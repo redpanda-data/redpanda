@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+from dataclasses import dataclass
 import glob
+import json
 import subprocess
 import os
 import signal
@@ -8,6 +10,7 @@ import asyncio
 import tarfile
 import tempfile
 from typing import Any
+import yaml
 
 CLUSTER_STARTUP_MARKER = "Successfully started Redpanda"
 BENCH_START_MARKER = "Starting benchmark traffic"
@@ -67,16 +70,32 @@ async def start_dev_cluster(dev_cluster_py: str, redpanda_bin: str):
     return proc
 
 
-async def start_omb(omb_benchmark: str):
+@dataclass
+class OmbTarget:
+    results_path: str
+    total_messages: int
+
+
+async def start_omb(
+    tmpdir: str, omb_benchmark: str
+) -> tuple[asyncio.subprocess.Process, OmbTarget]:
+    workload_path = (
+        f"{os.path.dirname(os.path.realpath(__file__))}/omb_config/workload.yaml"
+    )
+    driver_path = (
+        f"{os.path.dirname(os.path.realpath(__file__))}/omb_config/driver.yaml"
+    )
+    results_path = os.path.join(tmpdir, "results.json")
+
     bench_cmd: list[str] = [
         omb_benchmark,
         "--drivers",
-        f"{os.path.dirname(os.path.realpath(__file__))}/omb_config/driver.yaml",
+        driver_path,
         "--output",
-        "/tmp/ombout",
+        results_path,
         "--service-version",
         "unknown_version",
-        f"{os.path.dirname(os.path.realpath(__file__))}/omb_config/workload.yaml",
+        workload_path,
     ]
     print(f"Launching omb: {' '.join(bench_cmd)}")
     proc = await asyncio.create_subprocess_exec(
@@ -85,7 +104,30 @@ async def start_omb(omb_benchmark: str):
         stderr=asyncio.subprocess.STDOUT,
         start_new_session=True,
     )
-    return proc
+
+    with open(workload_path, "r") as workload_yaml:
+        workload = yaml.safe_load(workload_yaml)
+
+    omb_target = OmbTarget(
+        results_path=results_path,
+        total_messages=workload["producerRate"]
+        * (workload["warmupDurationMinutes"] + workload["testDurationMinutes"])
+        * 60,
+    )
+    return proc, omb_target
+
+
+def check_omb(omb_target: OmbTarget):
+    with open(omb_target.results_path, "r") as results_f:
+        results = json.load(results_f)
+
+    # OMB will always overshoot but just avoid flakiness
+    leeway_factor = 0.95
+
+    if sum(results["sent"]) < omb_target.total_messages * leeway_factor:
+        raise RuntimeError("OMB sent too few messages")
+    if sum(results["consumed"]) < omb_target.total_messages * leeway_factor:
+        raise RuntimeError("OMB consumed too few messages")
 
 
 async def terminate(proc: asyncio.subprocess.Process, name: str):
@@ -99,7 +141,7 @@ async def terminate(proc: asyncio.subprocess.Process, name: str):
         print(f"Error terminating {name}: {e}")
 
 
-async def profile(args: argparse.Namespace, redpanda_bin: str):
+async def profile(args: argparse.Namespace, tmpdir: str, redpanda_bin: str):
     cluster_proc: asyncio.subprocess.Process | None = None
     omb_proc: asyncio.subprocess.Process | None = None
     cluster_task: asyncio.Task[None] | None = None
@@ -111,9 +153,10 @@ async def profile(args: argparse.Namespace, redpanda_bin: str):
         await read_until(cluster_proc, CLUSTER_STARTUP_MARKER, "cluster")
         cluster_task = asyncio.create_task(continue_stream(cluster_proc, "cluster"))
 
-        omb_proc = await start_omb(args.omb_benchmark)
+        omb_proc, omb_target = await start_omb(tmpdir, args.omb_benchmark)
         await read_until(omb_proc, BENCH_START_MARKER, "omb")
         await asyncio.create_task(continue_stream(omb_proc, "omb"))
+        check_omb(omb_target)
 
     finally:
         if omb_proc:
@@ -167,7 +210,7 @@ def main(args: argparse.Namespace):
 
         redpanda_bin = extra_rp_tar(args.redpanda_tar, tmpdirname)
 
-        asyncio.run(profile(args, redpanda_bin))
+        asyncio.run(profile(args, tmpdirname, redpanda_bin))
         combine_profiles(args, profile_dir, args.combined_profile_file)
 
 
