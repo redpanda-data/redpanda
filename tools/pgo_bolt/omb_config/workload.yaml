@@ -13,7 +13,7 @@ subscriptionsPerTopic: 1
 producersPerTopic: 10
 consumerPerSubscription: 10
 
-producerRate: 100000
+producerRate: 20000
 
 consumerBacklogSizeGB: 0
 
