@@ -12,12 +12,14 @@
 
 #include "model/fundamental.h"
 
+#include <ada.h>
 #include <expected>
 
 namespace cloud_storage_clients {
 
 struct bucket_params {
     plain_bucket_name plain_name;
+    ada::url_search_params upstream_opts;
 };
 
 std::expected<bucket_params, std::string>

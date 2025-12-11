@@ -117,6 +117,7 @@ public:
 
     /// Stop must be called before destroying the client object.
     ss::future<> stop();
+
     using net::base_transport::shutdown;
     using net::base_transport::wait_input_shutdown;
 
@@ -272,6 +273,9 @@ public:
 
     /// Whether the client has a valid connection.
     using net::base_transport::is_valid;
+
+    /// Server address.
+    using net::base_transport::server_address;
 
     /**
      * Dispatch a request with the provided headers and body.

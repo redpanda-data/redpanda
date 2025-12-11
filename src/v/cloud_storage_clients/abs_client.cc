@@ -13,10 +13,10 @@
 #include "base/vlog.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
-#include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/types.h"
+#include "cloud_storage_clients/upstream.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
@@ -445,12 +445,12 @@ abs_request_creator::make_delete_file_request(
 }
 
 abs_client::abs_client(
-  ss::weak_ptr<client_pool> pool_ptr,
+  ss::weak_ptr<upstream> upstream_ptr,
   const abs_configuration& conf,
   const net::base_transport::configuration& transport_conf,
   ss::shared_ptr<client_probe> probe,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : client(std::move(pool_ptr))
+  : client(std::move(upstream_ptr))
   , _data_lake_v2_client_config(
       conf.is_hns_enabled
         ? std::make_optional(
@@ -467,13 +467,13 @@ abs_client::abs_client(
 }
 
 abs_client::abs_client(
-  ss::weak_ptr<client_pool> pool_ptr,
+  ss::weak_ptr<upstream> upstream_ptr,
   const abs_configuration& conf,
   const net::base_transport::configuration& transport_conf,
   ss::shared_ptr<client_probe> probe,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : client(std::move(pool_ptr))
+  : client(std::move(upstream_ptr))
   , _data_lake_v2_client_config(
       conf.is_hns_enabled
         ? std::make_optional(
@@ -567,7 +567,7 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
                 // the expired token will trigger generic AuthenticationFailed
                 // error.
                 outcome = error_outcome::authentication_failed;
-                if (auto p = _pool_ptr.get()) {
+                if (auto p = _upstream_ptr.get()) {
                     p->maybe_refresh_credentials();
                 }
             } else {
@@ -1143,6 +1143,11 @@ ss::future<> abs_client::do_delete_path(
             throw;
         }
     }
+}
+
+std::ostream& abs_client::print(std::ostream& os) const {
+    fmt::print(os, "ABS client{{{}}}", _client.server_address());
+    return os;
 }
 
 } // namespace cloud_storage_clients

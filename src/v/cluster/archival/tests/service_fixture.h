@@ -210,10 +210,11 @@ public:
     void auth_token_refresh_eventually(
       size_t expected, ss::lowres_clock::duration to = 3s) {
         RPTEST_REQUIRE_EVENTUALLY(to, [this, expected] {
-            return pool.local().token_refresh_count() == expected;
+            return pool.local().token_refresh_count().get() == expected;
         });
     }
 
+    ss::sharded<cloud_storage_clients::upstream_registry> upstreams;
     ss::sharded<cloud_storage_clients::client_pool> pool;
     ss::sharded<cloud_io::remote> io;
     ss::sharded<cloud_storage::remote> remote;

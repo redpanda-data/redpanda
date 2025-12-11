@@ -67,8 +67,14 @@ struct cloud_storage_fixture : s3_imposter_fixture {
                   storage::disk_space_alert::ok);
             })
           .get();
-
-        pool.start(10, ss::sharded_parameter([this] { return conf; })).get();
+        upstreams.start(conf).get();
+        pool
+          .start(
+            ss::sharded_parameter(
+              [this] { return std::ref(upstreams.local()); }),
+            10,
+            conf)
+          .get();
         pool
           .invoke_on_all(
             &cloud_storage_clients::client_pool::start, std::nullopt)
@@ -76,7 +82,7 @@ struct cloud_storage_fixture : s3_imposter_fixture {
         cloud_io
           .start(
             std::ref(pool),
-            ss::sharded_parameter([this] { return conf; }),
+            conf,
             ss::sharded_parameter([] { return config_file; }),
             ss::sharded_parameter(
               [] { return ss::default_scheduling_group(); }))
@@ -85,10 +91,7 @@ struct cloud_storage_fixture : s3_imposter_fixture {
           .invoke_on_all(
             [](cloud_io::remote& cloud_io) { return cloud_io.start(); })
           .get();
-        api
-          .start(
-            std::ref(cloud_io), ss::sharded_parameter([this] { return conf; }))
-          .get();
+        api.start(std::ref(cloud_io), conf).get();
         api
           .invoke_on_all([](cloud_storage::remote& api) { return api.start(); })
           .get();
@@ -101,6 +104,7 @@ struct cloud_storage_fixture : s3_imposter_fixture {
         api.stop().get();
         cloud_io.stop().get();
         pool.stop().get();
+        upstreams.stop().get();
         cache.stop().get();
         tmp_directory.remove().get();
     }
@@ -116,6 +120,7 @@ struct cloud_storage_fixture : s3_imposter_fixture {
 
     ss::tmp_dir tmp_directory;
     ss::sharded<cloud_io::cache> cache;
+    ss::sharded<cloud_storage_clients::upstream_registry> upstreams;
     ss::sharded<cloud_storage_clients::client_pool> pool;
     ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<remote> api;

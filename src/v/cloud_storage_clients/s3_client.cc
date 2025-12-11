@@ -17,9 +17,9 @@
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
-#include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
+#include "cloud_storage_clients/upstream.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
@@ -594,7 +594,7 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               key,
               bucket);
             outcome = error_outcome::authentication_failed;
-            if (auto p = _pool_ptr.get()) {
+            if (auto p = _upstream_ptr.get()) {
                 p->maybe_refresh_credentials();
             }
         } else {
@@ -623,24 +623,24 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
 }
 
 s3_client::s3_client(
-  ss::weak_ptr<client_pool> pool_ptr,
+  ss::weak_ptr<upstream> upstream_ptr,
   const s3_configuration& conf,
   const net::base_transport::configuration& transport_conf,
   ss::shared_ptr<client_probe> probe,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : client(std::move(pool_ptr))
+  : client(std::move(upstream_ptr))
   , _requestor(conf, std::move(apply_credentials))
   , _client(transport_conf, nullptr, probe)
   , _probe(std::move(probe)) {}
 
 s3_client::s3_client(
-  ss::weak_ptr<client_pool> pool_ptr,
+  ss::weak_ptr<upstream> upstream_ptr,
   const s3_configuration& conf,
   const net::base_transport::configuration& transport_conf,
   ss::shared_ptr<client_probe> probe,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : client(std::move(pool_ptr))
+  : client(std::move(upstream_ptr))
   , _requestor(conf, std::move(apply_credentials))
   , _client(transport_conf, &as, probe, conf.max_idle_time)
   , _probe(std::move(probe)) {}
@@ -1238,4 +1238,10 @@ auto s3_client::delete_objects(
     co_return co_await send_request(
       do_delete_objects(bucket, keys, timeout), bucket, dummy);
 }
+
+std::ostream& s3_client::print(std::ostream& os) const {
+    fmt::print(os, "S3 client{{{}}}", _client.server_address());
+    return os;
+}
+
 } // namespace cloud_storage_clients

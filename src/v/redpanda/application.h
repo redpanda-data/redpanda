@@ -124,6 +124,8 @@ public:
     ss::sharded<cloud_io::cache> shadow_index_cache;
     ss::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;
+    ss::sharded<cloud_storage_clients::upstream_registry>
+      cloud_storage_upstreams;
     ss::sharded<cloud_storage_clients::client_pool> cloud_storage_clients;
     ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<cloud_storage::remote> cloud_storage_api;

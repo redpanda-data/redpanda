@@ -10,16 +10,16 @@
 
 #include "cloud_storage_clients/credential_manager.h"
 
-#include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/logger.h"
+#include "cloud_storage_clients/upstream.h"
 
 namespace cloud_storage_clients {
 
 credential_manager::credential_manager(
-  client_pool& pool,
+  upstream& upstream,
   cloud_storage_clients::client_configuration conf,
   model::cloud_credentials_source cloud_credentials_source)
-  : _pool(pool)
+  : _upstream(upstream)
   , _client_conf(std::move(conf))
   , _auth_refresh_bg_op{pool_log, _gate, _as, cloud_credentials_source, cloud_storage_clients::build_refresh_credentials_source(_client_conf, cloud_credentials_source)}
   , _azure_shared_key_binding(
@@ -30,16 +30,17 @@ ss::future<> credential_manager::start() {
     // op to refresh credentials periodically, and load pool with static
     // credentials right now.
     if (_auth_refresh_bg_op.is_static_config()) {
-        _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
+        _upstream.load_credentials(
+          _auth_refresh_bg_op.build_static_credentials());
     } else {
         // Launch background operation to fetch credentials on
         // auth_refresh_shard_id, and copy them to other shards. We do not wait
-        // for this operation here, the wait is done in client_pool::acquire to
+        // for this operation here, the wait is done in upstream::acquire to
         // avoid delaying application startup.
         _auth_refresh_bg_op.maybe_start_auth_refresh_op(
           [this](auto credentials) {
-              return _pool.container().invoke_on_all(
-                [c = std::move(credentials)](client_pool& p) {
+              return _upstream.container().invoke_on_all(
+                [c = std::move(credentials)](upstream& p) {
                     p.load_credentials(std::move(c));
                 });
           });
@@ -78,7 +79,8 @@ ss::future<> credential_manager::start() {
           cloud_storage_clients::build_refresh_credentials_source(
             _client_conf, model::cloud_credentials_source::config_file));
 
-        _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
+        _upstream.load_credentials(
+          _auth_refresh_bg_op.build_static_credentials());
     });
 
     co_return;

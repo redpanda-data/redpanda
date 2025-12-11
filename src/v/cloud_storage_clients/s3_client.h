@@ -122,14 +122,14 @@ private:
 class s3_client : public client {
 public:
     s3_client(
-      ss::weak_ptr<client_pool> pool_ptr,
+      ss::weak_ptr<upstream> upstream_ptr,
       const s3_configuration& conf,
       const net::base_transport::configuration& transport_conf,
       ss::shared_ptr<client_probe> probe,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
         apply_credentials);
     s3_client(
-      ss::weak_ptr<client_pool> pool_ptr,
+      ss::weak_ptr<upstream> upstream_ptr,
       const s3_configuration& conf,
       const net::base_transport::configuration& transport_conf,
       ss::shared_ptr<client_probe> probe,
@@ -255,6 +255,8 @@ private:
     // compatible with the configured cloud storage provider), and false
     // otherwise.
     ss::future<bool> self_configure_test(const plain_bucket_name& bucket);
+
+    std::ostream& print(std::ostream& os) const override;
 
 private:
     request_creator _requestor;

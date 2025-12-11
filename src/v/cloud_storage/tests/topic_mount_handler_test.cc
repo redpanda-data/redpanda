@@ -15,18 +15,13 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/topic_configuration.h"
-#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/namespace.h"
-#include "test_utils/test.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
 
 #include <gtest/gtest.h>
-
-#include <chrono>
 
 using namespace cloud_storage;
 using namespace std::chrono_literals;

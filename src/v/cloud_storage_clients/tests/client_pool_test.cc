@@ -49,6 +49,10 @@ static cloud_storage_clients::s3_configuration client_configuration() {
 
 static const client_pool_builder test_pool_builder{client_configuration()};
 
+static const cloud_storage_clients::bucket_params test_bucket_params{
+  .plain_name = cloud_storage_clients::plain_bucket_name("test-bucket"),
+};
+
 SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_abortable) {
     constexpr size_t num_connections_per_shard = 0;
 
@@ -62,7 +66,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_abortable) {
                         .get();
     ss::abort_source as;
 
-    auto f = pool.local().acquire(as);
+    auto f = pool.local().acquire(test_bucket_params, as);
     while (!pool.local().has_waiters()) {
         ss::yield().get();
     }
@@ -92,7 +96,9 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_with_timeout) {
     using namespace std::chrono_literals;
 
     {
-        auto lease = pool.local().acquire_with_timeout(as, 100ms).get();
+        auto lease = pool.local()
+                       .acquire_with_timeout(test_bucket_params, as, 100ms)
+                       .get();
 
         // The request should fail w/in 500ms due to lease expiry
         // Note that the default timeout for the request itself is 5s
@@ -110,7 +116,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_with_timeout) {
     }
 
     {
-        auto lease = pool.local().acquire(as).get();
+        auto lease = pool.local().acquire(test_bucket_params, as).get();
 
         auto f = ss::with_timeout(
           ss::lowres_clock::now() + 500ms,
@@ -127,7 +133,9 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_with_timeout) {
 
         auto lease = pool.local()
                        .acquire_with_timeout(
-                         as, ss::lowres_clock::duration::max())
+                         test_bucket_params,
+                         as,
+                         ss::lowres_clock::duration::max())
                        .get();
 
         BOOST_REQUIRE_EQUAL(lease._wd, nullptr);
@@ -149,7 +157,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_timeout) {
         // acquire should time out. no abort required.
         ss::abort_source as;
 
-        auto f = pool.local().acquire(as, ss::lowres_clock::now() + 100ms);
+        auto f = pool.local().acquire(
+          test_bucket_params, as, ss::lowres_clock::now() + 100ms);
         while (!pool.local().has_waiters()) {
             ss::yield().get();
         }
@@ -165,7 +174,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_timeout) {
         // soon.
         ss::abort_source as;
 
-        auto f = pool.local().acquire(as, ss::lowres_clock::time_point::max());
+        auto f = pool.local().acquire(
+          test_bucket_params, as, ss::lowres_clock::time_point::max());
         while (!pool.local().has_waiters()) {
             ss::yield().get();
         }
@@ -187,7 +197,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_timeout) {
         // client acquisition.
 
         ss::abort_source as;
-        auto f = pool.local().acquire_with_timeout(as, 100ms);
+        auto f = pool.local().acquire_with_timeout(
+          test_bucket_params, as, 100ms);
         ss::sleep(500ms).get();
         as.request_abort();
         BOOST_REQUIRE_THROW(f.get(), ss::abort_requested_exception);
@@ -197,7 +208,10 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_timeout) {
         // passing a deadline in the past should behave sanely
         ss::abort_source as;
         BOOST_REQUIRE_THROW(
-          pool.local().acquire(as, ss::lowres_clock::time_point::min()).get(),
+          pool.local()
+            .acquire(
+              test_bucket_params, as, ss::lowres_clock::time_point::min())
+            .get(),
           ss::timed_out_error);
     }
 }

@@ -21,34 +21,46 @@ namespace cloud_storage_clients::tests {
 class [[nodiscard]] client_pool_stop_guard {
 public:
     explicit client_pool_stop_guard(
+      std::unique_ptr<ss::sharded<upstream_registry>> upstreams,
       ss::sharded<cloud_storage_clients::client_pool>& pool)
-      : _pool(&pool) {}
+      : upstreams_(std::move(upstreams))
+      , pool_(&pool) {}
 
     client_pool_stop_guard(const client_pool_stop_guard&) = delete;
     client_pool_stop_guard& operator=(const client_pool_stop_guard&) = delete;
 
     client_pool_stop_guard(client_pool_stop_guard&& other) noexcept
-      : _pool(other._pool) {
-        other._pool = nullptr;
+      : upstreams_(std::move(other.upstreams_))
+      , pool_(other.pool_) {
+        other.pool_ = nullptr;
     }
     client_pool_stop_guard& operator=(client_pool_stop_guard&& other) noexcept {
         if (this != &other) {
-            _pool = other._pool;
-            other._pool = nullptr;
+            upstreams_ = std::exchange(other.upstreams_, nullptr);
+            pool_ = std::exchange(other.pool_, nullptr);
         }
         return *this;
     }
 
-    void release() { _pool = nullptr; }
+    void release() {
+        vassert(
+          upstreams_ == nullptr,
+          "Cannot release when upstream registry is owned by the guard");
+        pool_ = nullptr;
+    }
 
     ~client_pool_stop_guard() {
-        if (_pool) {
-            _pool->stop().get();
+        if (pool_) {
+            pool_->stop().get();
+        }
+        if (upstreams_) {
+            upstreams_->stop().get();
         }
     }
 
 private:
-    ss::sharded<cloud_storage_clients::client_pool>* _pool;
+    std::unique_ptr<ss::sharded<upstream_registry>> upstreams_;
+    ss::sharded<cloud_storage_clients::client_pool>* pool_;
 };
 
 class [[nodiscard]] client_pool_builder {
@@ -69,10 +81,19 @@ public:
         return copy;
     }
 
+    client_pool_builder copy() const { return *this; }
+
     ss::future<client_pool_stop_guard>
     build(ss::sharded<cloud_storage_clients::client_pool>& pool) && {
+        auto upstreams = std::make_unique<ss::sharded<upstream_registry>>();
+        co_await upstreams->start(conf_);
+
         co_await pool.start(
-          num_connections_, std::move(conf_), overdraft_policy_);
+          ss::sharded_parameter(
+            [&upstreams] { return std::ref(upstreams->local()); }),
+          num_connections_,
+          std::move(conf_),
+          overdraft_policy_);
 
         std::exception_ptr e;
         try {
@@ -85,7 +106,7 @@ public:
             std::rethrow_exception(e);
         }
 
-        co_return client_pool_stop_guard{pool};
+        co_return client_pool_stop_guard{std::move(upstreams), pool};
     }
 
 private:

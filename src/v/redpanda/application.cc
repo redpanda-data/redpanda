@@ -1705,8 +1705,14 @@ void application::wire_up_redpanda_services(
         cloud_config = cloud_storage::configuration::get_config().get();
         backend = cloud_storage_clients::infer_backend_from_configuration(
           cloud_config->client_config, cloud_config->cloud_credentials_source);
+
+        construct_service(cloud_storage_upstreams, cloud_config->client_config)
+          .get();
+
         construct_service(
           cloud_storage_clients,
+          ss::sharded_parameter(
+            [this] { return std::ref(cloud_storage_upstreams.local()); }),
           cloud_config->connection_limit,
           cloud_config->client_config,
           cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)

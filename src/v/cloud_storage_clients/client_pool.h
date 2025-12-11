@@ -10,10 +10,10 @@
 
 #pragma once
 
-#include "cloud_roles/apply_credentials.h"
+#include "cloud_storage_clients/bucket_params.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
-#include "cloud_storage_clients/credential_manager.h"
+#include "cloud_storage_clients/upstream_registry.h"
 #include "container/intrusive_list_helpers.h"
 #include "ssx/watchdog.h"
 #include "utils/stop_signal.h"
@@ -106,6 +106,7 @@ public:
     /// \param application_abort_source abort source which can be used to stop
     /// Redpanda gracefully
     client_pool(
+      upstream_registry& upstream_registry,
       size_t size,
       client_configuration conf,
       client_pool_overdraft_policy policy
@@ -120,13 +121,7 @@ public:
 
     bool shutdown_initiated();
 
-    void maybe_refresh_credentials();
-    uint64_t token_refresh_count() const noexcept;
-
-    /// Performs the dual functions of loading refreshed credentials into
-    /// apply_credentials object, as well as initializing the client pool
-    /// the first time this function is called.
-    void load_credentials(cloud_roles::credentials credentials);
+    ss::future<uint64_t> token_refresh_count() const;
 
     /// \brief Acquire http client from the pool.
     ///
@@ -139,6 +134,7 @@ public:
     /// \return client pointer (via future that can wait if all clients
     ///         are in use)
     ss::future<client_lease> acquire(
+      const bucket_params& params,
       ss::abort_source& as,
       std::optional<ss::lowres_clock::time_point> deadline = std::nullopt);
 
@@ -158,6 +154,7 @@ public:
     /// \param ctx - Optional context for the log message. e.g. the string
     ///              representation of a retry_chain_node.
     ss::future<client_lease> acquire_with_timeout(
+      const bucket_params& params,
       ss::abort_source& as,
       ss::lowres_clock::duration deadline,
       std::optional<ss::sstring> ctx = std::nullopt);
@@ -176,17 +173,7 @@ public:
     bool has_waiters() const noexcept { return _cvar.has_waiters(); }
 
 private:
-    ss::future<> client_self_configure(
-      std::optional<std::reference_wrapper<stop_signal>>
-        application_stop_signal);
-    ss::future<
-      std::optional<cloud_storage_clients::client_self_configuration_output>>
-    do_client_self_configure(client_ptr client);
-    ss::future<> accept_self_configure_result(
-      std::optional<client_self_configuration_output> result);
-
-    client_ptr make_client() noexcept;
-    void release(client_ptr leased);
+    void release(client_ptr leased, upstream_key key);
 
     /// Return number of clients which wasn't utilized
     size_t normalized_num_clients_in_use() const;
@@ -194,10 +181,6 @@ private:
     void return_one(unsigned other);
 
     void update_usage_stats();
-
-    ///  Wait for credentials to be acquired. Once credentials are acquired,
-    ///  based on the policy, optionally wait for client pool to initialize.
-    ss::future<> wait_for_credentials();
 
     /// Configured capacity per shard
     const size_t _capacity;
@@ -216,16 +199,26 @@ private:
         client_wrapper(client_wrapper&& other) noexcept
           : ptr(std::move(other.ptr)) {
             _hook.swap_nodes(other._hook);
+            _upstream_hook.swap_nodes(other._upstream_hook);
         }
         client_wrapper& operator=(client_wrapper&& other) = delete;
         ~client_wrapper() = default;
 
         client_ptr ptr;
         intrusive_list_hook _hook;
+        intrusive_list_hook _upstream_hook;
     };
 
+    // Authoritative ownership of all idle clients.
     std::unordered_map<client*, client_wrapper> _idle_clients;
+
+    // Global LRU list of idle clients.
     intrusive_list<client_wrapper, &client_wrapper::_hook> _lru_idle_list;
+
+    // Per-upstream LRU lists of idle clients.
+    using upstream_list
+      = intrusive_list<client_wrapper, &client_wrapper::_upstream_hook>;
+    std::map<upstream_key, upstream_list> _lru_idle_list_per_upstream;
 
     size_t _num_own_leased{0};
 
@@ -239,15 +232,9 @@ private:
     // invariants.
     ss::gate _bg_gate;
 
-    /// Holds and applies the credentials for requests to S3. Shared pointer to
-    /// enable rotating credentials to all clients.
-    ss::lw_shared_ptr<cloud_roles::apply_credentials> _apply_credentials;
-    ss::condition_variable _credentials_var;
-
-    ssx::semaphore _self_config_barrier{0, "self_config_barrier"};
     ssx::semaphore _pool_ready_barrier{0, "pool_barrier"};
 
-    credential_manager _credential_manager;
+    upstream_registry& _upstream_registry;
 };
 
 } // namespace cloud_storage_clients

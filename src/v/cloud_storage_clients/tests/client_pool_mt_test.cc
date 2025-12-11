@@ -51,6 +51,10 @@ static cloud_storage_clients::s3_configuration client_configuration() {
 
 static const client_pool_builder test_pool_builder{client_configuration()};
 
+static const cloud_storage_clients::bucket_params test_bucket_params{
+  .plain_name = cloud_storage_clients::plain_bucket_name("test-bucket"),
+};
+
 SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_another_shard) {
     BOOST_REQUIRE(ss::smp::count == 2);
 
@@ -68,24 +72,45 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_another_shard) {
 
     ss::abort_source as;
 
+    // Barrier to ensure that all shards are ready to deal connections.
+    // Avoids an implementation detail where if the remote shard pool is not
+    // ready we will not attempt to borrow from it and instead wait locally.
+    pool
+      .invoke_on_all([&](cloud_storage_clients::client_pool& p) {
+          return p.acquire(test_bucket_params, as).discard_result();
+      })
+      .get();
+
+    auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
+
+    // Barrier to ensure that all shards are ready to deal connections.
+    // Avoids an implementation detail where if the remote shard pool is not
+    // ready we will not attempt to borrow from it and instead wait locally.
+    pool
+      .invoke_on_all([&](cloud_storage_clients::client_pool& p) {
+          return p.acquire(test_bucket_params, as).discard_result();
+      })
+      .get();
+
     vlog(test_log.debug, "use own connections");
     // deplete own connections
     std::deque<cloud_storage_clients::client_pool::client_lease> leases;
     for (size_t i = 0; i < num_connections_per_shard; i++) {
-        leases.push_back(pool.local().acquire(as).get());
+        leases.push_back(pool.local().acquire(test_bucket_params, as).get());
     }
 
     vlog(test_log.debug, "borrow connections from others");
     // deplete others connections
     for (size_t i = 0; i < num_connections_per_shard; i++) {
-        leases.push_back(pool.local().acquire(as).get());
+        leases.push_back(pool.local().acquire(test_bucket_params, as).get());
     }
 
     auto fut = ss::smp::invoke_on_others([&pool] {
         return ss::async([&pool] {
             ss::abort_source local_as;
             vlog(test_log.debug, "acquire extra connection on the other shard");
-            std::ignore = pool.local().acquire(local_as).get();
+            std::ignore
+              = pool.local().acquire(test_bucket_params, local_as).get();
             vlog(test_log.debug, "connection acquired");
         });
     });
@@ -160,7 +185,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_this_shard) {
       .invoke_on_all([&pool](shard_leases& sl) mutable {
           return ss::async([&] {
               for (size_t i = 0; i < num_connections_per_shard; i++) {
-                  sl.leases.push_back(pool.local().acquire(sl.as).get());
+                  sl.leases.push_back(
+                    pool.local().acquire(test_bucket_params, sl.as).get());
               }
           });
       })
@@ -175,7 +201,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_this_shard) {
 
     // Free local resources which should become available to the prevoiusly
     // created future.
-    auto fut = pool.local().acquire(leases.local().as);
+    auto fut = pool.local().acquire(test_bucket_params, leases.local().as);
     try {
         ss::with_timeout(ss::lowres_clock::now() + 1s, std::move(fut)).get();
     } catch (const ss::timed_out_error&) {
@@ -219,7 +245,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_after_leasing_all) {
     // Lease all connections from all the shards.
     for (size_t i = 0; i < ss::smp::count * num_connections_per_shard; i++) {
         leases.local().leases.push_back(
-          pool.local().acquire(leases.local().as).get());
+          pool.local().acquire(test_bucket_params, leases.local().as).get());
     }
 
     vlog(test_log.debug, "connections depleted");
@@ -238,7 +264,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_after_leasing_all) {
         [&pool](shard_leases& sl) {
             return ss::async([&sl, &pool] {
                 for (size_t i = 0; i < num_connections_per_shard; i++) {
-                    sl.leases.push_back(pool.local().acquire(sl.as).get());
+                    sl.leases.push_back(
+                      pool.local().acquire(test_bucket_params, sl.as).get());
                 }
             });
         })
@@ -246,7 +273,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_after_leasing_all) {
 
     vlog(test_log.debug, "done borrowing leases");
 
-    auto pending_acquire = pool.local().acquire(as);
+    auto pending_acquire = pool.local().acquire(test_bucket_params, as);
     ss::yield().get();
 
     if (pending_acquire.available()) {
@@ -281,4 +308,99 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_after_leasing_all) {
     } catch (const ss::timed_out_error&) {
         BOOST_FAIL("Timed out");
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_client_pool_multiple_upstreams) {
+    // Smoke test.
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    auto pool_stop = test_pool_builder.copy().build(pool).get();
+
+    cloud_storage_clients::bucket_params key1{
+      .plain_name = cloud_storage_clients::plain_bucket_name("test-bucket-1"),
+      .upstream_opts = ada::url_search_params(
+        "region=us-east-1&endpoint=my-east-1.localhost"),
+    };
+
+    cloud_storage_clients::bucket_params key2{
+      .plain_name = cloud_storage_clients::plain_bucket_name("test-bucket-2"),
+      .upstream_opts = ada::url_search_params(
+        "region=us-west-2&endpoint=my-west-2.localhost"),
+    };
+
+    // Acquire concurrently
+    // - from multiple shards
+    // - from multiple upstreams
+    pool
+      .invoke_on_all([&](cloud_storage_clients::client_pool& p) {
+          return ss::async([&] {
+              ss::abort_source as;
+              auto fut1 = p.acquire(test_bucket_params, as);
+              auto fut2 = p.acquire(key1, as);
+              auto fut3 = p.acquire(key2, as);
+
+              // TODO: Verify that clients actually have different upstreams.
+              auto r = ss::when_all_succeed(
+                         std::move(fut1), std::move(fut2), std::move(fut3))
+                         .get();
+
+              BOOST_REQUIRE_EQUAL(
+                fmt::format("{}", std::get<0>(r).client),
+                "S3 client{{host: localhost, port: 4434}}");
+              BOOST_REQUIRE_EQUAL(
+                fmt::format("{}", std::get<1>(r).client),
+                "S3 client{{host: my-east-1.localhost, port: 4434}}");
+              BOOST_REQUIRE_EQUAL(
+                fmt::format("{}", std::get<2>(r).client),
+                "S3 client{{host: my-west-2.localhost, port: 4434}}");
+          });
+      })
+      .get();
+
+    std::vector<cloud_storage_clients::bucket_params> concurrent_requests{};
+    concurrent_requests.reserve(1000);
+    for (size_t i = 0; i < 1000; i++) {
+        cloud_storage_clients::bucket_params params{
+          .plain_name = cloud_storage_clients::plain_bucket_name(
+            fmt::format("test-bucket-{}", i)),
+          .upstream_opts = ada::url_search_params(
+            i % 2 == 0 ? "region=us-east-1&endpoint=my-east-1.localhost"
+                       : "region=us-west-2&endpoint=my-west-2.localhost"),
+        };
+        concurrent_requests.push_back(std::move(params));
+    }
+
+    for (int i = 0; i < 3; i++) {
+        pool
+          .invoke_on_all([&](cloud_storage_clients::client_pool& p) {
+              return ss::parallel_for_each(
+                concurrent_requests,
+                [&](cloud_storage_clients::bucket_params& params) {
+                    return ss::async([&] {
+                        ss::abort_source as;
+                        auto lease = p.acquire(params, as).get();
+
+                        BOOST_REQUIRE_EQUAL(
+                          fmt::format("{}", lease.client),
+                          params.upstream_opts.get("endpoint").value()
+                              == "my-east-1.localhost"
+                            ? "S3 client{{host: "
+                              "my-east-1.localhost, port: "
+                              "4434}}"
+                            : "S3 client{{host: "
+                              "my-west-2.localhost, port: "
+                              "4434}}");
+
+                        // Hold the lease for a bit to increase
+                        // chance of contention.
+                        ss::sleep(3ms).get();
+                    });
+                });
+          })
+          .get();
+
+        ss::yield().get();
+    }
+
+    BOOST_REQUIRE_EQUAL(pool.local().idle_count(), pool.local().capacity());
 }

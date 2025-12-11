@@ -15,14 +15,14 @@
 
 namespace cloud_storage_clients {
 
-class client_pool;
+class upstream;
 
 /// Credential manager is responsible for managing authentication credentials
 /// for the client pool.
 class credential_manager {
 public:
     credential_manager(
-      client_pool&,
+      upstream&,
       cloud_storage_clients::client_configuration,
       model::cloud_credentials_source);
 
@@ -35,7 +35,7 @@ public:
     uint64_t token_refresh_count() const noexcept;
 
 private:
-    client_pool& _pool;
+    upstream& _upstream;
     cloud_storage_clients::client_configuration _client_conf;
     cloud_roles::auth_refresh_bg_op _auth_refresh_bg_op;
     config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;

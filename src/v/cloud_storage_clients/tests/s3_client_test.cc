@@ -126,6 +126,10 @@ static constexpr auto no_such_config_payload = R"xml(
 
 static constexpr auto unexpected_payload = "unexpected!";
 
+static const cloud_storage_clients::bucket_params test_bucket_params{
+  .plain_name = cloud_storage_clients::plain_bucket_name("test-bucket"),
+};
+
 void set_routes(ss::httpd::routes& r) {
     using namespace ss::httpd;
     using reply = ss::http::reply;
@@ -872,7 +876,7 @@ public:
                                 client_pool_overdraft_policy::wait_if_empty)
                             .build(pool)
                             .get();
-        stop_guard.release(); // managed by fixture
+        pool_stop_guard.emplace(std::move(stop_guard));
 
         server->start().get();
         server->set_routes(set_routes).get();
@@ -881,13 +885,14 @@ public:
     }
 
     ~client_pool_fixture() {
-        pool.stop().get();
+        pool_stop_guard.reset();
         server->stop().get();
     }
 
     cloud_storage_clients::s3_configuration s3_conf;
     ss::shared_ptr<ss::httpd::http_server_control> server;
     ss::sharded<cloud_storage_clients::client_pool> pool;
+    std::optional<client_pool_stop_guard> pool_stop_guard;
 };
 
 static ss::future<> test_client_pool_payload(
@@ -915,7 +920,7 @@ FIXTURE_TEST(test_client_pool_wait_strategy, client_pool_fixture) {
     for (size_t i = 0; i < 20; i++) {
         auto f
           = pool.local()
-              .acquire(never_abort)
+              .acquire(test_bucket_params, never_abort)
               .then([server = server](
                       cloud_storage_clients::client_pool::client_lease lease) {
                   return test_client_pool_payload(server, std::move(lease));
@@ -958,7 +963,7 @@ FIXTURE_TEST(test_client_pool_reconnect, client_pool_fixture) {
     std::vector<ss::future<bool>> fut;
     for (size_t i = 0; i < 20; i++) {
         auto f = pool.local()
-                   .acquire(never_abort)
+                   .acquire(test_bucket_params, never_abort)
                    .then(
                      [server = server](
                        cloud_storage_clients::client_pool::client_lease lease) {

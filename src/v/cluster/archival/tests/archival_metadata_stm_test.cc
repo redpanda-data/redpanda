@@ -97,12 +97,15 @@ struct archival_metadata_stm_base_fixture
                 cfg.client_config = get_s3_configuration(port);
             })
           .get();
+        cloud_upstreams.start(cloud_cfg.local().client_config).get();
         // Connection pool
         cloud_conn_pool
           .start(
-            cloud_cfg.local().connection_limit(), ss::sharded_parameter([this] {
-                return cloud_cfg.local().client_config;
-            }))
+            ss::sharded_parameter(
+              [this] { return std::ref(cloud_upstreams.local()); }),
+            cloud_cfg.local().connection_limit(),
+            ss::sharded_parameter(
+              [this] { return cloud_cfg.local().client_config; }))
           .get();
         // Cloud storage remote api
         cloud_io
@@ -129,10 +132,12 @@ struct archival_metadata_stm_base_fixture
         cloud_io.stop().get();
         cloud_api.stop().get();
         cloud_conn_pool.stop().get();
+        cloud_upstreams.stop().get();
         cloud_cfg.stop().get();
     }
 
     ss::sharded<cloud_storage::configuration> cloud_cfg;
+    ss::sharded<cloud_storage_clients::upstream_registry> cloud_upstreams;
     ss::sharded<cloud_storage_clients::client_pool> cloud_conn_pool;
     ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<cloud_storage::remote> cloud_api;

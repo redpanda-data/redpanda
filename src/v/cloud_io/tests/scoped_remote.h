@@ -11,6 +11,12 @@
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
+#include "cloud_storage_clients/upstream_registry.h"
+
+#include <seastar/core/sharded.hh>
+
+#include <cstddef>
+#include <memory>
 
 namespace cloud_io {
 
@@ -22,6 +28,7 @@ struct scoped_remote {
     ~scoped_remote();
     void request_stop();
 
+    ss::sharded<cloud_storage_clients::upstream_registry> upstreams;
     ss::sharded<cloud_storage_clients::client_pool> pool;
     ss::sharded<remote> remote;
 

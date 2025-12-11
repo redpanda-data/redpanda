@@ -16,15 +16,16 @@ std::expected<bucket_params, std::string>
 extract_bucket_params(const bucket_name& name) {
     const auto& name_str = name();
 
-    // For now, we only support plain bucket names without connection
-    // parameters.
-    if (name_str.find('?') != ss::sstring::npos) {
-        return std::unexpected(
-          "bucket name parsing with connection parameters is not supported");
-    }
-
     bucket_params params;
-    params.plain_name = plain_bucket_name{name_str};
+
+    const size_t search_pos = name_str.find('?');
+    if (search_pos == ss::sstring::npos) {
+        params.plain_name = plain_bucket_name{name_str};
+        return params;
+    }
+    params.plain_name = plain_bucket_name{name_str.substr(0, search_pos)};
+    params.upstream_opts = ada::url_search_params{
+      name_str.substr(search_pos + 1)};
 
     return params;
 }
