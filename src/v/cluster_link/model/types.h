@@ -866,6 +866,8 @@ struct metadata
     friend std::ostream& operator<<(std::ostream& os, const metadata& md);
 };
 
+using metadata_ptr = ss::lw_shared_ptr<const metadata>;
+
 /// \brief Command used to add a mirror topic to a cluster link
 ///
 /// This command will be used either via the auto topic creation task via a
