@@ -12,7 +12,9 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "serde/protobuf/rpc.h"
 
+#include <optional>
 #include <system_error>
 
 namespace cluster_link {
@@ -55,16 +57,25 @@ std::error_code make_error_code(errc) noexcept;
 
 const std::error_category& error_category() noexcept;
 
+// Helper function to create error_info with reason and metadata
+serde::pb::rpc::error_info make_error_info(
+  errc ec,
+  chunked_hash_map<ss::sstring, ss::sstring> metadata = {});
+
 class err_info {
 public:
     explicit err_info(errc ec);
     err_info(errc, std::string);
+    err_info(errc, std::string, std::optional<serde::pb::rpc::error_info>);
+
     errc code() const noexcept;
     const std::string& message() const noexcept;
+    const std::optional<serde::pb::rpc::error_info>& info() const noexcept;
 
 private:
     errc _ec;
     std::string _msg;
+    std::optional<serde::pb::rpc::error_info> _error_info;
 };
 
 template<typename T>

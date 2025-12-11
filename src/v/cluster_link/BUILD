@@ -32,7 +32,9 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//proto/redpanda/core/admin/v2:error_reason_cc_proto",
         "//src/v/base",
+        "//src/v/serde/protobuf:rpc",
     ],
 )
 

@@ -52,6 +52,7 @@ redpanda_cc_gtest(
         "errc_test.cc",
     ],
     deps = [
+        "//proto/redpanda/core/admin/v2:error_reason_cc_proto",
         "//src/v/cluster_link:errc",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
