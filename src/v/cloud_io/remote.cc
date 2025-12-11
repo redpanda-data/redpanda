@@ -14,6 +14,7 @@
 #include "cloud_io/logger.h"
 #include "cloud_io/provider.h"
 #include "cloud_io/transfer_details.h"
+#include "cloud_storage_clients/bucket_params.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/types.h"
@@ -184,6 +185,16 @@ ss::future<upload_result> remote::upload_stream(
   std::optional<size_t> max_retries) {
     const auto& path = transfer_details.key;
     const auto& bucket = transfer_details.bucket;
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return upload_result::failed;
+    }
     auto guard = _gate.hold();
     retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(log, fib);
@@ -202,7 +213,7 @@ ss::future<upload_result> remote::upload_stream(
         }
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -226,7 +237,7 @@ ss::future<upload_result> remote::upload_stream(
         auto reader_handle = co_await reset_str();
         // Segment upload attempt
         auto res = co_await lease.client->put_object(
-          bucket,
+          bucket_params->plain_name,
           path,
           content_length,
           reader_handle->take_stream(),
@@ -306,15 +317,25 @@ ss::future<download_result> remote::download_stream(
   std::function<void(size_t)> throttle_metric_ms_cb) {
     const auto& path = transfer_details.key;
     const auto& bucket = transfer_details.bucket;
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return download_result::failed;
+    }
 
     auto guard = _gate.hold();
     retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(log, fib);
 
-    auto fut = co_await [this, &fib, &transfer_details] {
+    auto fut = co_await [this, &fib, &transfer_details, &bucket_params] {
         transfer_details.on_client_acquire();
         return ss::coroutine::as_future(_pool.local().acquire_with_timeout(
-          fib.root_abort_source(), _lease_timeout(), fib()));
+          *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
     }();
     if (fut.failed()) {
         co_return throw_if_not_timeout(
@@ -331,7 +352,11 @@ ss::future<download_result> remote::download_stream(
         auto download_latency_measure
           = transfer_details.scoped_latency_measurement();
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), false, byte_range);
+          bucket_params->plain_name,
+          path,
+          fib.get_timeout(),
+          false,
+          byte_range);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -436,11 +461,21 @@ remote::download_object(download_request download_request) {
 
     const auto path = transfer_details.key;
     const auto bucket = transfer_details.bucket;
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return download_result::failed;
+    }
     const auto object_type = download_request.display_str;
 
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -454,7 +489,10 @@ remote::download_object(download_request download_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         download_request.transfer_details.on_request(fib.retry_count());
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), download_request.expect_missing);
+          bucket_params->plain_name,
+          path,
+          fib.get_timeout(),
+          download_request.expect_missing);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -527,12 +565,23 @@ ss::future<download_result> remote::object_exists(
   const cloud_storage_clients::object_key& path,
   retry_chain_node& parent,
   std::string_view object_type) {
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return download_result::failed;
+    }
+
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -543,7 +592,7 @@ ss::future<download_result> remote::object_exists(
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto resp = co_await lease.client->head_object(
-          bucket, path, fib.get_timeout());
+          bucket_params->plain_name, path, fib.get_timeout());
         if (resp) {
             vlog(
               ctxlog.debug,
@@ -605,6 +654,16 @@ ss::future<download_result> remote::object_exists(
 ss::future<upload_result>
 remote::delete_object(transfer_details transfer_details) {
     const auto& bucket = transfer_details.bucket;
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return upload_result::failed;
+    }
     const auto& path = transfer_details.key;
     auto& parent = transfer_details.parent_rtc;
     ss::gate::holder gh{_gate};
@@ -612,7 +671,7 @@ remote::delete_object(transfer_details transfer_details) {
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -629,7 +688,7 @@ remote::delete_object(transfer_details transfer_details) {
         // represents any mutable operation.
         transfer_details.on_request(fib.retry_count());
         auto res = co_await lease.client->delete_object(
-          bucket, path, fib.get_timeout());
+          bucket_params->plain_name, path, fib.get_timeout());
 
         if (res) {
             co_return upload_result::success;
@@ -768,13 +827,24 @@ ss::future<upload_result> remote::delete_object_batch(
   chunked_vector<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent,
   std::function<void(size_t)> req_cb) {
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return upload_result::failed;
+    }
+
     ss::gate::holder gh{_gate};
 
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -786,7 +856,7 @@ ss::future<upload_result> remote::delete_object_batch(
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         req_cb(fib.retry_count());
         auto res = co_await lease.client->delete_objects(
-          bucket, keys, fib.get_timeout());
+          bucket_params->plain_name, keys, fib.get_timeout());
 
         if (res) {
             if (!res.value().undeleted_keys.empty()) {
@@ -964,12 +1034,23 @@ ss::future<list_result> remote::list_objects(
   std::optional<cloud_storage_clients::client::item_filter> item_filter,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token) {
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return cloud_storage_clients::error_outcome::fail;
+    }
+
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), cloud_storage_clients::error_outcome::retry);
@@ -993,7 +1074,7 @@ ss::future<list_result> remote::list_objects(
     // Keep iterating while the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto res = co_await lease.client->list_objects(
-          bucket,
+          bucket_params->plain_name,
           prefix,
           std::nullopt,
           max_keys,
@@ -1090,6 +1171,19 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     auto guard = _gate.hold();
 
     auto& transfer_details = upload_request.transfer_details;
+
+    auto& bucket = transfer_details.bucket;
+    const auto bucket_params = cloud_storage_clients::extract_bucket_params(
+      bucket);
+    if (!bucket_params) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_params.error());
+        co_return upload_result::failed;
+    }
+
     retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(log, fib);
     auto permit = fib.retry();
@@ -1102,7 +1196,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_params, fib.root_abort_source(), _lease_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -1119,7 +1213,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
 
         auto to_upload = upload_request.payload.copy();
         auto res = co_await lease.client->put_object(
-          transfer_details.bucket,
+          bucket_params->plain_name,
           path,
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),

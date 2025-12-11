@@ -79,7 +79,28 @@ inline constexpr offset operator-(offset o, offset_delta d) { return o + (-d); }
 
 namespace cloud_storage_clients {
 
-using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
+/// Bucket name type stores a plain cloud storage bucket name or a data source
+/// name (DSN) that includes bucket name and optional connection parameters
+/// overriding cluster configuration.
+///
+/// No secret information is stored in this type. It can be logged or displayed
+/// to the user as is.
+///
+/// Examples:
+///   - my-bucket
+///   - my-bucket?region=us-west-2&endpoint=http://localhost:9000
+///
+/// History note: The connectin parameters in DSN format were introduced to
+/// support cross-region bucket access for Remote Read Replicas feature.
+using bucket_name = named_type<ss::sstring, struct bucket_name_tag>;
+
+/// Plain bucket name is the actual bucket name without any connection
+/// parameters.
+///
+/// Examples:
+///   - my-bucket
+///   - another-bucket
+using plain_bucket_name = named_type<ss::sstring, struct plain_bucket_name_tag>;
 
 } // namespace cloud_storage_clients
 

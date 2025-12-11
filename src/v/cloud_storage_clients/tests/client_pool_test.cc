@@ -98,7 +98,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_with_timeout) {
         // Note that the default timeout for the request itself is 5s
         auto res = ss::with_timeout(
                      ss::lowres_clock::now() + 500ms,
-                     lease.client->list_objects(random_test_bucket_name()))
+                     lease.client->list_objects(
+                       random_test_plain_bucket_name()))
                      .get();
 
         BOOST_REQUIRE(res.has_error());
@@ -113,7 +114,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_with_timeout) {
 
         auto f = ss::with_timeout(
           ss::lowres_clock::now() + 500ms,
-          lease.client->list_objects(random_test_bucket_name()));
+          lease.client->list_objects(random_test_plain_bucket_name()));
 
         // This time the lease never expires, so internally we should keep
         // trying to connect for at least 500ms.

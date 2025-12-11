@@ -35,7 +35,7 @@ public:
     /// \param payload_size_bytes is a size of the object in bytes
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_put_blob_request(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       size_t payload_size_bytes);
 
@@ -45,7 +45,7 @@ public:
     /// \param key is the blob identifier
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_get_blob_request(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       std::optional<http_byte_range> byte_range = std::nullopt);
 
@@ -55,15 +55,15 @@ public:
     /// \param key is a blob name
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_get_blob_metadata_request(
-      const bucket_name& name, const object_key& key);
+      const plain_bucket_name& name, const object_key& key);
 
     /// \brief Create a 'Delete Blob' request header
     ///
     /// \param name is a container
     /// \param key is an blob name
     /// \return initialized and signed http header or error
-    result<http::client::request_header>
-    make_delete_blob_request(const bucket_name& name, const object_key& key);
+    result<http::client::request_header> make_delete_blob_request(
+      const plain_bucket_name& name, const object_key& key);
 
     // clang-format off
     /// \brief Initialize http header for 'List Blobs' request
@@ -77,7 +77,7 @@ public:
     /// \return initialized and signed http header or error
     // clang-format on
     result<http::client::request_header> make_list_blobs_request(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       bool files_only,
       std::optional<object_key> prefix,
       std::optional<size_t> max_results,
@@ -90,7 +90,7 @@ public:
     /// \brief Init http header for 'Set Expiry' request. the object will be
     /// expired in `expires_in` ms after the request is received
     result<http::client::request_header> make_set_expiry_to_blob_request(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration expires_in) const;
 
@@ -103,7 +103,7 @@ public:
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_delete_file_request(
       const access_point_uri& adls_ap,
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& path);
 
 private:
@@ -152,7 +152,7 @@ public:
     /// \return future that becomes ready after request was sent
     ss::future<result<http::client::response_stream_ref, error_outcome>>
     get_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
@@ -164,7 +164,7 @@ public:
     /// \param timeout is a timeout of the operation
     /// \return future that becomes ready when the request is completed
     ss::future<result<head_object_result, error_outcome>> head_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout) override;
 
@@ -176,7 +176,7 @@ public:
     /// \param timeout is a timeout of the operation
     /// \return future that becomes ready when the upload is completed
     ss::future<result<no_response, error_outcome>> put_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
@@ -191,7 +191,7 @@ public:
     /// \param timeout is a timeout of the operation
     /// \return future that becomes ready when the request is completed
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
@@ -205,7 +205,7 @@ public:
     /// \param key is an id of the blob
     /// \param timeout is a timeout of the operation
     ss::future<result<no_response, error_outcome>> delete_object(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const object_key& key,
       ss::lowres_clock::duration timeout) override;
 
@@ -217,7 +217,7 @@ public:
     /// \param keys is a list of blob ids
     /// \param timeout is a timeout of the operation
     ss::future<result<delete_objects_result, error_outcome>> delete_objects(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const chunked_vector<object_key>& keys,
       ss::lowres_clock::duration timeout) override;
 
@@ -246,7 +246,7 @@ public:
     /// \param key is the path to be deleted
     /// \param timeout is a timeout of the operation
     ss::future<result<no_response, error_outcome>> delete_path(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       object_key path,
       ss::lowres_clock::duration timeout);
 
@@ -258,14 +258,14 @@ private:
       std::optional<op_type_tag> op_type = std::nullopt);
 
     ss::future<http::client::response_stream_ref> do_get_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
       std::optional<http_byte_range> byte_range = std::nullopt);
 
     ss::future<> do_put_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
@@ -273,17 +273,17 @@ private:
       bool accept_no_content = false);
 
     ss::future<head_object_result> do_head_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout);
 
     ss::future<> do_delete_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout);
 
     ss::future<list_bucket_result> do_list_objects(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       std::optional<object_key> prefix,
       std::optional<size_t> max_results,
       std::optional<ss::sstring> marker,
@@ -302,12 +302,12 @@ private:
     do_test_set_expiry_on_dummy_file(ss::lowres_clock::duration timeout);
 
     ss::future<> do_delete_path(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       object_key path,
       ss::lowres_clock::duration timeout);
 
     ss::future<> do_delete_file(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       object_key path,
       ss::lowres_clock::duration timeout);
 

@@ -45,7 +45,7 @@ public:
     /// \param payload_size_bytes is a size of the object in bytes
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_unsigned_put_object_request(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       size_t payload_size_bytes);
 
@@ -56,7 +56,7 @@ public:
     /// \param key is an object name
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_get_object_request(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       std::optional<http_byte_range> byte_range = std::nullopt);
 
@@ -65,16 +65,16 @@ public:
     /// \param name is a bucket that has the object
     /// \param key is an object name
     /// \return initialized and signed http header or error
-    result<http::client::request_header>
-    make_head_object_request(const bucket_name& name, const object_key& key);
+    result<http::client::request_header> make_head_object_request(
+      const plain_bucket_name& name, const object_key& key);
 
     /// \brief Create a 'DeleteObject' request header
     ///
     /// \param name is a bucket that has the object
     /// \param key is an object name
     /// \return initialized and signed http header or error
-    result<http::client::request_header>
-    make_delete_object_request(const bucket_name& name, const object_key& key);
+    result<http::client::request_header> make_delete_object_request(
+      const plain_bucket_name& name, const object_key& key);
 
     /// \brief Create a 'DeleteObjects' request header and body
     ///
@@ -83,7 +83,7 @@ public:
     /// \return the header and an the body as an input_stream
     result<std::tuple<http::client::request_header, ss::input_stream<char>>>
     make_delete_objects_request(
-      const bucket_name& name, const chunked_vector<object_key>& keys);
+      const plain_bucket_name& name, const chunked_vector<object_key>& keys);
 
     /// \brief Initialize http header for 'ListObjectsV2' request
     ///
@@ -95,7 +95,7 @@ public:
     /// \param delimiter used to group results with common prefixes
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_list_objects_v2_request(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       std::optional<object_key> prefix,
       std::optional<object_key> start_after,
       std::optional<size_t> max_keys,
@@ -104,10 +104,10 @@ public:
 
 private:
     friend class s3_client;
-    std::string make_host(const bucket_name& name) const;
+    std::string make_host(const plain_bucket_name& name) const;
 
     std::string
-    make_target(const bucket_name& name, const object_key& key) const;
+    make_target(const plain_bucket_name& name, const object_key& key) const;
 
     access_point_uri _ap;
 
@@ -154,7 +154,7 @@ public:
     /// \return future that gets ready after request was sent
     ss::future<result<http::client::response_stream_ref, error_outcome>>
     get_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
@@ -165,7 +165,7 @@ public:
     /// \param key is an id of the object
     /// \return future that becomes ready when the request is completed
     ss::future<result<head_object_result, error_outcome>> head_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout) override;
 
@@ -176,7 +176,7 @@ public:
     /// \param body is an input_stream that can be used to read body
     /// \return future that becomes ready when the upload is completed
     ss::future<result<no_response, error_outcome>> put_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
@@ -184,7 +184,7 @@ public:
       bool accept_no_content = false) override;
 
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
@@ -194,30 +194,30 @@ public:
       std::optional<item_filter> collect_item_if = std::nullopt) override;
 
     ss::future<result<no_response, error_outcome>> delete_object(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const object_key& key,
       ss::lowres_clock::duration timeout) override;
 
     ss::future<result<delete_objects_result, error_outcome>> delete_objects(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const chunked_vector<object_key>& keys,
       ss::lowres_clock::duration timeout) override;
 
 private:
     ss::future<head_object_result> do_head_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout);
 
     ss::future<http::client::response_stream_ref> do_get_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
       std::optional<http_byte_range> byte_range = std::nullopt);
 
     ss::future<> do_put_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
@@ -225,7 +225,7 @@ private:
       bool accept_no_content = false);
 
     ss::future<list_bucket_result> do_list_objects_v2(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
@@ -235,26 +235,26 @@ private:
       std::optional<item_filter> collect_item_if = std::nullopt);
 
     ss::future<> do_delete_object(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const object_key& key,
       ss::lowres_clock::duration timeout);
 
     ss::future<delete_objects_result> do_delete_objects(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const chunked_vector<object_key>& keys,
       ss::lowres_clock::duration timeout);
 
     template<typename T>
     ss::future<result<T, error_outcome>> send_request(
       ss::future<T> request_future,
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const object_key& key);
 
     // Performs testing as part of the self-configuration step. Returns true if
     // the test was successful (indicating that the current addressing style is
     // compatible with the configured cloud storage provider), and false
     // otherwise.
-    ss::future<bool> self_configure_test(const bucket_name& bucket);
+    ss::future<bool> self_configure_test(const plain_bucket_name& bucket);
 
 private:
     request_creator _requestor;

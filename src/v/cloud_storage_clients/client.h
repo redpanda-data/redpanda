@@ -61,7 +61,7 @@ public:
     /// \return future that becomes ready after request was sent
     virtual ss::future<result<http::client::response_stream_ref, error_outcome>>
     get_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
@@ -80,7 +80,7 @@ public:
     /// \param timeout is a timeout of the operation
     /// \return future that becomes ready when the request is completed
     virtual ss::future<result<head_object_result, error_outcome>> head_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout)
       = 0;
@@ -95,7 +95,7 @@ public:
     /// \param accept_no_content accepts a 204 response as valid
     /// \return future that becomes ready when the upload is completed
     virtual ss::future<result<no_response, error_outcome>> put_object(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
@@ -135,7 +135,7 @@ public:
     /// collected.
     /// \return future that becomes ready when the request is completed
     virtual ss::future<result<list_bucket_result, error_outcome>> list_objects(
-      const bucket_name& name,
+      const plain_bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
@@ -152,7 +152,7 @@ public:
     /// \param timeout is a timeout of the operation
     /// \return future that becomes ready when the request is completed
     virtual ss::future<result<no_response, error_outcome>> delete_object(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const object_key& key,
       ss::lowres_clock::duration timeout)
       = 0;
@@ -182,7 +182,7 @@ public:
     /// considered as successfully deleted)
     virtual ss::future<result<delete_objects_result, error_outcome>>
     delete_objects(
-      const bucket_name& bucket,
+      const plain_bucket_name& bucket,
       const chunked_vector<object_key>& keys,
       ss::lowres_clock::duration timeout)
       = 0;

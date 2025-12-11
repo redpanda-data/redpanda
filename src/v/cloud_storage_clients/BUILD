@@ -5,6 +5,7 @@ redpanda_cc_library(
     srcs = [
         "abs_client.cc",
         "abs_error.cc",
+        "bucket_params.cc",
         "client_pool.cc",
         "client_probe.cc",
         "configuration.cc",
@@ -17,6 +18,7 @@ redpanda_cc_library(
     hdrs = [
         "abs_client.h",
         "abs_error.h",
+        "bucket_params.h",
         "client.h",
         "client_pool.h",
         "client_probe.h",

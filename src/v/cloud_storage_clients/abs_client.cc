@@ -192,7 +192,7 @@ abs_request_creator::abs_request_creator(
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> abs_request_creator::make_get_blob_request(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   std::optional<http_byte_range> byte_range) {
     // GET /{container-id}/{blob-id} HTTP/1.1
@@ -224,7 +224,9 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
 }
 
 result<http::client::request_header> abs_request_creator::make_put_blob_request(
-  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
+  const plain_bucket_name& name,
+  const object_key& key,
+  size_t payload_size_bytes) {
     // PUT /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -255,7 +257,7 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
 
 result<http::client::request_header>
 abs_request_creator::make_get_blob_metadata_request(
-  const bucket_name& name, const object_key& key) {
+  const plain_bucket_name& name, const object_key& key) {
     // HEAD /{container-id}/{blob-id}?comp=metadata HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -280,7 +282,7 @@ abs_request_creator::make_get_blob_metadata_request(
 
 result<http::client::request_header>
 abs_request_creator::make_delete_blob_request(
-  const bucket_name& name, const object_key& key) {
+  const plain_bucket_name& name, const object_key& key) {
     // DELETE /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -306,7 +308,7 @@ abs_request_creator::make_delete_blob_request(
 
 result<http::client::request_header>
 abs_request_creator::make_list_blobs_request(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   bool files_only,
   std::optional<object_key> prefix,
   std::optional<size_t> max_results,
@@ -384,7 +386,7 @@ abs_request_creator::make_get_account_info_request() {
 
 result<http::client::request_header>
 abs_request_creator::make_set_expiry_to_blob_request(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration expires_in) const {
     // https://learn.microsoft.com/en-us/rest/api/storageservices/set-blob-expiry?tabs=microsoft-entra-id
@@ -418,7 +420,7 @@ abs_request_creator::make_set_expiry_to_blob_request(
 result<http::client::request_header>
 abs_request_creator::make_delete_file_request(
   const access_point_uri& adls_ap,
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& path) {
     // DELETE /{container-id}/{path} HTTP/1.1
     // Host: {storage-account-id}.dfs.core.windows.net
@@ -622,7 +624,7 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
 abs_client::get_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
@@ -635,7 +637,7 @@ abs_client::get_object(
 }
 
 ss::future<http::client::response_stream_ref> abs_client::do_get_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
@@ -688,7 +690,7 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
 
 ss::future<result<abs_client::no_response, error_outcome>>
 abs_client::put_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
@@ -704,7 +706,7 @@ abs_client::put_object(
 }
 
 ss::future<> abs_client::do_put_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
@@ -743,14 +745,14 @@ ss::future<> abs_client::do_put_object(
 
 ss::future<result<abs_client::head_object_result, error_outcome>>
 abs_client::head_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     return send_request(do_head_object(name, key, timeout), key);
 }
 
 ss::future<abs_client::head_object_result> abs_client::do_head_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_get_blob_metadata_request(name, key);
@@ -784,7 +786,7 @@ ss::future<abs_client::head_object_result> abs_client::do_head_object(
 
 ss::future<result<abs_client::no_response, error_outcome>>
 abs_client::delete_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     using ret_t = result<no_response, error_outcome>;
@@ -830,7 +832,7 @@ abs_client::delete_object(
 }
 
 ss::future<> abs_client::do_delete_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_delete_blob_request(name, key);
@@ -859,7 +861,7 @@ ss::future<> abs_client::do_delete_object(
 
 ss::future<result<abs_client::delete_objects_result, error_outcome>>
 abs_client::delete_objects(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const chunked_vector<object_key>& keys,
   ss::lowres_clock::duration timeout) {
     abs_client::delete_objects_result delete_objects_result;
@@ -879,7 +881,7 @@ abs_client::delete_objects(
 
 ss::future<result<abs_client::list_bucket_result, error_outcome>>
 abs_client::list_objects(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   [[maybe_unused]] std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -900,7 +902,7 @@ abs_client::list_objects(
 }
 
 ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<size_t> max_results,
   std::optional<ss::sstring> marker,
@@ -958,6 +960,11 @@ abs_client::get_account_info(ss::lowres_clock::duration timeout) {
 ss::future<abs_client::storage_account_info>
 abs_client::do_test_set_expiry_on_dummy_file(
   ss::lowres_clock::duration timeout) {
+    // TODO: Review this code. It is likely buggy when Remote Read Replicas are
+    // used. We are testing HNS on default storage account, but in RRR setup, we
+    // actually use a different storage account for reads.
+    // A similar issue exists in S3 client.
+
     // since this is one-off operation at startup, it's easier to read directly
     // cloud_storage_azure_container than to wire it in. this is ok because if
     // we are in abs_client it means that the required properties, like
@@ -970,7 +977,7 @@ abs_client::do_test_set_expiry_on_dummy_file(
         throw std::runtime_error("cloud_storage_azure_container is not set");
     }
 
-    auto bucket = bucket_name{container_name.value()};
+    auto bucket = plain_bucket_name{container_name.value()};
     auto test_file = object_key{set_expiry_test_file};
 
     // try set expiry
@@ -1053,7 +1060,7 @@ abs_client::do_get_account_info(ss::lowres_clock::duration timeout) {
 }
 
 ss::future<> abs_client::do_delete_file(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   object_key path,
   ss::lowres_clock::duration timeout) {
     vassert(
@@ -1091,7 +1098,7 @@ ss::future<> abs_client::do_delete_file(
 
 ss::future<result<abs_client::no_response, error_outcome>>
 abs_client::delete_path(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   object_key path,
   ss::lowres_clock::duration timeout) {
     return send_request(
@@ -1102,7 +1109,7 @@ abs_client::delete_path(
 }
 
 ss::future<> abs_client::do_delete_path(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   object_key path,
   ss::lowres_clock::duration timeout) {
     std::vector<object_key> blobs_to_delete = util::all_paths_to_file(path);

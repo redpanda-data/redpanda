@@ -30,6 +30,12 @@ inline cloud_storage_clients::bucket_name random_test_bucket_name() {
       "test-bucket-" + ss::sstring{uuid_t::create()}};
 }
 
+inline cloud_storage_clients::plain_bucket_name
+random_test_plain_bucket_name() {
+    return cloud_storage_clients::plain_bucket_name{
+      "test-bucket-" + ss::sstring{uuid_t::create()}};
+}
+
 static constexpr cloud_storage_clients::s3_url_style default_url_style
   = cloud_storage_clients::s3_url_style::virtual_host;
 

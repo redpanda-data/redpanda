@@ -84,7 +84,7 @@ request_creator::request_creator(
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> request_creator::make_get_object_request(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   std::optional<http_byte_range> byte_range) {
     http::client::request_header header{};
@@ -123,7 +123,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
 }
 
 result<http::client::request_header> request_creator::make_head_object_request(
-  const bucket_name& name, const object_key& key) {
+  const plain_bucket_name& name, const object_key& key) {
     http::client::request_header header{};
     // Virtual Style:
     // HEAD /{object-id} HTTP/1.1
@@ -153,7 +153,9 @@ result<http::client::request_header> request_creator::make_head_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
+  const plain_bucket_name& name,
+  const object_key& key,
+  size_t payload_size_bytes) {
     // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
     // Host: {bucket-name}.s3.{region}.amazonaws.com
@@ -192,7 +194,7 @@ request_creator::make_unsigned_put_object_request(
 
 result<http::client::request_header>
 request_creator::make_list_objects_v2_request(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -260,7 +262,7 @@ request_creator::make_list_objects_v2_request(
 
 result<http::client::request_header>
 request_creator::make_delete_object_request(
-  const bucket_name& name, const object_key& key) {
+  const plain_bucket_name& name, const object_key& key) {
     http::client::request_header header{};
     // Virtual Style:
     // DELETE /{object-id} HTTP/1.1
@@ -292,7 +294,7 @@ request_creator::make_delete_object_request(
 
 result<std::tuple<http::client::request_header, ss::input_stream<char>>>
 request_creator::make_delete_objects_request(
-  const bucket_name& name, const chunked_vector<object_key>& keys) {
+  const plain_bucket_name& name, const chunked_vector<object_key>& keys) {
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // will generate this request:
     //
@@ -382,7 +384,7 @@ request_creator::make_delete_objects_request(
     return {std::move(header), make_iobuf_input_stream(std::move(body))};
 }
 
-std::string request_creator::make_host(const bucket_name& name) const {
+std::string request_creator::make_host(const plain_bucket_name& name) const {
     switch (_ap_style) {
     case s3_url_style::virtual_host:
         // Host: bucket-name.s3.region-code.amazonaws.com
@@ -394,7 +396,7 @@ std::string request_creator::make_host(const bucket_name& name) const {
 }
 
 std::string request_creator::make_target(
-  const bucket_name& name, const object_key& key) const {
+  const plain_bucket_name& name, const object_key& key) const {
     switch (_ap_style) {
     case s3_url_style::virtual_host:
         // Target: /homepage.html
@@ -543,7 +545,7 @@ ss::future<ResultT> parse_head_error_response(
 template<typename T>
 ss::future<result<T, error_outcome>> s3_client::send_request(
   ss::future<T> request_future,
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const object_key& key) {
     auto outcome = error_outcome::retry;
 
@@ -692,7 +694,11 @@ s3_client::self_configure() {
         co_return result;
     }
 
-    const auto bucket = cloud_storage_clients::bucket_name{
+    // TODO: Review this code. It is likely buggy when Remote Read Replicas are
+    // used. We are testing HNS on default storage account, but in RRR setup, we
+    // actually use a different storage account for reads.
+    // A similar issue exists in ABS client.
+    const auto bucket = cloud_storage_clients::plain_bucket_name{
       bucket_config.value().value()};
 
     // Test virtual_host style.
@@ -729,7 +735,8 @@ s3_client::self_configure() {
     co_return error_outcome::fail;
 }
 
-ss::future<bool> s3_client::self_configure_test(const bucket_name& bucket) {
+ss::future<bool>
+s3_client::self_configure_test(const plain_bucket_name& bucket) {
     // Check that the current addressing-style works by issuing a ListObjects
     // request.
     auto list_objects_result = co_await list_objects(
@@ -743,7 +750,7 @@ void s3_client::shutdown() { _client.shutdown_now(); }
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
 s3_client::get_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
@@ -756,7 +763,7 @@ s3_client::get_object(
 }
 
 ss::future<http::client::response_stream_ref> s3_client::do_get_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
@@ -827,14 +834,14 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
 
 ss::future<result<s3_client::head_object_result, error_outcome>>
 s3_client::head_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     return send_request(do_head_object(name, key, timeout), name, key);
 }
 
 ss::future<s3_client::head_object_result> s3_client::do_head_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_head_object_request(name, key);
@@ -888,7 +895,7 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
 }
 
 ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
@@ -904,7 +911,7 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
 }
 
 ss::future<> s3_client::do_put_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& id,
   size_t payload_size,
   ss::input_stream<char> body,
@@ -980,7 +987,7 @@ ss::future<> s3_client::do_put_object(
 
 ss::future<result<s3_client::list_bucket_result, error_outcome>>
 s3_client::list_objects(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -1004,7 +1011,7 @@ s3_client::list_objects(
 }
 
 ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -1056,7 +1063,7 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
 
 ss::future<result<s3_client::no_response, error_outcome>>
 s3_client::delete_object(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     using ret_t = result<s3_client::no_response, error_outcome>;
@@ -1090,7 +1097,7 @@ s3_client::delete_object(
 }
 
 ss::future<> s3_client::do_delete_object(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_delete_object_request(bucket, key);
@@ -1181,7 +1188,7 @@ iobuf_to_delete_objects_result(iobuf&& buf) {
 }
 
 auto s3_client::do_delete_objects(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const chunked_vector<object_key>& keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<client::delete_objects_result> {
@@ -1223,7 +1230,7 @@ auto s3_client::do_delete_objects(
 }
 
 auto s3_client::delete_objects(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const chunked_vector<object_key>& keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<result<delete_objects_result, error_outcome>> {
