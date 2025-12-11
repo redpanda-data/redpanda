@@ -20,6 +20,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 
@@ -270,8 +271,9 @@ inline auto parallel_transform(Rng rng, Func func) {
 /// easier to search for places we start background work.
 namespace detail {
 struct background_t {
-    template<typename T>
-    constexpr void operator=(T&&) const noexcept {}
+    constexpr void operator=(seastar::future<> f) const noexcept {
+        seastar::engine().run_in_background(std::move(f));
+    }
 };
 } // namespace detail
 inline constexpr detail::background_t background;
