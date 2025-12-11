@@ -231,12 +231,15 @@ ss::future<err_info> manager::broker_preflight_check(
             }
         }
         if (!unsupported_api_errors.empty()) {
+            chunked_hash_map<ss::sstring, ss::sstring> metadata;
+            metadata.emplace("brokerId", ssx::sformat("{}", node_id));
             co_return err_info(
               errc::link_unsupported_api_version,
               fmt::format(
                 "Broker {} does not support required APIs: [{}]",
                 node_id,
-                fmt::join(unsupported_api_errors, ", ")));
+                fmt::join(unsupported_api_errors, ", ")),
+              make_error_info(errc::link_unsupported_api_version, std::move(metadata)));
         }
     } catch (const kafka::client::broker_error& e) {
         vlog(
@@ -244,22 +247,30 @@ ss::future<err_info> manager::broker_preflight_check(
           "Broker {} preflight check failed - {}",
           node_id,
           e.what());
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("brokerId", ssx::sformat("{}", node_id));
+        metadata.emplace("errorType", "broker_error");
         co_return err_info(
           errc::link_broker_unreachable,
           fmt::format(
-            "Broker {} preflight check failed - {}", node_id, e.what()));
+            "Broker {} preflight check failed - {}", node_id, e.what()),
+          make_error_info(errc::link_broker_unreachable, std::move(metadata)));
     } catch (...) {
         vlog(
           cllog.warn,
           "Broker {} preflight check failed - {}",
           node_id,
           std::current_exception());
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("brokerId", ssx::sformat("{}", node_id));
+        metadata.emplace("errorType", "unknown_exception");
         co_return err_info(
           errc::link_broker_verification_failed,
           fmt::format(
             "Broker {} preflight check failed - {}",
             node_id,
-            std::current_exception()));
+            std::current_exception()),
+          make_error_info(errc::link_broker_verification_failed, std::move(metadata)));
     }
     vlog(
       cllog.trace,
@@ -291,12 +302,15 @@ ss::future<err_info> manager::link_preflight_checks(const model::metadata& md) {
               "cluster",
               md.name);
             co_await stop_and_ignore();
+            chunked_hash_map<ss::sstring, ss::sstring> metadata;
+            metadata.emplace("linkName", ss::sstring(md.name));
             co_return err_info(
               errc::link_cluster_unreachable,
               fmt::format(
                 "Cluster link '{}' preflight check failed - unable to connect "
                 "to cluster",
-                md.name));
+                md.name),
+              make_error_info(errc::link_cluster_unreachable, std::move(metadata)));
         }
         // there is at least one broker.
         const auto& brokers = cluster->get_brokers();
@@ -333,9 +347,13 @@ ss::future<err_info> manager::link_preflight_checks(const model::metadata& md) {
         // in the preflight check. This is a loose check but should be
         // sufficient to catch misconfigurations.
         if (broker_errors.size() == num_reported_brokers) {
+            chunked_hash_map<ss::sstring, ss::sstring> metadata;
+            metadata.emplace("linkName", ss::sstring(md.name));
+            metadata.emplace("brokerCount", ssx::sformat("{}", num_reported_brokers));
             return_error = err_info(
               errc::link_broker_verification_failed,
-              fmt::format("[{}]", fmt::join(broker_errors, ", ")));
+              fmt::format("[{}]", fmt::join(broker_errors, ", ")),
+              make_error_info(errc::link_broker_verification_failed, std::move(metadata)));
         }
     } catch (const std::exception& e) {
         vlog(
@@ -343,13 +361,17 @@ ss::future<err_info> manager::link_preflight_checks(const model::metadata& md) {
           "Cluster link '{}' preflight check failed - {}",
           md.name,
           e.what());
-        return_error = {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(md.name));
+        metadata.emplace("errorType", "exception");
+        return_error = err_info(
           errc::link_cluster_unreachable,
           fmt::format(
             "Cluster link '{}' unreachable, preflight check "
             "failed - {}",
             md.name,
-            e.what())};
+            e.what()),
+          make_error_info(errc::link_cluster_unreachable, std::move(metadata)));
     }
     co_await stop_and_ignore();
     co_return return_error;
@@ -373,8 +395,12 @@ manager::upsert_cluster_link(model::metadata md) {
       std::move(md), ::model::timeout_clock::now() + 30s);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
+        metadata.emplace("underlyingError", ssx::sformat("{}", ec));
         co_return err_info(
-          err, fmt::format("Failed to create cluster link: {}", ec));
+          err, fmt::format("Failed to create cluster link: {}", ec),
+          make_error_info(err, std::move(metadata)));
     }
 
     try {
@@ -386,22 +412,32 @@ manager::upsert_cluster_link(model::metadata md) {
               return _registry->find_link_by_name(name).has_value();
           });
     } catch (const ss::condition_variable_timed_out&) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
+        metadata.emplace("timeoutMs", ssx::sformat("{}", wait_for_link_creation_timeout.count()));
         co_return err_info(
           errc::link_creation_failed,
           fmt::format(
-            "Timed out waiting for cluster link '{}' to be created", name));
+            "Timed out waiting for cluster link '{}' to be created", name),
+          make_error_info(errc::link_creation_failed, std::move(metadata)));
     } catch (const ss::broken_condition_variable&) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
         co_return err_info(
           errc::service_shutting_down,
           fmt::format(
-            "Aborted waiting for cluster link '{}' to be created", name));
+            "Aborted waiting for cluster link '{}' to be created", name),
+          make_error_info(errc::service_shutting_down, std::move(metadata)));
     }
 
     auto metadata_resp = _registry->find_link_by_name(name);
     if (!metadata_resp) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
         co_return err_info(
           errc::link_creation_failed,
-          fmt::format("Failed to find cluster link with name '{}'", name));
+          fmt::format("Failed to find cluster link with name '{}'", name),
+          make_error_info(errc::link_creation_failed, std::move(metadata)));
     }
 
     co_return metadata_resp->get().copy();
@@ -411,9 +447,12 @@ cl_result<model::metadata>
 manager::get_cluster_link(const model::name_t& name) {
     auto metadata_resp = _registry->find_link_by_name(name);
     if (!metadata_resp) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
         return err_info(
           errc::link_id_not_found,
-          fmt::format("Failed to find cluster link with name '{}'", name));
+          fmt::format("Failed to find cluster link with name '{}'", name),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
     return metadata_resp->get().copy();
 }
@@ -447,17 +486,24 @@ ss::future<cl_result<model::metadata>> manager::update_cluster_link(
 
     const auto id = _registry->find_link_id_by_name(name);
     if (!id.has_value()) {
-        co_return err_info{
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
+        co_return err_info(
           errc::link_id_not_found,
-          ssx::sformat("Unable to find link by name '{}'", name)};
+          ssx::sformat("Unable to find link by name '{}'", name),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
 
     auto ec = co_await _registry->update_cluster_link_configuration(
       *id, std::move(cmd), ::model::timeout_clock::now() + model_timeout);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
+        metadata.emplace("underlyingError", ssx::sformat("{}", ec));
         co_return err_info(
-          err, fmt::format("Failed to update cluster link {}: {}", name, ec));
+          err, fmt::format("Failed to update cluster link {}: {}", name, ec),
+          make_error_info(err, std::move(metadata)));
     }
 
     if (needs_consumer_offsets_topic) {
@@ -466,9 +512,13 @@ ss::future<cl_result<model::metadata>> manager::update_cluster_link(
 
     auto metadata_resp = _registry->find_link_by_id(*id);
     if (!metadata_resp) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
+        metadata.emplace("linkId", ssx::sformat("{}", *id));
         co_return err_info(
           errc::link_id_not_found,
-          fmt::format("Failed to find cluster link with name '{}'", name));
+          fmt::format("Failed to find cluster link with name '{}'", name),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
 
     co_return metadata_resp->get().copy();
@@ -491,9 +541,13 @@ ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
       force_update);
     const auto link_id = _registry->find_link_id_by_name(link_name);
     if (!link_id.has_value()) {
-        co_return err_info{
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        metadata.emplace("topicName", ss::sstring(topic()));
+        co_return err_info(
           errc::link_id_not_found,
-          ssx::sformat("Unable to find link by name '{}'", link_name)};
+          ssx::sformat("Unable to find link by name '{}'", link_name),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
     model::update_mirror_topic_status_cmd cmd;
     cmd.topic = topic;
@@ -504,19 +558,29 @@ ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
       *link_id, std::move(cmd), ::model::timeout_clock::now() + model_timeout);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        metadata.emplace("linkId", ssx::sformat("{}", *link_id));
+        metadata.emplace("topicName", ss::sstring(topic()));
+        metadata.emplace("underlyingError", ssx::sformat("{}", ec));
         co_return err_info(
           err,
           fmt::format(
             "Failed to update mirror topic '{}' status on link '{}': {}",
             topic,
             *link_id,
-            ec));
+            ec),
+          make_error_info(err, std::move(metadata)));
     }
     auto metadata_resp = _registry->find_link_by_id(*link_id);
     if (!metadata_resp) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        metadata.emplace("linkId", ssx::sformat("{}", *link_id));
         co_return err_info(
           errc::link_id_not_found,
-          fmt::format("Failed to find cluster link with id '{}'", *link_id));
+          fmt::format("Failed to find cluster link with id '{}'", *link_id),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
     co_return metadata_resp->get().copy();
 }
@@ -531,26 +595,38 @@ manager::failover_link_topics(model::name_t link_name) {
       link_name);
     const auto link_id = _registry->find_link_id_by_name(link_name);
     if (!link_id.has_value()) {
-        co_return err_info{
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        co_return err_info(
           errc::link_id_not_found,
-          ssx::sformat("Unable to find link by name '{}'", link_name)};
+          ssx::sformat("Unable to find link by name '{}'", link_name),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
     auto ec = co_await _registry->failover_link_topics(
       *link_id, ::model::timeout_clock::now() + model_timeout);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        metadata.emplace("linkId", ssx::sformat("{}", *link_id));
+        metadata.emplace("underlyingError", ssx::sformat("{}", ec));
         co_return err_info(
           err,
           fmt::format(
             "Failed to failover all mirror topics on link '{}': {}",
             *link_id,
-            ec));
+            ec),
+          make_error_info(err, std::move(metadata)));
     }
     auto metadata_resp = _registry->find_link_by_id(*link_id);
     if (!metadata_resp) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        metadata.emplace("linkId", ssx::sformat("{}", *link_id));
         co_return err_info(
           errc::link_id_not_found,
-          fmt::format("Failed to find cluster link with id '{}'", *link_id));
+          fmt::format("Failed to find cluster link with id '{}'", *link_id),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
     co_return metadata_resp->get().copy();
 }
@@ -588,12 +664,15 @@ manager::delete_cluster_link(model::name_t name, bool force_delete_link) {
 
     if (active_shadow_topics) {
         if (!force_delete_link) {
+            chunked_hash_map<ss::sstring, ss::sstring> metadata;
+            metadata.emplace("linkName", ss::sstring(name));
             co_return err_info(
               errc::link_has_active_shadow_topics,
               fmt::format(
                 "Failed to delete cluster link with name '{}'. There are "
                 "active/promoting shadow topics.",
-                name));
+                name),
+              make_error_info(errc::link_has_active_shadow_topics, std::move(metadata)));
         }
         vlog(
           cllog.info,
@@ -605,8 +684,12 @@ manager::delete_cluster_link(model::name_t name, bool force_delete_link) {
       std::move(name), force_delete_link, ::model::timeout_clock::now() + 30s);
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
+        metadata.emplace("underlyingError", ssx::sformat("{}", ec));
         co_return err_info(
-          err, fmt::format("Failed to delete cluster link: {}", ec));
+          err, fmt::format("Failed to delete cluster link: {}", ec),
+          make_error_info(err, std::move(metadata)));
     }
 
     co_return outcome::success();
@@ -622,9 +705,13 @@ ss::future<cl_result<model::metadata>> manager::remove_shadow_topic_from_link(
     auto hold = _g.hold();
     auto link_id = _registry->find_link_id_by_name(link_name);
     if (!link_id.has_value()) {
-        co_return err_info{
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        metadata.emplace("topicName", ss::sstring(shadow_topic()));
+        co_return err_info(
           errc::link_id_not_found,
-          ssx::sformat("Unable to find link by name '{}'", link_name)};
+          ssx::sformat("Unable to find link by name '{}'", link_name),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
 
     model::delete_mirror_topic_cmd cmd;
@@ -635,13 +722,18 @@ ss::future<cl_result<model::metadata>> manager::remove_shadow_topic_from_link(
 
     auto err = map_cluster_errc(ec);
     if (err != errc::success) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(link_name));
+        metadata.emplace("topicName", ss::sstring(shadow_topic()));
+        metadata.emplace("underlyingError", ssx::sformat("{}", ec));
         co_return err_info(
           err,
           fmt::format(
             "Failed to delete shadow topic '{}' from link '{}': {}",
             shadow_topic,
             link_name,
-            ec));
+            ec),
+          make_error_info(err, std::move(metadata)));
     }
 
     co_return get_cluster_link(link_name);
@@ -834,9 +926,12 @@ manager::get_partition_offsets_report_for_link(
   const model::name_t& name) const {
     auto link_id = _registry->find_link_id_by_name(name);
     if (!link_id) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkName", ss::sstring(name));
         return err_info(
           errc::link_id_not_found,
-          ssx::sformat("Unable to find link by name '{}'", name));
+          ssx::sformat("Unable to find link by name '{}'", name),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
     return get_partition_offsets_report_for_link(*link_id);
 }
@@ -845,9 +940,12 @@ cl_result<chunked_hash_map<::model::ntp, replication::partition_offsets_report>>
 manager::get_partition_offsets_report_for_link(model::id_t link_id) const {
     auto link_it = _links.find(link_id);
     if (link_it == _links.end()) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkId", ssx::sformat("{}", link_id));
         return err_info(
           errc::link_id_not_found,
-          ssx::sformat("Link with id '{}' not found", link_id));
+          ssx::sformat("Link with id '{}' not found", link_id),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
     return link_it->second->get_partition_offsets_report();
 }
@@ -972,9 +1070,12 @@ cl_result<model::link_task_status_report>
 manager::get_task_status_report(model::id_t link_id) const {
     const auto it = _links.find(link_id);
     if (it == _links.end()) {
+        chunked_hash_map<ss::sstring, ss::sstring> metadata;
+        metadata.emplace("linkId", ssx::sformat("{}", link_id));
         return err_info(
           errc::link_id_not_found,
-          ssx::sformat("Link with id '{}' not found", link_id));
+          ssx::sformat("Link with id '{}' not found", link_id),
+          make_error_info(errc::link_id_not_found, std::move(metadata)));
     }
 
     return it->second->get_task_status_report();
