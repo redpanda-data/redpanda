@@ -1,5 +1,18 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("//bazel/pbgen:pbgen.bzl", "redpanda_proto_library")
+
+proto_library(
+    name = "error_reason_proto",
+    srcs = ["error_reason.proto"],
+    visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "error_reason_cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":error_reason_proto"],
+)
 
 proto_library(
     name = "kafka_connections_proto",
