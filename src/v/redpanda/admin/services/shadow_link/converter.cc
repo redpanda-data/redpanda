@@ -1251,14 +1251,14 @@ convert_create_to_metadata(create_shadow_link_request req) {
 }
 
 shadow_link metadata_to_shadow_link(
-  cluster_link::model::metadata md,
+  cluster_link::model::metadata_ptr md,
   cluster_link::model::shadow_link_status_report status_report) {
     shadow_link sl;
 
-    sl.set_name(std::move(md.name));
-    sl.set_uid(ssx::sformat("{}", md.uuid));
-    sl.set_configurations(create_shadow_link_configuration(md));
-    sl.set_status(create_shadow_link_status(md, status_report));
+    sl.set_name(ss::sstring{md->name()});
+    sl.set_uid(ssx::sformat("{}", md->uuid));
+    sl.set_configurations(create_shadow_link_configuration(*md));
+    sl.set_status(create_shadow_link_status(*md, status_report));
 
     return sl;
 }
@@ -1266,24 +1266,30 @@ shadow_link metadata_to_shadow_link(
 cluster_link::model::update_cluster_link_configuration_cmd
 create_update_cluster_link_config_cmd(
   update_shadow_link_request req,
-  cluster_link::model::metadata current_metadata) {
+  cluster_link::model::metadata_ptr current_metadata) {
     if (!req.get_update_mask().is_valid_for_message<shadow_link>()) {
         throw serde::pb::rpc::invalid_argument_exception(
           ssx::sformat(
             "Invalid update mask for shadow_link: {}", req.get_update_mask()));
     }
+    auto current_md_copy = ss::make_lw_shared<cluster_link::model::metadata>({
+      .name = current_metadata->name,
+      .uuid = current_metadata->uuid,
+      .connection = current_metadata->connection,
+      .configuration = current_metadata->configuration.copy(),
+    });
     // Save off client ID to reuse later
     // Client ID is an output only field so when the shadow link value is
     // converted back to metadata, the client ID is not set
-    auto current_sl = metadata_to_shadow_link(current_metadata.copy(), {});
+    auto current_sl = metadata_to_shadow_link(std::move(current_md_copy), {});
     req.get_update_mask().merge_into(
       std::move(req.get_shadow_link()), &current_sl);
-    merge_input_only_fields(current_metadata, current_sl);
+    merge_input_only_fields(*current_metadata, current_sl);
     try {
         auto updated_md = shadow_link_to_metadata(std::move(current_sl));
 
-        merge_output_only_fields(current_metadata, updated_md);
-        update_timestamps(current_metadata, updated_md);
+        merge_output_only_fields(*current_metadata, updated_md);
+        update_timestamps(*current_metadata, updated_md);
 
         return cluster_link::model::update_cluster_link_configuration_cmd{
           .connection = std::move(updated_md.connection),

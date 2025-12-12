@@ -13,6 +13,7 @@ redpanda_test_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/cluster:table_utils",
         "//src/v/cluster_link/model",
         "//src/v/model",
     ],
@@ -27,6 +28,7 @@ redpanda_cc_gtest(
     deps = [
         ":test_lib",
         "//src/v/cluster",
+        "//src/v/cluster:table_utils",
         "//src/v/cluster_link/model",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

@@ -30,6 +30,7 @@ using ::cluster_link::model::add_mirror_topic_cmd;
 using ::cluster_link::model::delete_mirror_topic_cmd;
 using ::cluster_link::model::id_t;
 using ::cluster_link::model::metadata;
+using ::cluster_link::model::metadata_ptr;
 using ::cluster_link::model::name_t;
 using ::cluster_link::model::update_cluster_link_configuration_cmd;
 using ::cluster_link::model::update_mirror_topic_properties_cmd;
@@ -205,13 +206,11 @@ frontend::find_link_id_by_topic(model::topic_view topic) const {
     return _table->find_id_by_topic(topic);
 }
 
-std::optional<std::reference_wrapper<const metadata>>
-frontend::find_link_by_id(id_t id) const {
+metadata_ptr frontend::find_link_by_id(id_t id) const {
     return _table->find_link_by_id(id);
 }
 
-std::optional<std::reference_wrapper<const metadata>>
-frontend::find_link_by_name(const name_t& name) const {
+metadata_ptr frontend::find_link_by_name(const name_t& name) const {
     return _table->find_link_by_name(name);
 }
 
@@ -240,8 +239,8 @@ frontend::get_mirror_topics_for_link(id_t id) const {
       ::model::topic,
       ::cluster_link::model::mirror_topic_metadata>
       mirror_topics;
-    mirror_topics.reserve(link->get().state.mirror_topics.size());
-    for (const auto& [topic, metadata] : link->get().state.mirror_topics) {
+    mirror_topics.reserve(link->state.mirror_topics.size());
+    for (const auto& [topic, metadata] : link->state.mirror_topics) {
         mirror_topics.emplace(topic, metadata.copy());
     }
     return mirror_topics;
@@ -259,10 +258,9 @@ bool frontend::is_autocreate_mirror_topic(const model::topic& topic) const {
     }
     auto link = _table->find_link_by_id(link_id.value());
     vassert(
-      link.has_value(), "Expected value for link with id {}", link_id.value());
+      link != nullptr, "Expected value for link with id {}", link_id.value());
     const auto& topic_filters
-      = link->get()
-          .configuration.topic_metadata_mirroring_cfg.topic_name_filters;
+      = link->configuration.topic_metadata_mirroring_cfg.topic_name_filters;
     return ::cluster_link::model::select_topic(topic, topic_filters);
 }
 
@@ -311,11 +309,11 @@ bool frontend::schema_registry_shadowing_active() const {
     auto link_ids = get_all_link_ids();
     return std::ranges::any_of(link_ids, [this](id_t link_id) -> bool {
         const auto md = find_link_by_id(link_id);
-        if (!md.has_value()) {
+        if (!md) {
             return false;
         }
         // Check to see if the schema registry topic is in the mirror topic list
-        const auto& mirror_topics = md->get().state.mirror_topics;
+        const auto& mirror_topics = md->state.mirror_topics;
         auto topic_it = mirror_topics.find(
           ::model::schema_registry_internal_tp.topic);
         if (topic_it != mirror_topics.end()) {
@@ -324,7 +322,7 @@ bool frontend::schema_registry_shadowing_active() const {
         }
         // If mirror_schema_registry_topic option is set and the topic is not
         // yet in the mirror topic list, then shadowing for SR is active
-        const auto& sr_cfg = md->get().configuration.schema_registry_sync_cfg;
+        const auto& sr_cfg = md->configuration.schema_registry_sync_cfg;
         if (
           sr_cfg.sync_schema_registry_topic_mode.has_value()
           && std::holds_alternative<
@@ -573,10 +571,9 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
       cmd,
       [this](const cluster::cluster_link_upsert_cmd& cmd) {
           auto existing = _table->find_link_by_name(cmd.value.name);
-          if (existing.has_value()) {
+          if (existing) {
               // upsert
-              const auto& meta = existing->get();
-              if (meta.uuid != cmd.value.uuid) {
+              if (existing->uuid != cmd.value.uuid) {
                   // If the UUIDs do not match, it means we are trying to
                   // update an existing link with a different UUID.
                   vlog(
@@ -585,7 +582,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                     "different UUID ({}) than the existing one ({})",
                     cmd.value.name,
                     cmd.value.uuid,
-                    meta.uuid);
+                    existing->uuid);
                   return errc::uuid_conflict;
               }
               auto ec = validate_connection_config(cmd.value.connection);
@@ -652,10 +649,10 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
       },
       [this](const cluster::cluster_link_remove_cmd& cmd) {
           auto meta = _table->find_link_by_name(cmd.value.link_name);
-          if (!meta.has_value()) {
+          if (!meta) {
               return errc::does_not_exist;
           }
-          const auto& md = meta->get();
+
           const auto is_removable =
             [](const ::cluster_link::model::mirror_topic_status s) {
                 switch (s) {
@@ -671,7 +668,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 }
             };
           const auto mirror_topic_states
-            = md.state.mirror_topics | std::views::values
+            = meta->state.mirror_topics | std::views::values
               | std::views::transform(
                 &::cluster_link::model::mirror_topic_metadata::status);
           if (
@@ -704,10 +701,10 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
               return errc::invalid_create;
           }
           auto meta = _table->find_link_by_id(cmd.key);
-          if (!meta.has_value()) {
+          if (!meta) {
               return errc::does_not_exist;
           }
-          const auto status = meta->get().state.status;
+          const auto status = meta->state.status;
           if (status != ::cluster_link::model::link_status::active) {
               // fence any new topic additions if the link is not active
               vlog(
@@ -715,7 +712,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 "Attempting to add mirror topic {} to link {} which is not in "
                 "the active state (current state: {})",
                 cmd.value.topic,
-                meta->get().name,
+                meta->name,
                 status);
               return errc::invalid_update;
           }
@@ -728,14 +725,14 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                     "Attempting to add mirror topic '{}' to '{}', however it "
                     "is already mirrored by another link",
                     cmd.value.topic,
-                    meta->get().name);
+                    meta->name);
                   return errc::topic_being_mirrored_by_other_link;
               } else {
                   vlog(
                     cluster::clusterlog.warn,
                     "Topic '{}' is already mirrored by link '{}'",
                     cmd.value.topic,
-                    meta->get().name);
+                    meta->name);
                   return errc::topic_already_being_mirrored;
               }
           }
@@ -744,7 +741,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 cluster::clusterlog.warn,
                 "Invalid partition count for topic {} in link {}: {}",
                 cmd.value.topic,
-                meta->get().name,
+                meta->name,
                 cmd.value.metadata.partition_count);
               return errc::invalid_update;
           }
@@ -766,7 +763,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
               return errc::mirror_topic_name_invalid;
           }
           auto meta = _table->find_link_by_id(cmd.key);
-          if (!meta.has_value()) {
+          if (!meta) {
               return errc::does_not_exist;
           }
           auto id = _table->find_id_by_topic(cmd.value.topic);
@@ -776,7 +773,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 "Attempting to delete mirror topic '{}' from link '{}', "
                 "however topic is not being mirrored",
                 cmd.value.topic,
-                meta->get().name);
+                meta->name);
               return errc::topic_not_being_mirrored;
           }
           if (id.value() != cmd.key) {
@@ -786,7 +783,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 "however topic "
                 "is mirrored by another link",
                 cmd.value.topic,
-                meta->get().name);
+                meta->name);
               return errc::topic_being_mirrored_by_other_link;
           }
           return errc::success;
@@ -798,7 +795,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
               return errc::mirror_topic_name_invalid;
           }
           auto meta = _table->find_link_by_id(cmd.key);
-          if (!meta.has_value()) {
+          if (!meta) {
               return errc::does_not_exist;
           }
           auto id = _table->find_id_by_topic(cmd.value.topic);
@@ -847,7 +844,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
               return errc::mirror_topic_name_invalid;
           }
           auto meta = _table->find_link_by_id(cmd.key);
-          if (!meta.has_value()) {
+          if (!meta) {
               return errc::does_not_exist;
           }
           auto id = _table->find_id_by_topic(cmd.value.topic);
@@ -865,7 +862,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 cmd.value.topic);
               return errc::topic_being_mirrored_by_other_link;
           }
-          const auto& mirror_state = meta->get().state;
+          const auto& mirror_state = meta->state;
           const auto it = mirror_state.mirror_topics.find(cmd.value.topic);
 
           vassert(
@@ -881,7 +878,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 "Attempting to update mirror topic {} on link {} which is not "
                 "in the active state (current state: {})",
                 cmd.value.topic,
-                meta->get().name,
+                meta->name,
                 mirror_state.status);
               return errc::invalid_update;
           }
@@ -912,7 +909,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
       [this](
         const cluster::cluster_link_update_cluster_link_configuration_cmd&
           cmd) {
-          if (!_table->find_link_by_id(cmd.key).has_value()) {
+          if (!_table->find_link_by_id(cmd.key)) {
               vlog(
                 cluster::clusterlog.warn,
                 "Attempting to update a non-existant link id {}",
@@ -1091,21 +1088,20 @@ errc frontend::validator::validate_metadata_mirroring_config(
 ss::future<errc> frontend::failover_link_topics(
   ::cluster_link::model::id_t id, model::timeout_clock::duration timeout) {
     auto meta = _table->find_link_by_id(id);
-    if (!meta.has_value()) {
+    if (!meta) {
         co_return errc::does_not_exist;
     }
-    const auto& md = meta->get();
-    if (md.state.status != ::cluster_link::model::link_status::active) {
+    if (meta->state.status != ::cluster_link::model::link_status::active) {
         vlog(
           cluster::clusterlog.warn,
           "Attempting to failover topics of link {} which is not in the active "
           "state (current state: {})",
-          md.name,
-          md.state.status);
+          meta->name,
+          meta->state.status);
         co_return errc::invalid_update;
     }
 
-    const auto& topics = md.state.mirror_topics;
+    const auto& topics = meta->state.mirror_topics;
     chunked_vector<model::topic> topics_to_failover;
     auto should_failover = [](::cluster_link::model::mirror_topic_status s) {
         switch (s) {

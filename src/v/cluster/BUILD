@@ -667,6 +667,7 @@ redpanda_cc_library(
         "version.h",
     ],
     implementation_deps = [
+        ":table_utils",
         ":topic_memory_per_partition_default",
         "//src/v/cloud_storage:logger",
         "//src/v/crash_tracker",

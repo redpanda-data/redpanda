@@ -10,6 +10,7 @@
 
 #include "cluster/cluster_link/tests/utils.h"
 
+#include "cluster/cluster_link/table_utils.h"
 #include "cluster/commands.h"
 #include "cluster_link/model/types.h"
 
@@ -24,6 +25,17 @@ using ::cluster_link::model::mirror_topic_status;
 using ::cluster_link::model::name_t;
 using ::cluster_link::model::update_cluster_link_configuration_cmd;
 using ::cluster_link::model::update_mirror_topic_status_cmd;
+
+ss::future<metadata> copy_metadata(const metadata& md) {
+    metadata copy;
+    copy.name = md.name;
+    copy.uuid = md.uuid;
+    copy.connection = md.connection;
+    copy.state = co_await copy_link_state(md.state);
+    copy.configuration = copy_link_configuration(md.configuration);
+
+    co_return copy;
+}
 
 model::record_batch create_upsert_command(model::offset offset, metadata link) {
     cluster::cluster_link_upsert_cmd cmd(0, std::move(link));
