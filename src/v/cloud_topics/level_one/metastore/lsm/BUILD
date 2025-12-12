@@ -138,6 +138,24 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/common:object_id",
         "//src/v/lsm",
         "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
+    name = "state_update",
+    srcs = ["state_update.cc"],
+    hdrs = ["state_update.h"],
+    implementation_deps = [
+        ":keys",
+        ":values",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":state_reader",
+        ":write_batch_row",
+        "//src/v/base",
+        "//src/v/cloud_topics/level_one/metastore:state_update",
+        "//src/v/utils:named_type",
         "@seastar",
     ],
 )

@@ -51,3 +51,29 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "state_update_test",
+    timeout = "short",
+    srcs = [
+        "state_update_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/metastore:state",
+        "//src/v/cloud_topics/level_one/metastore:state_update",
+        "//src/v/cloud_topics/level_one/metastore/lsm:keys",
+        "//src/v/cloud_topics/level_one/metastore/lsm:state_reader",
+        "//src/v/cloud_topics/level_one/metastore/lsm:state_update",
+        "//src/v/cloud_topics/level_one/metastore/lsm:values",
+        "//src/v/cloud_topics/level_one/metastore/lsm:write_batch_row",
+        "//src/v/lsm",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
