@@ -110,7 +110,7 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
         co_return;
     }
     vlog(
-      cllog.trace,
+      cllog.info,
       "[{}] Checking if topic {} can be failed over",
       _link_id,
       topic);
@@ -154,7 +154,7 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
       valid_partitions.size()
       != static_cast<size_t>(topic_report->total_partitions)) {
         vlog(
-          cllog.debug,
+          cllog.info,
           "[{}] Topic {} cannot be promoted yet, only {}/{} partitions are "
           "reported as valid.",
           _link_id,
@@ -190,7 +190,7 @@ link_status_reconciler::per_link_reconciler::reconcile_status_changes() {
     auto holder = _gate.hold();
     while (!_as.abort_requested()) {
         co_await _cv.wait([this] { return has_pending_reconciliations(); });
-        vlog(cllog.trace, "[{}] Starting reconciliation iteration", _link_id);
+        vlog(cllog.info, "[{}] Starting reconciliation iteration", _link_id);
         const auto& md = _registry.find_link_by_id(_link_id);
         if (!md) {
             continue;
