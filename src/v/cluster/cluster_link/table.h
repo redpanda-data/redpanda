@@ -125,6 +125,10 @@ private:
 
     void run_callbacks(::cluster_link::model::id_t, model::revision_id);
 
+    // Special case to use to batch update all shadow topic states for a link
+    cluster::cluster_link::errc failover_all_topics_in_link(
+      ::cluster_link::model::id_t, model::revision_id);
+
 private:
     using name_index_t = chunked_hash_map<
       ::cluster_link::model::name_t,
