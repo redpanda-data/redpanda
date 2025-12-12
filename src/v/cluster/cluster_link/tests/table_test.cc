@@ -932,4 +932,118 @@ TEST_F_CORO(cluster_link_table_test, update_non_existent_link) {
     EXPECT_EQ(static_cast<errc>(ec.value()), errc::does_not_exist);
 }
 
+TEST_F_CORO(cluster_link_table_test, special_batch_failover) {
+    metadata link{
+      .name = name_t{"link1"},
+      .uuid = uuid_t{::uuid_t::create()},
+      .connection = connection_config{},
+    };
+
+    link.state.mirror_topics.emplace(
+      model::topic("active-topic"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::active, model::topic("active-topic")));
+
+    link.state.mirror_topics.emplace(
+      model::topic("failedover-topic"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::failed_over, model::topic("failedover-topic")));
+
+    link.state.mirror_topics.emplace(
+      model::topic("paused_topic"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::paused, model::topic("paused_topic")));
+
+    link.state.mirror_topics.emplace(
+      model::topic("active-topic2"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::active, model::topic("active-topic2")));
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, std::move(link)));
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to upsert link1: " << res.message();
+
+    res = co_await _table.local().apply_update(
+      testing::create_update_mirror_topic_status_command(
+        id_t{1}, {.topic = {}, .status = mirror_topic_status::failing_over}));
+
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to update mirror topic status: " << res.message();
+
+    auto found_link = _table.local().find_link_by_id(id_t{1});
+    ASSERT_TRUE_CORO(found_link.has_value());
+
+    const auto& mirror_topics = found_link->get().state.mirror_topics;
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("active-topic")).status,
+      mirror_topic_status::failing_over);
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("failedover-topic")).status,
+      mirror_topic_status::failed_over);
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("paused_topic")).status,
+      mirror_topic_status::paused);
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("active-topic2")).status,
+      mirror_topic_status::failing_over);
+}
+
+TEST_F_CORO(cluster_link_table_test, special_batch_failover_non_failover) {
+    metadata link{
+      .name = name_t{"link1"},
+      .uuid = uuid_t{::uuid_t::create()},
+      .connection = connection_config{},
+    };
+
+    link.state.mirror_topics.emplace(
+      model::topic("active-topic"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::active, model::topic("active-topic")));
+
+    link.state.mirror_topics.emplace(
+      model::topic("failedover-topic"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::failed_over, model::topic("failedover-topic")));
+
+    link.state.mirror_topics.emplace(
+      model::topic("paused_topic"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::paused, model::topic("paused_topic")));
+
+    link.state.mirror_topics.emplace(
+      model::topic("active-topic2"),
+      testing::create_mirror_topic_metadata(
+        mirror_topic_status::active, model::topic("active-topic2")));
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, std::move(link)));
+    ASSERT_EQ_CORO(res.value(), int(errc::success))
+      << "Failed to upsert link1: " << res.message();
+
+    res = co_await _table.local().apply_update(
+      testing::create_update_mirror_topic_status_command(
+        id_t{1}, {.topic = {}, .status = mirror_topic_status::paused}));
+
+    EXPECT_EQ(res.value(), int(errc::topic_not_being_mirrored))
+      << "Expected error for invalid status transition, got: " << res.message();
+
+    auto found_link = _table.local().find_link_by_id(id_t{1});
+    ASSERT_TRUE_CORO(found_link.has_value());
+
+    const auto& mirror_topics = found_link->get().state.mirror_topics;
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("active-topic")).status,
+      mirror_topic_status::active);
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("failedover-topic")).status,
+      mirror_topic_status::failed_over);
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("paused_topic")).status,
+      mirror_topic_status::paused);
+    EXPECT_EQ(
+      mirror_topics.at(model::topic("active-topic2")).status,
+      mirror_topic_status::active);
+}
+
 } // namespace cluster::cluster_link

@@ -892,7 +892,10 @@ struct add_mirror_topic_cmd
 /// \brief Command used to update the state of a mirror topic
 ///
 /// Will be used by the cluster linking mirroring task to change the state
-/// of mirroring for the topic
+/// of mirroring for the topic.
+/// If the topic is empty AND the status is `failing_over`, then this will
+/// trigger a batch update of all active shadow topics to enter the failing_over
+/// state.
 struct update_mirror_topic_status_cmd
   : serde::envelope<
       update_mirror_topic_status_cmd,

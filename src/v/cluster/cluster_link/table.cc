@@ -335,6 +335,29 @@ void table::run_callbacks(id_t id, model::revision_id revision) {
 }
 
 cluster::cluster_link::errc
+table::failover_all_topics_in_link(id_t id, model::revision_id revision) {
+    auto it = _link_metadata.find(id);
+    if (it == _link_metadata.end()) {
+        vlog(
+          cluster::clusterlog.info,
+          "Unable to failover all topics in non-existant link {}",
+          id);
+        return errc::does_not_exist;
+    }
+
+    auto& link_meta = it->second;
+    std::ranges::for_each(link_meta.state.mirror_topics, [](auto& t) {
+        if (t.second.status == mirror_topic_status::active) {
+            t.second.status = mirror_topic_status::failing_over;
+        }
+    });
+
+    _link_revision_index[id] = revision;
+    run_callbacks(id, revision);
+    return errc::success;
+}
+
+cluster::cluster_link::errc
 table::upsert_link(id_t id, metadata meta, model::revision_id revision) {
     for (const auto& t : meta.state.mirror_topics) {
         auto link_id = find_id_by_topic(t.first);
@@ -443,6 +466,13 @@ cluster::cluster_link::errc table::update_mirror_topic_state(
   id_t id,
   const update_mirror_topic_status_cmd& cmd,
   model::revision_id revision) {
+    if (
+      cmd.topic().empty()
+      && cmd.status
+           == ::cluster_link::model::mirror_topic_status::failing_over) {
+        // Special case to batch failover for all shadow topics in a shadow link
+        return failover_all_topics_in_link(id, revision);
+    }
     auto link_id = find_id_by_topic(cmd.topic);
     if (!link_id) {
         vlog(
