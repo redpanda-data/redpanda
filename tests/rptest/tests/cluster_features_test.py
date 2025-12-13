@@ -475,7 +475,7 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
             pass
         else:
             raise RuntimeError(
-                f"Node {old_node} joined cluster, but should have been rejected"
+                f"Node {old_node.name} joined cluster, but should have been rejected"
             )
 
         # Restart it with a sufficiently recent version and join should succeed
