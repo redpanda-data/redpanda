@@ -120,6 +120,29 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "state_reader",
+    srcs = [
+        "state_reader.cc",
+    ],
+    hdrs = [
+        "state_reader.h",
+    ],
+    implementation_deps = [
+        ":keys",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/ssx:future_util",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":values",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/lsm",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "values",
     hdrs = [
         "values.h",
