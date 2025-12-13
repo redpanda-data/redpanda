@@ -12,9 +12,10 @@
 #pragma once
 
 #include "cloud_storage_clients/client.h"
-#include "thirdparty/libxml2/parser.h"
 
 #include <seastar/core/iostream.hh>
+
+#include <libxml/parser.h>
 
 namespace cloud_storage_clients {
 

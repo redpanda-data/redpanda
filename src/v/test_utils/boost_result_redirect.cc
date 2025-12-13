@@ -10,12 +10,12 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_replace.h"
 #include "absl/time/time.h"
-#include "thirdparty/libxml2/xmlwriter.h"
 
 #include <boost/test/results_collector.hpp>
 #include <boost/test/tree/traverse.hpp>
 #include <boost/test/unit_test.hpp>
 #include <boost/test/unit_test_suite.hpp>
+#include <libxml/xmlwriter.h>
 
 #include <stdexcept>
 
