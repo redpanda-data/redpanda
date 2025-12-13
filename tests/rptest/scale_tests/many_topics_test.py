@@ -230,7 +230,7 @@ class ManyTopicsTest(RedpandaTest):
             return sum(numpy.diff(sorted(numbers_list)) == 1) >= n
 
         # Select random topic from the list
-        target_topic = topic_names[random.randint(0, len(topic_names))]
+        target_topic = random.choice(topic_names)
         # Consumer specific config
         consumer_extra_config = {
             "auto.offset.reset": "smallest",
