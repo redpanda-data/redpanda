@@ -17,7 +17,6 @@
 #include "security/oidc_authenticator.h"
 #include "security/plain_authenticator.h"
 #include "security/scram_authenticator.h"
-#include "thirdparty/c-ares/ares.h"
 #include "utils/backoff_policy.h"
 #include "utils/unresolved_address.h"
 #include "version/version.h"
@@ -26,6 +25,8 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/net/dns.hh>
+
+#include <ares.h>
 using namespace std::chrono_literals;
 namespace {
 bool is_dns_failure_error(const std::system_error& e) {

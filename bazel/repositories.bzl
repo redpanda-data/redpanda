@@ -38,14 +38,6 @@ def data_dependency():
     )
 
     http_archive(
-        name = "c-ares",
-        build_file = "//bazel/thirdparty:c-ares.BUILD",
-        sha256 = "7d935790e9af081c25c495fd13c2cfcda4792983418e96358ef6e7320ee06346",
-        strip_prefix = "c-ares-1.34.5",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.5.tar.gz",
-    )
-
-    http_archive(
         name = "hdrhistogram",
         build_file = "//bazel/thirdparty:hdrhistogram.BUILD",
         integrity = "sha256-u5U1GmqLJC3Jvh8oVidhqE1M8Kh0/8kKm2MHcKZGjpQ=",

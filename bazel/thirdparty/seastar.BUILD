@@ -644,7 +644,7 @@ cc_library(
         "@boost//:lockfree",
         "@boost//:program_options",
         "@boost//:thread",
-        "@c-ares",
+        "@c-ares//:ares",
         "@fmt",
         "@lksctp",
         "@lz4",
