@@ -209,7 +209,8 @@ private:
     ss::shared_ptr<client_probe> _probe;
     client_pool_overdraft_policy _policy;
 
-    ss::circular_buffer<client_ptr> _pool;
+    ss::circular_buffer<client_ptr> _idle_list;
+
     // List of all connections currently used by clients
     intrusive_list<client_lease, &client_lease::_hook> _leased;
     ss::condition_variable _cvar;

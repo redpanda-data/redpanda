@@ -192,7 +192,7 @@ ss::future<> client_pool::start(
 }
 
 ss::future<> client_pool::stop() {
-    vlog(pool_log.info, "Stopping client pool: {}", _pool.size());
+    vlog(pool_log.info, "Stopping client pool: {}", _idle_list.size());
 
     if (!_as.abort_requested()) {
         _as.request_abort();
@@ -206,9 +206,9 @@ ss::future<> client_pool::stop() {
     co_await _gate.close();
 
     std::vector<ss::future<>> stops;
-    stops.reserve(_pool.size());
+    stops.reserve(_idle_list.size());
 
-    for (auto& it : _pool) {
+    for (auto& it : _idle_list) {
         stops.emplace_back(it->stop());
     }
 
@@ -224,7 +224,7 @@ void client_pool::shutdown_connections() {
     vlog(
       pool_log.info,
       "Shutting down client pool: {} ({} connections leased)",
-      _pool.size(),
+      _idle_list.size(),
       _leased.size());
 
     _as.request_abort();
@@ -235,7 +235,7 @@ void client_pool::shutdown_connections() {
     for (auto& it : _leased) {
         it.client->shutdown();
     }
-    for (auto& it : _pool) {
+    for (auto& it : _idle_list) {
         it->shutdown();
     }
 
@@ -313,9 +313,9 @@ ss::future<client_pool::client_lease> client_pool::acquire(
 
         while (!client.has_value() && !deadline_reached() && !_gate.is_closed()
                && !_as.abort_requested()) {
-            if (likely(!_pool.empty())) {
-                client = _pool.back();
-                _pool.pop_back();
+            if (likely(!_idle_list.empty())) {
+                client = _idle_list.back();
+                _idle_list.pop_back();
             } else if (
               ss::smp::count == 1
               || _policy == client_pool_overdraft_policy::wait_if_empty
@@ -329,12 +329,12 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                 vlog(
                   pool_log.debug,
                   "cvar triggered, pool size: {}",
-                  _pool.size());
+                  _idle_list.size());
             } else {
                 // Try borrowing from peer shard.
                 auto clients_in_use = [](client_pool& other) {
                     return std::clamp(
-                      other._capacity - other._pool.size(),
+                      other._capacity - other._idle_list.size(),
                       0UL,
                       other._capacity);
                 };
@@ -376,13 +376,13 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                     // to borrow from a remote pool (co_await/async-operation),
                     // local pool may have gotten a client back. There is no
                     // need to wait in such case.
-                    if (_pool.empty()) {
+                    if (_idle_list.empty()) {
                         co_await ssx::with_timeout_abortable(
                           _cvar.wait(), model::no_timeout, as);
                         vlog(
                           pool_log.debug,
                           "cvar triggered, pool size: {}",
-                          _pool.size());
+                          _idle_list.size());
                     }
                 }
             }
@@ -425,14 +425,14 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                   // to the source shard.
                   // Otherwise, we replace the oldest client in the
                   // pool to improve connection reuse.
-                  if (!pool->_pool.empty()) {
+                  if (!pool->_idle_list.empty()) {
                       vlog(
                         pool_log.debug,
                         "disposing the oldest client connection and "
                         "replacing it with the borrowed one");
-                      pool->_pool.push_back(std::move(client));
-                      client = std::move(pool->_pool.front());
-                      pool->_pool.pop_front();
+                      pool->_idle_list.push_back(std::move(client));
+                      client = std::move(pool->_idle_list.front());
+                      pool->_idle_list.pop_front();
                   } else {
                       vlog(
                         pool_log.debug,
@@ -511,14 +511,14 @@ size_t client_pool::normalized_num_clients_in_use() const {
     // Here we won't be showing that some clients are available if previously
     // the pool was depleted. This is needed to prevent borrowing from
     // overloaded shards.
-    auto current = _capacity - std::clamp(_pool.size(), 0UL, _capacity);
+    auto current = _capacity - std::clamp(_idle_list.size(), 0UL, _capacity);
     auto normalized = static_cast<int>(
       100.0 * double(current) / static_cast<double>(_capacity));
     return normalized;
 }
 
 bool client_pool::borrow_one(unsigned other) {
-    if (_pool.empty()) {
+    if (_idle_list.empty()) {
         vlog(pool_log.debug, "declining borrow by {}", other);
         return false;
     }
@@ -526,12 +526,12 @@ bool client_pool::borrow_one(unsigned other) {
       pool_log.debug,
       "approving borrow by {}, pool size {}/{}",
       other,
-      _pool.size(),
+      _idle_list.size(),
       _capacity);
     // TODO: do not use the bottommost (oldest) element. Find the one
     // with expired connection.
-    auto c = _pool.front();
-    _pool.pop_front();
+    auto c = _idle_list.front();
+    _idle_list.pop_front();
     update_usage_stats();
     c->shutdown();
     ssx::spawn_with_gate(_bg_gate, [c] { return c->stop().finally([c] {}); });
@@ -541,10 +541,10 @@ bool client_pool::borrow_one(unsigned other) {
 void client_pool::return_one(unsigned other) {
     vlog(pool_log.debug, "shard {} returns a client", other);
     vassert(
-      _pool.size() < _capacity,
+      _idle_list.size() < _capacity,
       "tried to return a borrowed client but the pool is full");
     // Cold clients are at the front. Hot clients are at the back.
-    _pool.emplace_front(make_client());
+    _idle_list.emplace_front(make_client());
     update_usage_stats();
     vlog(
       pool_log.debug,
@@ -554,16 +554,16 @@ void client_pool::return_one(unsigned other) {
     _cvar.signal();
 }
 
-size_t client_pool::idle_count() const noexcept { return _pool.size(); }
+size_t client_pool::idle_count() const noexcept { return _idle_list.size(); }
 
 size_t client_pool::capacity() const noexcept { return _capacity; }
 
 void client_pool::populate_client_pool() {
     vlog(pool_log.info, "Populating client pool with {} clients", _capacity);
 
-    _pool.reserve(_capacity);
+    _idle_list.reserve(_capacity);
     for (size_t i = 0; i < _capacity; i++) {
-        _pool.emplace_back(make_client());
+        _idle_list.emplace_back(make_client());
     }
 
     // Be defensive in checking that we properly synchronized access to `_pool`
@@ -604,12 +604,12 @@ void client_pool::release(client_ptr leased) {
     vlog(
       pool_log.debug,
       "releasing a client, pool size: {}, capacity: {}",
-      _pool.size(),
+      _idle_list.size(),
       _capacity);
     vassert(
-      _pool.size() < _capacity,
+      _idle_list.size() < _capacity,
       "tried to release a client but the pool is at capacity");
-    _pool.emplace_back(std::move(leased));
+    _idle_list.emplace_back(std::move(leased));
     _cvar.signal();
 }
 
