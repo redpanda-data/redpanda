@@ -208,7 +208,25 @@ private:
     ss::shared_ptr<client_probe> _probe;
     client_pool_overdraft_policy _policy;
 
-    ss::circular_buffer<client_ptr> _idle_list;
+    struct client_wrapper {
+        explicit client_wrapper(client_ptr p)
+          : ptr(std::move(p)) {}
+        client_wrapper(const client_wrapper& other) = delete;
+        client_wrapper& operator=(client_wrapper& other) = delete;
+        client_wrapper(client_wrapper&& other) noexcept
+          : ptr(std::move(other.ptr)) {
+            _hook.swap_nodes(other._hook);
+        }
+        client_wrapper& operator=(client_wrapper&& other) = delete;
+        ~client_wrapper() = default;
+
+        client_ptr ptr;
+        intrusive_list_hook _hook;
+    };
+
+    std::unordered_map<client*, client_wrapper> _idle_clients;
+    intrusive_list<client_wrapper, &client_wrapper::_hook> _lru_idle_list;
+
     size_t _num_own_leased{0};
 
     // List of all connections currently used by clients
