@@ -43,9 +43,9 @@ class client_pool
   : public ss::weakly_referencable<client_pool>
   , public ss::peering_sharded_service<client_pool> {
 public:
-    using http_client_ptr = ss::shared_ptr<client>;
+    using client_ptr = ss::shared_ptr<client>;
     struct client_lease {
-        http_client_ptr client;
+        client_ptr client;
         ss::deleter deleter;
         ss::abort_source::subscription as_sub;
         intrusive_list_hook _hook;
@@ -53,7 +53,7 @@ public:
         std::unique_ptr<ssx::watchdog> _wd;
 
         client_lease(
-          http_client_ptr p,
+          client_ptr p,
           ss::abort_source& as,
           ss::deleter deleter,
           std::unique_ptr<client_probe::hist_t::measurement> m)
@@ -179,13 +179,13 @@ private:
         application_stop_signal);
     ss::future<
       std::optional<cloud_storage_clients::client_self_configuration_output>>
-    do_client_self_configure(http_client_ptr client);
+    do_client_self_configure(client_ptr client);
     ss::future<> accept_self_configure_result(
       std::optional<client_self_configuration_output> result);
 
     void populate_client_pool();
-    http_client_ptr make_client() noexcept;
-    void release(http_client_ptr leased);
+    client_ptr make_client() noexcept;
+    void release(client_ptr leased);
 
     /// Return number of clients which wasn't utilized
     size_t normalized_num_clients_in_use() const;
@@ -207,7 +207,7 @@ private:
     ss::shared_ptr<client_probe> _probe;
     client_pool_overdraft_policy _policy;
 
-    ss::circular_buffer<http_client_ptr> _pool;
+    ss::circular_buffer<client_ptr> _pool;
     // List of all connections currently used by clients
     intrusive_list<client_lease, &client_lease::_hook> _leased;
     ss::condition_variable _cvar;

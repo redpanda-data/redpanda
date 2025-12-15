@@ -115,7 +115,7 @@ ss::future<> client_pool::client_self_configure(
 
 ss::future<
   std::optional<cloud_storage_clients::client_self_configuration_output>>
-client_pool::do_client_self_configure(http_client_ptr client) {
+client_pool::do_client_self_configure(client_ptr client) {
     try {
         for (auto attempt = 1; attempt <= self_configure_attempts; ++attempt) {
             auto result = co_await client->self_configure();
@@ -279,7 +279,7 @@ ss::future<client_pool::client_lease> client_pool::acquire(
     auto guard = _gate.hold();
 
     std::optional<unsigned int> source_sid;
-    std::optional<http_client_ptr> client;
+    std::optional<client_ptr> client;
 
     auto deadline_reached = [&deadline] {
         return deadline.has_value()
@@ -577,10 +577,10 @@ void client_pool::populate_client_pool() {
     _pool_ready_barrier.signal(_pool_ready_barrier.max_counter());
 }
 
-client_pool::http_client_ptr client_pool::make_client() noexcept {
+client_pool::client_ptr client_pool::make_client() noexcept {
     return ss::visit(
       _config,
-      [this](const s3_configuration& cfg) -> http_client_ptr {
+      [this](const s3_configuration& cfg) -> client_ptr {
           return ss::make_shared<s3_client>(
             weak_from_this(),
             cfg,
@@ -589,7 +589,7 @@ client_pool::http_client_ptr client_pool::make_client() noexcept {
             _as,
             _apply_credentials);
       },
-      [this](const abs_configuration& cfg) -> http_client_ptr {
+      [this](const abs_configuration& cfg) -> client_ptr {
           return ss::make_shared<abs_client>(
             weak_from_this(),
             cfg,
@@ -600,7 +600,7 @@ client_pool::http_client_ptr client_pool::make_client() noexcept {
       });
 }
 
-void client_pool::release(http_client_ptr leased) {
+void client_pool::release(client_ptr leased) {
     vlog(
       pool_log.debug,
       "releasing a client, pool size: {}, capacity: {}",
