@@ -43,6 +43,7 @@ HOSTNAME_ERRORS = [
 
 CLOUD_STORAGE_CLIENT_CONFIG_ERRORS = [
     ".*[Ss]elf.configuration.*",
+    ".*Failed to acquire credentials within timeout.*",
     ".*Cloud storage client self-configuration failed.*",
     ".*InvalidAccessKeyId.*",
     ".*Couldn't reach S3.*",
