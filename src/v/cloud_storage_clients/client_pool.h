@@ -162,10 +162,12 @@ public:
       ss::lowres_clock::duration deadline,
       std::optional<ss::sstring> ctx = std::nullopt);
 
-    /// \brief Get number of connections
-    size_t size() const noexcept;
+    /// Idle client connections count. Even if this is 0, the pool may
+    /// still be able to serve acquire().
+    size_t idle_count() const noexcept;
 
-    size_t max_size() const noexcept;
+    /// \brief Configured capacity of the pool.
+    size_t capacity() const noexcept;
 
     bool has_background_operations() const noexcept {
         return _bg_gate.get_count() > 0;

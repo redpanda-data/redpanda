@@ -922,7 +922,7 @@ FIXTURE_TEST(test_client_pool_wait_strategy, client_pool_fixture) {
         fut.emplace_back(std::move(f));
     }
     ss::when_all_succeed(fut.begin(), fut.end()).get();
-    BOOST_REQUIRE(pool.local().size() == 2);
+    BOOST_REQUIRE(pool.local().idle_count() == 2);
 }
 
 static ss::future<bool> test_client_pool_reconnect_helper(

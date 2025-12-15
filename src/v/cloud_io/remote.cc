@@ -144,7 +144,7 @@ ss::future<> remote::stop() {
     vlog(log.debug, "Stopped remote...");
 }
 
-size_t remote::concurrency() const { return _pool.local().max_size(); }
+size_t remote::concurrency() const { return _pool.local().capacity(); }
 
 const provider& remote::provider() const { return _provider; }
 
