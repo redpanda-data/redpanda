@@ -185,7 +185,18 @@ ss::future<> client_pool::start(
     // have applied self-configuration results (if any).
     ssx::spawn_with_gate(_gate, [this]() {
         return ss::get_units(_self_config_barrier, 1, _as)
-          .then([this](ssx::semaphore_units) { populate_client_pool(); });
+          .then([this](ssx::semaphore_units) {
+              // Be defensive in checking that we properly synchronized access
+              // to `_pool` and `_cvar`. Before pool is ready, we do not expect
+              // anyone to check the size of the pool or wait on the condition
+              // variable.
+              vassert(
+                !_cvar.has_waiters(),
+                "This is a bug: _cvar is not expected to have waiters at this "
+                "point. Missing synchronization?");
+
+              _pool_ready_barrier.signal(_pool_ready_barrier.max_counter());
+          });
     });
 
     co_await _credential_manager.start();
@@ -314,8 +325,14 @@ ss::future<client_pool::client_lease> client_pool::acquire(
         while (!client.has_value() && !deadline_reached() && !_gate.is_closed()
                && !_as.abort_requested()) {
             if (likely(!_idle_list.empty())) {
+                // Return an idle connection if available.
                 client = _idle_list.back();
+                ++_num_own_leased;
                 _idle_list.pop_back();
+            } else if (_num_own_leased < _capacity) {
+                // Create a new connection if we are under capacity.
+                ++_num_own_leased;
+                client = make_client();
             } else if (
               ss::smp::count == 1
               || _policy == client_pool_overdraft_policy::wait_if_empty
@@ -328,15 +345,13 @@ ss::future<client_pool::client_lease> client_pool::acquire(
 
                 vlog(
                   pool_log.debug,
-                  "cvar triggered, pool size: {}",
-                  _idle_list.size());
+                  "cvar triggered, idle size: {}, leased size: {}",
+                  _idle_list.size(),
+                  _leased.size());
             } else {
                 // Try borrowing from peer shard.
                 auto clients_in_use = [](client_pool& other) {
-                    return std::clamp(
-                      other._capacity - other._idle_list.size(),
-                      0UL,
-                      other._capacity);
+                    return other._num_own_leased;
                 };
                 // Use 2-random approach. Pick 2 random shards
                 auto [sid1, sid2] = pick_two_random_shards();
@@ -511,27 +526,36 @@ size_t client_pool::normalized_num_clients_in_use() const {
     // Here we won't be showing that some clients are available if previously
     // the pool was depleted. This is needed to prevent borrowing from
     // overloaded shards.
-    auto current = _capacity - std::clamp(_idle_list.size(), 0UL, _capacity);
     auto normalized = static_cast<int>(
-      100.0 * double(current) / static_cast<double>(_capacity));
+      100.0 * double(_num_own_leased) / static_cast<double>(_capacity));
     return normalized;
 }
 
 bool client_pool::borrow_one(unsigned other) {
-    if (_idle_list.empty()) {
-        vlog(pool_log.debug, "declining borrow by {}", other);
+    if (_num_own_leased >= _capacity) {
+        vlog(pool_log.debug, "declining borrow by {}; all leased", other);
         return false;
     }
     vlog(
       pool_log.debug,
-      "approving borrow by {}, pool size {}/{}",
+      "approving borrow by {}, pool size {}/{}, owned leased: {}",
       other,
       _idle_list.size(),
-      _capacity);
+      _capacity,
+      _num_own_leased);
+
+    if (_idle_list.size() + _num_own_leased < _capacity) {
+        // Virtual borrow if we are not at capacity yet.
+        ++_num_own_leased;
+        update_usage_stats();
+        return true;
+    }
+
     // TODO: do not use the bottommost (oldest) element. Find the one
     // with expired connection.
     auto c = _idle_list.front();
     _idle_list.pop_front();
+    ++_num_own_leased;
     update_usage_stats();
     c->shutdown();
     ssx::spawn_with_gate(_bg_gate, [c] { return c->stop().finally([c] {}); });
@@ -541,10 +565,10 @@ bool client_pool::borrow_one(unsigned other) {
 void client_pool::return_one(unsigned other) {
     vlog(pool_log.debug, "shard {} returns a client", other);
     vassert(
-      _idle_list.size() < _capacity,
-      "tried to return a borrowed client but the pool is full");
-    // Cold clients are at the front. Hot clients are at the back.
-    _idle_list.emplace_front(make_client());
+      _num_own_leased > 0,
+      "invariant broken: trying to return a borrowed client but none are "
+      "leased");
+    --_num_own_leased;
     update_usage_stats();
     vlog(
       pool_log.debug,
@@ -557,25 +581,6 @@ void client_pool::return_one(unsigned other) {
 size_t client_pool::idle_count() const noexcept { return _idle_list.size(); }
 
 size_t client_pool::capacity() const noexcept { return _capacity; }
-
-void client_pool::populate_client_pool() {
-    vlog(pool_log.info, "Populating client pool with {} clients", _capacity);
-
-    _idle_list.reserve(_capacity);
-    for (size_t i = 0; i < _capacity; i++) {
-        _idle_list.emplace_back(make_client());
-    }
-
-    // Be defensive in checking that we properly synchronized access to `_pool`
-    // and `_cvar`. Before populate_client_pool() is called, we do not expect
-    // anyone to check the size of the pool or wait on the condition variable.
-    vassert(
-      !_cvar.has_waiters(),
-      "This is a bug: _cvar is not expected to have waiters at this point. "
-      "Missing synchronization?");
-
-    _pool_ready_barrier.signal(_pool_ready_barrier.max_counter());
-}
 
 client_pool::client_ptr client_pool::make_client() noexcept {
     return ss::visit(
@@ -609,6 +614,10 @@ void client_pool::release(client_ptr leased) {
     vassert(
       _idle_list.size() < _capacity,
       "tried to release a client but the pool is at capacity");
+    vassert(
+      _num_own_leased > 0,
+      "invariant broken: trying to release a client when none are leased");
+    --_num_own_leased;
     _idle_list.emplace_back(std::move(leased));
     _cvar.signal();
 }

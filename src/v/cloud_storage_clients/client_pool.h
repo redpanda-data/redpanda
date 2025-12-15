@@ -185,7 +185,6 @@ private:
     ss::future<> accept_self_configure_result(
       std::optional<client_self_configuration_output> result);
 
-    void populate_client_pool();
     client_ptr make_client() noexcept;
     void release(client_ptr leased);
 
@@ -210,6 +209,7 @@ private:
     client_pool_overdraft_policy _policy;
 
     ss::circular_buffer<client_ptr> _idle_list;
+    size_t _num_own_leased{0};
 
     // List of all connections currently used by clients
     intrusive_list<client_lease, &client_lease::_hook> _leased;
