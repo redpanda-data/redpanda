@@ -155,7 +155,12 @@ struct op_context {
         return !request.debounce_delay() || over_min_bytes()
                || is_empty_request() || contains_preferred_replica
                || response_error || rctx.abort_requested()
-               || deadline <= model::timeout_clock::now();
+               || deadline <= model::timeout_clock::now()
+               // If no more data can be read from a given partition due to
+               // hitting some limit then this condition ensure that the fetch
+               // ends. This is to ensure that we don't unintentionally throttle
+               // the reads from the partition.
+               || has_read_max_partition_fetch_bytes;
     }
 
     bool over_min_bytes() const {
@@ -208,6 +213,7 @@ struct op_context {
     // for fetches that have preferred replica set we skip read, therefore we
     // need other indicator of finished fetch request.
     bool contains_preferred_replica = false;
+    bool has_read_max_partition_fetch_bytes = false;
 };
 
 struct fetch_config {
@@ -350,6 +356,7 @@ struct read_result {
     model::offset data_base_offset;
     model::offset data_last_offset;
     size_t batch_count{0};
+    bool read_max_bytes{false};
     model::offset high_watermark;
     model::offset last_stable_offset;
     std::optional<std::chrono::milliseconds> delta_from_tip_ms;

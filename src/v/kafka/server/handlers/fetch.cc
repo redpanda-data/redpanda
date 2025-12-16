@@ -220,6 +220,7 @@ static ss::future<read_result> do_read_from_ntp(
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
   fetch_memory_units_manager& units_mgr) {
+    const auto original_max_bytes = ntp_config.cfg.max_bytes;
     // control available memory
     auto memory_units = units_mgr.zero_units();
     if (!ntp_config.cfg.skip_read) {
@@ -330,6 +331,8 @@ static ss::future<read_result> do_read_from_ntp(
     // happen because there is no strict limit on read size when reading the
     // obligatory batch.
     auto result = std::move(res_fut.get());
+    result.read_max_bytes = original_max_bytes != 0
+                            && result.data_size_bytes() >= original_max_bytes;
     memory_units.adjust_units(result.data_size_bytes());
     result.memory_units = std::move(memory_units);
     co_return result;
@@ -452,6 +455,7 @@ static void fill_fetch_responses(
                   });
                 resp.aborted_transactions = std::move(aborted);
             }
+            octx.has_read_max_partition_fetch_bytes |= res.read_max_bytes;
             resp_units = std::move(res.memory_units);
             resp.records = batch_reader(std::move(res).release_data());
         } else {
@@ -506,7 +510,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
         // is larger. This is needed to conform with KIP-74.
         ntp_cfg.cfg.strict_max_bytes = !obligatory_batch_read;
 
-        auto&& res = co_await do_read_from_ntp(
+        auto res = co_await do_read_from_ntp(
           cluster_pm,
           md_cache,
           replica_selector,

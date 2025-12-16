@@ -21,6 +21,7 @@ class OMBSampleConfigurations:
 
     # These are copied over from OMB/bin/generate_charts.py
     # All metrics are in milliseconds unless specially suffixed.
+    CON_RATE_AVG = "consumeRateAvg"
     PUB_LATENCY_MIN = "publishLatencyMin"
     PUB_LATENCY_AVG = "aggregatedPublishLatencyAvg"
     PUB_LATENCY_50PCT = "aggregatedPublishLatency50pct"

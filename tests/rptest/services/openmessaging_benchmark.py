@@ -483,6 +483,9 @@ class OpenMessagingBenchmark(Service):
         ) / (1024.0 * 1024.0)
         metrics["publishLatencyMin"] = min(metrics["publishLatencyMin"])
         metrics["endToEndLatencyMin"] = min(metrics["endToEndLatencyMin"])
+        metrics["consumeRateAvg"] = sum(metrics["consumeRate"]) / len(
+            metrics["consumeRate"]
+        )
 
         self._metrics = metrics
 
