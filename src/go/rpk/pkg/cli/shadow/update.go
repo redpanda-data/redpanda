@@ -143,7 +143,7 @@ Update a Shadow Link configuration:
 					UpdateMask: fm,
 				}))
 				out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
-				spinner := out.NewSpinner("Updating Shadow Link...")
+				spinner := out.NewSpinner("Updating Shadow Link...", out.WithElapsedTime())
 				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId(), spinner)
 				if err != nil {
 					spinner.Fail(fmt.Sprintf("unable to confirm Shadow Link update: %v", err))

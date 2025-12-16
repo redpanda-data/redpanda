@@ -16,26 +16,29 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/briandowns/spinner"
 	"github.com/mattn/go-isatty"
 )
 
 // Spinner provides animated progress indication for long-running operations.
-// In TTY environments, it displays an animated spinner with elapsed time.
+// In TTY environments, it displays an animated spinner.
 // In non-TTY environments, it gracefully degrades to simple text output.
 type Spinner struct {
-	program *tea.Program
-	done    chan struct{}
-	mu      sync.Mutex
-	isTTY   bool
-	output  io.Writer
-	stopped bool
+	spinner     *spinner.Spinner
+	mu          sync.Mutex
+	isTTY       bool
+	output      io.Writer
+	stopped     bool
+	message     string
+	startTime   time.Time
+	stopCh      chan struct{}
+	showElapsed bool
 }
 
 // spinnerConfig holds configuration options for the spinner.
 type spinnerConfig struct {
-	output io.Writer
+	output      io.Writer
+	showElapsed bool
 }
 
 // SpinnerOption configures a Spinner.
@@ -49,53 +52,12 @@ func WithOutput(w io.Writer) SpinnerOption {
 	}
 }
 
-// spinnerModel is the bubbletea model for the spinner.
-type spinnerModel struct {
-	spinner   spinner.Model
-	message   string
-	startTime time.Time
-	quitting  bool
-	finalMsg  string
-}
-
-// updateMessageMsg is sent to update the spinner's message.
-type updateMessageMsg string
-
-// quitMsg is sent to stop the spinner.
-type quitMsg struct {
-	finalMsg string
-}
-
-func (m spinnerModel) Init() tea.Cmd {
-	return m.spinner.Tick
-}
-
-func (m spinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
-	case updateMessageMsg:
-		m.message = string(msg)
-		return m, nil
-	case quitMsg:
-		m.quitting = true
-		m.finalMsg = msg.finalMsg
-		return m, tea.Quit
+// WithElapsedTime enables showing elapsed time in the spinner message.
+// When enabled, the spinner displays "(Xs elapsed)" after the message.
+func WithElapsedTime() SpinnerOption {
+	return func(c *spinnerConfig) {
+		c.showElapsed = true
 	}
-	return m, nil
-}
-
-func (m spinnerModel) View() string {
-	if m.quitting {
-		if m.finalMsg != "" {
-			return m.finalMsg + "\n"
-		}
-		return ""
-	}
-	elapsed := time.Since(m.startTime).Truncate(time.Second)
-	return fmt.Sprintf("%s %s (%v elapsed)", m.spinner.View(), m.message, elapsed)
 }
 
 // isTerminal checks if the given writer is a terminal.
@@ -128,39 +90,61 @@ func NewSpinner(message string, opts ...SpinnerOption) *Spinner {
 	}
 
 	s := &Spinner{
-		done:   make(chan struct{}),
-		output: cfg.output,
-		isTTY:  isTerminal(cfg.output),
+		output:      cfg.output,
+		isTTY:       isTerminal(cfg.output),
+		message:     message,
+		showElapsed: cfg.showElapsed,
 	}
 
 	if !s.isTTY {
 		// Non-TTY: print message once, no animation
 		fmt.Fprintln(s.output, message)
-		close(s.done)
 		return s
 	}
 
 	// TTY: start animated spinner
-	sp := spinner.New()
-	sp.Spinner = spinner.Dot
+	s.spinner = spinner.New(spinner.CharSets[14], 100*time.Millisecond,
+		spinner.WithWriter(s.output))
+	s.updateSuffix()
+	s.spinner.Start()
 
-	model := spinnerModel{
-		spinner:   sp,
-		message:   message,
-		startTime: time.Now(),
+	if s.showElapsed {
+		s.startTime = time.Now()
+		s.stopCh = make(chan struct{})
+		// Start goroutine to update elapsed time every second
+		go s.runElapsedTimeUpdater()
 	}
 
-	s.program = tea.NewProgram(model,
-		tea.WithOutput(s.output),
-		tea.WithoutSignalHandler(),
-	)
-
-	go func() {
-		_, _ = s.program.Run()
-		close(s.done)
-	}()
-
 	return s
+}
+
+// updateSuffix updates the spinner's suffix with the current message.
+// Must be called with s.mu held or before the spinner is started.
+func (s *Spinner) updateSuffix() {
+	if s.showElapsed {
+		elapsed := time.Since(s.startTime).Truncate(time.Second)
+		s.spinner.Suffix = fmt.Sprintf(" %s (%v elapsed)", s.message, elapsed)
+	} else {
+		s.spinner.Suffix = " " + s.message
+	}
+}
+
+// runElapsedTimeUpdater updates the spinner suffix every second to show elapsed time.
+func (s *Spinner) runElapsedTimeUpdater() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			if !s.stopped && s.spinner != nil {
+				s.updateSuffix()
+			}
+			s.mu.Unlock()
+		}
+	}
 }
 
 // Stop stops the spinner without displaying a final message.
@@ -184,11 +168,12 @@ func (s *Spinner) UpdateMessage(message string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.stopped || s.program == nil {
+	if s.stopped || s.spinner == nil {
 		return
 	}
 
-	s.program.Send(updateMessageMsg(message))
+	s.message = message
+	s.updateSuffix()
 }
 
 // stopWith stops the spinner and displays the given final message.
@@ -201,9 +186,16 @@ func (s *Spinner) stopWith(finalMsg string) {
 	}
 	s.stopped = true
 
-	if s.program != nil {
-		s.program.Send(quitMsg{finalMsg: finalMsg})
-		<-s.done
+	if s.spinner != nil {
+		// Stop the elapsed time updater goroutine if running
+		if s.showElapsed {
+			close(s.stopCh)
+		}
+
+		if finalMsg != "" {
+			s.spinner.FinalMSG = finalMsg + "\n"
+		}
+		s.spinner.Stop()
 	} else if finalMsg != "" {
 		// Non-TTY mode: just print the final message
 		fmt.Fprintln(s.output, finalMsg)

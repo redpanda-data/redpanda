@@ -104,7 +104,7 @@ Create a Shadow Link without confirmation prompt:
 				}))
 				out.MaybeDie(err, "unable to create Shadow Link: %v", err)
 
-				spinner := out.NewSpinner("Creating Shadow Link...")
+				spinner := out.NewSpinner("Creating Shadow Link...", out.WithElapsedTime())
 				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId(), spinner)
 				if err != nil {
 					if oErr := new(OperationFailedError); errors.As(err, &oErr) {

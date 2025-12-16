@@ -12,8 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_alecaivazis_survey_v2//:survey",
-        "@com_github_charmbracelet_bubbles//spinner",
-        "@com_github_charmbracelet_bubbletea//:bubbletea",
+        "@com_github_briandowns_spinner//:spinner",
         "@com_github_fatih_color//:color",
         "@com_github_mattn_go_isatty//:go-isatty",
         "@com_github_spf13_afero//:afero",

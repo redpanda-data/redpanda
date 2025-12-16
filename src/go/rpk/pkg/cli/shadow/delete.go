@@ -101,7 +101,7 @@ Force delete a Shadow Link with active shadow topics:
 				}))
 				out.MaybeDie(err, "unable to delete Shadow Link: %v", err)
 
-				spinner := out.NewSpinner("Deleting Shadow Link...")
+				spinner := out.NewSpinner("Deleting Shadow Link...", out.WithElapsedTime())
 				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId(), spinner)
 				if err != nil {
 					spinner.Fail(fmt.Sprintf("unable to confirm Shadow Link deletion: %v", err))
