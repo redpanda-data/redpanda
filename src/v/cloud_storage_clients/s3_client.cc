@@ -698,6 +698,13 @@ s3_client::self_configure() {
     // used. We are testing HNS on default storage account, but in RRR setup, we
     // actually use a different storage account for reads.
     // A similar issue exists in ABS client.
+    //
+    // TODO: we probably want to get rid of the self configuration logic. We
+    // might not even know a bucket for XRRR, yet. Or bucket might not exist for
+    // one topic but exist for the other even though they are all within same
+    // provider.
+    //
+    // Needs more thought.
     const auto bucket = cloud_storage_clients::plain_bucket_name{
       bucket_config.value().value()};
 

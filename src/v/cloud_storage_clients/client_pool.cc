@@ -118,6 +118,8 @@ void client_pool::shutdown_connections() {
     _cvar.broken();
     _pool_ready_barrier.broken();
 
+    // TODO: ask upstream to "shutdown connections" too.
+
     for (auto& it : _leased) {
         it.client->shutdown();
     }
@@ -168,6 +170,24 @@ ss::future<client_pool::client_lease> client_pool::acquire(
 
     const upstream_key key = create_upstream_key(_config, bucket);
     auto h = co_await _upstream_registry.get(key);
+
+    auto lru_idle_list_per_upstream_count = [this](const upstream_key& k) {
+        auto it = _lru_idle_list_per_upstream.find(k);
+        if (it == _lru_idle_list_per_upstream.end()) {
+            return 0UL;
+        }
+        return it->second.size();
+    };
+
+    vlog(
+      pool_log.debug,
+      "got upstream handle for key {}, upstream idle clients {}, total idle "
+      "{}, capacity {}",
+      key,
+      lru_idle_list_per_upstream_count(key),
+      _idle_clients.size(),
+
+      _capacity);
 
     std::optional<unsigned int> source_sid;
     std::optional<client_ptr> client;

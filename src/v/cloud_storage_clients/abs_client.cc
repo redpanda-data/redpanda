@@ -491,6 +491,8 @@ abs_client::abs_client(
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 abs_client::self_configure() {
+    // TODO: use the bucket name to verify access to the bucket
+
     auto& cfg = config::shard_local_cfg();
     auto hns_enabled
       = cfg.cloud_storage_azure_hierarchical_namespace_enabled.value();

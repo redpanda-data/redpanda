@@ -401,10 +401,11 @@ build_refresh_credentials_source(
 namespace {
 ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
 build_tls_credentials(
-  ss::sstring name, const ss::tls::credentials_builder& cred_builder) {
-    co_return co_await net::build_reloadable_credentials_with_probe<
-      ss::tls::certificate_credentials>(
-      cred_builder, "cloud_storage_client", std::move(name));
+  ss::sstring, const ss::tls::credentials_builder& cred_builder) {
+    co_return co_await cred_builder.build_reloadable_certificate_credentials();
+    // co_return co_await net::build_reloadable_credentials_with_probe<
+    //   ss::tls::certificate_credentials>(
+    //   cred_builder, "cloud_storage_client", std::move(name));
 }
 
 ss::future<net::base_transport::configuration> build_transport_configuration(

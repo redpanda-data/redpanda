@@ -83,23 +83,55 @@ upstream::upstream(client_configuration config)
       })) {}
 
 ss::future<> upstream::start() {
-    _transport_config = co_await build_transport_configuration(_config);
-    co_await _credential_manager.start();
+    std::exception_ptr e;
 
-    if (ss::this_shard_id() == ss::shard_id{0}) {
-        ssx::spawn_with_gate(_gate, [this]() {
-            vlog(pool_log.info, "Starting client self-configuration...");
-            return client_self_configure();
-        });
+    try {
+        vlog(pool_log.info, "Upstream starting {}", _config);
+
+        _transport_config = co_await build_transport_configuration(_config);
+
+        vlog(pool_log.info, "Upstream transport configured {}", _config);
+        co_await _credential_manager.start();
+
+        vlog(pool_log.info, "Upstream credentials started {}", _config);
+
+        if (ss::this_shard_id() == ss::shard_id{0}) {
+            ssx::spawn_with_gate(_gate, [this]() {
+                vlog(pool_log.info, "Starting client self-configuration...");
+                return client_self_configure();
+            });
+        }
+
+        vlog(
+          pool_log.info, "Upstream waiting on self config barrier {}", _config);
+        auto u = co_await ss::get_units(_self_config_barrier, 1);
+        u = {}; // release the unit
+
+        vlog(pool_log.info, "Upstream started {}", _config);
+    } catch (...) {
+        // Log as otherwise we're a bit blind.
+        vlog(
+          pool_log.error,
+          "Upstream failed to start {}: {}",
+          _config,
+          std::current_exception());
+
+        // All peer-shards are waiting on _self_config_barrier, so we need to
+        // break it to avoid deadlock.
+
+        e = std::current_exception();
     }
-
-    auto u = co_await ss::get_units(_self_config_barrier, 1);
-    u = {}; // release the unit
+    if (e) {
+        co_await container().invoke_on_all(
+          [](upstream& svc) { return svc._self_config_barrier.broken(); });
+        std::rethrow_exception(e);
+    }
 }
 
 ss::future<> upstream::stop() {
     _as.request_abort();
     _credentials_var.broken();
+    _self_config_barrier.broken();
     co_await _gate.close();
     co_await _credential_manager.stop();
 

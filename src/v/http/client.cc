@@ -207,6 +207,8 @@ ss::future<client::request_response_t> client::make_request(
 
 ss::future<reconnect_result_t> client::get_connected(
   ss::lowres_clock::duration timeout, prefix_logger ctxlog) {
+    constexpr auto max_retries = 5;
+
     auto clear_shutdown_signal = ss::defer(
       [this]() noexcept { _shutdown_now = false; });
     if (unlikely(_stopped)) {
@@ -222,7 +224,9 @@ ss::future<reconnect_result_t> client::get_connected(
     auto current = ss::lowres_clock::now();
     const auto deadline = current + timeout;
     const auto interval = 1s; // 500ms;
-    while (!_connect_gate.is_closed() && current < deadline) {
+    int try_ix = 0;
+    while (!_connect_gate.is_closed() && current < deadline
+           && try_ix++ <= max_retries) {
         if (_as != nullptr) {
             _as->check();
         }
@@ -370,9 +374,7 @@ bool client::response_stream::is_done() const {
 }
 
 /// Return true if the header parsing is done
-bool client::response_stream::is_header_done() const {
-    return _parser.is_header_done();
-}
+bool client::response_stream::is_header_done() const { return _header_done; }
 
 /// Access response headers (should only be called if is_header_done() == true)
 const client::response_header& client::response_stream::get_headers() const {
@@ -467,6 +469,10 @@ ss::future<iobuf> client::response_stream::recv_some() {
           auto bufseq = iobuf_to_constbufseq(_buffer);
           boost::beast::error_code ec;
           size_t noctets = _parser.put(bufseq, ec);
+          if (!_header_done && _parser.is_header_done()) {
+              _header_done = true;
+              vlog(_ctxlog.trace, "received headers: {:u}", get_headers());
+          }
           if (ec == boost::beast::http::error::need_more) {
               // The parser is in the eager mode. This means
               // that the data will be produced (iobuf_body::value_type::append

@@ -20,11 +20,11 @@
 namespace cloud_storage_clients {
 
 fmt::iterator upstream_key::format_to(fmt::iterator it) const {
-    fmt::format_to(
+    return fmt::format_to(
       it,
-      "upstream_key{{region={}}}",
-      _region().empty() ? "<default>" : _region());
-    return it;
+      "upstream_key{{region={}, endpoint={}}}",
+      _region().empty() ? "<default>" : _region(),
+      _endpoint().empty() ? "<default>" : _endpoint());
 }
 
 upstream_registry::upstream_registry(client_configuration config)
@@ -217,6 +217,13 @@ upstream_registry::do_upsert_entry(upstream_key key) {
         }
 
         if (e) {
+            vlog(
+              pool_log.warn,
+              "Failed to create owned sharded upstream for key {}: {}. "
+              "Stopping.",
+              key,
+              e);
+
             // Partially created resource.
             if (ptr != nullptr) {
                 co_await ptr->stop();
@@ -229,6 +236,8 @@ upstream_registry::do_upsert_entry(upstream_key key) {
 
             // Remove the entry so that future attempts can retry.
             _entries.erase(it);
+
+            vlog(pool_log.trace, "Re-raising creation exception {}", key);
 
             // Throw to current caller too.
             std::rethrow_exception(e);
