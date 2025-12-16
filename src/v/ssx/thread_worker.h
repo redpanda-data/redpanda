@@ -352,6 +352,14 @@ public:
      * start the background thread.
      */
     ss::future<> start(config c) {
+        co_await ss::smp::invoke_on_all([] {
+            vassert(
+              ss::engine_is_ready(),
+              "Seastar engine not ready when starting sharded_thread_worker on "
+              "shard {}",
+              ss::this_shard_id());
+        });
+
         co_await _impl.start();
         co_await _impl.invoke_on_all([&c](impl::thread_worker& w) {
             return w.start({.pin_to_shard_core = true, .name = c.name});
