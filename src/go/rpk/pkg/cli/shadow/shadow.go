@@ -17,6 +17,7 @@ import (
 	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -59,8 +60,10 @@ cluster metadata.
 }
 
 // waitForOperation is a shared function to poll for the completion of an async
-// Shadow Link operation. (e.g., create, delete, update).
-func waitForOperation(ctx context.Context, cloudClient *publicapi.CloudClientSet, opID string) (isCompleted bool, err error) {
+// Shadow Link operation. (e.g., create, delete, update). If spinner is non-nil,
+// it will be updated with progress information during polling.
+func waitForOperation(ctx context.Context, cloudClient *publicapi.CloudClientSet, opID string, spinner *out.Spinner) (isCompleted bool, err error) {
+	_ = spinner // Spinner animates automatically in its goroutine; kept for API consistency
 	backoff := func(i int) {
 		sleepTime := retryDelay * (1 << i) // Exponential backoff.
 		zap.L().Sugar().Debugf("Shadow Link operation not completed yet, retrying in %d ms", sleepTime)

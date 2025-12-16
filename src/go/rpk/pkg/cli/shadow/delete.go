@@ -11,6 +11,7 @@ package shadow
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
@@ -100,28 +101,35 @@ Force delete a Shadow Link with active shadow topics:
 				}))
 				out.MaybeDie(err, "unable to delete Shadow Link: %v", err)
 
-				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId())
-				out.MaybeDie(err, "unable to confirm Shadow Link deletion: %v", err)
+				spinner := out.NewSpinner("Deleting Shadow Link...")
+				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId(), spinner)
+				if err != nil {
+					spinner.Fail(fmt.Sprintf("unable to confirm Shadow Link deletion: %v", err))
+					os.Exit(1)
+				}
 				if !isComplete {
+					spinner.Stop()
 					out.Exit("Shadow link deletion is taking longer than expected. Please check the status of the shadow link using 'rpk shadow status %q'", linkName)
 				}
-			} else {
-				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
-				out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
-				link, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
-					Name: linkName,
-				}))
-				out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
-				printShadowLinkInfo(link.Msg.GetShadowLink())
-				promptConfirm(false)
-
-				_, err = cl.ShadowLinkService().DeleteShadowLink(cmd.Context(), connect.NewRequest(&adminv2.DeleteShadowLinkRequest{
-					Name:  linkName,
-					Force: forceDelete,
-				}))
-				out.MaybeDie(err, "unable to delete Redpanda Shadow Link %q: %v", linkName, handleConnectError(err, "delete", linkName))
+				spinner.Success(fmt.Sprintf("Shadow Link %q deleted successfully", linkName))
+				os.Exit(0)
 			}
+			// Self-hosted path
+			cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+			link, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
+				Name: linkName,
+			}))
+			out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
+			printShadowLinkInfo(link.Msg.GetShadowLink())
+			promptConfirm(false)
+
+			_, err = cl.ShadowLinkService().DeleteShadowLink(cmd.Context(), connect.NewRequest(&adminv2.DeleteShadowLinkRequest{
+				Name:  linkName,
+				Force: forceDelete,
+			}))
+			out.MaybeDie(err, "unable to delete Redpanda Shadow Link %q: %v", linkName, handleConnectError(err, "delete", linkName))
 
 			fmt.Printf("Shadow Link %q deleted successfully\n", linkName)
 		},

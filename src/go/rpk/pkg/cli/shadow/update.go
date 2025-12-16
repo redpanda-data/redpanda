@@ -11,6 +11,7 @@ package shadow
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
@@ -142,23 +143,30 @@ Update a Shadow Link configuration:
 					UpdateMask: fm,
 				}))
 				out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
-				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId())
-				out.MaybeDie(err, "unable to confirm Shadow Link update: %v", err)
+				spinner := out.NewSpinner("Updating Shadow Link...")
+				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId(), spinner)
+				if err != nil {
+					spinner.Fail(fmt.Sprintf("unable to confirm Shadow Link update: %v", err))
+					os.Exit(1)
+				}
 				if !isComplete {
+					spinner.Stop()
 					out.Exit("Shadow link update is taking longer than expected. Please check the status of the shadow link using 'rpk shadow status %q'", linkName)
 				}
-			} else {
-				updatedSL := shadowLinkConfigToProto(updatedCfg)
-				fm, err := fieldmaskpb.New(updatedSL, diff...)
-				out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
-
-				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
-				_, err = adminClient.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
-					ShadowLink: updatedSL,
-					UpdateMask: fm,
-				}))
-				out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
+				spinner.Success(fmt.Sprintf("Successfully updated shadow link %q", linkName))
+				os.Exit(0)
 			}
+			// Self-hosted path
+			updatedSL := shadowLinkConfigToProto(updatedCfg)
+			fm, err := fieldmaskpb.New(updatedSL, diff...)
+			out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
+
+			zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
+			_, err = adminClient.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
+				ShadowLink: updatedSL,
+				UpdateMask: fm,
+			}))
+			out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
 			fmt.Printf("Successfully updated shadow link %q.\n", linkName)
 		},
 	}
