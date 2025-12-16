@@ -7,7 +7,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
+import re
 import itertools
 import random
 import string
@@ -96,7 +96,13 @@ class RapidTopicRecreateTest(RedpandaTest):
         self.rpk.add_partitions(self.cloud_topic_name, partitions_to_add)
         self._current_partitions += partitions_to_add
 
-    @cluster(num_nodes=3)
+    @cluster(
+        num_nodes=3,
+        log_allow_list=[
+            # topic may be deleted before its written to cloud storage
+            re.compile(".*cloud_storage.*Failed to fetch manifest during finalize().*")
+        ],
+    )
     def test_topic_rapid_recreation(self):
         with Finjector(
             self.redpanda, self.scale, max_concurrent_failures=1
