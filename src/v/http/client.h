@@ -196,6 +196,7 @@ public:
         client* _client;
         prefix_logger& _ctxlog;
         response_parser _parser;
+        bool _is_header_done{false};
         iobuf _buffer; /// store incomplete tail elements
         iobuf _prefetch;
         client_probe::subprobe _sprobe;
