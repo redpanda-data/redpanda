@@ -469,7 +469,7 @@ http_archive(
     name = "omb",
     add_prefix = "omb",
     build_file = "//bazel/thirdparty:omb.BUILD",
-    sha256 = "8b4cb43d5092cb76d43d6a3e3d58a9ad513d08cb5a87ff56ec609fff28b8e2ba",
+    sha256 = "9d1f651d98a624dcfb09c213a8b77732bd08e037d32922b06c06e6027841e8ee",
     strip_prefix = "openmessaging-benchmark-0.0.1-SNAPSHOT",
-    urls = ["https://perf-team-public.s3.us-west-2.amazonaws.com/tmp/omb_minimal_test.tar.gz"],
+    urls = ["https://vectorized-public.s3.amazonaws.com/dependencies/omb/omb_minimal_3c624daad47f16ae7036b67142c384d3e59150bf.tar.gz"],
 )
