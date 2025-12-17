@@ -30,6 +30,13 @@ SIGNAL_CRASH_LOG = [
     "Segmentation fault:",
     "Illegal instruction on",
     "Illegal instruction:",
+    # ASan stack trace lines (e.g. "#4 0x... in seastar::promise_base::assert_task_shard")
+    # and summary lines (e.g. "SUMMARY: AddressSanitizer: SEGV ... in ...::assert_task_shard")
+    # In debug mode, the ASan output may include function names with 'assert' in them depending
+    # on what is on the stack when the signal is received by the process. This 'assert' text
+    # would trigger the bad log lines check. To avoid that, we exclude ASan output lines here.
+    r"#\d+ 0x[0-9a-f]+ in ",
+    "SUMMARY: AddressSanitizer:",
 ]
 
 ASSERT_CRASH_LOG = ["assert - "]
