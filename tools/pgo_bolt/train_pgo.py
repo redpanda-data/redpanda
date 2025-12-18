@@ -201,7 +201,7 @@ def extra_rp_tar(rp_tar: str, temp_dir: str):
 
     with tarfile.open(rp_tar, "r") as tar:
         for member in tar.getmembers():
-            tar.extract(member, path=extract_path)
+            tar.extract(member, path=extract_path, filter="fully_trusted")
 
     # Find the redpanda binary (to avoid hardcoding the a little bit brittle path)
     for root, _, files in os.walk(extract_path):
