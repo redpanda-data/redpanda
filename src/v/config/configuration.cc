@@ -3800,6 +3800,15 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       500,
       {.min = 1})
+  , schema_registry_max_json_recursion_depth(
+      *this,
+      "schema_registry_max_json_recursion_depth",
+      "Maximum recursion depth when parsing JSON schemas in Schema Registry.  "
+      "Setting this too high may result in instability of the system due to "
+      "stack overflow.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      8,
+      {.min = 1})
   , kafka_memory_share_for_fetch(
       *this,
       "kafka_memory_share_for_fetch",
