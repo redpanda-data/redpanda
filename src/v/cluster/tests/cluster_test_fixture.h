@@ -194,6 +194,10 @@ public:
         return _instances[id]->app.id_allocator_frontend.local();
     }
 
+    kafka::usage_manager& get_local_usage_manager(model::node_id id) {
+        return _instances[id]->app.usage_manager.local();
+    }
+
     ss::sharded<cluster::partition_manager>&
     get_partition_manager(model::node_id id) {
         return _instances[id]->app.partition_manager;
