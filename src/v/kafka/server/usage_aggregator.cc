@@ -97,12 +97,15 @@ static ss::future<> clear_persisted_state(storage::kvstore& kvstore) {
 usage usage::operator+(const usage& other) const {
     return usage{
       .bytes_sent = bytes_sent + other.bytes_sent,
-      .bytes_received = bytes_received + other.bytes_received};
+      .bytes_received = bytes_received + other.bytes_received,
+      .shadow_bytes_received = shadow_bytes_received
+                               + other.shadow_bytes_received};
 }
 
 usage& usage::operator+=(const usage& other) {
     bytes_sent += other.bytes_sent;
     bytes_received += other.bytes_received;
+    shadow_bytes_received += other.shadow_bytes_received;
     return *this;
 }
 
@@ -120,6 +123,7 @@ void usage_window::reset(uint64_t now) {
     u.bytes_received = 0;
     u.bytes_cloud_storage = std::nullopt;
     u.datalake_usage = {};
+    u.shadow_bytes_received = 0;
 }
 
 template<typename clock_type>

@@ -91,6 +91,14 @@ public:
     /// kafka port
     void add_bytes_recv(size_t recv) { _current_bucket.bytes_received += recv; }
 
+    /// Adds shadow traffic bytes received to current open window
+    ///
+    /// Should be called at the shadowing layer to account for bytes received
+    /// via shadowing replication
+    void add_shadow_bytes_recv(size_t recv) {
+        _current_bucket.shadow_bytes_received += recv;
+    }
+
     /// Obtain all current stats - for all shards
     ///
     ss::future<std::vector<usage_window>> get_usage_stats() const;
