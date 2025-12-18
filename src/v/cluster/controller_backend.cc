@@ -440,9 +440,9 @@ ss::future<> controller_backend::bootstrap_controller_backend() {
     _topic_table_notify_handle
       = _topics.local().register_ntp_delta_notification(
         [this](topic_table::ntp_delta_range_t deltas_range) {
-            for (const auto& d : deltas_range) {
-                process_delta(d);
-            }
+            chunked_vector<topic_table::ntp_delta> deltas(
+              deltas_range.begin(), deltas_range.end());
+            process_deltas(std::move(deltas));
         });
 
     co_return;
@@ -657,19 +657,32 @@ controller_backend::calculate_learner_initial_offset(
       std::min(max_removable_local_log_offset, *retention_offset));
 }
 
-void controller_backend::process_delta(const topic_table::ntp_delta& d) {
+void controller_backend::process_deltas(
+  chunked_vector<topic_table::ntp_delta> deltas) {
+    ssx::spawn_with_gate(_gate, [this, deltas = std::move(deltas)] mutable {
+        return ss::do_with(
+          std::move(deltas),
+          [this](chunked_vector<topic_table::ntp_delta>& deltas) {
+              return ss::do_for_each(deltas, [this](topic_table::ntp_delta d) {
+                  return _reconciliation_sem.get_units(1).then(
+                    [this, d = std::move(d)](ssx::semaphore_units u) {
+                        ssx::background = process_delta(
+                          std::move(d), std::move(u));
+                    });
+              });
+          });
+    });
+}
+
+ss::future<> controller_backend::process_delta(
+  topic_table::ntp_delta d, ssx::semaphore_units u) {
     vlog(clusterlog.trace, "got delta: {}", d);
 
     // update partition_leaders_table if needed
 
     if (d.type == topic_table_ntp_delta_type::removed) {
-        ssx::spawn_with_gate(
-          _gate, [this, ntp = d.ntp, rev = d.revision] mutable {
-              return ss::do_with(std::move(ntp), [this, rev](const auto& ntp) {
-                  return _partition_leaders_table.local().remove_leader(
-                    ntp, rev);
-              });
-          });
+        co_await _partition_leaders_table.local().remove_leader(
+          d.ntp, d.revision);
     }
 
     // notify reconciliation fiber
@@ -697,7 +710,7 @@ void controller_backend::process_delta(const topic_table::ntp_delta& d) {
 
     rs.wakeup_event.set();
     if (inserted) {
-        ssx::background = reconcile_ntp_fiber(d.ntp, rs_it->second);
+        co_await reconcile_ntp_fiber(d.ntp, rs_it->second, std::move(u));
     }
 }
 
@@ -716,7 +729,14 @@ void controller_backend::notify_reconciliation(const model::ntp& ntp) {
       rs);
     rs.wakeup_event.set();
     if (inserted) {
-        ssx::background = reconcile_ntp_fiber(ntp, rs_it->second);
+        ssx::spawn_with_gate(_gate, [this, ntp = ntp, rs = rs_it->second] {
+            return _reconciliation_sem.get_units(1).then(
+              [this, ntp = std::move(ntp), rs = std::move(rs)](
+                ssx::semaphore_units u) {
+                  return reconcile_ntp_fiber(
+                    std::move(ntp), std::move(rs), std::move(u));
+              });
+        });
     }
 }
 
@@ -879,12 +899,9 @@ ss::future<> controller_backend::clear_orphan_topic_files(
 }
 
 ss::future<> controller_backend::reconcile_ntp_fiber(
-  model::ntp ntp, ss::lw_shared_ptr<ntp_reconciliation_state> rs) {
-    if (_gate.is_closed()) {
-        co_return;
-    }
-    auto gate_holder = _gate.hold();
-
+  model::ntp ntp,
+  ss::lw_shared_ptr<ntp_reconciliation_state> rs,
+  ssx::semaphore_units u) {
     // If we don't switch here, reconciliation will inherit the scheduling group
     // of whoever triggered it (could be e.g. the admin SG).
     co_await ss::coroutine::switch_to(ss::default_scheduling_group());
@@ -896,7 +913,6 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
         }
 
         try {
-            auto sem_units = co_await _reconciliation_sem.get_units(1);
             rs->last_retried_at = ss::lowres_clock::now();
             co_await try_reconcile_ntp(ntp, *rs);
             if (rs->is_reconciled()) {
@@ -914,6 +930,8 @@ ss::future<> controller_backend::reconcile_ntp_fiber(
             }
         }
     }
+
+    u.return_all();
 }
 
 ss::future<> controller_backend::try_reconcile_ntp(

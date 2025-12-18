@@ -270,10 +270,14 @@ private:
       model::revision_id bootstrap_revision,
       absl::flat_hash_map<model::ntp, model::revision_id> topic_table_snapshot);
 
-    void process_delta(const topic_table::ntp_delta&);
+    void process_deltas(chunked_vector<topic_table::ntp_delta>);
+    ss::future<> process_delta(topic_table::ntp_delta, ssx::semaphore_units);
 
+    // Meant to be called with `_gate` already held.
     ss::future<> reconcile_ntp_fiber(
-      model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>);
+      model::ntp,
+      ss::lw_shared_ptr<ntp_reconciliation_state>,
+      ssx::semaphore_units);
     ss::future<>
     try_reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
     ss::future<result<ss::stop_iteration>>
