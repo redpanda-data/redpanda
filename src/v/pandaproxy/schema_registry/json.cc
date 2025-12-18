@@ -851,9 +851,11 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
             return merge_references(references_objects);
         }
     }
-    throw std::runtime_error(
-      fmt::format(
-        "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p}));
+    throw as_exception(
+      error_info{
+        error_code::internal_server_error,
+        fmt::format(
+          "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p})});
 }
 
 // helper to convert a boolean to a schema, and to traverse $refs
