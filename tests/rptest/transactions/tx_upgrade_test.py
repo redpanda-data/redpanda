@@ -262,6 +262,11 @@ class TxUpgradeCompactionTest(TxUpgradeTestBase, LogCompactionTxRemovalMixin):
             )
             prev_version_str = ver_string(new_version)
 
+        # Once we have upgraded to the newest version, enable tx batch removal.
+        self.redpanda.set_cluster_config(
+            {"log_compaction_tx_batch_removal_enabled": True}
+        )
+
         # One last round of producing
         self._produce_with_transactions(topic=self.topic_spec.name)
 

@@ -815,9 +815,10 @@ class LogCompactionTxRemovalTestBase(
         ),
     }
 
-    def __init__(self, test_context):
+    def __init__(self, test_context, extra_rp_conf=None):
         self.test_context = test_context
         # Run with small segments and a very frequent compaction interval.
+
         self.extra_rp_conf = {
             "log_compaction_interval_ms": 1000,
             "log_segment_size": 2 * 1024**2,  # 2 MiB
@@ -826,6 +827,8 @@ class LogCompactionTxRemovalTestBase(
             "storage_target_replay_bytes": 100,
             "log_segment_ms": 60,
         }
+        if extra_rp_conf:
+            self.extra_rp_conf.update(extra_rp_conf)
         self.transaction_timeout_ms = 2000
 
         super().__init__(
@@ -891,7 +894,8 @@ class LogCompactionTxRemovalTestBase(
 
 class LogCompactionTxRemovalTest(LogCompactionTxRemovalTestBase):
     def __init__(self, test_context):
-        super().__init__(test_context)
+        extra_rp_conf = {"log_compaction_tx_batch_removal_enabled": True}
+        super().__init__(test_context, extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=4)
     def test_tx_control_batch_removal(self):
@@ -972,6 +976,11 @@ class LogCompactionTxRemovalUpgradeTest(LogCompactionTxRemovalTestBase):
             self.may_have_tx_batch_version
         ):
             self.upgrade_to_version(version)
+
+        # Once we have upgraded to the newest version, enable tx batch removal.
+        self.redpanda.set_cluster_config(
+            {"log_compaction_tx_batch_removal_enabled": True}
+        )
 
         # Perform rest of test
         self.do_test_tx_control_batch_removal(test_case_name, test_case)

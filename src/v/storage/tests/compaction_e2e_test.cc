@@ -2328,6 +2328,8 @@ TEST_F(CompactionFixtureTest, SuperfluousPlaceholderRemoval) {
 }
 
 TEST_F(CompactionFixtureTest, AbortTransactions) {
+    test_local_cfg.get("log_compaction_tx_batch_removal_enabled")
+      .set_value(true);
     using cluster::tx_executor;
     tx_executor exec;
     auto term = partition->raft()->term();
@@ -2401,6 +2403,8 @@ TEST_F(CompactionFixtureTest, AbortTransactions) {
 }
 
 TEST_F(CompactionFixtureTest, CommitTransactions) {
+    test_local_cfg.get("log_compaction_tx_batch_removal_enabled")
+      .set_value(true);
     using cluster::tx_executor;
     tx_executor exec;
     auto term = partition->raft()->term();
