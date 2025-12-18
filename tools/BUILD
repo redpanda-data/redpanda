@@ -119,7 +119,6 @@ genrule(
           "--combined-profile-file $(RULEDIR)/pgo_profile.profdata",
     tags = [
         "manual",
-        "no-sandbox",
         "supports-graceful-termination",
     ],
     tools = [
