@@ -20,6 +20,9 @@
 
 namespace compaction {
 
+bool is_tx_batch_compaction_enabled(
+  ss::sharded<features::feature_table>& feature_table);
+
 // Returns `true` if the provided `record_batch_type` is a control batch that is
 // immediately removable during compaction. This means we do not need to
 // consider either deduplication (compactible) or `delete.retention.ms` (a form
