@@ -49,6 +49,7 @@ async def start_dev_cluster(dev_cluster_py: str, redpanda_bin: str, tmpdir: str)
     data_dir = os.path.join(tmpdir, "rp_data")
     os.makedirs(data_dir, exist_ok=True)
     cmd = [
+        sys.executable,
         dev_cluster_py,
         "--cores",
         "2",
@@ -151,9 +152,7 @@ async def profile(args: argparse.Namespace, tmpdir: str, redpanda_bin: str):
     failed = False
     try:
         cluster_proc = await start_dev_cluster(
-            args.dev_cluster_py,
-            redpanda_bin,
-            tmpdir,
+            args.dev_cluster_py, redpanda_bin, tmpdir
         )
         await read_until(cluster_proc, CLUSTER_STARTUP_MARKER, "cluster")
         cluster_task = asyncio.create_task(continue_stream(cluster_proc, "cluster"))

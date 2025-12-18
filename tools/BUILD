@@ -68,25 +68,6 @@ py_binary(
     deps = DEV_CLUSTER_PYTHON_DEPS,
 )
 
-# dev cluster target for the pgo genrule. We need dev_cluster as a tool
-# dependency such that it provides the deps/runfiles. That however makes it
-# dependencies (redpanda) built in "host-config" which is not what we want.
-py_binary(
-    name = "dev_cluster_for_pgo",
-    testonly = True,
-    srcs = [
-        "dev_cluster.py",
-    ],
-    data = [
-        "//bazel/thirdparty:grafana",
-        "//bazel/thirdparty:minio",
-        "//bazel/thirdparty:prometheus",
-    ],
-    main = "dev_cluster.py",
-    visibility = ["//visibility:private"],
-    deps = DEV_CLUSTER_PYTHON_DEPS,
-)
-
 # Package redpanda binary into a tarball alongside with all needed runfiles. We
 # can't make a redpanda a "tool" dependency as otherwise it will run under
 # "host-config"
@@ -101,18 +82,33 @@ pkg_tar(
     visibility = ["//visibility:private"],
 )
 
+# pgo training script used as a tool target which also sets up the python deps
+# for dev_cluster.py such that we can run dev_cluster from within train_pgo
+py_binary(
+    name = "train_pgo",
+    testonly = True,
+    srcs = [
+        "pgo_bolt/train_pgo.py",
+    ],
+    data = [
+        "dev_cluster.py",
+    ],
+    visibility = ["//visibility:private"],
+    deps = DEV_CLUSTER_PYTHON_DEPS,
+)
+
 genrule(
     name = "pgo_profile",
     testonly = True,
     srcs = [
         "//bazel/thirdparty:omb_minimal",
         "@current_llvm_toolchain//:llvm-profdata",
-        "pgo_bolt/train_pgo.py",
+        "dev_cluster.py",
         ":redpanda_package_for_pgo",
     ],
     outs = ["pgo_profile.profdata"],
-    cmd = "$(execpath pgo_bolt/train_pgo.py) " +
-          "--dev-cluster-py $(execpath :dev_cluster_for_pgo) " +
+    cmd = "$(execpath :train_pgo) " +
+          "--dev-cluster-py $(location dev_cluster.py) " +
           "--llvm-profdata-bin $(execpath @current_llvm_toolchain//:llvm-profdata) " +
           "--redpanda-tar $(location :redpanda_package_for_pgo) " +
           "--omb-benchmark $(execpath //bazel/thirdparty:omb_minimal) " +
@@ -122,7 +118,7 @@ genrule(
         "supports-graceful-termination",
     ],
     tools = [
-        ":dev_cluster_for_pgo",
+        ":train_pgo",
     ],
     visibility = ["//visibility:public"],
 )
