@@ -467,12 +467,14 @@ public:
 
         chunked_vector<kafka::offset> expected_offsets;
         expected_offsets.reserve(batches.size());
+        uint64_t total_bytes = 0;
         for (const auto& batch : batches) {
             _highest_seen_pid = std::max(
               _highest_seen_pid,
               ::model::producer_id{batch.header().producer_id});
             expected_offsets.push_back(
               ::model::offset_cast(batch.base_offset()));
+            total_bytes += batch.size_bytes();
         }
         auto new_last_replicated_begin = ::model::offset_cast(
           batches.front().base_offset());
@@ -514,6 +516,15 @@ public:
           timeout,
           as);
         _last_replicated_offset = new_last_replicated_end;
+        stages.replicate_finished = stages.replicate_finished.then(
+          [this, total_bytes](result<raft::replicate_result> result) {
+              if (result.has_error()) {
+                  return result;
+              }
+              // Update usage manager with the number of bytes replicated
+              _usage_mgr.add_shadow_bytes_recv(total_bytes);
+              return result;
+          });
         return stages;
     }
 
@@ -602,7 +613,7 @@ private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     const cluster::metadata_cache& _metadata_cache;
     cluster::id_allocator_frontend& _id_allocator_frontend;
-    [[maybe_unused]] kafka::usage_manager& _usage_mgr;
+    kafka::usage_manager& _usage_mgr;
     ss::shared_ptr<kafka::write_at_offset_stm> _stm;
     // set in start();
     std::optional<kafka::offset> _last_replicated_offset;
