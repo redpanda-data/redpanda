@@ -32,7 +32,7 @@ bool is_removable_control_batch(
     // `log_compaction_disable_tx_batch_removal()`.
     auto is_co_topic = model::is_consumer_offsets_topic(ntp);
     auto remove_user_tx_fence_enabled
-      = !config::shard_local_cfg().log_compaction_disable_tx_batch_removal()
+      = config::shard_local_cfg().log_compaction_tx_batch_removal_enabled()
         && feature_table.local().is_active(
           features::feature::coordinated_compaction);
     auto tx_fence_removable = batch_type == model::record_batch_type::tx_fence

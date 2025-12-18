@@ -1130,11 +1130,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
   , log_compaction_disable_tx_batch_removal(
+      *this, "log_compaction_disable_tx_batch_removal")
+  , log_compaction_tx_batch_removal_enabled(
       *this,
-      "log_compaction_disable_tx_batch_removal",
-      "Disable removal of transactional control batches. This should only be "
-      "toggled to `true` in extreme cases of proven instability due to issues "
-      "with transactional control batch removal.",
+      "log_compaction_tx_batch_removal_enabled",
+      "Enables removal of transactional control batches during compaction. "
+      "These batches are removed according to a topic's configured "
+      "delete.retention.ms.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
   , retention_bytes(

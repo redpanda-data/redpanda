@@ -212,7 +212,7 @@ ss::future<index_state> deduplicate_segment(
     auto unset_transactional_bit_enabled
       = feature_table.local().is_active(
           features::feature::coordinated_compaction)
-        && !config::shard_local_cfg().log_compaction_disable_tx_batch_removal();
+        && config::shard_local_cfg().log_compaction_tx_batch_removal_enabled();
     const bool past_tombstone_delete_horizon
       = internal::is_past_tombstone_delete_horizon(seg, cfg);
     bool may_have_tombstone_records = false;
