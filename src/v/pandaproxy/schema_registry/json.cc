@@ -14,6 +14,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/inlined_vector.h"
+#include "config/configuration.h"
 #include "json/chunked_buffer.h"
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
@@ -283,13 +284,13 @@ public:
         return &(it->second);
     }
 
-    int remaining_ref_units() const { return _ref_units; }
-    int consume_ref_units() { return --_ref_units; }
+    ssize_t remaining_ref_units() const { return _ref_units; }
+    ssize_t consume_ref_units() { return --_ref_units; }
 
 private:
     const json_schema_definition::impl& _schema;
-    static constexpr int max_recursion_depth{5};
-    int _ref_units{max_recursion_depth};
+    ssize_t _ref_units{
+      config::shard_local_cfg().schema_registry_max_json_recursion_depth()};
 };
 
 struct context {
