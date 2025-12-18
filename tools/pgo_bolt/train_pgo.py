@@ -45,8 +45,8 @@ async def continue_stream(proc: asyncio.subprocess.Process, tag: str):
         print(f"[{tag}] - {line}")
 
 
-async def start_dev_cluster(dev_cluster_py: str, redpanda_bin: str):
-    data_dir = "/dev/shm/rp_data/"
+async def start_dev_cluster(dev_cluster_py: str, redpanda_bin: str, tmpdir: str):
+    data_dir = os.path.join(tmpdir, "rp_data")
     os.makedirs(data_dir, exist_ok=True)
     cmd = [
         dev_cluster_py,
@@ -153,6 +153,7 @@ async def profile(args: argparse.Namespace, tmpdir: str, redpanda_bin: str):
         cluster_proc = await start_dev_cluster(
             args.dev_cluster_py,
             redpanda_bin,
+            tmpdir,
         )
         await read_until(cluster_proc, CLUSTER_STARTUP_MARKER, "cluster")
         cluster_task = asyncio.create_task(continue_stream(cluster_proc, "cluster"))
@@ -212,7 +213,9 @@ def extra_rp_tar(rp_tar: str, temp_dir: str):
 
 
 def main(args: argparse.Namespace):
-    with tempfile.TemporaryDirectory(prefix="redpanda_pgo_") as tmpdirname:
+    with tempfile.TemporaryDirectory(
+        prefix="redpanda_pgo_", dir="/dev/shm"
+    ) as tmpdirname:
         profile_dir = os.path.join(tmpdirname, "profile_dir")
         os.makedirs(profile_dir)
         os.environ["LLVM_PROFILE_FILE"] = f"{profile_dir}/data-%p.profraw"
