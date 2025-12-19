@@ -10,34 +10,37 @@
 
 #include "cloud_io/provider.h"
 #include "iceberg/uri.h"
-#include "test_utils/test.h"
+
+#include <gtest/gtest.h>
 
 #include <variant>
 
+namespace {
 using namespace iceberg;
 
 template<auto Start, auto End, auto Inc, class F>
 constexpr void constexpr_for(F&& f) {
     if constexpr (Start < End) {
         f(std::integral_constant<decltype(Start), Start>());
-        constexpr_for<Start + Inc, End, Inc>(f);
+        constexpr_for<Start + Inc, End, Inc>(std::forward<F>(f));
     }
 }
 
-auto valid_paths = std::vector{
-  std::filesystem::path("a"),
-  std::filesystem::path("foo/bar/baz/manifest.avro"),
-};
+constexpr auto valid_paths = std::to_array({"a", "foo/bar/baz/manifest.avro"});
 
 template<typename V>
 void test_uri_conversion();
 
 template<>
 void test_uri_conversion<cloud_io::s3_compat_provider>() {
-    auto bucket = cloud_storage_clients::bucket_name("testbucket1");
-    auto other_bucket = cloud_storage_clients::bucket_name("testbucket2");
+    const std::vector<cloud_storage_clients::bucket_name> examples = {
+      cloud_storage_clients::bucket_name{"testbucket1"},
+      cloud_storage_clients::bucket_name{"test.bucket.name"}};
 
-    auto other_converter = uri_converter(
+    const auto unrelated_bucket = cloud_storage_clients::bucket_name(
+      "testbucket2");
+
+    const auto other_converter = uri_converter(
       cloud_io::s3_compat_provider{"otherscheme"});
 
     auto s3_compat_provider_schemes = std::vector{"s3", "gcs"};
@@ -45,24 +48,26 @@ void test_uri_conversion<cloud_io::s3_compat_provider>() {
         uri_converter convertor(
           cloud_io::provider{cloud_io::s3_compat_provider{scheme}});
 
-        for (const auto& path : valid_paths) {
-            auto uri = convertor.to_uri(bucket, path);
+        for (const auto& b : examples) {
+            for (const auto& path : valid_paths) {
+                auto uri = convertor.to_uri(b, path);
 
-            // Forward
-            ASSERT_EQ(
-              uri, fmt::format("{}://testbucket1/{}", scheme, path.native()));
+                // Forward
+                ASSERT_EQ(uri, fmt::format("{}://{}/{}", scheme, b, path));
 
-            // Backward
-            auto path_res = convertor.from_uri(bucket, uri);
-            ASSERT_TRUE(path_res.has_value())
-              << "Failed to get path from URI: " << uri;
-            ASSERT_EQ(path_res.value(), path);
+                // Backward
+                auto path_res = convertor.from_uri(b, uri);
+                ASSERT_TRUE(path_res.has_value())
+                  << "Failed to get path from URI: " << uri;
+                ASSERT_EQ(path_res.value(), path);
 
-            // Should fail with different bucket.
-            ASSERT_FALSE(convertor.from_uri(other_bucket, uri).has_value());
+                // Should fail with different bucket.
+                ASSERT_FALSE(
+                  convertor.from_uri(unrelated_bucket, uri).has_value());
 
-            // Should fail with other converter.
-            ASSERT_FALSE(other_converter.from_uri(bucket, uri).has_value());
+                // Should fail with other converter.
+                ASSERT_FALSE(other_converter.from_uri(b, uri).has_value());
+            }
         }
     }
 }
@@ -83,7 +88,7 @@ void test_uri_conversion<cloud_io::abs_provider>() {
           uri,
           fmt::format(
             "abfss://testbucket1@testaccount123.dfs.core.windows.net/{}",
-            path.native()));
+            path));
 
         // Backward
         auto path_res = convertor.from_uri(bucket, uri);
@@ -107,5 +112,7 @@ constexpr void test_uri_conversion_all_providers() {
           std::variant_alternative_t<i.value, cloud_io::provider>>();
     });
 }
+
+} // namespace
 
 TEST(IcebergUriTest, Test) { test_uri_conversion_all_providers(); }
