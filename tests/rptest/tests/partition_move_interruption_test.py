@@ -1,15 +1,30 @@
 import random
+from itertools import product
+from typing import Sequence, cast
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricsEndpoint
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierParams,
+    KgoVerifierConsumerGroupConsumer,
+    KgoVerifierMultiConsumerGroupConsumer,
+    KgoVerifierMultiProducer,
+    KgoVerifierProducer,
+)
+from rptest.services.redpanda import (
+    get_cloud_storage_type,
+    CloudStorageType,
+    CLOUD_TOPICS_CONFIG_STR,
+    MetricsEndpoint,
+    RESTART_LOG_ALLOW_LIST,
+    SISettings,
+)
 
-from rptest.tests.nodes_decommissioning_test import KgoVerifierProducer
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
@@ -30,6 +45,13 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
     """
 
     def __init__(self, test_context, *args, **kwargs):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
         super(PartitionMoveInterruption, self).__init__(
             test_context,
             *args,
@@ -42,8 +64,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
                 "default_topic_replications": 3,
                 "compacted_log_segment_size": 1 * (2**20),
                 "controller_snapshot_max_age_sec": 3,
+                CLOUD_TOPICS_CONFIG_STR: True,
+                "enable_cluster_metadata_upload_loop": False,
             },
             node_prealloc_count=1,
+            si_settings=si_settings,
             **kwargs,
         )
         self.test_topic: str = ""
@@ -55,6 +80,13 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             self.min_records = 5000
         else:
             self.min_records = 100000
+
+        self.producer: KgoVerifierProducer | KgoVerifierMultiProducer
+        self.consumer: (
+            KgoVerifierConsumerGroupConsumer | KgoVerifierMultiConsumerGroupConsumer
+        )
+
+        self.rpk = RpkTool(self.redpanda)
 
     def start_producer(self):
         self.producer = KgoVerifierProducer(
@@ -86,6 +118,34 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             compacted=compacted,
             group_name="pmi-consumer",
             tolerate_data_loss=tolerate_data_loss,
+        )
+
+        self.consumer.start(clean=False)
+
+    def start_multi_producer(self, kgo_params: list[KgoVerifierParams]):
+        self.producer = KgoVerifierMultiProducer(
+            self.test_context,
+            self.redpanda,
+            kgo_params,
+            custom_node=self.preallocated_nodes,
+        )
+        self.producer.start(clean=False)
+        # wait for an arbitrary number of acks here.
+        # value cargo culted from start_producer, which waits for acks > 10.
+        cast(KgoVerifierMultiProducer, self.producer).wait_for_acks(
+            [11, 11], timeout_sec=120, backoff_sec=1
+        )
+
+    def start_multi_consumer(
+        self,
+        kgo_params: list[KgoVerifierParams],
+    ):
+        self.consumer = KgoVerifierMultiConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            kgo_params,
+            readers=5,
+            custom_node=self.preallocated_nodes,
         )
 
         self.consumer.start(clean=False)
@@ -164,8 +224,10 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             lambda: self.metrics_correct(prev_assignment, assignmets), timeout_sec=10
         )
 
-    def _random_move_and_cancel(self, unclean_abort, force_back):
-        metadata = self.client().describe_topics()
+    def _random_move_and_cancel(
+        self, unclean_abort, force_back, topics: list[str] | None = None
+    ):
+        metadata = self.client().describe_topics(topics)
         topic, partition = self._random_partition(metadata)
         prev_assignment, assignments = self._dispatch_random_partition_move(
             topic=topic, partition=partition, allow_no_op=False
@@ -186,46 +248,94 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self.redpanda.set_cluster_config({"raft_learner_recovery_rate": str(new_rate)})
         wait_for_recovery_throttle_rate(redpanda=self.redpanda, new_rate=new_rate)
 
+    def _create_topics(self, kgo_params: Sequence[KgoVerifierParams]) -> None:
+        for p in kgo_params:
+            spec = p.topic_spec
+            self.rpk.create_topic(
+                topic=spec.name,
+                partitions=spec.partition_count,
+                replicas=spec.replication_factor,
+                config={
+                    TopicSpec.PROPERTY_CLOUD_TOPIC_ENABLE: "true"
+                    if spec.cloud_topics_enabled
+                    else "false",
+                    TopicSpec.PROPERTY_CLEANUP_POLICY: spec.cleanup_policy,
+                },
+            )
+
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(
         replication_factor=[1, 3],
         unclean_abort=[True, False],
         force_back=[True, False],
         compacted=[False, True],
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
     )
     def test_cancelling_partition_move(
-        self, replication_factor, unclean_abort, force_back, compacted
+        self,
+        replication_factor,
+        unclean_abort,
+        force_back,
+        compacted,
+        cloud_storage_type,
     ):
         """
         Cancel partition moving with active consumer / producer
         """
-        spec = TopicSpec(
-            partition_count=self.partition_count,
-            replication_factor=replication_factor,
-            cleanup_policy=TopicSpec.CLEANUP_COMPACT
-            if compacted
-            else TopicSpec.CLEANUP_DELETE,
-        )
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    name="panda-test-topic",
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT
+                    if compacted
+                    else TopicSpec.CLEANUP_DELETE,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=compacted,
+                tolerate_data_loss=unclean_abort,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    name="cloud-topic-test-topic",
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT
+                    if compacted
+                    else TopicSpec.CLEANUP_DELETE,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=compacted,
+                tolerate_data_loss=unclean_abort,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
+        self._create_topics(kgo_params)
 
-        self.start_producer()
+        self.start_multi_producer(kgo_params)
         if not compacted:
-            self.start_consumer(compacted=compacted, tolerate_data_loss=unclean_abort)
+            self.start_multi_consumer(kgo_params)
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(0)
 
         for i in range(self.moves):
             self._random_move_and_cancel(
-                unclean_abort=unclean_abort, force_back=force_back
+                unclean_abort=unclean_abort,
+                force_back=force_back,
+                topics=[p.topic_spec.name for p in kgo_params],
             )
             if i % 2 == 0:
                 # restart one of the nodes after each move
                 self.redpanda.restart_nodes([random.choice(self.redpanda.nodes)])
         # start consumer late in the process for the compaction to trigger
         if compacted:
-            self.start_consumer(compacted=compacted, tolerate_data_loss=unclean_abort)
+            self.start_multi_consumer(kgo_params)
 
         self.producer.wait()
         self.consumer.wait()
@@ -234,37 +344,62 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
     @matrix(
         replication_factor=[1, 3],
         unclean_abort=[True, False],
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
     )
-    def test_cancelling_partition_move_x_core(self, replication_factor, unclean_abort):
+    def test_cancelling_partition_move_x_core(
+        self, replication_factor, unclean_abort, cloud_storage_type
+    ):
         """
         Cancel partition moving with active consumer / producer
         """
 
-        spec = TopicSpec(
-            partition_count=self.partition_count,
-            replication_factor=replication_factor,
-            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
-        )
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=True,
+                tolerate_data_loss=unclean_abort,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=True,
+                tolerate_data_loss=unclean_abort,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
+        self._create_topics(kgo_params)
 
-        self.start_producer()
-        self.start_consumer(compacted=True, tolerate_data_loss=unclean_abort)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(0)
 
         partition = random.randint(0, self.partition_count - 1)
-        for i in range(self.moves):
+        for p, i in product(kgo_params, range(self.moves)):
+            topic = p.topic_spec.name
             # move partition between cores first
             x_core = i < self.moves / 2
 
             prev_assignment, new_assignment = self._dispatch_random_partition_move(
-                topic=self.test_topic, partition=partition, x_core_only=x_core
+                topic=topic, partition=partition, x_core_only=x_core
             )
             if x_core:
                 self._wait_post_move(
-                    topic=self.test_topic,
+                    topic=topic,
                     partition=partition,
                     assignments=new_assignment,
                     timeout_sec=60,
@@ -272,7 +407,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             else:
                 self._request_move_cancel(
                     unclean_abort=unclean_abort,
-                    topic=self.test_topic,
+                    topic=topic,
                     partition=partition,
                     previous_assignment=prev_assignment,
                 )
@@ -307,96 +442,144 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self._wait_post_move(self.test_topic, partition, assignments, 60)
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_forced_cancellation(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_forced_cancellation(self, cloud_storage_type):
         partitions = 4
 
-        spec = TopicSpec(
-            name="panda-test-topic", partition_count=partitions, replication_factor=3
-        )
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    name="panda-test-topic",
+                    partition_count=partitions,
+                    replication_factor=3,
+                ),
+                self.msg_size,
+                self.min_records,
+                key_set_cardinality=500,
+                tolerate_data_loss=True,
+                group_name="pmi-consumer",
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    name="cloud-topic-test-topic",
+                    partition_count=partitions,
+                    replication_factor=3,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                key_set_cardinality=500,
+                tolerate_data_loss=True,
+                group_name="pmi-consumer",
+            ),
+        ]
+        self._create_topics(kgo_params)
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
-
-        self.start_producer()
-        self.start_consumer(compacted=False, tolerate_data_loss=True)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
 
         admin = Admin(self.redpanda)
-        partition = random.randint(0, partitions - 1)
 
-        # get current assignments
-        assignment = self._get_node_assignments(
-            admin, self.test_topic, partition=partition
-        )
+        for topic in [p.topic_spec.name for p in kgo_params]:
+            partition = random.randint(0, partitions - 1)
+            # get current assignments
+            assignment = self._get_node_assignments(admin, topic, partition=partition)
 
-        # drop one of the replicas, new quorum requires both of them to be up
-        new_assignment = assignment[0:2]
+            # drop one of the replicas, new quorum requires both of them to be up
+            new_assignment = assignment[0:2]
 
-        self.logger.info(
-            f"new assignment for {self.test_topic}/{partition}: {new_assignment}"
-        )
-        # throttle recovery to prevent partition move from finishing
-        # self._throttle_recovery(10)
-        # at this point both of the replicas should be voters, stop one of the
-        # nodes form new assignment to make sure that new quorum is no
-        # longer available
-        to_stop = random.choice(new_assignment)["node_id"]
-        self.redpanda.stop_node(self.redpanda.get_node(to_stop))
+            self.logger.info(
+                f"new assignment for {topic}/{partition}: {new_assignment}"
+            )
+            # throttle recovery to prevent partition move from finishing
+            # self._throttle_recovery(10)
+            # at this point both of the replicas should be voters, stop one of the
+            # nodes form new assignment to make sure that new quorum is no
+            # longer available
+            to_stop = random.choice(new_assignment)["node_id"]
+            self.logger.info(f"{topic=}: {to_stop=}")
+            self.redpanda.stop_node(self.redpanda.get_node(to_stop))
 
-        # wait for new controller to be elected
-        def new_controller():
-            return self.redpanda.idx(self.redpanda.controller()) != to_stop
+            # wait for new controller to be elected
+            def new_controller():
+                return self.redpanda.idx(self.redpanda.controller()) != to_stop
 
-        wait_until(new_controller, 10, 1)
+            wait_until(new_controller, 10, 1)
 
-        # update replica set
-        self._set_partition_assignments(
-            self.test_topic, partition, new_assignment, admin
-        )
+            # update replica set
+            self._set_partition_assignments(topic, partition, new_assignment, admin)
 
-        self._wait_for_move_in_progress(self.test_topic, partition)
+            self._wait_for_move_in_progress(topic, partition)
 
-        # abort moving partition
-        admin.cancel_partition_move(self.test_topic, partition=partition)
-        admin.force_abort_partition_move(self.test_topic, partition=partition)
+            # abort moving partition
+            admin.cancel_partition_move(topic, partition=partition)
+            admin.force_abort_partition_move(topic, partition=partition)
 
-        # # restart the node
-        # self.redpanda.start_node(self.redpanda.get_node(to_stop))
+            # wait for previous assignment to be set
+            def cancelled():
+                info = admin.get_partitions(topic, partition)
 
-        # wait for previous assignment to be set
-        def cancelled():
-            info = admin.get_partitions(self.test_topic, partition)
+                converged = self._equal_assignments(info["replicas"], assignment)
+                return converged and info["status"] == "done"
 
-            converged = self._equal_assignments(info["replicas"], assignment)
-            return converged and info["status"] == "done"
+            # wait until redpanda reports complete
+            wait_until(cancelled, timeout_sec=30, backoff_sec=2)
 
-        # wait until redpanda reports complete
-        wait_until(cancelled, timeout_sec=30, backoff_sec=2)
+            # restart the node
+            self.redpanda.start_node(self.redpanda.get_node(to_stop))
 
         self.producer.wait()
         self.consumer.wait()
 
     @cluster(num_nodes=5)
-    def test_cancelling_all_moves_in_cluster(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_cancelling_all_moves_in_cluster(self, cloud_storage_type):
         """
         Cancel all partition moves in the cluster
         """
 
-        spec = TopicSpec(partition_count=self.partition_count, replication_factor=3)
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
+        self._create_topics(kgo_params)
 
-        self.start_producer()
-        self.start_consumer(compacted=False, tolerate_data_loss=False)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(0)
         current_movements = {}
         partitions = list(range(0, self.partition_count))
-        for _ in range(self.partition_count - 1):
+        for i in range(self.partition_count - 1):
+            topic = kgo_params[i % 2].topic_spec.name
             partition = random.choice(partitions)
             partitions.remove(partition)
             current_movements[partition] = self._dispatch_random_partition_move(
-                self.test_topic, partition
+                topic, partition
             )
 
         self.logger.info(f"moving {current_movements}")
@@ -422,28 +605,53 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         )
 
     @cluster(num_nodes=5)
-    def test_cancelling_all_moves_from_node(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_cancelling_all_moves_from_node(self, cloud_storage_type):
         """
         Cancel all partition moves directed to/from given node
         """
 
-        spec = TopicSpec(partition_count=self.partition_count, replication_factor=3)
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
+        self._create_topics(kgo_params)
 
-        self.start_producer()
-        self.start_consumer(compacted=False, tolerate_data_loss=False)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
 
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(0)
         current_movements = {}
         partitions = list(range(0, self.partition_count))
-        for _ in range(self.partition_count - 1):
+        for i in range(self.partition_count - 1):
             partition = random.choice(partitions)
             partitions.remove(partition)
+            topic = kgo_params[i % 2].topic_spec.name
             current_movements[partition] = self._dispatch_random_partition_move(
-                self.test_topic, partition
+                topic, partition
             )
 
         self.logger.info(f"moving {current_movements}")
@@ -491,140 +699,86 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         return None
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_cancelling_partition_move_node_down(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_cancelling_partition_move_node_down(self, cloud_storage_type):
         """
         Cancel partition moving with active consumer / producer
         """
 
-        spec = TopicSpec(partition_count=self.partition_count, replication_factor=3)
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    partition_count=self.partition_count,
+                    replication_factor=3,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+        ]
 
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
-        self.start_producer()
-        self.start_consumer(compacted=False, tolerate_data_loss=False)
+        self._create_topics(kgo_params)
 
-        metadata = self.client().describe_topics()
-        topic, partition = self._random_partition(metadata)
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
+
         admin = Admin(self.redpanda)
-        assignments = self._get_node_assignments(admin, topic, partition)
-        prev_assignments = assignments.copy()
-
-        self.logger.info(
-            f"initial assignments for {topic}/{partition}: {prev_assignments}"
-        )
-
-        replica_ids = [a["node_id"] for a in prev_assignments]
-        # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(0)
-        to_stop = None
-        for n in self.redpanda.nodes:
-            id = self.redpanda.node_id(n)
-            if id not in replica_ids:
-                previous = assignments.pop()
-                assignments.append({"node_id": id})
-                # stop a node that is going to be removed from current partition assignment
-                to_stop = self.get_node_by_id(previous["node_id"])
-                self.redpanda.stop_node(to_stop)
-                break
-
-        def new_controller():
-            leader_id = admin.get_partition_leader(
-                namespace="redpanda", topic="controller", partition=0
-            )
-            return leader_id != -1 and leader_id != self.redpanda.node_id(to_stop)
-
-        wait_until(new_controller, 30)
-
-        self.logger.info(
-            f"moving {topic}/{partition}: {prev_assignments} -> {assignments}"
-        )
-
-        self._set_partition_assignments(topic, partition, assignments, admin)
-
-        self._wait_for_move_in_progress(topic, partition)
-
-        admin.cancel_partition_move(topic, partition)
-
-        def move_finished():
-            for n in self.redpanda.started_nodes():
-                partition_info = admin.get_partitions(
-                    topic=topic, partition=partition, node=n
-                )
-                if partition_info["status"] != "done":
-                    return False
-                if not self._equal_assignments(
-                    partition_info["replicas"], prev_assignments
-                ):
-                    return False
-
-            return True
-
-        wait_until(move_finished, 30, backoff_sec=1)
-
-        self.producer.wait()
-        self.consumer.wait()
-
-    # TODO: investigate slow startups in debug mode
-    @skip_debug_mode
-    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(replication_factor=[1, 3])
-    def test_cancellations_interrupted_with_restarts(self, replication_factor):
-        spec = TopicSpec(
-            name="test-move-topic",
-            partition_count=self.partition_count,
-            replication_factor=replication_factor,
-        )
-
-        self.client().create_topic(spec)
-        self.test_topic = spec.name
-
-        self.start_producer()
-        self.start_consumer(compacted=False, tolerate_data_loss=False)
-
-        topic = spec.name
-        partition = 0
-        admin = Admin(self.redpanda)
-
-        assignments = self._get_node_assignments(admin, topic, partition)
-        prev_assignments = assignments.copy()
-
-        # throttle recovery to prevent partition move from finishing
-
-        for i in range(0, 10):
-            self._throttle_recovery(0)
-            should_cancel = i % 2
+        # TODO: loopify
+        for topic in [p.topic_spec.name for p in kgo_params]:
+            metadata = self.client().describe_topics([topic])
+            topic, partition = self._random_partition(metadata)
             assignments = self._get_node_assignments(admin, topic, partition)
             prev_assignments = assignments.copy()
-            self.logger.info(
-                f"[{i}] current assignments for {topic}/{partition}: {prev_assignments}"
-            )
-            replica_ids = [a["node_id"] for a in prev_assignments]
-            available_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
-            random.shuffle(available_ids)
-            for id in available_ids:
-                if id not in replica_ids:
-                    assignments.pop()
-                    assignments.append({"node_id": id})
 
             self.logger.info(
-                f"[{i}] moving {topic}/{partition}: {prev_assignments} -> {assignments}"
+                f"initial assignments for {topic}/{partition}: {prev_assignments}"
+            )
+
+            replica_ids = [a["node_id"] for a in prev_assignments]
+            # throttle recovery to prevent partition move from finishing
+            self._throttle_recovery(0)
+            to_stop = None
+            for n in self.redpanda.nodes:
+                id = self.redpanda.node_id(n)
+                if id not in replica_ids:
+                    previous = assignments.pop()
+                    assignments.append({"node_id": id})
+                    # stop a node that is going to be removed from current partition assignment
+                    to_stop = self.get_node_by_id(previous["node_id"])
+                    self.redpanda.stop_node(to_stop)
+                    break
+
+            def new_controller():
+                leader_id = admin.get_partition_leader(
+                    namespace="redpanda", topic="controller", partition=0
+                )
+                return leader_id != -1 and leader_id != self.redpanda.node_id(to_stop)
+
+            wait_until(new_controller, 30)
+
+            self.logger.info(
+                f"moving {topic}/{partition}: {prev_assignments} -> {assignments}"
             )
 
             self._set_partition_assignments(topic, partition, assignments, admin)
 
             self._wait_for_move_in_progress(topic, partition)
 
-            if should_cancel:
-                try:
-                    admin.cancel_partition_move(topic, partition)
-                except Exception:
-                    pass
-
-            self._throttle_recovery(10000000)
-            for n in self.redpanda.nodes:
-                self.redpanda.stop_node(n, forced=True)
-            for n in self.redpanda.nodes:
-                self.redpanda.start_node(n)
+            admin.cancel_partition_move(topic, partition)
 
             def move_finished():
                 for n in self.redpanda.started_nodes():
@@ -633,17 +787,127 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
                     )
                     if partition_info["status"] != "done":
                         return False
-
-                    replicas = partition_info["replicas"]
-
-                    cancelled = self._equal_assignments(replicas, prev_assignments)
-                    reverted = self._equal_assignments(replicas, assignments)
-                    if not (cancelled or reverted):
+                    if not self._equal_assignments(
+                        partition_info["replicas"], prev_assignments
+                    ):
                         return False
 
                 return True
 
-            wait_until(move_finished, 80, backoff_sec=1)
+            wait_until(move_finished, 30, backoff_sec=1)
+
+            self.redpanda.start_node(to_stop)
+
+        self.producer.wait()
+        self.consumer.wait()
+
+    # TODO: investigate slow startups in debug mode
+    @skip_debug_mode
+    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @matrix(
+        replication_factor=[1, 3],
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
+    )
+    def test_cancellations_interrupted_with_restarts(
+        self, replication_factor, cloud_storage_type
+    ):
+        kgo_params = [
+            KgoVerifierParams(
+                TopicSpec(
+                    name="test-move-topic",
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+            KgoVerifierParams(
+                TopicSpec(
+                    name="cloud-topic-test-move-topic",
+                    partition_count=self.partition_count,
+                    replication_factor=replication_factor,
+                    cloud_topics_enabled=True,
+                ),
+                self.msg_size,
+                self.min_records,
+                compacted=False,
+                tolerate_data_loss=False,
+            ),
+        ]
+
+        self._create_topics(kgo_params)
+
+        self.start_multi_producer(kgo_params)
+        self.start_multi_consumer(kgo_params)
+
+        for p in kgo_params:
+            topic = p.topic_spec.name
+            partition = 0
+            admin = Admin(self.redpanda)
+
+            assignments = self._get_node_assignments(admin, topic, partition)
+            prev_assignments = assignments.copy()
+
+            # throttle recovery to prevent partition move from finishing
+
+            for i in range(0, 5):
+                self._throttle_recovery(0)
+                should_cancel = i % 2
+                assignments = self._get_node_assignments(admin, topic, partition)
+                prev_assignments = assignments.copy()
+                self.logger.info(
+                    f"[{i}] current assignments for {topic}/{partition}: {prev_assignments}"
+                )
+                replica_ids = [a["node_id"] for a in prev_assignments]
+                available_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
+                random.shuffle(available_ids)
+                for id in available_ids:
+                    if id not in replica_ids:
+                        assignments.pop()
+                        assignments.append({"node_id": id})
+
+                self.logger.info(
+                    f"[{i}] moving {topic}/{partition}: {prev_assignments} -> {assignments}"
+                )
+
+                self._set_partition_assignments(topic, partition, assignments, admin)
+
+                self._wait_for_move_in_progress(topic, partition)
+
+                if should_cancel:
+                    try:
+                        admin.cancel_partition_move(topic, partition)
+                    except Exception:
+                        pass
+
+                self._throttle_recovery(10000000)
+                for n in self.redpanda.nodes:
+                    self.redpanda.stop_node(n, forced=True)
+                for n in self.redpanda.nodes:
+                    self.redpanda.start_node(n)
+
+                def move_finished():
+                    for n in self.redpanda.started_nodes():
+                        partition_info = admin.get_partitions(
+                            topic=topic, partition=partition, node=n
+                        )
+                        if partition_info["status"] != "done":
+                            return False
+
+                        replicas = partition_info["replicas"]
+
+                        cancelled = self._equal_assignments(replicas, prev_assignments)
+                        reverted = self._equal_assignments(replicas, assignments)
+                        if not (cancelled or reverted):
+                            return False
+
+                    return True
+
+                wait_until(move_finished, 80, backoff_sec=1)
 
         self.producer.wait()
         self.consumer.wait()

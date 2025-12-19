@@ -98,6 +98,13 @@ class KgoVerifierParams:
         self.consumer_group_readers: int | None = consumer_group_readers
         self.max_uncommitted: int | None = max_uncommitted
 
+    @property
+    def topic_spec(self) -> TopicSpec:
+        assert isinstance(self.topic, TopicSpec), (
+            f"{type(self.topic)=}, expected TopicSpec"
+        )
+        return cast(TopicSpec, self.topic)
+
 
 class KgoVerifierService(Service):
     """
@@ -1292,7 +1299,6 @@ class KgoVerifierMultiService(Service):
         if clean:
             self.clean_node(node, **kwargs)
         for s in self._assigned_services(node):
-            print(f"start {s._topic}")
             s.start_node(node, clean=False, **kwargs)
 
     def wait_node(self, node: ClusterNode, timeout_sec: float | None = None) -> Any:
