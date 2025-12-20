@@ -160,7 +160,8 @@ public:
               throttle_no_progress),
           },
           std::make_unique<object_storage_test_impl>(&listed, &deleted, &cfg),
-          std::make_unique<epoch_source_test_impl>(&max_epoch)) {}
+          std::make_unique<epoch_source_test_impl>(&max_epoch),
+          std::make_unique<node_info_test_impl>()) {}
 
     void TearDown() override { gc.stop().get(); }
 

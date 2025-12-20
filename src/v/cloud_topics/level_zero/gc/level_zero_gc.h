@@ -31,6 +31,7 @@ namespace cluster {
 class controller_stm;
 class health_monitor_frontend;
 class topic_table;
+class members_table;
 } // namespace cluster
 
 namespace cloud_topics {
@@ -252,17 +253,20 @@ public:
     level_zero_gc(
       level_zero_gc_config,
       std::unique_ptr<object_storage>,
-      std::unique_ptr<epoch_source>);
+      std::unique_ptr<epoch_source>,
+      std::unique_ptr<node_info>);
 
     /*
      * Construct with default implementations of storage and epoch providers.
      */
     level_zero_gc(
+      model::node_id,
       cloud_io::remote*,
       cloud_storage_clients::bucket_name,
       seastar::sharded<cluster::health_monitor_frontend>*,
       seastar::sharded<cluster::controller_stm>*,
-      seastar::sharded<cluster::topic_table>*);
+      seastar::sharded<cluster::topic_table>*,
+      seastar::sharded<cluster::members_table>*);
 
     ~level_zero_gc();
 

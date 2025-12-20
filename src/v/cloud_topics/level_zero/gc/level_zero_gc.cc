@@ -30,8 +30,11 @@ namespace cloud_topics {
 class level_zero_gc::list_delete_worker {
 public:
     explicit list_delete_worker(
-      std::unique_ptr<object_storage> storage, level_zero_gc_probe& probe)
+      std::unique_ptr<object_storage> storage,
+      std::unique_ptr<node_info> node_info,
+      level_zero_gc_probe& probe)
       : storage_(std::move(storage))
+      , node_info_(std::move(node_info))
       , probe_(&probe)
       , worker_([](std::exception_ptr eptr) {
           vlog(cd_log.warn, "Exception from delete worker: {}", eptr);
@@ -164,6 +167,7 @@ public:
 
 private:
     std::unique_ptr<object_storage> storage_;
+    std::unique_ptr<node_info> node_info_;
     level_zero_gc_probe* probe_;
     ssx::work_queue worker_;
     // TODO: configurable limits?
@@ -516,7 +520,8 @@ private:
 level_zero_gc::level_zero_gc(
   level_zero_gc_config config,
   std::unique_ptr<object_storage> storage,
-  std::unique_ptr<epoch_source> epoch_source)
+  std::unique_ptr<epoch_source> epoch_source,
+  std::unique_ptr<node_info> node_info)
   : config_(std::move(config))
   , epoch_source_(std::move(epoch_source))
   , should_run_(false) // begin in a stopped state
@@ -524,14 +529,17 @@ level_zero_gc::level_zero_gc(
   , worker_(worker())
   , probe_(config::shard_local_cfg().disable_metrics())
   , delete_worker_(
-      std::make_unique<list_delete_worker>(std::move(storage), probe_)) {}
+      std::make_unique<list_delete_worker>(
+        std::move(storage), std::move(node_info), probe_)) {}
 
 level_zero_gc::level_zero_gc(
+  model::node_id self,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
   seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
   seastar::sharded<cluster::controller_stm>* controller_stm,
-  seastar::sharded<cluster::topic_table>* topic_table)
+  seastar::sharded<cluster::topic_table>* topic_table,
+  seastar::sharded<cluster::members_table>* members_table)
   : level_zero_gc(
       level_zero_gc_config{
         .deletion_grace_period
@@ -545,7 +553,8 @@ level_zero_gc::level_zero_gc(
       },
       std::make_unique<object_storage_remote_impl>(remote, std::move(bucket)),
       std::make_unique<epoch_source_impl>(
-        health_monitor, controller_stm, topic_table)) {}
+        health_monitor, controller_stm, topic_table),
+      std::make_unique<node_info_impl>(self, members_table)) {}
 
 level_zero_gc::~level_zero_gc() = default;
 

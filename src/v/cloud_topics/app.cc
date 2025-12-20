@@ -104,11 +104,13 @@ ss::future<> app::construct(
 
     co_await construct_service(
       l0_gc,
+      self,
       ss::sharded_parameter([&] { return &remote->local(); }),
       bucket,
       &controller->get_health_monitor(),
       &controller->get_controller_stm(),
-      &controller->get_topics_state());
+      &controller->get_topics_state(),
+      &controller->get_members_table());
 
     co_await construct_service(housekeeper_manager, ss::sharded_parameter([&] {
                                    return &replicated_metastore.local();
