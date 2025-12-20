@@ -6446,7 +6446,7 @@ TEST_F(storage_test_fixture, segment_cached_disk_usage_set_after_compaction) {
         } while (log->segments().back()->size_bytes() < size);
     };
 
-    auto add_segment_func = [&](this auto) -> ss::future<> {
+    auto add_segment_func = [&]() -> ss::future<> {
         auto size = random_generators::get_int(4_KiB, 10_MiB);
         add_segment(size, model::term_id(0));
         co_await log->force_roll();
