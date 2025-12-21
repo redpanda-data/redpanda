@@ -179,12 +179,14 @@ void compaction_coordinator::collect_mcco_from_all_members() {
     }
     update_local_mcco();
     for (auto& [node_id, fstate] : _fstates) {
-        ssx::background = fstate.mcco_getter->submit(
-          [this, holder = _raft_bg.hold(), node_id](
-            ss::abort_source& op_as) mutable {
-              return get_and_process_compaction_mcco(node_id, op_as)
-                .finally([holder = std::move(holder)] {});
-          });
+        ssx::background = fstate.mcco_getter
+                            ->submit([this, holder = _raft_bg.hold(), node_id](
+                                       ss::abort_source& op_as) mutable {
+                                return get_and_process_compaction_mcco(
+                                         node_id, op_as)
+                                  .finally([holder = std::move(holder)] {});
+                            })
+                            .discard_result();
     }
     arm_timer_if_needed(false);
 }
@@ -284,26 +286,30 @@ void compaction_coordinator::on_local_mcco_update(model::offset new_mcco) {
 
 void compaction_coordinator::send_mtro_to_followers() {
     for (const auto& [node_id, fstate] : _fstates) {
-        ssx::background = fstate.mtro_sender->submit(
-          [this, holder = _raft_bg.hold(), node_id](
-            ss::abort_source& op_as) mutable -> ss::future<> {
-              // MTRO may get recalculated a few times triggered by MCCO
-              // arriving from multiple nodes. However, we cannot wait for all
-              // MCCOs to arrive as some of them may come very late e.g. due to
-              // a node outage. Sleep to avoid flooding the follower with RPCs.
-              // Earlier runs will be superseded by the later ones during by
-              // executor, so typically only the last RPC will be sent.
-              return ss::sleep_abortable(mtro_send_delay, op_as)
-                .then([this, node_id, &op_as]() {
-                    return repeat(
-                      [this, node_id]() {
-                          return send_mtro_to_follower(node_id);
-                      },
-                      op_as);
+        ssx::background
+          = fstate.mtro_sender
+              ->submit(
+                [this, holder = _raft_bg.hold(), node_id](
+                  ss::abort_source& op_as) mutable -> ss::future<> {
+                    // MTRO may get recalculated a few times triggered by MCCO
+                    // arriving from multiple nodes. However, we cannot wait for
+                    // all MCCOs to arrive as some of them may come very late
+                    // e.g. due to a node outage. Sleep to avoid flooding the
+                    // follower with RPCs. Earlier runs will be superseded by
+                    // the later ones during by executor, so typically only the
+                    // last RPC will be sent.
+                    return ss::sleep_abortable(mtro_send_delay, op_as)
+                      .then([this, node_id, &op_as]() {
+                          return repeat(
+                            [this, node_id]() {
+                                return send_mtro_to_follower(node_id);
+                            },
+                            op_as);
+                      })
+                      .finally([holder = std::move(holder)] {})
+                      .discard_result();
                 })
-                .finally([holder = std::move(holder)] {})
-                .discard_result();
-          });
+              .discard_result();
     }
 }
 
