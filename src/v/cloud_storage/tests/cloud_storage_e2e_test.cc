@@ -1425,6 +1425,88 @@ TEST_F(ManualFixture, TestSpilloverWithTruncationRetainsStartOffset) {
       archiver.manifest().get_start_kafka_offset_override(), kafka::offset{8});
 }
 
+// Test a scenario where after a topic recreation the spillover manifests from
+// the previous incarnation could be applied to the new topic, causing errors or
+// reading wrong data.
+TEST_F(ManualFixture, TestSpilloverCacheCollision) {
+    test_local_cfg.get("log_compaction_interval_ms")
+      .set_value(std::chrono::duration_cast<std::chrono::milliseconds>(1s));
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+    test_local_cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::make_optional<size_t>(2));
+    test_local_cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{});
+
+    const model::topic topic_name("spillover_truncate_test");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
+    props.retention_bytes = tristate<size_t>(disable_tristate_t{});
+    props.retention_duration = tristate<std::chrono::milliseconds>(
+      disable_tristate_t{});
+
+    // Run two iterations of topic creation, data production, spillover, and
+    // deletion. The second iteration will reuse the topic name, and we want to
+    // verify that the first incarnation does not affect the
+    // second incarnation.
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        vlog(e2e_test_log.info, "Running iteration {}", iteration);
+
+        add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+        wait_for_leader(ntp).get();
+
+        auto partition = app.partition_manager.local().get(ntp);
+        auto* archiver = &partition->archiver().value().get();
+
+        vlog(e2e_test_log.info, "Seeding partition data");
+
+        tests::remote_segment_generator gen(
+          make_kafka_client().get(), *partition);
+
+        auto total_records = gen.num_segments(6)
+                               .batches_per_segment(5)
+                               .records_per_batch(1)
+                               .start_ix(iteration)
+                               .produce()
+                               .get();
+        ASSERT_GE(total_records, 30);
+
+        ASSERT_TRUE(archiver->sync_for_tests().get());
+
+        // Evict local log to force reads from tiered storage.
+        vlog(e2e_test_log.info, "Setting cloud_gc to evict local log");
+        partition->log()->set_cloud_gc_offset(
+          archiver->manifest().get_last_offset());
+
+        RPTEST_REQUIRE_EVENTUALLY(10s, [log = partition->log()] {
+            return log->segments().size() == 1;
+        });
+
+        vlog(e2e_test_log.info, "Applying spillover");
+        archiver->apply_spillover().get();
+
+        // Verify that spillover happened as we expect.
+        ASSERT_EQ(archiver->manifest().get_spillover_map().size(), 2);
+
+        // Consume all data.
+        tests::kafka_consume_transport consumer(make_kafka_client().get());
+        consumer.start().get();
+        auto consumed = consumer
+                          .consume_from_partition(
+                            topic_name, ntp.tp.partition, model::offset{0})
+                          .get();
+        ASSERT_EQ(consumed.size(), 30);
+        ASSERT_EQ(consumed.front().key, fmt::format("key{}", iteration));
+
+        // Delete topic.
+        vlog(e2e_test_log.info, "Deleting topic");
+        delete_topic({model::kafka_namespace, topic_name}).get();
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(WithOverride, EndToEndFixture, ::testing::Bool());
 INSTANTIATE_TEST_SUITE_P(
   WithOverride, CloudStorageEndToEndManualTest, ::testing::Bool());
