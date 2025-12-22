@@ -14,12 +14,14 @@
 #include "cloud_topics/logger.h"
 #include "cloud_topics/object_utils.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/members_table.h"
 #include "cluster/topic_table.h"
 #include "ssx/semaphore.h"
 #include "ssx/work_queue.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 
@@ -481,6 +483,34 @@ private:
     seastar::sharded<cluster::health_monitor_frontend>* health_monitor_;
     seastar::sharded<cluster::controller_stm>* controller_stm_;
     seastar::sharded<cluster::topic_table>* topic_table_;
+};
+
+class node_info_impl : public level_zero_gc::node_info {
+public:
+    node_info_impl(
+      model::node_id self, seastar::sharded<cluster::members_table>* mt)
+      : self_(self)
+      , members_table_(mt) {}
+
+    size_t shard_index() const final {
+        return shards_up_to(self_) + seastar::this_shard_id();
+    }
+    size_t total_shards() const final {
+        return shards_up_to(model::node_id::max());
+    }
+
+private:
+    size_t shards_up_to(model::node_id ub) const {
+        size_t total{0};
+        for (const auto& [id, node] : members_table_->local().nodes()) {
+            if (id < ub) {
+                total += node.broker.properties().cores;
+            }
+        }
+        return total;
+    }
+    model::node_id self_;
+    seastar::sharded<cluster::members_table>* members_table_;
 };
 
 level_zero_gc::level_zero_gc(

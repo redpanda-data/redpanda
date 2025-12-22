@@ -138,6 +138,11 @@ private:
     std::optional<int64_t>* epoch_;
 };
 
+class node_info_test_impl : public cloud_topics::level_zero_gc::node_info {
+    size_t shard_index() const final { return 0; }
+    size_t total_shards() const final { return 1; }
+};
+
 class LevelZeroGCTest : public testing::Test {
 public:
     LevelZeroGCTest(

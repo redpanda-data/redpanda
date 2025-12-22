@@ -227,6 +227,23 @@ public:
         get_partitions_max_gc_epoch(seastar::abort_source*) = 0;
     };
 
+    /**
+     * Interface for determining the total number of shards in the cluster
+     * and the current shard's position in logical, ordered list of shard IDs
+     * starting at 0 (node 0, shard 0) and ending at total_shards - 1.
+     */
+    struct node_info {
+        node_info() = default;
+        node_info(const node_info&) = default;
+        node_info(node_info&&) = delete;
+        node_info& operator=(const node_info&) = default;
+        node_info& operator=(node_info&&) = delete;
+        virtual ~node_info() = default;
+
+        virtual size_t shard_index() const = 0;
+        virtual size_t total_shards() const = 0;
+    };
+
 public:
     /*
      * Construct with the given storage and epoch providers. This interface is
