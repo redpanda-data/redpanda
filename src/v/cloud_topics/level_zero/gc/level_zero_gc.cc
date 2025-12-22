@@ -796,4 +796,21 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
       std::move(eligible_objects), object_keys_total_bytes);
 }
 
+std::optional<prefix_range_inclusive>
+compute_prefix_range(size_t shard_idx, size_t total_shards) {
+    auto total_prefixes = object_id::prefix_max + 1;
+    total_shards = std::min(total_shards, static_cast<size_t>(total_prefixes));
+    if (shard_idx >= total_shards) {
+        return std::nullopt;
+    }
+    auto stride = total_prefixes / total_shards;
+    auto min = static_cast<object_id::prefix_t>(shard_idx * stride);
+    auto max = static_cast<object_id::prefix_t>(min + stride - 1);
+    if (shard_idx == total_shards - 1) {
+        max = object_id::prefix_max;
+    }
+
+    return prefix_range_inclusive{min, max};
+}
+
 } // namespace cloud_topics

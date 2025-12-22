@@ -427,3 +427,117 @@ TEST_F(LevelZeroGCScaleOutTest, ConcurrentDeletesPipelineSaturation) {
     EXPECT_TRUE(Eventually(
       [this, expected = (size_t)n] { return deleted.size() == expected; }));
 }
+
+// =============================================================================
+// Prefix Range Computation Tests (Static, no GC required)
+// =============================================================================
+
+class PrefixRangeComputationTest : public testing::Test {};
+
+/*
+ * With a single shard, it should handle all prefixes [0, 999].
+ */
+TEST_F(PrefixRangeComputationTest, SingleShardCoversAllPrefixes) {
+    auto range = cloud_topics::compute_prefix_range(
+      0 /* shard_idx */, 1 /* total_shards */);
+    ASSERT_TRUE(range.has_value());
+    auto [min, max] = range.value();
+    EXPECT_EQ(min, 0);
+    EXPECT_EQ(max, cloud_topics::object_id::prefix_max);
+}
+
+/*
+ * With two shards, verify non-overlapping ranges that cover the full space.
+ */
+TEST_F(PrefixRangeComputationTest, TwoShardsPartitionSpace) {
+    {
+        auto range = cloud_topics::compute_prefix_range(
+          0 /* shard_idx */, 2 /* total_shards */);
+        ASSERT_TRUE(range.has_value());
+        // First shard: [0, 500)
+        EXPECT_EQ(range->min, 0);
+        EXPECT_EQ(range->max, 499);
+    }
+
+    {
+        auto range = cloud_topics::compute_prefix_range(
+          1 /* shard_idx */, 2 /* total_shards */);
+        ASSERT_TRUE(range.has_value());
+        // Second shard: [500, 999]
+        EXPECT_EQ(range->min, 500);
+        EXPECT_EQ(range->max, cloud_topics::object_id::prefix_max);
+    }
+}
+
+/*
+ * With 1000 shards (one per prefix), each shard handles exactly one prefix.
+ */
+TEST_F(PrefixRangeComputationTest, ThousandShardsOnePerPrefix) {
+    constexpr size_t total = 1000;
+
+    for (size_t i = 0; i < total; ++i) {
+        auto range = cloud_topics::compute_prefix_range(
+          i /* shard_idx */, total /* total_shards */);
+        ASSERT_TRUE(range.has_value());
+        auto [min, max] = range.value();
+        if (i < total - 1) {
+            EXPECT_EQ(min, i);
+            EXPECT_EQ(max, i);
+        } else {
+            EXPECT_EQ(min, i);
+            EXPECT_EQ(max, cloud_topics::object_id::prefix_max);
+        }
+    }
+}
+
+TEST_F(PrefixRangeComputationTest, MoreShardsThanPrefixes) {
+    constexpr size_t total = 2000;
+
+    {
+        auto range = cloud_topics::compute_prefix_range(
+          0 /* shard_idx */, total /* total_shards */);
+        ASSERT_TRUE(range.has_value());
+        EXPECT_EQ(range->min, 0);
+        EXPECT_EQ(range->max, 0);
+    }
+
+    {
+        auto range = cloud_topics::compute_prefix_range(
+          cloud_topics::object_id::prefix_max /* shard_idx */,
+          total /* total_shards */);
+        ASSERT_TRUE(range.has_value());
+        EXPECT_EQ(range->min, cloud_topics::object_id::prefix_max);
+        EXPECT_EQ(range->max, cloud_topics::object_id::prefix_max);
+    }
+
+    EXPECT_FALSE(
+      cloud_topics::compute_prefix_range(
+        total - 1 /* shard_idx */, total /* total_shards */)
+        .has_value());
+}
+
+/*
+ * Verify complete coverage with 41 shards (simulating a heterogeneous cluster).
+ */
+TEST_F(PrefixRangeComputationTest, HeterogeneousCompleteCoverage) {
+    constexpr size_t total = 41;
+
+    std::vector<int> coverage_count(1000, 0);
+
+    for (size_t shard = 0; shard < total; ++shard) {
+        auto r = cloud_topics::compute_prefix_range(
+          shard /* shard_idx */, total /* total_shards */);
+        auto [min, max] = r.value();
+        EXPECT_GE(min, 0);
+        EXPECT_LE(max, cloud_topics::object_id::prefix_max);
+        for (auto prefix = min; prefix <= max && prefix < 1000; ++prefix) {
+            coverage_count[prefix]++;
+        }
+    }
+
+    // Verify all prefixes are covered exactlye
+    for (int prefix = 0; prefix < 1000; ++prefix) {
+        EXPECT_EQ(coverage_count[prefix], 1) << fmt::format(
+          "Prefix {} covered {} times", prefix, coverage_count[prefix]);
+    }
+}

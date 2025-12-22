@@ -169,6 +169,7 @@ redpanda_cc_library(
     deps = [
         ":cluster_services_interface",
         ":types",
+        "//src/v/base",
         "//src/v/cloud_storage_clients",
         "//src/v/ssx:sformat",
         "//src/v/utils:uuid",

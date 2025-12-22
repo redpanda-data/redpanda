@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_storage_clients/types.h"
 #include "cloud_topics/types.h"
 
@@ -39,6 +40,18 @@ public:
 
     static std::expected<object_id::prefix_t, std::string>
       level_zero_path_to_prefix(std::string_view);
+};
+
+struct prefix_range_inclusive {
+    using T = object_id::prefix_t;
+    static_assert(std::is_unsigned_v<T>);
+    static constexpr T t_max = object_id::prefix_max;
+    T min;
+    T max;
+    prefix_range_inclusive(T min, T max);
+    bool contains(T v) const;
+    bool operator==(const prefix_range_inclusive& other) const;
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 } // namespace cloud_topics

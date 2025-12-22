@@ -111,4 +111,24 @@ object_path_factory::level_zero_path_to_prefix(std::string_view key) {
     return pfx;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+prefix_range_inclusive::prefix_range_inclusive(T min, T max)
+  : min(min)
+  , max(max) {
+    vassert(max <= t_max, "prefix_range: Invalid max: {}", max);
+}
+
+bool prefix_range_inclusive::contains(T v) const {
+    return v >= min && v <= max;
+}
+
+bool prefix_range_inclusive::operator==(
+  const prefix_range_inclusive& other) const {
+    return min == other.min && max == other.max;
+}
+
+fmt::iterator prefix_range_inclusive::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "[{},{}]", min, max);
+}
+
 } // namespace cloud_topics

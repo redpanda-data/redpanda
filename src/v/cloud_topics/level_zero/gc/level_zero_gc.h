@@ -305,4 +305,19 @@ private:
     std::unique_ptr<list_delete_worker> delete_worker_{};
 };
 
+/**
+ * @brief Compute a subrange of [0,999] for some shard.
+ *
+ * Aims to partition the object prefix space ([0-999]) perfectly (i.e. with no
+ * missing prefixes or overlap between shards). As a result, might _not_ assign
+ * a sub-range to some shard, e.g. if the shard index exceeds the total number
+ * of prefixes.
+ *
+ * @param shard_idx - Shard index as computed by an implementation of node_info
+ * @param total_shards - Total number of shards in the cluster
+ */
+struct prefix_range_inclusive;
+std::optional<prefix_range_inclusive>
+compute_prefix_range(size_t shard_idx, size_t total_shards);
+
 } // namespace cloud_topics
