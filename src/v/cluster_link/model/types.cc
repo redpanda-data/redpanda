@@ -13,6 +13,7 @@
 
 #include "base/format_to.h"
 #include "model/timestamp.h"
+#include "ssx/async_algorithm.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/variant_utils.hh>
@@ -337,6 +338,20 @@ shadow_link_status_report_request::format_to(fmt::iterator it) const {
     return fmt::format_to(it, "{{ link_id: {} }}", link_id);
 }
 
+ss::future<shadow_link_status_topic_response>
+shadow_link_status_topic_response::copy() const {
+    shadow_link_status_topic_response copy;
+    copy.status = status;
+    copy.partition_reports.reserve(partition_reports.size());
+    ssx::async_counter counter;
+    co_await ssx::async_for_each_counter(
+      counter, partition_reports, [&copy](const auto& pid_report) {
+          const auto& [pid, report] = pid_report;
+          copy.partition_reports.emplace(pid, report);
+      });
+    co_return copy;
+}
+
 fmt::iterator
 shadow_link_status_topic_response::format_to(fmt::iterator it) const {
     return fmt::format_to(
@@ -376,6 +391,23 @@ shadow_link_status_report_response::format_to(fmt::iterator it) const {
 } // namespace cluster_link::rpc
 
 namespace cluster_link::model {
+
+ss::future<shadow_link_status_report> shadow_link_status_report::copy() const {
+    shadow_link_status_report copy;
+    copy.link_id = link_id;
+
+    copy.topic_responses.reserve(topic_responses.size());
+    for (const auto& [topic, response] : topic_responses) {
+        copy.topic_responses.emplace(topic, co_await response.copy());
+    }
+
+    copy.task_status_reports.reserve(task_status_reports.size());
+    for (const auto& [task_name, reports] : task_status_reports) {
+        copy.task_status_reports.emplace(task_name, reports.copy());
+    }
+    co_return copy;
+}
+
 fmt::iterator shadow_link_status_report::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
