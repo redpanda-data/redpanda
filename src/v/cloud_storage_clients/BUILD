@@ -67,6 +67,7 @@ redpanda_cc_library(
         "//src/v/utils:named_type",
         "//src/v/utils:retry_chain_node",
         "//src/v/utils:stop_signal",
+        "//src/v/utils:uuid",
         "@ada",
         "@boost//:beast",
         "@boost//:lexical_cast",

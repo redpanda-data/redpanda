@@ -65,6 +65,19 @@ public:
     result<http::client::request_header> make_delete_blob_request(
       const plain_bucket_name& name, const object_key& key);
 
+    /// \brief Create a 'Batch Delete' request header and body
+    ///
+    /// Uses the Azure Blob Storage Batch API to delete multiple blobs
+    /// in a single request. The request uses multipart/mixed encoding.
+    ///
+    /// \param name is a container
+    /// \param keys is a vector of blob names to delete
+    /// \return initialized and signed http header and body as input_stream or
+    /// error
+    result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+    make_batch_delete_request(
+      const plain_bucket_name& name, const chunked_vector<object_key>& keys);
+
     // clang-format off
     /// \brief Initialize http header for 'List Blobs' request
     ///
@@ -280,6 +293,11 @@ private:
     ss::future<> do_delete_object(
       const plain_bucket_name& name,
       const object_key& key,
+      ss::lowres_clock::duration timeout);
+
+    ss::future<delete_objects_result> do_batch_delete_objects(
+      const plain_bucket_name& bucket,
+      const chunked_vector<object_key>& keys,
       ss::lowres_clock::duration timeout);
 
     ss::future<list_bucket_result> do_list_objects(

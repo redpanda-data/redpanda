@@ -11,6 +11,7 @@
 #include "cloud_storage_clients/abs_client.h"
 
 #include "base/vlog.h"
+#include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -20,10 +21,13 @@
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
+#include "container/chunked_hash_map.h"
 #include "http/utils.h"
 #include "json/document.h"
 #include "json/istreamwrapper.h"
+#include "utils/uuid.h"
 
+#include <charconv>
 #include <utility>
 
 namespace {
@@ -55,6 +59,9 @@ constexpr boost::beast::string_view error_code_name = "x-ms-error-code";
 constexpr boost::beast::string_view expiry_option_name = "x-ms-expiry-option";
 constexpr boost::beast::string_view expiry_option_value = "RelativeToNow";
 constexpr boost::beast::string_view expiry_time_name = "x-ms-expiry-time";
+
+constexpr boost::beast::string_view content_type_multipart_val
+  = "multipart/mixed";
 
 constexpr boost::beast::string_view
   hierarchical_namespace_not_enabled_error_code
@@ -185,6 +192,76 @@ parse_header_error_response(const http::http_response::header_type& hdr) {
     return {code, message, hdr.result()};
 }
 
+/// Parse multipart/mixed batch delete response
+/// The response format is:
+/// --boundary
+/// Content-Type: application/http
+/// Content-ID: 0
+///
+/// HTTP/1.1 202 Accepted
+/// x-ms-request-id: ...
+/// ...
+///
+/// --boundary
+/// ... (more responses)
+/// --boundary--
+static cloud_storage_clients::client::delete_objects_result
+parse_batch_delete_response(
+  iobuf buf,
+  std::string_view boundary,
+  const chunked_vector<object_key>& keys) {
+    cloud_storage_clients::client::delete_objects_result result;
+
+    // Simple multipart parser - split by boundary
+    auto boundary_delim = ssx::sformat("--{}", boundary);
+    util::multipart_response_parser parts{std::move(buf), boundary_delim};
+
+    constexpr auto convert_content_id =
+      [](std::string_view raw) -> std::optional<size_t> {
+        size_t v{};
+        auto res = std::from_chars(raw.data(), raw.data() + raw.size(), v);
+        return res.ec == std::errc{} ? std::make_optional(v) : std::nullopt;
+    };
+
+    chunked_hash_set<size_t> content_ids_seen;
+    content_ids_seen.reserve(keys.size());
+    std::optional<iobuf> part;
+    while ((part = parts.get_part()).has_value()) {
+        iobuf_parser part_parser{std::move(part).value()};
+        auto mime = util::mime_header::from(part_parser);
+        auto maybe_content_id = mime.content_id<size_t>(convert_content_id);
+        if (!maybe_content_id.has_value()) {
+            vlog(
+              abs_log.debug,
+              "MIME header missing 'Content-ID' from batch response, skipping "
+              "part");
+            continue;
+        }
+        content_ids_seen.insert(maybe_content_id.value());
+        // having stripped off the leading MIME headers, we should have a
+        // complete HTTP response at the front of the parser
+        auto subrequest = util::multipart_subresponse::from(part_parser);
+        if (auto maybe_error = subrequest.error(error_code_name);
+            maybe_error.has_value()) {
+            result.undeleted_keys.push_back({
+              .key = keys[maybe_content_id.value()],
+              .reason = std::move(maybe_error).value(),
+            });
+        }
+    }
+
+    for (auto id : std::views::iota(0ul, keys.size())) {
+        if (!content_ids_seen.contains(id)) {
+            result.undeleted_keys.push_back({
+              .key = keys[id],
+              .reason = "Object missing from batch response",
+            });
+        }
+    }
+
+    return result;
+}
+
 abs_request_creator::abs_request_creator(
   const abs_configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
@@ -304,6 +381,132 @@ abs_request_creator::make_delete_blob_request(
     }
     util::url_encode_target(header);
     return header;
+}
+
+result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+abs_request_creator::make_batch_delete_request(
+  const plain_bucket_name& name, const chunked_vector<object_key>& keys) {
+    // Azure Blob Storage Batch API
+    // https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch
+    //
+    // POST /?comp=batch HTTP/1.1
+    // Host: {storage-account-id}.blob.core.windows.net
+    // Content-Type: multipart/mixed; boundary=batch_<unique-id>
+    // Content-Length: <...>
+    // x-ms-date: {req-datetime in RFC9110} # added by 'add_auth'
+    // x-ms-version: 2023-01-23             # added by 'add_auth'
+    // Authorization:{signature}            # added by 'add_auth'
+    //
+    // Body structure:
+    // --batch_<unique-id>
+    // Content-ID: 0
+    //
+    // DELETE /{container-id}/{blob-id} HTTP/1.1
+    // Content-Type: application/http
+    // Content-Transfer-Encoding: binary
+    // x-ms-delete-snapshots: include
+    // x-ms-date: {req-datetime in RFC9110}
+    // x-ms-version: 2023-01-23            # added by 'add_auth'
+    // Authorization:{signature}
+    //
+    // --batch_<unique-id>
+    // ... (repeat for each blob)
+    // --batch_<unique-id>--
+
+    // Generate unique boundary using counter
+    auto boundary = fmt::format("batch_{}", uuid_t::create());
+
+    // Build the multipart body using iobuf and stream
+    iobuf body;
+    iobuf_ostreambuf obuf(body);
+    std::ostream out(&obuf);
+
+    for (size_t i = 0; i < keys.size(); ++i) {
+        const auto& key = keys[i];
+
+        // Boundary line
+        fmt::print(out, "--{}\r\n", boundary);
+
+        http::client::request_header part_header{};
+        part_header.insert(
+          boost::beast::http::field::content_type, "application/http");
+        part_header.insert(
+          boost::beast::http::field::content_transfer_encoding, "binary");
+        part_header.insert(
+          boost::beast::http::field::content_id, fmt::to_string(i));
+
+        // Create individual delete request for this blob
+
+        // Create a temporary header to get auth headers for this subrequest
+        // NOTE: Per
+        // https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch?tabs=microsoft-entra-id#request-body
+        // The subrequests should
+        // - Not have the x-ms-version header.
+        // - Include the path of the URL
+        // - Omit the host
+        // - Each subrequest is authorized separately, with the provided
+        //   auth headers in the subrequest.
+        http::client::request_header subrequest_header{};
+        subrequest_header.method(boost::beast::http::verb::delete_);
+        subrequest_header.target(fmt::format("/{}/{}", name(), key().string()));
+        subrequest_header.insert(delete_snapshot_name, delete_snapshot_value);
+        if (auto ec = _apply_credentials->add_auth(subrequest_header); ec) {
+            return ec;
+        }
+
+        // Content-Length for DELETE is always 0
+        subrequest_header.insert(
+          boost::beast::http::field::content_length, fmt::to_string(0));
+
+        util::url_encode_target(subrequest_header);
+
+        for (const auto& f : part_header) {
+            fmt::print(out, "{}: {}\r\n", f.name_string(), f.value());
+        }
+        fmt::print(out, "\r\n");
+
+        fmt::print(
+          out,
+          "{} {} HTTP/1.1\r\n",
+          subrequest_header.method_string(),
+          subrequest_header.target());
+
+        for (const auto& field : subrequest_header) {
+            fmt::print(out, "{}: {}\r\n", field.name_string(), field.value());
+        }
+
+        fmt::print(out, "\r\n");
+    }
+
+    // Final boundary
+    fmt::print(out, "--{}--\r\n", boundary);
+
+    if (!out.good()) {
+        throw std::runtime_error(
+          fmt::format(
+            "failed to create batch delete request, state: {}", out.rdstate()));
+    }
+
+    // Main request header
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::post);
+    header.target("/?comp=batch");
+    header.insert(
+      boost::beast::http::field::host,
+      boost::beast::string_view{_ap().data(), _ap().length()});
+    header.insert(
+      boost::beast::http::field::content_type,
+      fmt::format("{}; boundary={}", content_type_multipart_val, boundary));
+    header.insert(
+      boost::beast::http::field::content_length,
+      std::to_string(body.size_bytes()));
+    if (auto ec = _apply_credentials->add_auth(header); ec) {
+        return ec;
+    }
+    util::url_encode_target(header);
+
+    auto stream = make_iobuf_input_stream(std::move(body));
+    return std::make_tuple(std::move(header), std::move(stream));
 }
 
 result<http::client::request_header>
@@ -859,24 +1062,54 @@ ss::future<> abs_client::do_delete_object(
     }
 }
 
+ss::future<abs_client::delete_objects_result>
+abs_client::do_batch_delete_objects(
+  const plain_bucket_name& bucket,
+  const chunked_vector<object_key>& keys,
+  ss::lowres_clock::duration timeout) {
+    auto request = _requestor.make_batch_delete_request(bucket, keys);
+    if (!request) {
+        co_return ss::coroutine::exception(
+          std::make_exception_ptr(std::system_error(request.error())));
+    }
+    auto& [header, body] = request.value();
+    vlog(abs_log.trace, "send batch delete request:\n{}", header);
+
+    auto response_stream = co_await _client.request(
+      std::move(header), body, timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::accepted) {
+        // If the top level request fails, we expect a regular old XML or JSON
+        // REST error response, like any other endpoint.
+        const auto content_type = util::get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await http::drain(std::move(response_stream));
+        throw parse_rest_error_response(content_type, status, std::move(buf));
+    }
+
+    // Extract boundary from Content-Type header
+    const auto& headers = response_stream->get_headers();
+    auto boundary = util::find_multipart_boundary(headers);
+    auto response_buf = co_await http::drain(std::move(response_stream));
+    if (!boundary.has_value()) {
+        std::rethrow_exception(boundary.error());
+    }
+    co_return parse_batch_delete_response(
+      std::move(response_buf), boundary.value(), keys);
+}
+
 ss::future<result<abs_client::delete_objects_result, error_outcome>>
 abs_client::delete_objects(
   const plain_bucket_name& bucket,
   const chunked_vector<object_key>& keys,
   ss::lowres_clock::duration timeout) {
-    abs_client::delete_objects_result delete_objects_result;
-    for (const auto& key : keys) {
-        try {
-            auto res = co_await delete_object(bucket, key, timeout);
-            if (res.has_error()) {
-                delete_objects_result.undeleted_keys.push_back(
-                  {key, fmt::format("{}", res.error())});
-            }
-        } catch (const std::exception& ex) {
-            delete_objects_result.undeleted_keys.push_back({key, ex.what()});
-        }
-    }
-    co_return delete_objects_result;
+    const object_key dummy{""};
+    co_return co_await send_request(
+      do_batch_delete_objects(bucket, keys, timeout), dummy);
 }
 
 ss::future<result<abs_client::list_bucket_result, error_outcome>>
