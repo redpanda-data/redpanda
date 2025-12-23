@@ -31,6 +31,8 @@ void handle_error(cluster_link::errc err, ss::sstring info) {
     case cluster_link::errc::topic_metadata_stale:
     case cluster_link::errc::failed_to_stop_task:
     case cluster_link::errc::failed_to_pause_task:
+    case cluster_link::errc::report_generation_timed_out:
+    case cluster_link::errc::report_generation_unknown_error:
         throw serde::pb::rpc::internal_exception(std::move(info));
     case cluster_link::errc::failed_to_connect_to_remote_cluster:
     case cluster_link::errc::remote_cluster_does_not_support_required_api:

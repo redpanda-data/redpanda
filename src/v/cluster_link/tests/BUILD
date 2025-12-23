@@ -188,3 +188,23 @@ redpanda_cc_gtest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "shadow_link_report_cache_test",
+    timeout = "short",
+    srcs = [
+        "shadow_link_report_cache_test.cc",
+    ],
+    cpu = 2,
+    deps = [
+        "//src/v/cluster_link:shadow_link_report_cache",
+        "//src/v/cluster_link/model",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

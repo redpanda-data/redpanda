@@ -82,6 +82,10 @@ struct error_category final : public std::error_category {
             return "failed to stop task";
         case errc::failed_to_pause_task:
             return "failed to pause task";
+        case errc::report_generation_timed_out:
+            return "report generation timed out";
+        case errc::report_generation_unknown_error:
+            return "report generation unknown error";
         }
 
         return "(unknown error code)";
