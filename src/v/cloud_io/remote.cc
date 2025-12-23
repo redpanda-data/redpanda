@@ -169,8 +169,8 @@ int remote::delete_objects_max_keys() const {
     case model::cloud_storage_backend::google_s3_compat:
         return 100;
     case model::cloud_storage_backend::azure:
-        // Will be supported once azurite supports batch blob delete
-        [[fallthrough]];
+        // https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch
+        return 256;
     case model::cloud_storage_backend::unknown:
         return 1;
     }
