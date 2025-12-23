@@ -56,6 +56,20 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "linker_test",
+    timeout = "short",
+    srcs = [
+        "linker_test.cc",
+    ],
+    deps = [
+        "//src/v/context:context_frame",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_bench(
     name = "context_rpbench",
     timeout = "short",

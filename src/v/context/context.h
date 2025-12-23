@@ -85,9 +85,8 @@ class context_ref;
 
 namespace context {
 class deadline_timer;
-namespace detail {
-class basic_context_frame;
-} // namespace detail
+template<size_t N>
+class linker;
 } // namespace context
 
 namespace context {
@@ -173,6 +172,8 @@ private:
 class basic_context_frame {
     friend class ::context_ref;
     friend class context::deadline_timer;
+    template<size_t>
+    friend class context::linker;
     friend class background_context_frame;
 #ifdef CONTEXT_DEBUG_REF_COUNTING
     friend class context::cancel_handle;

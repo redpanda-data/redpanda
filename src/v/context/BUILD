@@ -21,6 +21,7 @@ redpanda_cc_library(
         "abort_source.h",
         "context_frame.h",
         "deadline_timer.h",
+        "linker.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
