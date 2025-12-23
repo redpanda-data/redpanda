@@ -4495,6 +4495,14 @@ configuration::configuration()
       "Default timeout for RPC requests between Redpanda nodes.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , shadow_link_report_caching_ttl_ms(
+      *this,
+      "shadow_link_report_caching_ttl_ms",
+      "The duration for which shadow link reports are cached on the broker .. "
+      "todo: add more details",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5000ms,
+      {.min = 100ms, .max = std::chrono::milliseconds(1h)})
   , cloud_topics_enabled(
       *this,
       true,

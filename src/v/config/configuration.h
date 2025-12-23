@@ -811,6 +811,9 @@ struct configuration final : public config_store {
     enterprise<property<bool>> enable_shadow_linking;
     property<std::chrono::milliseconds> internal_rpc_request_timeout_ms;
 
+    bounded_property<std::chrono::milliseconds>
+      shadow_link_report_caching_ttl_ms;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
