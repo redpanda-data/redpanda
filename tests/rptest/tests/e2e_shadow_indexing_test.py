@@ -1232,6 +1232,10 @@ class EndToEndSpilloverTest(RedpandaTest):
         self.msg_size = 1024 * 256
         self.msg_count = 3000
 
+        self.redpanda.set_environment(
+            {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        )
+
     def produce(self):
         topic_name = self.topics[0].name
         producer = KgoVerifierProducer(

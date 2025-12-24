@@ -70,6 +70,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
             extra_rp_conf=extra_rp_conf,
         )
 
+        self.redpanda.set_environment(
+            {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        )
+
     def setup(self):
         # defer starting redpanda to test body
         pass

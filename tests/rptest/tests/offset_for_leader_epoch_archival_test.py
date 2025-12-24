@@ -60,6 +60,10 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
             si_settings=si_settings,
         )
 
+        self.redpanda.set_environment(
+            {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        )
+
     def _alter_topic_retention_with_retry(self, topic):
         rpk = RpkTool(self.redpanda)
 

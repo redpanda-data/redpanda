@@ -309,9 +309,7 @@ SEASTAR_THREAD_TEST_CASE(validate_with_validator_error) {
     BOOST_TEST(errors.size() > 0);
 
     // Property should retain default value
-    // Surprising but the current behavior is that invalid values actually
-    // update the property.
-    BOOST_TEST(cfg.validated_string() == "invalid_value");
+    BOOST_TEST(cfg.validated_string() == "magic_foo");
 }
 
 SEASTAR_THREAD_TEST_CASE(validate_with_type_mismatch) {
@@ -346,11 +344,7 @@ SEASTAR_THREAD_TEST_CASE(validate_required_with_validator_error) {
       "required_validated_string: invalid_value\n");
 
     // Required property with validation error throws std::invalid_argument
-    // BOOST_CHECK_THROW(cfg.read_yaml(invalid_yaml), std::invalid_argument);
-
-    auto errors = cfg.read_yaml(invalid_yaml);
-    BOOST_TEST(errors.size() > 0);
-    BOOST_TEST(cfg.required_validated_string() == "invalid_value");
+    BOOST_CHECK_THROW(cfg.read_yaml(invalid_yaml), std::invalid_argument);
 }
 
 SEASTAR_THREAD_TEST_CASE(config_json_serialization) {

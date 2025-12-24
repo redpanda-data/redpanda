@@ -254,6 +254,10 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
         self.rpk = RpkTool(self.redpanda)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 
+        self.redpanda.set_environment(
+            {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        )
+
     def query_segments(self):
         return self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
             "kafka", self.topic_name, 0
@@ -456,6 +460,10 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         self.rpk = RpkTool(self.redpanda)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
+
+        self.redpanda.set_environment(
+            {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        )
 
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=get_cloud_storage_type())
