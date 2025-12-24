@@ -199,6 +199,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "context_sleep",
+    srcs = [
+        "context_sleep.cc",
+    ],
+    hdrs = [
+        "context_sleep.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/context",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "sharded_ptr",
     hdrs = [
         "sharded_ptr.h",
