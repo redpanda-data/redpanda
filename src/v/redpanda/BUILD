@@ -41,6 +41,7 @@ redpanda_cc_library(
         "//src/v/cluster/utils:partition_change_notifier_impl",
         "//src/v/cluster_link:fwd",
         "//src/v/cluster_link:rpc_service",
+        "//src/v/cluster_link:shadow_link_report_cache",
         "//src/v/compression",
         "//src/v/config",
         "//src/v/crash_tracker",

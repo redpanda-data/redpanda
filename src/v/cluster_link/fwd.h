@@ -15,4 +15,6 @@ namespace cluster_link {
 class link;
 class manager;
 class service;
+class shadow_link_report_cache;
+class shadow_link_report_fetcher_impl;
 } // namespace cluster_link

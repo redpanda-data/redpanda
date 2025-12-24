@@ -46,6 +46,7 @@ redpanda_cc_library(
         "//proto/redpanda/core/admin/v2:shadow_link_redpanda_proto",
         "//src/v/cluster",
         "//src/v/cluster_link:fwd",
+        "//src/v/cluster_link:shadow_link_report_cache",
         "//src/v/cluster_link/model",
         "//src/v/redpanda/admin/proxy:client",
         "//src/v/serde/protobuf:rpc",

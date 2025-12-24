@@ -13,6 +13,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "cluster_link/service.h"
+#include "cluster_link/shadow_link_report_cache.h"
 #include "redpanda/admin/services/shadow_link/converter.h"
 #include "redpanda/admin/services/shadow_link/err.h"
 #include "redpanda/admin/services/utils.h"
@@ -21,12 +22,16 @@
 namespace admin {
 ss::logger sllog("shadow_link_service");
 
+static constexpr auto timeout = 1min;
+
 shadow_link_service_impl::shadow_link_service_impl(
   admin::proxy::client proxy_client,
   ss::sharded<cluster_link::service>* service,
+  ss::sharded<cluster_link::shadow_link_report_cache>* shadow_link_report_cache,
   ss::sharded<cluster::metadata_cache>* md_cache)
   : _proxy_client(std::move(proxy_client))
   , _service(service)
+  , _shadow_link_report_cache(shadow_link_report_cache)
   , _md_cache(md_cache) {}
 
 ss::future<proto::admin::create_shadow_link_response>
@@ -173,11 +178,12 @@ shadow_link_service_impl::update_shadow_link(
         link_name, std::move(update_cmd)));
 
     auto status_report = handle_error(
-      co_await _service->local().shadow_link_report(link_name));
+      co_await _shadow_link_report_cache->local().get_report(
+        link_name, timeout, true));
 
     proto::admin::update_shadow_link_response resp;
-    resp.set_shadow_link(
-      metadata_to_shadow_link(std::move(updated_md), std::move(status_report)));
+    resp.set_shadow_link(metadata_to_shadow_link(
+      std::move(updated_md), co_await status_report->copy()));
 
     co_return resp;
 }
@@ -202,7 +208,8 @@ shadow_link_service_impl::fail_over(
     auto current_link = handle_error(
       _service->local().get_cluster_link(link_name));
     auto status_report = handle_error(
-      co_await _service->local().shadow_link_report(link_name));
+      co_await _shadow_link_report_cache->local().get_report(
+        link_name, timeout, true));
     const auto& failover_topic = req.get_shadow_topic_name();
     proto::admin::fail_over_response resp;
     if (failover_topic.empty()) {
@@ -210,8 +217,8 @@ shadow_link_service_impl::fail_over(
         auto result = handle_error(
           co_await _service->local().failover_link_topics(
             std::move(link_name)));
-        resp.set_shadow_link(
-          metadata_to_shadow_link(std::move(result), std::move(status_report)));
+        resp.set_shadow_link(metadata_to_shadow_link(
+          std::move(result), co_await status_report->copy()));
     } else {
         // failover the specific shadow topic
         auto topic = model::topic{failover_topic};
@@ -220,8 +227,8 @@ shadow_link_service_impl::fail_over(
             std::move(link_name),
             std::move(topic),
             cluster_link::model::mirror_topic_status::failing_over));
-        resp.set_shadow_link(
-          metadata_to_shadow_link(std::move(result), std::move(status_report)));
+        resp.set_shadow_link(metadata_to_shadow_link(
+          std::move(result), co_await status_report->copy()));
     }
     co_return resp;
 }
@@ -320,8 +327,10 @@ shadow_link_service_impl::build_shadow_link(
     auto md = handle_error(
       _service->local().get_cluster_link(shadow_link_name));
     auto link_status = handle_error(
-      co_await _service->local().shadow_link_report(shadow_link_name));
+      co_await _shadow_link_report_cache->local().get_report(
+        shadow_link_name, timeout, false));
 
-    co_return metadata_to_shadow_link(std::move(md), std::move(link_status));
+    co_return metadata_to_shadow_link(
+      std::move(md), co_await link_status->copy());
 }
 } // namespace admin

@@ -197,7 +197,7 @@ redpanda_cc_library(
         ":logger",
         "//src/v/ssx:future_util",
     ],
-    visibility = ["//src/v/cluster_link:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":cluster_link",
         "//src/v/cluster_link/model",
