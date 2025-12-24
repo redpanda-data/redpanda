@@ -205,6 +205,38 @@ class ClusterConfigBootstrapTest(RedpandaTest):
         )
 
 
+class ClusterConfigBoundedPropertyTest(RedpandaTest):
+    """
+    Test that bounded properties clamp out-of-range values from bootstrap config.
+    """
+
+    def __init__(self, *args, **kwargs):
+        # Set log_segment_size to 100 bytes (below minimum of 1MB)
+        super().__init__(
+            *args,
+            extra_rp_conf={"log_segment_size": 100},
+            **kwargs,
+        )
+
+    @cluster(num_nodes=1)
+    def test_bounded_property_clamped_to_minimum(self):
+        """
+        Verify that bounded properties are clamped to their minimum bound when
+        an out-of-range value is provided in bootstrap config. Setting
+        log_segment_size to 100 should result in the value being clamped to
+        1MB (the minimum bound).
+        """
+        admin = Admin(self.redpanda)
+        config = admin.get_cluster_config()
+
+        # The value should be clamped to 1MB (1048576 bytes)
+        min_segment_size = 1024 * 1024  # 1 MiB
+        assert config["log_segment_size"] == min_segment_size, (
+            f"Expected log_segment_size to be clamped to {min_segment_size} (1MB), "
+            f"but got {config['log_segment_size']}"
+        )
+
+
 class HasRedpandaAndAdmin(Protocol):
     redpanda: RedpandaService
     admin: Admin
