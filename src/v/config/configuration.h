@@ -837,8 +837,6 @@ public:
 
     property<bool> cloud_topics_parallel_fetch_enabled;
 
-    property<bool> cloud_topics_fetch_debounce_enabled;
-
     development_feature_property<int> development_feature_property_testing_only;
 
 private:

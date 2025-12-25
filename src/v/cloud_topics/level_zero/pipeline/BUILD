@@ -5,8 +5,6 @@ package(default_visibility = [
     "//src/v/cloud_topics:__pkg__",
     "//src/v/cloud_topics/level_zero/batcher:__pkg__",
     "//src/v/cloud_topics/level_zero/batcher/tests:__pkg__",
-    "//src/v/cloud_topics/level_zero/read_debounce:__pkg__",
-    "//src/v/cloud_topics/level_zero/read_debounce/tests:__pkg__",
     "//src/v/cloud_topics/level_zero/read_fanout:__pkg__",
     "//src/v/cloud_topics/level_zero/read_fanout/tests:__pkg__",
     "//src/v/cloud_topics/level_zero/read_request_scheduler:__pkg__",

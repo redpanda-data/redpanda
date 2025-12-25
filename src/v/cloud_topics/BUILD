@@ -133,7 +133,6 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/cluster_services_impl",
         "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:write_pipeline",
-        "//src/v/cloud_topics/level_zero/read_debounce",
         "//src/v/cloud_topics/level_zero/read_fanout",
         "//src/v/cloud_topics/level_zero/read_request_scheduler",
         "//src/v/cloud_topics/level_zero/reader:fetch_handler",

@@ -4585,14 +4585,6 @@ configuration::configuration()
       "request using multiple shards.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       true)
-  , cloud_topics_fetch_debounce_enabled(
-      *this,
-      "cloud_topics_fetch_debounce_enabled",
-      "Enables fetch debouncing in cloud topics. This mechanism guarantees "
-      "that the broker fetches every object only once improving the "
-      "performance and lowering the cost.",
-      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      true)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
