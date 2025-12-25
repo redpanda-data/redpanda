@@ -147,15 +147,13 @@ read_debounce<Clock>::process_single_request(read_request<Clock>* req) {
 
         _pipeline_stage.push_next_stage(*proxy);
 
-        auto holder = _gate.hold();
         proxy->response.get_future()
-          .finally([proxy, u = std::move(u), h = std::move(holder)] mutable {
+          .finally([proxy, u = std::move(u)] {
               // finally is used to capture 'u' and 'proxy'
               // while the request is fulfilled.
               // This call exits shortly but 'proxy' should
               // live until the request is running. The value
               // of 'u' could be 'nullopt'.
-              u.reset();
           })
           .forward_to(std::move(req->response));
         // At this point it's guaranteed that the req->response
