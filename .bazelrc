@@ -1,4 +1,7 @@
-common --registry=https://bcr.bazel.build
+#TODO: restore this
+#common --registry=https://bcr.bazel.build
+common --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main/
+
 common --extra_toolchains=@current_llvm_toolchain//:all
 
 common --@toolchains_llvm//toolchain/config:libunwind=False
