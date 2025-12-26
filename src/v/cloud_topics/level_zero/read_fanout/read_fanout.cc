@@ -11,6 +11,7 @@
 
 #include "cloud_topics/level_zero/pipeline/read_request.h"
 #include "container/chunked_vector.h"
+#include "model/timeout_clock.h"
 #include "ssx/future-util.h"
 
 namespace cloud_topics::l0 {
@@ -134,7 +135,11 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
             _pipeline_stage.push_next_stage(*proxy);
             futures.push_back(std::move(fut));
         }
-        auto fut_res = co_await ss::when_all(futures.begin(), futures.end());
+
+        auto& as = _pipeline_stage.get_abort_source();
+        auto fut = ss::when_all(futures.begin(), futures.end());
+        auto fut_res = co_await ssx::with_timeout_abortable(
+          std::move(fut), model::no_timeout, as);
 
         // First process all exception, propagate the first one to the source
         // request Then process error codes, if there are any errors propagate
