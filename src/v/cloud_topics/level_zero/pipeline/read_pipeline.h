@@ -98,6 +98,10 @@ public:
             return _parent->get_root_rtc();
         }
 
+        ss::abort_source& get_abort_source() noexcept {
+            return _parent->get_abort_source();
+        }
+
         void register_pipeline_error(errc e) {
             _parent->register_pipeline_error(e);
         }
