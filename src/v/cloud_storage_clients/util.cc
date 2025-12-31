@@ -12,8 +12,10 @@
 
 #include "base/vlog.h"
 #include "bytes/streambuf.h"
+#include "container/chunked_vector.h"
 #include "http/utils.h"
 #include "net/connection.h"
+#include "strings/string_switch.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
@@ -245,6 +247,62 @@ get_response_content_type(const http::client::response_header& headers) {
     }
 
     return response_content_type::unknown;
+}
+
+mime_header mime_header::from(iobuf_parser& in) {
+    mime_header result;
+    chunked_vector<char> nl_stack;
+    nl_stack.reserve(4);
+    chunked_vector<std::string> raw_headers;
+    static constexpr size_t max_buf = 1024;
+    std::string buf;
+    while (in.bytes_left()) {
+        auto c = in.consume_type<char>();
+        if (c == '\r' && (nl_stack.empty() || nl_stack.back() == '\n')) {
+            nl_stack.push_back(c);
+        } else if (c == '\n' && !nl_stack.empty() && nl_stack.back() == '\r') {
+            nl_stack.push_back(c);
+        } else if (c == '\r' || c == '\n' || buf.size() >= max_buf) {
+            throw std::runtime_error("Failed to parse MIME header");
+        } else {
+            nl_stack.clear();
+            buf.push_back(c);
+        }
+        if (nl_stack.size() == 2) {
+            raw_headers.emplace_back(std::move(buf));
+            buf = {};
+        } else if (nl_stack.size() == 4) {
+            break;
+        }
+    }
+    for (const auto& hdr : raw_headers) {
+        try {
+            field f = string_switch<field>{std::string_view{hdr}}
+                        .starts_with("Content-Type:", field::content_type)
+                        .starts_with("Content-ID:", field::content_id)
+                        .starts_with("Content-Length:", field::content_length)
+                        .starts_with(
+                          "Content-Transfer-Encoding:",
+                          field::content_transfer_encoding);
+            constexpr std::string_view sep = ": ";
+            if (auto sep_pos = hdr.find(sep); sep_pos != hdr.npos) {
+                // quietly ignore duplicate fields
+                std::ignore = result._fields.try_emplace(
+                  f, hdr.substr(sep_pos + sep.size()));
+            }
+        } catch (const std::runtime_error&) {
+            // ignore anything we don't explicitly match for
+            continue;
+        }
+    }
+    return result;
+}
+
+std::optional<ss::sstring> mime_header::get(field f) const {
+    if (auto it = _fields.find(f); it != _fields.end()) {
+        return std::make_optional(it->second);
+    }
+    return std::nullopt;
 }
 
 } // namespace cloud_storage_clients::util

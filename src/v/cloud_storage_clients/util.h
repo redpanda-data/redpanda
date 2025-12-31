@@ -11,6 +11,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "cloud_storage_clients/types.h"
 #include "http/client.h"
 
@@ -50,5 +51,29 @@ void url_encode_target(http::client::request_header& header);
 
 response_content_type
 get_response_content_type(const http::client::response_header& headers);
+
+struct mime_header {
+    static constexpr std::string_view content_type_field = "Content-Type";
+    static constexpr std::string_view content_id_field = "Content-ID";
+
+public:
+    using field = boost::beast::http::field;
+    using field_map_t = std::unordered_map<field, ss::sstring>;
+
+    template<typename T>
+    std::optional<T> content_id(
+      const std::function<std::optional<T>(std::string_view)> f) const {
+        return get(field::content_id).and_then(f);
+    }
+    std::optional<ss::sstring> get(field f) const;
+    field_map_t::const_iterator find(field f) const { return _fields.find(f); }
+    field_map_t::const_iterator end() const { return _fields.end(); }
+
+    // TODO: should return optional or someting?
+    static mime_header from(iobuf_parser& in);
+
+private:
+    field_map_t _fields;
+};
 
 } // namespace cloud_storage_clients::util
