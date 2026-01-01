@@ -89,4 +89,21 @@ private:
     bool _done{false};
 };
 
+struct multipart_subresponse {
+    using status = boost::beast::http::status;
+    status result() const;
+    bool is_ok() const;
+    std::optional<ss::sstring> error(std::string_view error_code_name) const;
+    static multipart_subresponse from(iobuf_parser& in);
+
+private:
+    static std::vector<boost::asio::const_buffer>
+    iobuf_to_constbufseq(const iobuf& buf);
+    using parser_t = boost::beast::http::response_parser<http::iobuf_body>;
+    std::optional<parser_t::value_type> _response{};
+    size_t _noctets{0};
+    boost::beast::error_code _ec{};
+    bool _header_done{false};
+};
+
 } // namespace cloud_storage_clients::util

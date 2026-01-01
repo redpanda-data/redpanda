@@ -366,4 +366,63 @@ void multipart_response_parser::advance_to_first_boundary() {
     }
 }
 
+auto multipart_subresponse::result() const -> status {
+    vassert(!_ec, "Parser had errored: {}", _ec.message());
+    vassert(_response.has_value(), "Response missing");
+    vassert(_header_done, "Header not done");
+    return _response.value().result();
+}
+
+bool multipart_subresponse::is_ok() const {
+    auto st = result();
+    return st == status::ok || st == status::accepted
+           || st == status::no_content || st == status::not_found;
+}
+
+std::optional<ss::sstring>
+multipart_subresponse::error(std::string_view error_code_name) const {
+    if (is_ok()) {
+        return std::nullopt;
+    }
+    auto st = result();
+    auto it = _response.value().find(error_code_name);
+    std::string_view reason = "Unknown";
+    if (it != _response.value().end()) {
+        reason = it->value();
+    }
+    return ssx::sformat(
+      "HTTP {} {} - {}", static_cast<unsigned>(st), st, reason);
+}
+
+multipart_subresponse multipart_subresponse::from(iobuf_parser& in) {
+    multipart_subresponse result{};
+    auto buf = in.share(in.bytes_left());
+    parser_t parser;
+    parser.get().body().set_temporary_source(buf);
+    auto bufseq = iobuf_to_constbufseq(buf);
+    result._noctets = parser.put(bufseq, result._ec);
+    if (result._ec) {
+        throw std::runtime_error(
+          ssx::sformat(
+            "faled to parse multipart reponse part: {}, remaining bytes: "
+            "{}, n octets parsed: {}",
+            result._ec.message(),
+            buf.size_bytes(),
+            result._noctets));
+    }
+    result._header_done = parser.is_header_done();
+    result._response.emplace(parser.release());
+    return result;
+}
+
+std::vector<boost::asio::const_buffer>
+multipart_subresponse::iobuf_to_constbufseq(const iobuf& buf) {
+    std::vector<boost::asio::const_buffer> seq;
+    for (const auto& fragm : buf) {
+        boost::asio::const_buffer cbuf{fragm.get(), fragm.size()};
+        seq.push_back(cbuf);
+    }
+    return seq;
+};
+
 } // namespace cloud_storage_clients::util
