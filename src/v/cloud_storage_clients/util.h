@@ -76,4 +76,17 @@ private:
     field_map_t _fields;
 };
 
+struct multipart_response_parser {
+    explicit multipart_response_parser(iobuf b, ss::sstring delim);
+    std::optional<iobuf> get_part();
+
+private:
+    void advance_to_first_boundary();
+    iobuf _buffer;
+    iobuf_const_parser _parser;
+    ss::sstring _delim;
+    bool _found_first{false};
+    bool _done{false};
+};
+
 } // namespace cloud_storage_clients::util

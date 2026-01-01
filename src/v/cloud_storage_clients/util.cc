@@ -305,4 +305,65 @@ std::optional<ss::sstring> mime_header::get(field f) const {
     return std::nullopt;
 }
 
+multipart_response_parser::multipart_response_parser(iobuf b, ss::sstring delim)
+  : _buffer(std::move(b))
+  , _parser(std::cref(_buffer))
+  , _delim(std::move(delim)) {}
+
+std::optional<iobuf> multipart_response_parser::get_part() {
+    advance_to_first_boundary();
+    if (!_found_first || _done) {
+        return std::nullopt;
+    }
+    size_t delim_idx = 0;
+    std::optional<size_t> part_start{};
+    size_t part_len = 0;
+    while (delim_idx < _delim.size() && _parser.bytes_left()) {
+        auto c = _parser.consume_type<char>();
+        if (c == _delim[delim_idx]) {
+            ++delim_idx;
+            continue;
+        }
+        // unlikely, but we may have skipped some bytes that appeared to be
+        // part of a delimiter.
+        part_len += delim_idx + 1;
+        delim_idx = 0;
+        // eat up any leading CRLFs so the resulting part starts on text
+        if (!part_start.has_value()) [[unlikely]] {
+            if (c == '\r' || c == '\n') {
+                part_len = 0;
+                continue;
+            }
+            part_start = _parser.bytes_consumed() - 1;
+            part_len = 1;
+        }
+    }
+    // we ran out of bytes before reaching the end delimiter
+    if (delim_idx < _delim.size() || _parser.bytes_left() < 2) {
+        _done = true;
+        return std::nullopt;
+    }
+    // check for end delimiter
+    auto maybe_end = _parser.peek_bytes(2);
+    if (maybe_end[0] == '-' && maybe_end[1] == '-') {
+        _done = true;
+    }
+    if (part_len == 0 || !part_start.has_value()) {
+        return std::nullopt;
+    }
+    return std::make_optional<iobuf>(
+      _buffer.share(part_start.value(), part_len));
+}
+
+void multipart_response_parser::advance_to_first_boundary() {
+    size_t delim_idx = 0;
+    while (!_found_first && _parser.bytes_left()) {
+        auto c = _parser.consume_type<char>();
+        if (c == _delim[delim_idx]) {
+            ++delim_idx;
+        }
+        _found_first = delim_idx == _delim.size();
+    }
+}
+
 } // namespace cloud_storage_clients::util
