@@ -95,6 +95,8 @@ redpanda_cc_btest(
         "util_test.cc",
     ],
     deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/cloud_storage_clients",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
