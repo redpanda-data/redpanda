@@ -167,7 +167,7 @@ int remote::delete_objects_max_keys() const {
         // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
         return 1000;
     case model::cloud_storage_backend::google_s3_compat:
-        [[fallthrough]];
+        return 100;
     case model::cloud_storage_backend::azure:
         // Will be supported once azurite supports batch blob delete
         [[fallthrough]];
