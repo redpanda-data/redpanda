@@ -45,6 +45,7 @@ ss::json::json_return_type raw_data_to_usage_response(
               "{}", dl_usage.missing_reason);
         }
         resp.back().datalake_usage = std::move(dl_usage_response);
+        resp.back().shadowing_bytes_received_count = e.u.shadow_bytes_received;
     }
     if (include_open && !resp.empty()) {
         /// Handle case where client does not want to observe

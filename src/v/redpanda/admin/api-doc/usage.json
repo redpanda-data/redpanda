@@ -89,6 +89,10 @@
                 "datalake_usage": {
                     "type": "datalake_usage",
                     "description": "Datalake feature usage metrics."
+                },
+                "shadowing_bytes_received_count": {
+                    "type": "long",
+                    "description": "Number of bytes received by Redpanda for shadowing related replication"
                 }
             }
         }

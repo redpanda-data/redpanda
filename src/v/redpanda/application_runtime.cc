@@ -281,6 +281,7 @@ void application::wire_up_runtime_services(
       &controller->get_security_frontend(),
       &_kafka_data_rpc_client,
       &id_allocator_frontend,
+      &usage_manager,
       smp_service_groups.cluster_link_smp_sg(),
       scheduling_groups::instance().cluster_linking_sg())
       .get();

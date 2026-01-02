@@ -59,28 +59,36 @@ std::chrono::time_point<clock_type, duration> round_to_interval(
 /// periodically serialized to disk, hence why the struct inherits from the
 /// serde::envelope
 struct usage
-  : serde::envelope<usage, serde::version<1>, serde::compat_version<0>> {
+  : serde::envelope<usage, serde::version<2>, serde::compat_version<0>> {
     uint64_t bytes_sent{0};
     uint64_t bytes_received{0};
     std::optional<uint64_t> bytes_cloud_storage;
     datalake_usage_api::usage_stats datalake_usage;
+    // Total bytes replicated as a part of shadowing. This is
+    // not accounted under (Kafka) bytes_received.
+    uint64_t shadow_bytes_received{0};
     usage operator+(const usage&) const;
     usage& operator+=(const usage&);
     auto serde_fields() {
         return std::tie(
-          bytes_sent, bytes_received, bytes_cloud_storage, datalake_usage);
+          bytes_sent,
+          bytes_received,
+          bytes_cloud_storage,
+          datalake_usage,
+          shadow_bytes_received);
     }
     friend bool operator==(const usage&, const usage&) = default;
     friend std::ostream& operator<<(std::ostream& os, const usage& u) {
         fmt::print(
           os,
           "{{ bytes_sent: {} bytes_received: {} bytes_cloud_storage: {} "
-          "datalake_usage: {} }}",
+          "datalake_usage: {} shadow_bytes_received: {}}}",
           u.bytes_sent,
           u.bytes_received,
           u.bytes_cloud_storage ? std::to_string(*u.bytes_cloud_storage)
                                 : "n/a",
-          u.datalake_usage);
+          u.datalake_usage,
+          u.shadow_bytes_received);
         return os;
     }
 };

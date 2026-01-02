@@ -57,6 +57,7 @@ public:
       ss::sharded<cluster::security_frontend>* security_fe,
       ss::sharded<kafka::data::rpc::client>* kafka_data_rpc_client,
       ss::sharded<cluster::id_allocator_frontend>* id_alloc,
+      ss::sharded<kafka::usage_manager>* usage_mgr,
       ss::smp_service_group smp_group,
       ss::scheduling_group scheduling_group);
 
@@ -228,6 +229,7 @@ private:
     ss::sharded<cluster::security_frontend>* _security_fe;
     ss::sharded<kafka::data::rpc::client>* _kafka_data_rpc_client;
     ss::sharded<cluster::id_allocator_frontend>* _id_allocator_frontend;
+    ss::sharded<kafka::usage_manager>* _usage_mgr;
     ss::smp_service_group _smp_group;
     ss::scheduling_group _scheduling_group;
     std::unique_ptr<manager> _manager;
@@ -246,5 +248,6 @@ std::unique_ptr<replication::data_source> make_default_data_source(
 std::unique_ptr<replication::data_sink> make_default_data_sink(
   ss::lw_shared_ptr<cluster::partition> partition,
   const cluster::metadata_cache&,
-  cluster::id_allocator_frontend&);
+  cluster::id_allocator_frontend&,
+  kafka::usage_manager&);
 } // namespace cluster_link

@@ -3739,3 +3739,97 @@ class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
             assert source_offsets == target_offsets, (
                 f"Expected source and target offsets to match, got {target_offsets} vs {source_offsets}"
             )
+
+
+class ShadowLinkingUsageTest(ShadowLinkPreAllocTestBase):
+    """
+    Tests that the usage endpoint is tracking shadowing metrics
+    """
+
+    def __init__(self, test_context, *args, **kwargs):
+        # Enable usage tracking with reasonable window settings
+        # The windows are chosen so the entire history of windows
+        # are returned in each usage query. This way we can easily
+        # sum across all windows to get total shadowing bytes received
+        # and compute deltas as needed.
+        extra_rp_conf = {
+            "enable_usage": True,
+            "usage_num_windows": 30,
+            "usage_window_width_interval_sec": 3,
+            "usage_disk_persistance_interval_sec": 3,
+        }
+        super(ShadowLinkingUsageTest, self).__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf, *args, **kwargs
+        )
+
+    def _get_shadowing_bytes_received(self, cluster: RedpandaService) -> int:
+        """
+        Get the total shadowing_bytes_received_count across all windows for a cluster
+        """
+        admin = cluster._admin
+        total_bytes = 0
+
+        for node in cluster.started_nodes():
+            try:
+                usage_response = admin.get_usage(node, include_open=True)
+                for window in usage_response:
+                    shadow_bytes = window.get("shadowing_bytes_received_count", 0)
+                    total_bytes += shadow_bytes
+            except Exception as e:
+                self.logger.warning(f"Failed to get usage from node {node.name}: {e}")
+
+        return total_bytes
+
+    @cluster(num_nodes=7)
+    def test_shadowing_bytes_received_tracking(self):
+        """
+        Test that shadowing_bytes_received_count is properly tracked when
+        data is replicated via shadowing
+        """
+        # Create topic on source cluster
+        source_topic = TopicSpec(name="test-topic")
+        self.source_default_client().create_topic(source_topic)
+
+        # Create shadow link
+        self.create_link("test-link")
+
+        prev_shadow_bytes = self._get_shadowing_bytes_received(
+            self.target_cluster_service
+        )
+        iterations = 5
+        total_produced = 0
+        for _ in range(iterations):
+            # Produce data to source cluster
+            records = 10000
+            record_size = 512
+            KgoVerifierProducer.oneshot(
+                self.test_context,
+                self.source_cluster_service,
+                topic=source_topic.name,
+                msg_size=record_size,
+                msg_count=records,
+            )
+            total_produced += records * record_size
+            self.logger.debug(f"Produced {total_produced} bytes to source cluster")
+
+            # Wait for data to be replicated via shadowing
+            def shadowing_bytes_increased():
+                current_bytes = self._get_shadowing_bytes_received(
+                    self.target_cluster_service
+                )
+                self.logger.debug(
+                    f"Current shadowing bytes received: {current_bytes}, "
+                    f"prev: {prev_shadow_bytes}, "
+                    f"total produced: {total_produced}"
+                )
+                made_progress = current_bytes > prev_shadow_bytes and current_bytes > (
+                    total_produced * 0.5
+                )
+                return (made_progress, current_bytes)
+
+            prev_shadow_bytes = wait_until_result(
+                shadowing_bytes_increased,
+                timeout_sec=60,
+                backoff_sec=3,
+                err_msg="Shadowing bytes received count did not increase as expected",
+            )
