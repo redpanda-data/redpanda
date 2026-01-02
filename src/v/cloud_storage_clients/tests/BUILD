@@ -159,3 +159,21 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "gcs_client_test",
+    timeout = "short",
+    srcs = [
+        "gcs_client_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_storage_clients",
+        "//src/v/http/tests:utils",
+        "//src/v/net",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:unresolved_address",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
