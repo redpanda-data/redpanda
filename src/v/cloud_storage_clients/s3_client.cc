@@ -1474,8 +1474,23 @@ auto s3_client::delete_objects(
   ss::lowres_clock::duration timeout)
   -> ss::future<result<delete_objects_result, error_outcome>> {
     const object_key dummy{""};
-    co_return co_await send_request(
-      do_delete_objects(bucket, keys, timeout), bucket, dummy);
+
+    // Determine which batch delete implementation to use based on backend
+    // GCS does not support S3-style batch deletes, so use GCS batch API
+    auto backend = config::shard_local_cfg().cloud_storage_backend();
+    auto inferred_backend = infer_backend_from_uri(_requestor._ap);
+
+    bool is_gcs = backend == model::cloud_storage_backend::google_s3_compat
+                  || inferred_backend
+                       == model::cloud_storage_backend::google_s3_compat;
+
+    if (is_gcs) {
+        co_return co_await send_request(
+          do_gcs_batch_delete_objects(bucket, keys, timeout), bucket, dummy);
+    } else {
+        co_return co_await send_request(
+          do_delete_objects(bucket, keys, timeout), bucket, dummy);
+    }
 }
 
 auto s3_client::do_gcs_batch_delete_objects(
