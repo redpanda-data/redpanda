@@ -69,6 +69,7 @@ redpanda_cc_library(
         "@boost//:beast",
         "@boost//:lexical_cast",
         "@boost//:property_tree",
+        "@rapidjson",
         "@seastar",
     ],
 )
