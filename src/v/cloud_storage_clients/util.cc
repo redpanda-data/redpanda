@@ -394,10 +394,22 @@ multipart_subresponse::error(std::string_view error_code_name) const {
       "HTTP {} {} - {}", static_cast<unsigned>(st), st, reason);
 }
 
+std::optional<ss::sstring>
+multipart_subresponse::error(const std::function<ss::sstring(iobuf)>& parser) {
+    if (is_ok()) {
+        return std::nullopt;
+    }
+    auto st = result();
+    auto reason = parser(_body.share());
+    return ssx::sformat(
+      "HTTP {} {} - {}", static_cast<unsigned>(st), st, reason);
+}
+
 multipart_subresponse multipart_subresponse::from(iobuf_parser& in) {
     multipart_subresponse result{};
     auto buf = in.share(in.bytes_left());
     parser_t parser;
+    parser.eager(true);
     parser.get().body().set_temporary_source(buf);
     auto bufseq = iobuf_to_constbufseq(buf);
     result._noctets = parser.put(bufseq, result._ec);
@@ -411,6 +423,7 @@ multipart_subresponse multipart_subresponse::from(iobuf_parser& in) {
             result._noctets));
     }
     result._header_done = parser.is_header_done();
+    result._body = parser.get().body().consume();
     result._response.emplace(parser.release());
     return result;
 }

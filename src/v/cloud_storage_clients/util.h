@@ -94,16 +94,21 @@ struct multipart_subresponse {
     status result() const;
     bool is_ok() const;
     std::optional<ss::sstring> error(std::string_view error_code_name) const;
+    // extract error message from the response body. non-const because it
+    // requires a share from the cached response body
+    std::optional<ss::sstring> error(const std::function<ss::sstring(iobuf)>&);
     static multipart_subresponse from(iobuf_parser& in);
 
 private:
     static std::vector<boost::asio::const_buffer>
     iobuf_to_constbufseq(const iobuf& buf);
     using parser_t = boost::beast::http::response_parser<http::iobuf_body>;
-    std::optional<parser_t::value_type> _response{};
+    using response_t = parser_t::value_type;
+    std::optional<response_t> _response{};
     size_t _noctets{0};
     boost::beast::error_code _ec{};
     bool _header_done{false};
+    iobuf _body;
 };
 
 } // namespace cloud_storage_clients::util
