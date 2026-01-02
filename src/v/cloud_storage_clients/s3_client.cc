@@ -25,9 +25,12 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/types.h"
+#include "container/chunked_hash_map.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "http/utils.h"
+#include "json/istreamwrapper.h"
+#include "json/reader.h"
 #include "utils/base64.h"
 
 #include <seastar/core/abort_source.hh>
@@ -47,6 +50,7 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 
+#include <charconv>
 #include <exception>
 #include <utility>
 #include <variant>
@@ -384,6 +388,128 @@ request_creator::make_delete_objects_request(
     return {std::move(header), make_iobuf_input_stream(std::move(body))};
 }
 
+result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+request_creator::make_gcs_batch_delete_request(
+  const plain_bucket_name& name, const chunked_vector<object_key>& keys) {
+    // Google Cloud Storage Batch API
+    // https://cloud.google.com/storage/docs/batch
+    //
+    // POST /batch/storage/v1 HTTP/1.1
+    // Host: storage.googleapis.com
+    // Content-Type: multipart/mixed; boundary=<boundary>
+    // Authorization: Bearer <token>  # added by 'add_auth'
+    // Content-Length: <...>
+    //
+    // Body structure:
+    // --<boundary>
+    // Content-Type: application/http
+    // Content-ID: <id>
+    //
+    // DELETE /storage/v1/b/<bucket>/o/<object> HTTP/1.1
+    //
+    // --<boundary>
+    // ... (repeat for each object)
+    // --<boundary>--
+    //
+    // Note: GCS batch API requires path-only URLs in subrequests
+    // Max 100 requests per batch, max 10MB payload
+
+    // Generate unique boundary
+    auto boundary = fmt::format("batch_{}", uuid_t::create());
+
+    // Build the multipart body
+    iobuf body;
+    iobuf_ostreambuf obuf(body);
+    std::ostream out(&obuf);
+
+    for (size_t i = 0; i < keys.size(); ++i) {
+        const auto& key = keys[i];
+
+        // Boundary line
+        fmt::print(out, "--{}\r\n", boundary);
+
+        http::client::request_header part_header{};
+        part_header.insert(
+          boost::beast::http::field::content_type, "application/http");
+        part_header.insert(
+          boost::beast::http::field::content_transfer_encoding, "binary");
+        part_header.insert(
+          boost::beast::http::field::content_id, fmt::to_string(i));
+
+        http::client::request_header subrequest_header{};
+        subrequest_header.method(boost::beast::http::verb::delete_);
+        subrequest_header.target(make_target(name, key));
+        subrequest_header.insert(
+          boost::beast::http::field::content_type, "application/json");
+        subrequest_header.insert(
+          boost::beast::http::field::accept, "application/json");
+        // Content-Length for DELETE is 0
+        subrequest_header.insert(
+          boost::beast::http::field::content_length, fmt::to_string(0));
+        util::url_encode_target(subrequest_header);
+
+        // NOTE: Per docs.cloud.google.com/storage/docs/batch#http:
+        // if you provide an [Auth] header for a specific nested request, then
+        // that header applies only to the request that specified it. If you
+        // provide an [Auth] header for the outer request, then that header
+        // applies to all of the nested requests unless they override it with an
+        // [Auth] header of their own.
+
+        // part header
+
+        for (const auto& f : part_header) {
+            fmt::print(out, "{}: {}\r\n", f.name_string(), f.value());
+        }
+        fmt::print(out, "\r\n");
+
+        // subrequest header
+
+        fmt::print(
+          out,
+          "{} {} HTTP/1.1\r\n",
+          subrequest_header.method_string(),
+          subrequest_header.target());
+
+        for (const auto& f : subrequest_header) {
+            fmt::print(out, "{}: {}\r\n", f.name_string(), f.value());
+        }
+        fmt::print(out, "\r\n");
+    }
+
+    // Final boundary
+    fmt::print(out, "--{}--\r\n", boundary);
+
+    if (!out.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "failed to create GCS batch delete request, state: {}",
+          out.rdstate()));
+    }
+
+    // Create the main request header
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::post);
+    // GCS batch endpoint uses a fixed path, not bucket-specific
+    header.target("/batch/storage/v1");
+    header.insert(boost::beast::http::field::host, "storage.googleapis.com");
+    header.insert(
+      boost::beast::http::field::content_type,
+      fmt::format("multipart/mixed; boundary={}", boundary));
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", body.size_bytes()));
+
+    auto ec = _apply_credentials->add_auth(header);
+    if (ec) {
+        return ec;
+    }
+
+    // Convert iobuf to input_stream
+    auto stream = make_iobuf_input_stream(std::move(body));
+
+    return {std::move(header), std::move(stream)};
+}
+
 std::string request_creator::make_host(const plain_bucket_name& name) const {
     switch (_ap_style) {
     case s3_url_style::virtual_host:
@@ -504,6 +630,122 @@ ss::future<ResultT> parse_rest_error_response(
       fmt::format("Empty error response, status code {}", result),
       "",
       ""));
+}
+
+namespace {
+struct gcs_error_handler
+  : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>, gcs_error_handler> {
+    enum class state : uint8_t { init, in_error, in_message, found };
+    state st = state::init;
+    std::optional<ss::sstring> message;
+    bool Key(const char* str, rapidjson::SizeType len, bool) {
+        std::string_view k{str, len};
+        if (st == state::init && k == "error") {
+            st = state::in_error;
+        } else if (st == state::in_error && k == "message") {
+            st = state::in_message;
+        }
+        return true;
+    }
+
+    bool String(const char* str, rapidjson::SizeType len, bool) {
+        if (st == state::in_message) {
+            message.emplace(str, len);
+            st = state::found;
+        }
+        return true;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        if (st == state::in_error) {
+            st = state::init;
+        }
+        return true;
+    }
+};
+
+ss::sstring parse_gcs_error_reason(iobuf body) {
+    iobuf_istreambuf ibuf(body);
+    std::istream stream(&ibuf);
+    json::IStreamWrapper wrapper(stream);
+    json::Reader reader;
+    gcs_error_handler handler;
+    auto res = reader.Parse(wrapper, handler);
+    if (res && handler.message.has_value()) {
+        return std::move(handler.message).value();
+    } else {
+        return "Unknown";
+    }
+};
+} // namespace
+
+/// Parse GCS batch delete response using multipart parsing utilities
+/// GCS batch responses follow the multipart/mixed format similar to ABS
+static cloud_storage_clients::client::delete_objects_result
+parse_gcs_batch_delete_response(
+  iobuf buf,
+  std::string_view boundary,
+  const chunked_vector<object_key>& keys) {
+    cloud_storage_clients::client::delete_objects_result result;
+
+    // Parse multipart response - split by boundary
+    auto boundary_delim = ssx::sformat("--{}", boundary);
+    util::multipart_response_parser parts{std::move(buf), boundary_delim};
+
+    constexpr auto convert_content_id =
+      [](std::string_view raw) -> std::optional<size_t> {
+        constexpr std::string_view pfx = "response-";
+        std::optional<size_t> result{};
+        if (auto pos = raw.find(pfx); pos != raw.npos) {
+            raw = raw.substr(pos + pfx.size());
+            size_t v{};
+            auto res = std::from_chars(raw.data(), raw.data() + raw.size(), v);
+            if (res.ec == std::errc{}) {
+                result = v;
+            }
+        }
+        return result;
+    };
+
+    chunked_hash_set<size_t> content_ids_seen;
+    std::optional<iobuf> part;
+    while ((part = parts.get_part()).has_value()) {
+        iobuf_parser part_parser{std::move(part).value()};
+        auto mime = util::mime_header::from(part_parser);
+        auto maybe_content_id = mime.content_id<size_t>(convert_content_id);
+        if (!maybe_content_id.has_value()) {
+            vlog(
+              s3_log.debug,
+              "MIME header missing 'Content-ID' from batch response, skipping "
+              "part");
+            continue;
+        }
+        content_ids_seen.insert(maybe_content_id.value());
+        // having stripped off the leading MIME headers, we should have a
+        // complete HTTP response at the front of the parser
+        auto subrequest = util::multipart_subresponse::from(part_parser);
+        if (auto maybe_error = subrequest.error(parse_gcs_error_reason);
+            maybe_error.has_value()) {
+            // Extract error message from response if available
+            // GCS error responses may contain error details in the body
+            result.undeleted_keys.push_back({
+              .key = keys[maybe_content_id.value()],
+              .reason = std::move(maybe_error).value(),
+            });
+        }
+    }
+
+    // Check for any keys that were not in the response
+    for (auto id : std::views::iota(0ul, keys.size())) {
+        if (!content_ids_seen.contains(id)) {
+            result.undeleted_keys.push_back({
+              .key = keys[id],
+              .reason = "Object missing from batch response",
+            });
+        }
+    }
+
+    return result;
 }
 
 /// Head response doesn't give us an XML encoded error object in
@@ -1238,4 +1480,46 @@ auto s3_client::delete_objects(
     co_return co_await send_request(
       do_delete_objects(bucket, keys, timeout), bucket, dummy);
 }
+
+auto s3_client::do_gcs_batch_delete_objects(
+  const plain_bucket_name& bucket,
+  const chunked_vector<object_key>& keys,
+  ss::lowres_clock::duration timeout)
+  -> ss::future<client::delete_objects_result> {
+    auto request = _requestor.make_gcs_batch_delete_request(bucket, keys);
+    if (!request) {
+        co_return ss::coroutine::exception(
+          std::make_exception_ptr(std::system_error(request.error())));
+    }
+    auto& [header, body] = request.value();
+    vlog(s3_log.trace, "send GCS batch delete request:\n{}", header);
+
+    auto response_stream = co_await _client.request(
+      std::move(header), body, timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    // GCS batch API returns 200 OK for successful batch requests
+    // Individual subrequest failures are encoded in the multipart response
+    if (status != boost::beast::http::status::ok) {
+        const auto content_type = util::get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await http::drain(std::move(response_stream));
+        co_return co_await parse_rest_error_response<delete_objects_result>(
+          content_type, status, std::move(buf));
+    }
+
+    // Extract boundary from Content-Type header
+    const auto& headers = response_stream->get_headers();
+    auto boundary = util::find_multipart_boundary(headers);
+    auto response_buf = co_await http::drain(std::move(response_stream));
+    if (!boundary.has_value()) {
+        throw std::runtime_error(boundary.error());
+    }
+    co_return parse_gcs_batch_delete_response(
+      std::move(response_buf), boundary.value(), keys);
+}
+
 } // namespace cloud_storage_clients
