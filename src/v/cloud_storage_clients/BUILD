@@ -43,6 +43,7 @@ redpanda_cc_library(
         "//src/v/cloud_roles:auth_refresh_bg_op",
         "//src/v/cloud_roles:types",
         "//src/v/config",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/container:intrusive",
         "//src/v/crash_tracker",
@@ -70,6 +71,7 @@ redpanda_cc_library(
         "@boost//:beast",
         "@boost//:lexical_cast",
         "@boost//:property_tree",
+        "@rapidjson",
         "@seastar",
     ],
 )
