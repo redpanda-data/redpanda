@@ -165,3 +165,6 @@ cloud_storage_clients::http_byte_range parse_byte_header(std::string_view s);
 
 std::vector<cloud_storage_clients::object_key>
 keys_from_delete_objects_request(const http_test_utils::request_info&);
+
+std::vector<std::pair<ss::sstring, cloud_storage_clients::object_key>>
+keys_from_batch_delete_request(const http_test_utils::request_info&);
