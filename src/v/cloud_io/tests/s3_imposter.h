@@ -83,7 +83,8 @@ public:
     void set_expectations_and_listen(
       std::vector<expectation> expectations,
       std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
-      = std::nullopt);
+      = std::nullopt,
+      std::set<ss::sstring> content_type_overrides = {});
 
     /// Update expectations for the REST API.
     void add_expectations(std::vector<expectation> expectations);
@@ -128,7 +129,8 @@ private:
       ss::httpd::routes& r,
       const std::vector<expectation>& expectations,
       std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
-      = std::nullopt);
+      = std::nullopt,
+      std::set<ss::sstring> content_type_overrides = {});
 
     ss::socket_address _server_addr;
     ss::shared_ptr<ss::httpd::http_server_control> _server;

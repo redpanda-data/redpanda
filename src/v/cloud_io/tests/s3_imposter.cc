@@ -434,18 +434,25 @@ s3_imposter_fixture::get_targets() const {
 
 void s3_imposter_fixture::set_expectations_and_listen(
   std::vector<s3_imposter_fixture::expectation> expectations,
-  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
+  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store,
+  std::set<ss::sstring> content_type_overrides) {
     const ss::sstring url_prefix = "/" + url_base();
     for (auto& expectation : expectations) {
         expectation.url.insert(
           expectation.url.begin(), url_prefix.begin(), url_prefix.end());
     }
     _server
-      ->set_routes(
-        [this, &expectations, headers_to_store = std::move(headers_to_store)](
-          ss::httpd::routes& r) mutable {
-            set_routes(r, expectations, std::move(headers_to_store));
-        })
+      ->set_routes([this,
+                    &expectations,
+                    headers_to_store = std::move(headers_to_store),
+                    ct_overrides = std::move(content_type_overrides)](
+                     ss::httpd::routes& r) mutable {
+          set_routes(
+            r,
+            expectations,
+            std::move(headers_to_store),
+            std::move(ct_overrides));
+      })
       .get();
     _server->listen(_server_addr).get();
 }
@@ -491,7 +498,8 @@ ss::sstring s3_imposter_fixture::url_base() const {
 void s3_imposter_fixture::set_routes(
   ss::httpd::routes& r,
   const std::vector<s3_imposter_fixture::expectation>& expectations,
-  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
+  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store,
+  std::set<ss::sstring> content_type_overrides) {
     using namespace ss::httpd;
     using reply = ss::http::reply;
     _content_handler = ss::make_shared<content_handler>(
@@ -500,7 +508,8 @@ void s3_imposter_fixture::set_routes(
       [this](const_req req, reply& repl, [[maybe_unused]] ss::sstring& type) {
           return _content_handler->handle(req, repl);
       },
-      "xml");
+      "xml",
+      std::move(content_type_overrides));
     r.add_default_handler(_handler.get());
 }
 
