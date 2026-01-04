@@ -37,7 +37,8 @@ class flexible_function_handler : public ss::httpd::handler_base {
 public:
     flexible_function_handler(
       const flexible_handle_function& f_handle,
-      ss::sstring content_type = "txt");
+      ss::sstring content_type = "txt",
+      std::set<ss::sstring> content_type_overrides = {});
 
     ss::future<std::unique_ptr<ss::http::reply>> handle(
       [[maybe_unused]] const ss::sstring& path,
@@ -47,6 +48,7 @@ public:
 private:
     ss::httpd::future_handler_function _f_handle;
     ss::sstring _content_type;
+    std::set<ss::sstring> _content_type_overrides;
 };
 
 } // namespace test_utils
