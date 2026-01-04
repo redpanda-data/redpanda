@@ -23,7 +23,9 @@ namespace http {
 namespace test_utils {
 
 flexible_function_handler::flexible_function_handler(
-  const flexible_handle_function& f_handle, ss::sstring content_type)
+  const flexible_handle_function& f_handle,
+  ss::sstring content_type,
+  std::set<ss::sstring> content_type_overrides)
   : _f_handle([this, f_handle](
                 std::unique_ptr<ss::http::request> req,
                 std::unique_ptr<ss::http::reply> rep) {
@@ -32,7 +34,8 @@ flexible_function_handler::flexible_function_handler(
       return ss::make_ready_future<std::unique_ptr<ss::http::reply>>(
         std::move(rep));
   })
-  , _content_type(std::move(content_type)) {}
+  , _content_type(std::move(content_type))
+  , _content_type_overrides(std::move(content_type_overrides)) {}
 
 ss::future<std::unique_ptr<ss::http::reply>> flexible_function_handler::handle(
   [[maybe_unused]] const ss::sstring& path,
@@ -40,7 +43,10 @@ ss::future<std::unique_ptr<ss::http::reply>> flexible_function_handler::handle(
   std::unique_ptr<ss::http::reply> rep) {
     return _f_handle(std::move(req), std::move(rep))
       .then([this](std::unique_ptr<ss::http::reply> rep) {
-          if (_content_type == "xml") {
+          if (_content_type_overrides.contains(
+                rep->get_header("Content-Type"))) {
+              rep->done();
+          } else if (_content_type == "xml") {
               // Because `application/xml` is not implemented as a mapping
               // in `http/mime_types.cc`, in order to construct a reply with
               // the `Content-Type` header set to `application/xml`, we
