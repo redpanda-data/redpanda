@@ -1,0 +1,493 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.admin.v2;
+
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
+import "proto/redpanda/core/common/v1/ntp.proto";
+
+option (pbgen.cpp_namespace) = "proto::admin";
+
+// The CloudStorageStatusService provides operations for managing cloud storage
+// status, recovery, and metadata for partitions.
+service CloudStorageStatusService {
+    // SyncLocalState
+    //
+    // Sync content of the bucket with local partition metadata.
+    rpc SyncLocalState(SyncLocalStateRequest) returns (SyncLocalStateResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // InitializeClusterRecovery
+    //
+    // Initializes a cluster recovery.
+    rpc InitializeClusterRecovery(InitializeClusterRecoveryRequest)
+        returns (InitializeClusterRecoveryResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // GetClusterRecovery
+    //
+    // Get status of cluster recovery.
+    rpc GetClusterRecovery(GetClusterRecoveryRequest)
+        returns (GetClusterRecoveryResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // InitiateTopicScanAndRecovery
+    //
+    // Initiate topic scan on bucket and start topic recovery.
+    rpc InitiateTopicScanAndRecovery(InitiateTopicScanAndRecoveryRequest)
+        returns (InitiateTopicScanAndRecoveryResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // QueryAutomatedRecovery
+    //
+    // Query status of automated topic recovery.
+    rpc QueryAutomatedRecovery(QueryAutomatedRecoveryRequest)
+        returns (QueryAutomatedRecoveryResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // GetPartitionCloudStorageStatus
+    //
+    // Get cloud storage status for a partition.
+    rpc GetPartitionCloudStorageStatus(GetPartitionCloudStorageStatusRequest)
+        returns (GetPartitionCloudStorageStatusResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // GetManifest
+    //
+    // Get the in-memory partition manifest in JSON format.
+    rpc GetManifest(GetManifestRequest) returns (GetManifestResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // GetCloudStorageLifecycle
+    //
+    // Get lifecycle markers for topics pending deletion.
+    rpc GetCloudStorageLifecycle(GetCloudStorageLifecycleRequest)
+        returns (GetCloudStorageLifecycleResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // DeleteCloudStorageLifecycle
+    //
+    // Forcibly drop a lifecycle marker for a topic, this may leave data behind
+    // in the tiered storage bucket.
+    rpc DeleteCloudStorageLifecycle(DeleteCloudStorageLifecycleRequest)
+        returns (DeleteCloudStorageLifecycleResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // CloudStorageCacheTrim
+    //
+    // Invoke trimming on the local cache of tiered storage objects. This
+    // operation will trim the local cache of tiered storage objects. If no
+    // parameters are included, this endpoint by default trims the cache to the
+    // maximum cache size given by the cluster config. Use the 'bytes' and
+    // 'objects' parameters to specify the number of bytes and objects to retain
+    // in the cache.
+    rpc CloudStorageCacheTrim(CloudStorageCacheTrimRequest)
+        returns (CloudStorageCacheTrimResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // GetCloudStorageAnomalies
+    //
+    // Retrieve cloud storage anomalies for a given partition.
+    rpc GetCloudStorageAnomalies(GetCloudStorageAnomaliesRequest)
+        returns (GetCloudStorageAnomaliesResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // UnsafeResetMetadataFromCloud
+    //
+    // Resets the manifest to the one in cloud storage, updating all replicas
+    // with the given manifest. The request is refused if applying the change
+    // would cause data loss and the force query parameter is unspecified or
+    // false.
+    rpc UnsafeResetMetadataFromCloud(UnsafeResetMetadataFromCloudRequest)
+        returns (UnsafeResetMetadataFromCloudResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // ResetScrubbingMetadata
+    //
+    // Reset scrubbing related metadata and anomalies for given partition.
+    rpc ResetScrubbingMetadata(ResetScrubbingMetadataRequest)
+        returns (ResetScrubbingMetadataResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+}
+
+// SyncLocalStateRequest is the request for syncing bucket content with local
+// partition metadata.
+message SyncLocalStateRequest {
+    // Topic and partition to sync.
+    common.v1.TopicPartition topic_partition = 1;
+}
+
+// SyncLocalStateResponse is the response from the SyncLocalState RPC.
+message SyncLocalStateResponse {}
+
+// InitializeClusterRecoveryRequest is the request for initializing a cluster
+// recovery.
+message InitializeClusterRecoveryRequest {
+    // Optional cluster uuid to recover. If not provided, will auto-discover the
+    // manifest with highest sequence number.
+    optional string cluster_uuid_override = 1;
+}
+
+// InitializeClusterRecoveryResponse is the response from the
+// InitializeClusterRecovery RPC.
+message InitializeClusterRecoveryResponse {}
+
+// GetClusterRecoveryRequest is the request for getting cluster recovery status.
+message GetClusterRecoveryRequest {}
+
+// ClusterRecoveryStatus contains the status of a cluster recovery operation.
+message ClusterRecoveryStatus {
+    // Current status of recovery process.
+    string state = 1;
+    // Error message if recovery failed.
+    optional string error = 2;
+}
+
+// GetClusterRecoveryResponse is the response from the GetClusterRecovery RPC.
+message GetClusterRecoveryResponse {
+    // The cluster recovery status.
+    ClusterRecoveryStatus status = 1;
+}
+
+// RecoveryRequestParams contains parameters for topic recovery operations.
+message RecoveryRequestParams {
+    // Pattern to match topic names for recovery.
+    optional string topic_names_pattern = 1;
+    // Retention bytes for recovered topics.
+    optional int64 retention_bytes = 2;
+    // Retention milliseconds for recovered topics.
+    optional int64 retention_ms = 3;
+}
+
+// InitiateTopicScanAndRecoveryRequest is the request for initiating topic scan
+// and recovery.
+message InitiateTopicScanAndRecoveryRequest {
+    // Recovery request parameters.
+    optional RecoveryRequestParams params = 1;
+}
+
+// InitiateTopicScanAndRecoveryResponse is the response from the
+// InitiateTopicScanAndRecovery RPC.
+message InitiateTopicScanAndRecoveryResponse {}
+
+// QueryAutomatedRecoveryRequest is the request for querying automated topic
+// recovery status.
+message QueryAutomatedRecoveryRequest {}
+
+// TopicDownloadCounts contains download statistics for a topic.
+message TopicDownloadCounts {
+    // Namespace and topic name.
+    string topic_namespace = 1;
+    // Number of pending downloads.
+    int64 pending_downloads = 2;
+    // Number of successful downloads.
+    int64 successful_downloads = 3;
+    // Number of failed downloads.
+    int64 failed_downloads = 4;
+}
+
+// TopicRecoveryStatus contains the status of a topic recovery operation.
+message TopicRecoveryStatus {
+    // Current state of topic recovery.
+    string state = 1;
+    // Download counts per topic.
+    repeated TopicDownloadCounts topic_download_counts = 2;
+    // Original recovery request parameters.
+    optional RecoveryRequestParams request = 3;
+}
+
+// QueryAutomatedRecoveryResponse is the response from the
+// QueryAutomatedRecovery RPC.
+message QueryAutomatedRecoveryResponse {
+    // The topic recovery status.
+    TopicRecoveryStatus status = 1;
+}
+
+// GetPartitionCloudStorageStatusRequest is the request for getting cloud
+// storage status for a partition.
+message GetPartitionCloudStorageStatusRequest {
+    // Topic and partition to query.
+    common.v1.TopicPartition topic_partition = 1;
+}
+
+// PartitionCloudStorageStatus contains cloud storage status information for a
+// partition.
+message PartitionCloudStorageStatus {
+    // The partition's cloud storage mode (one of: disabled, write_only,
+    // read_only, full and read_replica).
+    string cloud_storage_mode = 1;
+    // Delta in milliseconds since the last upload of the partition's manifest.
+    optional int64 ms_since_last_manifest_upload = 2;
+    // Delta in milliseconds since the last segment upload for the partition.
+    optional int64 ms_since_last_segment_upload = 3;
+    // Delta in milliseconds since the last manifest sync (only present for read
+    // replicas).
+    optional int64 ms_since_last_manifest_sync = 4;
+    // If true, the remote metadata may not yet include all segments that have
+    // been uploaded.
+    bool metadata_update_pending = 5;
+    // Total size of the log for the partition (overlap between local and cloud
+    // log is excluded).
+    int64 total_log_size_bytes = 6;
+    // Total size of the addressable cloud log for the partition.
+    int64 cloud_log_size_bytes = 7;
+    // Total size of the addressable segments in the STM region of the log.
+    int64 stm_region_size_bytes = 8;
+    // Total size of the archive region of the log.
+    int64 archive_size_bytes = 9;
+    // Total size of the addressable local log for the partition.
+    int64 local_log_size_bytes = 10;
+    // Number of segments in the STM region of the cloud log.
+    int64 stm_region_segment_count = 11;
+    // Number of segments in the cloud log.
+    int64 cloud_log_segment_count = 12;
+    // Number of segments in the local log.
+    int64 local_log_segment_count = 13;
+    // The first Kafka offset accessible from the cloud (inclusive).
+    optional int64 cloud_log_start_offset = 14;
+    // The first Kafka offset accessible from the cloud in the STM region
+    // (inclusive).
+    optional int64 stm_region_start_offset = 15;
+    // The last Kafka offset accessible from the cloud (inclusive).
+    optional int64 cloud_log_last_offset = 16;
+    // The first Kafka offset accessible locally (inclusive).
+    optional int64 local_log_start_offset = 17;
+    // The last Kafka offset accessible locally (inclusive).
+    optional int64 local_log_last_offset = 18;
+}
+
+// GetPartitionCloudStorageStatusResponse is the response from the
+// GetPartitionCloudStorageStatus RPC.
+message GetPartitionCloudStorageStatusResponse {
+    // The partition cloud storage status.
+    PartitionCloudStorageStatus status = 1;
+}
+
+// GetManifestRequest is the request for getting the partition manifest.
+message GetManifestRequest {
+    // Topic and partition to query.
+    common.v1.TopicPartition topic_partition = 1;
+}
+
+// GetManifestResponse is the response from the GetManifest RPC.
+message GetManifestResponse {
+    // In-memory partition manifest in JSON format.
+    string manifest_json = 1;
+}
+
+// GetCloudStorageLifecycleRequest is the request for getting lifecycle markers.
+message GetCloudStorageLifecycleRequest {}
+
+// LifecycleMarker represents the lifecycle status of a topic.
+message LifecycleMarker {
+    // Namespace.
+    string ns = 1;
+    // Topic name.
+    string topic = 2;
+    // Topic revision ID.
+    int64 revision_id = 3;
+    // Lifecycle status.
+    string status = 4;
+}
+
+// GetCloudStorageLifecycleResponse is the response from the
+// GetCloudStorageLifecycle RPC.
+message GetCloudStorageLifecycleResponse {
+    // Lifecycle markers for topics pending deletion.
+    repeated LifecycleMarker markers = 1;
+}
+
+// DeleteCloudStorageLifecycleRequest is the request for deleting a lifecycle
+// marker.
+message DeleteCloudStorageLifecycleRequest {
+    // Topic name.
+    string topic = 1;
+    // Topic revision ID.
+    int64 revision = 2;
+}
+
+// DeleteCloudStorageLifecycleResponse is the response from the
+// DeleteCloudStorageLifecycle RPC.
+message DeleteCloudStorageLifecycleResponse {}
+
+// CloudStorageCacheTrimRequest is the request for trimming the local cache.
+message CloudStorageCacheTrimRequest {
+    // Target number of objects to retain in the cache.
+    optional int64 objects = 1;
+    // Target number of bytes to retain in the cache.
+    optional int64 bytes = 2;
+}
+
+// CloudStorageCacheTrimResponse is the response from the CloudStorageCacheTrim
+// RPC.
+message CloudStorageCacheTrimResponse {}
+
+// GetCloudStorageAnomaliesRequest is the request for getting cloud storage
+// anomalies.
+message GetCloudStorageAnomaliesRequest {
+    // Namespace.
+    string namespace = 1;
+    // Topic name.
+    string topic = 2;
+    // Partition ID.
+    int32 partition = 3;
+}
+
+// SegmentMeta contains metadata for an uploaded segment.
+message SegmentMeta {
+    // Base offset of the segment.
+    int64 base_offset = 1;
+    // Committed offset of the segment.
+    int64 committed_offset = 2;
+    // Delta offset (may be null).
+    optional int64 delta_offset = 3;
+    // Delta offset end (may be null).
+    optional int64 delta_offset_end = 4;
+    // Base timestamp of the segment.
+    int64 base_timestamp = 5;
+    // Maximum timestamp in the segment.
+    int64 max_timestamp = 6;
+    // Size of the segment in bytes.
+    int64 size_bytes = 7;
+    // Whether the segment is compacted.
+    bool is_compacted = 8;
+    // Archiver term.
+    int64 archiver_term = 9;
+    // Segment term.
+    int64 segment_term = 10;
+    // NTP revision.
+    int64 ntp_revision = 11;
+}
+
+// MetadataAnomaly describes a metadata anomaly detected by the scrubber.
+message MetadataAnomaly {
+    // Type of anomaly.
+    string type = 1;
+    // Explanation of the anomaly.
+    string explanation = 2;
+    // Segment at which the anomaly was detected.
+    SegmentMeta at_segment = 3;
+    // Previous segment (may be null).
+    optional SegmentMeta previous_segment = 4;
+}
+
+// CloudStoragePartitionAnomalies contains anomalies detected by the cloud
+// storage scrubber for a partition.
+message CloudStoragePartitionAnomalies {
+    // Namespace.
+    string ns = 1;
+    // Topic name.
+    string topic = 2;
+    // Partition ID.
+    int64 partition = 3;
+    // Topic revision ID.
+    int64 revision_id = 4;
+    // Whether the partition manifest is missing.
+    optional bool missing_partition_manifest = 5;
+    // List of missing spillover manifests.
+    repeated string missing_spillover_manifests = 6;
+    // List of missing segments.
+    repeated string missing_segments = 7;
+    // Segment metadata anomalies.
+    repeated MetadataAnomaly segment_metadata_anomalies = 8;
+    // Timestamp of last complete scrub.
+    optional int64 last_complete_scrub_at = 9;
+    // Number of discarded missing spillover manifests.
+    optional int64 num_discarded_missing_spillover_manifests = 10;
+    // Number of discarded missing segments.
+    optional int64 num_discarded_missing_segments = 11;
+    // Number of discarded metadata anomalies.
+    optional int64 num_discarded_metadata_anomalies = 12;
+}
+
+// GetCloudStorageAnomaliesResponse is the response from the
+// GetCloudStorageAnomalies RPC.
+message GetCloudStorageAnomaliesResponse {
+    // The cloud storage partition anomalies.
+    CloudStoragePartitionAnomalies anomalies = 1;
+}
+
+// UnsafeResetMetadataFromCloudRequest is the request for resetting partition
+// metadata from cloud storage.
+message UnsafeResetMetadataFromCloudRequest {
+    // Namespace.
+    string namespace = 1;
+    // Topic name.
+    string topic = 2;
+    // Partition ID.
+    int32 partition = 3;
+    // Force reset even if it would cause data loss.
+    optional bool force = 4;
+}
+
+// UnsafeResetMetadataFromCloudResponse is the response from the
+// UnsafeResetMetadataFromCloud RPC.
+message UnsafeResetMetadataFromCloudResponse {}
+
+// ResetScrubbingMetadataRequest is the request for resetting scrubbing
+// metadata.
+message ResetScrubbingMetadataRequest {
+    // Namespace.
+    string namespace = 1;
+    // Topic name.
+    string topic = 2;
+    // Partition ID.
+    int32 partition = 3;
+}
+
+// ResetScrubbingMetadataResponse is the response from the
+// ResetScrubbingMetadata RPC.
+message ResetScrubbingMetadataResponse {}

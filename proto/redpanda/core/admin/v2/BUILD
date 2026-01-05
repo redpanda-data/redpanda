@@ -118,3 +118,25 @@ redpanda_proto_library(
         "@abseil-cpp//absl/time:time",
     ],
 )
+
+proto_library(
+    name = "cloud_storage_status_proto",
+    srcs = ["cloud_storage_status.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/common/v1:ntp_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
+    ],
+)
+
+redpanda_proto_library(
+    name = "cloud_storage_status_redpanda_proto",
+    protos = [
+        ":cloud_storage_status_proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/common/v1:ntp_redpanda_proto",
+    ],
+)
