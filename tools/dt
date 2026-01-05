@@ -352,6 +352,13 @@ class DucktapeRunner:
         """Run ducktape tests in docker container."""
         self.log("Running ducktape tests...")
 
+        # Clean up any existing ducktape container from previous interrupted runs
+        subprocess.run(
+            ["docker", "rm", "-f", "ducktape"],
+            capture_output=True,
+            check=False,
+        )
+
         # Build globals
         globals_json = self.build_ducktape_globals()
 
