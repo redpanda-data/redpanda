@@ -113,6 +113,14 @@ def data_dependency():
         url = "https://vectorized-public.s3.amazonaws.com/dependencies/lksctp-tools-1.0.19.tar.gz",
     )
 
+    http_archive(
+        name = "ragel",
+        build_file = "//bazel/thirdparty:ragel.BUILD",
+        sha256 = "5f156edb65d20b856d638dd9ee2dfb43285914d9aa2b6ec779dac0270cd56c3f",
+        strip_prefix = "ragel-6.10",
+        url = "http://www.colm.net/files/ragel/ragel-6.10.tar.gz",
+    )
+
     #
     # ** IMPORTANT - OpenSSL and FIPS **
     #
