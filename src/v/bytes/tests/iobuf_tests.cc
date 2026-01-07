@@ -99,6 +99,10 @@ SEASTAR_THREAD_TEST_CASE(test_cmp_str_view) {
       std::strong_ordering::equal, (multiple_frags.share(0, 3) <=> "cat"));
     BOOST_CHECK_LT(iobuf::from(""), iobuf::from("cat"));
     BOOST_CHECK_GT(iobuf::from("cat"), iobuf::from(""));
+    auto multi_frags = iobuf::from("ab");
+    multi_frags.append_fragments(iobuf::from("d"));
+    BOOST_CHECK_EQUAL(
+      true, (iobuf::from("abc") <=> multi_frags) == std::strong_ordering::less);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {
