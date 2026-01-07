@@ -105,7 +105,7 @@ iobuf encode_for_stats(int32_value);
 iobuf encode_for_stats(int64_value);
 iobuf encode_for_stats(float32_value);
 iobuf encode_for_stats(float64_value);
-iobuf encode_for_stats(const byte_array_value&);
-iobuf encode_for_stats(const fixed_byte_array_value&);
+iobuf encode_for_stats(byte_array_value&);
+iobuf encode_for_stats(fixed_byte_array_value&);
 
 } // namespace serde::parquet

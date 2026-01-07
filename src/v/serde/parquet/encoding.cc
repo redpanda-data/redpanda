@@ -182,6 +182,6 @@ iobuf encode_for_stats(float64_value v) {
     e.add_value(v);
     return e.get_encoded_buf();
 }
-iobuf encode_for_stats(const byte_array_value& v) { return v.val.copy(); }
-iobuf encode_for_stats(const fixed_byte_array_value& v) { return v.val.copy(); }
+iobuf encode_for_stats(byte_array_value& v) { return v.val.share(); }
+iobuf encode_for_stats(fixed_byte_array_value& v) { return v.val.share(); }
 } // namespace serde::parquet
