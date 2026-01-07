@@ -279,7 +279,19 @@ class KgoVerifierService(Service):
             return r.status_code == 200
 
     def _assert_running(self, node: ClusterNode) -> None:
-        node.account.ssh_output(f"ps -p {self._pid}", allow_fail=False)
+        output = node.account.ssh_output(
+            f"test -d /proc/{self._pid} && echo 1 || echo 0"
+        )
+        is_running = output.decode().strip() == "1"
+        assert is_running, f"Process {self._pid} is not running on {node.name}"
+
+    def is_running(self, node: ClusterNode) -> bool:
+        try:
+            self._assert_running(node)
+            return True
+        except Exception as e:
+            self.logger.debug(f"Service is not running, {e}")
+            return False
 
     def stop_node(self, node: ClusterNode, **kwargs: Any) -> None:
         error = None
@@ -346,7 +358,7 @@ class KgoVerifierService(Service):
     def wait_node(self, node: ClusterNode, timeout_sec: float | None = None) -> Any:
         """
         Wrapper to catch timeouts on wait, and send a `/print_stack` to the remote
-        process in case it is experiencing a hang bug.
+        process in case it is experiencing a hang bug (if it is still running).
         """
         assert not self._stopped, (
             f"Can't wait {self.who_am_i()}. It was already stopped. You can either stop() a service or wait() and then stop() it but not the other way around."
@@ -358,7 +370,8 @@ class KgoVerifierService(Service):
             return self._do_wait_node(node, timeout_sec)
         except:
             try:
-                self._remote(node, "print_stack")
+                if self.is_running(node):
+                    self._remote(node, "print_stack")
             except Exception as e:
                 self._redpanda.logger.warning(
                     f"{self.who_am_i()} failed to print stacks during wait failure: {e}"
@@ -423,7 +436,7 @@ class KgoVerifierService(Service):
             f"wait_node {self.who_am_i()}: waiting node={node.name} pid={self._pid} to terminate"
         )
         wait_until(
-            lambda: not node.account.exists(f"/proc/{self._pid}"),
+            lambda: not self.is_running(node),
             timeout_sec=10,
             backoff_sec=0.5,
         )
@@ -538,6 +551,11 @@ class StatusThread(threading.Thread):
         session.mount("http://", HTTPAdapter(max_retries=retry_strategy))
 
         while not self._stop_requested.is_set():
+            if not self._parent.is_running(self._node):
+                raise RuntimeError(
+                    f"Process was terminated early, check logs for {self.who_am_i}"
+                )
+
             drop_out = self._shutdown_requested.is_set()
             r = session.get(
                 url=self._parent._remote_url(self._node, "status"), timeout=5
