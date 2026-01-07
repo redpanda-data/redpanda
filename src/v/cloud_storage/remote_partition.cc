@@ -368,6 +368,18 @@ public:
     do_load_slice(model::timeout_clock::time_point deadline) override {
         std::exception_ptr unknown_exception_ptr = nullptr;
         try {
+            auto now = model::timeout_clock::now();
+            auto time_remaining = deadline - now;
+            vlog(
+              _ctxlog.debug,
+              "partition_record_batch_reader_impl do_load_slice - deadline: {}, "
+              "now: {}, time_remaining: {}ms",
+              deadline.time_since_epoch().count(),
+              now.time_since_epoch().count(),
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                time_remaining)
+                .count());
+
             if (is_end_of_stream()) {
                 vlog(
                   _ctxlog.debug,
@@ -375,7 +387,6 @@ public:
                   "empty");
                 co_return storage_t{};
             }
-            auto now = model::timeout_clock::now();
             if (_seg_reader->config().over_budget || now > deadline) {
                 vlog(
                   _ctxlog.debug,
