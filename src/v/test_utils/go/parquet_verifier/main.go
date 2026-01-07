@@ -163,18 +163,47 @@ func main() {
 					i, j, col.NumValues(), col.NullCount(),
 				)
 			}
-			if !parquet.Equal(cmin, colMin) {
+			if len(cmin.Bytes()) > 64 || len(cmax.Bytes()) > 64 {
 				log.Fatalf(
-					"❌ : invalid min value for page in row group %d, column %d: %v != %v\n",
-					i, j, cmin, colMin,
+					"❌ : invalid length for cmin %v(len %d) or cmax %v(len %d) needs to be <= 64 bytes\n",
+					cmin, len(cmin.Bytes()), cmax, len(cmax.Bytes()),
 				)
 			}
-			if !parquet.Equal(cmax, colMax) {
-				log.Fatalf(
-					"❌ : invalid max value for page in row group %d, column %d: %v != %v\n",
-					i, j, cmax, colMax,
-				)
+
+			switch cmin.Kind() {
+			case parquet.ByteArray, parquet.FixedLenByteArray:
+				if parquet.ByteArrayType.Compare(cmin, colMin) > 0 {
+					log.Fatalf(
+						"❌ : invalid min value for page in row group %d, column %d: %v > %v\n",
+						i, j, cmin, colMin,
+					)
+				}
+			default:
+				if !parquet.Equal(cmin, colMin) {
+					log.Fatalf(
+						"❌ : invalid min value for page in row group %d, column %d: %v != %v\n",
+						i, j, cmin, colMin,
+					)
+				}
 			}
+
+			switch cmax.Kind() {
+			case parquet.ByteArray, parquet.FixedLenByteArray:
+				if parquet.ByteArrayType.Compare(cmax, colMax) < 0 {
+					log.Fatalf(
+						"❌ : invalid max value for page in row group %d, column %d: %v < %v\n",
+						i, j, cmax, colMax,
+					)
+				}
+			default:
+				if !parquet.Equal(cmax, colMax) {
+					log.Fatalf(
+						"❌ : invalid max value for page in row group %d, column %d: %v != %v\n",
+						i, j, cmax, colMax,
+					)
+				}
+			}
+
 			_ = pages.Close()
 		}
 	}
@@ -233,18 +262,40 @@ func main() {
 				)
 			}
 
-			if !reflect.DeepEqual(omin, rmin) {
-				log.Fatalf(
-					"❌ row group %d, column %d min value mismatch: %v != %v\n",
-					i, j, omin, rmin,
-				)
+			// Note that parquet-go currently does not truncate bounds in page stats.
+			// Hence the bounds will not be equal in the rewritten file.
+			switch omin.Kind() {
+			case parquet.ByteArray, parquet.FixedLenByteArray:
+				if parquet.ByteArrayType.Compare(omin, rmin) > 0 {
+					log.Fatalf(
+						"❌ row group %d, column %d min value mismatch: %v > %v\n",
+						i, j, omin, rmin,
+					)
+				}
+			default:
+				if !parquet.Equal(omin, rmin) {
+					log.Fatalf(
+						"❌ row group %d, column %d min value mismatch: %v != %v\n",
+						i, j, omin, rmin,
+					)
+				}
 			}
 
-			if !reflect.DeepEqual(omax, rmax) {
-				log.Fatalf(
-					"❌ row group %d, column %d max value mismatch: %v != %v\n",
-					i, j, omax, rmin,
-				)
+			switch omax.Kind() {
+			case parquet.ByteArray, parquet.FixedLenByteArray:
+				if parquet.ByteArrayType.Compare(omax, rmax) < 0 {
+					log.Fatalf(
+						"❌ row group %d, column %d max value mismatch: %v < %v\n",
+						i, j, omax, rmax,
+					)
+				}
+			default:
+				if !parquet.Equal(omax, rmax) {
+					log.Fatalf(
+						"❌ row group %d, column %d max value mismatch: %v != %v\n",
+						i, j, omax, rmin,
+					)
+				}
 			}
 		}
 	}
