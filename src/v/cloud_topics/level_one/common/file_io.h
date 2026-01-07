@@ -47,7 +47,7 @@ public:
 private:
     ss::future<uint64_t> save_to_cache(
       ss::input_stream<char>,
-      cloud_io::space_reservation_guard*,
+      cloud_io::space_reservation_guard,
       std::filesystem::path,
       uint64_t content_length);
 

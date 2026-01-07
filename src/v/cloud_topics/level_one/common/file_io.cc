@@ -156,10 +156,10 @@ file_io::put_object(object_id oid, staging_file* file, ss::abort_source* as) {
 
 ss::future<uint64_t> file_io::save_to_cache(
   ss::input_stream<char> stream,
-  cloud_io::space_reservation_guard* reservation,
+  cloud_io::space_reservation_guard reservation,
   std::filesystem::path cache_key,
   uint64_t content_length) {
-    co_await _cache->put(std::move(cache_key), stream, *reservation);
+    co_await _cache->put(std::move(cache_key), stream, reservation);
     co_return content_length;
 }
 
@@ -211,10 +211,13 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
             co_return std::unexpected(io::errc::file_io_error);
         }
         cloud_io::try_consume_stream consumer =
-          [this, r = reservation_fut.get(), &cache_key](
+          [this, r = reservation_fut.get(), cache_key](
             uint64_t content_length, ss::input_stream<char> stream) mutable {
               return save_to_cache(
-                std::move(stream), &r, cache_key, content_length);
+                std::move(stream),
+                std::move(r),
+                std::move(cache_key),
+                content_length);
           };
         auto result_fut
           = co_await ss::coroutine::as_future<cloud_io::download_result>(
