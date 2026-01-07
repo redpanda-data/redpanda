@@ -74,6 +74,7 @@ public:
     using const_reverse_iterator = typename container::const_reverse_iterator;
     using iterator_consumer = details::io_iterator_consumer;
     using byte_iterator = details::io_byte_iterator;
+    using reverse_byte_iterator = details::reverse_io_byte_iterator;
     using placeholder = details::io_placeholder;
 
     static iobuf from(std::string_view view) {
