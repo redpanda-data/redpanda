@@ -62,11 +62,19 @@ crc::crc32 compute_crc32(Args&&... args) {
     return crc;
 }
 
-template<typename value_type, auto comparator>
+template<
+  typename value_type,
+  auto comparator,
+  typename truncator = internal::noop_bound_truncator>
 class buffered_column_writer final : public column_writer::impl {
+    using stats_t = column_stats_collector<value_type, comparator, truncator>;
+    using bound_ref_t = stats_t::bound_ref_type;
+
 public:
     buffered_column_writer(const schema_element& schema_element, options opts)
-      : _max_rep_level(schema_element.max_repetition_level)
+      : _current_page_stats(opts.max_bound_size_bytes)
+      , _flushed_stats(opts.max_bound_size_bytes)
+      , _max_rep_level(schema_element.max_repetition_level)
       , _max_def_level(schema_element.max_definition_level)
       , _opts(opts) {}
 
@@ -134,23 +142,14 @@ public:
         size_t compressed_page_size = encoded_def_levels.size_bytes()
                                       + encoded_rep_levels.size_bytes()
                                       + encoded_data.size_bytes();
-        using bound_type = decltype(_flushed_stats)::bound_ref_type;
         std::optional<statistics::bound> max_bound;
-        if (bound_type max = _current_page_stats.max()) {
-            // TODO: consider truncating large values instead of writing them
-            // (is_exact=false)
-            max_bound.emplace(
-              /*value=*/encode_for_stats(*max),
-              /*is_exact=*/true);
+        if (bound_ref_t max = _current_page_stats.max()) {
+            max_bound = get_bound(max, _current_page_stats.max_is_exact());
             _flushed_stats.record_value(*max);
         }
         std::optional<statistics::bound> min_bound;
-        if (bound_type min = _current_page_stats.min()) {
-            // TODO: consider truncating large values instead of writing them
-            // (is_exact=false)
-            min_bound.emplace(
-              /*value=*/encode_for_stats(*min),
-              /*is_exact=*/true);
+        if (bound_ref_t min = _current_page_stats.min()) {
+            min_bound = get_bound(min, _current_page_stats.min_is_exact());
             _flushed_stats.record_value(*min);
         }
         _flushed_stats.record_null(_current_page_stats.null_count());
@@ -213,20 +212,9 @@ public:
 
         statistics full_stats{
           .null_count = _flushed_stats.null_count(),
-          .max = {},
-          .min = {},
+          .max = get_bound(_flushed_stats.max(), _flushed_stats.max_is_exact()),
+          .min = get_bound(_flushed_stats.min(), _flushed_stats.min_is_exact()),
         };
-        using bound_type = decltype(_flushed_stats)::bound_ref_type;
-        if (bound_type max = _flushed_stats.max()) {
-            full_stats.max.emplace(
-              /*value=*/encode_for_stats(*max),
-              /*is_exact=*/true);
-        }
-        if (bound_type min = _flushed_stats.min()) {
-            full_stats.min.emplace(
-              /*value=*/encode_for_stats(*min),
-              /*is_exact=*/true);
-        }
         _flushed_stats.reset();
         _total_memory_usage = 0;
         co_return flushed_pages{
@@ -236,8 +224,8 @@ public:
     }
 
 private:
-    column_stats_collector<value_type, comparator> _current_page_stats;
-    column_stats_collector<value_type, comparator> _flushed_stats;
+    stats_t _current_page_stats;
+    stats_t _flushed_stats;
     int64_t _total_memory_usage = 0;
     plain_encoder<value_type> _value_buffer;
     chunked_vector<def_level> _def_levels;
@@ -248,6 +236,15 @@ private:
     rep_level _max_rep_level;
     def_level _max_def_level;
     options _opts;
+
+    std::optional<statistics::bound> get_bound(bound_ref_t r, bool is_exact) {
+        if (!r) {
+            return {};
+        }
+
+        return statistics::bound{
+          .value = encode_for_stats(*r), .is_exact = is_exact};
+    }
 };
 
 template class buffered_column_writer<boolean_value, ordering::boolean>;
@@ -259,8 +256,16 @@ template class buffered_column_writer<float32_value, ordering::float32>;
 template class buffered_column_writer<float64_value, ordering::float64>;
 template class buffered_column_writer<byte_array_value, ordering::byte_array>;
 template class buffered_column_writer<
+  byte_array_value,
+  ordering::byte_array,
+  internal::binary_bound_truncator>;
+template class buffered_column_writer<
   fixed_byte_array_value,
   ordering::fixed_byte_array>;
+template class buffered_column_writer<
+  fixed_byte_array_value,
+  ordering::fixed_byte_array,
+  internal::binary_bound_truncator>;
 template class buffered_column_writer<
   fixed_byte_array_value,
   ordering::int128_be>;
@@ -308,20 +313,46 @@ make_impl(const schema_element& e, f64_type, options opts) {
 }
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element& e, byte_array_type t, options opts) {
-    if (t.fixed_length.has_value()) {
-        if (
-          t.fixed_length == sizeof(absl::int128)
-          && std::holds_alternative<decimal_type>(e.logical_type)) {
-            return std::make_unique<buffered_column_writer<
-              fixed_byte_array_value,
-              ordering::int128_be>>(e, opts);
-        }
+    using ret_t = std::unique_ptr<column_writer::impl>;
+    auto truncating_byte_array_writer = [&] -> ret_t {
         return std::make_unique<buffered_column_writer<
-          fixed_byte_array_value,
-          ordering::fixed_byte_array>>(e, opts);
-    }
-    return std::make_unique<
-      buffered_column_writer<byte_array_value, ordering::byte_array>>(e, opts);
+          byte_array_value,
+          ordering::byte_array,
+          internal::binary_bound_truncator>>(e, opts);
+    };
+    return ss::visit(
+      e.logical_type,
+      [&](const string_type&) { return truncating_byte_array_writer(); },
+      [&](const enum_type&) { return truncating_byte_array_writer(); },
+      [&](const json_type&) { return truncating_byte_array_writer(); },
+      [&](const bson_type&) { return truncating_byte_array_writer(); },
+      [&](const std::monostate&) -> ret_t {
+          if (t.fixed_length.has_value()) {
+              return std::make_unique<buffered_column_writer<
+                fixed_byte_array_value,
+                ordering::fixed_byte_array,
+                internal::binary_bound_truncator>>(e, opts);
+          }
+
+          return truncating_byte_array_writer();
+      },
+      [&](const auto&) -> ret_t {
+          if (t.fixed_length.has_value()) {
+              if (
+                t.fixed_length == sizeof(absl::int128)
+                && std::holds_alternative<decimal_type>(e.logical_type)) {
+                  return std::make_unique<buffered_column_writer<
+                    fixed_byte_array_value,
+                    ordering::int128_be>>(e, opts);
+              }
+              return std::make_unique<buffered_column_writer<
+                fixed_byte_array_value,
+                ordering::fixed_byte_array>>(e, opts);
+          }
+          return std::make_unique<
+            buffered_column_writer<byte_array_value, ordering::byte_array>>(
+            e, opts);
+      });
 }
 
 } // namespace

@@ -48,6 +48,9 @@ public:
     struct options {
         // If true, use zstd compression for the column data.
         bool compress;
+        // If a value exists then an attempt will be made to truncate most
+        // binary bounds to this size.
+        std::optional<size_t> max_bound_size_bytes;
     };
 
     explicit column_writer(const schema_element&, options);

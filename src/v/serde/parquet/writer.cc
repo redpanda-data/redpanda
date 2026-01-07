@@ -58,6 +58,7 @@ public:
                   element,
                   {
                     .compress = _opts.compress,
+                    .max_bound_size_bytes = _opts.max_bound_size,
                   }),
               });
         });

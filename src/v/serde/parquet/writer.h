@@ -52,6 +52,11 @@ public:
         // group). Ecosystem libraries tend to default between 256Kib-1MiB
         static constexpr int64_t default_page_size = 512_KiB;
         int64_t page_buffer_size = default_page_size;
+
+        // The target maximum size for bound values in statistic metadata.
+        // Most ecosystem libraries tend to set this to 60-64bytes.
+        static constexpr size_t default_max_bound_size = 64;
+        std::optional<size_t> max_bound_size = default_max_bound_size;
     };
 
     // Create a new parquet file writer using the given options that

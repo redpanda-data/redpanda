@@ -79,8 +79,16 @@ private:
 
 // We incrementally collect stats on columns so we can serialize
 // it in the metadata for query engine performance.
-template<typename value_type, auto comparator>
+template<
+  typename value_type,
+  auto comparator,
+  typename truncator = internal::noop_bound_truncator>
 class column_stats_collector {
+    struct bound_t {
+        std::optional<value_type> val;
+        bool is_exact = false;
+    };
+
 public:
     using ref_type = std::conditional_t<
       std::is_trivially_copyable_v<value_type>,
@@ -91,6 +99,10 @@ public:
       std::optional<value_type>,
       std::optional<value_type>&>;
 
+    column_stats_collector() = default;
+    explicit column_stats_collector(std::optional<size_t> max_bound_size)
+      : _max_bound_size(max_bound_size) {}
+
     // Record a value in the collector
     void record_value(ref_type v) {
         if constexpr (std::is_floating_point_v<decltype(v.val)>) {
@@ -98,11 +110,15 @@ public:
                 return;
             }
         }
-        if (!_min || comparator(v, *_min) == std::strong_ordering::less) {
-            _min = internal::copy(v);
+
+        if (
+          !_min.val || comparator(v, *_min.val) == std::strong_ordering::less) {
+            set_bound<true>(_min, v);
         }
-        if (!_max || comparator(v, *_max) == std::strong_ordering::greater) {
-            _max = internal::copy(v);
+        if (
+          !_max.val
+          || comparator(v, *_max.val) == std::strong_ordering::greater) {
+            set_bound<false>(_max, v);
         }
     }
 
@@ -113,27 +129,29 @@ public:
     void merge(column_stats_collector<value_type, comparator>& other) {
         _null_count += other._null_count;
         if (
-          other._min
-          && (!_min || comparator(*other._min, *_min) == std::strong_ordering::less)) {
-            _min = internal::copy(*other._min);
+          other._min.val
+          && (!_min.val || comparator(*other._min.val, *_min.val) == std::strong_ordering::less)) {
+            _min = {internal::copy(*other._min.val), other._min.is_exact};
         }
         if (
-          other._max
-          && (!_max || comparator(*other._max, *_max) == std::strong_ordering::greater)) {
-            _max = internal::copy(*other._max);
+          other._max.val
+          && (!_max.val || comparator(*other._max.val, *_max.val) == std::strong_ordering::greater)) {
+            _max = {internal::copy(*other._max.val), other._max.is_exact};
         }
     }
-
     void reset() {
         _null_count = 0;
-        _min = std::nullopt;
-        _max = std::nullopt;
+        _min = {std::nullopt, false};
+        _max = {std::nullopt, false};
     }
 
     int64_t null_count() const { return _null_count; }
 
-    bound_ref_type min() { return normalize(_min, true); }
-    bound_ref_type max() { return normalize(_max, false); }
+    bound_ref_type min() { return normalize(_min.val, true); }
+    bool min_is_exact() const { return _min.is_exact; }
+
+    bound_ref_type max() { return normalize(_max.val, false); }
+    bool max_is_exact() const { return _max.is_exact; }
 
 private:
     bound_ref_type normalize(bound_ref_type v, bool min) {
@@ -146,8 +164,35 @@ private:
         return v;
     }
 
-    std::optional<value_type> _min;
-    std::optional<value_type> _max;
+    template<bool is_min_bound>
+    void set_bound(bound_t& b, ref_type v) {
+        if constexpr (
+          std::is_same_v<value_type, byte_array_value>
+          || std::is_same_v<value_type, fixed_byte_array_value>) {
+            if (_max_bound_size) {
+                iobuf& val = v.val;
+                std::optional<iobuf> t_b;
+                // Immediately truncating the new bound limits the length of any
+                // comparison in `record_value` to `_max_bound_size`.
+                if constexpr (is_min_bound) {
+                    t_b = truncator{*_max_bound_size}.get_min_bound(val);
+                } else {
+                    t_b = truncator{*_max_bound_size}.get_max_bound(val);
+                }
+
+                if (t_b) {
+                    b = {value_type{std::move(*t_b)}, false};
+                    return;
+                }
+            }
+        }
+
+        b = {internal::copy(v), true};
+    }
+
+    std::optional<size_t> _max_bound_size;
+    bound_t _min;
+    bound_t _max;
     int64_t _null_count = 0;
 };
 
