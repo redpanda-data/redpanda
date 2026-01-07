@@ -986,6 +986,7 @@ class RpkTool:
         use_schema_registry: str | None = None,
         read_committed: bool = False,
         fetch_max_wait: float | None = None,
+        request_timeout_overhead: float | None = None,
     ) -> str:
         cmd = ["consume", topic]
         if group is not None:
@@ -1015,7 +1016,10 @@ class RpkTool:
             cmd += ["--read-committed"]
 
         return self._run_topic(
-            cmd, timeout=timeout, use_schema_registry=use_schema_registry is not None
+            cmd,
+            timeout=timeout,
+            use_schema_registry=use_schema_registry is not None,
+            request_timeout_overhead=request_timeout_overhead,
         )
 
     def group_seek_to(self, group: str, to: str) -> None:
@@ -1314,11 +1318,23 @@ class RpkTool:
         output = self._execute(cmd)
         return json.loads(output) if output_format == "json" else output
 
-    def _run_topic(self, cmd, stdin=None, timeout=None, use_schema_registry=False):
+    def _run_topic(
+        self,
+        cmd,
+        stdin=None,
+        timeout=None,
+        use_schema_registry=False,
+        request_timeout_overhead=None,
+    ):
         cmd = [self._rpk_binary(), "topic"] + self._kafka_conn_settings() + cmd
         if use_schema_registry:
             cmd = cmd + self._schema_registry_conn_settings()
-        return self._execute(cmd, stdin=stdin, timeout=timeout)
+        return self._execute(
+            cmd,
+            stdin=stdin,
+            timeout=timeout,
+            request_timeout_overhead=request_timeout_overhead,
+        )
 
     def _run_group(self, cmd, stdin=None, timeout=None):
         cmd = [self._rpk_binary(), "group"] + self._kafka_conn_settings() + cmd
@@ -1482,11 +1498,14 @@ class RpkTool:
         timeout: int | None = None,
         log_cmd: bool = True,
         env: dict[str, str] | None = None,
+        request_timeout_overhead: float | None = None,
     ) -> str:
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
-        cmd += ["-X", f"globals.request_timeout_overhead={timeout}s"]
+        # Use custom request_timeout_overhead if provided, otherwise use timeout
+        overhead = request_timeout_overhead if request_timeout_overhead is not None else timeout
+        cmd += ["-X", f"globals.request_timeout_overhead={overhead}s"]
         # Unconditionally enable verbose logging
         cmd += ["-v"]
 
