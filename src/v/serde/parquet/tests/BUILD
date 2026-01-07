@@ -186,6 +186,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/serde/parquet:column_writer",
         "//src/v/serde/parquet:value",
+        "//src/v/strings:utf8",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",

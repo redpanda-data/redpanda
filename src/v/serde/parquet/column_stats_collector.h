@@ -49,6 +49,32 @@ template<>
 byte_array_value copy(byte_array_value&);
 template<>
 fixed_byte_array_value copy(fixed_byte_array_value&);
+
+class noop_bound_truncator {
+public:
+    explicit noop_bound_truncator(size_t) {}
+    std::optional<iobuf> get_min_bound(iobuf&) { return {}; }
+    std::optional<iobuf> get_max_bound(iobuf&) { return {}; }
+};
+
+class binary_bound_truncator {
+public:
+    explicit binary_bound_truncator(size_t max_bound_size_bytes)
+      : _max_bound_size(max_bound_size_bytes) {}
+
+    std::optional<iobuf> get_min_bound(iobuf&) const;
+    std::optional<iobuf> get_max_bound(iobuf&) const;
+
+private:
+    size_t _max_bound_size;
+
+    bool is_valid_utf8(const iobuf&) const;
+    std::optional<iobuf> try_increment(iobuf&, bool) const;
+    std::optional<iobuf> try_increment_utf8(iobuf&) const;
+    std::optional<iobuf> try_increment_bytes(iobuf&) const;
+    std::optional<iobuf> truncate_to_max_bound_size(iobuf&, bool) const;
+};
+
 } // namespace internal
 
 // We incrementally collect stats on columns so we can serialize

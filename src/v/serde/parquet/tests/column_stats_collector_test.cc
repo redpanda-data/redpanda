@@ -12,11 +12,13 @@
 #include "gmock/gmock.h"
 #include "serde/parquet/column_stats_collector.h"
 #include "serde/parquet/value.h"
+#include "strings/utf8.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <compare>
 #include <limits>
 #include <optional>
 
@@ -184,6 +186,174 @@ TEST(ColumnStatsCollector, Merge) {
     EXPECT_THAT(collector_a.null_count(), 5);
     EXPECT_THAT(collector_a.min(), Optional(int64_value{-99}));
     EXPECT_THAT(collector_a.max(), Optional(int64_value{99}));
+}
+
+TEST(NoopTrunactor, Basic) {
+    serde::parquet::internal::noop_bound_truncator t{0};
+    iobuf b;
+    EXPECT_EQ(t.get_max_bound(b), std::nullopt);
+    EXPECT_EQ(t.get_min_bound(b), std::nullopt);
+}
+
+namespace {
+bool is_utf8(iobuf& b, size_t bound_size) {
+    auto begin = iobuf::byte_iterator(b.cbegin(), b.cend());
+    auto end = iobuf::byte_iterator(b.cend(), b.cend());
+    return utf::is_valid_utf8(begin, end, bound_size);
+}
+} // namespace
+
+TEST(BinaryTrunactor, Bytes) {
+    struct test_params {
+        size_t max_bound_size;
+        bool is_min_bound;
+        std::vector<uint8_t> bound;
+    };
+
+    std::vector<std::pair<test_params, std::optional<std::vector<uint8_t>>>>
+      tests{
+        {{.max_bound_size = 2,
+          .is_min_bound = true,
+          .bound = {0xFF, 0xFF, 0xFF}},
+         {{0xFF, 0xFF}}},
+        {{.max_bound_size = 2,
+          .is_min_bound = false,
+          .bound = {0xFF, 0xFF, 0xFF}},
+         {}},
+        {{.max_bound_size = 2,
+          .is_min_bound = false,
+          .bound = {0xFF, 0x1, 0xFF}},
+         {{0xFF, 0x2}}},
+        {{.max_bound_size = 2,
+          .is_min_bound = false,
+          .bound = {0xFE, 0xFF, 0xFF}},
+         {{0xFF, 0x0}}},
+      };
+
+    for (const auto& [params, expec] : tests) {
+        iobuf buf;
+        buf.append(&params.bound.front(), params.bound.size());
+        auto param_bound_str = buf.linearize_to_string();
+        auto res = expec.transform([](auto& e) {
+            iobuf b;
+            b.append(&e.front(), e.size());
+            return b;
+        });
+
+        EXPECT_FALSE(is_utf8(buf, params.max_bound_size));
+
+        serde::parquet::internal::binary_bound_truncator t{
+          params.max_bound_size};
+        std::optional<iobuf> bound;
+        if (params.is_min_bound) {
+            bound = t.get_min_bound(buf);
+        } else {
+            bound = t.get_max_bound(buf);
+        }
+        EXPECT_EQ(bound, res);
+
+        // Ensure the original buffer remains un-modified.
+        EXPECT_EQ(buf.linearize_to_string(), param_bound_str);
+
+        if (bound) {
+            if (params.is_min_bound) {
+                EXPECT_LE(
+                  bound->linearize_to_string(), buf.linearize_to_string());
+            } else {
+                EXPECT_GE(
+                  bound->linearize_to_string(), buf.linearize_to_string());
+            }
+        }
+    }
+}
+
+TEST(BinaryTrunactor, MinMax) {
+    auto b = iobuf::from(
+      "vkNOQZeDacDujKTSpi3tqFjam5Q7I0PaBS8uXvMeSYsNm8Q2yegdvbTOkjzo2bRSGDSSMjBJ"
+      "esftbKb7RmIjMh");
+    auto b_min
+      = serde::parquet::internal::binary_bound_truncator{64}.get_min_bound(b);
+    auto b_max
+      = serde::parquet::internal::binary_bound_truncator{64}.get_max_bound(b);
+    EXPECT_TRUE((b_min <=> b_max) == std::strong_ordering::less);
+}
+
+TEST(BinaryTrunactor, UTF8) {
+    struct test_params {
+        size_t max_bound_size;
+        bool is_min_bound;
+        std::string bound;
+    };
+
+    const auto max_code_point = utf::utf32_code_point{0x10FFFF};
+    const std::string max_code_point_s = {
+      max_code_point.utf8_encoding().data(),
+      max_code_point.utf8_encoding_length()};
+
+    std::vector<std::pair<test_params, std::optional<std::string>>> tests{
+      {{.max_bound_size = 2, .is_min_bound = true, .bound = ""}, {}},
+      {{.max_bound_size = 2, .is_min_bound = false, .bound = ""}, {}},
+      {{.max_bound_size = 2, .is_min_bound = true, .bound = "hello"}, {"he"}},
+      {{.max_bound_size = 2, .is_min_bound = false, .bound = "hello"}, {"hf"}},
+      {{.max_bound_size = 4, .is_min_bound = false, .bound = "hello"},
+       {"helm"}},
+      {{.max_bound_size = 5, .is_min_bound = false, .bound = "hello"}, {}},
+      {{.max_bound_size = 5, .is_min_bound = true, .bound = "hello"}, {}},
+      {{.max_bound_size = 2, .is_min_bound = true, .bound = max_code_point_s},
+       {}},
+      {{.max_bound_size = 8,
+        .is_min_bound = false,
+        .bound = max_code_point_s + max_code_point_s + max_code_point_s},
+       {}},
+      {{.max_bound_size = 8,
+        .is_min_bound = true,
+        .bound = max_code_point_s + max_code_point_s + max_code_point_s},
+       {max_code_point_s + max_code_point_s}},
+      {{.max_bound_size = 2,
+        .is_min_bound = false,
+        .bound = "h" + max_code_point_s + max_code_point_s},
+       {"i"}},
+      {{.max_bound_size = 4,
+        .is_min_bound = false,
+        .bound = "h" + max_code_point_s + max_code_point_s},
+       {"i"}},
+      {{.max_bound_size = 5,
+        .is_min_bound = false,
+        .bound = "h" + max_code_point_s + max_code_point_s},
+       {std::string{"i"} + '\0'}},
+    };
+
+    for (auto& [params, expec] : tests) {
+        serde::parquet::internal::binary_bound_truncator t{
+          params.max_bound_size};
+        auto buf = iobuf::from(params.bound);
+        auto res = expec.transform([](auto& r) { return iobuf::from(r); });
+
+        EXPECT_TRUE(is_utf8(buf, params.max_bound_size));
+
+        std::optional<iobuf> bound;
+        if (params.is_min_bound) {
+            bound = t.get_min_bound(buf);
+        } else {
+            bound = t.get_max_bound(buf);
+        }
+        EXPECT_EQ(bound, res);
+
+        // Ensure the original buffer remains un-modified.
+        EXPECT_EQ(buf.linearize_to_string(), params.bound);
+
+        if (bound) {
+            EXPECT_TRUE(is_utf8(*bound, params.max_bound_size));
+
+            if (params.is_min_bound) {
+                EXPECT_LE(
+                  bound->linearize_to_string(), buf.linearize_to_string());
+            } else {
+                EXPECT_GE(
+                  bound->linearize_to_string(), buf.linearize_to_string());
+            }
+        }
+    }
 }
 
 // NOLINTEND(*magic-number*)

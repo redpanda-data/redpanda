@@ -121,6 +121,131 @@ fixed_byte_array_value copy(fixed_byte_array_value& v) {
     return {v.val.share(0, v.val.size_bytes())};
 }
 
+std::optional<iobuf> binary_bound_truncator::get_min_bound(iobuf& b) const {
+    if (b.size_bytes() <= _max_bound_size) {
+        return {};
+    }
+    return truncate_to_max_bound_size(b, is_valid_utf8(b));
+}
+
+std::optional<iobuf> binary_bound_truncator::get_max_bound(iobuf& b) const {
+    if (b.size_bytes() <= _max_bound_size) {
+        return {};
+    }
+
+    bool is_utf8 = is_valid_utf8(b);
+    return truncate_to_max_bound_size(b, is_utf8).and_then([&](auto trun) {
+        return try_increment(trun, is_utf8);
+    });
+}
+
+bool binary_bound_truncator::is_valid_utf8(const iobuf& b) const {
+    auto cbegin = iobuf::byte_iterator(b.cbegin(), b.cend());
+    auto cend = iobuf::byte_iterator(b.cend(), b.cend());
+    // Only validate up to the max bound size. This makes the runtime constant
+    // and an incremented utf8 sequence will still be greater than or equal to
+    // an incremented plain byte sequence.
+    return utf::is_valid_utf8(cbegin, cend, _max_bound_size);
+}
+
+std::optional<iobuf>
+binary_bound_truncator::try_increment(iobuf& b, bool is_utf8) const {
+    if (is_utf8) {
+        return try_increment_utf8(b);
+    } else {
+        return try_increment_bytes(b);
+    }
+}
+
+std::optional<iobuf>
+binary_bound_truncator::try_increment_utf8(iobuf& b) const {
+    auto crbegin = iobuf::reverse_byte_iterator(b.crbegin(), b.crend());
+    auto crend = iobuf::reverse_byte_iterator(b.crend(), b.crend());
+    auto utf_iter = utf::utf32_reverse_iterator(crbegin, crend);
+    auto utf_end = utf::utf32_reverse_iterator(crend, crend);
+
+    size_t bytes_read = 0;
+    size_t code_points_read = 0;
+    std::optional<utf::utf32_code_point> inc_char;
+    for (; utf_iter != utf_end; ++utf_iter) {
+        ++code_points_read;
+        bytes_read += utf_iter->utf8_encoding_length();
+        // TODO: `try_increment` only increments if the resulting utf8 encoding
+        // is the same length as the original. This can likely be relaxed if its
+        // acceptable that the truncated value exceeds `_max_bound_size` by a
+        // few bytes.
+        if (auto inc_c = utf_iter->try_increment()) {
+            inc_char = inc_c;
+            break;
+        }
+    }
+
+    if (!inc_char) {
+        return {};
+    }
+
+    auto trun = b.share(0, b.size_bytes() - bytes_read);
+    auto ph = trun.reserve(
+      inc_char->utf8_encoding_length() + (code_points_read - 1));
+    ph.write(
+      inc_char->utf8_encoding().data(), inc_char->utf8_encoding_length());
+    const uint8_t z = 0;
+    for (size_t i = 0; i < (code_points_read - 1); ++i) {
+        ph.write(&z, 1);
+    }
+    return trun;
+}
+
+std::optional<iobuf>
+binary_bound_truncator::try_increment_bytes(iobuf& b) const {
+    size_t bytes_read = 0;
+    std::optional<uint8_t> char_found;
+    auto crbegin = iobuf::reverse_byte_iterator(b.crbegin(), b.crend());
+    auto crend = iobuf::reverse_byte_iterator(b.crend(), b.crend());
+    for (; crbegin != crend; crbegin++) {
+        bytes_read++;
+        uint8_t c = *crbegin;
+        if (c != std::numeric_limits<uint8_t>::max()) {
+            char_found = c + 1;
+            break;
+        }
+    }
+
+    if (!char_found) {
+        return {};
+    }
+
+    auto trun = b.share(0, b.size_bytes() - bytes_read);
+    auto ph = trun.reserve(bytes_read);
+    ph.write(&char_found.value(), 1);
+    // Note that it'd be more efficient to just re-use the tail-end of `b`.
+    // However, zero-ing out the tail end results in a closer bound.
+    const uint8_t z = 0;
+    for (size_t i = 0; i < (bytes_read - 1); i++) {
+        ph.write(&z, 1);
+    }
+    return trun;
+}
+
+std::optional<iobuf> binary_bound_truncator::truncate_to_max_bound_size(
+  iobuf& b, bool valid_utf8) const {
+    auto trun = b.share(0, _max_bound_size);
+
+    if (valid_utf8) {
+        auto crbegin = iobuf::reverse_byte_iterator(
+          trun.crbegin(), trun.crend());
+        auto crend = iobuf::reverse_byte_iterator(trun.crend(), trun.crend());
+        auto n = utf::find_incomplete_code_point(crbegin, crend);
+        if (trun.size_bytes() == n) {
+            return {};
+        }
+
+        trun = trun.share(0, trun.size_bytes() - n);
+    }
+
+    return trun;
+}
+
 } // namespace internal
 
 } // namespace serde::parquet
