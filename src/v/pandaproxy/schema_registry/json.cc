@@ -297,11 +297,11 @@ public:
     }
 
     ssize_t remaining_ref_units() const { return _ref_units; }
-    ssize_t consume_ref_units() { return --_ref_units; }
+    ssize_t consume_ref_units() const { return --_ref_units; }
 
 private:
     const json_schema_definition::impl& _schema;
-    ssize_t _ref_units{
+    mutable ssize_t _ref_units{
       config::shard_local_cfg().schema_registry_max_json_recursion_depth()};
 };
 
@@ -504,7 +504,7 @@ result<document_context> parse_json(iobuf buf) {
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  context ctx,
+  const context& ctx,
   const json::Value& older,
   const json::Value& newer,
   std::string_view p);
@@ -802,7 +802,7 @@ resolve_pointer(const json::Pointer& p, const json::Value& root) {
 // the max_allowed_depth is reached. throws if the max depth is reached or if
 // the reference can't be resolved
 json_const_object
-resolve_reference(schema_context& ctx, const json::Value& candidate) {
+resolve_reference(const schema_context& ctx, const json::Value& candidate) {
     auto ref_it = candidate.FindMember("$ref");
     if (ref_it == candidate.MemberEnd()) { // not a reference, no-op
         return candidate.GetObject();
@@ -871,7 +871,7 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
 }
 
 // helper to convert a boolean to a schema, and to traverse $refs
-json_const_object get_schema(schema_context& ctx, const json::Value& v) {
+json_const_object get_schema(const schema_context& ctx, const json::Value& v) {
     if (v.IsObject()) {
         return resolve_reference(ctx, v.GetObject());
     }
@@ -2130,7 +2130,7 @@ using namespace is_superset_impl;
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
 json_compatibility_result is_superset(
-  context ctx,
+  const context& ctx,
   const json::Value& older_schema,
   const json::Value& newer_schema,
   std::string_view p) {
