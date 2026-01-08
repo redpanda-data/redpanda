@@ -118,3 +118,17 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "values",
+    hdrs = [
+        "values.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/metastore:state",
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
