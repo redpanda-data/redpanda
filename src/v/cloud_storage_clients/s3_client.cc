@@ -486,6 +486,11 @@ request_creator::make_gcs_batch_delete_request(
           out.rdstate()));
     }
 
+    vlog(
+      s3_log.trace,
+      "RAW BATCH DELETE REQUEST:\n{}",
+      body.linearize_to_string().substr(0, 2056));
+
     // Create the main request header
     http::client::request_header header{};
     header.method(boost::beast::http::verb::post);
@@ -1530,6 +1535,12 @@ auto s3_client::do_gcs_batch_delete_objects(
     const auto& headers = response_stream->get_headers();
     auto boundary = util::find_multipart_boundary(headers);
     auto response_buf = co_await http::drain(std::move(response_stream));
+    auto cl_it = headers.find(boost::beast::http::field::content_length);
+    vlog(
+      s3_log.trace,
+      "RAW BATCH DELETE RESPONSE content-length: {}:\n{}",
+      cl_it == headers.end() ? "Unknown" : cl_it->value(),
+      response_buf.linearize_to_string().substr(0, 2056));
     if (!boundary.has_value()) {
         throw std::runtime_error(boundary.error());
     }
