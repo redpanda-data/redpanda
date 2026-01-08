@@ -157,6 +157,7 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
             self.redpanda.wait_until(metadata_readable, timeout_sec=30, backoff_sec=1)
 
         producer.wait(timeout_sec=expect_duration)
+        producer.stop()
         producer.free()
 
         produce_duration = time.time() - t1

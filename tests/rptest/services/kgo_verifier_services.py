@@ -190,6 +190,7 @@ class KgoVerifierService(Service):
         inst = cls(*args, **kwargs)
         inst.start()
         inst.wait(**timeout_kwargs)
+        inst.stop()
         inst.free()
         return inst
 
@@ -320,6 +321,12 @@ class KgoVerifierService(Service):
             if "No such process" not in str(e.msg):
                 raise
 
+        wait_until(
+            lambda: not self.is_running(node),
+            timeout_sec=10,
+            backoff_sec=0.5,
+        )
+
         self._pid = None
         self._release_port()
         if error:
@@ -415,12 +422,10 @@ class KgoVerifierService(Service):
             backoff_sec=5,
             err_msg=f"{self.who_am_i()} didn't complete in {timeout_sec} seconds",
         )
-        self.status_thread.raise_on_error()
 
         # Read final status
         self.logger.debug(f"wait_node {self.who_am_i()}: reading final status")
         self.status_thread.shutdown()
-        self._status_thread = None
 
         # Permit the subprocess to exit, and wait for it to do so
         self.logger.debug(f"wait_node {self.who_am_i()}: requesting shutdown")
@@ -432,22 +437,7 @@ class KgoVerifierService(Service):
             # before shutting down.
             pass
 
-        self.logger.debug(
-            f"wait_node {self.who_am_i()}: waiting node={node.name} pid={self._pid} to terminate"
-        )
-        wait_until(
-            lambda: not self.is_running(node),
-            timeout_sec=10,
-            backoff_sec=0.5,
-        )
-        self._pid = None
-
-        self.logger.debug(
-            f"wait_node {self.who_am_i()}: node={node.name} pid={self._pid} terminated"
-        )
-
-        self._release_port()
-        self._stopped = True
+        self.status_thread.raise_on_error()
 
         return True
 

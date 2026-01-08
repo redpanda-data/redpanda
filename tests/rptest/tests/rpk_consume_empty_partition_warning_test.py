@@ -56,6 +56,7 @@ class RpkConsumeEmptyPartitionWarningTest(RedpandaTest):
         )
         producer.start()
         producer.wait()
+        producer.stop()
         producer.free()
 
         # Verify initial state

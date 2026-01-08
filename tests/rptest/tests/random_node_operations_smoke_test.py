@@ -394,6 +394,7 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             assert self.consumer.consumer_status.validator.invalid_reads == 0, (
                 f"Invalid reads in topic: {self.topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
             )
+            self.consumer.stop()
             del self.consumer
 
             # Start a new consumer to read all data written
@@ -410,6 +411,8 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             assert self.consumer.consumer_status.validator.invalid_reads == 0, (
                 f"Invalid reads in topic: {self.topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
             )
+            self.consumer.stop()
+            self.producer.stop()
 
     def maybe_enable_iceberg_for_topic(
         self, topic_spec: TopicSpec, iceberg_enabled: bool

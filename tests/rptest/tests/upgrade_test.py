@@ -331,6 +331,10 @@ class UpgradeBackToBackTest(PreallocNodesTest):
                 controller_snapshot = log_viewer.read_controller_snapshot(node=node)
                 self.logger.info(f"Read controller snapshot: {controller_snapshot}")
 
+        for consumer in self._consumers:
+            consumer.stop()
+        self._producer.stop()
+
 
 class UpgradeWithWorkloadTest(EndToEndTest):
     """
@@ -517,6 +521,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
             )
             producer.start()
             producer.wait()
+            producer.stop()
             producer.free()
             expect_records[partition] += n_records
 

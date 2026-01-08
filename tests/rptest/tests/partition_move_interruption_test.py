@@ -229,6 +229,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
 
         self.producer.wait()
         self.consumer.wait()
+        self.producer.stop()
+        self.consumer.stop()
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(
@@ -282,6 +284,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
 
         self.producer.wait()
         self.consumer.wait()
+        self.producer.stop()
+        self.consumer.stop()
 
     def increase_replication_factor(
         self, topic, partition, requested_replication_factor
@@ -374,6 +378,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
 
         self.producer.wait()
         self.consumer.wait()
+        self.producer.stop()
+        self.consumer.stop()
 
     @cluster(num_nodes=5)
     def test_cancelling_all_moves_in_cluster(self):
@@ -410,6 +416,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         wait_until(lambda: len(admin.list_reconfigurations()) == 0, 60, 1)
         self.producer.wait()
         self.consumer.wait()
+        self.producer.stop()
+        self.consumer.stop()
 
     def is_moving_to_node(previous_replicas, current_replicas, id):
         return is_in_replica_set(current_replicas, id) and not is_in_replica_set(
@@ -483,6 +491,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
 
         self.producer.wait()
         self.consumer.wait()
+        self.producer.stop()
+        self.consumer.stop()
 
     def get_node_by_id(self, id):
         for n in self.redpanda.nodes:
@@ -563,6 +573,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
 
         self.producer.wait()
         self.consumer.wait()
+        self.producer.stop()
+        self.consumer.stop()
 
     # TODO: investigate slow startups in debug mode
     @skip_debug_mode
@@ -647,3 +659,5 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
 
         self.producer.wait()
         self.consumer.wait()
+        self.producer.stop()
+        self.consumer.stop()

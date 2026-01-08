@@ -92,6 +92,7 @@ class FollowerFetchingTest(PreallocNodesTest):
         )
         producer.start()
         producer.wait()
+        producer.stop()
         producer.free()
 
     def get_node_metric(self, node, topic, metric):

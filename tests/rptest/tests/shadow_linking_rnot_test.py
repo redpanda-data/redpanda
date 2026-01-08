@@ -161,6 +161,8 @@ class ClusterLinkingWorkloadWorker:
             self.logger.error(f"Workload for topic: {self.spec.topic} failed: {e}")
             success = False
             error = str(e)
+        finally:
+            self.verifier.stop_kgo_services()
         return ClusterLinkingWorkloadResult(self.spec.topic, success, error)
 
 

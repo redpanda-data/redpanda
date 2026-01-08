@@ -85,6 +85,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         # was written before it started.
         self.consumer.wait()
         assert self.consumer.consumer_status.validator.invalid_reads == 0
+        self.consumer.stop()
         del self.consumer
 
         # Start a new consumer to read all data written
@@ -96,6 +97,8 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             >= self.producer.produce_status.acked
         )
         assert self.consumer.consumer_status.validator.invalid_reads == 0
+        self.consumer.stop()
+        self.producer.stop()
 
     def node_replicas(self, topics, node_id):
         topic_descriptions = self.client().describe_topics(topics)

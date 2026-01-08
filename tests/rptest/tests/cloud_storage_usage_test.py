@@ -99,6 +99,7 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
 
         for p in producers:
             p.wait(self.target_runtime)
+            p.stop()
             p.free()
 
     def _check_usage(self, timeout_sec):

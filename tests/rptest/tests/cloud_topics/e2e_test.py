@@ -269,6 +269,8 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
         assert cstatus.validator.invalid_reads == 0
         assert cstatus.validator.out_of_scope_invalid_reads == 0
         self.wait_until_all_reconciled(self.topics, transactions=True)
+        self.kgo_consumer.stop()
+        self.kgo_producer.stop()
 
 
 class EndToEndCloudTopicsCompactionTest(EndToEndCloudTopicsBase):

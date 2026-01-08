@@ -1912,6 +1912,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         )
         consumer.start()
         consumer.wait_total_reads(count=9000, timeout_sec=60, backoff_sec=5)
+        consumer.stop()
 
     def _maybe_failure_injector(self, with_failures: bool):
         if with_failures:

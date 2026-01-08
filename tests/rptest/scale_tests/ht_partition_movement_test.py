@@ -93,6 +93,7 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest, PartitionMovementMi
 
         self.consumer.wait()
         assert self.consumer.consumer_status.validator.invalid_reads == 0
+        self.consumer.stop()
         del self.consumer
 
         # Create a fresh consumer to read the quiescent state from start to finish
@@ -104,6 +105,9 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest, PartitionMovementMi
             >= self.producer.produce_status.acked
         )
         assert self.consumer.consumer_status.validator.invalid_reads == 0
+
+        self.consumer.stop()
+        self.producer.stop()
 
     @cluster(num_nodes=6)
     @parametrize(replication_factor=1)

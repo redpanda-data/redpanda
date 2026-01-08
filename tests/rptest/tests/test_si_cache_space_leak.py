@@ -127,6 +127,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         self._consumer.start(clean=False)
 
         self._producer.wait()
+        self._producer.stop()
 
         # Verify that all files in cache are being closed
         def cache_files_closed():
@@ -156,6 +157,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         wait_until(lambda: not cache_files_closed(), timeout_sec=30, backoff_sec=5)
 
         self._consumer.wait()
+        self._consumer.stop()
 
         assert self._producer.produce_status.acked >= num_messages
         assert (

@@ -127,6 +127,7 @@ class RemoteLabelsTest(RedpandaTest):
         )
         producer.start()
         producer.wait(timeout_sec=60)
+        producer.stop()
         producer.free()
 
     @cluster(num_nodes=3)

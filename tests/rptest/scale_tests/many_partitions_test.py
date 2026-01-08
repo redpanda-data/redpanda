@@ -582,6 +582,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             )
             producer.start()
             producer.wait(timeout_sec=expect_transmit_time)
+            producer.stop()
             self.free_preallocated_nodes()
             duration = time.time() - t1
             self.logger.info(
@@ -631,6 +632,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         )
         rand_consumer.start(clean=False)
         rand_consumer.wait()
+        rand_consumer.stop()
 
         fast_producer.stop()
         self.logger.info("Write+randread stress test complete, verifying sequentially")
@@ -672,7 +674,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             ), (
                 f"{verifier.consumer_status.validator.valid_reads} >= {fast_producer.produce_status.acked} + {msg_count_per_topic}"
             )
-
+        verifier.stop()
         self.free_preallocated_nodes()
 
     def _run_omb(self, scale: ScaleParameters):

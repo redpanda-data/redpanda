@@ -639,6 +639,7 @@ class LogCompactionEnableSlidingWindow(RedpandaTest):
                 err_msg="Did not see any compacted segments.",
             )
 
+            producer.stop()
             producer.free()
 
             next_sliding_window_config = not next_sliding_window_config

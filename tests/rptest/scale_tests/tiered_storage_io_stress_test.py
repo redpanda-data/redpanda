@@ -149,6 +149,8 @@ class TieredStorageIoStressTest(PreallocNodesTest):
         # mid-run, they'll run to completion.
         for consumer in self._consumers:
             consumer.wait()
+            consumer.stop()
+        self._producer.stop()
 
         assert (
             self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least

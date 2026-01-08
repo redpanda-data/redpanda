@@ -199,6 +199,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         producer.start()
         producer.wait(timeout_sec=60)
+        producer.stop()
         producer.free()
 
         wait_until(
@@ -242,6 +243,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         producer.start()
         producer.wait(timeout_sec=30)
+        producer.stop()
         producer.free()
 
         wait_until(
@@ -315,6 +317,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         wait_until(all_partitions_spilled, timeout_sec=180, backoff_sec=10)
 
         producer.wait(timeout_sec=60)
+        producer.stop()
         producer.free()
 
         wait_until(lambda: self._all_uploads_done(), timeout_sec=60, backoff_sec=5)
@@ -418,6 +421,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         producer.start()
         producer.wait(timeout_sec=30)
+        producer.stop()
         producer.free()
 
         # wait for uploads from first
@@ -529,6 +533,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             time.sleep(2)
 
         producer.wait(timeout_sec=120)
+        producer.stop()
         producer.free()
 
         self.logger.info(
@@ -1244,6 +1249,7 @@ class EndToEndSpilloverTest(RedpandaTest):
 
         producer.start()
         producer.wait()
+        producer.stop()
         producer.free()
 
         def all_partitions_spilled():
@@ -1268,6 +1274,7 @@ class EndToEndSpilloverTest(RedpandaTest):
         assert consumer.consumer_status.validator.invalid_reads == 0
         assert consumer.consumer_status.validator.valid_reads >= self.msg_count
 
+        consumer.stop()
         consumer.free()
 
     @cluster(num_nodes=4, log_allow_list=[r"cluster.*Can't add segment"])
@@ -1341,6 +1348,7 @@ class EndToEndThrottlingTest(RedpandaTest):
 
         producer.start()
         producer.wait()
+        producer.stop()
         producer.free()
 
         wait_until(self._all_uploads_done, timeout_sec=180, backoff_sec=10)
@@ -1366,7 +1374,7 @@ class EndToEndThrottlingTest(RedpandaTest):
 
         assert consumer.consumer_status.validator.invalid_reads == 0
         assert consumer.consumer_status.validator.valid_reads >= self.msg_count
-
+        consumer.stop()
         consumer.free()
 
         return consume_duration
@@ -1510,6 +1518,7 @@ class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
         )
         producer.start()
         producer.wait(timeout_sec=300)
+        producer.stop()
         producer.free()
 
         original_snapshot = self.redpanda.storage(

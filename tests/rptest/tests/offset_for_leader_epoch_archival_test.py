@@ -163,6 +163,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
         producer.start()
         producer.wait()
+        producer.stop()
         producer.free()
 
         def all_partitions_spilled():

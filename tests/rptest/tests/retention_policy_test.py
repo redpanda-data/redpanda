@@ -1028,6 +1028,7 @@ class BogusTimestampTest(EndToEndTest):
             )
             producer.start()
             producer.wait()
+            producer.stop()
             producer.free()
 
             # Write the rest of the messages with invalid timestamps
@@ -1042,6 +1043,7 @@ class BogusTimestampTest(EndToEndTest):
             )
             producer.start()
             producer.wait()
+            producer.stop()
         else:
             # Write msg_count messages with timestamps in the future
             producer = KgoVerifierProducer(
@@ -1055,6 +1057,7 @@ class BogusTimestampTest(EndToEndTest):
             )
             producer.start()
             producer.wait()
+            producer.stop()
 
         if not use_broker_timestamps:
             # We should have written the expected number of segments, and nothing can

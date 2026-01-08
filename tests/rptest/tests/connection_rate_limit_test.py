@@ -86,6 +86,7 @@ class ConnectionRateLimitTest(PreallocNodesTest):
     def connection_rate_test(self):
         self._producer.start()
         self._producer.wait()
+        self._producer.stop()
         self._producer.free()
 
         metrics = MetricCheck(

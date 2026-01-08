@@ -125,6 +125,7 @@ class WriteCachingFailureInjectionE2ETest(RedpandaTest):
             assert total_lost == consumer.consumer_status.validator.lost_offsets["0"], (
                 f"kgo reported lost offset count mismatch: expected {total_lost}, got {consumer.consumer_status.validator.lost_offsets['0']}"
             )
+        consumer.stop()
 
     @cluster(num_nodes=5)
     def test_crash_all_with_consumer_group(self):

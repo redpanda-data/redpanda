@@ -198,6 +198,7 @@ class CompactionTest(RedpandaTest):
 
         producer.start(clean=True)
         producer.wait()
+        producer.stop()
         producer.free()
 
     def wait_for_compaction(self):
@@ -250,6 +251,7 @@ class CompactionTest(RedpandaTest):
 
         consumer.start(clean=False)
         consumer.wait(timeout_sec=120)
+        consumer.stop()
         consumer.free()
 
         verifier = DatalakeVerifier(

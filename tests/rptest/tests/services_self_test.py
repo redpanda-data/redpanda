@@ -259,6 +259,11 @@ class KgoVerifierSelfTest(PreallocNodesTest):
         group_consumer.wait(timeout_sec=60)
         seq_consumer.wait(timeout_sec=60)
 
+        producer.stop()
+        rand_consumer.stop()
+        group_consumer.stop()
+        seq_consumer.stop()
+
     @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=4)
     def test_kgo_verifier_multi(self):
@@ -339,6 +344,11 @@ class KgoVerifierSelfTest(PreallocNodesTest):
         rand_consumer.wait(timeout_sec=60)
         group_consumer.wait(timeout_sec=60)
 
+        producer.stop()
+        seq_consumer.stop()
+        rand_consumer.stop()
+        group_consumer.stop()
+
 
 class KgoVerifierMultiNodeSelfTest(PreallocNodesTest):
     def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any) -> None:
@@ -407,6 +417,9 @@ class KgoVerifierMultiNodeSelfTest(PreallocNodesTest):
         producer.wait(timeout_sec=60)
         seq_consumer.wait(timeout_sec=60)
 
+        producer.stop()
+        seq_consumer.stop()
+
     @skip_debug_mode
     @cluster(num_nodes=5)
     def test_kgo_verifier_multi_node_autoassign(self) -> None:
@@ -465,6 +478,9 @@ class KgoVerifierMultiNodeSelfTest(PreallocNodesTest):
 
         producer.wait(timeout_sec=60)
         seq_consumer.wait(timeout_sec=60)
+
+        producer.stop()
+        seq_consumer.stop()
 
 
 class BucketScrubSelfTest(RedpandaTest):

@@ -115,6 +115,7 @@ class CloudRetentionTest(PreallocNodesTest):
             msg_count, timeout_sec=1200, backoff_sec=5, progress_sec=20
         )
         producer.wait()
+        producer.stop()
         self.logger.info("finished producing")
         topics = (TopicSpec(name=self.topic_name, partition_count=num_partitions),)
 
@@ -204,6 +205,7 @@ class CloudRetentionTest(PreallocNodesTest):
         consumer.start(clean=False)
 
         consumer.wait()
+        consumer.stop()
         self.logger.info("finished consuming")
         valid_reads = consumer.consumer_status.validator.valid_reads
         threshold = segment_size * num_partitions / msg_size
@@ -259,6 +261,7 @@ class CloudRetentionTest(PreallocNodesTest):
         )
         producer.start(clean=False)
         producer.wait()
+        producer.stop()
 
         topics = (TopicSpec(name=self.topic_name, partition_count=num_partitions),)
 
@@ -319,6 +322,7 @@ class CloudRetentionTest(PreallocNodesTest):
         )
         producer.start(clean=False)
         producer.wait()
+        producer.stop()
 
 
 class CloudRetentionTimelyGCTest(RedpandaTest):
