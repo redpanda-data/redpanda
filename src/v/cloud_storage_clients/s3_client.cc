@@ -438,7 +438,8 @@ request_creator::make_gcs_batch_delete_request(
 
         http::client::request_header subrequest_header{};
         subrequest_header.method(boost::beast::http::verb::delete_);
-        subrequest_header.target(make_target(name, key));
+        subrequest_header.target(
+          fmt::format("/storage/v1/b/{}/o/{}", name(), key().string()));
         subrequest_header.insert(
           boost::beast::http::field::content_type, "application/json");
         subrequest_header.insert(

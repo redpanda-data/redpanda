@@ -953,8 +953,15 @@ TEST_P(all_types_gcs_remote_fixture, test_delete_objects_on_unknown_backend) {
     ASSERT_EQ(get_requests().size(), 3);
     auto batch_delete = get_requests()[2];
 
+    // TODO(oren): if the url format was the issue here, we should convert them
+    // somehow in the s3 imposter backend so we can still simulate the lookup
+    // behavior. otoh, maybe that's just tetsing the fixture
+    auto json_api_url = [this](std::string_view key) {
+        return ssx::sformat("/storage/v1/b/{}/o/{}", bucket_name, key);
+    };
+
     std::vector<ss::sstring> expected_urls{
-      "/" + url_base() + "p", "/" + url_base() + "q"};
+      json_api_url("p"), json_api_url("q")};
     ASSERT_EQ(batch_delete.method, "POST");
     ASSERT_TRUE(batch_delete.content.contains(expected_urls[0]));
     ASSERT_TRUE(batch_delete.content.contains(expected_urls[1]));
