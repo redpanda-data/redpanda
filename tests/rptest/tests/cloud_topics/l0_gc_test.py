@@ -85,7 +85,12 @@ class CloudTopicsL0GCTest(RedpandaTest):
             )
             self.logger.info(samples)
             if samples is not None and samples.samples:
-                return int(sum(s.value for s in samples.samples))
+                n = int(sum(s.value for s in samples.samples))
+                print(n)
+                for node in self.redpanda.nodes:
+                    self.redpanda._update_usage_stats(node)
+                print(self.redpanda.usage_stats)
+                return n
             return 0
 
         wait_until(
