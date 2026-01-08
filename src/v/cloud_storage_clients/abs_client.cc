@@ -487,6 +487,11 @@ abs_request_creator::make_batch_delete_request(
             "failed to create batch delete request, state: {}", out.rdstate()));
     }
 
+    vlog(
+      abs_log.trace,
+      "RAW BATCH DELETE REQUEST:\n{}",
+      body.linearize_to_string().substr(0, 2056));
+
     // Main request header
     http::client::request_header header{};
     header.method(boost::beast::http::verb::post);
@@ -1095,6 +1100,12 @@ abs_client::do_batch_delete_objects(
     const auto& headers = response_stream->get_headers();
     auto boundary = util::find_multipart_boundary(headers);
     auto response_buf = co_await http::drain(std::move(response_stream));
+    auto cl_it = headers.find(boost::beast::http::field::content_length);
+    vlog(
+      abs_log.trace,
+      "RAW BATCH DELETE RESPONSE content-length: {}:\n{}",
+      cl_it == headers.end() ? "Unknown" : cl_it->value(),
+      response_buf.linearize_to_string().substr(0, 2056));
     if (!boundary.has_value()) {
         std::rethrow_exception(boundary.error());
     }
