@@ -422,8 +422,13 @@ request_creator::make_gcs_batch_delete_request(
     iobuf_ostreambuf obuf(body);
     std::ostream out(&obuf);
 
+    auto encoded_bucket = http::uri_encode(name(), http::uri_encode_slash::yes);
+
     for (size_t i = 0; i < keys.size(); ++i) {
         const auto& key = keys[i];
+
+        auto encoded_key = http::uri_encode(
+          key().string(), http::uri_encode_slash::yes);
 
         // Boundary line
         fmt::print(out, "--{}\r\n", boundary);
@@ -438,7 +443,8 @@ request_creator::make_gcs_batch_delete_request(
 
         http::client::request_header subrequest_header{};
         subrequest_header.method(boost::beast::http::verb::delete_);
-        subrequest_header.target(make_target(name, key));
+        subrequest_header.target(
+          fmt::format("/storage/v1/b/{}/o/{}", encoded_bucket, encoded_key));
         subrequest_header.insert(
           boost::beast::http::field::content_type, "application/json");
         subrequest_header.insert(
@@ -446,7 +452,7 @@ request_creator::make_gcs_batch_delete_request(
         // Content-Length for DELETE is 0
         subrequest_header.insert(
           boost::beast::http::field::content_length, fmt::to_string(0));
-        util::url_encode_target(subrequest_header);
+        // util::url_encode_target(subrequest_header);
 
         // NOTE: Per docs.cloud.google.com/storage/docs/batch#http:
         // if you provide an [Auth] header for a specific nested request, then
@@ -699,6 +705,7 @@ parse_gcs_batch_delete_response(
 
     constexpr auto convert_content_id =
       [](std::string_view raw) -> std::optional<size_t> {
+        vlog(s3_log.trace, "BATCH PART RAW CONTENT ID: {}", raw);
         constexpr std::string_view pfx = "response-";
         std::optional<size_t> result{};
         if (auto pos = raw.find(pfx); pos != raw.npos) {
@@ -725,6 +732,8 @@ parse_gcs_batch_delete_response(
               "part");
             continue;
         }
+        vlog(
+          s3_log.trace, "BATCH PART CONTENT_ID: {}", maybe_content_id.value());
         content_ids_seen.insert(maybe_content_id.value());
         // having stripped off the leading MIME headers, we should have a
         // complete HTTP response at the front of the parser
@@ -1544,6 +1553,7 @@ auto s3_client::do_gcs_batch_delete_objects(
     if (!boundary.has_value()) {
         throw std::runtime_error(boundary.error());
     }
+    vlog(s3_log.trace, "BATCH DELETE RESPONSE BOUNDARY: {}", boundary.value());
     co_return parse_gcs_batch_delete_response(
       std::move(response_buf), boundary.value(), keys);
 }
