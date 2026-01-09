@@ -23,6 +23,167 @@
 #include <deque>
 #include <exception>
 #include <numeric>
+#include <ranges>
+#include <stdexcept>
+#include <string_view>
+
+/*
+ * All fuzz operations on an iobuf object are also applied to an object of this
+ * reference type. The reference type's operations are considered correct and
+ * therefore it is expected that the iobuf object ends up in a similar state as
+ * the reference object if the iobuf operations are implemented correctly.
+ */
+using reference_t = std::deque<std::string_view>;
+
+namespace {
+/*
+ * Compare contents of iobuf and reference container.
+ */
+void check_equals(const iobuf& buf, const reference_t& ref) {
+    const auto ref_size = std::accumulate(
+      ref.begin(), ref.end(), size_t(0), [](size_t acc, std::string_view sv) {
+          return acc + sv.size();
+      });
+
+    if (buf.empty() != (ref_size == 0)) {
+        throw std::runtime_error(
+          fmt::format(
+            "Iobuf empty state {} != reference empty state {}",
+            buf.empty(),
+            ref_size == 0));
+    }
+
+    if (buf.size_bytes() != ref_size) {
+        throw std::runtime_error(
+          fmt::format(
+            "Iobuf size {} != reference size {}", buf.size_bytes(), ref_size));
+    }
+
+    struct ref_ctx {
+        reference_t::const_iterator it, end;
+        std::string_view sv;
+
+        explicit ref_ctx(const reference_t& ref)
+          : it(ref.cbegin())
+          , end(ref.cend()) {
+            if (it != end) {
+                sv = *it;
+            }
+        }
+
+        std::string_view next(size_t limit) {
+            vassert(it != end, "");
+            auto ret = sv.substr(0, limit);
+            vassert(ret.size() <= sv.size(), "");
+            sv.remove_prefix(ret.size());
+            if (sv.empty()) {
+                ++it;
+                if (it != end) {
+                    sv = *it;
+                }
+            }
+            return ret;
+        }
+    };
+
+    // for string_view operators. skip if the buffer is big.
+    std::optional<std::string> s;
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+    if (buf.size_bytes() < (1ULL << 18ULL)) {
+        s.emplace();
+    }
+
+    ref_ctx ctx(ref);
+    auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
+    in.consume(buf.size_bytes(), [&s, &ctx](const char* data, size_t size) {
+        if (s.has_value()) {
+            s.value().append(data, size);
+        }
+        std::string_view in(data, size);
+        while (!in.empty()) {
+            auto ref = ctx.next(in.size());
+            if (std::memcmp(in.data(), ref.data(), ref.size()) != 0) {
+                throw std::runtime_error(
+                  fmt::format("Iobuf contents differ from reference contents"));
+            }
+            in.remove_prefix(ref.size());
+        }
+        return ss::stop_iteration::no;
+    });
+
+    if (s.has_value()) {
+        // coverage for iobuf::operator==(std:string_view) (equal)
+        if (!(buf == std::string_view(s.value()))) {
+            throw std::runtime_error(
+              "Iobuf contents are not identical for "
+              "string_view comparison");
+        }
+        // coverage for iobuf::operator==(std:string_view) (not-equal)
+        if (!s.value().empty()) {
+            s.value().back()++;
+            if (buf == std::string_view(s.value())) {
+                throw std::runtime_error(
+                  "Iobuf contents are not identical for "
+                  "string_view comparison");
+            }
+            s.value().back()--;
+        }
+        // coverage for iobuf::operator!=(std:string_view) (size difference)
+        s.value().append("a");
+        if (!(buf != std::string_view(s.value()))) {
+            throw std::runtime_error(
+              "Iobuf contents are identical for string_view comparison");
+        }
+    }
+}
+
+struct iobuf_and_ref {
+    iobuf buf;
+    reference_t ref;
+
+    void check() const {
+        try {
+            ::check_equals(buf, ref);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+              fmt::format("iobuf_and_ref: {}", e.what()));
+        }
+    }
+};
+
+/*
+ * A repeatable way of generating an iobuf with many fragments from a
+ * string_view.
+ */
+iobuf_and_ref generate_many_frag_iobuf(std::string_view v) {
+    iobuf_and_ref o;
+    while (!v.empty()) {
+        auto frag_size = std::min<size_t>(v[0], v.size() - 1);
+        v.remove_prefix(1);
+
+        o.buf.append_fragments(iobuf::from(v.substr(0, frag_size)));
+        o.ref.push_back(v.substr(0, frag_size));
+        v.remove_prefix(frag_size);
+    }
+    o.check();
+    return o;
+}
+
+/*
+ * Does an unsigned byte-wise lexicographical comparison between two reference
+ * objects.
+ */
+std::strong_ordering
+compare_reference(const reference_t& a, const reference_t& b) {
+    auto to_unsigned_char = std::views::transform(
+      [](char c) { return static_cast<unsigned char>(c); });
+    auto a_chars = a | std::views::join | to_unsigned_char;
+    auto b_chars = b | std::views::join | to_unsigned_char;
+
+    return std::lexicographical_compare_three_way(
+      a_chars.begin(), a_chars.end(), b_chars.begin(), b_chars.end());
+}
+} // namespace
 
 /*
  * Holds an iobuf and a reference container. When an operation (e.g. append)
@@ -32,7 +193,7 @@
  */
 class iobuf_ops {
     iobuf buf;
-    std::deque<std::string_view> ref;
+    reference_t ref;
 
 public:
     void moves() {
@@ -100,6 +261,52 @@ public:
         tmp.append(payload.data(), payload.size());
         buf.prepend(std::move(tmp));
         ref.push_front(payload);
+    }
+
+    void compare_iobufs(std::string_view v, bool use_small_frags) {
+        iobuf o_buf;
+        reference_t o_ref;
+        if (use_small_frags) {
+            auto r = generate_many_frag_iobuf(v);
+            o_buf = std::move(r.buf);
+            o_ref = std::move(r.ref);
+        } else {
+            o_buf = iobuf::from(v);
+            o_ref.push_back(v);
+            check_equals(o_buf, o_ref);
+        }
+
+        // Test iobuf::operator<=>
+        {
+            auto iobuf_res = buf <=> o_buf;
+            auto ref_res = compare_reference(ref, o_ref);
+            if (iobuf_res != ref_res) {
+                throw std::runtime_error("(buf <=> o_buf) != (ref <=> o_ref)");
+            }
+
+            iobuf_res = o_buf <=> buf;
+            ref_res = compare_reference(o_ref, ref);
+            if (iobuf_res != ref_res) {
+                throw std::runtime_error("(o_buf <=> buf) != (o_ref <=> ref)");
+            }
+        }
+
+        // Test iobuf::operator==
+        {
+            auto iobuf_res = buf == o_buf;
+            auto ref_res = compare_reference(ref, o_ref)
+                           == std::strong_ordering::equal;
+            if (iobuf_res != ref_res) {
+                throw std::runtime_error("(buf == o_buf) != (ref == o_ref)");
+            }
+
+            iobuf_res = o_buf == buf;
+            ref_res = compare_reference(o_ref, ref)
+                      == std::strong_ordering::equal;
+            if (iobuf_res != ref_res) {
+                throw std::runtime_error("(o_buf == buf) != (o_ref == ref)");
+            }
+        }
     }
 
     void trim_front(size_t size) {
@@ -194,117 +401,14 @@ public:
         }
     }
 
-public:
     /*
      * Check consistency of iobuf with reference.
      */
     void check() const {
-        const auto ref_size = std::accumulate(
-          ref.begin(),
-          ref.end(),
-          size_t(0),
-          [](size_t acc, std::string_view sv) { return acc + sv.size(); });
-
-        if (buf.empty() != (ref_size == 0)) {
-            throw std::runtime_error(
-              fmt::format(
-                "Iobuf empty state {} != reference empty state {}",
-                buf.empty(),
-                ref_size == 0));
-        }
-
-        if (buf.size_bytes() != ref_size) {
-            throw std::runtime_error(
-              fmt::format(
-                "Iobuf size {} != reference size {}",
-                buf.size_bytes(),
-                ref_size));
-        }
-
-        check_equals();
-    }
-
-private:
-    /*
-     * Compare contents of iobuf and reference container.
-     */
-    void check_equals() const {
-        struct ref_ctx {
-            std::deque<std::string_view>::const_iterator it, end;
-            std::string_view sv;
-
-            explicit ref_ctx(const std::deque<std::string_view>& ref)
-              : it(ref.cbegin())
-              , end(ref.cend()) {
-                if (it != end) {
-                    sv = *it;
-                }
-            }
-
-            std::string_view next(size_t limit) {
-                vassert(it != end, "");
-                auto ret = sv.substr(0, limit);
-                vassert(ret.size() <= sv.size(), "");
-                sv.remove_prefix(ret.size());
-                if (sv.empty()) {
-                    ++it;
-                    if (it != end) {
-                        sv = *it;
-                    }
-                }
-                return ret;
-            }
-        };
-
-        // for string_view operators. skip if the buffer is big.
-        std::optional<std::string> s;
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-        if (buf.size_bytes() < (1ULL << 18ULL)) {
-            s.emplace();
-        }
-
-        ref_ctx ctx(ref);
-        auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
-        in.consume(buf.size_bytes(), [&s, &ctx](const char* data, size_t size) {
-            if (s.has_value()) {
-                s.value().append(data, size);
-            }
-            std::string_view in(data, size);
-            while (!in.empty()) {
-                auto ref = ctx.next(in.size());
-                if (std::memcmp(in.data(), ref.data(), ref.size()) != 0) {
-                    throw std::runtime_error(
-                      fmt::format(
-                        "Iobuf contents differ from reference contents"));
-                }
-                in.remove_prefix(ref.size());
-            }
-            return ss::stop_iteration::no;
-        });
-
-        if (s.has_value()) {
-            // coverage for iobuf::operator==(std:string_view) (equal)
-            if (!(buf == std::string_view(s.value()))) {
-                throw std::runtime_error(
-                  "Iobuf contents are not identical for "
-                  "string_view comparison");
-            }
-            // coverage for iobuf::operator==(std:string_view) (not-equal)
-            if (!s.value().empty()) {
-                s.value().back()++;
-                if (buf == std::string_view(s.value())) {
-                    throw std::runtime_error(
-                      "Iobuf contents are not identical for "
-                      "string_view comparison");
-                }
-                s.value().back()--;
-            }
-            // coverage for iobuf::operator!=(std:string_view) (size difference)
-            s.value().append("a");
-            if (!(buf != std::string_view(s.value()))) {
-                throw std::runtime_error(
-                  "Iobuf contents are identical for string_view comparison");
-            }
+        try {
+            ::check_equals(buf, ref);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(fmt::format("iobuf_ops: {}", e.what()));
         }
     }
 };
@@ -319,6 +423,8 @@ enum class op_type : uint8_t {
     iobuf_as_scattered,
     hexdump,
     reserve_memory,
+    compare,
+    compare_small_fragments,
     prepend_temporary_buffer,
     prepend_iobuf,
     append_iobuf,
@@ -334,6 +440,10 @@ struct fmt::formatter<op_type> : formatter<std::string_view> {
     auto format(op_type t, format_context& ctx) const {
         auto name = [](auto t) {
             switch (t) {
+            case op_type::compare:
+                return "compare";
+            case op_type::compare_small_fragments:
+                return "compare_small_fragments";
             case op_type::copy:
                 return "copy";
             case op_type::append_fragments:
@@ -461,6 +571,14 @@ private:
         vassert(op.size.has_value(), "Op {} requires size operands", op.op);
 
         switch (op.op) {
+        case op_type::compare:
+            m_.compare_iobufs(op.data, false);
+            return;
+
+        case op_type::compare_small_fragments:
+            m_.compare_iobufs(op.data, true);
+            return;
+
         case op_type::append_fragments:
             m_.append_fragments(op.data);
             return;
@@ -533,6 +651,8 @@ private:
 
         // size operand
         switch (op.op) {
+        case op_type::compare:
+        case op_type::compare_small_fragments:
         case op_type::trim_front:
         case op_type::trim_back:
         case op_type::prepend_iobuf:
@@ -553,6 +673,8 @@ private:
 
         // data operand
         switch (op.op) {
+        case op_type::compare:
+        case op_type::compare_small_fragments:
         case op_type::append_fragments:
         case op_type::prepend_iobuf:
         case op_type::prepend_temporary_buffer:
