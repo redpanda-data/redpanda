@@ -350,7 +350,7 @@ struct context {
     }
 
 private:
-    static constexpr size_t max_superset_recursion_depth{20};
+    static constexpr size_t max_superset_recursion_depth{200};
     mutable size_t _superset_recursion_depth{max_superset_recursion_depth};
 
 private:
@@ -852,7 +852,7 @@ resolve_pointer(const json::Pointer& p, const json::Value& root) {
 // iteratively resolve a reference, following the $ref field until the end or
 // the max_allowed_depth is reached. throws if the max depth is reached or if
 // the reference can't be resolved
-json_const_object
+[[gnu::noinline]] json_const_object
 resolve_reference(const schema_context& ctx, const json::Value& candidate) {
     auto ref_it = candidate.FindMember("$ref");
     if (ref_it == candidate.MemberEnd()) { // not a reference, no-op
@@ -922,7 +922,8 @@ resolve_reference(const schema_context& ctx, const json::Value& candidate) {
 }
 
 // helper to convert a boolean to a schema, and to traverse $refs
-json_const_object get_schema(const schema_context& ctx, const json::Value& v) {
+[[gnu::noinline]] json_const_object
+get_schema(const schema_context& ctx, const json::Value& v) {
     if (v.IsObject()) {
         return resolve_reference(ctx, v.GetObject());
     }
@@ -941,7 +942,7 @@ json_const_object get_schema(const schema_context& ctx, const json::Value& v) {
 
 // helper to retrieve the object value for a key, or an empty object if the key
 // is not present
-json::Value::ConstObject
+[[gnu::noinline]] json::Value::ConstObject
 get_object_or_empty(const json::Value& v, std::string_view key) {
     auto it = v.FindMember(
       json::Value{key.data(), rapidjson::SizeType(key.size())});
@@ -967,7 +968,7 @@ get_object_or_empty(const json::Value& v, std::string_view key) {
 
 // helper to retrieve the array value for a key, or an empty array if the key
 // is not present
-json::Value::ConstArray
+[[gnu::noinline]] json::Value::ConstArray
 get_array_or_empty(const json::Value& v, std::string_view key) {
     auto it = v.FindMember(
       json::Value{key.data(), rapidjson::SizeType(key.size())});
@@ -1026,7 +1027,7 @@ extract_property_and_gate_check(
 //  value  |  value  | is_same or predicate
 template<typename VPred>
 requires std::is_invocable_r_v<bool, VPred, double, double>
-json_compatibility_result is_numeric_property_value_superset(
+[[gnu::noinline]] json_compatibility_result is_numeric_property_value_superset(
   const json::Value& older,
   const json::Value& newer,
   std::string_view prop_name,
@@ -1087,7 +1088,7 @@ json_compatibility_result is_numeric_property_value_superset(
 
 enum class additional_field_for { object, array };
 
-json_compatibility_result is_additional_superset(
+[[gnu::noinline]] json_compatibility_result is_additional_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
@@ -1198,7 +1199,7 @@ json_compatibility_result is_additional_superset(
       get_additional_props(ctx.newer.dialect(), newer));
 }
 
-json_compatibility_result is_string_superset(
+[[gnu::noinline]] json_compatibility_result is_string_superset(
   const json::Value& older, const json::Value& newer, std::string_view p) {
     json_compatibility_result res;
 
@@ -1244,7 +1245,7 @@ json_compatibility_result is_string_superset(
     return res;
 }
 
-json_compatibility_result is_numeric_superset(
+[[gnu::noinline]] json_compatibility_result is_numeric_superset(
   const json::Value& older, const json::Value& newer, std::string_view p) {
     json_compatibility_result res;
 
@@ -1407,7 +1408,7 @@ json_compatibility_result is_numeric_superset(
     return res;
 }
 
-json_compatibility_result is_array_superset(
+[[gnu::noinline]] json_compatibility_result is_array_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
@@ -1600,7 +1601,7 @@ json_compatibility_result is_array_superset(
     return res;
 }
 
-json_compatibility_result is_object_properties_superset(
+[[gnu::noinline]] json_compatibility_result is_object_properties_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
@@ -1701,7 +1702,7 @@ json_compatibility_result is_object_properties_superset(
     return res;
 }
 
-json_compatibility_result is_object_required_superset(
+[[gnu::noinline]] json_compatibility_result is_object_required_superset(
   const json::Value& older, const json::Value& newer, std::string_view p) {
     json_compatibility_result res;
     // to pass the check, a required property from newer has to be present in
@@ -1742,7 +1743,7 @@ json_compatibility_result is_object_required_superset(
     return res;
 }
 
-json_compatibility_result is_object_dependencies_superset(
+[[gnu::noinline]] json_compatibility_result is_object_dependencies_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
@@ -1837,7 +1838,7 @@ json_compatibility_result is_object_dependencies_superset(
     return res;
 }
 
-json_compatibility_result is_object_superset(
+[[gnu::noinline]] json_compatibility_result is_object_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
@@ -1895,7 +1896,7 @@ json_compatibility_result is_object_superset(
     return res;
 }
 
-json_compatibility_result is_enum_superset(
+[[gnu::noinline]] json_compatibility_result is_enum_superset(
   const json::Value& older, const json::Value& newer, std::string_view p) {
     json_compatibility_result res;
     auto enum_p = make_path(p, "enum").string();
@@ -1946,7 +1947,7 @@ json_compatibility_result is_enum_superset(
     return res;
 }
 
-json_compatibility_result is_not_combinator_superset(
+[[gnu::noinline]] json_compatibility_result is_not_combinator_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
@@ -1995,7 +1996,7 @@ json::Value to_keyword(p_combinator c) {
     }
 }
 
-json_compatibility_result is_positive_combinator_superset(
+[[gnu::noinline]] json_compatibility_result is_positive_combinator_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
@@ -2180,7 +2181,7 @@ using namespace is_superset_impl;
 // a schema O is a superset of another schema N if every schema that is valid
 // for N is also valid for O. precondition: older and newer are both valid
 // schemas
-json_compatibility_result is_superset(
+[[gnu::noinline]] json_compatibility_result is_superset(
   const context& ctx,
   const json::Value& older_schema,
   const json::Value& newer_schema,
