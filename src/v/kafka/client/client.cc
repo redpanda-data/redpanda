@@ -83,19 +83,23 @@ ss::future<> client::connect() {
       _seeds.begin(), _seeds.end(), random_generators::internal::gen);
 
     return ss::do_with(size_t{0}, [this](size_t& retries) {
+        const auto seed = [this, &retries]() {
+            return _seeds[retries % _seeds.size()];
+        };
         return retry_with_mitigation(
           _config.retries_cfg.max_retries,
           _config.retries_cfg.retry_base_backoff,
-          [this, retries]() {
-              return do_connect(_seeds[retries % _seeds.size()]);
-          },
-          [this, &retries](std::exception_ptr ex) {
-              ++retries;
+          [this, seed]() { return do_connect(seed()); },
+          [this, seed, &retries](std::exception_ptr ex) {
+              auto address = seed();
               vlog(
                 _logger.info,
-                "Failed to connect to seed {}: {}, retrying",
-                retries,
+                "Failed to connect {} to seed @ {}:{} - {}, retrying",
+                _config.connection_cfg.client_id.value_or("redpanda-client"),
+                address.host(),
+                address.port(),
                 ex);
+              ++retries;
               return external_mitigate_error(ex);
           },
           _as);
