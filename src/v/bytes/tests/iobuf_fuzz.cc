@@ -234,7 +234,7 @@ public:
         ref.push_back(payload);
     }
 
-    void append_fragments(std::string_view payload) {
+    void append_fragments(std::string_view payload, bool use_small_frags) {
         /*
          * footgun alert: if you append from an iobuf share then the backing
          * memory is also shared. so if you do something like this:
@@ -245,10 +245,18 @@ public:
          * overwrite data at the front of the buffer. this same scenario can
          * probably be created when combining ops with iobuf::share.
          */
-        iobuf tmp;
-        tmp.append(payload.data(), payload.size());
-        buf.append_fragments(std::move(tmp));
-        ref.push_back(payload);
+        if (!use_small_frags) {
+            iobuf tmp;
+            tmp.append(payload.data(), payload.size());
+            buf.append_fragments(std::move(tmp));
+            ref.push_back(payload);
+        } else {
+            auto g_buf = generate_many_frag_iobuf(payload);
+            buf.append_fragments(std::move(g_buf.buf));
+            for (auto v : g_buf.ref) {
+                ref.push_back(v);
+            }
+        }
     }
 
     void prepend_temporary_buffer(std::string_view payload) {
@@ -430,6 +438,7 @@ enum class op_type : uint8_t {
     append_iobuf,
     append_temporary_buffer,
     append_fragments,
+    append_small_fragments,
     append_uint8_array,
     append_char_array,
     max = append_char_array,
@@ -448,6 +457,8 @@ struct fmt::formatter<op_type> : formatter<std::string_view> {
                 return "copy";
             case op_type::append_fragments:
                 return "append_fragments";
+            case op_type::append_small_fragments:
+                return "append_small_fragments";
             case op_type::moves:
                 return "moves";
             case op_type::clear:
@@ -580,7 +591,11 @@ private:
             return;
 
         case op_type::append_fragments:
-            m_.append_fragments(op.data);
+            m_.append_fragments(op.data, false);
+            return;
+
+        case op_type::append_small_fragments:
+            m_.append_fragments(op.data, true);
             return;
 
         case op_type::trim_front:
@@ -660,6 +675,7 @@ private:
         case op_type::hexdump:
         case op_type::prepend_temporary_buffer:
         case op_type::append_fragments:
+        case op_type::append_small_fragments:
         case op_type::append_iobuf:
         case op_type::append_temporary_buffer:
         case op_type::append_uint8_array:
@@ -676,6 +692,7 @@ private:
         case op_type::compare:
         case op_type::compare_small_fragments:
         case op_type::append_fragments:
+        case op_type::append_small_fragments:
         case op_type::prepend_iobuf:
         case op_type::prepend_temporary_buffer:
         case op_type::append_iobuf:
