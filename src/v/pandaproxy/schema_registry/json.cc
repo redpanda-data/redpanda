@@ -308,6 +308,57 @@ private:
 struct context {
     schema_context older;
     schema_context newer;
+
+    context(schema_context older, schema_context newer)
+      : older{std::move(older)}
+      , newer{std::move(newer)} {}
+
+    class superset_unit {
+    public:
+        explicit superset_unit(const context* ctx)
+          : _ctx{ctx} {}
+
+        ~superset_unit() {
+            if (_engaged) {
+                _ctx->return_superset_recursion_depth();
+            }
+        }
+
+        superset_unit(const superset_unit&) = delete;
+        superset_unit& operator=(const superset_unit&) = delete;
+        superset_unit(superset_unit&& rhs) noexcept
+          : _ctx{rhs._ctx}
+          , _engaged{rhs._engaged} {
+            rhs._engaged = false;
+        }
+        superset_unit& operator=(superset_unit&&) = delete;
+
+    private:
+        const context* _ctx;
+        bool _engaged{true};
+    };
+
+    size_t remaining_superset_recursion_depth() const {
+        return _superset_recursion_depth;
+    }
+    std::optional<superset_unit> consume_superset_recursion_depth() const {
+        if (_superset_recursion_depth <= 0) {
+            return std::nullopt;
+        }
+        _superset_recursion_depth--;
+        return superset_unit{this};
+    }
+
+private:
+    static constexpr size_t max_superset_recursion_depth{20};
+    mutable size_t _superset_recursion_depth{max_superset_recursion_depth};
+
+private:
+    void return_superset_recursion_depth() const {
+        ++_superset_recursion_depth;
+    }
+
+    friend class superset_unit;
 };
 
 template<json_schema_dialect Dialect>
@@ -2134,6 +2185,14 @@ json_compatibility_result is_superset(
   const json::Value& older_schema,
   const json::Value& newer_schema,
   std::string_view p) {
+    auto consumed_depth = ctx.consume_superset_recursion_depth();
+    if (!consumed_depth) {
+        json_compatibility_result res;
+        res.emplace<json_incompatibility>(
+          std::string{p}, json_incompatibility_type::type_changed);
+        return res;
+    }
+
     json_compatibility_result res;
 
     // break recursion if parameters are atoms:
@@ -2442,7 +2501,7 @@ compatibility_result check_compatible(
     auto raw_compat_result = [&]() {
         // reader is a superset of writer iff every schema that is valid for
         // writer is also valid for reader
-        context ctx{.older{reader()}, .newer{writer()}};
+        context ctx{schema_context{reader()}, schema_context{writer()}};
         return is_superset(ctx, reader().ctx.doc, writer().ctx.doc, "#/");
     }();
 
