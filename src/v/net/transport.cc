@@ -8,7 +8,19 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/with_timeout.hh>
 
+#include <system_error>
+
 namespace {
+
+class timed_out_error : public ss::timed_out_error {
+public:
+    explicit timed_out_error(ss::sstring msg)
+      : _msg{std::move(msg)} {}
+    const char* what() const noexcept override { return _msg.c_str(); }
+
+private:
+    ss::sstring _msg;
+};
 
 ss::future<ss::connected_socket> connect_with_timeout(
   const seastar::socket_address& address,
@@ -18,9 +30,23 @@ ss::future<ss::connected_socket> connect_with_timeout(
     auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))
       .handle_exception([socket, address, log](const std::exception_ptr& e) {
-          vlog(log->trace, "error connecting to {} - {}", address, e);
-          socket->shutdown();
-          return ss::make_exception_future<ss::connected_socket>(e);
+          try {
+              std::rethrow_exception(e);
+          } catch (const ss::timed_out_error& ex) {
+              socket->shutdown();
+              return ss::make_exception_future<ss::connected_socket>(
+                timed_out_error(
+                  ssx::sformat("connection to {} - {}", address, e)));
+          } catch (const std::system_error& ex) {
+              socket->shutdown();
+              return ss::make_exception_future<ss::connected_socket>(
+                std::system_error(
+                  ex.code(), fmt::format("connection to {}", address)));
+          } catch (...) {
+              vlog(log->trace, "error connecting to {} - {}", address, e);
+              socket->shutdown();
+              return ss::make_exception_future<ss::connected_socket>(e);
+          }
       });
 }
 
