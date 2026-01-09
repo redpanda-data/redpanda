@@ -899,9 +899,10 @@ ss::future<> connection_context::client_protocol_state::handle_response(
     if (disconnected) {
         vlog(
           klog.info,
-          "Disconnected {} ({})",
+          "Disconnected {} ({}), {}",
           connection_ctx->conn->addr,
-          disconnected.value());
+          disconnected.value(),
+          e);
     } else {
         vlog(klog.warn, "Error processing request: {}", e);
     }
