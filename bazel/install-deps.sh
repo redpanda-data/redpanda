@@ -34,7 +34,6 @@ deb_deps=(
   libtool
   make
   pkgconf
-  ragel
   sudo
 )
 
@@ -47,7 +46,6 @@ fedora_deps=(
   git
   libtool
   perl
-  ragel
   xorg-x11-util-macros
   sudo
 )
