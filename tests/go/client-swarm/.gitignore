@@ -1,0 +1,18 @@
+# Binaries
+client-swarm
+*.exe
+
+# Test binaries
+*.test
+
+# Output of go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
