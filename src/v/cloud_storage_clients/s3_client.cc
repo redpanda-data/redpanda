@@ -445,14 +445,6 @@ request_creator::make_gcs_batch_delete_request(
         subrequest_header.method(boost::beast::http::verb::delete_);
         subrequest_header.target(
           fmt::format("/storage/v1/b/{}/o/{}", encoded_bucket, encoded_key));
-        subrequest_header.insert(
-          boost::beast::http::field::content_type, "application/json");
-        subrequest_header.insert(
-          boost::beast::http::field::accept, "application/json");
-        // Content-Length for DELETE is 0
-        subrequest_header.insert(
-          boost::beast::http::field::content_length, fmt::to_string(0));
-        // util::url_encode_target(subrequest_header);
 
         // NOTE: Per docs.cloud.google.com/storage/docs/batch#http:
         // if you provide an [Auth] header for a specific nested request, then
@@ -472,7 +464,7 @@ request_creator::make_gcs_batch_delete_request(
 
         fmt::print(
           out,
-          "{} {} HTTP/1.1\r\n",
+          "{} {}\r\n",
           subrequest_header.method_string(),
           subrequest_header.target());
 

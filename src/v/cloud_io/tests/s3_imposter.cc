@@ -658,7 +658,7 @@ keys_from_batch_delete_request(const http_test_utils::request_info& req) {
 
         pos += method.size();
 
-        auto ver_pos = line.find(" HTTP/");
+        auto ver_pos = line.find('\r');
         if (ver_pos == line.npos) {
             continue;
         }
