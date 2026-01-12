@@ -40,6 +40,15 @@
 
 namespace ssx {
 
+namespace detail {
+
+template<typename T>
+concept HasYieldCalled = requires {
+    { T::yield_called() } -> std::same_as<void>;
+};
+
+} // namespace detail
+
 struct async_counter {
     // internal details, don't rely on the values
     ssize_t count = 0;
@@ -143,7 +152,9 @@ async_for_each_coro(Counter counter, Iterator begin, EndIterator end, Fn f) {
         if (counter.count >= Traits::interval) {
             co_await ss::coroutine::maybe_yield();
             counter.count = 0;
-            Traits::yield_called();
+            if constexpr (detail::HasYieldCalled<Traits>) {
+                Traits::yield_called();
+            }
         }
     } while (begin != end);
 }
@@ -397,7 +408,9 @@ ss::future<> async_while_counter(async_counter& counter, Cond cond, Fn f) {
         if (!stop && counter.count >= Traits::interval) {
             co_await ss::coroutine::maybe_yield();
             counter.count = 0;
-            Traits::yield_called();
+            if constexpr (detail::HasYieldCalled<Traits>) {
+                Traits::yield_called();
+            }
         }
     }
 }

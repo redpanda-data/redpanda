@@ -40,7 +40,7 @@ using consensus_set = heartbeat_manager::consensus_set;
 // async_for_each_counter trait for gathering heartbeats
 // cost is 1 per raft group, and each raft group will have on average 3ish
 // followers. This should yield around every 100 followers
-struct loop_traits : ssx::async_algo_traits {
+struct loop_traits {
     static constexpr ssize_t interval = 30;
 };
 

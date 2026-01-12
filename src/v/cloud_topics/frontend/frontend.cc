@@ -68,7 +68,7 @@ static constexpr auto L0_replicate_default_timeout = 1s;
 // The default `async_algo_traits::interval` value of `100` seems a bit too high
 // to reliably prevent reactor stalls in the `convert_to_placeholders()` loop.
 // Use this lower value instead.
-struct convert_to_placeholders_loop_traits : ssx::async_algo_traits {
+struct convert_to_placeholders_loop_traits {
     static constexpr ssize_t interval = 10;
 };
 
