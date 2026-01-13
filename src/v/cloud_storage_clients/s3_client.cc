@@ -870,6 +870,51 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
     co_return outcome;
 }
 
+// Build transport configuration for GCS batch API endpoint.
+// The batch endpoint must be accessed at storage.googleapis.com directly,
+// not through bucket-specific virtual host URLs.
+std::optional<s3_client::gcs_batch_client_conf>
+s3_client::make_gcs_batch_transport_conf(
+  const net::base_transport::configuration& base_conf,
+  const access_point_uri& uri,
+  const ss::abort_source* as,
+  ss::lowres_clock::duration max_idle) {
+    // Only create batch config for GCS backends
+    // Determine which batch delete implementation to use based on backend
+    // GCS does not support S3-style batch deletes, so use GCS batch API
+    auto backend = config::shard_local_cfg().cloud_storage_backend();
+    auto inferred_backend = infer_backend_from_uri(uri);
+
+    bool is_gcs = backend == model::cloud_storage_backend::google_s3_compat
+                  || inferred_backend
+                       == model::cloud_storage_backend::google_s3_compat;
+    if (!is_gcs) {
+        return std::nullopt;
+    }
+
+    // TODO: better
+    bool is_test = base_conf.server_addr.host() == "localhost"
+                   || base_conf.server_addr.host() == "127.0.0.1";
+
+    return s3_client::gcs_batch_client_conf{
+        .transport_conf = net::base_transport::configuration{
+          .server_addr = net::unresolved_address{
+            is_test
+              ? base_conf.server_addr.host()
+              : "storage.googleapis.com",
+              base_conf.server_addr.port(),
+              base_conf.server_addr.family()},
+          .credentials = base_conf.credentials,
+          .tls_sni_hostname = (base_conf.tls_sni_hostname.has_value()
+                               ? std::make_optional("storage.googleapis.com")
+                               : std::nullopt),
+          .wait_for_tls_server_eof = base_conf.wait_for_tls_server_eof,
+        },
+        .max_idle_time = max_idle,
+        .as = as,
+    };
+}
+
 s3_client::s3_client(
   ss::weak_ptr<client_pool> pool_ptr,
   const s3_configuration& conf,
@@ -879,7 +924,9 @@ s3_client::s3_client(
   : client(std::move(pool_ptr))
   , _requestor(conf, std::move(apply_credentials))
   , _client(transport_conf, nullptr, probe)
-  , _probe(std::move(probe)) {}
+  , _probe(std::move(probe))
+  , _gcs_batch_transport_conf(make_gcs_batch_transport_conf(
+      transport_conf, conf.uri, nullptr, conf.max_idle_time)) {}
 
 s3_client::s3_client(
   ss::weak_ptr<client_pool> pool_ptr,
@@ -891,7 +938,9 @@ s3_client::s3_client(
   : client(std::move(pool_ptr))
   , _requestor(conf, std::move(apply_credentials))
   , _client(transport_conf, &as, probe, conf.max_idle_time)
-  , _probe(std::move(probe)) {}
+  , _probe(std::move(probe))
+  , _gcs_batch_transport_conf(make_gcs_batch_transport_conf(
+      transport_conf, conf.uri, &as, conf.max_idle_time)) {}
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 s3_client::self_configure() {
@@ -992,9 +1041,35 @@ s3_client::self_configure_test(const plain_bucket_name& bucket) {
     co_return list_objects_result;
 }
 
-ss::future<> s3_client::stop() { return _client.stop(); }
+ss::future<> s3_client::stop() {
+    co_await _client.stop();
+    if (_gcs_batch_client.has_value()) {
+        co_await _gcs_batch_client->stop();
+    }
+}
 
-void s3_client::shutdown() { _client.shutdown_now(); }
+void s3_client::shutdown() {
+    _client.shutdown_now();
+    if (_gcs_batch_client.has_value()) {
+        _gcs_batch_client->shutdown_now();
+    }
+}
+
+http::client& s3_client::get_gcs_batch_client() {
+    vassert(
+      _gcs_batch_transport_conf.has_value(),
+      "GCS batch client requested but transport config not available. "
+      "This should only be called for GCS backends.");
+    // _client(transport_conf, &as, probe, conf.max_idle_time);
+    if (!_gcs_batch_client.has_value()) {
+        _gcs_batch_client.emplace(
+          _gcs_batch_transport_conf.value().transport_conf,
+          _gcs_batch_transport_conf.value().as,
+          _probe,
+          _gcs_batch_transport_conf.value().max_idle_time);
+    }
+    return _gcs_batch_client.value();
+}
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
 s3_client::get_object(
@@ -1513,41 +1588,58 @@ auto s3_client::do_gcs_batch_delete_objects(
           std::make_exception_ptr(std::system_error(request.error())));
     }
     auto& [header, body] = request.value();
+
     vlog(s3_log.trace, "send GCS batch delete request:\n{}", header);
 
-    auto response_stream = co_await _client.request(
-      std::move(header), body, timeout);
+    std::exception_ptr ex;
+    std::optional<delete_objects_result> result;
+    try {
+        auto response_stream = co_await get_gcs_batch_client().request(
+          std::move(header), body, timeout);
 
-    co_await response_stream->prefetch_headers();
-    vassert(response_stream->is_header_done(), "Header is not received");
+        co_await response_stream->prefetch_headers();
+        vassert(response_stream->is_header_done(), "Header is not received");
 
-    const auto status = response_stream->get_headers().result();
-    // GCS batch API returns 200 OK for successful batch requests
-    // Individual subrequest failures are encoded in the multipart response
-    if (status != boost::beast::http::status::ok) {
-        const auto content_type = util::get_response_content_type(
-          response_stream->get_headers());
-        auto buf = co_await http::drain(std::move(response_stream));
-        co_return co_await parse_rest_error_response<delete_objects_result>(
-          content_type, status, std::move(buf));
+        const auto status = response_stream->get_headers().result();
+        // GCS batch API returns 200 OK for successful batch requests
+        // Individual subrequest failures are encoded in the multipart response
+        if (status != boost::beast::http::status::ok) {
+            const auto content_type = util::get_response_content_type(
+              response_stream->get_headers());
+            auto buf = co_await http::drain(std::move(response_stream));
+            co_await body.close();
+            co_return co_await parse_rest_error_response<delete_objects_result>(
+              content_type, status, std::move(buf));
+        }
+
+        // Extract boundary from Content-Type header
+        const auto& headers = response_stream->get_headers();
+        auto boundary = util::find_multipart_boundary(headers);
+        auto response_buf = co_await http::drain(std::move(response_stream));
+        auto cl_it = headers.find(boost::beast::http::field::content_length);
+        vlog(
+          s3_log.trace,
+          "RAW BATCH DELETE RESPONSE content-length: {}:\n{}",
+          cl_it == headers.end() ? "Unknown" : cl_it->value(),
+          response_buf.linearize_to_string().substr(0, 2056));
+        if (!boundary.has_value()) {
+            throw std::runtime_error(boundary.error());
+        }
+        vlog(
+          s3_log.trace, "BATCH DELETE RESPONSE BOUNDARY: {}", boundary.value());
+        result = parse_gcs_batch_delete_response(
+          std::move(response_buf), boundary.value(), keys);
+    } catch (...) {
+        ex = std::current_exception();
     }
 
-    // Extract boundary from Content-Type header
-    const auto& headers = response_stream->get_headers();
-    auto boundary = util::find_multipart_boundary(headers);
-    auto response_buf = co_await http::drain(std::move(response_stream));
-    auto cl_it = headers.find(boost::beast::http::field::content_length);
-    vlog(
-      s3_log.trace,
-      "RAW BATCH DELETE RESPONSE content-length: {}:\n{}",
-      cl_it == headers.end() ? "Unknown" : cl_it->value(),
-      response_buf.linearize_to_string().substr(0, 2056));
-    if (!boundary.has_value()) {
-        throw std::runtime_error(boundary.error());
+    co_await body.close();
+
+    if (ex) {
+        std::rethrow_exception(ex);
     }
-    vlog(s3_log.trace, "BATCH DELETE RESPONSE BOUNDARY: {}", boundary.value());
-    co_return parse_gcs_batch_delete_response(
-      std::move(response_buf), boundary.value(), keys);
+    vassert(result.has_value(), "RESULT MISSING VALUE");
+    co_return std::move(result).value();
 }
 
 } // namespace cloud_storage_clients

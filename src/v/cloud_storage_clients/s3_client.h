@@ -272,10 +272,38 @@ private:
     // otherwise.
     ss::future<bool> self_configure_test(const plain_bucket_name& bucket);
 
+    // Returns a reference to the GCS batch client, lazily initializing it if
+    // needed. The batch client connects directly to storage.googleapis.com
+    // rather than the bucket-specific virtual host endpoint.
+    http::client& get_gcs_batch_client();
+
 private:
     request_creator _requestor;
     http::client _client;
     ss::shared_ptr<client_probe> _probe;
+
+    // Dedicated HTTP client for GCS batch API operations.
+    // The GCS batch endpoint (storage.googleapis.com/batch/storage/v1) must be
+    // accessed directly, not through bucket-specific virtual host URLs.
+    // Lazily initialized on first use.
+    std::optional<http::client> _gcs_batch_client;
+
+    struct gcs_batch_client_conf {
+        net::base_transport::configuration transport_conf{};
+        ss::lowres_clock::duration max_idle_time{};
+        const ss::abort_source* as{nullptr};
+    };
+
+    static std::optional<s3_client::gcs_batch_client_conf>
+    make_gcs_batch_transport_conf(
+      const net::base_transport::configuration& base_conf,
+      const access_point_uri& uri,
+      const ss::abort_source* as,
+      ss::lowres_clock::duration max_idle);
+
+    // Transport configuration for the GCS batch client, stored during
+    // construction for lazy initialization.
+    std::optional<gcs_batch_client_conf> _gcs_batch_transport_conf;
 };
 
 std::variant<client::delete_objects_result, rest_error_response>
