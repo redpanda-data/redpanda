@@ -407,7 +407,7 @@ std::optional<iobuf> multipart_response_parser::get_part() {
     // boundary string appeared in the sub-response body (illegal per multipart
     // grammar laid out in RFC 2046)
     if (
-      delim_idx != _delim.size() || line_feed.count() != 2
+      delim_idx != _delim.size() || line_feed.count() < 2
       || _parser.bytes_left() < 2) {
         _done = true;
         return std::nullopt;

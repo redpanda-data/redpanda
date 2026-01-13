@@ -44,7 +44,7 @@ make_batch_delete_success_response(std::string_view boundary, size_t num_keys) {
           "Content-Type: application/http\r\n"
           "Content-ID: response-{}\r\n\r\n"
           "HTTP/1.1 204 No Content\r\n"
-          "X-GUploader-UploadID: test-upload-id-{}\r\n\r\n",
+          "X-GUploader-UploadID: test-upload-id-{}\r\n\r\n\r\n",
           boundary,
           i,
           i);
