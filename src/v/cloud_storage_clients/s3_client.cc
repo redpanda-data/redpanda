@@ -487,7 +487,7 @@ request_creator::make_gcs_batch_delete_request(
     vlog(
       s3_log.trace,
       "RAW BATCH DELETE REQUEST:\n{}",
-      body.linearize_to_string().substr(0, 2056));
+      body.linearize_to_string());
 
     // Create the main request header
     http::client::request_header header{};
@@ -1621,7 +1621,7 @@ auto s3_client::do_gcs_batch_delete_objects(
           s3_log.trace,
           "RAW BATCH DELETE RESPONSE content-length: {}:\n{}",
           cl_it == headers.end() ? "Unknown" : cl_it->value(),
-          response_buf.linearize_to_string().substr(0, 2056));
+          response_buf.linearize_to_string());
         if (!boundary.has_value()) {
             throw std::runtime_error(boundary.error());
         }
