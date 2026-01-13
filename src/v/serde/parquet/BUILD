@@ -120,6 +120,7 @@ redpanda_cc_library(
         "//src/v/compression",
         "//src/v/container:chunked_vector",
         "//src/v/hashing:crc32",
+        "//src/v/strings:utf8",
         "@abseil-cpp//absl/numeric:int128",
         "@seastar",
     ],

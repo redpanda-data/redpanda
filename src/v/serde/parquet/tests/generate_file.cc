@@ -245,7 +245,11 @@ schema_element all_types_schema() {
         leaf_node("C", field_repetition_type::required, i64_type{}),
         leaf_node("D", field_repetition_type::required, f32_type{}),
         leaf_node("E", field_repetition_type::required, f64_type{}),
-        leaf_node("F", field_repetition_type::required, byte_array_type{})));
+        leaf_node("F", field_repetition_type::required, byte_array_type{}),
+        leaf_node(
+          "G",
+          field_repetition_type::required,
+          byte_array_type{.fixed_length = 128})));
     // TODO: also add logical types
 }
 
@@ -284,7 +288,7 @@ value generate_required(const schema_element& root) {
               return fixed_byte_array_value{iobuf::from(
                 random_generators::gen_alphanum_string(*t.fixed_length))};
           }
-          auto size = random_generators::get_int<size_t>(64);
+          auto size = random_generators::get_int<size_t>(65, 128);
           return byte_array_value{
             iobuf::from(random_generators::gen_alphanum_string(size))};
       });

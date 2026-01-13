@@ -231,6 +231,7 @@ public:
     using iterator = iter<false, true>;
     using reverse_iterator = iter<false, false>;
     using const_iterator = iter<true, true>;
+    using const_reverse_iterator = iter<true, false>;
 
     bool empty() const {
         check_consistency();
@@ -338,11 +339,14 @@ public:
     reverse_iterator rend() { return {this, nullptr}; }
     const_iterator cbegin() const { return {this, _head}; }
     const_iterator cend() const { return {this, nullptr}; }
+    const_reverse_iterator crbegin() const { return {this, _tail}; }
+    const_reverse_iterator crend() const { return {this, nullptr}; }
 
 private:
     friend class iter<true, true>;
     friend class iter<false, true>;
     friend class iter<false, false>;
+    friend class iter<true, false>;
     inline void update_generation() {
 #ifndef NDEBUG
         ++_generation;

@@ -71,8 +71,10 @@ public:
     using iterator = typename container::iterator;
     using reverse_iterator = typename container::reverse_iterator;
     using const_iterator = typename container::const_iterator;
+    using const_reverse_iterator = typename container::const_reverse_iterator;
     using iterator_consumer = details::io_iterator_consumer;
     using byte_iterator = details::io_byte_iterator;
+    using reverse_byte_iterator = details::reverse_io_byte_iterator;
     using placeholder = details::io_placeholder;
 
     static iobuf from(std::string_view view) {
@@ -268,6 +270,8 @@ public:
     const_iterator end() const;
     const_iterator cbegin() const;
     const_iterator cend() const;
+    const_reverse_iterator crbegin() const;
+    const_reverse_iterator crend() const;
 
     std::string hexdump(size_t) const;
 
@@ -307,6 +311,12 @@ inline iobuf::const_iterator iobuf::begin() const { return _frags.cbegin(); }
 inline iobuf::const_iterator iobuf::end() const { return _frags.cend(); }
 inline iobuf::const_iterator iobuf::cbegin() const { return _frags.cbegin(); }
 inline iobuf::const_iterator iobuf::cend() const { return _frags.cend(); }
+inline iobuf::const_reverse_iterator iobuf::crbegin() const {
+    return _frags.crbegin();
+}
+inline iobuf::const_reverse_iterator iobuf::crend() const {
+    return _frags.crend();
+}
 
 inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
 inline bool iobuf::operator!=(std::string_view o) const {

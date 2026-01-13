@@ -27,7 +27,10 @@ public:
       , _byte_index(initial_index)
       , _remaining_size(max_size_to_write) {}
 
-    [[gnu::always_inline]] void write(const char* src, size_t len) {
+    template<typename T>
+    [[gnu::always_inline]] void write(const T* src, size_t len)
+    requires(sizeof(T) == 1)
+    {
         details::check_out_of_range(len, _remaining_size);
         std::copy_n(src, len, mutable_index());
         _remaining_size -= len;

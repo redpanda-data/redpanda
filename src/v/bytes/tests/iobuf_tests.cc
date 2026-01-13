@@ -99,6 +99,10 @@ SEASTAR_THREAD_TEST_CASE(test_cmp_str_view) {
       std::strong_ordering::equal, (multiple_frags.share(0, 3) <=> "cat"));
     BOOST_CHECK_LT(iobuf::from(""), iobuf::from("cat"));
     BOOST_CHECK_GT(iobuf::from("cat"), iobuf::from(""));
+    auto multi_frags = iobuf::from("ab");
+    multi_frags.append_fragments(iobuf::from("d"));
+    BOOST_CHECK_EQUAL(
+      true, (iobuf::from("abc") <=> multi_frags) == std::strong_ordering::less);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {
@@ -302,6 +306,52 @@ SEASTAR_THREAD_TEST_CASE(traver_all_bytes_one_at_a_time) {
         ++begin;
     }
     BOOST_CHECK_EQUAL(str, expected.data());
+}
+SEASTAR_THREAD_TEST_CASE(iterate_bytes_backward_no_frags) {
+    auto b = iobuf();
+    auto begin = iobuf::reverse_byte_iterator(b.crbegin(), b.crend());
+    auto end = iobuf::reverse_byte_iterator(b.crend(), b.crend());
+    size_t bytes_read = 0;
+    for (; begin != end; begin++) {
+        bytes_read++;
+    }
+    BOOST_CHECK_EQUAL(bytes_read, 0);
+}
+SEASTAR_THREAD_TEST_CASE(iterate_bytes_backward_empty_frags) {
+    auto b = iobuf();
+    b.append(std::make_unique<iobuf::fragment>(0));
+    b.append(std::make_unique<iobuf::fragment>(1));
+    auto begin = iobuf::reverse_byte_iterator(b.crbegin(), b.crend());
+    auto end = iobuf::reverse_byte_iterator(b.crend(), b.crend());
+    size_t bytes_read = 0;
+    for (; begin != end; begin++) {
+        bytes_read++;
+    }
+    BOOST_CHECK_EQUAL(bytes_read, 0);
+}
+SEASTAR_THREAD_TEST_CASE(iterate_bytes_backward_mult_frags) {
+    auto b = iobuf();
+    std::string str1 = "hello";
+    std::string str2 = "world";
+
+    b.append(
+      std::make_unique<iobuf::fragment>(
+        ss::temporary_buffer<char>::copy_of(str1)));
+    b.append(std::make_unique<iobuf::fragment>(1));
+    b.append(
+      std::make_unique<iobuf::fragment>(
+        ss::temporary_buffer<char>::copy_of(str2)));
+
+    auto begin = iobuf::reverse_byte_iterator(b.crbegin(), b.crend());
+    auto end = iobuf::reverse_byte_iterator(b.crend(), b.crend());
+
+    iobuf rev;
+    for (; begin != end; begin++) {
+        rev.append(&*begin, 1);
+    }
+    BOOST_CHECK_EQUAL(
+      rev.linearize_to_string(),
+      std::ranges::to<std::string>(std::views::reverse(str1 + str2)));
 }
 SEASTAR_THREAD_TEST_CASE(not_equal_by_size) {
     auto a = iobuf();
