@@ -1594,7 +1594,7 @@ auto s3_client::do_gcs_batch_delete_objects(
     std::exception_ptr ex;
     std::optional<delete_objects_result> result;
     try {
-        auto response_stream = co_await get_gcs_batch_client().request(
+        auto response_stream = co_await _client.request(
           std::move(header), body, timeout);
 
         co_await response_stream->prefetch_headers();
