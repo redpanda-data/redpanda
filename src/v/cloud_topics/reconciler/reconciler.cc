@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <exception>
 #include <expected>
 #include <iterator>
@@ -239,25 +240,56 @@ ss::future<> reconciler::reconcile() {
 }
 
 chunked_vector<chunked_vector<ss::shared_ptr<source>>>
-reconciler::partition_sources_into_sets(
-  chunked_vector<ss::shared_ptr<source>> sources) {
+partition_sources_into_sets(chunked_vector<ss::shared_ptr<source>> sources) {
+    // Bucket width for logarithmic bucketing based on retention lifetimes. Each
+    // bucket spans ~1.65x. With natural log scaling and a bucket_width = 0.5,
+    // we will have at most (when considering the int64_t::max() cap on
+    // retention properties) 87 buckets.
+    static constexpr double bucket_width = 0.5;
+
+    // Sources with retention are bucketed by log(retention)/bucket_width.
+    // Sources without retention are grouped by topic_id.
+    chunked_hash_map<uint8_t, chunked_vector<ss::shared_ptr<source>>>
+      retention_bucket_idx_to_source;
     chunked_hash_map<model::topic_id, chunked_vector<ss::shared_ptr<source>>>
-      topic_id_to_sources;
+      topic_id_to_source;
+
     for (auto& src : sources) {
-        auto& src_vec = topic_id_to_sources[src->topic_id_partition().topic_id];
-        src_vec.push_back(std::move(src));
+        auto retention = src->effective_retention_ms();
+        if (retention.has_value()) {
+            uint8_t bucket_idx = 0;
+            if (retention.value().count() >= 1) {
+                // std::log(0) = -inf, and std::log(x) where x < 1 is -ve.
+                bucket_idx = static_cast<uint8_t>(
+                  std::log(static_cast<double>(retention.value().count()))
+                  / bucket_width);
+            }
+            retention_bucket_idx_to_source[bucket_idx].push_back(
+              std::move(src));
+        } else {
+            topic_id_to_source[src->topic_id_partition().topic_id].push_back(
+              std::move(src));
+        }
+    }
+
+    chunked_vector<chunked_vector<ss::shared_ptr<source>>> result;
+    result.reserve(
+      retention_bucket_idx_to_source.size() + topic_id_to_source.size());
+
+    for (auto& [_, src_vec] : retention_bucket_idx_to_source) {
+        result.push_back(std::move(src_vec));
+    }
+    for (auto& [_, src_vec] : topic_id_to_source) {
+        result.push_back(std::move(src_vec));
     }
 
     vlog(
       lg.debug,
-      "Partitioned sources into {} sets by topic_id",
-      topic_id_to_sources.size());
+      "Partitioned sources into {} sets ({} by retention, {} by topic)",
+      result.size(),
+      retention_bucket_idx_to_source.size(),
+      topic_id_to_source.size());
 
-    chunked_vector<chunked_vector<ss::shared_ptr<source>>> result;
-    result.reserve(topic_id_to_sources.size());
-    for (auto& [_, src_vec] : topic_id_to_sources) {
-        result.push_back(std::move(src_vec));
-    }
     return result;
 }
 

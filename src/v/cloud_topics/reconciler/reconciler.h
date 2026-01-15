@@ -250,12 +250,6 @@ private:
       std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder);
 
     /*
-     * Partition sources into sets for reconciliation.
-     */
-    chunked_vector<chunked_vector<ss::shared_ptr<source>>>
-    partition_sources_into_sets(chunked_vector<ss::shared_ptr<source>> sources);
-
-    /*
      * Reconcile a set of sources. Creates a metadata builder, maps sources to
      * objects, builds and uploads objects, and commits them to the metastore.
      * Returns the max object size produced, or 0 if no objects were
@@ -271,5 +265,9 @@ private:
     reconciler_probe _probe;
     adaptive_interval _scheduler;
 };
+
+// Partition sources into sets for reconciliation.
+chunked_vector<chunked_vector<ss::shared_ptr<source>>>
+partition_sources_into_sets(chunked_vector<ss::shared_ptr<source>> sources);
 
 } // namespace cloud_topics::reconciler

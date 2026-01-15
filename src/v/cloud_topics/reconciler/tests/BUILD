@@ -25,6 +25,7 @@ redpanda_test_cc_library(
         "//src/v/cloud_topics/reconciler",
         "//src/v/model",
         "//src/v/model/tests:random",
+        "//src/v/storage",
         "@seastar",
     ],
 )
