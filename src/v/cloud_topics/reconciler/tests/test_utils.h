@@ -17,9 +17,11 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
+#include "storage/ntp_config.h"
 
 #include <seastar/core/future.hh>
 
+#include <chrono>
 #include <expected>
 #include <optional>
 #include <stdexcept>
@@ -98,6 +100,55 @@ private:
     bool _fail_set_lro = false;
     bool _fail_make_reader = false;
     std::optional<std::chrono::milliseconds> _effective_retention_ms;
+};
+
+/// A fake source that uses an ntp_config to determine effective_retention_ms,
+/// matching the real l0_source implementation.
+class fake_l0_source : public source {
+public:
+    fake_l0_source(
+      model::ntp ntp, model::topic_id_partition tidp, storage::ntp_config cfg)
+      : source(std::move(ntp), tidp)
+      , _cfg(std::move(cfg)) {}
+
+    kafka::offset last_reconciled_offset() override { return _lro; }
+
+    ss::future<std::expected<void, errc>>
+    set_last_reconciled_offset(kafka::offset o, ss::abort_source&) override {
+        _lro = o;
+        co_return std::expected<void, errc>{};
+    }
+
+    ss::future<model::record_batch_reader>
+    make_reader(source::reader_config) override {
+        co_return model::make_empty_record_batch_reader();
+    }
+
+    /// Same implementation as l0_source::effective_retention_ms()
+    std::optional<std::chrono::milliseconds>
+    effective_retention_ms() const override {
+        auto policy = _cfg.cleanup_policy();
+
+        std::optional<std::chrono::milliseconds> res;
+
+        if (model::is_compaction_enabled(policy)) {
+            res = _cfg.max_compaction_lag_ms();
+        }
+
+        if (model::is_deletion_enabled(policy)) {
+            if (auto retention = _cfg.retention_duration()) {
+                res = res ? std::min(*res, *retention) : retention;
+            }
+        }
+
+        return res;
+    }
+
+    const storage::ntp_config& get_ntp_config() const { return _cfg; }
+
+private:
+    kafka::offset _lro;
+    storage::ntp_config _cfg;
 };
 
 class unreliable_metastore : public l1::simple_metastore {

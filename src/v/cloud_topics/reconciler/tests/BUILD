@@ -93,3 +93,21 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "partition_sources_into_sets_test",
+    timeout = "short",
+    srcs = [
+        "partition_sources_into_sets_test.cc",
+    ],
+    deps = [
+        ":test_utils",
+        "//src/v/cloud_topics/reconciler",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:tristate",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
