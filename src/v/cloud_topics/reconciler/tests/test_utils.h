@@ -79,6 +79,16 @@ public:
           std::move(log));
     }
 
+    std::optional<std::chrono::milliseconds>
+    effective_retention_ms() const override {
+        return _effective_retention_ms;
+    }
+
+    void set_effective_retention_ms(
+      std::optional<std::chrono::milliseconds> retention) {
+        _effective_retention_ms = retention;
+    }
+
     void fail_set_lro(bool fail) { _fail_set_lro = fail; }
     void fail_make_reader(bool fail) { _fail_make_reader = fail; }
 
@@ -87,6 +97,7 @@ private:
     chunked_vector<model::record_batch> _source_log;
     bool _fail_set_lro = false;
     bool _fail_make_reader = false;
+    std::optional<std::chrono::milliseconds> _effective_retention_ms;
 };
 
 class unreliable_metastore : public l1::simple_metastore {

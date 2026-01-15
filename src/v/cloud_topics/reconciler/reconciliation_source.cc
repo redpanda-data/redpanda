@@ -19,6 +19,7 @@
 #include "kafka/utils/txn_reader.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "storage/ntp_config.h"
 #include "utils/retry_chain_node.h"
 
 #include <expected>
@@ -132,6 +133,26 @@ public:
 
         co_return model::make_record_batch_reader<kafka::read_committed_reader>(
           std::move(tracker), std::move(reader.reader));
+    }
+
+    std::optional<std::chrono::milliseconds>
+    effective_retention_ms() const override {
+        const auto& cfg = _partition->get_ntp_config();
+        auto policy = cfg.cleanup_policy();
+
+        std::optional<std::chrono::milliseconds> res;
+
+        if (model::is_compaction_enabled(policy)) {
+            res = cfg.max_compaction_lag_ms();
+        }
+
+        if (model::is_deletion_enabled(policy)) {
+            if (auto retention = cfg.retention_duration()) {
+                res = res ? std::min(*res, *retention) : retention;
+            }
+        }
+
+        return res;
     }
 
 private:

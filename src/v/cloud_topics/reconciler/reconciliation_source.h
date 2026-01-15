@@ -16,6 +16,7 @@
 
 #include <seastar/core/shared_ptr.hh>
 
+#include <chrono>
 #include <expected>
 
 namespace cluster {
@@ -79,6 +80,14 @@ public:
     // It *is* valid for this reader to outlive `source`.
     virtual ss::future<model::record_batch_reader>
       make_reader(reader_config) = 0;
+
+    // Get the effective retention value for this source used for bucketing
+    // during reconciliation.
+    // - For compact topics: returns max_compaction_lag_ms
+    // - For delete topics: returns retention_duration
+    // - Returns std::nullopt if no time-based retention is configured
+    virtual std::optional<std::chrono::milliseconds>
+    effective_retention_ms() const = 0;
 
 private:
     model::ntp _ntp;
