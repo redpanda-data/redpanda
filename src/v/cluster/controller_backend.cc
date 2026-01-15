@@ -739,7 +739,15 @@ controller_backend::force_replica_set_update(
     if (!contains_node(new_replicas, _self)) {
         // This node will no longer be a part of the raft group,
         // will be cleaned up as a part of update_finished command.
+        // Make sure it can't be leader, though, s.t. update_finished can
+        // actually be sent out.
+        partition->block_new_leadership();
+        co_await partition->raft()->step_down("not_in_force_replica_set");
         co_return ss::stop_iteration::yes;
+    } else {
+        // force of a force may return a replica to the config, make sure
+        // if it was prior blocked from leadership, it isn't anymore
+        partition->unblock_new_leadership();
     }
     auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
       previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
