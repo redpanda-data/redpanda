@@ -16,6 +16,7 @@
  * llvm-cov show src/v/bytes/tests/fuzz_iobuf -instr-profile=default.profdata
  * -format=html ../src/v/bytes/iobuf.h ../src/v/bytes/iobuf.cc > cov.html
  */
+#include "base/units.h"
 #include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/scattered_message.h"
@@ -40,18 +41,10 @@ namespace {
  * Compare contents of iobuf and reference container.
  */
 void check_equals(const iobuf& buf, const reference_t& ref) {
-    const auto ref_size = std::accumulate(
-      ref.begin(), ref.end(), size_t(0), [](size_t acc, std::string_view sv) {
+    const auto ref_size = std::ranges::fold_left(
+      ref, size_t(0), [](size_t acc, std::string_view sv) {
           return acc + sv.size();
       });
-
-    if (buf.empty() != (ref_size == 0)) {
-        throw std::runtime_error(
-          fmt::format(
-            "Iobuf empty state {} != reference empty state {}",
-            buf.empty(),
-            ref_size == 0));
-    }
 
     if (buf.size_bytes() != ref_size) {
         throw std::runtime_error(
@@ -59,82 +52,45 @@ void check_equals(const iobuf& buf, const reference_t& ref) {
             "Iobuf size {} != reference size {}", buf.size_bytes(), ref_size));
     }
 
-    struct ref_ctx {
-        reference_t::const_iterator it, end;
-        std::string_view sv;
+    auto buf_begin = iobuf::byte_iterator(buf.cbegin(), buf.cend());
+    auto buf_end = iobuf::byte_iterator(buf.cend(), buf.cend());
+    auto ref_range = ref | std::views::join;
 
-        explicit ref_ctx(const reference_t& ref)
-          : it(ref.cbegin())
-          , end(ref.cend()) {
-            if (it != end) {
-                sv = *it;
-            }
-        }
-
-        std::string_view next(size_t limit) {
-            vassert(it != end, "");
-            auto ret = sv.substr(0, limit);
-            vassert(ret.size() <= sv.size(), "");
-            sv.remove_prefix(ret.size());
-            if (sv.empty()) {
-                ++it;
-                if (it != end) {
-                    sv = *it;
-                }
-            }
-            return ret;
-        }
-    };
-
-    // for string_view operators. skip if the buffer is big.
-    std::optional<std::string> s;
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    if (buf.size_bytes() < (1ULL << 18ULL)) {
-        s.emplace();
+    if (!std::equal(buf_begin, buf_end, ref_range.begin())) {
+        throw std::runtime_error("buf != ref");
     }
 
-    ref_ctx ctx(ref);
-    auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
-    in.consume(buf.size_bytes(), [&s, &ctx](const char* data, size_t size) {
-        if (s.has_value()) {
-            s.value().append(data, size);
-        }
-        std::string_view in(data, size);
-        while (!in.empty()) {
-            auto ref = ctx.next(in.size());
-            if (std::memcmp(in.data(), ref.data(), ref.size()) != 0) {
-                throw std::runtime_error(
-                  fmt::format("Iobuf contents differ from reference contents"));
-            }
-            in.remove_prefix(ref.size());
-        }
-        return ss::stop_iteration::no;
-    });
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+    if (buf.size_bytes() > 128_KiB) {
+        // Skip the string_view operator checks if the iobuf is too large to
+        // linearize.
+        return;
+    }
 
-    if (s.has_value()) {
-        // coverage for iobuf::operator==(std:string_view) (equal)
-        if (!(buf == std::string_view(s.value()))) {
+    auto s = buf.linearize_to_string();
+    // coverage for iobuf::operator==(std:string_view) (equal)
+    if (!(buf == std::string_view(s))) {
+        throw std::runtime_error(
+          "Iobuf contents are not identical for "
+          "string_view comparison");
+    }
+    // coverage for iobuf::operator==(std:string_view) (not-equal)
+    if (!s.empty()) {
+        s.back()++;
+        if (buf == std::string_view(s)) {
             throw std::runtime_error(
               "Iobuf contents are not identical for "
               "string_view comparison");
         }
-        // coverage for iobuf::operator==(std:string_view) (not-equal)
-        if (!s.value().empty()) {
-            s.value().back()++;
-            if (buf == std::string_view(s.value())) {
-                throw std::runtime_error(
-                  "Iobuf contents are not identical for "
-                  "string_view comparison");
-            }
-            s.value().back()--;
-        }
-        // coverage for iobuf::operator!=(std:string_view) (size difference)
-        s.value().append("a");
-        if (!(buf != std::string_view(s.value()))) {
-            throw std::runtime_error(
-              "Iobuf contents are identical for string_view comparison");
-        }
+        s.back()--;
     }
+    // coverage for iobuf::operator!=(std:string_view) (size difference)
+    s.append("a", 1);
+    if (!(buf != std::string_view(s))) {
+        throw std::runtime_error(
+          "Iobuf contents are identical for string_view comparison");
+    }
+    return;
 }
 
 struct iobuf_and_ref {
