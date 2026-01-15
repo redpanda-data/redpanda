@@ -321,6 +321,7 @@ class CrashLoopChecksTest(RedpandaTest):
     )
     @matrix(signal_shard=[0, 1])
     def test_vassert_message(self, signal_shard: int):
+        raise RuntimeError(f"node {signal_shard} failed")
         if not self.debug_mode:
             self.logger.info("Skipping test, endpoints only exist in debug mode")
             return
