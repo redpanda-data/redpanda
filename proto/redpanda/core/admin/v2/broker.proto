@@ -24,13 +24,17 @@ option (pbgen.cpp_namespace) = "proto::admin";
 // The BrokerService gives information about individual brokers within the
 // cluster.
 service BrokerService {
-    // GetBroker returns information about a single broker in the cluster.
+    // GetBroker
+    //
+    // Returns information about a single broker in the cluster.
     rpc GetBroker(GetBrokerRequest) returns (GetBrokerResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
-    // ListBrokers returns information about all brokers in the cluster.
+    // ListBrokers
+    //
+    // Returns information about all brokers in the cluster.
     rpc ListBrokers(ListBrokersRequest) returns (ListBrokersResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER

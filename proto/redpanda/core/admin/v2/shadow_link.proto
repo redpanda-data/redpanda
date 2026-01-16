@@ -30,53 +30,74 @@ import "google/protobuf/field_mask.proto";
 option (pbgen.cpp_namespace) = "proto::admin";
 
 service ShadowLinkService {
+    // CreateShadowLink
+    //
+    // Creates a new shadow link between clusters.
     rpc CreateShadowLink(CreateShadowLinkRequest)
         returns (CreateShadowLinkResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // DeleteShadowLink
+    //
+    // Deletes an existing shadow link.
     rpc DeleteShadowLink(DeleteShadowLinkRequest)
         returns (DeleteShadowLinkResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // GetShadowLink
+    //
+    // Gets information about a specific shadow link.
     rpc GetShadowLink(GetShadowLinkRequest) returns (GetShadowLinkResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // ListShadowLinks
+    //
+    // Lists all shadow links in the cluster.
     rpc ListShadowLinks(ListShadowLinksRequest)
         returns (ListShadowLinksResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
+    // UpdateShadowLink
+    //
+    // Updates an existing shadow link configuration.
     rpc UpdateShadowLink(UpdateShadowLinkRequest)
         returns (UpdateShadowLinkResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
-    // Fails over a shadow link or a single shadow topic
+    // FailOver
+    //
+    // Fails over a shadow link or a single shadow topic for disaster recovery.
     rpc FailOver(FailOverRequest) returns (FailOverResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
 
-    // This operation returns information about a Shadow Topic on a Shadow Link.
-    // A Shadow Topic is a resource created automatically by a Shadow Link.  The
-    // Shadow Topic 'shadows' a topic on a source cluster, mirroring the data
+    // GetShadowTopic
+    //
+    // Returns information about a shadow topic on a shadow link.
+    // A shadow topic is a resource created automatically by a shadow link. The
+    // shadow topic 'shadows' a topic on a source cluster, mirroring the data
     // and properties of that topic.
     rpc GetShadowTopic(GetShadowTopicRequest) returns (GetShadowTopicResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
-    // This operation returns a list of all Shadow Topics on a Shadow Link and
-    // their status
+    // ListShadowTopics
+    //
+    // Returns a list of all shadow topics on a shadow link and
+    // their status.
     rpc ListShadowTopics(ListShadowTopicsRequest)
         returns (ListShadowTopicsResponse) {
         option (pbgen.rpc) = {

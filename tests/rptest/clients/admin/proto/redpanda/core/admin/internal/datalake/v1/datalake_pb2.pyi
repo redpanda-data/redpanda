@@ -246,17 +246,19 @@ class TopicState(google.protobuf.message.Message):
     PARTITION_STATES_FIELD_NUMBER: builtins.int
     LIFECYCLE_STATE_FIELD_NUMBER: builtins.int
     TOTAL_KAFKA_PROCESSED_BYTES_FIELD_NUMBER: builtins.int
+    LAST_COMMITTED_SNAPSHOT_ID_FIELD_NUMBER: builtins.int
     revision: builtins.int
     lifecycle_state: Global___LifecycleState.ValueType
     total_kafka_processed_bytes: builtins.int
+    last_committed_snapshot_id: builtins.int
 
     @property
     def partition_states(self) -> google.protobuf.internal.containers.MessageMap[builtins.int, Global___PartitionState]:
         ...
 
-    def __init__(self, *, revision: builtins.int=..., partition_states: collections.abc.Mapping[builtins.int, Global___PartitionState] | None=..., lifecycle_state: Global___LifecycleState.ValueType=..., total_kafka_processed_bytes: builtins.int=...) -> None:
+    def __init__(self, *, revision: builtins.int=..., partition_states: collections.abc.Mapping[builtins.int, Global___PartitionState] | None=..., lifecycle_state: Global___LifecycleState.ValueType=..., total_kafka_processed_bytes: builtins.int=..., last_committed_snapshot_id: builtins.int=...) -> None:
         ...
 
-    def ClearField(self, field_name: typing.Literal['lifecycle_state', b'lifecycle_state', 'partition_states', b'partition_states', 'revision', b'revision', 'total_kafka_processed_bytes', b'total_kafka_processed_bytes']) -> None:
+    def ClearField(self, field_name: typing.Literal['last_committed_snapshot_id', b'last_committed_snapshot_id', 'lifecycle_state', b'lifecycle_state', 'partition_states', b'partition_states', 'revision', b'revision', 'total_kafka_processed_bytes', b'total_kafka_processed_bytes']) -> None:
         ...
 Global___TopicState: typing_extensions.TypeAlias = TopicState

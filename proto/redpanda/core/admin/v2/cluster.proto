@@ -24,8 +24,10 @@ option (pbgen.cpp_namespace) = "proto::admin";
 
 // The ClusterService gives information about the cluster.
 service ClusterService {
-    // ListKafkaConnections returns information about the cluster's Kafka
-    // connections, collected and ordered across all brokers.
+    // ListKafkaConnections
+    //
+    // Returns information about the cluster's Kafka connections, collected
+    // and ordered across all brokers.
     rpc ListKafkaConnections(ListKafkaConnectionsRequest)
         returns (ListKafkaConnectionsResponse) {
         option (pbgen.rpc) = {

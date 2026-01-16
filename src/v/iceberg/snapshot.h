@@ -91,6 +91,16 @@ struct snapshot {
     std::optional<schema::id_t> schema_id;
 
     friend bool operator==(const snapshot&, const snapshot&) = default;
+
+    snapshot copy() const {
+        return {
+          .parent_snapshot_id = parent_snapshot_id,
+          .sequence_number = sequence_number,
+          .timestamp_ms = timestamp_ms,
+          .summary = summary,
+          .manifest_list_path = manifest_list_path,
+          .schema_id = schema_id};
+    }
 };
 
 // The type of snapshot reference.

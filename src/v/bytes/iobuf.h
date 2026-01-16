@@ -252,6 +252,7 @@ public:
     bool operator==(const iobuf&) const;
     bool operator<(const iobuf&) const;
     bool operator!=(const iobuf&) const;
+    /// Does an unsigned byte-wise comparison between this iobuf and the other.
     std::strong_ordering operator<=>(const iobuf&) const;
 
     bool operator==(std::string_view) const;

@@ -130,7 +130,8 @@ std::strong_ordering iobuf::operator<=>(const iobuf& o) const {
     constexpr static size_t max_byte_for_byte_cmp = 4;
     const auto n = std::min({lhs.size(), rhs.size(), max_byte_for_byte_cmp});
     for (size_t i = 0; i < n; ++i) {
-        const auto cmp = lhs[i] <=> rhs[i];
+        const auto cmp = static_cast<unsigned char>(lhs[i])
+                         <=> static_cast<unsigned char>(rhs[i]);
         if (cmp != std::strong_ordering::equal) {
             return cmp;
         }

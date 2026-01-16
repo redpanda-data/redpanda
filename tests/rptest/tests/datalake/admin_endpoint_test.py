@@ -125,6 +125,10 @@ class DatalakeAdminEndpointTest(RedpandaTest):
                 t2_state.lifecycle_state
                 == admin_v2.datalake_pb.LifecycleState.LIFECYCLE_STATE_LIVE
             )
+            assert t1_state.last_committed_snapshot_id is not None
+            assert t1_state.last_committed_snapshot_id > 0
+            assert t2_state.last_committed_snapshot_id is not None
+            assert t2_state.last_committed_snapshot_id > 0
 
             assert len(t1_state.partition_states) == 3
             assert len(t2_state.partition_states) == 2

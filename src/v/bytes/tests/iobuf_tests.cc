@@ -51,6 +51,7 @@ SEASTAR_THREAD_TEST_CASE(test_lt) {
     BOOST_CHECK_LT(iobuf::from(""), iobuf::from("cat"));
     BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("dog"));
     BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("catastrophe"));
+    BOOST_CHECK_LT(iobuf::from("\x01"), iobuf::from("\xFF"));
     BOOST_CHECK_EQUAL(false, iobuf::from("cat") < iobuf::from("cat"));
     BOOST_CHECK_EQUAL(false, iobuf{} < iobuf{});
     BOOST_CHECK(std::strong_ordering::equal == (iobuf{} <=> iobuf{}));

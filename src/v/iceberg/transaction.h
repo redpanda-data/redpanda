@@ -77,6 +77,7 @@ public:
     // NOTE: it is up to the caller to ensure the transaction has not hit any
     // errors before calling these.
     const table_metadata& table() const { return table_; }
+    table_metadata release_table() && { return std::move(table_); }
     const updates_and_reqs& updates() const { return updates_; }
 
     // Construct a transaction object but immediately set error_ to non-nullopt.

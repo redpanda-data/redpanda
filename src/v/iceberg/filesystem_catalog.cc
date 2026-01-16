@@ -123,7 +123,7 @@ filesystem_catalog::drop_table(const table_identifier& table_id, bool) {
     co_return outcome::success();
 }
 
-ss::future<checked<std::nullopt_t, catalog::errc>>
+ss::future<checked<table_metadata, catalog::errc>>
 filesystem_catalog::commit_txn(
   const table_identifier& table_ident, transaction txn) {
     if (txn.updates().updates.empty()) {
@@ -131,7 +131,8 @@ filesystem_catalog::commit_txn(
           log.debug,
           "Transaction has no updates to table {}, returning early",
           table_ident.table);
-        co_return std::nullopt;
+        co_return checked<table_metadata, catalog::errc>{
+          std::move(txn).release_table()};
     }
     auto current_tmeta = co_await read_table_meta(table_ident);
     if (current_tmeta.has_error()) {
@@ -167,8 +168,12 @@ filesystem_catalog::commit_txn(
         }
     }
     auto current_version = current_tmeta.value().version;
-    co_return co_await write_table_meta(
+    auto write_res = co_await write_table_meta(
       table_ident, new_tmeta, current_version);
+    if (write_res.has_error()) {
+        co_return write_res.error();
+    }
+    co_return std::move(new_tmeta);
 }
 
 ss::sstring

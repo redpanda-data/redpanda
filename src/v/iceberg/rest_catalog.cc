@@ -180,7 +180,7 @@ rest_catalog::drop_table(const table_identifier& table_ident, bool purge) {
     co_return map_error("drop_table", res.error());
 }
 
-ss::future<checked<std::nullopt_t, errc>>
+ss::future<checked<table_metadata, errc>>
 rest_catalog::commit_txn(const table_identifier& t_id, transaction txn) {
     auto rtc = create_rtc();
     vlog(log.trace, "commit table update {} requested", t_id);
@@ -197,7 +197,7 @@ rest_catalog::commit_txn(const table_identifier& t_id, transaction txn) {
           log.debug,
           "Transaction has no updates to table {}, returning early",
           t_id.table);
-        co_return std::nullopt;
+        co_return checked<table_metadata, errc>{std::move(txn).release_table()};
     }
 
     commit_table_request req;
@@ -210,7 +210,9 @@ rest_catalog::commit_txn(const table_identifier& t_id, transaction txn) {
     }
     auto h = co_await lock_.get_units();
     co_return (co_await client_->commit_table_update(std::move(req), rtc))
-      .transform([](commit_table_response&&) { return std::nullopt; })
+      .transform([](commit_table_response&& ctr) {
+          return std::move(ctr.table_metadata);
+      })
       .transform_error([](const rest_client::domain_error& err) {
           return map_error("commit_txn", err);
       });

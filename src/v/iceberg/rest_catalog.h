@@ -50,7 +50,7 @@ public:
     ss::future<checked<void, errc>>
     drop_table(const table_identifier& table_ident, bool purge) final;
 
-    ss::future<checked<std::nullopt_t, errc>>
+    ss::future<checked<table_metadata, errc>>
     commit_txn(const table_identifier& table_ident, transaction) final;
 
     ~rest_catalog() final = default;

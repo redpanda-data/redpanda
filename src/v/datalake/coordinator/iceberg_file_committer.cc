@@ -314,7 +314,7 @@ public:
         return std::nullopt;
     }
 
-    ss::future<checked<std::nullopt_t, file_committer::errc>> commit(
+    ss::future<checked<iceberg::table_metadata, file_committer::errc>> commit(
       const model::topic& topic,
       model::revision_id topic_revision,
       iceberg::catalog& catalog,
@@ -327,7 +327,7 @@ public:
               "returning without updating Iceberg catalog",
               topic,
               topic_revision);
-            co_return std::nullopt;
+            co_return table_.copy();
         }
 
         vassert(
@@ -376,7 +376,7 @@ public:
                 "Iceberg transaction did not commit to table {}", table_id_));
         }
 
-        co_return std::nullopt;
+        co_return std::move(icb_commit_res.value());
     }
 
     size_t num_files() const noexcept { return icb_files_.size(); }
@@ -557,6 +557,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
         co_return chunked_vector<mark_files_committed_update>{};
     }
     chunked_vector<mark_files_committed_update> updates;
+    updates.reserve(pending_commits.size());
     for (const auto& [pid, entry] : pending_commits) {
         auto tp = model::topic_partition(topic, pid);
         auto update_res = mark_files_committed_update::build(
@@ -600,6 +601,21 @@ iceberg_file_committer::commit_topic_files_to_catalog(
               .commit(topic, topic_revision, catalog_, io_);
         if (main_table_commit_res.has_error()) {
             co_return main_table_commit_res.error();
+        }
+        auto table_metadata = std::move(main_table_commit_res.value());
+        /**
+         * We preserve the snapshot id of the last committed snapshot in the
+         * coordinator state. This way we can correlate committed partition
+         * offsets with particular Iceberg Table snapshots.
+         *
+         * We are not interested in the DLQ table snapshots here, as they
+         * don't correspond to committed offsets in the main topic.
+         */
+        const auto current_snapshot_id = table_metadata.current_snapshot_id;
+        if (current_snapshot_id) {
+            for (auto& update : updates) {
+                update.snapshot_id = *current_snapshot_id;
+            }
         }
     }
 

@@ -11,6 +11,7 @@
 
 #include "container/chunked_hash_map.h"
 #include "datalake/coordinator/translated_offset_range.h"
+#include "iceberg/manifest_entry.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 
@@ -80,13 +81,14 @@ struct partition_state
 // worker.
 struct topic_state
   : public serde::
-      envelope<topic_state, serde::version<1>, serde::compat_version<0>> {
+      envelope<topic_state, serde::version<2>, serde::compat_version<0>> {
     auto serde_fields() {
         return std::tie(
           revision,
           pid_to_pending_files,
           lifecycle_state,
-          total_kafka_bytes_processed);
+          total_kafka_bytes_processed,
+          last_committed_snapshot_id);
     }
 
     enum class lifecycle_state_t {
@@ -120,6 +122,8 @@ struct topic_state
     // committed to iceberg. Includes bytes from DLQ table as well.
     uint64_t total_kafka_bytes_processed{0};
 
+    // Snapshot id of the last committed main table iceberg snapshot.
+    std::optional<iceberg::snapshot_id> last_committed_snapshot_id;
     topic_state copy() const;
 
     // TODO: add table-wide metadata like Kafka schema id, Iceberg table uuid,
