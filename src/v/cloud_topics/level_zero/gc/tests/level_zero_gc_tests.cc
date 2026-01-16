@@ -197,12 +197,13 @@ public:
 };
 
 template<typename Func>
-::testing::AssertionResult Eventually(Func func, int retries = 50) {
+::testing::AssertionResult Eventually(
+  Func func, int retries = 50, std::chrono::milliseconds delay = 20ms) {
     while (retries-- > 0) {
         if (func()) {
             return ::testing::AssertionSuccess();
         }
-        seastar::sleep_abortable(std::chrono::milliseconds(100)).get();
+        seastar::sleep_abortable(delay).get();
     }
     return ::testing::AssertionFailure() << "Timeout";
 }
@@ -431,7 +432,9 @@ TEST_F(LevelZeroGCScaleOutTest, ConcurrentDeletesPipelineSaturation) {
     this->cfg.delete_cost = 50ms;
     gc.start();
     EXPECT_TRUE(Eventually(
-      [this, expected = (size_t)n] { return deleted.size() == expected; }));
+      [this, expected = (size_t)n] { return deleted.size() == expected; },
+      50,
+      100ms));
 }
 
 // =============================================================================
