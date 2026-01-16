@@ -12,6 +12,7 @@
 #include "base/format_to.h"
 #include "base/vlog.h"
 #include "cloud_io/remote.h"
+#include "cloud_storage_clients/types.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/object_utils.h"
 #include "cluster/health_monitor_frontend.h"
@@ -72,29 +73,25 @@ public:
       chunked_vector<cloud_storage_clients::client::list_bucket_item>,
       cloud_storage_clients::error_outcome>>
     next_page() {
-        // cached continuation is single use. pass it to list_objects and null
-        // it out immediately.
-        auto objects = co_await storage_->list_objects(
-          &as_, std::exchange(continuation_token_, std::nullopt));
+        while (
+          !as_.abort_requested()
+          && (continuation_token_.has_value() || (curr_prefix_ = next_prefix()).has_value())) {
+            vassert(
+              curr_prefix_.has_value(),
+              "Expected curr_prefix_ to be populated here...");
+            auto objects = co_await do_next_page(curr_prefix_.value());
 
-        // fairly naive approach to caching the token. if the list request
-        // failed, we leave the cached token empty, but if some other error
-        // occurs while processing a page, we keep the token and "skip" that
-        // page. with lexicographically ordered list results and monotonic
-        // epochs, any eligible keys in a skipped page are guaranteed to appear
-        // in a subsequent round. given the volume of L0 objects at higher
-        // throughput rates, we're going to err on the side of making progress
-        // (vs performing a perfect sweep of outstanding objects).
-        if (
-          objects.has_value()
-          && !objects.value().next_continuation_token.empty()) {
-            continuation_token_.emplace(
-              std::move(objects.value().next_continuation_token));
+            // we could filter here to ensure that all the prefixes are in
+            // range, but if they're not it doesn't really matter. all best
+            // effort.
+            if (!objects.has_value() || !objects.value().empty()) {
+                co_return std::move(objects);
+            }
+
+            // nothing to do...try the next prefix
         }
-        if (!objects.has_value()) {
-            co_return std::unexpected{objects.error()};
-        }
-        co_return std::move(objects.value()).contents;
+        co_return chunked_vector<
+          cloud_storage_clients::client::list_bucket_item>{};
     }
 
     size_t delete_objects(
@@ -167,6 +164,48 @@ public:
     }
 
 private:
+    std::optional<cloud_storage_clients::object_key> next_prefix() {
+        key_prefixes_.set_range(compute_prefix_range(
+          node_info_->shard_index(), node_info_->total_shards()));
+        return key_prefixes_.consume_prefix();
+    }
+
+    seastar::future<std::expected<
+      chunked_vector<cloud_storage_clients::client::list_bucket_item>,
+      cloud_storage_clients::error_outcome>>
+    do_next_page(const cloud_storage_clients::object_key& prefix) {
+        vlog(
+          cd_log.trace,
+          "list_delete_worker: Processing key prefix {}",
+          curr_prefix_);
+        // cached continuation is single use. pass it to list_objects and
+        // null it out immediately.
+        auto list_result = co_await storage_->list_objects(
+          &as_, curr_prefix_, std::exchange(continuation_token_, std::nullopt));
+        if (!list_result.has_value()) {
+            co_return std::unexpected{list_result.error()};
+        }
+
+        auto objects = std::move(list_result).value();
+        if (objects.contents.empty()) {
+            co_return std::move(objects.contents);
+        }
+
+        // fairly naive approach to caching the token. if the list request
+        // failed, we leave the cached token empty, but if some other error
+        // occurs while processing a page, we keep the token and "skip" that
+        // page. with lexicographically ordered list results and monotonic
+        // epochs, any eligible keys in a skipped page are guaranteed to
+        // appear in a subsequent round. given the volume of L0 objects at
+        // higher throughput rates, we're going to err on the side of making
+        // progress (vs performing a perfect sweep of outstanding objects).
+        if (objects.is_truncated && !objects.next_continuation_token.empty()) {
+            continuation_token_.emplace(
+              std::move(objects.next_continuation_token));
+        }
+        co_return std::move(objects.contents);
+    }
+
     std::unique_ptr<object_storage> storage_;
     std::unique_ptr<node_info> node_info_;
     level_zero_gc_probe* probe_;
@@ -180,6 +219,8 @@ private:
     seastar::abort_source as_{};
     seastar::gate gate_{};
     std::optional<ss::sstring> continuation_token_{};
+    std::optional<cloud_storage_clients::object_key> curr_prefix_;
+    prefix_compressor key_prefixes_;
 };
 
 class object_storage_remote_impl : public level_zero_gc::object_storage {
