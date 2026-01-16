@@ -197,7 +197,8 @@ public:
           object_path_factory::level_zero_data_dir(),
           std::nullopt /*delimiter*/,
           std::nullopt /*item_filter*/,
-          std::nullopt /*max_keys*/,
+          // TODO: should depend on cloud backend (abs is 5000 max)
+          1000 /*max_keys*/,
           std::move(continuation_token));
         if (res.has_value()) {
             co_return std::move(res).assume_value();
