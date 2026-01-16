@@ -1653,45 +1653,52 @@ void op_context::create_response_placeholders() {
     }
 }
 
-bool update_fetch_partition(
+// Determines if a partition should be included in an incremental fetch
+// response per KIP-227.
+bool partition_has_changes(
   const fetch_response::partition_response& resp,
-  fetch_session_partition& partition) {
-    bool include = false;
+  const fetch_session_partition& session_partition) {
     if (resp.records && resp.records->size_bytes() > 0) {
-        // Partitions with new data are always included in the response.
-        include = true;
+        return true;
     }
-    if (partition.high_watermark != resp.high_watermark) {
-        include = true;
-        partition.high_watermark = model::offset(resp.high_watermark);
+    if (session_partition.high_watermark != resp.high_watermark) {
+        return true;
     }
-    if (partition.last_stable_offset != resp.last_stable_offset) {
-        include = true;
-        partition.last_stable_offset = model::offset(resp.last_stable_offset);
+    if (session_partition.last_stable_offset != resp.last_stable_offset) {
+        return true;
     }
-    if (partition.start_offset != resp.log_start_offset) {
-        include = true;
-        partition.start_offset = model::offset(resp.log_start_offset);
+    if (session_partition.start_offset != resp.log_start_offset) {
+        return true;
     }
     /**
      * Always include partition in a response if it contains information about
      * the preferred replica
      */
     if (resp.preferred_read_replica != -1) {
-        include = true;
-    }
-    if (include) {
-        return include;
+        return true;
     }
     if (resp.error_code != error_code::none) {
         // Partitions with errors are always included in the response.
-        // We also set the cached highWatermark to an invalid offset, -1.
-        // This ensures that when the error goes away, we re-send the
-        // partition.
-        partition.high_watermark = model::offset{-1};
-        include = true;
+        return true;
     }
-    return include;
+    return false;
+}
+
+// Updates the fetch session's partition with the response. Called in
+// send_response() when committing the response, not during fetch iteration (to
+// avoid premature updates on retries).
+void update_session_partition(
+  const fetch_response::partition_response& resp,
+  fetch_session_partition& session_partition) {
+    session_partition.high_watermark = model::offset(resp.high_watermark);
+    session_partition.last_stable_offset = model::offset(
+      resp.last_stable_offset);
+    session_partition.start_offset = model::offset(resp.log_start_offset);
+    if (resp.error_code != error_code::none) {
+        // Set high_watermark to -1 so we re-send this partition once the error
+        // clears.
+        session_partition.high_watermark = model::offset{-1};
+    }
 }
 
 ss::future<response_ptr> op_context::send_response() && {
@@ -1702,7 +1709,24 @@ ss::future<response_ptr> op_context::send_response() && {
     }
     // bellow we handle incremental fetches, set response session id
     response.data.session_id = session_ctx.session()->id();
+
+    auto& session_partitions = session_ctx.session()->partitions();
+    auto update_session = [&session_partitions](const auto& resp_it) {
+        auto key = model::kitp_view(
+          resp_it->partition->topic_id,
+          resp_it->partition->topic,
+          resp_it->partition_response->partition_index);
+        if (auto sp_it = session_partitions.find(key);
+            sp_it != session_partitions.end()) {
+            update_session_partition(
+              *resp_it->partition_response, sp_it->second->partition);
+        }
+    };
+
     if (session_ctx.is_full_fetch()) {
+        for (auto it = response.begin(false); it != response.end(); ++it) {
+            update_session(it);
+        }
         return rctx.respond(std::move(response));
     }
 
@@ -1728,6 +1752,8 @@ ss::future<response_ptr> op_context::send_response() && {
     }
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
+        update_session(it);
+
         if (it->is_new_topic) {
             final_response.data.responses.emplace_back(
               fetchable_topic_response{.topic = it->partition->topic});
@@ -1808,7 +1834,7 @@ void op_context::response_placeholder::set(
 
         if (auto it = session_partitions.find(key);
             it != session_partitions.end()) {
-            auto has_to_be_included = update_fetch_partition(
+            auto has_to_be_included = partition_has_changes(
               *_it->partition_response, it->second->partition);
             /**
              * From KIP-227
