@@ -63,7 +63,7 @@ public:
     bool has_capacity() const { return page_sem_.available_units() > 0; }
 
     seastar::future<std::expected<
-      cloud_storage_clients::client::list_bucket_result,
+      chunked_vector<cloud_storage_clients::client::list_bucket_item>,
       cloud_storage_clients::error_outcome>>
     next_page() {
         // cached continuation is single use. pass it to list_objects and null
@@ -85,7 +85,10 @@ public:
             continuation_token_.emplace(
               std::move(objects.value().next_continuation_token));
         }
-        co_return objects;
+        if (!objects.has_value()) {
+            co_return std::unexpected{objects.error()};
+        }
+        co_return std::move(objects.value()).contents;
     }
 
     size_t delete_objects(
@@ -672,7 +675,7 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
     std::optional<cluster_epoch> last_epoch;
     object_id::prefix_t last_prefix{0};
 
-    for (const auto& object : candidate_objects.value().contents) {
+    for (const auto& object : candidate_objects.value()) {
         const auto object_epoch = object_path_factory::level_zero_path_to_epoch(
           object.key);
 
