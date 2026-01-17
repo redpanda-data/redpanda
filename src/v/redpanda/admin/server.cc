@@ -143,6 +143,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <ranges>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -338,6 +339,11 @@ admin_server::admin_server(
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
+    _server.set_keepalive_parameters(ss::net::tcp_keepalive_params{
+      .idle = std::chrono::seconds{120},
+      .interval = std::chrono::seconds{60},
+      .count = 3,
+    });
 }
 
 ss::future<> admin_server::start() {
@@ -4490,8 +4496,8 @@ admin_server::get_cloud_storage_lifecycle(std::unique_ptr<ss::http::request>) {
 
     auto& topic_table = _controller->get_topics_state().local();
 
-    cluster::topic_table::lifecycle_markers_t markers
-      = topic_table.get_lifecycle_markers();
+    chunked_vector<cluster::topic_table::lifecycle_markers_t::value_type>
+      markers{std::from_range, topic_table.get_lifecycle_markers()};
 
     // Hack: persuade json response to always include the field even if empty
     response.markers._set = true;

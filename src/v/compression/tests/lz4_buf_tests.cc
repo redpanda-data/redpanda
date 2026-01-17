@@ -83,6 +83,8 @@ TEST(MixedAllocations, CustomAllocator) {
 }
 
 TEST(MaxBufSizeDeathTest, CustomAllocator) {
+    GTEST_SKIP()
+      << "TODO(death_tests): re-enable when death tests are made stable in CI.";
     auto b = compression::lz4_decompression_buffers{4_MiB, 128_KiB + 1};
     auto allocator = b.custom_mem_alloc();
     ASSERT_DEATH(

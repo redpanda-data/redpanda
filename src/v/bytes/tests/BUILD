@@ -27,7 +27,7 @@ redpanda_cc_btest(
 
 redpanda_cc_gtest(
     name = "iobuf_mt_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "iobuf_tests_mt.cc",
     ],

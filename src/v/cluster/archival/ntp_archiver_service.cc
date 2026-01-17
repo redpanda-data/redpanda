@@ -1443,8 +1443,21 @@ ntp_archiver::make_segment_index(
   retry_chain_logger& ctxlog,
   std::string_view index_path,
   ss::input_stream<char> stream) {
-    auto base_kafka_offset = model::offset_cast(
-      _parent.log()->from_log_offset(base_rp_offset));
+    std::exception_ptr eptr;
+    auto base_kafka_offset = [this, base_rp_offset, &eptr]() -> kafka::offset {
+        try {
+            return model::offset_cast(
+              _parent.log()->from_log_offset(base_rp_offset));
+        } catch (...) {
+            eptr = std::current_exception();
+            return kafka::offset{};
+        }
+    }();
+
+    if (eptr) {
+        co_await stream.close();
+        std::rethrow_exception(eptr);
+    }
 
     cloud_storage::offset_index ix{
       base_rp_offset,

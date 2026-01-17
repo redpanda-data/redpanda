@@ -1676,6 +1676,11 @@ void rm_stm::apply_fence(model::producer_identity pid, model::record_batch b) {
         maybe_rearm_autoabort_timer(
           clock_type::now() + batch_data.transaction_timeout_ms.value());
     }
+    // if the producer is already tracked under active transactions list,
+    // unlink it first and move to the end of the list.
+    if (producer->_active_transaction_hook.is_linked()) [[unlikely]] {
+        _active_tx_producers.erase(_active_tx_producers.iterator_to(*producer));
+    }
     _active_tx_producers.push_back(*producer);
     _producer_state_manager.local().touch(*producer, _vcluster_id);
 }
