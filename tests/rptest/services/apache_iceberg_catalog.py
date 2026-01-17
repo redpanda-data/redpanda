@@ -231,7 +231,7 @@ class IcebergRESTCatalog(CatalogService):
         )
         node.account.ssh(cmd, allow_fail=False)
         self._catalog_url = f"http://{node.account.hostname}:{self.iceberg_rest_port}"
-        self.wait(timeout_sec=30)
+        self.wait(timeout_sec=60)
 
     def wait_node(self, node, timeout_sec=None):
         check_cmd = f"pyiceberg --uri {self.iceberg_rest_url} create namespace default"
