@@ -581,9 +581,14 @@ class RedpandaInstaller:
             if line not in latest_version_by_line or v > latest_version_by_line[line]:
                 latest_version_by_line[line] = v
         latest_versions = list(latest_version_by_line.values())
-        latest_versions.sort()
         if self.head_version() not in latest_versions:
             latest_versions.append(self.head_version())
+        latest_versions.sort()
+        # Truncate the `latest_versions` list to `HEAD` so that it is the last
+        # major version in the upgrade path
+        latest_versions = latest_versions[
+            : latest_versions.index(self.head_version()) + 1
+        ]
         self._redpanda.logger.debug(
             f"upgrade path to head from {version} is {latest_versions}"
         )

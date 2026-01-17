@@ -82,15 +82,9 @@ filesystem_catalog::create_table(
       .sort_orders = std::move(sort_orders),
       .default_sort_order_id = sort_order::id_t{0},
     };
-    // First ensure no version hint exists for this table. That would mean the
+    // Ensure no version hint exists for this table. That would mean the
     // table effectively already exists.
     static constexpr std::optional<int32_t> expect_no_vhint = std::nullopt;
-    auto vhint_res = co_await check_expected_version_hint(
-      vhint_path(table_ident), expect_no_vhint);
-    if (vhint_res.has_error()) {
-        co_return vhint_res.error();
-    }
-    // Then write the table metadata.
     auto ret = co_await write_table_meta(table_ident, tmeta, expect_no_vhint);
     if (ret.has_error()) {
         co_return ret.error();
@@ -250,7 +244,20 @@ filesystem_catalog::write_table_meta(
     // TODO: this is an imperfect check for version hint existence. Maybe we
     // can use conditional writes to ensure an atomic update?
 
-    // First, upload the table metadata.
+    // First check to make sure the version hint matches what we expect.
+    auto table_vhint_path = vhint_path(table_ident);
+    auto vhint_check_res = co_await check_expected_version_hint(
+      table_vhint_path, expected_cur_version);
+    if (vhint_check_res.has_error()) {
+        vlog(
+          log.debug,
+          "Version-hint check on file {} failed before uploading table "
+          "metadata, exiting early without writing metadata",
+          table_vhint_path);
+        co_return vhint_check_res.error();
+    }
+
+    // Then upload the table metadata.
     auto expected_next_version = expected_cur_version.value_or(-1) + 1;
     auto path = tmeta_path(table_ident, expected_next_version);
     auto res = co_await table_io_.upload_table_meta(path, tmeta);
@@ -258,11 +265,17 @@ filesystem_catalog::write_table_meta(
         co_return to_catalog_errc(res.error());
     }
 
-    // Then check to make sure the version hint still matches what we expect.
-    auto table_vhint_path = vhint_path(table_ident);
-    auto vhint_check_res = co_await check_expected_version_hint(
+    // Then check again to make sure the version hint still matches what we
+    // expect.
+    vhint_check_res = co_await check_expected_version_hint(
       table_vhint_path, expected_cur_version);
     if (vhint_check_res.has_error()) {
+        vlog(
+          log.warn,
+          "Version-hint check on file {} failed after uploading table metadata "
+          "{}, table may be inconsistent",
+          table_vhint_path,
+          path);
         co_return vhint_check_res.error();
     }
 
@@ -271,6 +284,12 @@ filesystem_catalog::write_table_meta(
     auto vhint_up_res = co_await table_io_.upload_version_hint(
       table_vhint_path, expected_next_version);
     if (vhint_up_res.has_error()) {
+        vlog(
+          log.warn,
+          "Version-hint upload of file {} failed after uploading table "
+          "metadata {}, table may be inconsistent",
+          table_vhint_path,
+          path);
         co_return to_catalog_errc(vhint_up_res.error());
     }
     co_return std::nullopt;

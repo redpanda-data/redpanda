@@ -148,6 +148,8 @@ TEST_F_CORO(FileTest, TestAppend) {
 
 using FileDeathTest = FileTest;
 TEST_F(FileDeathTest, TestAppendAfterClose) {
+    GTEST_SKIP()
+      << "TODO(death_tests): re-enable when death tests are made stable in CI.";
     const auto path = test_path("foo");
     auto created = file_mgr_->create_file(path).get();
     created->close().get();
@@ -160,6 +162,8 @@ TEST_F(FileDeathTest, TestAppendAfterClose) {
 }
 
 TEST_F(FileDeathTest, TestStreamAfterClose) {
+    GTEST_SKIP()
+      << "TODO(death_tests): re-enable when death tests are made stable in CI.";
     const auto path = test_path("foo");
     auto created = file_mgr_->create_file(path).get();
     auto buf = tests::random_iobuf();

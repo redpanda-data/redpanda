@@ -957,6 +957,8 @@ auto partition_balancer_planner::request_context::do_with_partition(
   Visitor& visitor) {
     const bool is_disabled = _parent._state.topics().is_disabled(ntp);
     const auto& orig_replicas = assignment.replicas;
+
+    // check if there is an in progress move
     auto in_progress_it = _parent._state.topics().updates_in_progress().find(
       ntp);
     if (in_progress_it != _parent._state.topics().updates_in_progress().end()) {
@@ -976,28 +978,39 @@ auto partition_balancer_planner::request_context::do_with_partition(
         }
 
         if (state == reconfiguration_state::in_progress) {
-            if (can_add_cancellation()) {
-                partition part{
-                  moving_partition{ntp, replicas, orig_replicas, *this}};
-                return visitor(part);
-            } else {
+            // partition is dead in the water, it lost quorum in the middle of
+            // moving
+            if (!has_quorum(all_unavailable_nodes, orig_replicas)) {
                 partition part{immutable_partition{
                   ntp,
-                  replicas,
-                  immutable_partition::immutability_reason::batch_full,
+                  orig_replicas,
+                  immutable_partition::immutability_reason::no_quorum,
                   state,
                   *this}};
                 return visitor(part);
             }
-        } else {
+            // if theres enough reconfiguration badwidth to process a cancel
+            if (can_add_cancellation()) {
+                partition part{
+                  moving_partition{ntp, replicas, orig_replicas, *this}};
+                return visitor(part);
+            }
+            // otherwise its immutable for now
             partition part{immutable_partition{
               ntp,
               replicas,
-              immutable_partition::immutability_reason::reconfiguration_state,
+              immutable_partition::immutability_reason::batch_full,
               state,
               *this}};
             return visitor(part);
         }
+        partition part{immutable_partition{
+          ntp,
+          replicas,
+          immutable_partition::immutability_reason::reconfiguration_state,
+          state,
+          *this}};
+        return visitor(part);
     }
 
     if (is_disabled) {

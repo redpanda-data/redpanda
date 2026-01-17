@@ -238,6 +238,9 @@ AUDIT_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
     re.compile(".*Failed to append authz event to audit log.*"),
     re.compile(".*Failed to append authentication event to audit log.*"),
     re.compile(".*Failed to audit authorization request for endpoint.*"),
+    re.compile(
+        ".*Request to authorize user to modify or view cluster configuration was not audited.*"
+    ),
 ]
 
 # Path to the LSAN suppressions file

@@ -23,6 +23,8 @@ topic_metrics_watcher::topic_metrics_watcher(
     tt.register_topic_delta_notification(
       [this](const auto&) { maybe_aggregate_topic_label(); });
     _topic_agg_limit.watch([this] { maybe_aggregate_topic_label(); });
+
+    maybe_aggregate_topic_label();
 }
 
 ss::future<> topic_metrics_watcher::stop() { return _gate.close(); }

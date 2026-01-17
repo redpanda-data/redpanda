@@ -25,6 +25,7 @@
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "container/chunked_hash_map.h"
 #include "hashing/xx.h"
 
 namespace {
@@ -271,8 +272,13 @@ ss::future<purger::purge_result> purger::purge_manifest(
       bucket, {format, manifest_key}, manifest, manifest_purge_rtc);
 
     if (manifest_get_result == download_result::notfound) {
-        vlog(ctxlog.debug, "Partition manifest get {} not found", manifest_key);
-        result.status = purge_status::permanent_failure;
+        vlog(
+          ctxlog.debug,
+          "Partition manifest get {} not found, assuming success",
+          manifest_key);
+        // It's possible multiple purgers raced and a different node succeeded
+        // in purging the manifest, so treat this as a success.
+        result.status = purge_status::success;
         co_return result;
     } else if (manifest_get_result != download_result::success) {
         vlog(
@@ -350,8 +356,8 @@ ss::future<housekeeping_job::run_result> purger::run(run_quota_t quota) {
     }
 
     // Take a copy, as we will iterate over it asynchronously
-    cluster::topic_table::lifecycle_markers_t markers
-      = _topic_table.get_lifecycle_markers();
+    chunked_vector<cluster::topic_table::lifecycle_markers_t::value_type>
+      markers{std::from_range, _topic_table.get_lifecycle_markers()};
 
     const auto my_global_position = get_global_position();
 

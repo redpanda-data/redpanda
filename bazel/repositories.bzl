@@ -40,9 +40,9 @@ def data_dependency():
     http_archive(
         name = "c-ares",
         build_file = "//bazel/thirdparty:c-ares.BUILD",
-        sha256 = "7d935790e9af081c25c495fd13c2cfcda4792983418e96358ef6e7320ee06346",
-        strip_prefix = "c-ares-1.34.5",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.5.tar.gz",
+        sha256 = "912dd7cc3b3e8a79c52fd7fb9c0f4ecf0aaa73e45efda880266a2d6e26b84ef5",
+        strip_prefix = "c-ares-1.34.6",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.6.tar.gz",
     )
 
     http_archive(
@@ -113,6 +113,14 @@ def data_dependency():
         url = "https://vectorized-public.s3.amazonaws.com/dependencies/lksctp-tools-1.0.19.tar.gz",
     )
 
+    http_archive(
+        name = "ragel",
+        build_file = "//bazel/thirdparty:ragel.BUILD",
+        sha256 = "5f156edb65d20b856d638dd9ee2dfb43285914d9aa2b6ec779dac0270cd56c3f",
+        strip_prefix = "ragel-6.10",
+        url = "http://www.colm.net/files/ragel/ragel-6.10.tar.gz",
+    )
+
     #
     # ** IMPORTANT - OpenSSL and FIPS **
     #
@@ -162,9 +170,9 @@ def data_dependency():
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "4665a3f117c47e830e819e7b1184ace9f701d20487817f0c46e124b7b62750ba",
-        strip_prefix = "seastar-737485d4e702a447c310e804cc9bfc57cb7c60cf",
-        url = "https://github.com/redpanda-data/seastar/archive/737485d4e702a447c310e804cc9bfc57cb7c60cf.tar.gz",
+        sha256 = "b8a902653fd02625106a43e5493f1fadec78407cf0f3b99db565e4ea9404d833",
+        strip_prefix = "seastar-77ef0a4474248c746b977b2e4b5d23bb32a905d0",
+        url = "https://github.com/redpanda-data/seastar/archive/77ef0a4474248c746b977b2e4b5d23bb32a905d0.tar.gz",
     )
 
     http_archive(

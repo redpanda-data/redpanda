@@ -457,11 +457,11 @@
                     "description": "a subset of partitions originating from this node with allocation failures. "
                 },
                 "partitions": {
-                    "type": "array",
+                    "type": "chunked_array",
                     "items": {
                         "type": "partition_reconfiguration_status"
                     },
-                    "description": "Array of partition reconfiguration statues"
+                    "description": "Array of partition reconfiguration statuses"
                 },
                 "reallocation_failure_details": {
                     "type": "array",
