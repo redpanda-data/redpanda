@@ -76,7 +76,8 @@ ss::future<shared_broker_t> broker_factory::create_broker(
         co_await broker_transport->connect();
     } catch (const std::system_error& ex) {
         if (net::is_reconnect_error(ex) || is_dns_failure_error(ex)) {
-            throw broker_error(node_id, error_code::network_exception);
+            throw broker_error(
+              node_id, error_code::network_exception, ex.what());
         }
         vlog(_logger->warn, "std::system_error: {}", ex.what());
         throw;
