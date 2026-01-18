@@ -9,6 +9,7 @@
  */
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
 
+#include "base/format_to.h"
 #include "base/vlog.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/logger.h"

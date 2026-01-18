@@ -12,6 +12,7 @@
 #include "base/format_to.h"
 #include "cloud_storage_clients/types.h"
 #include "cloud_topics/types.h"
+#include "container/chunked_vector.h"
 
 #include <expected>
 
@@ -52,6 +53,81 @@ struct prefix_range_inclusive {
     bool contains(T v) const;
     bool operator==(const prefix_range_inclusive& other) const;
     fmt::iterator format_to(fmt::iterator it) const;
+};
+
+/**
+ * @brief A trie for compressing a contiguous range of 3-digit numeric prefixes
+ * into a minimal set of string prefixes that cover the same range.
+ *
+ * Object IDs use a 3-digit prefix (000-999) for partitioning data across
+ * object storage. When listing objects within a range of prefixes, issuing
+ * one list request per prefix is inefficient. This trie compresses the range
+ * into the smallest set of prefix strings that exactly covers it.
+ *
+ * The compression exploits the decimal structure: a prefix like "1" covers
+ * all values 100-199, "05" covers 050-059, and "042" covers only 042.
+ *
+ * Usage:
+ *   1. insert() a prefix_range_inclusive - populates the trie with all
+ *      3-digit strings in the range
+ *   2. prune() - collapses saturated subtrees into shorter prefixes
+ *   3. collect() - returns the minimal covering prefix set
+ *
+ * Examples (after insert + prune):
+ *   [0, 12]     -> {"00", "010", "011", "012"}
+ *   [100, 199]  -> {"1"}
+ *   [89, 300]   -> {"089", "09", "1", "2", "300"}
+ *   [0, 999]    -> {""}  (empty string matches everything)
+ *
+ * Before pruning, collect() returns all values in the range as 3-digit
+ * zero-padded strings. After pruning, it returns the compressed set.
+ * Both insert() and prune() are idempotent on their own, and collect()
+ * is always idempotent.
+ *
+ * clear() resets the trie to its initial empty state.
+ */
+class trie {
+private:
+    struct node;
+
+public:
+    trie();
+    ~trie();
+    trie(const trie&) = delete;
+    trie& operator=(const trie&) = delete;
+    trie(trie&&) = delete;
+    trie& operator=(trie&&) = delete;
+
+    /**
+     * @brief Insert all 3-digit zero-padded strings in the given range.
+     */
+    void insert(prefix_range_inclusive prefixes);
+
+    /**
+     * @brief Collapse saturated subtrees into shorter prefixes. A subtree is
+     * saturated when it contains all possible values for its depth:
+     * - depth 1: 100 values (e.g., "1" covers 100-199)
+     * - depth 2: 10 values (e.g., "05" covers 050-059)
+     * - depth 3: 1 value (leaf node)
+     */
+    void prune();
+
+    /**
+     * @brief Return the current set of prefix strings. Before prune(), this
+     * returns all inserted values. After prune(), this returns the minimal
+     * covering set. Returns empty if nothing has been inserted.
+     */
+    chunked_vector<ss::sstring> collect() const;
+
+    /**
+     * @brief Reset the trie to its initial empty state.
+     */
+    void clear();
+
+    fmt::iterator format_to(fmt::iterator it) const;
+
+private:
+    std::unique_ptr<node> root;
 };
 
 } // namespace cloud_topics
