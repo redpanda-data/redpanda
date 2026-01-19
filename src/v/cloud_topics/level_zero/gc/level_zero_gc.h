@@ -11,6 +11,7 @@
 
 #include "cloud_io/io_result.h"
 #include "cloud_storage_clients/client.h"
+#include "cloud_storage_clients/types.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc_probe.h"
 #include "cloud_topics/types.h"
 #include "container/chunked_hash_map.h"
@@ -165,6 +166,8 @@ public:
           cloud_storage_clients::error_outcome>>
         list_objects(
           seastar::abort_source*,
+          std::optional<cloud_storage_clients::object_key> prefix
+          = std::nullopt,
           std::optional<ss::sstring> continuation_token = std::nullopt)
           = 0;
 

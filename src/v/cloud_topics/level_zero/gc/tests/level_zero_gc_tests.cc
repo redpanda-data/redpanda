@@ -44,6 +44,7 @@ public:
       cloud_storage_clients::error_outcome>>
     list_objects(
       seastar::abort_source* as,
+      std::optional<cloud_storage_clients::object_key> prefix,
       std::optional<ss::sstring> continuation_token) override {
         chunked_vector<cloud_storage_clients::client::list_bucket_item> keep;
         co_await seastar::sleep(cfg_->list_cost);
@@ -53,6 +54,11 @@ public:
                 if (object.key == continuation_token) {
                     continuation_token.reset();
                 }
+                continue;
+            }
+            if (
+              prefix.has_value()
+              && !object.key.starts_with(prefix.value()().string())) {
                 continue;
             }
             auto not_deleted = true;

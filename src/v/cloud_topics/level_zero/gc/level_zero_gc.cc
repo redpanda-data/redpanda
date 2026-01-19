@@ -199,12 +199,14 @@ public:
       cloud_storage_clients::error_outcome>>
     list_objects(
       seastar::abort_source* asrc,
+      std::optional<cloud_storage_clients::object_key> prefix,
       std::optional<ss::sstring> continuation_token) override {
         retry_chain_node rtc(*asrc, timeout, backoff);
         auto res = co_await remote_->list_objects(
           bucket_,
           rtc,
-          object_path_factory::level_zero_data_dir(),
+          std::move(prefix).value_or(
+            object_path_factory::level_zero_data_dir()),
           std::nullopt /*delimiter*/,
           std::nullopt /*item_filter*/,
           // TODO: should depend on cloud backend (abs is 5000 max)
