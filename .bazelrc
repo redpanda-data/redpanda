@@ -16,8 +16,7 @@ common --@rules_python//python/config_settings:bootstrap_impl=script
 # By default build without CGO
 build --@rules_go//go/config:pure
 
-build:gofips --//bazel:gofips=True --@rules_go//go/toolchain:sdk_name=go_sdk_with_systemcrypto
-build:gofips --@rules_go//go/config:pure=false
+build:gofips --action_env=GOFIPS140=v1.0.0
 
 # Improve caching and readability of filepaths that the compiler uses by not using
 # absolute paths, and instead use paths that are relative to the redpanda repo.

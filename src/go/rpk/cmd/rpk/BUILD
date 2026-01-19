@@ -12,10 +12,6 @@ go_library(
 go_binary(
     name = "rpk",
     embed = [":rpk_lib"],
-    gotags = select({
-        "//bazel:gofips_enabled": ["fips"],
-        "//conditions:default": [],
-    }),
     visibility = ["//visibility:public"],
     x_defs = {
         "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.version": "{STABLE_GIT_LATEST_TAG}",

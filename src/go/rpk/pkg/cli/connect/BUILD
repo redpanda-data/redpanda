@@ -14,7 +14,6 @@ go_library(
     deps = [
         "//src/go/rpk/pkg/cobraext",
         "//src/go/rpk/pkg/config",
-        "//src/go/rpk/pkg/fips",
         "//src/go/rpk/pkg/httpapi",
         "//src/go/rpk/pkg/os",
         "//src/go/rpk/pkg/out",

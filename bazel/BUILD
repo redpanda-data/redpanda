@@ -1,17 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
-
-bool_flag(
-    name = "gofips",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "gofips_enabled",
-    flag_values = {
-        ":gofips": "true",
-    },
-)
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 
 # Selects the sanitizer configuration to use for this build.
 # Note that simply setting this flag is not enough, you also need
