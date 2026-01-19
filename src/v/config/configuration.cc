@@ -4395,12 +4395,10 @@ configuration::configuration()
   , iceberg_default_catalog_namespace(
       *this,
       "iceberg_default_catalog_namespace",
-      "The default namespace (database name) for Iceberg tables. All tables "
-      "created by Redpanda will be placed in this namespace within the Iceberg "
-      "catalog. Supports nested namespaces as an array of strings. IMPORTANT: "
-      "This value must be configured before enabling Iceberg and must not be "
-      "changed afterward. Changing it will cause Redpanda to lose track of "
-      "existing tables.",
+      "The default Iceberg catalog namespace where Redpanda creates tables. "
+      "Supports nested namespaces as an array of strings. IMPORTANT: Configure "
+      "this value before you enable Iceberg. Do not change it afterward, or "
+      "Redpanda loses track of existing tables.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       {"redpanda"},
       &validate_iceberg_default_catalog_namespace)
