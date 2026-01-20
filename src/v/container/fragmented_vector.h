@@ -120,8 +120,9 @@ public:
      */
     fragmented_vector(std::initializer_list<value_type> elems)
       : fragmented_vector(elems.begin(), elems.end()) {}
+
     /**
-     * @brief Construct a new vector from a given range
+     * @brief Construct a new vector by moving from a given range
      */
     template<typename Range>
     requires std::ranges::sized_range<Range>
@@ -129,6 +130,17 @@ public:
       : fragmented_vector() {
         reserve(std::ranges::size(range));
         std::move(range.begin(), range.end(), std::back_inserter(*this));
+    }
+
+    /**
+     * @brief Construct a new vector by copying from a const range
+     */
+    template<typename Range>
+    requires(std::ranges::sized_range<Range>)
+    fragmented_vector(std::from_range_t, const Range& range)
+      : fragmented_vector() {
+        reserve(std::ranges::size(range));
+        std::copy(range.begin(), range.end(), std::back_inserter(*this));
     }
 
     fragmented_vector& operator=(fragmented_vector&& other) noexcept {
