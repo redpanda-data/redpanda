@@ -81,10 +81,8 @@ ss::future<> compaction_committer::compaction_job::finalize(
 
     if (!_inflight_uploads.empty()) {
         // Await and discard unresolved inflight futures, if any.
-        auto inflight_uploads = std::exchange(_inflight_uploads, {});
-        using res_t = chunked_vector<expected_t>;
         auto res = co_await ss::coroutine::as_future(
-          ssx::when_all_succeed<res_t>(std::move(inflight_uploads)));
+          do_await_inflight_uploads());
         res.ignore_ready_future();
     }
 
@@ -233,15 +231,18 @@ void compaction_committer::compaction_job::upload_some() {
     }
 }
 
+ss::future<chunked_vector<compaction_committer::compaction_job::expected_t>>
+compaction_committer::compaction_job::do_await_inflight_uploads() {
+    auto inflight_uploads = std::exchange(_inflight_uploads, {});
+    return ssx::when_all_succeed<chunked_vector<expected_t>>(
+      std::move(inflight_uploads));
+}
+
 ss::future<std::optional<ss::sstring>>
 compaction_committer::compaction_job::await_inflight_uploads() {
     co_await _last_upload_scheduled.wait();
 
-    auto inflight_uploads = std::exchange(_inflight_uploads, {});
-
-    using res_t = chunked_vector<expected_t>;
-    auto res = co_await ssx::when_all_succeed<res_t>(
-      std::move(inflight_uploads));
+    auto res = co_await do_await_inflight_uploads();
 
     auto failed = res | std::views::filter([](const expected_t& res) {
                       return !res.has_value();

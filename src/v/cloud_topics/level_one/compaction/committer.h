@@ -116,6 +116,10 @@ public:
         // `_staging_file_and_md_infos` to cloud storage via `start_upload()`.
         void upload_some();
 
+        // Exchanges and awaits all futures in `_inflight_uploads`, leaving it
+        // empty.
+        ss::future<chunked_vector<expected_t>> do_await_inflight_uploads();
+
         // Awaits all inflight uploads. Returns `std::nullopt` if successful and
         // a string describing the error(s) otherwise.
         ss::future<std::optional<ss::sstring>> await_inflight_uploads();
