@@ -279,7 +279,10 @@ ss::future<> compaction_sink::finalize() {
     auto new_cleaned_ranges = get_new_cleaned_ranges(
       _new_cleaned_ranges, _processed_extents, _start_offset);
 
-    co_await _job->finalize(
+    auto id = _job->id();
+    _job = nullptr;
+    co_await _committer->finalize_compaction_job(
+      id,
       std::move(new_cleaned_ranges),
       std::move(removed_tombstone_ranges),
       _expected_compaction_epoch);

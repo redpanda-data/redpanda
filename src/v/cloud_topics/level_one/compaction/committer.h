@@ -39,7 +39,6 @@ public:
           compaction_job_id,
           model::topic_id_partition,
           std::unique_ptr<metastore::object_metadata_builder>,
-          compaction_committer*,
           io*,
           metastore*,
           committing_policy*,
@@ -56,9 +55,7 @@ public:
         // the built update is either successfully or unsuccessfully committed
         // to the `metastore`. The newly cleaned ranges, removed tombstone
         // ranges, and expected compaction epoch are provided in order to help
-        // build up the final compaction update to the `metastore`. After the
-        // update is committed, the job is unlinked from the `_committer`, and
-        // the job becomes a dangling pointer.
+        // build up the final compaction update to the `metastore`.
         ss::future<> finalize(
           chunked_vector<metastore::compaction_update::cleaned_range>,
           offset_interval_set,
@@ -173,7 +170,6 @@ public:
         // uploaded, and awaited upon within `await_inflight_uploads()`.
         ss::condition_variable _last_upload_scheduled;
 
-        compaction_committer* _committer;
         io* _io;
         metastore* _metastore;
         committing_policy* _policy;
@@ -201,11 +197,11 @@ public:
     // Extracts the compaction job for the provided `id` and destructs it.
     // Use of any raw `job_state*` objects for this `id` after function is
     // called will result in use of a dangling pointer.
-    void finalize_job(compaction_job_id);
-
-    // Cancels a inflight job for the requested tidp, if one exists in this
-    // `committer`.
-    void cancel_job_for_tidp(model::topic_id_partition);
+    ss::future<> finalize_compaction_job(
+      compaction_job_id,
+      chunked_vector<metastore::compaction_update::cleaned_range>,
+      offset_interval_set,
+      metastore::compaction_epoch);
 
 private:
     friend class ::ReducerTestFixture;

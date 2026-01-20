@@ -27,7 +27,6 @@ compaction_committer::compaction_job::compaction_job(
   compaction_job_id id,
   model::topic_id_partition tidp,
   std::unique_ptr<metastore::object_metadata_builder> metadata_builder,
-  compaction_committer* committer,
   io* io,
   metastore* metastore,
   committing_policy* policy,
@@ -36,7 +35,6 @@ compaction_committer::compaction_job::compaction_job(
   , _tp(tidp)
   , _metadata_builder(std::move(metadata_builder))
   , _upload_sem(0, fmt::format("upload_sem_{}", id))
-  , _committer(committer)
   , _io(io)
   , _metastore(metastore)
   , _policy(policy)
@@ -90,8 +88,6 @@ ss::future<> compaction_committer::compaction_job::finalize(
         // Remove leftover staging files, if any.
         co_await remove_staging_files();
     }
-
-    _committer->finalize_job(_id);
 }
 
 void compaction_committer::compaction_job::cancel_job() {
@@ -459,7 +455,6 @@ compaction_committer::begin_compaction_job(model::topic_id_partition tidp) {
         id,
         tidp,
         std::move(metadata_builder),
-        this,
         _io,
         _metastore,
         _policy.get(),
@@ -475,12 +470,20 @@ compaction_committer::begin_compaction_job(model::topic_id_partition tidp) {
     co_return it->second.get();
 }
 
-void compaction_committer::finalize_job(compaction_job_id id) {
-    // Now safe to extract/remove the underlying job state from
-    // `_compaction_jobs`.
+ss::future<> compaction_committer::finalize_compaction_job(
+  compaction_job_id id,
+  chunked_vector<metastore::compaction_update::cleaned_range>
+    new_cleaned_ranges,
+  offset_interval_set removed_tombstone_ranges,
+  metastore::compaction_epoch expected_compaction_epoch) {
     auto job_ptr_opt = _compaction_jobs.extract(id);
     vassert(job_ptr_opt.has_value(), "concurrency issue?");
     auto job_ptr = std::move(job_ptr_opt.value().second);
+
+    co_await job_ptr->finalize(
+      std::move(new_cleaned_ranges),
+      std::move(removed_tombstone_ranges),
+      expected_compaction_epoch);
 }
 
 void compaction_committer::cancel_active_jobs() {
