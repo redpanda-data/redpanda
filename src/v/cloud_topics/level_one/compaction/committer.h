@@ -61,8 +61,9 @@ public:
           offset_interval_set,
           metastore::compaction_epoch);
 
-        // Breaks all necessary concurrency objects, indicating a cancelled job.
-        void cancel_job();
+        // Breaks all necessary concurrency objects. Must be called to safely
+        // shut down a `compaction_job` after `finalize()` is called.
+        ss::future<> stop();
 
         // Removes all staging files left on disk for the provided job.
         ss::future<> remove_staging_files();
@@ -166,6 +167,7 @@ public:
         // or when the job is marked as `finalized`.
         ssx::semaphore _upload_sem;
         ss::abort_source _as;
+        ss::gate _gate;
         // Condition variable that is signalled when the last L1 object has been
         // uploaded, and awaited upon within `await_inflight_uploads()`.
         ss::condition_variable _last_upload_scheduled;

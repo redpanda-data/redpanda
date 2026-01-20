@@ -90,10 +90,11 @@ ss::future<> compaction_committer::compaction_job::finalize(
     }
 }
 
-void compaction_committer::compaction_job::cancel_job() {
+ss::future<> compaction_committer::compaction_job::stop() {
     _as.request_abort();
     _upload_sem.broken();
     _last_upload_scheduled.broken();
+    co_await _gate.close();
 }
 
 ss::future<> compaction_committer::compaction_job::remove_staging_files() {
@@ -132,17 +133,20 @@ ss::future<> compaction_committer::compaction_job::upload_loop() {
 }
 
 void compaction_committer::compaction_job::start_upload_loop() {
-    ssx::background = upload_loop().handle_exception(
-      [this](const std::exception_ptr& e) {
-          auto log_level = ssx::is_shutdown_exception(e) ? ss::log_level::debug
-                                                         : ss::log_level::warn;
-          vlogl(
-            compaction_log,
-            log_level,
-            "Encountered exception in upload loop for job {}: {}",
-            _id,
-            e);
-      });
+    ssx::spawn_with_gate(_gate, [this] {
+        return upload_loop().handle_exception(
+          [this](const std::exception_ptr& e) {
+              auto log_level = ssx::is_shutdown_exception(e)
+                                 ? ss::log_level::debug
+                                 : ss::log_level::warn;
+              vlogl(
+                compaction_log,
+                log_level,
+                "Encountered exception in upload loop for job {}: {}",
+                _id,
+                e);
+          });
+    });
 }
 
 ss::future<compaction_committer::compaction_job::expected_t>
@@ -482,6 +486,8 @@ ss::future<> compaction_committer::finalize_compaction_job(
       std::move(new_cleaned_ranges),
       std::move(removed_tombstone_ranges),
       expected_compaction_epoch);
+
+    co_await job_ptr->stop();
 }
 
 } // namespace cloud_topics::l1
