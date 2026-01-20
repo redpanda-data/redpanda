@@ -256,22 +256,27 @@ ss::future<> compaction_sink::finalize() {
         co_return;
     }
 
-    if (_inflight_object) {
-        if (!_processed_extents.empty()) {
-            auto last_offset
-              = _processed_extents.make_reverse_stream().next().last_offset;
-            co_await flush(last_offset);
-        } else {
-            // We started an object but didn't process any extents, which means
-            // no meaningful work has been performed. Discard the inflight
-            // object.
-            auto inflight_object = std::exchange(_inflight_object, nullptr);
-            auto active_staging_file = std::exchange(
-              inflight_object->active_staging_file, nullptr);
-            auto builder = std::exchange(inflight_object->builder, nullptr);
-            co_await active_staging_file->remove();
-            co_await builder->close();
+    std::exception_ptr eptr;
+    try {
+        if (_inflight_object) {
+            if (!_processed_extents.empty()) {
+                auto last_offset
+                  = _processed_extents.make_reverse_stream().next().last_offset;
+                co_await flush(last_offset);
+            } else {
+                // We started an object but didn't process any extents, which
+                // means no meaningful work has been performed. Discard the
+                // inflight object.
+                auto inflight_object = std::exchange(_inflight_object, nullptr);
+                auto active_staging_file = std::exchange(
+                  inflight_object->active_staging_file, nullptr);
+                auto builder = std::exchange(inflight_object->builder, nullptr);
+                co_await active_staging_file->remove();
+                co_await builder->close();
+            }
         }
+    } catch (...) {
+        eptr = std::current_exception();
     }
 
     auto removed_tombstone_ranges = get_removed_tombstone_ranges(
@@ -286,6 +291,10 @@ ss::future<> compaction_sink::finalize() {
       std::move(new_cleaned_ranges),
       std::move(removed_tombstone_ranges),
       _expected_compaction_epoch);
+
+    if (eptr) {
+        std::rethrow_exception(eptr);
+    }
 }
 
 } // namespace cloud_topics::l1
