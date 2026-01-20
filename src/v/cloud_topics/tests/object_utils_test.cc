@@ -33,6 +33,15 @@ TEST(ObjectPathFactory, LevelZeroPathFormat) {
         "$"));
 }
 
+TEST(ObjectPathFactory, LevelZeroPathPrefixFormat) {
+    // key details:
+    // - exactly one '/' between dir and extension
+    // - no trailing '/'
+    EXPECT_EQ(
+      cloud_topics::object_path_factory::level_zero_path_prefix("12"),
+      "level_zero/data/12");
+}
+
 TEST(ObjectPathFactory, LevelZeroDataDir) {
     EXPECT_EQ(
       cloud_topics::object_path_factory::level_zero_data_dir(),

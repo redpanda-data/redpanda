@@ -43,6 +43,12 @@ object_path_factory::level_zero_path(object_id id) {
         id.prefix));
 }
 
+cloud_storage_clients::object_key
+object_path_factory::level_zero_path_prefix(std::string_view ext) {
+    return cloud_storage_clients::object_key{
+      ssx::sformat("{}{}", level_zero_data_dir_str, ext)};
+}
+
 cloud_storage_clients::object_key object_path_factory::level_zero_data_dir() {
     return cloud_storage_clients::object_key(level_zero_data_dir_str);
 }

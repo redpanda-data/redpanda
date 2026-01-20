@@ -29,6 +29,12 @@ public:
     static cloud_storage_clients::object_key level_zero_path(object_id id);
 
     /*
+     * Generate a level-zero object path prefix
+     */
+    static cloud_storage_clients::object_key
+    level_zero_path_prefix(std::string_view ext);
+
+    /*
      * Level-zero object data root directory. Contains a trailing "/".
      */
     static cloud_storage_clients::object_key level_zero_data_dir();
