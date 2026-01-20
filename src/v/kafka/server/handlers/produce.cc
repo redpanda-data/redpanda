@@ -146,12 +146,24 @@ partition_produce_stages partition_append(
   int32_t num_records,
   int64_t num_bytes,
   std::chrono::milliseconds timeout_ms) {
+    // https://github.com/redpanda-data/redpanda/blob/dev/src/v/kafka/protocol/schemata/produce_response.json
+    // If CreateTime is used for the topic, the timestamp will be -1. If
+    // LogAppendTime is used for the topic, the timestamp will be the broker
+    // local time when the messages are appended.
+    auto log_append_time_ms = batch->header().attrs.timestamp_type()
+                                  == model::timestamp_type::create_time
+                                ? model::timestamp::missing()
+                                : batch->header().max_timestamp;
     auto stages = partition->replicate(
       bid, std::move(*batch), acks_to_replicate_options(acks, timeout_ms));
     return partition_produce_stages{
       .dispatched = std::move(stages.request_enqueued),
       .produced = stages.replicate_finished.then_wrapped(
-        [partition, id, num_records = num_records, num_bytes](
+        [partition,
+         id,
+         num_records = num_records,
+         num_bytes,
+         log_append_time_ms = log_append_time_ms](
           ss::future<result<raft::replicate_result>> f) {
             produce_response::partition p{.partition_index = id};
             try {
@@ -161,6 +173,7 @@ partition_produce_stages partition_append(
                     // is inclusive
                     p.base_offset = model::offset(
                       r.value().last_offset - (num_records - 1));
+                    p.log_append_time_ms = log_append_time_ms;
                     p.error_code = error_code::none;
                     partition->probe().add_records_produced(num_records);
                     partition->probe().add_bytes_produced(num_bytes);
