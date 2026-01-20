@@ -216,10 +216,6 @@ private:
         return job_it->second.get();
     }
 
-    // Indicates that any active jobs should be cancelled due to requested
-    // abort, likely during shutdown.
-    void cancel_active_jobs();
-
 private:
     chunked_hash_map<compaction_job_id, job_ptr_t> _compaction_jobs;
 

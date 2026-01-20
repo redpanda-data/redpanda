@@ -426,9 +426,7 @@ ss::future<> compaction_committer::stop() {
       "Stopping compaction committer with {} active jobs.",
       _compaction_jobs.size());
     _as.request_abort();
-    auto close_fut = _gate.close();
-    cancel_active_jobs();
-    co_await std::move(close_fut);
+    co_await _gate.close();
 }
 
 ss::future<compaction_committer::compaction_job*>
@@ -484,12 +482,6 @@ ss::future<> compaction_committer::finalize_compaction_job(
       std::move(new_cleaned_ranges),
       std::move(removed_tombstone_ranges),
       expected_compaction_epoch);
-}
-
-void compaction_committer::cancel_active_jobs() {
-    for (auto& [_, job] : _compaction_jobs) {
-        job->cancel_job();
-    }
 }
 
 } // namespace cloud_topics::l1
