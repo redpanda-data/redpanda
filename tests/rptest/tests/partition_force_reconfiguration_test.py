@@ -615,7 +615,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
 
             # misplaced leader
             current_leader = partition_details.leader
-            if not current_leader or current_leader not in reconfiguration_target:
+            if current_leader not in reconfiguration_target:
                 return False
 
             return True
