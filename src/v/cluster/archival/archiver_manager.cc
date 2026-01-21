@@ -600,7 +600,9 @@ private:
           expected_term);
 
         auto archiver = maybe_construct_archiver();
-
+        vassert(
+          archiver != nullptr,
+          "Expected create_and_start_archiver() to return a built archiver.");
         co_await archiver->start();
         co_return archiver;
     }
