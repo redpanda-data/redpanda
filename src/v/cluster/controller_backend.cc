@@ -728,11 +728,10 @@ controller_backend::force_replica_set_update(
         partition->block_new_leadership();
         co_await partition->raft()->step_down("not_in_force_replica_set");
         co_return ss::stop_iteration::yes;
-    } else {
-        // force of a force may return a replica to the config, make sure
-        // if it was prior blocked from leadership, it isn't anymore
-        partition->unblock_new_leadership();
     }
+    // force of a force may return a replica to the config, make sure
+    // if it was prior blocked from leadership, it isn't anymore
+    partition->unblock_new_leadership();
     auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
       previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
     if (partition->cloud_data_available()) {
