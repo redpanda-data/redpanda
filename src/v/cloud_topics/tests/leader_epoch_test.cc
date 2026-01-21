@@ -250,10 +250,9 @@ TEST_F(LeaderEpochTest, TestGetLeaderEpochWhileReconciling) {
             for (auto node_id : instance_ids()) {
                 auto& ct_app = get_ct_app(node_id);
                 ct_app.get_reconciler()
-                  ->invoke_on_all(
-                    [](auto& reconciler) {
-                        return reconciler.reconcile().discard_result();
-                    })
+                  ->invoke_on_all([](auto& reconciler) {
+                      return reconciler.reconcile().discard_result();
+                  })
                   .get();
             }
             auto l1_o = get_last_l1_offset().get();
