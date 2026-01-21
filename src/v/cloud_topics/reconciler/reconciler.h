@@ -85,6 +85,11 @@ struct reconcile_error {
  * the L1 metastore. Finally, it updates the LRO, based on either
  * its own progress, or a corrected LRO returned from the metastore.
  */
+struct reconcile_result {
+    size_t max_object_bytes{0};
+    chunked_vector<model::ntp> processed_ntps;
+};
+
 class reconciler {
 public:
     reconciler(l1::io*, l1::metastore*);
@@ -114,11 +119,11 @@ public:
      * may be reconciled into an L1 object. Operates on the set of currently
      * attached partitions.
      *
-     * Returns the set of NTPs that were processed this round.
-     * An NTP is processed if it contributes an extent to an object
-     * accepted by the metastore and its LRO advances.
+     * Returns the max object size produced and the set of NTPs that were
+     * processed this round. An NTP is processed if it contributes an extent
+     * to an object accepted by the metastore and its LRO advances.
      */
-    ss::future<chunked_vector<model::ntp>> reconcile();
+    ss::future<reconcile_result> reconcile();
 
 private:
     struct source_entry {
@@ -275,7 +280,7 @@ private:
      * Returns the max object size produced (or 0 if none committed) and the
      * NTPs that were successfully processed.
      */
-    ss::future<std::pair<size_t, chunked_vector<model::ntp>>>
+    ss::future<reconcile_result>
     reconcile_source_set(chunked_vector<ss::shared_ptr<source>> sources);
 
     /*

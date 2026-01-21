@@ -215,9 +215,9 @@ ss::future<> reconciler::reconciliation_loop() {
          *   except for shutdown
          */
         // clang-format on
-        chunked_vector<model::ntp> processed_ntps;
+        reconcile_result result;
         try {
-            processed_ntps = co_await reconcile();
+            result = co_await reconcile();
         } catch (...) {
             const auto is_shutdown = ssx::is_shutdown_exception(
               std::current_exception());
@@ -230,7 +230,7 @@ ss::future<> reconciler::reconciliation_loop() {
 
         // Update priority counters based on what was processed.
         chunked_hash_set<model::ntp> processed_set(
-          processed_ntps.begin(), processed_ntps.end());
+          result.processed_ntps.begin(), result.processed_ntps.end());
         for (auto& [ntp, entry] : _sources) {
             if (processed_set.contains(ntp)) {
                 entry.rounds_waiting = 0;
@@ -239,11 +239,21 @@ ss::future<> reconciler::reconciliation_loop() {
             }
         }
 
-        next_wait = _scheduler.current_interval();
+        // If we filled an object to max size, re-reconcile immediately.
+        // The reconciler tries to stay on the batch cache aggressively
+        // when throughput is high.
+        const auto max_object_size
+          = config::shard_local_cfg()
+              .cloud_topics_reconciliation_max_object_size();
+        if (result.max_object_bytes >= max_object_size) {
+            next_wait = ss::lowres_clock::duration::zero();
+        } else {
+            next_wait = _scheduler.current_interval();
+        }
     }
 }
 
-ss::future<chunked_vector<model::ntp>> reconciler::reconcile() {
+ss::future<reconcile_result> reconciler::reconcile() {
     _probe.increment_rounds();
 
     chunked_vector<source_entry> entries;
@@ -256,7 +266,7 @@ ss::future<chunked_vector<model::ntp>> reconciler::reconcile() {
       "Reconciliation loop tick with {} attached partitions",
       entries.size());
     if (entries.empty()) {
-        co_return chunked_vector<model::ntp>{};
+        co_return reconcile_result{};
     }
 
     auto source_sets = partition_sources_into_sets(std::move(entries));
@@ -264,19 +274,18 @@ ss::future<chunked_vector<model::ntp>> reconciler::reconcile() {
     // Adapt scheduling interval based on max object size produced.
     // Note that we slow down if there's nothing to reconcile or if all
     // objects failed. This is a sort of retry with backoff mechanism.
-    size_t max_bytes_produced = 0;
-    chunked_vector<model::ntp> all_processed;
+    reconcile_result result;
     for (auto& source_set : source_sets) {
-        auto [bytes, processed] = co_await reconcile_source_set(
-          std::move(source_set));
-        max_bytes_produced = std::max(max_bytes_produced, bytes);
-        for (auto& ntp : processed) {
-            all_processed.push_back(std::move(ntp));
+        auto set_result = co_await reconcile_source_set(std::move(source_set));
+        result.max_object_bytes = std::max(
+          result.max_object_bytes, set_result.max_object_bytes);
+        for (auto& ntp : set_result.processed_ntps) {
+            result.processed_ntps.push_back(std::move(ntp));
         }
     }
 
-    _scheduler.adapt(max_bytes_produced);
-    co_return all_processed;
+    _scheduler.adapt(result.max_object_bytes);
+    co_return result;
 }
 
 chunked_vector<chunked_vector<ss::shared_ptr<source>>>
@@ -309,11 +318,10 @@ reconciler::partition_sources_into_sets(chunked_vector<source_entry> entries) {
     return result;
 }
 
-ss::future<std::pair<size_t, chunked_vector<model::ntp>>>
-reconciler::reconcile_source_set(
+ss::future<reconcile_result> reconciler::reconcile_source_set(
   chunked_vector<ss::shared_ptr<source>> sources) {
     if (sources.empty()) {
-        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
+        co_return reconcile_result{};
     }
 
     // Begin by creating the set of objects to be built.
@@ -340,7 +348,7 @@ reconciler::reconcile_source_set(
           "Could not create object metadata builder: {}",
           metadata_builder_res.error());
         _probe.increment_rounds_failed();
-        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
+        co_return reconcile_result{};
     }
     auto& metadata_builder = metadata_builder_res.value();
     chunked_hash_map<l1::object_id, chunked_vector<ss::shared_ptr<source>>>
@@ -351,7 +359,7 @@ reconciler::reconcile_source_set(
         if (!oid.has_value()) {
             vlog(lg.warn, "Could not get object: {}", oid.error());
             _probe.increment_rounds_failed();
-            co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
+            co_return reconcile_result{};
         }
         oid_to_sources[oid.value()].push_back(src);
     }
@@ -387,7 +395,7 @@ reconciler::reconcile_source_set(
               oid,
               ex);
             if (is_shutdown) {
-                co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
+                co_return reconcile_result{};
             }
             failed_objects.push_back(oid);
             continue;
@@ -432,7 +440,7 @@ reconciler::reconcile_source_set(
         // NB: This doesn't count as failing the round because it may be that
         // all sources are fully reconciled.
         vlog(lg.debug, "No successful objects to commit to metastore");
-        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
+        co_return reconcile_result{};
     }
 
     // Commit all successful objects to the metastore.
@@ -443,18 +451,19 @@ reconciler::reconcile_source_set(
           "Abandoning reconciliation run because the L1 metastore operation "
           "failed"));
         _probe.increment_rounds_failed();
-        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
+        co_return reconcile_result{};
     }
 
     // Collect the NTPs that were successfully processed.
-    chunked_vector<model::ntp> processed_ntps;
+    reconcile_result result;
+    result.max_object_bytes = max_bytes_produced;
     for (const auto& obj : successful_objects) {
         for (const auto& commit : obj.commits) {
-            processed_ntps.push_back(commit.source->ntp());
+            result.processed_ntps.push_back(commit.source->ntp());
         }
     }
 
-    co_return std::pair{max_bytes_produced, std::move(processed_ntps)};
+    co_return result;
 }
 
 ss::future<std::expected<reconciler::built_object_metadata, reconcile_error>>
