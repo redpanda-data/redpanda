@@ -289,3 +289,89 @@ TEST(TrieTest, PruneIsIdempotent) {
     EXPECT_THAT(
       after_second_prune, testing::ElementsAreArray(after_second_prune));
 }
+
+// -----------------------------------------------------------------------------
+// PrefixCompressor Tests
+// -----------------------------------------------------------------------------
+
+TEST(PrefixCompressorTest, ConsumeWithNoRangeReturnsNullopt) {
+    cloud_topics::prefix_compressor pc;
+    EXPECT_EQ(pc.consume_prefix(), std::nullopt);
+    pc.set_range(std::nullopt);
+    EXPECT_EQ(pc.consume_prefix(), std::nullopt);
+    // Multiple calls still return nullopt
+    EXPECT_EQ(pc.consume_prefix(), std::nullopt);
+    EXPECT_EQ(pc.consume_prefix(), std::nullopt);
+}
+
+TEST(PrefixCompressorTest, ConsumeIteratesThroughPrefixesAndWraps) {
+    cloud_topics::prefix_compressor pc;
+    // Use a small range for simplicity: [100, 102] -> 3 prefixes
+    pc.set_range(cloud_topics::prefix_range_inclusive{100, 102});
+
+    auto all_prefixes = pc.compressed_key_prefixes();
+    ASSERT_EQ(all_prefixes.size(), 3);
+
+    for (auto _ : std::views::iota(0, 2)) {
+        // Consume all prefixes
+        for (size_t i = 0; i < all_prefixes.size(); ++i) {
+            auto prefix = pc.consume_prefix();
+            ASSERT_TRUE(prefix.has_value());
+            EXPECT_EQ(prefix.value(), all_prefixes[i]);
+        }
+
+        // Next consume should return nullopt (end of iteration)
+        EXPECT_EQ(pc.consume_prefix(), std::nullopt);
+    }
+}
+
+TEST(PrefixCompressorTest, SetIdenticalRangeIsNoOp) {
+    cloud_topics::prefix_compressor pc;
+    pc.set_range(cloud_topics::prefix_range_inclusive{100, 102});
+
+    // Consume one prefix
+    auto first = pc.consume_prefix();
+    ASSERT_TRUE(first.has_value());
+
+    // Set the same range again - should preserve position
+    pc.set_range(cloud_topics::prefix_range_inclusive{100, 102});
+
+    // Should continue from where we left off, not restart
+    auto second = pc.consume_prefix();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_NE(first.value(), second.value());
+}
+
+TEST(PrefixCompressorTest, SetDifferentRangeResets) {
+    cloud_topics::prefix_compressor pc;
+    pc.set_range(cloud_topics::prefix_range_inclusive{100, 102});
+
+    // Consume one prefix
+    auto first = pc.consume_prefix();
+    ASSERT_TRUE(first.has_value());
+
+    // Set a different range - should reset
+    pc.set_range(cloud_topics::prefix_range_inclusive{200, 202});
+
+    auto new_prefixes = pc.compressed_key_prefixes();
+
+    // Should start from beginning of new range
+    auto new_first = pc.consume_prefix();
+    ASSERT_TRUE(new_first.has_value());
+    EXPECT_EQ(new_first.value(), new_prefixes[0]);
+}
+
+TEST(PrefixCompressorTest, SetNulloptClearsState) {
+    cloud_topics::prefix_compressor pc;
+    pc.set_range(cloud_topics::prefix_range_inclusive{100, 102});
+
+    // Consume one prefix
+    ASSERT_TRUE(pc.consume_prefix().has_value());
+
+    // Clear the range
+    pc.set_range(std::nullopt);
+
+    // Should return nullopt now
+    EXPECT_EQ(pc.consume_prefix(), std::nullopt);
+    EXPECT_TRUE(pc.compressed_key_prefixes().empty());
+}

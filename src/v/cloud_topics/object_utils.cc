@@ -310,4 +310,43 @@ fmt::iterator trie::format_to(fmt::iterator it) const {
     return fmt::format_to(it, "{}", *root);
 }
 
+void prefix_compressor::set_range(std::optional<prefix_range_inclusive> range) {
+    if (range_ == range) {
+        // nothing changed, nothing to do
+        return;
+    }
+    range_ = range;
+    trie_.clear();
+    raw_prefixes_.clear();
+    prefix_idx_.reset();
+    if (range_.has_value()) {
+        trie_.insert(range_.value());
+        trie_.prune();
+        raw_prefixes_ = trie_.collect();
+        prefix_idx_ = 0;
+    }
+}
+
+std::optional<cloud_storage_clients::object_key>
+prefix_compressor::consume_prefix() {
+    if (!prefix_idx_.has_value() || raw_prefixes_.empty()) {
+        return std::nullopt;
+    }
+    if (prefix_idx_.value() >= raw_prefixes_.size()) {
+        prefix_idx_ = 0;
+        return std::nullopt;
+    }
+    return object_path_factory::level_zero_path_prefix(
+      raw_prefixes_.at(prefix_idx_.value()++));
+}
+
+chunked_vector<cloud_storage_clients::object_key>
+prefix_compressor::compressed_key_prefixes() const {
+    return raw_prefixes_ | std::views::transform([](const ss::sstring& s) {
+               return object_path_factory::level_zero_path_prefix(s);
+           })
+           | std::ranges::to<
+             chunked_vector<cloud_storage_clients::object_key>>();
+}
+
 } // namespace cloud_topics

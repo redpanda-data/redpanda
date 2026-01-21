@@ -136,4 +136,50 @@ private:
     std::unique_ptr<node> root;
 };
 
+/**
+ * @brief Stateful iterator over compressed prefix keys for object listing.
+ *
+ * Wraps a trie to provide incremental consumption of compressed prefixes.
+ * Maintains iteration state across calls to consume_prefix().
+ *
+ * Iteration behavior:
+ * - consume_prefix() returns prefixes one at a time as object keys
+ * - Returns nullopt when exhausted, then wraps around on the next call
+ * - Useful for round-robin distribution of list operations across iterations
+ *
+ * Range updates:
+ * - set_range(same_range) is a no-op; iteration position preserved
+ * - set_range(different_range) resets iteration to the beginning
+ * - set_range(nullopt) clears all state; consume returns nullopt
+ *
+ * compressed_key_prefixes() returns all prefixes without affecting iteration.
+ */
+struct prefix_compressor {
+    prefix_compressor() = default;
+
+    /**
+     * @brief Set the prefix range. No-op if range unchanged. Resets
+     * iteration if range differs. Clears state if nullopt.
+     */
+    void set_range(std::optional<prefix_range_inclusive>);
+
+    /**
+     * @brief Return all compressed prefixes as object keys (non-consuming).
+     */
+    chunked_vector<cloud_storage_clients::object_key>
+    compressed_key_prefixes() const;
+
+    /**
+     * @brief Return the next prefix, or nullopt if exhausted. Wraps around on
+     * subsequent call after exhaustion.
+     */
+    std::optional<cloud_storage_clients::object_key> consume_prefix();
+
+private:
+    std::optional<prefix_range_inclusive> range_;
+    trie trie_;
+    chunked_vector<ss::sstring> raw_prefixes_;
+    std::optional<size_t> prefix_idx_;
+};
+
 } // namespace cloud_topics
