@@ -113,13 +113,23 @@ public:
      * One round of reconciliation in which data from one or more sources
      * may be reconciled into an L1 object. Operates on the set of currently
      * attached partitions.
+     *
+     * Returns the set of NTPs that were processed this round.
+     * An NTP is processed if it contributes an extent to an object
+     * accepted by the metastore and its LRO advances.
      */
-    ss::future<> reconcile();
+    ss::future<chunked_vector<model::ntp>> reconcile();
 
 private:
+    struct source_entry {
+        ss::shared_ptr<source> src;
+        // Number of rounds since last processed.
+        uint32_t rounds_waiting{0};
+    };
+
     // NB: Partition attachment is the only part using ntps instead of
     //     topic id partitions.
-    chunked_hash_map<model::ntp, ss::shared_ptr<source>> _sources;
+    chunked_hash_map<model::ntp, source_entry> _sources;
 
 private:
     /*
@@ -250,19 +260,30 @@ private:
       std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder);
 
     /*
-     * Partition sources into sets for reconciliation.
+     * Partition source entries into sets for reconciliation, grouped by
+     * topic_id. Within each set, entries are sorted by priority (sources
+     * waiting longer get higher priority) with shuffling for fairness among
+     * equal priorities. Returns the prioritized sources with entry metadata
+     * stripped.
      */
     chunked_vector<chunked_vector<ss::shared_ptr<source>>>
-    partition_sources_into_sets(chunked_vector<ss::shared_ptr<source>> sources);
+    partition_sources_into_sets(chunked_vector<source_entry> entries);
 
     /*
      * Reconcile a set of sources. Creates a metadata builder, maps sources to
      * objects, builds and uploads objects, and commits them to the metastore.
-     * Returns the max object size produced, or 0 if no objects were
-     * successfully committed.
+     * Returns the max object size produced (or 0 if none committed) and the
+     * NTPs that were successfully processed.
      */
-    ss::future<size_t>
+    ss::future<std::pair<size_t, chunked_vector<model::ntp>>>
     reconcile_source_set(chunked_vector<ss::shared_ptr<source>> sources);
+
+    /*
+     * Sort source entries by priority for reconciliation. Sources that have
+     * been waiting longer (more rounds skipped) get higher priority. Sources
+     * with equal priority are shuffled for fairness.
+     */
+    static void prioritize_sources(chunked_vector<source_entry>& entries);
 
     l1::io* _l1_io;
     l1::metastore* _metastore;

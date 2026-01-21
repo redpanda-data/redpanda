@@ -25,6 +25,7 @@
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "random/generators.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
@@ -95,12 +96,13 @@ void reconciler::attach_source(ss::shared_ptr<source> src) {
     if (_sources.contains(src->ntp())) {
         return;
     }
+    auto ntp = src->ntp();
     vlog(
       lg.debug,
       "Attaching partition {} (tidp: {})",
-      src->ntp(),
+      ntp,
       src->topic_id_partition());
-    _sources.emplace(src->ntp(), src);
+    _sources.emplace(std::move(ntp), source_entry{.src = std::move(src)});
 }
 
 void reconciler::detach(const model::ntp& ntp) {
@@ -113,6 +115,26 @@ void reconciler::detach(const model::ntp& ntp) {
          * _sources collection.
          */
         _sources.erase(it);
+    }
+}
+
+void reconciler::prioritize_sources(chunked_vector<source_entry>& entries) {
+    // Sort entries by rounds waiting (descending) so starved partitions
+    // get priority.
+    std::sort(entries.begin(), entries.end(), [](auto& a, auto& b) {
+        return a.rounds_waiting > b.rounds_waiting;
+    });
+
+    // Shuffle within groups of same rounds_waiting value for fairness.
+    auto& rng = random_generators::global().engine();
+    auto it = entries.begin();
+    while (it != entries.end()) {
+        auto group_start = it;
+        auto group_waiting = it->rounds_waiting;
+        while (it != entries.end() && it->rounds_waiting == group_waiting) {
+            ++it;
+        }
+        std::shuffle(group_start, it, rng);
     }
 }
 
@@ -193,8 +215,9 @@ ss::future<> reconciler::reconciliation_loop() {
          *   except for shutdown
          */
         // clang-format on
+        chunked_vector<model::ntp> processed_ntps;
         try {
-            co_await reconcile();
+            processed_ntps = co_await reconcile();
         } catch (...) {
             const auto is_shutdown = ssx::is_shutdown_exception(
               std::current_exception());
@@ -204,67 +227,93 @@ ss::future<> reconciler::reconciliation_loop() {
               "Recoverable error during reconciliation: {}",
               std::current_exception());
         }
+
+        // Update priority counters based on what was processed.
+        chunked_hash_set<model::ntp> processed_set(
+          processed_ntps.begin(), processed_ntps.end());
+        for (auto& [ntp, entry] : _sources) {
+            if (processed_set.contains(ntp)) {
+                entry.rounds_waiting = 0;
+            } else {
+                ++entry.rounds_waiting;
+            }
+        }
+
         next_wait = _scheduler.current_interval();
     }
 }
 
-ss::future<> reconciler::reconcile() {
+ss::future<chunked_vector<model::ntp>> reconciler::reconcile() {
     _probe.increment_rounds();
 
-    chunked_vector<ss::shared_ptr<source>> sources;
+    chunked_vector<source_entry> entries;
     // Make a copy of the sources to not worry about concurrent modification.
-    for (auto& [_, src] : _sources) {
-        sources.push_back(src);
+    for (auto& [_, entry] : _sources) {
+        entries.push_back(entry);
     }
     vlog(
       lg.debug,
       "Reconciliation loop tick with {} attached partitions",
-      sources.size());
-    if (sources.empty()) {
-        co_return;
+      entries.size());
+    if (entries.empty()) {
+        co_return chunked_vector<model::ntp>{};
     }
 
-    auto source_sets = partition_sources_into_sets(std::move(sources));
+    auto source_sets = partition_sources_into_sets(std::move(entries));
 
     // Adapt scheduling interval based on max object size produced.
     // Note that we slow down if there's nothing to reconcile or if all
     // objects failed. This is a sort of retry with backoff mechanism.
     size_t max_bytes_produced = 0;
+    chunked_vector<model::ntp> all_processed;
     for (auto& source_set : source_sets) {
-        auto bytes = co_await reconcile_source_set(std::move(source_set));
+        auto [bytes, processed] = co_await reconcile_source_set(
+          std::move(source_set));
         max_bytes_produced = std::max(max_bytes_produced, bytes);
+        for (auto& ntp : processed) {
+            all_processed.push_back(std::move(ntp));
+        }
     }
 
     _scheduler.adapt(max_bytes_produced);
+    co_return all_processed;
 }
 
 chunked_vector<chunked_vector<ss::shared_ptr<source>>>
-reconciler::partition_sources_into_sets(
-  chunked_vector<ss::shared_ptr<source>> sources) {
-    chunked_hash_map<model::topic_id, chunked_vector<ss::shared_ptr<source>>>
-      topic_id_to_sources;
-    for (auto& src : sources) {
-        auto& src_vec = topic_id_to_sources[src->topic_id_partition().topic_id];
-        src_vec.push_back(std::move(src));
+reconciler::partition_sources_into_sets(chunked_vector<source_entry> entries) {
+    chunked_hash_map<model::topic_id, chunked_vector<source_entry>>
+      topic_id_to_entries;
+    for (auto& entry : entries) {
+        auto& entry_vec
+          = topic_id_to_entries[entry.src->topic_id_partition().topic_id];
+        entry_vec.push_back(std::move(entry));
     }
 
     vlog(
       lg.debug,
       "Partitioned sources into {} sets by topic_id",
-      topic_id_to_sources.size());
+      topic_id_to_entries.size());
 
+    // Prioritize within each set and extract sources.
     chunked_vector<chunked_vector<ss::shared_ptr<source>>> result;
-    result.reserve(topic_id_to_sources.size());
-    for (auto& [_, src_vec] : topic_id_to_sources) {
-        result.push_back(std::move(src_vec));
+    result.reserve(topic_id_to_entries.size());
+    for (auto& [_, entry_vec] : topic_id_to_entries) {
+        prioritize_sources(entry_vec);
+        chunked_vector<ss::shared_ptr<source>> sources;
+        sources.reserve(entry_vec.size());
+        for (auto& entry : entry_vec) {
+            sources.push_back(std::move(entry.src));
+        }
+        result.push_back(std::move(sources));
     }
     return result;
 }
 
-ss::future<size_t> reconciler::reconcile_source_set(
+ss::future<std::pair<size_t, chunked_vector<model::ntp>>>
+reconciler::reconcile_source_set(
   chunked_vector<ss::shared_ptr<source>> sources) {
     if (sources.empty()) {
-        co_return 0;
+        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
     }
 
     // Begin by creating the set of objects to be built.
@@ -291,7 +340,7 @@ ss::future<size_t> reconciler::reconcile_source_set(
           "Could not create object metadata builder: {}",
           metadata_builder_res.error());
         _probe.increment_rounds_failed();
-        co_return 0;
+        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
     }
     auto& metadata_builder = metadata_builder_res.value();
     chunked_hash_map<l1::object_id, chunked_vector<ss::shared_ptr<source>>>
@@ -302,7 +351,7 @@ ss::future<size_t> reconciler::reconcile_source_set(
         if (!oid.has_value()) {
             vlog(lg.warn, "Could not get object: {}", oid.error());
             _probe.increment_rounds_failed();
-            co_return 0;
+            co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
         }
         oid_to_sources[oid.value()].push_back(src);
     }
@@ -338,7 +387,7 @@ ss::future<size_t> reconciler::reconcile_source_set(
               oid,
               ex);
             if (is_shutdown) {
-                co_return 0;
+                co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
             }
             failed_objects.push_back(oid);
             continue;
@@ -383,7 +432,7 @@ ss::future<size_t> reconciler::reconcile_source_set(
         // NB: This doesn't count as failing the round because it may be that
         // all sources are fully reconciled.
         vlog(lg.debug, "No successful objects to commit to metastore");
-        co_return 0;
+        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
     }
 
     // Commit all successful objects to the metastore.
@@ -394,10 +443,18 @@ ss::future<size_t> reconciler::reconcile_source_set(
           "Abandoning reconciliation run because the L1 metastore operation "
           "failed"));
         _probe.increment_rounds_failed();
-        co_return 0;
+        co_return std::pair{size_t{0}, chunked_vector<model::ntp>{}};
     }
 
-    co_return max_bytes_produced;
+    // Collect the NTPs that were successfully processed.
+    chunked_vector<model::ntp> processed_ntps;
+    for (const auto& obj : successful_objects) {
+        for (const auto& commit : obj.commits) {
+            processed_ntps.push_back(commit.source->ntp());
+        }
+    }
+
+    co_return std::pair{max_bytes_produced, std::move(processed_ntps)};
 }
 
 ss::future<std::expected<reconciler::built_object_metadata, reconcile_error>>
