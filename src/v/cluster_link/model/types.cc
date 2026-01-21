@@ -219,26 +219,6 @@ void link_state::set_mirror_topics(mirror_topics_t&& topics) {
     mirror_topics = std::move(topics);
 }
 
-link_state link_state::copy() const {
-    link_state copy;
-    copy.status = status;
-    copy.mirror_topics.reserve(mirror_topics.size());
-    for (const auto& [topic, state] : mirror_topics) {
-        copy.mirror_topics.emplace(topic, state.copy());
-    }
-    return copy;
-}
-
-metadata metadata::copy() const {
-    metadata copy;
-    copy.name = name;
-    copy.uuid = uuid;
-    copy.connection = connection;
-    copy.state = state.copy();
-    copy.configuration = configuration.copy();
-    return copy;
-}
-
 add_mirror_topic_cmd add_mirror_topic_cmd::copy() const {
     add_mirror_topic_cmd copy;
     copy.topic = topic;

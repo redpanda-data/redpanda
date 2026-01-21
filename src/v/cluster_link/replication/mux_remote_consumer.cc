@@ -23,11 +23,10 @@ mux_remote_consumer::mux_remote_consumer(
   mux_remote_consumer::configuration consumer_configuration,
   std::optional<kafka::client::direct_consumer_probe::configuration> probe_cfg)
   : _client_id(std::move(consumer_configuration.client_id))
-  , _consumer(
-      std::make_unique<kafka::client::direct_consumer>(
-        cluster,
-        consumer_configuration.direct_consumer_configuration,
-        std::move(probe_cfg)))
+  , _consumer(std::make_unique<kafka::client::direct_consumer>(
+      cluster,
+      consumer_configuration.direct_consumer_configuration,
+      std::move(probe_cfg)))
   , _snc_quota_mgr(snc_quota_mgr)
   , _partition_max_buffered(consumer_configuration.partition_max_buffered)
   , _fetch_max_wait(consumer_configuration.fetch_max_wait)

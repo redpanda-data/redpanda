@@ -15,6 +15,8 @@
 #include "model/record.h"
 
 namespace cluster::cluster_link::testing {
+ss::future<::cluster_link::model::metadata>
+copy_metadata(const ::cluster_link::model::metadata& md);
 model::record_batch
   create_upsert_command(model::offset, ::cluster_link::model::metadata);
 model::record_batch

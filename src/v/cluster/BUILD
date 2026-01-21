@@ -277,6 +277,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_utils",
+    srcs = [
+        "cluster_link/table_utils.cc",
+    ],
+    hdrs = [
+        "cluster_link/table_utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/ssx:async_algorithm",
+    ],
+    visibility = ["__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "//src/v/cluster_link/model",
+        "//src/v/container:chunked_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster",
     srcs = [
         "archival/adjacent_segment_merger.cc",
@@ -647,6 +667,7 @@ redpanda_cc_library(
         "version.h",
     ],
     implementation_deps = [
+        ":table_utils",
         ":topic_memory_per_partition_default",
         "//src/v/cloud_storage:logger",
         "//src/v/crash_tracker",

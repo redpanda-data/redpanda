@@ -838,10 +838,9 @@ struct link_state
 
     auto serde_fields() { return std::tie(status, mirror_topics); }
 
-    link_state copy() const;
-
     friend std::ostream& operator<<(std::ostream& os, const link_state& ls);
 };
+class cluster_link_table_test;
 struct metadata
   : serde::envelope<metadata, serde::version<0>, serde::compat_version<0>> {
     /// Name of the cluster link
@@ -861,10 +860,10 @@ struct metadata
         return std::tie(name, uuid, connection, state, configuration);
     }
 
-    metadata copy() const;
-
     friend std::ostream& operator<<(std::ostream& os, const metadata& md);
 };
+
+using metadata_ptr = ss::lw_shared_ptr<const metadata>;
 
 /// \brief Command used to add a mirror topic to a cluster link
 ///

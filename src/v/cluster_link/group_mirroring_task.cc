@@ -849,7 +849,7 @@ group_mirroring_task_factory::created_task_name() const noexcept {
 }
 
 std::unique_ptr<task> group_mirroring_task_factory::create_task(link* link) {
-    return std::make_unique<group_mirroring_task>(link, link->get_config());
+    return std::make_unique<group_mirroring_task>(link, *(link->get_config()));
 }
 
 fmt::iterator group_mirroring_task::error::format_to(fmt::iterator it) const {

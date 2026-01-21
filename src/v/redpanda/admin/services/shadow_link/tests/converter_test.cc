@@ -313,13 +313,14 @@ TEST(converter_test, create_with_tls_flag_only) {
     shadow_link.set_name(ss::sstring{name});
     req.set_shadow_link(std::move(shadow_link));
 
-    auto md = admin::convert_create_to_metadata(std::move(req));
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>(
+      admin::convert_create_to_metadata(std::move(req)));
 
-    EXPECT_TRUE(md.connection.tls_enabled);
-    EXPECT_FALSE(md.connection.ca.has_value());
-    EXPECT_FALSE(md.connection.key.has_value());
-    EXPECT_FALSE(md.connection.cert.has_value());
-    EXPECT_TRUE(md.connection.tls_provide_sni);
+    EXPECT_TRUE(md->connection.tls_enabled);
+    EXPECT_FALSE(md->connection.ca.has_value());
+    EXPECT_FALSE(md->connection.key.has_value());
+    EXPECT_FALSE(md->connection.cert.has_value());
+    EXPECT_TRUE(md->connection.tls_provide_sni);
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 
@@ -632,10 +633,10 @@ TEST(converter_test, create_with_metadata_sync_options) {
 
 TEST(converter_test, metadata_to_shadow_link) {
     auto uuid = uuid_t::create();
-    cluster_link::model::metadata md;
-    md.name = cluster_link::model::name_t{"test-link"};
-    md.uuid = cluster_link::model::uuid_t(uuid);
-    md.connection.bootstrap_servers = {
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->name = cluster_link::model::name_t{"test-link"};
+    md->uuid = cluster_link::model::uuid_t(uuid);
+    md->connection.bootstrap_servers = {
       net::unresolved_address("localhost", 9092)};
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
@@ -709,16 +710,16 @@ TEST(converter_test, metadata_to_shadow_link) {
 
 TEST(converter_test, metadata_to_shadow_link_tasks_disabled) {
     auto uuid = uuid_t::create();
-    cluster_link::model::metadata md;
-    md.name = cluster_link::model::name_t{"test-link"};
-    md.uuid = cluster_link::model::uuid_t(uuid);
-    md.connection.bootstrap_servers = {
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->name = cluster_link::model::name_t{"test-link"};
+    md->uuid = cluster_link::model::uuid_t(uuid);
+    md->connection.bootstrap_servers = {
       net::unresolved_address("localhost", 9092)};
-    md.configuration.topic_metadata_mirroring_cfg.is_enabled
+    md->configuration.topic_metadata_mirroring_cfg.is_enabled
       = cluster_link::model::enabled_t::no;
-    md.configuration.consumer_groups_mirroring_cfg.is_enabled
+    md->configuration.consumer_groups_mirroring_cfg.is_enabled
       = cluster_link::model::enabled_t::no;
-    md.configuration.security_settings_sync_cfg.is_enabled
+    md->configuration.security_settings_sync_cfg.is_enabled
       = cluster_link::model::enabled_t::no;
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
@@ -737,8 +738,8 @@ TEST(converter_test, metadata_to_shadow_link_tasks_disabled) {
 }
 
 TEST(converter_test, metadata_to_shadow_link_authn_scram_256) {
-    cluster_link::model::metadata md;
-    md.connection.authn_config = cluster_link::model::scram_credentials{
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.authn_config = cluster_link::model::scram_credentials{
       .username = "test-user",
       .password = "test-password",
       .mechanism = "SCRAM-SHA-256"};
@@ -760,8 +761,8 @@ TEST(converter_test, metadata_to_shadow_link_authn_scram_256) {
 }
 
 TEST(converter_test, metadata_to_shadow_link_authn_scram_512) {
-    cluster_link::model::metadata md;
-    md.connection.authn_config = cluster_link::model::scram_credentials{
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.authn_config = cluster_link::model::scram_credentials{
       .username = "test-user",
       .password = "test-password",
       .mechanism = "SCRAM-SHA-512"};
@@ -783,8 +784,8 @@ TEST(converter_test, metadata_to_shadow_link_authn_scram_512) {
 }
 
 TEST(converter_test, metadata_to_shadow_link_authn_invalid_scram) {
-    cluster_link::model::metadata md;
-    md.connection.authn_config = cluster_link::model::scram_credentials{
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.authn_config = cluster_link::model::scram_credentials{
       .username = "test-user",
       .password = "test-password",
       .mechanism = "SCRAM-SHA-NOPE"};
@@ -793,8 +794,8 @@ TEST(converter_test, metadata_to_shadow_link_authn_invalid_scram) {
 }
 
 TEST(converter_test, metadata_to_shadow_link_authn_plain) {
-    cluster_link::model::metadata md;
-    md.connection.authn_config = cluster_link::model::scram_credentials{
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.authn_config = cluster_link::model::scram_credentials{
       .username = "test-user",
       .password = "test-password",
       .mechanism = "PLAIN"};
@@ -816,10 +817,10 @@ TEST(converter_test, metadata_to_shadow_link_tls_file) {
     const auto ca_file = "ca_file.pem";
     const auto key_file = "key_file.pem";
     const auto cert_file = "cert_file.pem";
-    cluster_link::model::metadata md;
-    md.connection.ca = cluster_link::model::tls_file_path(ca_file);
-    md.connection.key = cluster_link::model::tls_file_path(key_file);
-    md.connection.cert = cluster_link::model::tls_file_path(cert_file);
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.ca = cluster_link::model::tls_file_path(ca_file);
+    md->connection.key = cluster_link::model::tls_file_path(key_file);
+    md->connection.cert = cluster_link::model::tls_file_path(cert_file);
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 
@@ -836,9 +837,9 @@ TEST(converter_test, metadata_to_shadow_link_tls_file) {
 
 TEST(converter_test, metadata_to_shadow_link_tls_file_on_ca) {
     const auto ca_file = "ca_file.pem";
-    cluster_link::model::metadata md;
-    md.connection.ca = cluster_link::model::tls_file_path(ca_file);
-    md.connection.tls_provide_sni
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.ca = cluster_link::model::tls_file_path(ca_file);
+    md->connection.tls_provide_sni
       = cluster_link::model::connection_config::tls_provide_sni_t::no;
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
@@ -859,10 +860,10 @@ TEST(converter_test, metadata_to_shadow_link_tls_value) {
     const auto key = "key";
     const auto cert = "cert";
 
-    cluster_link::model::metadata md;
-    md.connection.ca = cluster_link::model::tls_value(ca);
-    md.connection.key = cluster_link::model::tls_value(key);
-    md.connection.cert = cluster_link::model::tls_value(cert);
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.ca = cluster_link::model::tls_value(ca);
+    md->connection.key = cluster_link::model::tls_value(key);
+    md->connection.cert = cluster_link::model::tls_value(cert);
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 
@@ -882,8 +883,8 @@ TEST(converter_test, metadata_to_shadow_link_tls_value) {
 TEST(converter_test, metadata_to_shadow_link_tls_value_only_ca) {
     const auto ca = "ca";
 
-    cluster_link::model::metadata md;
-    md.connection.ca = cluster_link::model::tls_value(ca);
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->connection.ca = cluster_link::model::tls_value(ca);
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 
@@ -899,30 +900,30 @@ TEST(converter_test, metadata_to_shadow_link_tls_value_only_ca) {
 
 TEST(converter_test, metadata_to_shadow_link_mismatch_tls) {
     {
-        cluster_link::model::metadata md;
-        md.connection.ca = cluster_link::model::tls_file_path("ca");
-        md.connection.key = cluster_link::model::tls_value("key");
-        md.connection.cert = cluster_link::model::tls_value("cert");
+        auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+        md->connection.ca = cluster_link::model::tls_file_path("ca");
+        md->connection.key = cluster_link::model::tls_value("key");
+        md->connection.cert = cluster_link::model::tls_value("cert");
 
         EXPECT_THROW(
           admin::metadata_to_shadow_link(std::move(md), {}),
           std::invalid_argument);
     }
     {
-        cluster_link::model::metadata md;
-        md.connection.ca = cluster_link::model::tls_value("ca");
-        md.connection.key = cluster_link::model::tls_file_path("key");
-        md.connection.cert = cluster_link::model::tls_file_path("cert");
+        auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+        md->connection.ca = cluster_link::model::tls_value("ca");
+        md->connection.key = cluster_link::model::tls_file_path("key");
+        md->connection.cert = cluster_link::model::tls_file_path("cert");
 
         EXPECT_THROW(
           admin::metadata_to_shadow_link(std::move(md), {}),
           std::invalid_argument);
     }
     {
-        cluster_link::model::metadata md;
-        md.connection.ca = cluster_link::model::tls_file_path("ca");
-        md.connection.key = cluster_link::model::tls_file_path("key");
-        md.connection.cert = cluster_link::model::tls_value("cert");
+        auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+        md->connection.ca = cluster_link::model::tls_file_path("ca");
+        md->connection.key = cluster_link::model::tls_file_path("key");
+        md->connection.cert = cluster_link::model::tls_value("cert");
 
         EXPECT_THROW(
           admin::metadata_to_shadow_link(std::move(md), {}),
@@ -932,11 +933,11 @@ TEST(converter_test, metadata_to_shadow_link_mismatch_tls) {
 
 TEST(converter_test, metadata_to_shadow_link_topic_mirroring_cfg) {
     const auto interval = 15s;
-    cluster_link::model::metadata md;
-    md.configuration.topic_metadata_mirroring_cfg.task_interval = interval;
-    md.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror = {
-      "prop1", "prop2"};
-    md.configuration.topic_metadata_mirroring_cfg.topic_name_filters = {
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->configuration.topic_metadata_mirroring_cfg.task_interval = interval;
+    md->configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
+      = {"prop1", "prop2"};
+    md->configuration.topic_metadata_mirroring_cfg.topic_name_filters = {
       {.pattern_type = cluster_link::model::filter_pattern_type::literal,
        .filter = cluster_link::model::filter_type::include,
        .pattern = "test-literal-include"},
@@ -945,9 +946,9 @@ TEST(converter_test, metadata_to_shadow_link_topic_mirroring_cfg) {
         .filter = cluster_link::model::filter_type::exclude,
         .pattern = "test-prefix-exclude",
       }};
-    md.configuration.topic_metadata_mirroring_cfg.exclude_default = true;
+    md->configuration.topic_metadata_mirroring_cfg.exclude_default = true;
 
-    md.configuration.schema_registry_sync_cfg.sync_schema_registry_topic_mode
+    md->configuration.schema_registry_sync_cfg.sync_schema_registry_topic_mode
       = cluster_link::model::schema_registry_sync_config::
         shadow_entire_schema_registry{};
 
@@ -999,7 +1000,7 @@ create_shadow_topic(ss::sstring name, proto::admin::shadow_topic_state state) {
 }
 
 TEST(converter_test, metadata_to_shadow_link_topic_status) {
-    cluster_link::model::metadata md;
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
     cluster_link::model::link_state::mirror_topics_t mirror_topic_states;
     mirror_topic_states[model::topic{"active"}]
       = cluster_link::model::mirror_topic_metadata{
@@ -1014,7 +1015,7 @@ TEST(converter_test, metadata_to_shadow_link_topic_status) {
       = cluster_link::model::mirror_topic_metadata{
         .status = cluster_link::model::mirror_topic_status::promoted};
 
-    md.state.set_mirror_topics(std::move(mirror_topic_states));
+    md->state.set_mirror_topics(std::move(mirror_topic_states));
 
     auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 
@@ -1062,7 +1063,13 @@ TEST(converter_test, update_shadow_link_add_field) {
     req.set_update_mask(std::move(mask));
 
     auto update_cmd = admin::create_update_cluster_link_config_cmd(
-      std::move(req), current_md.copy());
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
 
     EXPECT_EQ(update_cmd.connection, current_md.connection);
     EXPECT_NE(update_cmd.link_config, current_md.configuration);
@@ -1108,7 +1115,13 @@ TEST(converter_test, update_scram_creds) {
 
     auto now = model::to_time_point(model::timestamp::now());
     auto update_cmd = admin::create_update_cluster_link_config_cmd(
-      std::move(req), current_md.copy());
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
 
     const auto& new_scram_config
       = std::get<cluster_link::model::scram_credentials>(
@@ -1146,7 +1159,13 @@ TEST(converter_test, remove_scram_creds) {
     req.set_update_mask(std::move(mask));
 
     auto update_cmd = admin::create_update_cluster_link_config_cmd(
-      std::move(req), current_md.copy());
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
     EXPECT_EQ(update_cmd.connection.authn_config, std::nullopt);
 }
 
@@ -1174,7 +1193,13 @@ TEST(converter_test, do_not_update_scram_creds) {
     req.set_update_mask(std::move(mask));
 
     auto update_cmd = admin::create_update_cluster_link_config_cmd(
-      std::move(req), current_md.copy());
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
 
     EXPECT_EQ(
       update_cmd.link_config.topic_metadata_mirroring_cfg.get_task_interval(),
@@ -1224,7 +1249,13 @@ TEST(converter_test, invalid_scram_update) {
 
     EXPECT_THROW(
       admin::create_update_cluster_link_config_cmd(
-        std::move(req), current_md.copy()),
+        std::move(req),
+        ss::make_lw_shared<cluster_link::model::metadata>({
+          .name = current_md.name,
+          .uuid = current_md.uuid,
+          .connection = current_md.connection,
+          .configuration = current_md.configuration.copy(),
+        })),
       serde::pb::rpc::invalid_argument_exception);
 }
 
@@ -1261,7 +1292,13 @@ TEST(converter_test, test_update_tls_value) {
     req.set_update_mask(std::move(mask));
 
     auto update_cmd = admin::create_update_cluster_link_config_cmd(
-      std::move(req), current_md.copy());
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
 
     EXPECT_EQ(
       std::get<cluster_link::model::tls_value>(*update_cmd.connection.ca),
@@ -1275,9 +1312,9 @@ TEST(converter_test, test_update_tls_value) {
 }
 
 TEST(converter_test, metadata_to_shadow_link_security) {
-    cluster_link::model::metadata md;
-    md.configuration.security_settings_sync_cfg.task_interval = 10s;
-    md.configuration.security_settings_sync_cfg.acl_filters.emplace_back(
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->configuration.security_settings_sync_cfg.task_interval = 10s;
+    md->configuration.security_settings_sync_cfg.acl_filters.emplace_back(
       cluster_link::model::acl_filter{
         .resource_filter = cluster_link::model::
           acl_resource_filter{.resource_type = cluster_link::model::acl_resource::any, .pattern_type = cluster_link::model::acl_pattern::any, .name = "*"},
@@ -1441,12 +1478,12 @@ TEST(converter_test, test_convert_timestamp) {
 }
 
 namespace {
-cluster_link::model::metadata create_base_metadata() {
+ss::lw_shared_ptr<cluster_link::model::metadata> create_base_metadata() {
     auto uuid = uuid_t::create();
-    cluster_link::model::metadata md;
-    md.name = cluster_link::model::name_t{"test-link"};
-    md.uuid = cluster_link::model::uuid_t(uuid);
-    md.connection.bootstrap_servers = {
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->name = cluster_link::model::name_t{"test-link"};
+    md->uuid = cluster_link::model::uuid_t(uuid);
+    md->connection.bootstrap_servers = {
       net::unresolved_address("localhost", 9092)};
 
     return md;
@@ -1466,7 +1503,7 @@ TEST(converter_test, timestamp_to_string) {
     }
     {
         auto md = create_base_metadata();
-        md.configuration.topic_metadata_mirroring_cfg.starting_offset
+        md->configuration.topic_metadata_mirroring_cfg.starting_offset
           = cluster_link::model::earliest_offset_ts;
         auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 
@@ -1477,7 +1514,7 @@ TEST(converter_test, timestamp_to_string) {
     }
     {
         auto md = create_base_metadata();
-        md.configuration.topic_metadata_mirroring_cfg.starting_offset
+        md->configuration.topic_metadata_mirroring_cfg.starting_offset
           = cluster_link::model::latest_offset_ts;
         auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 
@@ -1488,7 +1525,7 @@ TEST(converter_test, timestamp_to_string) {
     }
     {
         auto md = create_base_metadata();
-        md.configuration.topic_metadata_mirroring_cfg.starting_offset
+        md->configuration.topic_metadata_mirroring_cfg.starting_offset
           = model::timestamp{1759193250080};
         auto sl = admin::metadata_to_shadow_link(std::move(md), {});
 

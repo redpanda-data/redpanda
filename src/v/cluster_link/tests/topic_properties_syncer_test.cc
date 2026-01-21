@@ -89,7 +89,7 @@ public:
         // topic
         RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
             auto link = fixture()->find_link_by_name(test_link_name);
-            const auto& mirror_topics = link->get().state.mirror_topics;
+            const auto& mirror_topics = link->state.mirror_topics;
             auto mirror_topic_it = mirror_topics.find(test_topic);
             if (mirror_topic_it == mirror_topics.end()) {
                 return false;
@@ -122,7 +122,7 @@ TEST_F_CORO(topic_properties_syncer_test, topic_properties_sync) {
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
@@ -142,7 +142,7 @@ TEST_F_CORO(topic_properties_syncer_test, topic_properties_sync) {
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             return mirror_topic_it->second.status
@@ -155,7 +155,7 @@ TEST_F_CORO(topic_properties_syncer_test, topic_properties_sync) {
     fixture()->get_cluster_mock().set_topic_partition_count(test_topic, 5);
     co_await ss::sleep(2s);
     auto link = fixture()->find_link_by_name(test_link_name);
-    const auto& mirror_topics = link->get().state.mirror_topics;
+    const auto& mirror_topics = link->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(test_topic);
     ASSERT_NE_CORO(mirror_topic_it, mirror_topics.end());
     EXPECT_EQ(mirror_topic_it->second.partition_count, 3);
@@ -172,7 +172,7 @@ TEST_F_CORO(topic_properties_syncer_test, sync_rf) {
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
@@ -186,7 +186,7 @@ TEST_F_CORO(topic_properties_syncer_test, sync_rf) {
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
@@ -203,7 +203,7 @@ TEST_F_CORO(topic_properties_syncer_test, sync_rf) {
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, new_topic] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(new_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
@@ -268,7 +268,7 @@ TEST_F_CORO(
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
@@ -286,7 +286,7 @@ TEST_F_CORO(
   do_not_return_topic_config_no_mod) {
     auto properties = [this]() {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it == mirror_topics.end()) {
             throw std::runtime_error("Mirror topic not found in test setup");
@@ -312,7 +312,7 @@ TEST_F_CORO(
     co_await ss::sleep(2s);
 
     auto link = fixture()->find_link_by_name(test_link_name);
-    const auto& mirror_topics = link->get().state.mirror_topics;
+    const auto& mirror_topics = link->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(test_topic);
     ASSERT_NE_CORO(mirror_topic_it, mirror_topics.end());
     EXPECT_EQ(properties, mirror_topic_it->second)
@@ -323,7 +323,7 @@ TEST_F_CORO(
   update_properties_invalid_describe_configs_test, return_error_with_mod) {
     auto properties = [this]() {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it == mirror_topics.end()) {
             throw std::runtime_error("Mirror topic not found in test setup");
@@ -343,7 +343,7 @@ TEST_F_CORO(
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
@@ -353,7 +353,7 @@ TEST_F_CORO(
     });
 
     auto link = fixture()->find_link_by_name(test_link_name);
-    const auto& mirror_topics = link->get().state.mirror_topics;
+    const auto& mirror_topics = link->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(test_topic);
     ASSERT_NE_CORO(mirror_topic_it, mirror_topics.end());
     EXPECT_EQ(properties.topic_configs, mirror_topic_it->second.topic_configs)
@@ -364,7 +364,7 @@ TEST_F_CORO(
   update_properties_invalid_describe_configs_test, return_wrong_resource_type) {
     auto properties = [this]() {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it == mirror_topics.end()) {
             throw std::runtime_error("Mirror topic not found in test setup");
@@ -384,7 +384,7 @@ TEST_F_CORO(
 
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link = fixture()->find_link_by_name(test_link_name);
-        const auto& mirror_topics = link->get().state.mirror_topics;
+        const auto& mirror_topics = link->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(test_topic);
         if (mirror_topic_it != mirror_topics.end()) {
             const auto& topic_metadata = mirror_topic_it->second;
@@ -394,7 +394,7 @@ TEST_F_CORO(
     });
 
     auto link = fixture()->find_link_by_name(test_link_name);
-    const auto& mirror_topics = link->get().state.mirror_topics;
+    const auto& mirror_topics = link->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(test_topic);
     ASSERT_NE_CORO(mirror_topic_it, mirror_topics.end());
     EXPECT_EQ(properties.topic_configs, mirror_topic_it->second.topic_configs)

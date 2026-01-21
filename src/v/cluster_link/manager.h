@@ -39,7 +39,7 @@ class manager {
 public:
     using notification_id = named_type<uint32_t, struct mgr_notification_tag>;
     using link_cfg_change_notification_cb
-      = ss::noncopyable_function<void(model::id_t, const model::metadata&)>;
+      = ss::noncopyable_function<void(model::id_t, model::metadata_ptr)>;
     manager(
       ::model::node_id self,
       std::unique_ptr<kafka::data::rpc::partition_leader_cache>
@@ -71,20 +71,20 @@ public:
     /**
      * @brief Creates or updates a cluster link
      */
-    ss::future<cl_result<model::metadata>>
+    ss::future<cl_result<model::metadata_ptr>>
     upsert_cluster_link(model::metadata md);
     /**
      * @brief Get the cluster link object by name
      */
-    cl_result<model::metadata> get_cluster_link(const model::name_t& name);
+    cl_result<model::metadata_ptr> get_cluster_link(const model::name_t& name);
     /**
      * @brief Returns list of cluster links
      */
-    cl_result<chunked_vector<model::metadata>> list_cluster_links();
+    cl_result<chunked_vector<model::metadata_ptr>> list_cluster_links();
     /**
      * @brief Updates the configuration of a cluster link
      */
-    ss::future<cl_result<model::metadata>> update_cluster_link(
+    ss::future<cl_result<model::metadata_ptr>> update_cluster_link(
       model::name_t name, model::update_cluster_link_configuration_cmd cmd);
 
     /**
@@ -92,7 +92,7 @@ public:
      *
      * @return Result containing metadata of updated mirror topic or an error.
      */
-    ss::future<cl_result<model::metadata>> update_mirror_topic_status(
+    ss::future<cl_result<model::metadata_ptr>> update_mirror_topic_status(
       model::name_t link_name,
       ::model::topic,
       model::mirror_topic_status,
@@ -103,7 +103,7 @@ public:
      *
      * @return Result containing metadata of failed over topics or an error.
      */
-    ss::future<cl_result<model::metadata>>
+    ss::future<cl_result<model::metadata_ptr>>
     failover_link_topics(model::name_t link_name);
 
     /**
@@ -116,7 +116,7 @@ public:
      * @brief Removes a shadow topic from a shadow link.  Will remove all state
      * of the topic but will not delete the topic
      */
-    ss::future<cl_result<model::metadata>> remove_shadow_topic_from_link(
+    ss::future<cl_result<model::metadata_ptr>> remove_shadow_topic_from_link(
       model::name_t link_name, ::model::topic shadow_topic);
 
     /// Used to notify that a cluster link has been updated

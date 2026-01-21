@@ -36,7 +36,7 @@ public:
       model::id_t link_id,
       manager* manager,
       ss::lowres_clock::duration task_reconciler_interval,
-      model::metadata config,
+      model::metadata_ptr config,
       std::unique_ptr<kafka::client::cluster> cluster_connection,
       std::unique_ptr<replication::link_configuration_provider>,
       std::unique_ptr<replication::data_source_factory>,
@@ -52,7 +52,7 @@ public:
 
     ss::future<cl_result<void>> register_task(task_factory*);
 
-    void update_config(model::metadata, ::model::revision_id);
+    void update_config(model::metadata_ptr, ::model::revision_id);
 
     // at the link scope
     bool requires_active_replicators() const;
@@ -63,8 +63,6 @@ public:
       ::model::ntp ntp,
       ntp_leader is_ntp_leader,
       std::optional<::model::term_id>);
-
-    const model::metadata& config() const;
 
     bool task_is_registered(std::string_view) const noexcept;
 
@@ -92,7 +90,7 @@ public:
     ss::future<::cluster::cluster_link::errc> update_mirror_topic_properties(
       model::update_mirror_topic_properties_cmd cmd);
 
-    const model::metadata& get_config() const noexcept;
+    model::metadata_ptr get_config() const noexcept;
 
     kafka::data::rpc::topic_metadata_cache& topic_metadata_cache() noexcept;
 
@@ -143,7 +141,7 @@ private:
     model::id_t _link_id;
     manager* _manager;
     chunked_hash_map<ss::sstring, std::unique_ptr<task>> _tasks;
-    model::metadata _config;
+    model::metadata_ptr _config;
     std::unique_ptr<kafka::client::cluster> _cluster_connection;
     replication::link_replication_manager _replication_mgr;
 

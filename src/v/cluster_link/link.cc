@@ -89,7 +89,7 @@ link::link(
   model::id_t link_id,
   manager* manager,
   ss::lowres_clock::duration task_reconciler_interval,
-  model::metadata config,
+  model::metadata_ptr config,
   std::unique_ptr<kafka::client::cluster> cluster_connection,
   std::unique_ptr<replication::link_configuration_provider> config_provider,
   std::unique_ptr<replication::data_source_factory> data_source_factory,
@@ -106,7 +106,7 @@ link::link(
       std::move(data_sink_factory),
       replication::replication_probe::configuration{
         .group_name = link_probe::shadow_link_group,
-        .labels = {link_probe::shadow_link_name(_config.name)}})
+        .labels = {link_probe::shadow_link_name(_config->name)}})
   , _task_reconciler_interval(task_reconciler_interval)
   , _probe{} {}
 
@@ -114,7 +114,10 @@ link::~link() noexcept = default;
 
 ss::future<> link::start() {
     vlog(
-      cllog.info, "Starting cluster link {} ({})", _config.name, _config.uuid);
+      cllog.info,
+      "Starting cluster link {} ({})",
+      _config->name,
+      _config->uuid);
 
     // Allow exception to propagate to the caller
     _probe = std::make_unique<link_probe>(*this);
@@ -134,7 +137,10 @@ ss::future<> link::start() {
 
 ss::future<> link::stop() noexcept {
     vlog(
-      cllog.info, "Stopping cluster link {} ({})", _config.name, _config.uuid);
+      cllog.info,
+      "Stopping cluster link {} ({})",
+      _config->name,
+      _config->uuid);
     _task_reconciler.cancel();
     _as.request_abort();
     co_await _replication_mgr.stop();
@@ -145,7 +151,7 @@ ss::future<> link::stop() noexcept {
           cllog.info,
           "Stopping task {} for cluster link {}",
           t->name(),
-          _config.name);
+          _config->name);
         auto res_f = co_await ss::coroutine::as_future(stop_task(t.get()));
         if (res_f.failed()) {
             auto exception = res_f.get_exception();
@@ -175,7 +181,7 @@ ss::future<> link::stop() noexcept {
 
     _probe.reset(nullptr);
 
-    vlog(cllog.info, "Stopped link {} ({})", _config.name, _config.uuid);
+    vlog(cllog.info, "Stopped link {} ({})", _config->name, _config->uuid);
 }
 
 ss::future<cl_result<void>> link::register_task(task_factory* tf) {
@@ -184,8 +190,8 @@ ss::future<cl_result<void>> link::register_task(task_factory* tf) {
       cllog.debug,
       "Registering task factory {} for cluster link {} ({})",
       tf->created_task_name(),
-      _config.name,
-      _config.uuid);
+      _config->name,
+      _config->uuid);
     auto t = tf->create_task(this);
 
     if (!t) {
@@ -194,42 +200,42 @@ ss::future<cl_result<void>> link::register_task(task_factory* tf) {
           ssx::sformat(
             "Failed to create task from factory {} for cluster link {}",
             tf->created_task_name(),
-            _config.name));
+            _config->name));
     }
 
     co_return co_await do_register_task(std::move(t));
 }
 
 void link::update_config(
-  model::metadata config, ::model::revision_id revision) {
+  model::metadata_ptr config, ::model::revision_id revision) {
     vlog(
       cllog.debug,
       "Updating cluster link {} ({}): {} using revision: {}",
-      _config.name,
-      _config.uuid,
+      _config->name,
+      _config->uuid,
       config,
       revision);
     chunked_vector<::model::topic> new_topics_to_replicate;
     chunked_vector<::model::topic> topics_no_longer_mirroring;
-    for (const auto& [topic, m] : config.state.mirror_topics) {
+    for (const auto& [topic, m] : config->state.mirror_topics) {
         if (
-          !_config.state.mirror_topics.contains(topic)
+          !_config->state.mirror_topics.contains(topic)
           && mirror_active_state(m.status)) {
             vlog(cllog.debug, "New topic to replicate: {}", topic);
             new_topics_to_replicate.push_back(topic);
         }
     }
-    for (const auto& [topic, _] : _config.state.mirror_topics) {
-        if (!config.state.mirror_topics.contains(topic)) {
+    for (const auto& [topic, _] : _config->state.mirror_topics) {
+        if (!config->state.mirror_topics.contains(topic)) {
             topics_no_longer_mirroring.push_back(topic);
         }
     }
-    _config = std::move(config);
+    _config = config;
     maybe_update_connection_configuration();
 
     for (auto& [_, t] : _tasks) {
         vlog(cllog.trace, "Updating config for task {}", t->name());
-        t->update_config(_config);
+        t->update_config(*_config);
     }
 
     // Configuration updates may change whether or not the tasks have been
@@ -247,7 +253,7 @@ void link::update_config(
         vlog(
           cllog.debug,
           "Link {} is not active, stopping all replicators",
-          _config.name);
+          _config->name);
         _replication_mgr.stop_replicators();
     } else {
         for (const auto& topic : topics_no_longer_mirroring) {
@@ -257,7 +263,7 @@ void link::update_config(
               topic);
             _replication_mgr.stop_replicators(topic);
         }
-        for (const auto& [topic, _] : _config.state.mirror_topics) {
+        for (const auto& [topic, _] : _config->state.mirror_topics) {
             if (requires_active_replicators(topic)) {
                 continue;
             }
@@ -265,7 +271,7 @@ void link::update_config(
               cllog.debug,
               "Topic {} on link {} is not active, stopping its replicators",
               topic,
-              _config.name);
+              _config->name);
             _replication_mgr.stop_replicators(topic);
         }
         handle_new_topics_to_replicate(std::move(new_topics_to_replicate));
@@ -273,7 +279,7 @@ void link::update_config(
 }
 
 bool link::requires_active_replicators() const {
-    switch (_config.state.status) {
+    switch (_config->state.status) {
     case model::link_status::active:
         // check below for topic status overrides
         return true;
@@ -286,7 +292,7 @@ bool link::requires_active_replicators(const ::model::topic& topic) const {
     if (!requires_active_replicators()) {
         return false;
     }
-    const auto& mts = _config.state.mirror_topics;
+    const auto& mts = _config->state.mirror_topics;
     auto it = mts.find(topic);
     if (it == mts.end()) {
         return false;
@@ -302,12 +308,12 @@ ss::future<> link::handle_on_leadership_change(
     vlog(
       cllog.trace,
       "Shadow link {} handling leadership change for {}: {}, term: {}",
-      _config.name,
+      _config->name,
       ntp,
       is_ntp_leader,
       term);
 
-    const auto& mirror_topics = _config.state.mirror_topics;
+    const auto& mirror_topics = _config->state.mirror_topics;
     if (mirror_topics.contains(ntp.tp.topic)) {
         vlog(
           cllog.debug,
@@ -339,8 +345,6 @@ ss::future<> link::handle_on_leadership_change(
     co_await run_task_reconciler();
 }
 
-const model::metadata& link::config() const { return _config; }
-
 bool link::task_is_registered(std::string_view name) const noexcept {
     return _tasks.contains(ss::sstring{name});
 }
@@ -357,7 +361,7 @@ void link::unregister_for_task_state_changes(
 
 model::link_task_status_report link::get_task_status_report() const {
     model::link_task_status_report report;
-    report.link_name = _config.name;
+    report.link_name = _config->name;
     report.task_status_reports.reserve(_tasks.size());
     for (const auto& [name, t] : _tasks) {
         report.task_status_reports.emplace(name, t->get_status_report());
@@ -380,7 +384,7 @@ ss::future<::cluster::cluster_link::errc> link::update_mirror_topic_properties(
     return _manager->update_mirror_topic_properties(_link_id, std::move(cmd));
 }
 
-const model::metadata& link::get_config() const noexcept { return _config; }
+model::metadata_ptr link::get_config() const noexcept { return _config; }
 
 topic_metadata_cache& link::topic_metadata_cache() noexcept {
     return _manager->topic_metadata_cache();
@@ -469,7 +473,9 @@ ss::future<> link::run_task_reconciler() {
     auto units = std::move(fut).get();
 
     vlog(
-      cllog.trace, "Running task reconciler for cluster link {}", _config.name);
+      cllog.trace,
+      "Running task reconciler for cluster link {}",
+      _config->name);
     // Iterate over all tasks and reconcile their state
     for (auto& [name, t] : _tasks) {
         if (!_as.abort_requested() && should_start_task(t.get())) {
@@ -477,7 +483,7 @@ ss::future<> link::run_task_reconciler() {
               cllog.info,
               "Reconciler starting task {} for cluster link {}",
               name,
-              _config.name);
+              _config->name);
             auto res = co_await start_task(t.get());
             if (!res) {
                 vlog(
@@ -493,7 +499,7 @@ ss::future<> link::run_task_reconciler() {
               cllog.info,
               "Reconciler pausing task {} for cluster link {}",
               name,
-              _config.name);
+              _config->name);
             auto res = co_await pause_task(t.get());
             if (!res) {
                 vlog(
@@ -509,7 +515,7 @@ ss::future<> link::run_task_reconciler() {
               cllog.debug,
               "Reconciler stopping task {} for cluster link {}",
               name,
-              _config.name);
+              _config->name);
             auto res = co_await stop_task(t.get());
             if (!res) {
                 if (res.assume_error().code() == errc::task_not_running) {
@@ -531,13 +537,13 @@ ss::future<cl_result<void>> link::do_register_task(std::unique_ptr<task> t) {
       cllog.debug,
       "Registering task {} for cluster link {} ({})",
       t->name(),
-      _config.name,
-      _config.uuid);
+      _config->name,
+      _config->uuid);
     if (_tasks.contains(t->name())) {
         auto msg = ssx::sformat(
           "Task named '{}' already exists for link {}",
           t->name(),
-          _config.name);
+          _config->name);
         vlog(cllog.warn, "{}", msg);
         co_return err_info(
           errc::task_already_registered_on_link, std::move(msg));
@@ -552,7 +558,7 @@ ss::future<cl_result<void>> link::do_register_task(std::unique_ptr<task> t) {
         vlog(
           cllog.debug, "Task {} reported state change: {}", task_name, change);
         _task_state_change_notifications.notify(
-          _config.name, task_name, change);
+          _config->name, task_name, change);
     });
     // If we register a task after the link has started, then check to see if it
     // should start and do so
@@ -587,7 +593,7 @@ ss::future<cl_result<void>> link::do_register_task(std::unique_ptr<task> t) {
 }
 
 void link::maybe_update_connection_configuration() {
-    auto kafka_cfg = metadata_to_kafka_config(_config);
+    auto kafka_cfg = metadata_to_kafka_config(*_config);
     if (kafka_cfg == _cluster_connection->configuration()) {
         return;
     }
@@ -595,7 +601,7 @@ void link::maybe_update_connection_configuration() {
     vlog(
       cllog.info,
       "Updating connection configuration for link {}: {}",
-      _config.name,
+      _config->name,
       kafka_cfg);
     _cluster_connection->update_configuration(std::move(kafka_cfg));
 }
