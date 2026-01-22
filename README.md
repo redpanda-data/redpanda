@@ -19,6 +19,7 @@ Redpanda is the most complete, Apache Kafka®-compatible streaming data platform
     - [macOS](#macos)
     - [Other Linux environments](#other-linux-environments)
   - [Build manually](#build-manually)
+  - [Development with moonrepo](#development-with-moonrepo)
   - [Release candidate builds](#release-candidate-builds)
     - [RC releases on Debian/Ubuntu](#rc-releases-on-debianubuntu)
     - [RC releases on Fedora/RedHat/Amazon Linux](#rc-releases-on-fedoraredhatamazon-linux)
@@ -100,6 +101,71 @@ bazel build --config=release //...
 ```
 
 For more build configurations, see `.bazelrc`.
+
+## Development with moonrepo
+
+Redpanda uses [moonrepo](https://moonrepo.dev/) for development task orchestration. This provides a consistent developer experience with automatic toolchain management.
+
+### Quick Start
+
+```bash
+# Run bootstrap to install all toolchains to vbuild/
+./scripts/bootstrap.sh
+
+# Source the environment (or add to your shell profile)
+source scripts/env.sh
+
+# Verify environment
+moon run :check-env
+```
+
+All tools are installed within the repository under `vbuild/`:
+- `vbuild/proto/` - proto toolchain manager and managed tools (go, rust, uv, node)
+- `vbuild/bazelisk/` - bazelisk (Bazel version manager)
+
+### Common Tasks
+
+```bash
+# Build everything
+moon run :build
+
+# Build specific projects
+moon run rp:build            # C++ core (Bazel)
+moon run rpk:build           # RPK CLI (Go)
+
+# Run tests
+moon run :test               # All tests
+moon run rp:test             # C++ tests
+moon run rpk:test            # RPK tests
+
+# Linting
+moon run :lint               # All linters
+moon run rpk:lint            # Go linting
+
+# Ducktape integration tests
+moon run tests:ducktape      # Full test suite
+moon run tests:ducktape-quick # Quick tests
+```
+
+### Build Configurations
+
+For C++ builds, use the appropriate task for your configuration:
+
+```bash
+moon run rp:build        # Release build (default)
+moon run rp:build-debug  # Debug build
+moon run rp:build-fast   # Fast build (no optimizations)
+```
+
+### Project Structure
+
+| Project | Location | Description |
+|---------|----------|-------------|
+| `rp` | `src/v` | C++ core (Bazel) |
+| `rpk` | `src/go/rpk` | RPK CLI (Go) |
+| `transform-sdk-rust` | `src/transform-sdk/rust` | Rust transform SDK |
+| `transform-sdk-js` | `src/transform-sdk/js` | JS transform SDK |
+| `tests` | `tests` | Ducktape integration tests |
 
 ## Release candidate builds
 
