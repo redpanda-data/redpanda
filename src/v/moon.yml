@@ -1,0 +1,76 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+type: 'application'
+language: 'other'
+platform: 'system'
+
+fileGroups:
+  sources: ['**/*.cc', '**/*.h', '**/BUILD']
+
+tasks:
+  # System setup - ensure AIO limits are sufficient for builds/tests
+  set-aio-max:
+    script: |
+      MIN_REQUIRED=20971520
+      if [ ! -f /proc/sys/fs/aio-max-nr ]; then
+        echo "fs.aio-max-nr not available (non-Linux or container without /proc)"
+        exit 0
+      fi
+      CURRENT=$(/sbin/sysctl -nb fs.aio-max-nr 2>/dev/null || cat /proc/sys/fs/aio-max-nr)
+      if [ "$CURRENT" -lt "$MIN_REQUIRED" ]; then
+        echo "Setting fs.aio-max-nr from $CURRENT to $MIN_REQUIRED (requires sudo)"
+        if command -v sudo >/dev/null 2>&1; then
+          sudo sysctl -w fs.aio-max-nr=$MIN_REQUIRED
+        else
+          echo "Warning: sudo not available, cannot set fs.aio-max-nr"
+          echo "Run manually: sysctl -w fs.aio-max-nr=$MIN_REQUIRED"
+        fi
+      else
+        echo "fs.aio-max-nr=$CURRENT (sufficient)"
+      fi
+    options:
+      cache: false
+
+  # Default build (release)
+  build:
+    command: 'bazel build --config=release --config=stamp //...'
+    deps: ['set-aio-max']
+    inputs: ['@group(sources)', '/MODULE.bazel', '/.bazelrc', '/bazel/**/*']
+    options:
+      runFromWorkspaceRoot: true
+
+  # Debug build
+  build-debug:
+    command: 'bazel build --config=debug --config=stamp //...'
+    deps: ['set-aio-max']
+    inputs: ['@group(sources)', '/MODULE.bazel', '/.bazelrc', '/bazel/**/*']
+    options:
+      runFromWorkspaceRoot: true
+
+  # Fast build (no optimizations)
+  build-fast:
+    command: 'bazel build --config=fastbuild //...'
+    deps: ['set-aio-max']
+    inputs: ['@group(sources)', '/MODULE.bazel', '/.bazelrc', '/bazel/**/*']
+    options:
+      runFromWorkspaceRoot: true
+
+  # Default test (release)
+  test:
+    command: 'bazel test --config=release //...'
+    deps: ['set-aio-max']
+    inputs: ['@group(sources)', '/MODULE.bazel', '/.bazelrc', '/bazel/**/*']
+    options:
+      runFromWorkspaceRoot: true
+
+  # Debug test
+  test-debug:
+    command: 'bazel test --config=debug //...'
+    deps: ['set-aio-max']
+    inputs: ['@group(sources)', '/MODULE.bazel', '/.bazelrc', '/bazel/**/*']
+    options:
+      runFromWorkspaceRoot: true
+
+  lint:
+    command: 'bazel run //tools:buildifier.check'
+    options:
+      runFromWorkspaceRoot: true
