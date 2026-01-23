@@ -1,0 +1,92 @@
+# Copyright 2026 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+name: moon-rp
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/v/**'
+      - 'MODULE.bazel'
+      - 'MODULE.bazel.lock'
+      - '.bazelrc'
+      - '.bazelversion'
+      - 'bazel/**'
+      - '.moon/**'
+      - '.prototools'
+      - '.github/workflows/moon-rp.yml'
+  pull_request:
+    paths:
+      - 'src/v/**'
+      - 'MODULE.bazel'
+      - 'MODULE.bazel.lock'
+      - '.bazelrc'
+      - '.bazelversion'
+      - 'bazel/**'
+      - '.moon/**'
+      - '.prototools'
+      - '.github/workflows/moon-rp.yml'
+  merge_group:
+    types: [checks_requested]
+
+jobs:
+  test:
+    name: Test (${{ matrix.config }})
+    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - config: release
+            task: rp:test
+          - config: debug
+            task: rp:test-debug
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: moonrepo/setup-toolchain@v0
+        with:
+          auto-install: true
+          cache-base: 'dev'
+
+      - uses: useblacksmith/setup-bazel@v2
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-${{ matrix.config }}
+          repository-cache: true
+          external-cache: true
+          bazelrc: |
+            build --color=yes
+            build --show_timestamps
+
+      - name: Test
+        run: moon run ${{ matrix.task }} --color
+
+  lint:
+    name: Lint (Buildifier)
+    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: moonrepo/setup-toolchain@v0
+        with:
+          auto-install: true
+          cache-base: 'dev'
+
+      - uses: useblacksmith/setup-bazel@v2
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          bazelrc: |
+            build --color=yes
+
+      - name: Lint
+        run: moon run rp:lint --color
