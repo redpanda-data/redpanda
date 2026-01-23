@@ -1,0 +1,12 @@
+# Core toolchains managed by proto
+go = "1.24.3"
+rust = "1.75.0"
+node = "20.11.0"
+uv = "0.5.26"
+golangci-lint = "1.64.8"
+
+# Third-party plugins
+[plugins.tools]
+golangci-lint = "https://raw.githubusercontent.com/b4nst/proto-plugins/refs/heads/main/toml/golangci-lint.toml"
+
+# Bazel is auto-managed via .bazelversion

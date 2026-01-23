@@ -1,0 +1,10 @@
+$schema: 'https://moonrepo.dev/schemas/workspace.json'
+
+projects:
+  root: '.'
+  rp: 'src/v'
+  rpk: 'src/go/rpk'
+
+vcs:
+  manager: 'git'
+  defaultBranch: 'dev'
