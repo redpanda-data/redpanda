@@ -10,6 +10,7 @@
 
 #include "redpanda/admin/services/internal/level_zero_gc.h"
 
+#include "cloud_topics/level_zero/gc/level_zero_gc.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
@@ -25,6 +26,28 @@ constexpr auto health_report_query_timeout = 10s;
 } // namespace
 
 namespace admin {
+
+seastar::future<proto::admin::level_zero_gc::start_response>
+level_zero_gc_service_impl::start(
+  serde::pb::rpc::context, proto::admin::level_zero_gc::start_request) {
+    using namespace proto::admin::level_zero_gc;
+    start_response response;
+    co_await _gc->invoke_on_all(
+      [](cloud_topics::level_zero_gc& gc) { return gc.start(); });
+    response.set_state(state::l0_gc_state_started);
+    co_return response;
+}
+
+seastar::future<proto::admin::level_zero_gc::pause_response>
+level_zero_gc_service_impl::pause(
+  serde::pb::rpc::context, proto::admin::level_zero_gc::pause_request) {
+    using namespace proto::admin::level_zero_gc;
+    pause_response response;
+    co_await _gc->invoke_on_all(
+      [](cloud_topics::level_zero_gc& gc) { return gc.start(); });
+    response.set_state(state::l0_gc_state_paused);
+    co_return response;
+}
 
 seastar::future<proto::admin::level_zero_gc::advance_epoch_response>
 level_zero_gc_service_impl::advance_epoch(
@@ -122,8 +145,7 @@ auto level_zero_gc_service_impl::populate_epochs(
 
 seastar::future<proto::admin::level_zero_gc::get_epoch_response>
 level_zero_gc_service_impl::get_epoch(
-  serde::pb::rpc::context,
-  proto::admin::level_zero_gc::get_epoch_request req) {
+  serde::pb::rpc::context, proto::admin::level_zero_gc::get_epoch_request req) {
     using namespace proto::admin::level_zero_gc;
     get_epoch_response response;
 

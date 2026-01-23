@@ -61,6 +61,7 @@ redpanda_cc_library(
     deps = [
         "//proto/redpanda/core/admin/internal/cloud_topics/v1:level_zero_gc_redpanda_proto",
         "//src/v/base",
+        "//src/v/cloud_topics/level_zero/gc:level_zero_gc",
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/serde/protobuf:rpc",

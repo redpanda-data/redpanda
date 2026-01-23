@@ -76,6 +76,7 @@ public:
     ss::sharded<reconciler::reconciler>* get_reconciler();
     ss::sharded<l1::replicated_metastore>* get_sharded_replicated_metastore();
     l1::compaction_scheduler* get_compaction_scheduler();
+    ss::sharded<level_zero_gc>* get_level_zero_gc();
 
     // TODO: add 'get_control_plane_api' etc
 

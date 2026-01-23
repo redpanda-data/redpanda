@@ -25,6 +25,18 @@ option (pbgen.cpp_namespace) = "proto::admin::level_zero_gc";
 // Admin endpoints to interact with L0 garbage collection for Cloud Topics.
 
 service LevelZeroGcService {
+    rpc Start(StartRequest) returns (StartResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    rpc Pause(PauseRequest) returns (PauseResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
     // Try to advance the L0 GC epoch for a sequence of topic partitions. Each
     // partition fails or succeeds based on whether the current L0 GC epoch
     // matches the expected current epoch for that partition.
@@ -41,6 +53,18 @@ service LevelZeroGcService {
             authz: SUPERUSER
         };
     }
+}
+
+message StartRequest {}
+
+message StartResponse {
+    State state = 1;
+}
+
+message PauseRequest {}
+
+message PauseResponse {
+    State state = 1;
 }
 
 // AdvanceEpochRequest is the request for advancing the LO epoch for one or more
@@ -102,6 +126,12 @@ message TopicPartitionGetEpochResult {
         int64 epoch = 2;
         Error error = 3;
     }
+}
+
+enum State {
+    L0_GC_STATE_STARTED = 0;
+    L0_GC_STATE_PAUSED = 1;
+    L0_GC_STATE_STOPPED = 2;
 }
 
 // Error indicates success or failure for an attempt to advance the

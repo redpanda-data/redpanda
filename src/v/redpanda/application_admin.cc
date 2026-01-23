@@ -104,6 +104,7 @@ void application::configure_admin_server(model::node_id node_id) {
                   &controller->get_topics_state()));
               s.add_service(
                 std::make_unique<admin::level_zero_gc_service_impl>(
+                  cloud_topics_app->get_level_zero_gc(),
                   &controller->get_topics_state(),
                   &controller->get_health_monitor()));
           }

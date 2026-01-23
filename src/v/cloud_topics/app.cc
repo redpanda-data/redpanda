@@ -232,4 +232,6 @@ l1::compaction_scheduler* app::get_compaction_scheduler() {
     return compaction_scheduler.get();
 }
 
+ss::sharded<level_zero_gc>* app::get_level_zero_gc() { return &l0_gc; }
+
 } // namespace cloud_topics
