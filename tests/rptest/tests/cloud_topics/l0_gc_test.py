@@ -9,10 +9,15 @@
 from rptest.clients.admin.v2 import Admin, l0_gc_pb, ntp_pb
 from rptest.context.cloud_storage import CloudStorageType
 from rptest.services.kgo_repeater_service import repeater_traffic
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierParams,
+    KgoVerifierMultiProducer,
+    KgoVerifierProducer,
+)
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
+from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -23,6 +28,7 @@ from rptest.services.redpanda import (
     CLOUD_TOPICS_CONFIG_STR,
 )
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_exception, wait_until_result
 
 
 class CloudTopicsL0GCTest(RedpandaTest):
@@ -50,6 +56,10 @@ class CloudTopicsL0GCTest(RedpandaTest):
             extra_rp_conf=extra_rp_conf,
             si_settings=si_settings,
         )
+
+    @property
+    def l0_gc_client(self):
+        return Admin(self.redpanda).l0_gc()
 
     def __create_topics(self, topics: list[TopicSpec]):
         rpk = RpkTool(self.redpanda)
@@ -96,6 +106,58 @@ class CloudTopicsL0GCTest(RedpandaTest):
             backoff_sec=5,
             retry_on_exc=True,
         )
+
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type()[0:1])
+    def test_l0_gc_pause(self, cloud_storage_type: CloudStorageType):
+        self.topics = [
+            TopicSpec(partition_count=2),
+        ]
+        self.__create_topics(self.topics)
+
+        def get_num_objects_deleted():
+            samples = self.redpanda.metrics_sample(
+                "vectorized_cloud_topics_l0_gc_objects_deleted_total"
+            )
+            self.logger.info(samples)
+            if samples is not None and samples.samples:
+                n = int(sum(s.value for s in samples.samples))
+                print(n)
+                return n
+            return 0
+
+        with repeater_traffic(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topics=[spec.name for spec in self.topics],
+            msg_size=1024,
+            rate_limit_bps=2 * 1024 * 1024,
+            workers=1,
+        ) as repeater:
+            repeater.await_group_ready()
+            repeater.await_progress(300, timeout_sec=90)
+
+        print("DID IT STOP?")
+
+        wait_until(
+            lambda: get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=5,
+            retry_on_exc=True,
+        )
+        pause_response = self.l0_gc_client.pause(l0_gc_pb.PauseRequest())
+        assert pause_response is not None, "PauseResponse should not be None"
+
+        n_deleted = get_num_objects_deleted()
+        with expect_exception(TimeoutError, lambda _: True):
+            wait_until(
+                lambda: get_num_objects_deleted() > n_deleted,
+                timeout_sec=30,
+                backoff_sec=5,
+                retry_on_exc=True,
+            )
+            result = get_num_objects_deleted()
+            print(f"{result=} > {n_deleted=}")
 
 
 class L0GcAdminTest(RedpandaTest):
