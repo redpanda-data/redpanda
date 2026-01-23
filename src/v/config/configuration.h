@@ -260,6 +260,7 @@ struct configuration final : public config_store {
     // same as log.retention.ms in kafka
     retention_duration_property log_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
+    property<std::chrono::milliseconds> log_compaction_max_priority_wait_ms;
     // same as delete.retention.ms in kafka
     property<std::optional<std::chrono::milliseconds>> tombstone_retention_ms;
     bounded_property<std::optional<double>, numeric_bounds>

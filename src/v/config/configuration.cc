@@ -1058,6 +1058,13 @@ configuration::configuration()
       "How often to trigger background compaction.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10s)
+  , log_compaction_max_priority_wait_ms(
+      *this,
+      "log_compaction_max_priority_wait_ms",
+      "Maximum time a priority partition (for example, __consumer_offsets) can "
+      "wait for compaction before preempting regular compaction.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30min)
   , tombstone_retention_ms(
       *this,
       "tombstone_retention_ms",
