@@ -1,0 +1,61 @@
+# Copyright 2026 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+name: moon-rpk
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/go/rpk/**'
+      - '.moon/**'
+      - '.prototools'
+      - 'moon.yml'
+      - '.github/workflows/moon-rpk.yml'
+  pull_request:
+    paths:
+      - 'src/go/rpk/**'
+      - '.moon/**'
+      - '.prototools'
+      - 'moon.yml'
+      - '.github/workflows/moon-rpk.yml'
+  merge_group:
+    types: [checks_requested]
+
+jobs:
+  rpk:
+    name: RPK
+    runs-on: blacksmith-16vcpu-ubuntu-2404-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: moonrepo/setup-toolchain@v0
+        with:
+          auto-install: true
+          cache-base: 'dev'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('src/go/rpk/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build
+        run: moon run rpk:build --color
+
+      - name: Test
+        run: moon run rpk:test --color
+
+      - name: Lint
+        run: moon run rpk:lint --color
