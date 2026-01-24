@@ -37,6 +37,7 @@ concept Vector = requires(T t) {
     { t.size() } -> std::convertible_to<std::size_t>;
 };
 
+[[clang::always_inline]]
 void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
@@ -45,16 +46,20 @@ void tag_invoke(
     using Type = std::decay_t<decltype(t)>;
     using value_type = typename Type::value_type;
 
-    const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+    serde_size_t size = 0;
+    [[clang::always_inline]] size = read_nested<serde_size_t>(
+      in, bytes_left_limit);
     if constexpr (Reservable<decltype(t)>) {
         t.reserve(size);
     }
     for (auto i = 0U; i < size; ++i) {
-        t.push_back(read_nested<value_type>(in, bytes_left_limit));
+        [[clang::always_inline]] t.push_back(
+          read_nested<value_type>(in, bytes_left_limit));
     }
     t.shrink_to_fit();
 }
 
+[[clang::always_inline]]
 void tag_invoke(tag_t<write_tag>, iobuf& out, Vector auto t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
@@ -63,9 +68,9 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, Vector auto t) {
           type_str<decltype(t)>(),
           t.size()));
     }
-    write(out, static_cast<serde_size_t>(t.size()));
+    [[clang::always_inline]] write(out, static_cast<serde_size_t>(t.size()));
     for (auto& el : t) {
-        write(out, std::move(el));
+        [[clang::always_inline]] write(out, std::move(el));
     }
 }
 

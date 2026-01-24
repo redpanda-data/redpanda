@@ -58,6 +58,7 @@ public:
             _frag_index_end = _frag->get() + _frag->size();
         }
     }
+    [[clang::always_inline]]
     void skip(size_t n) {
         size_t c = consume(n, [](const char*, size_t /*max*/) {
             return ss::stop_iteration::no;
@@ -84,6 +85,7 @@ public:
     template<
       typename T,
       typename = std::enable_if_t<std::is_trivially_copyable_v<T>, T>>
+    [[clang::always_inline]]
     T consume_type() {
         constexpr size_t sz = sizeof(T);
         T obj;
@@ -92,6 +94,7 @@ public:
         return obj;
     }
     template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
+    [[clang::always_inline]]
     T consume_be_type() {
         return ss::be_to_cpu(consume_type<T>());
     }
@@ -116,6 +119,7 @@ public:
     /// takes a Consumer object and iteraters over the chunks in oder, from
     /// the given buffer index position. Use a stop_iteration::yes for early
     /// exit;
+    [[clang::always_inline]]
     size_t consume(const size_t n, Consumer&& f) {
         size_t i = 0;
         while (i < n) {

@@ -26,6 +26,7 @@ namespace serde {
 
 template<typename T>
 requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
+[[clang::always_inline]]
 void tag_invoke(
   tag_t<read_tag>, iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
@@ -52,6 +53,7 @@ void tag_invoke(
 
 template<typename T>
 requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
+[[clang::always_inline]]
 void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     using Type = std::decay_t<T>;
     if constexpr (sizeof(Type) == 1) {
@@ -71,17 +73,19 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     }
 }
 
+[[clang::always_inline]]
 inline void tag_invoke(tag_t<write_tag>, iobuf& out, bool t) {
-    write_tag(out, static_cast<int8_t>(t));
+    [[clang::always_inline]] write_tag(out, static_cast<int8_t>(t));
 }
 
+[[clang::always_inline]]
 inline void tag_invoke(
   tag_t<read_tag>,
   iobuf_parser& in,
   bool& t,
   const std::size_t bytes_left_limit) {
     int8_t byte;
-    read_tag(in, byte, bytes_left_limit);
+    [[clang::always_inline]] read_tag(in, byte, bytes_left_limit);
     t = (byte != 0);
 }
 

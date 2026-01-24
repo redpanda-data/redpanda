@@ -28,6 +28,7 @@ struct header {
 };
 
 template<typename T>
+[[clang::always_inline]]
 header read_header(iobuf_parser& in, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
 

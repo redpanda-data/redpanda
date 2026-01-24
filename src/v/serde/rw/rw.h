@@ -24,25 +24,28 @@ concept DirectReadable = requires(iobuf_parser& in, const header& h) {
 };
 
 template<typename T>
+[[clang::always_inline]]
 void read_nested(iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
-    read_tag(in, t, bytes_left_limit);
+    [[clang::always_inline]] read_tag(in, t, bytes_left_limit);
 }
 
 template<typename T>
+[[clang::always_inline]]
 T read_nested(iobuf_parser& in, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(std::is_default_constructible_v<T> || DirectReadable<T>);
     if constexpr (DirectReadable<T>) {
         const auto h = read_header<Type>(in, bytes_left_limit);
-        return Type::serde_direct_read(in, h);
+        [[clang::always_inline]] return Type::serde_direct_read(in, h);
     } else {
         auto t = Type();
-        read_nested(in, t, bytes_left_limit);
+        [[clang::always_inline]] read_nested(in, t, bytes_left_limit);
         return t;
     }
 }
 
 template<typename T>
+[[clang::always_inline]]
 std::decay_t<T> read(iobuf_parser& in) {
     auto ret = read_nested<T>(in, 0U);
     if (unlikely(in.bytes_left() != 0)) {
@@ -57,18 +60,21 @@ std::decay_t<T> read(iobuf_parser& in) {
 }
 
 template<typename T>
+[[clang::always_inline]]
 void write(iobuf& b, T x) {
-    write_tag(b, std::forward<T>(x));
+    [[clang::always_inline]] write_tag(b, std::forward<T>(x));
 }
 
 template<typename T>
+[[clang::always_inline]]
 iobuf to_iobuf(T&& t) {
     iobuf b;
-    write(b, std::forward<T>(t));
+    [[clang::always_inline]] write(b, std::forward<T>(t));
     return b;
 }
 
 template<typename T>
+[[clang::always_inline]]
 T from_iobuf(iobuf b) {
     auto in = iobuf_parser{std::move(b)};
     return read<T>(in);

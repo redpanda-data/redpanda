@@ -37,16 +37,20 @@ using tag_t = std::remove_cvref_t<decltype(CPO)>;
 
 inline constexpr struct write_fn {
     template<typename T>
+    [[clang::always_inline]]
     void operator()(iobuf& b, T&& x) const {
-        return tag_invoke(*this, b, std::forward<T>(x));
+        [[clang::always_inline]] return tag_invoke(
+          *this, b, std::forward<T>(x));
     }
 } write_tag{};
 
 inline constexpr struct read_fn {
     template<typename T>
+    [[clang::always_inline]]
     void operator()(
       iobuf_parser& in, T& t, const std::size_t bytes_left_limit) const {
-        return tag_invoke(*this, in, t, bytes_left_limit);
+        [[clang::always_inline]] return tag_invoke(
+          *this, in, t, bytes_left_limit);
     }
 } read_tag{};
 

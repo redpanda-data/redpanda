@@ -120,11 +120,13 @@ public:
     bool read_bool() { return bool(consume_type<int8_t>()); }
 
     template<typename T>
+    [[clang::always_inline]]
     T consume_type() {
         return _in.consume_type<T>();
     }
 
     template<typename T>
+    [[clang::always_inline]]
     T consume_be_type() {
         return _in.consume_be_type<T>();
     }
@@ -135,6 +137,7 @@ public:
     requires requires(Consumer c, const char* src, size_t max) {
         { c(src, max) } -> std::same_as<ss::stop_iteration>;
     }
+    [[clang::always_inline]]
     size_t consume(const size_t n, Consumer&& f) {
         return _in.consume(n, std::forward<Consumer>(f));
     }

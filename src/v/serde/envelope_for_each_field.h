@@ -16,8 +16,9 @@
 namespace serde {
 
 template<typename T>
+[[clang::always_inline]]
 constexpr inline auto envelope_to_tuple(T&& t) {
-    return t.serde_fields();
+    [[clang::always_inline]] return t.serde_fields();
 }
 
 template<typename Fn>
@@ -26,14 +27,20 @@ concept check_for_more_fn = requires(Fn&& fn, int& f) {
 };
 
 template<is_envelope T, typename Fn>
+[[clang::always_inline]]
 inline auto envelope_for_each_field(T& t, Fn&& fn) {
-    std::apply([&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
+    [[clang::always_inline]] std::apply(
+      [&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
 }
 
 template<is_envelope T, check_for_more_fn Fn>
+[[clang::always_inline]]
 inline auto envelope_for_each_field(T& t, Fn&& fn) {
-    std::apply(
-      [&](auto&&... args) { (void)(fn(args) && ...); }, envelope_to_tuple(t));
+    [[clang::always_inline]] std::apply(
+      [&] [[clang::always_inline]] (auto&&... args) {
+          (void)(fn(args) && ...);
+      },
+      envelope_to_tuple(t));
 }
 
 } // namespace serde
