@@ -35,7 +35,7 @@ concept has_serde_fields = requires(T t) { t.serde_fields(); };
 
 template<typename T>
 requires is_envelope<std::decay_t<T>>
-[[clang::always_inline]]
+
 void tag_invoke(
   tag_t<read_tag>, iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
@@ -67,9 +67,9 @@ void tag_invoke(
 
     if constexpr (has_serde_read<Type>) {
         static_assert(!has_serde_fields<Type>);
-        [[clang::always_inline]] t.serde_read(in, h);
+        t.serde_read(in, h);
     } else {
-        [[clang::always_inline]] envelope_for_each_field(t, [&](auto& f) {
+        envelope_for_each_field(t, [&](auto& f) {
             using FieldType = std::decay_t<decltype(f)>;
             if (h._bytes_left_limit == in.bytes_left()) {
                 return false;
@@ -84,7 +84,7 @@ void tag_invoke(
                   h._bytes_left_limit,
                   in.bytes_left()));
             }
-            [[clang::always_inline]] f = read_nested<FieldType>(
+            f = read_nested<FieldType>(
               in, bytes_left_limit);
             return true;
         });
@@ -96,7 +96,7 @@ void tag_invoke(
 
 template<typename T>
 requires is_envelope<std::decay_t<T>>
-[[clang::always_inline]]
+
 void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     using Type = std::decay_t<T>;
 
@@ -113,9 +113,9 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     const auto size_before = out.size_bytes();
     if constexpr (has_serde_write<Type>) {
         static_assert(!has_serde_fields<Type>);
-        [[clang::always_inline]] t.serde_write(out);
+        t.serde_write(out);
     } else {
-        [[clang::always_inline]] envelope_for_each_field(
+        envelope_for_each_field(
           t, [&out](auto& f) { write(out, std::move(f)); });
     }
 
