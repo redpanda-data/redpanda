@@ -25,7 +25,7 @@ namespace {
 
 TEST(ctp_stm_state_test, initial_state) {
     ct::ctp_stm_state state;
-    EXPECT_FALSE(state.get_max_epoch().has_value());
+    EXPECT_FALSE(state.get_max_applied_epoch().has_value());
     EXPECT_FALSE(state.get_max_seen_epoch().has_value());
     EXPECT_FALSE(state.get_last_reconciled_offset().has_value());
     EXPECT_FALSE(state.get_last_reconciled_log_offset().has_value());
@@ -56,16 +56,16 @@ TEST(ctp_stm_state_test, advance_epoch) {
     ct::cluster_epoch epoch3(10);
 
     state.advance_epoch(epoch1, model::offset(1));
-    EXPECT_EQ(state.get_max_epoch().value(), epoch1);
+    EXPECT_EQ(state.get_max_applied_epoch().value(), epoch1);
     EXPECT_EQ(state.get_max_seen_epoch().value(), epoch1);
 
     state.advance_epoch(epoch2, model::offset(2));
-    EXPECT_EQ(state.get_max_epoch().value(), epoch2);
+    EXPECT_EQ(state.get_max_applied_epoch().value(), epoch2);
     EXPECT_EQ(state.get_max_seen_epoch().value(), epoch2);
 
     // Should not go backwards
     state.advance_epoch(epoch3, model::offset(3));
-    EXPECT_EQ(state.get_max_epoch().value(), epoch2);
+    EXPECT_EQ(state.get_max_applied_epoch().value(), epoch2);
     EXPECT_EQ(state.get_max_seen_epoch().value(), epoch2);
 }
 
@@ -77,7 +77,7 @@ TEST(ctp_stm_state_test, advance_epoch_on_a_follower) {
     state.advance_epoch(advance_epoch, model::offset(1));
 
     EXPECT_EQ(state.get_max_seen_epoch().value(), advance_epoch);
-    EXPECT_EQ(state.get_max_epoch().value(), advance_epoch);
+    EXPECT_EQ(state.get_max_applied_epoch().value(), advance_epoch);
 }
 
 TEST(ctp_stm_state_test, advance_last_reconciled_offset) {

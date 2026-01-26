@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
@@ -59,7 +60,15 @@ public:
     kafka::offset start_offset() const noexcept;
 
     /// Find the maximum cluster epoch registered in the state.
-    std::optional<cluster_epoch> get_max_epoch() const noexcept;
+    std::optional<cluster_epoch> get_max_applied_epoch() const noexcept;
+
+    /// Return the previous epoch value.
+    /// The request can be replicated only if its epoch is greater or
+    /// equal to epoch returned by this method. If the method returns
+    /// nullopt then the epoch wasn't advanced yet so there is no
+    /// previous epoch.
+    /// Note that this value is not necessary equal to estimate_min_epoch.
+    std::optional<cluster_epoch> get_previous_applied_epoch() const noexcept;
 
     /// Return the max_seen_epoch epoch.
     ///
@@ -74,20 +83,17 @@ public:
     /// \return max_seen_epoch epoch.
     std::optional<cluster_epoch> get_max_seen_epoch() const noexcept;
 
+    /// Return the previous_seen_epoch epoch.
+    std::optional<cluster_epoch> get_previous_seen_epoch() const noexcept;
+
     /// Estimate the minimum epoch referenced by this ctp_stm.
     /// \note This value might be stale.
     std::optional<cluster_epoch> estimate_min_epoch() const noexcept;
 
-    /// Return the previous epoch value.
-    /// The request can be replicated only if its epoch is greater or
-    /// equal to epoch returned by this method. If the method returns
-    /// nullopt then the epoch wasn't advanced yet so there is no
-    /// previous epoch.
-    /// Note that this value is not necessary equal to estimate_min_epoch.
-    std::optional<cluster_epoch> get_previous_epoch() const noexcept;
-
     /// Return true if the epoch can be replicated
     bool epoch_in_window(cluster_epoch epoch) const noexcept;
+    /// Return true if the epoch is above the current window
+    bool epoch_above_window(cluster_epoch epoch) const noexcept;
 
     /// Estimate inactive epoch
     std::optional<cluster_epoch> estimate_inactive_epoch() const noexcept;
@@ -125,6 +131,8 @@ public:
     ///
     /// \return Max collectible offset.
     model::offset get_max_collectible_offset() const noexcept;
+
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     /// The max epoch after the current in flight requests are applied.

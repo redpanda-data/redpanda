@@ -37,7 +37,10 @@ struct epoch_window_checker
     }
 
     // Assert if the epoch at this offset in the log is valid or not.
-    void check_epoch(cluster_epoch epoch, model::offset offset);
+    void
+    check_epoch(const model::ntp&, cluster_epoch epoch, model::offset offset);
+
+    fmt::iterator format_to(fmt::iterator it) const;
 
     cluster_epoch _min_epoch;
     cluster_epoch _max_epoch;

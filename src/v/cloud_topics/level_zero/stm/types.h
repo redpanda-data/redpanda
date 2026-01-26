@@ -32,8 +32,10 @@ struct [[nodiscard]] cluster_epoch_fence {
 // The error returned when the CTP STM has seen a newer epoch than the one
 // attempting to be used.
 struct [[nodiscard]] stale_cluster_epoch {
-    // The latest cluster epoch
-    cluster_epoch latest_seen;
+    // The lowest epoch we accept
+    cluster_epoch window_min;
+    // The highest epoch we accept
+    cluster_epoch window_max;
 };
 
 } // namespace cloud_topics

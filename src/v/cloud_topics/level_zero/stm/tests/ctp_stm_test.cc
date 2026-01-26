@@ -584,7 +584,7 @@ TEST_F_CORO(ctp_stm_fixture, test_previous_epoch_fencing_with_lro) {
     // Get the previous epoch (should be epoch 2, the previous
     // max_applied_epoch)
     auto stm = get_stm<0>(leader);
-    auto previous_epoch = stm->state().get_previous_epoch();
+    auto previous_epoch = stm->state().get_previous_applied_epoch();
     ASSERT_TRUE_CORO(previous_epoch.has_value());
     ASSERT_EQ_CORO(previous_epoch.value(), ct::cluster_epoch{2});
 
@@ -608,7 +608,7 @@ TEST_F_CORO(ctp_stm_fixture, test_previous_epoch_fencing_with_lro) {
         // get_previous_epoch() returns the committed _previous_epoch, which
         // is still 2 because no batch with epoch 4 has been applied yet.
         // The transient _previous_seen_epoch is 3 (used by epoch_in_window).
-        previous_epoch = stm->state().get_previous_epoch();
+        previous_epoch = stm->state().get_previous_applied_epoch();
         ASSERT_TRUE_CORO(previous_epoch.has_value());
         ASSERT_EQ_CORO(previous_epoch.value(), ct::cluster_epoch{2});
     }
@@ -659,7 +659,7 @@ TEST_F_CORO(ctp_stm_fixture, test_previous_epoch_fencing_with_lro) {
 
     // Get the previous epoch (lower bound of active epochs)
     // The previous epoch is still 2 (no new epochs have been applied)
-    previous_epoch = stm->state().get_previous_epoch();
+    previous_epoch = stm->state().get_previous_applied_epoch();
     ASSERT_TRUE_CORO(previous_epoch.has_value());
     ASSERT_EQ_CORO(previous_epoch.value(), ct::cluster_epoch{2});
 
@@ -685,7 +685,7 @@ TEST_F_CORO(ctp_stm_fixture, test_previous_epoch_fencing_with_lro) {
     }
 
     // The previous epoch is still 2 (no new epochs have been applied)
-    previous_epoch = stm->state().get_previous_epoch();
+    previous_epoch = stm->state().get_previous_applied_epoch();
     ASSERT_TRUE_CORO(previous_epoch.has_value());
     ASSERT_EQ_CORO(previous_epoch.value(), ct::cluster_epoch{2});
 
@@ -703,7 +703,7 @@ TEST_F_CORO(ctp_stm_fixture, test_previous_epoch_fencing_with_lro) {
     ASSERT_TRUE_CORO(inactive_after_lro4);
 
     // Previous epoch should still be 2 (unchanged, no new epochs applied)
-    previous_epoch = stm->state().get_previous_epoch();
+    previous_epoch = stm->state().get_previous_applied_epoch();
     ASSERT_TRUE_CORO(previous_epoch.has_value());
     ASSERT_EQ_CORO(previous_epoch.value(), ct::cluster_epoch{2});
 

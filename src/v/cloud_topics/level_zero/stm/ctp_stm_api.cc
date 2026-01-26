@@ -187,7 +187,7 @@ ctp_stm_api::fence_epoch(cluster_epoch e) {
 }
 
 std::optional<cluster_epoch> ctp_stm_api::get_max_epoch() const {
-    return _stm->state().get_max_epoch();
+    return _stm->state().get_max_applied_epoch();
 }
 
 std::optional<cluster_epoch> ctp_stm_api::get_max_seen_epoch() const {

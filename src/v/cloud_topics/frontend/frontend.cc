@@ -605,10 +605,11 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     if (!fence.has_value()) {
         vlog(
           cd_log.warn,
-          "Failed to fence epoch {} for ntp {}, ctp latest seen epoch is {}",
+          "Failed to fence epoch {} for ntp {}, ctp window is [{}, {}]",
           upload_res.value().front().id.epoch,
           ntp,
-          fence.error().latest_seen);
+          fence.error().window_min,
+          fence.error().window_max);
         co_return default_errc;
     }
 
@@ -742,10 +743,12 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
     if (!fence.has_value()) {
         vlog(
           cd_log.warn,
-          "Failed to fence epoch {} for ntp {}, ctp latest seen epoch is {}",
+          "Failed to fence epoch {} for ntp {}, ctp latest seen epoch is [{}, "
+          "{}]",
           res.value().front().id.epoch,
           ntp(),
-          fence.error().latest_seen);
+          fence.error().window_min,
+          fence.error().window_max);
         co_return std::unexpected(
           kafka::make_error_code(kafka::error_code::request_timed_out));
     }
