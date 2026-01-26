@@ -4,10 +4,12 @@
     "https://bcr.bazel.build/bazel_registry.json": "8a28e4aff06ee60aed2a8c281907fb8bcbf3b753c91fb5a5c57da3215d5b3497",
     "https://bcr.bazel.build/modules/abseil-cpp/20210324.2/MODULE.bazel": "7cd0312e064fde87c8d1cd79ba06c876bd23630c83466e9500321be55c96ace2",
     "https://bcr.bazel.build/modules/abseil-cpp/20211102.0/MODULE.bazel": "70390338f7a5106231d20620712f7cccb659cd0e9d073d1991c038eb9fc57589",
+    "https://bcr.bazel.build/modules/abseil-cpp/20220623.1/MODULE.bazel": "73ae41b6818d423a11fd79d95aedef1258f304448193d4db4ff90e5e7a0f076c",
     "https://bcr.bazel.build/modules/abseil-cpp/20230125.1/MODULE.bazel": "89047429cb0207707b2dface14ba7f8df85273d484c2572755be4bab7ce9c3a0",
     "https://bcr.bazel.build/modules/abseil-cpp/20230802.0.bcr.1/MODULE.bazel": "1c8cec495288dccd14fdae6e3f95f772c1c91857047a098fad772034264cc8cb",
     "https://bcr.bazel.build/modules/abseil-cpp/20230802.0/MODULE.bazel": "d253ae36a8bd9ee3c5955384096ccb6baf16a1b1e93e858370da0a3b94f77c16",
     "https://bcr.bazel.build/modules/abseil-cpp/20230802.1/MODULE.bazel": "fa92e2eb41a04df73cdabeec37107316f7e5272650f81d6cc096418fe647b915",
+    "https://bcr.bazel.build/modules/abseil-cpp/20240116.0/MODULE.bazel": "98dc378d64c12a4e4741ad3362f87fb737ee6a0886b2d90c3cdbb4d93ea3e0bf",
     "https://bcr.bazel.build/modules/abseil-cpp/20240116.1/MODULE.bazel": "37bcdb4440fbb61df6a1c296ae01b327f19e9bb521f9b8e26ec854b6f97309ed",
     "https://bcr.bazel.build/modules/abseil-cpp/20240116.2/MODULE.bazel": "73939767a4686cd9a520d16af5ab440071ed75cec1a876bf2fcfaf1f71987a16",
     "https://bcr.bazel.build/modules/abseil-cpp/20250127.1/MODULE.bazel": "c4a89e7ceb9bf1e25cf84a9f830ff6b817b72874088bf5141b314726e46a57c1",
@@ -26,6 +28,7 @@
     "https://bcr.bazel.build/modules/bazel_features/1.18.0/MODULE.bazel": "1be0ae2557ab3a72a57aeb31b29be347bcdc5d2b1eb1e70f39e3851a7e97041a",
     "https://bcr.bazel.build/modules/bazel_features/1.19.0/MODULE.bazel": "59adcdf28230d220f0067b1f435b8537dd033bfff8db21335ef9217919c7fb58",
     "https://bcr.bazel.build/modules/bazel_features/1.21.0/MODULE.bazel": "675642261665d8eea09989aa3b8afb5c37627f1be178382c320d1b46afba5e3b",
+    "https://bcr.bazel.build/modules/bazel_features/1.3.0/MODULE.bazel": "cdcafe83ec318cda34e02948e81d790aab8df7a929cec6f6969f13a489ccecd9",
     "https://bcr.bazel.build/modules/bazel_features/1.30.0/MODULE.bazel": "a14b62d05969a293b80257e72e597c2da7f717e1e69fa8b339703ed6731bec87",
     "https://bcr.bazel.build/modules/bazel_features/1.30.0/source.json": "b07e17f067fe4f69f90b03b36ef1e08fe0d1f3cac254c1241a1818773e3423bc",
     "https://bcr.bazel.build/modules/bazel_features/1.4.1/MODULE.bazel": "e45b6bb2350aff3e442ae1111c555e27eac1d915e77775f6fdc4b351b758b5d7",
@@ -43,6 +46,8 @@
     "https://bcr.bazel.build/modules/bazel_skylib/1.7.1/MODULE.bazel": "3120d80c5861aa616222ec015332e5f8d3171e062e3e804a2a0253e1be26e59b",
     "https://bcr.bazel.build/modules/bazel_skylib/1.8.0/MODULE.bazel": "2fb3fb53675f6adfc1ca5bfbd5cfb655ae350fba4706d924a8ec7e3ba945671c",
     "https://bcr.bazel.build/modules/bazel_skylib/1.8.0/source.json": "5875230cfe587308c40964baa5504351c1f0c576171d7e605dba0ad452d5fcb9",
+    "https://bcr.bazel.build/modules/boringssl/0.0.0-20211025-d4f1ab9/MODULE.bazel": "6ee6353f8b1a701fe2178e1d925034294971350b6d3ac37e67e5a7d463267834",
+    "https://bcr.bazel.build/modules/boringssl/0.0.0-20230215-5c22014/MODULE.bazel": "4b03dc0d04375fa0271174badcd202ed249870c8e895b26664fd7298abea7282",
     "https://bcr.bazel.build/modules/boringssl/0.0.0-20240530-2db0eb3/MODULE.bazel": "d0405b762c5e87cd445b7015f2b8da5400ef9a8dbca0bfefa6c1cea79d528a97",
     "https://bcr.bazel.build/modules/boringssl/0.0.0-20240530-2db0eb3/source.json": "0d413869349e82e5d679802abe9ce23e0326bbf56daa97ae9e7dbdcec72982fc",
     "https://bcr.bazel.build/modules/buildifier_prebuilt/8.2.0.2/MODULE.bazel": "a9b689711d5b69f9db741649b218c119b9fdf82924ba390415037e09798edd03",
@@ -52,29 +57,60 @@
     "https://bcr.bazel.build/modules/bzip2/1.0.8.bcr.2/MODULE.bazel": "43b570f55b7479bfa7c6675b227ccc3155d56377bb7782f178b2d1733196a435",
     "https://bcr.bazel.build/modules/bzip2/1.0.8.bcr.2/source.json": "9789bb6c0444ae84fb7f559c9da0fbb46d39219539f8d99c13b8db55357e8cf9",
     "https://bcr.bazel.build/modules/bzip2/1.0.8/MODULE.bazel": "83ee443b286b0b91566e5ee77e74ba6445895f3135467893871560f9e4ebc159",
+    "https://bcr.bazel.build/modules/c-ares/1.15.0/MODULE.bazel": "ba0a78360fdc83f02f437a9e7df0532ad1fbaa59b722f6e715c11effebaa0166",
+    "https://bcr.bazel.build/modules/c-ares/1.15.0/source.json": "5e3ed991616c5ec4cc09b0893b29a19232de4a1830eb78c567121bfea87453f7",
     "https://bcr.bazel.build/modules/crc32c/1.1.0/MODULE.bazel": "f11439d063a2b4e0f19b56bb8da6a931f9691bf583bd1ec0718645bce6c62b06",
     "https://bcr.bazel.build/modules/crc32c/1.1.0/source.json": "aabc6ce46d4b71343d500270c2ddfd45f59cff9fd171313bdd773bf620cf2a6f",
+    "https://bcr.bazel.build/modules/curl/8.4.0/MODULE.bazel": "0bc250aa1cb69590049383df7a9537c809591fcf876c620f5f097c58fdc9bc10",
+    "https://bcr.bazel.build/modules/curl/8.4.0/source.json": "8b9532397af6a24be4ec118d8637b1f4e3e5a0d4be672c94b2275d675c7f7d6b",
     "https://bcr.bazel.build/modules/fmt/9.1.0/MODULE.bazel": "e0db57b98ac793a576184554cd55b8782f5fbd043c43cda3088e2a5420462e8d",
     "https://bcr.bazel.build/modules/fmt/9.1.0/source.json": "2e2bf876e44d0d43aa5d964b5f7f6e5db2d93118e1f653de575bca693d702641",
+    "https://bcr.bazel.build/modules/gazelle/0.27.0/MODULE.bazel": "3446abd608295de6d90b4a8a118ed64a9ce11dcb3dda2dc3290a22056bd20996",
+    "https://bcr.bazel.build/modules/gazelle/0.30.0/MODULE.bazel": "f888a1effe338491f35f0e0e85003b47bb9d8295ccba73c37e07702d8d31c65b",
     "https://bcr.bazel.build/modules/gazelle/0.32.0/MODULE.bazel": "b499f58a5d0d3537f3cf5b76d8ada18242f64ec474d8391247438bf04f58c7b8",
     "https://bcr.bazel.build/modules/gazelle/0.33.0/MODULE.bazel": "a13a0f279b462b784fb8dd52a4074526c4a2afe70e114c7d09066097a46b3350",
     "https://bcr.bazel.build/modules/gazelle/0.34.0/MODULE.bazel": "abdd8ce4d70978933209db92e436deb3a8b737859e9354fb5fd11fb5c2004c8a",
     "https://bcr.bazel.build/modules/gazelle/0.36.0/MODULE.bazel": "e375d5d6e9a6ca59b0cb38b0540bc9a05b6aa926d322f2de268ad267a2ee74c0",
+    "https://bcr.bazel.build/modules/gazelle/0.40.0/MODULE.bazel": "42ba5378ebe845fca43989a53186ab436d956db498acde790685fe0e8f9c6146",
     "https://bcr.bazel.build/modules/gazelle/0.45.0/MODULE.bazel": "ecd19ebe9f8e024e1ccffb6d997cc893a974bcc581f1ae08f386bdd448b10687",
     "https://bcr.bazel.build/modules/gazelle/0.45.0/source.json": "111d182facc5f5e80f0b823d5f077b74128f40c3fd2eccc89a06f34191bd3392",
     "https://bcr.bazel.build/modules/google_benchmark/1.8.2/MODULE.bazel": "a70cf1bba851000ba93b58ae2f6d76490a9feb74192e57ab8e8ff13c34ec50cb",
+    "https://bcr.bazel.build/modules/google_benchmark/1.8.4/MODULE.bazel": "c6d54a11dcf64ee63545f42561eda3fd94c1b5f5ebe1357011de63ae33739d5e",
+    "https://bcr.bazel.build/modules/google_benchmark/1.8.4/source.json": "84590f7bc5a1fd99e1ef274ee16bb41c214f705e62847b42e705010dfa81fe53",
+    "https://bcr.bazel.build/modules/googleapis/0.0.0-20240326-1c8d509c5/MODULE.bazel": "a4b7e46393c1cdcc5a00e6f85524467c48c565256b22b5fae20f84ab4a999a68",
+    "https://bcr.bazel.build/modules/googleapis/0.0.0-20240819-fe8ba054a/MODULE.bazel": "117b7c7be7327ed5d6c482274533f2dbd78631313f607094d4625c28203cacdf",
+    "https://bcr.bazel.build/modules/googleapis/0.0.0-20240819-fe8ba054a/source.json": "b31fc7eb283a83f71d2e5bfc3d1c562d2994198fa1278409fbe8caec3afc1d3e",
     "https://bcr.bazel.build/modules/googletest/1.11.0/MODULE.bazel": "3a83f095183f66345ca86aa13c58b59f9f94a2f81999c093d4eeaa2d262d12f4",
     "https://bcr.bazel.build/modules/googletest/1.14.0.bcr.1/MODULE.bazel": "22c31a561553727960057361aa33bf20fb2e98584bc4fec007906e27053f80c6",
     "https://bcr.bazel.build/modules/googletest/1.14.0/MODULE.bazel": "cfbcbf3e6eac06ef9d85900f64424708cc08687d1b527f0ef65aa7517af8118f",
     "https://bcr.bazel.build/modules/googletest/1.15.2/MODULE.bazel": "6de1edc1d26cafb0ea1a6ab3f4d4192d91a312fd2d360b63adaa213cd00b2108",
     "https://bcr.bazel.build/modules/googletest/1.15.2/source.json": "dbdda654dcb3a0d7a8bc5d0ac5fc7e150b58c2a986025ae5bc634bb2cb61f470",
+    "https://bcr.bazel.build/modules/grpc-java/1.62.2/MODULE.bazel": "99b8771e8c7cacb130170fed2a10c9e8fed26334a93e73b42d2953250885a158",
+    "https://bcr.bazel.build/modules/grpc-java/1.66.0/MODULE.bazel": "86ff26209fac846adb89db11f3714b3dc0090fb2fb81575673cc74880cda4e7e",
+    "https://bcr.bazel.build/modules/grpc-java/1.66.0/source.json": "f841b339ff8516c86c3a5272cd053194dd0cb2fdd63157123835e1157a28328d",
+    "https://bcr.bazel.build/modules/grpc-proto/0.0.0-20240627-ec30f58/MODULE.bazel": "88de79051e668a04726e9ea94a481ec6f1692086735fd6f488ab908b3b909238",
+    "https://bcr.bazel.build/modules/grpc-proto/0.0.0-20240627-ec30f58/source.json": "5035d379c61042930244ab59e750106d893ec440add92ec0df6a0098ca7f131d",
+    "https://bcr.bazel.build/modules/grpc/1.41.0/MODULE.bazel": "5bcbfc2b274dabea628f0649dc50c90cf36543b1cfc31624832538644ad1aae8",
+    "https://bcr.bazel.build/modules/grpc/1.56.3.bcr.1/MODULE.bazel": "cd5b1eb276b806ec5ab85032921f24acc51735a69ace781be586880af20ab33f",
+    "https://bcr.bazel.build/modules/grpc/1.66.0.bcr.2/MODULE.bazel": "0fa2b0fd028ce354febf0fe90f1ed8fecfbfc33118cddd95ac0418cc283333a0",
+    "https://bcr.bazel.build/modules/grpc/1.66.0.bcr.2/source.json": "d2b273a925507d47b5e2d6852f194e70d2991627d71b13793cc2498400d4f99e",
     "https://bcr.bazel.build/modules/jsoncpp/1.9.5/MODULE.bazel": "31271aedc59e815656f5736f282bb7509a97c7ecb43e927ac1a37966e0578075",
     "https://bcr.bazel.build/modules/jsoncpp/1.9.5/source.json": "4108ee5085dd2885a341c7fab149429db457b3169b86eb081fa245eadf69169d",
     "https://bcr.bazel.build/modules/libpfm/4.11.0/MODULE.bazel": "45061ff025b301940f1e30d2c16bea596c25b176c8b6b3087e92615adbd52902",
+    "https://bcr.bazel.build/modules/libpfm/4.11.0/source.json": "caaffb3ac2b59b8aac456917a4ecf3167d40478ee79f15ab7a877ec9273937c9",
     "https://bcr.bazel.build/modules/liburing/2.5/MODULE.bazel": "51768194b0b344123b2d7237b65928c9c119e7fc18a3f86f4870e83c0b71c00a",
     "https://bcr.bazel.build/modules/liburing/2.5/source.json": "1ff3e7c04563757f99cc7d33c2d4cb4900c45d6aca2cf54d58a1b199e66460ec",
     "https://bcr.bazel.build/modules/lz4/1.9.4/MODULE.bazel": "e3d307b1d354d70f6c809167eafecf5d622c3f27e3971ab7273410f429c7f83a",
     "https://bcr.bazel.build/modules/lz4/1.9.4/source.json": "233f0bdfc21f254e3dda14683ddc487ca68c6a3a83b7d5db904c503f85bd089b",
+    "https://bcr.bazel.build/modules/nlohmann_json/3.11.3/MODULE.bazel": "87023db2f55fc3a9949c7b08dc711fae4d4be339a80a99d04453c4bb3998eefc",
+    "https://bcr.bazel.build/modules/nlohmann_json/3.11.3/source.json": "296c63a90c6813e53b3812d24245711981fc7e563d98fe15625f55181494488a",
+    "https://bcr.bazel.build/modules/nlohmann_json/3.6.1/MODULE.bazel": "6f7b417dcc794d9add9e556673ad25cb3ba835224290f4f848f8e2db1e1fca74",
+    "https://bcr.bazel.build/modules/opentelemetry-cpp/1.14.2/MODULE.bazel": "089a5613c2a159c7dfde098dabfc61e966889c7d6a81a98422a84c51535ed17d",
+    "https://bcr.bazel.build/modules/opentelemetry-cpp/1.14.2/source.json": "0c5f85ab9e5894c6f1382cf58ba03a6cd024f0592bee2229f99db216ef0c6764",
+    "https://bcr.bazel.build/modules/opentelemetry-proto/1.1.0/MODULE.bazel": "a49f406e99bf05ab43ed4f5b3322fbd33adfd484b6546948929d1316299b68bf",
+    "https://bcr.bazel.build/modules/opentelemetry-proto/1.1.0/source.json": "39ffadc4b7d9ccc0c0f45422510cbaeb8eca7b26e68d4142fc3ff18b4c2711b6",
+    "https://bcr.bazel.build/modules/opentracing-cpp/1.6.0/MODULE.bazel": "b3925269f63561b8b880ae7cf62ccf81f6ece55b62cd791eda9925147ae116ec",
+    "https://bcr.bazel.build/modules/opentracing-cpp/1.6.0/source.json": "da1cb1add160f5e5074b7272e9db6fd8f1b3336c15032cd0a653af9d2f484aed",
     "https://bcr.bazel.build/modules/package_metadata/0.0.5/MODULE.bazel": "ef4f9439e3270fdd6b9fd4dbc3d2f29d13888e44c529a1b243f7a31dfbc2e8e4",
     "https://bcr.bazel.build/modules/package_metadata/0.0.5/source.json": "2326db2f6592578177751c3e1f74786b79382cd6008834c9d01ec865b9126a85",
     "https://bcr.bazel.build/modules/patchelf/0.18.0/MODULE.bazel": "15a6beff7e828d585c5bd0f9f93589df117b5594e9d19e43096c77de58b9ae5f",
@@ -89,7 +125,11 @@
     "https://bcr.bazel.build/modules/platforms/0.0.9/MODULE.bazel": "4a87a60c927b56ddd67db50c89acaa62f4ce2a1d2149ccb63ffd871d5ce29ebc",
     "https://bcr.bazel.build/modules/platforms/1.0.0/MODULE.bazel": "f05feb42b48f1b3c225e4ccf351f367be0371411a803198ec34a389fb22aa580",
     "https://bcr.bazel.build/modules/platforms/1.0.0/source.json": "f4ff1fd412e0246fd38c82328eb209130ead81d62dcd5a9e40910f867f733d96",
+    "https://bcr.bazel.build/modules/prometheus-cpp/1.2.4/MODULE.bazel": "0fbe5dcff66311947a3f6b86ebc6a6d9328e31a28413ca864debc4a043f371e5",
+    "https://bcr.bazel.build/modules/prometheus-cpp/1.2.4/source.json": "aa58bb10d0bb0dcaf4ad2c509ddcec23d2e94c3935e21517a5adbc2363248a55",
     "https://bcr.bazel.build/modules/protobuf/21.7/MODULE.bazel": "a5a29bb89544f9b97edce05642fac225a808b5b7be74038ea3640fae2f8e66a7",
+    "https://bcr.bazel.build/modules/protobuf/23.1/MODULE.bazel": "88b393b3eb4101d18129e5db51847cd40a5517a53e81216144a8c32dfeeca52a",
+    "https://bcr.bazel.build/modules/protobuf/26.0.bcr.2/MODULE.bazel": "62e0b84ca727bdeb55a6fe1ef180e6b191bbe548a58305ea1426c158067be534",
     "https://bcr.bazel.build/modules/protobuf/27.0/MODULE.bazel": "7873b60be88844a0a1d8f80b9d5d20cfbd8495a689b8763e76c6372998d3f64c",
     "https://bcr.bazel.build/modules/protobuf/27.1/MODULE.bazel": "703a7b614728bb06647f965264967a8ef1c39e09e8f167b3ca0bb1fd80449c0d",
     "https://bcr.bazel.build/modules/protobuf/29.0-rc2.bcr.1/MODULE.bazel": "52f4126f63a2f0bbf36b99c2a87648f08467a4eaf92ba726bc7d6a500bbf770c",
@@ -97,19 +137,27 @@
     "https://bcr.bazel.build/modules/protobuf/29.0-rc3/MODULE.bazel": "33c2dfa286578573afc55a7acaea3cada4122b9631007c594bf0729f41c8de92",
     "https://bcr.bazel.build/modules/protobuf/29.0/MODULE.bazel": "319dc8bf4c679ff87e71b1ccfb5a6e90a6dbc4693501d471f48662ac46d04e4e",
     "https://bcr.bazel.build/modules/protobuf/29.1/MODULE.bazel": "557c3457560ff49e122ed76c0bc3397a64af9574691cb8201b4e46d4ab2ecb95",
-    "https://bcr.bazel.build/modules/protobuf/29.1/source.json": "04cca85dce26b895ed037d98336d860367fe09919208f2ad383f0df1aff63199",
+    "https://bcr.bazel.build/modules/protobuf/29.2/MODULE.bazel": "5435497c190d86f79b0568698c45044df7c8d97692886cda9fe9cf9053aea712",
+    "https://bcr.bazel.build/modules/protobuf/29.2/source.json": "fe7090cc34072609b26d9beafb122916dabc1d47ba61b242c26c4b06c51384ab",
     "https://bcr.bazel.build/modules/protobuf/3.19.0/MODULE.bazel": "6b5fbb433f760a99a22b18b6850ed5784ef0e9928a72668b66e4d7ccd47db9b0",
     "https://bcr.bazel.build/modules/protobuf/3.19.2/MODULE.bazel": "532ffe5f2186b69fdde039efe6df13ba726ff338c6bc82275ad433013fa10573",
     "https://bcr.bazel.build/modules/protobuf/3.19.6/MODULE.bazel": "9233edc5e1f2ee276a60de3eaa47ac4132302ef9643238f23128fea53ea12858",
+    "https://bcr.bazel.build/modules/protovalidate/1.0.0/MODULE.bazel": "4e63330954a67db00c55cc09d9b053b070930168146437402de19cbfbe7300e0",
+    "https://bcr.bazel.build/modules/protovalidate/1.0.0/source.json": "4a61a092ca03065a55cb48c593393c0b2b7a2d60f36a82820527382ff36311e2",
     "https://bcr.bazel.build/modules/pybind11_bazel/2.11.1/MODULE.bazel": "88af1c246226d87e65be78ed49ecd1e6f5e98648558c14ce99176da041dc378e",
     "https://bcr.bazel.build/modules/pybind11_bazel/2.12.0/MODULE.bazel": "e6f4c20442eaa7c90d7190d8dc539d0ab422f95c65a57cc59562170c58ae3d34",
     "https://bcr.bazel.build/modules/pybind11_bazel/2.12.0/source.json": "6900fdc8a9e95866b8c0d4ad4aba4d4236317b5c1cd04c502df3f0d33afed680",
+    "https://bcr.bazel.build/modules/re2/2021-09-01/MODULE.bazel": "bcb6b96f3b071e6fe2d8bed9cc8ada137a105f9d2c5912e91d27528b3d123833",
     "https://bcr.bazel.build/modules/re2/2023-09-01/MODULE.bazel": "cb3d511531b16cfc78a225a9e2136007a48cf8a677e4264baeab57fe78a80206",
     "https://bcr.bazel.build/modules/re2/2024-07-02.bcr.1/MODULE.bazel": "b4963dda9b31080be1905ef085ecd7dd6cd47c05c79b9cdf83ade83ab2ab271a",
     "https://bcr.bazel.build/modules/re2/2024-07-02.bcr.1/source.json": "2ff292be6ef3340325ce8a045ecc326e92cbfab47c7cbab4bd85d28971b97ac4",
     "https://bcr.bazel.build/modules/re2/2024-07-02/MODULE.bazel": "0eadc4395959969297cbcf31a249ff457f2f1d456228c67719480205aa306daa",
     "https://bcr.bazel.build/modules/rules_android/0.1.1/MODULE.bazel": "48809ab0091b07ad0182defb787c4c5328bd3a278938415c00a7b69b50c4d3a8",
     "https://bcr.bazel.build/modules/rules_android/0.1.1/source.json": "e6986b41626ee10bdc864937ffb6d6bf275bb5b9c65120e6137d56e6331f089e",
+    "https://bcr.bazel.build/modules/rules_apple/3.5.1/MODULE.bazel": "3d1bbf65ad3692003d36d8a29eff54d4e5c1c5f4bfb60f79e28646a924d9101c",
+    "https://bcr.bazel.build/modules/rules_apple/3.5.1/source.json": "e7593cdf26437d35dbda64faeaf5b82cbdd9df72674b0f041fdde75c1d20dda7",
+    "https://bcr.bazel.build/modules/rules_buf/0.3.0/MODULE.bazel": "1e333238b2e3faa828de0e27a0804a7228c63d42057fffc546bee7f956f3e284",
+    "https://bcr.bazel.build/modules/rules_buf/0.3.0/source.json": "ce5b3bc65ce7065af437e1b1bfa3860e23c14a5a0e178ce8d25b8b4b6c1d19e8",
     "https://bcr.bazel.build/modules/rules_cc/0.0.1/MODULE.bazel": "cb2aa0747f84c6c3a78dad4e2049c154f08ab9d166b1273835a8174940365647",
     "https://bcr.bazel.build/modules/rules_cc/0.0.10/MODULE.bazel": "ec1705118f7eaedd6e118508d3d26deba2a4e76476ada7e0e3965211be012002",
     "https://bcr.bazel.build/modules/rules_cc/0.0.13/MODULE.bazel": "0e8529ed7b323dad0775ff924d2ae5af7640b23553dfcd4d34344c7e7a867191",
@@ -118,23 +166,32 @@
     "https://bcr.bazel.build/modules/rules_cc/0.0.16/MODULE.bazel": "7661303b8fc1b4d7f532e54e9d6565771fea666fbdf839e0a86affcd02defe87",
     "https://bcr.bazel.build/modules/rules_cc/0.0.17/MODULE.bazel": "2ae1d8f4238ec67d7185d8861cb0a2cdf4bc608697c331b95bf990e69b62e64a",
     "https://bcr.bazel.build/modules/rules_cc/0.0.2/MODULE.bazel": "6915987c90970493ab97393024c156ea8fb9f3bea953b2f3ec05c34f19b5695c",
+    "https://bcr.bazel.build/modules/rules_cc/0.0.5/MODULE.bazel": "be41f87587998fe8890cd82ea4e848ed8eb799e053c224f78f3ff7fe1a1d9b74",
     "https://bcr.bazel.build/modules/rules_cc/0.0.6/MODULE.bazel": "abf360251023dfe3efcef65ab9d56beefa8394d4176dd29529750e1c57eaa33f",
     "https://bcr.bazel.build/modules/rules_cc/0.0.8/MODULE.bazel": "964c85c82cfeb6f3855e6a07054fdb159aced38e99a5eecf7bce9d53990afa3e",
     "https://bcr.bazel.build/modules/rules_cc/0.0.9/MODULE.bazel": "836e76439f354b89afe6a911a7adf59a6b2518fafb174483ad78a2a2fde7b1c5",
     "https://bcr.bazel.build/modules/rules_cc/0.1.1/MODULE.bazel": "2f0222a6f229f0bf44cd711dc13c858dad98c62d52bd51d8fc3a764a83125513",
     "https://bcr.bazel.build/modules/rules_cc/0.1.1/source.json": "d61627377bd7dd1da4652063e368d9366fc9a73920bfa396798ad92172cf645c",
+    "https://bcr.bazel.build/modules/rules_foreign_cc/0.10.1/MODULE.bazel": "b9527010e5fef060af92b6724edb3691970a5b1f76f74b21d39f7d433641be60",
     "https://bcr.bazel.build/modules/rules_foreign_cc/0.12.0/MODULE.bazel": "d850fab025ce79a845077035861034393f1cc1efc1d9d58d766272a26ba67def",
     "https://bcr.bazel.build/modules/rules_foreign_cc/0.12.0/source.json": "c97ddc022179fe30d1a9b94425d1e56d0a633f72332c55463e584a52ce1b38ac",
     "https://bcr.bazel.build/modules/rules_foreign_cc/0.9.0/MODULE.bazel": "c9e8c682bf75b0e7c704166d79b599f93b72cfca5ad7477df596947891feeef6",
     "https://bcr.bazel.build/modules/rules_fuzzing/0.5.2/MODULE.bazel": "40c97d1144356f52905566c55811f13b299453a14ac7769dfba2ac38192337a8",
     "https://bcr.bazel.build/modules/rules_fuzzing/0.5.2/source.json": "c8b1e2c717646f1702290959a3302a178fb639d987ab61d548105019f11e527e",
+    "https://bcr.bazel.build/modules/rules_go/0.33.0/MODULE.bazel": "a2b11b64cd24bf94f57454f53288a5dacfe6cb86453eee7761b7637728c1910c",
+    "https://bcr.bazel.build/modules/rules_go/0.38.1/MODULE.bazel": "fb8e73dd3b6fc4ff9d260ceacd830114891d49904f5bda1c16bc147bcc254f71",
+    "https://bcr.bazel.build/modules/rules_go/0.39.1/MODULE.bazel": "d34fb2a249403a5f4339c754f1e63dc9e5ad70b47c5e97faee1441fc6636cd61",
     "https://bcr.bazel.build/modules/rules_go/0.41.0/MODULE.bazel": "55861d8e8bb0e62cbd2896f60ff303f62ffcb0eddb74ecb0e5c0cbe36fc292c8",
     "https://bcr.bazel.build/modules/rules_go/0.42.0/MODULE.bazel": "8cfa875b9aa8c6fce2b2e5925e73c1388173ea3c32a0db4d2b4804b453c14270",
     "https://bcr.bazel.build/modules/rules_go/0.46.0/MODULE.bazel": "3477df8bdcc49e698b9d25f734c4f3a9f5931ff34ee48a2c662be168f5f2d3fd",
+    "https://bcr.bazel.build/modules/rules_go/0.48.0/MODULE.bazel": "d00ebcae0908ee3f5e6d53f68677a303d6d59a77beef879598700049c3980a03",
+    "https://bcr.bazel.build/modules/rules_go/0.50.1/MODULE.bazel": "b91a308dc5782bb0a8021ad4330c81fea5bda77f96b9e4c117b9b9c8f6665ee0",
+    "https://bcr.bazel.build/modules/rules_go/0.51.0/MODULE.bazel": "b6920f505935bfd69381651c942496d99b16e2a12f3dd5263b90ded16f3b4d0f",
     "https://bcr.bazel.build/modules/rules_go/0.53.0/MODULE.bazel": "a4ed760d3ac0dbc0d7b967631a9a3fd9100d28f7d9fcf214b4df87d4bfff5f9a",
     "https://bcr.bazel.build/modules/rules_go/0.56.1/MODULE.bazel": "d5b835c548ac917345f1780cd2da52edc1130a908fe091c92096895303ae78a0",
     "https://bcr.bazel.build/modules/rules_go/0.56.1/source.json": "0c902f7272e8d4e47e459af97be472bc19dadbbe6023a0719d1adce8483ac75a",
     "https://bcr.bazel.build/modules/rules_java/4.0.0/MODULE.bazel": "5a78a7ae82cd1a33cef56dc578c7d2a46ed0dca12643ee45edbb8417899e6f74",
+    "https://bcr.bazel.build/modules/rules_java/5.1.0/MODULE.bazel": "324b6478b0343a3ce7a9add8586ad75d24076d6d43d2f622990b9c1cfd8a1b15",
     "https://bcr.bazel.build/modules/rules_java/5.3.5/MODULE.bazel": "a4ec4f2db570171e3e5eb753276ee4b389bae16b96207e9d3230895c99644b86",
     "https://bcr.bazel.build/modules/rules_java/6.0.0/MODULE.bazel": "8a43b7df601a7ec1af61d79345c17b31ea1fedc6711fd4abfd013ea612978e39",
     "https://bcr.bazel.build/modules/rules_java/6.4.0/MODULE.bazel": "e986a9fe25aeaa84ac17ca093ef13a4637f6107375f64667a15999f77db6c8f6",
@@ -143,6 +200,7 @@
     "https://bcr.bazel.build/modules/rules_java/7.12.2/MODULE.bazel": "579c505165ee757a4280ef83cda0150eea193eed3bef50b1004ba88b99da6de6",
     "https://bcr.bazel.build/modules/rules_java/7.2.0/MODULE.bazel": "06c0334c9be61e6cef2c8c84a7800cef502063269a5af25ceb100b192453d4ab",
     "https://bcr.bazel.build/modules/rules_java/7.3.2/MODULE.bazel": "50dece891cfdf1741ea230d001aa9c14398062f2b7c066470accace78e412bc2",
+    "https://bcr.bazel.build/modules/rules_java/7.4.0/MODULE.bazel": "a592852f8a3dd539e82ee6542013bf2cadfc4c6946be8941e189d224500a8934",
     "https://bcr.bazel.build/modules/rules_java/7.6.1/MODULE.bazel": "2f14b7e8a1aa2f67ae92bc69d1ec0fa8d9f827c4e17ff5e5f02e91caa3b2d0fe",
     "https://bcr.bazel.build/modules/rules_java/8.12.0/MODULE.bazel": "8e6590b961f2defdfc2811c089c75716cb2f06c8a4edeb9a8d85eaa64ee2a761",
     "https://bcr.bazel.build/modules/rules_java/8.12.0/source.json": "cbd5d55d9d38d4008a7d00bee5b5a5a4b6031fcd4a56515c9accbcd42c7be2ba",
@@ -152,6 +210,7 @@
     "https://bcr.bazel.build/modules/rules_jvm_external/5.1/MODULE.bazel": "33f6f999e03183f7d088c9be518a63467dfd0be94a11d0055fe2d210f89aa909",
     "https://bcr.bazel.build/modules/rules_jvm_external/5.2/MODULE.bazel": "d9351ba35217ad0de03816ef3ed63f89d411349353077348a45348b096615036",
     "https://bcr.bazel.build/modules/rules_jvm_external/5.3/MODULE.bazel": "bf93870767689637164657731849fb887ad086739bd5d360d90007a581d5527d",
+    "https://bcr.bazel.build/modules/rules_jvm_external/6.0/MODULE.bazel": "37c93a5a78d32e895d52f86a8d0416176e915daabd029ccb5594db422e87c495",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.1/MODULE.bazel": "75b5fec090dbd46cf9b7d8ea08cf84a0472d92ba3585b476f44c326eda8059c4",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.3/MODULE.bazel": "c998e060b85f71e00de5ec552019347c8bca255062c990ac02d051bb80a38df0",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.3/source.json": "6f5f5a5a4419ae4e37c35a5bb0a6ae657ed40b7abc5a5189111b47fcebe43197",
@@ -176,9 +235,11 @@
     "https://bcr.bazel.build/modules/rules_proto/7.1.0/MODULE.bazel": "002d62d9108f75bb807cd56245d45648f38275cb3a99dcd45dfb864c5d74cb96",
     "https://bcr.bazel.build/modules/rules_proto/7.1.0/source.json": "39f89066c12c24097854e8f57ab8558929f9c8d474d34b2c00ac04630ad8940e",
     "https://bcr.bazel.build/modules/rules_python/0.10.2/MODULE.bazel": "cc82bc96f2997baa545ab3ce73f196d040ffb8756fd2d66125a530031cd90e5f",
+    "https://bcr.bazel.build/modules/rules_python/0.20.0/MODULE.bazel": "bfe14d17f20e3fe900b9588f526f52c967a6f281e47a1d6b988679bd15082286",
     "https://bcr.bazel.build/modules/rules_python/0.23.1/MODULE.bazel": "49ffccf0511cb8414de28321f5fcf2a31312b47c40cc21577144b7447f2bf300",
     "https://bcr.bazel.build/modules/rules_python/0.25.0/MODULE.bazel": "72f1506841c920a1afec76975b35312410eea3aa7b63267436bfb1dd91d2d382",
     "https://bcr.bazel.build/modules/rules_python/0.28.0/MODULE.bazel": "cba2573d870babc976664a912539b320cbaa7114cd3e8f053c720171cde331ed",
+    "https://bcr.bazel.build/modules/rules_python/0.29.0/MODULE.bazel": "2ac8cd70524b4b9ec49a0b8284c79e4cd86199296f82f6e0d5da3f783d660c82",
     "https://bcr.bazel.build/modules/rules_python/0.31.0/MODULE.bazel": "93a43dc47ee570e6ec9f5779b2e64c1476a6ce921c48cc9a1678a91dd5f8fd58",
     "https://bcr.bazel.build/modules/rules_python/0.33.2/MODULE.bazel": "3e036c4ad8d804a4dad897d333d8dce200d943df4827cb849840055be8d2e937",
     "https://bcr.bazel.build/modules/rules_python/0.4.0/MODULE.bazel": "9208ee05fd48bf09ac60ed269791cf17fb343db56c8226a720fbb1cdf467166c",
@@ -191,6 +252,8 @@
     "https://bcr.bazel.build/modules/rules_shell/0.3.0/MODULE.bazel": "de4402cd12f4cc8fda2354fce179fdb068c0b9ca1ec2d2b17b3e21b24c1a937b",
     "https://bcr.bazel.build/modules/rules_shell/0.4.1/MODULE.bazel": "00e501db01bbf4e3e1dd1595959092c2fadf2087b2852d3f553b5370f5633592",
     "https://bcr.bazel.build/modules/rules_shell/0.4.1/source.json": "4757bd277fe1567763991c4425b483477bb82e35e777a56fd846eb5cceda324a",
+    "https://bcr.bazel.build/modules/rules_swift/1.18.0/MODULE.bazel": "a6aba73625d0dc64c7b4a1e831549b6e375fbddb9d2dde9d80c9de6ec45b24c9",
+    "https://bcr.bazel.build/modules/rules_swift/1.18.0/source.json": "9e636cabd446f43444ea2662341a9cbb74ecd87ab0557225ae73f1127cb7ff52",
     "https://bcr.bazel.build/modules/snappy/1.2.1/MODULE.bazel": "ccfc05c2f321f33fa4190a57280f3b0b428982f7c66618f2acadf162fa0bbb95",
     "https://bcr.bazel.build/modules/snappy/1.2.1/source.json": "9a3e0181edc27543b4304f377a216ad09e014859db57921261552d0a4939ee1d",
     "https://bcr.bazel.build/modules/stardoc/0.5.1/MODULE.bazel": "1a05d92974d0c122f5ccf09291442580317cdd859f07a8655f1db9a60374f9f8",
@@ -201,17 +264,24 @@
     "https://bcr.bazel.build/modules/stardoc/0.7.1/MODULE.bazel": "3548faea4ee5dda5580f9af150e79d0f6aea934fc60c1cc50f4efdd9420759e7",
     "https://bcr.bazel.build/modules/stardoc/0.7.2/MODULE.bazel": "fc152419aa2ea0f51c29583fab1e8c99ddefd5b3778421845606ee628629e0e5",
     "https://bcr.bazel.build/modules/stardoc/0.7.2/source.json": "58b029e5e901d6802967754adf0a9056747e8176f017cfe3607c0851f4d42216",
+    "https://bcr.bazel.build/modules/upb/0.0.0-20211020-160625a/MODULE.bazel": "6cced416be2dc5b9c05efd5b997049ba795e5e4e6fafbe1624f4587767638928",
     "https://bcr.bazel.build/modules/upb/0.0.0-20220923-a547704/MODULE.bazel": "7298990c00040a0e2f121f6c32544bab27d4452f80d9ce51349b1a28f3005c43",
+    "https://bcr.bazel.build/modules/upb/0.0.0-20230516-61a97ef/MODULE.bazel": "c0df5e35ad55e264160417fd0875932ee3c9dda63d9fccace35ac62f45e1b6f9",
+    "https://bcr.bazel.build/modules/upb/0.0.0-20230907-e7430e6/MODULE.bazel": "3a7dedadf70346e678dc059dbe44d05cbf3ab17f1ce43a1c7a42edc7cbf93fd9",
+    "https://bcr.bazel.build/modules/upb/0.0.0-20230907-e7430e6/source.json": "6e513de1d26d1ded97a1c98a8ee166ff9be371a71556d4bc91220332dd3aa48e",
     "https://bcr.bazel.build/modules/xz/5.4.5.bcr.4/MODULE.bazel": "2cbf58a2875e7f23ab77073902e009bfce25481fac231f950b89d57d441d5ef3",
     "https://bcr.bazel.build/modules/xz/5.4.5.bcr.4/source.json": "f497d68412aab85c8aa83b54c0eac229fdce67c95c98a7ad562d58504ecaf9e5",
     "https://bcr.bazel.build/modules/yaml-cpp/0.8.0/MODULE.bazel": "879443fbbf128457a187bea6f278d05789f3fc465bb22c2e0fe7fdb52e45eef0",
     "https://bcr.bazel.build/modules/yaml-cpp/0.8.0/source.json": "8571372713f5030dbe517fb0cec549cef82aa5b76b4a178f902b95673ab5841c",
     "https://bcr.bazel.build/modules/zlib/1.2.11/MODULE.bazel": "07b389abc85fdbca459b69e2ec656ae5622873af3f845e1c9d80fe179f3effa0",
     "https://bcr.bazel.build/modules/zlib/1.2.12/MODULE.bazel": "3b1a8834ada2a883674be8cbd36ede1b6ec481477ada359cd2d3ddc562340b27",
+    "https://bcr.bazel.build/modules/zlib/1.2.13/MODULE.bazel": "aa6deb1b83c18ffecd940c4119aff9567cd0a671d7bba756741cb2ef043a29d5",
+    "https://bcr.bazel.build/modules/zlib/1.3.1.bcr.1/MODULE.bazel": "6a9fe6e3fc865715a7be9823ce694ceb01e364c35f7a846bf0d2b34762bc066b",
     "https://bcr.bazel.build/modules/zlib/1.3.1.bcr.3/MODULE.bazel": "af322bc08976524477c79d1e45e241b6efbeb918c497e8840b8ab116802dda79",
     "https://bcr.bazel.build/modules/zlib/1.3.1.bcr.5/MODULE.bazel": "eec517b5bbe5492629466e11dae908d043364302283de25581e3eb944326c4ca",
     "https://bcr.bazel.build/modules/zlib/1.3.1.bcr.5/source.json": "22bc55c47af97246cfc093d0acf683a7869377de362b5d1c552c2c2e16b7a806",
     "https://bcr.bazel.build/modules/zlib/1.3.1/MODULE.bazel": "751c9940dcfe869f5f7274e1295422a34623555916eb98c174c1e945594bf198",
+    "https://bcr.bazel.build/modules/zlib/1.3/MODULE.bazel": "6a9c02f19a24dcedb05572b2381446e27c272cd383aed11d41d99da9e3167a72",
     "https://bcr.bazel.build/modules/zstd/1.5.6/MODULE.bazel": "471ebe7d3cdd8c6469390fcf623eb4779ff55fbee0a87f1dc57a1def468b96d4",
     "https://bcr.bazel.build/modules/zstd/1.5.7/MODULE.bazel": "f5780cdbd6f4c5bb985a20f839844316fe48fb5e463056f372dbc37cfabdf450",
     "https://bcr.bazel.build/modules/zstd/1.5.7/source.json": "f72c48184b6528ffc908a5a2bcbf3070c6684f3db03da2182c8ca999ae5f5cfd"
@@ -465,7 +535,7 @@
     "@@apple_support+//crosstool:setup.bzl%apple_cc_configure_extension": {
       "general": {
         "bzlTransitiveDigest": "xcBTf2+GaloFpg7YEh/Bv+1yAczRkiCt3DGws4K7kSk=",
-        "usagesDigest": "3L+PK6aRnliv0iIS8m3kdo+LjmvjJWoFCm3qZcPSg+8=",
+        "usagesDigest": "f700ASGHSlNlHWdeh4mrBuHr6boot3gLQzH9SMYrbBY=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -972,6 +1042,31 @@
             "rules_boost+",
             "com_github_nelhage_rules_boost",
             "rules_boost+"
+          ]
+        ]
+      }
+    },
+    "@@rules_buf+//buf:extensions.bzl%buf": {
+      "general": {
+        "bzlTransitiveDigest": "E1cTyDRfMwI6QggVcmeh/yusmMsZdu3vrV45lAjdujA=",
+        "usagesDigest": "WfdaGsgPETn2zmyUkOCMquwb2a1i2Vx+7W8YmJvkiHw=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "rules_buf_toolchains": {
+            "repoRuleId": "@@rules_buf+//buf/internal:toolchain.bzl%buf_download_releases",
+            "attributes": {
+              "version": "v1.50.0",
+              "sha256": ""
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "rules_buf+",
+            "bazel_tools",
+            "bazel_tools"
           ]
         ]
       }
@@ -1925,9 +2020,10 @@
     "@@rules_python+//python/extensions:pip.bzl%pip": {
       "general": {
         "bzlTransitiveDigest": "AjXjzEGt60iE5uNLGM4/MYd59GyFpYEzYUHAXYPKv90=",
-        "usagesDigest": "uyVjx24f4g5US3lxyDSpbxwWDqARkBh1vViswkqGoPk=",
+        "usagesDigest": "uA+I4Ii+rSpCp+DshDfAq7YpCwekwvzFsQfZcQBnf2A=",
         "recordedFileInputs": {
           "@@//bazel/thirdparty/requirements.txt": "92d6d581c7950faeeb57532ba76d9ec5f366f817d193866e9d24ce3ee10a3f8c",
+          "@@grpc+//requirements.bazel.txt": "4c8c19a2a8f22108bf29feb5cc2694eb0c7e0c82ba0364df27fe5f5e4d7936e5",
           "@@protobuf+//python/requirements.txt": "983be60d3cec4b319dcab6d48aeb3f5b2f7c3350f26b3a9e97486c37967c73c5",
           "@@rules_fuzzing+//fuzzing/requirements.txt": "ab04664be026b632a0d2a2446c4f65982b7654f5b6851d2f9d399a19b7242a5b",
           "@@rules_python+//tools/publish/requirements_darwin.txt": "2994136eab7e57b083c3de76faf46f70fad130bc8e7360a7fed2b288b69e79dc",
@@ -1940,6 +2036,1761 @@
           "RULES_PYTHON_REPO_DEBUG_VERBOSITY": null
         },
         "generatedRepoSpecs": {
+          "grpc_python_dependencies_310_absl_py": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "absl-py==1.4.0"
+            }
+          },
+          "grpc_python_dependencies_310_cachetools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "cachetools==5.3.2"
+            }
+          },
+          "grpc_python_dependencies_310_certifi": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "certifi==2023.7.22"
+            }
+          },
+          "grpc_python_dependencies_310_chardet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "chardet==3.0.4"
+            }
+          },
+          "grpc_python_dependencies_310_charset_normalizer": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "charset-normalizer==3.3.2"
+            }
+          },
+          "grpc_python_dependencies_310_coverage": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "coverage==4.5.4"
+            }
+          },
+          "grpc_python_dependencies_310_cython": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "cython==3.0.0"
+            }
+          },
+          "grpc_python_dependencies_310_deprecated": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "Deprecated==1.2.14"
+            }
+          },
+          "grpc_python_dependencies_310_gevent": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "gevent==22.08.0"
+            }
+          },
+          "grpc_python_dependencies_310_google_api_core": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "google-api-core==1.34.1"
+            }
+          },
+          "grpc_python_dependencies_310_google_auth": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "google-auth==2.23.4"
+            }
+          },
+          "grpc_python_dependencies_310_google_cloud_monitoring": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "google-cloud-monitoring==2.16.0"
+            }
+          },
+          "grpc_python_dependencies_310_google_cloud_trace": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "google-cloud-trace==1.11.3"
+            }
+          },
+          "grpc_python_dependencies_310_googleapis_common_protos": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "googleapis-common-protos==1.63.1"
+            }
+          },
+          "grpc_python_dependencies_310_greenlet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "greenlet==1.1.3.post0"
+            }
+          },
+          "grpc_python_dependencies_310_idna": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "idna==2.7"
+            }
+          },
+          "grpc_python_dependencies_310_importlib_metadata": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "importlib-metadata==6.11.0"
+            }
+          },
+          "grpc_python_dependencies_310_oauth2client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "oauth2client==4.1.0"
+            }
+          },
+          "grpc_python_dependencies_310_opencensus_context": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "opencensus-context==0.1.3"
+            }
+          },
+          "grpc_python_dependencies_310_opentelemetry_api": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "opentelemetry-api==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_310_opentelemetry_exporter_prometheus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "opentelemetry-exporter-prometheus==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_310_opentelemetry_resourcedetector_gcp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "opentelemetry-resourcedetector-gcp==1.6.0a0"
+            }
+          },
+          "grpc_python_dependencies_310_opentelemetry_sdk": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "opentelemetry-sdk==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_310_opentelemetry_semantic_conventions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "opentelemetry-semantic-conventions==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_310_prometheus_client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "prometheus_client==0.20.0"
+            }
+          },
+          "grpc_python_dependencies_310_proto_plus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "proto-plus==1.22.3"
+            }
+          },
+          "grpc_python_dependencies_310_protobuf": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "protobuf>=5.27.1,<6.0dev"
+            }
+          },
+          "grpc_python_dependencies_310_pyasn1": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "pyasn1==0.5.0"
+            }
+          },
+          "grpc_python_dependencies_310_pyasn1_modules": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "pyasn1-modules==0.3.0"
+            }
+          },
+          "grpc_python_dependencies_310_requests": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "requests==2.25.1"
+            }
+          },
+          "grpc_python_dependencies_310_rsa": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "rsa==4.9"
+            }
+          },
+          "grpc_python_dependencies_310_setuptools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "setuptools==44.1.1"
+            }
+          },
+          "grpc_python_dependencies_310_typing_extensions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "typing-extensions==4.9.0"
+            }
+          },
+          "grpc_python_dependencies_310_urllib3": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "urllib3==1.26.18"
+            }
+          },
+          "grpc_python_dependencies_310_wheel": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "wheel==0.38.1"
+            }
+          },
+          "grpc_python_dependencies_310_wrapt": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "wrapt==1.16.0"
+            }
+          },
+          "grpc_python_dependencies_310_zipp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "zipp==3.17.0"
+            }
+          },
+          "grpc_python_dependencies_310_zope_event": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "zope.event==4.5.0"
+            }
+          },
+          "grpc_python_dependencies_310_zope_interface": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "grpc_python_dependencies_310",
+              "requirement": "zope.interface==6.1"
+            }
+          },
+          "grpc_python_dependencies_311_absl_py": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "absl-py==1.4.0"
+            }
+          },
+          "grpc_python_dependencies_311_cachetools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "cachetools==5.3.2"
+            }
+          },
+          "grpc_python_dependencies_311_certifi": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "certifi==2023.7.22"
+            }
+          },
+          "grpc_python_dependencies_311_chardet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "chardet==3.0.4"
+            }
+          },
+          "grpc_python_dependencies_311_charset_normalizer": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "charset-normalizer==3.3.2"
+            }
+          },
+          "grpc_python_dependencies_311_coverage": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "coverage==4.5.4"
+            }
+          },
+          "grpc_python_dependencies_311_cython": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "cython==3.0.0"
+            }
+          },
+          "grpc_python_dependencies_311_deprecated": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "Deprecated==1.2.14"
+            }
+          },
+          "grpc_python_dependencies_311_gevent": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "gevent==22.08.0"
+            }
+          },
+          "grpc_python_dependencies_311_google_api_core": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "google-api-core==1.34.1"
+            }
+          },
+          "grpc_python_dependencies_311_google_auth": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "google-auth==2.23.4"
+            }
+          },
+          "grpc_python_dependencies_311_google_cloud_monitoring": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "google-cloud-monitoring==2.16.0"
+            }
+          },
+          "grpc_python_dependencies_311_google_cloud_trace": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "google-cloud-trace==1.11.3"
+            }
+          },
+          "grpc_python_dependencies_311_googleapis_common_protos": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "googleapis-common-protos==1.63.1"
+            }
+          },
+          "grpc_python_dependencies_311_greenlet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "greenlet==1.1.3.post0"
+            }
+          },
+          "grpc_python_dependencies_311_idna": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "idna==2.7"
+            }
+          },
+          "grpc_python_dependencies_311_importlib_metadata": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "importlib-metadata==6.11.0"
+            }
+          },
+          "grpc_python_dependencies_311_oauth2client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "oauth2client==4.1.0"
+            }
+          },
+          "grpc_python_dependencies_311_opencensus_context": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "opencensus-context==0.1.3"
+            }
+          },
+          "grpc_python_dependencies_311_opentelemetry_api": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "opentelemetry-api==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_311_opentelemetry_exporter_prometheus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "opentelemetry-exporter-prometheus==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_311_opentelemetry_resourcedetector_gcp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "opentelemetry-resourcedetector-gcp==1.6.0a0"
+            }
+          },
+          "grpc_python_dependencies_311_opentelemetry_sdk": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "opentelemetry-sdk==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_311_opentelemetry_semantic_conventions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "opentelemetry-semantic-conventions==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_311_prometheus_client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "prometheus_client==0.20.0"
+            }
+          },
+          "grpc_python_dependencies_311_proto_plus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "proto-plus==1.22.3"
+            }
+          },
+          "grpc_python_dependencies_311_protobuf": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "protobuf>=5.27.1,<6.0dev"
+            }
+          },
+          "grpc_python_dependencies_311_pyasn1": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "pyasn1==0.5.0"
+            }
+          },
+          "grpc_python_dependencies_311_pyasn1_modules": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "pyasn1-modules==0.3.0"
+            }
+          },
+          "grpc_python_dependencies_311_requests": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "requests==2.25.1"
+            }
+          },
+          "grpc_python_dependencies_311_rsa": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "rsa==4.9"
+            }
+          },
+          "grpc_python_dependencies_311_setuptools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "setuptools==44.1.1"
+            }
+          },
+          "grpc_python_dependencies_311_typing_extensions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "typing-extensions==4.9.0"
+            }
+          },
+          "grpc_python_dependencies_311_urllib3": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "urllib3==1.26.18"
+            }
+          },
+          "grpc_python_dependencies_311_wheel": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "wheel==0.38.1"
+            }
+          },
+          "grpc_python_dependencies_311_wrapt": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "wrapt==1.16.0"
+            }
+          },
+          "grpc_python_dependencies_311_zipp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "zipp==3.17.0"
+            }
+          },
+          "grpc_python_dependencies_311_zope_event": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "zope.event==4.5.0"
+            }
+          },
+          "grpc_python_dependencies_311_zope_interface": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "grpc_python_dependencies_311",
+              "requirement": "zope.interface==6.1"
+            }
+          },
+          "grpc_python_dependencies_312_absl_py": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "absl-py==1.4.0"
+            }
+          },
+          "grpc_python_dependencies_312_cachetools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "cachetools==5.3.2"
+            }
+          },
+          "grpc_python_dependencies_312_certifi": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "certifi==2023.7.22"
+            }
+          },
+          "grpc_python_dependencies_312_chardet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "chardet==3.0.4"
+            }
+          },
+          "grpc_python_dependencies_312_charset_normalizer": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "charset-normalizer==3.3.2"
+            }
+          },
+          "grpc_python_dependencies_312_coverage": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "coverage==4.5.4"
+            }
+          },
+          "grpc_python_dependencies_312_cython": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "cython==3.0.0"
+            }
+          },
+          "grpc_python_dependencies_312_deprecated": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "Deprecated==1.2.14"
+            }
+          },
+          "grpc_python_dependencies_312_gevent": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "gevent==22.08.0"
+            }
+          },
+          "grpc_python_dependencies_312_google_api_core": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "google-api-core==1.34.1"
+            }
+          },
+          "grpc_python_dependencies_312_google_auth": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "google-auth==2.23.4"
+            }
+          },
+          "grpc_python_dependencies_312_google_cloud_monitoring": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "google-cloud-monitoring==2.16.0"
+            }
+          },
+          "grpc_python_dependencies_312_google_cloud_trace": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "google-cloud-trace==1.11.3"
+            }
+          },
+          "grpc_python_dependencies_312_googleapis_common_protos": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "googleapis-common-protos==1.63.1"
+            }
+          },
+          "grpc_python_dependencies_312_greenlet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "greenlet==1.1.3.post0"
+            }
+          },
+          "grpc_python_dependencies_312_idna": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "idna==2.7"
+            }
+          },
+          "grpc_python_dependencies_312_importlib_metadata": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "importlib-metadata==6.11.0"
+            }
+          },
+          "grpc_python_dependencies_312_oauth2client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "oauth2client==4.1.0"
+            }
+          },
+          "grpc_python_dependencies_312_opencensus_context": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "opencensus-context==0.1.3"
+            }
+          },
+          "grpc_python_dependencies_312_opentelemetry_api": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "opentelemetry-api==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_312_opentelemetry_exporter_prometheus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "opentelemetry-exporter-prometheus==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_312_opentelemetry_resourcedetector_gcp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "opentelemetry-resourcedetector-gcp==1.6.0a0"
+            }
+          },
+          "grpc_python_dependencies_312_opentelemetry_sdk": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "opentelemetry-sdk==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_312_opentelemetry_semantic_conventions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "opentelemetry-semantic-conventions==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_312_prometheus_client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "prometheus_client==0.20.0"
+            }
+          },
+          "grpc_python_dependencies_312_proto_plus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "proto-plus==1.22.3"
+            }
+          },
+          "grpc_python_dependencies_312_protobuf": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "protobuf>=5.27.1,<6.0dev"
+            }
+          },
+          "grpc_python_dependencies_312_pyasn1": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "pyasn1==0.5.0"
+            }
+          },
+          "grpc_python_dependencies_312_pyasn1_modules": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "pyasn1-modules==0.3.0"
+            }
+          },
+          "grpc_python_dependencies_312_requests": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "requests==2.25.1"
+            }
+          },
+          "grpc_python_dependencies_312_rsa": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "rsa==4.9"
+            }
+          },
+          "grpc_python_dependencies_312_setuptools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "setuptools==44.1.1"
+            }
+          },
+          "grpc_python_dependencies_312_typing_extensions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "typing-extensions==4.9.0"
+            }
+          },
+          "grpc_python_dependencies_312_urllib3": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "urllib3==1.26.18"
+            }
+          },
+          "grpc_python_dependencies_312_wheel": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "wheel==0.38.1"
+            }
+          },
+          "grpc_python_dependencies_312_wrapt": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "wrapt==1.16.0"
+            }
+          },
+          "grpc_python_dependencies_312_zipp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "zipp==3.17.0"
+            }
+          },
+          "grpc_python_dependencies_312_zope_event": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "zope.event==4.5.0"
+            }
+          },
+          "grpc_python_dependencies_312_zope_interface": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "grpc_python_dependencies_312",
+              "requirement": "zope.interface==6.1"
+            }
+          },
+          "grpc_python_dependencies_38_absl_py": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "absl-py==1.4.0"
+            }
+          },
+          "grpc_python_dependencies_38_cachetools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "cachetools==5.3.2"
+            }
+          },
+          "grpc_python_dependencies_38_certifi": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "certifi==2023.7.22"
+            }
+          },
+          "grpc_python_dependencies_38_chardet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "chardet==3.0.4"
+            }
+          },
+          "grpc_python_dependencies_38_charset_normalizer": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "charset-normalizer==3.3.2"
+            }
+          },
+          "grpc_python_dependencies_38_coverage": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "coverage==4.5.4"
+            }
+          },
+          "grpc_python_dependencies_38_cython": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "cython==3.0.0"
+            }
+          },
+          "grpc_python_dependencies_38_deprecated": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "Deprecated==1.2.14"
+            }
+          },
+          "grpc_python_dependencies_38_gevent": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "gevent==22.08.0"
+            }
+          },
+          "grpc_python_dependencies_38_google_api_core": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "google-api-core==1.34.1"
+            }
+          },
+          "grpc_python_dependencies_38_google_auth": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "google-auth==2.23.4"
+            }
+          },
+          "grpc_python_dependencies_38_google_cloud_monitoring": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "google-cloud-monitoring==2.16.0"
+            }
+          },
+          "grpc_python_dependencies_38_google_cloud_trace": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "google-cloud-trace==1.11.3"
+            }
+          },
+          "grpc_python_dependencies_38_googleapis_common_protos": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "googleapis-common-protos==1.63.1"
+            }
+          },
+          "grpc_python_dependencies_38_greenlet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "greenlet==1.1.3.post0"
+            }
+          },
+          "grpc_python_dependencies_38_idna": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "idna==2.7"
+            }
+          },
+          "grpc_python_dependencies_38_importlib_metadata": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "importlib-metadata==6.11.0"
+            }
+          },
+          "grpc_python_dependencies_38_oauth2client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "oauth2client==4.1.0"
+            }
+          },
+          "grpc_python_dependencies_38_opencensus_context": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "opencensus-context==0.1.3"
+            }
+          },
+          "grpc_python_dependencies_38_opentelemetry_api": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "opentelemetry-api==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_38_opentelemetry_exporter_prometheus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "opentelemetry-exporter-prometheus==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_38_opentelemetry_resourcedetector_gcp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "opentelemetry-resourcedetector-gcp==1.6.0a0"
+            }
+          },
+          "grpc_python_dependencies_38_opentelemetry_sdk": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "opentelemetry-sdk==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_38_opentelemetry_semantic_conventions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "opentelemetry-semantic-conventions==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_38_prometheus_client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "prometheus_client==0.20.0"
+            }
+          },
+          "grpc_python_dependencies_38_proto_plus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "proto-plus==1.22.3"
+            }
+          },
+          "grpc_python_dependencies_38_protobuf": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "protobuf>=5.27.1,<6.0dev"
+            }
+          },
+          "grpc_python_dependencies_38_pyasn1": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "pyasn1==0.5.0"
+            }
+          },
+          "grpc_python_dependencies_38_pyasn1_modules": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "pyasn1-modules==0.3.0"
+            }
+          },
+          "grpc_python_dependencies_38_requests": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "requests==2.25.1"
+            }
+          },
+          "grpc_python_dependencies_38_rsa": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "rsa==4.9"
+            }
+          },
+          "grpc_python_dependencies_38_setuptools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "setuptools==44.1.1"
+            }
+          },
+          "grpc_python_dependencies_38_typing_extensions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "typing-extensions==4.9.0"
+            }
+          },
+          "grpc_python_dependencies_38_urllib3": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "urllib3==1.26.18"
+            }
+          },
+          "grpc_python_dependencies_38_wheel": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "wheel==0.38.1"
+            }
+          },
+          "grpc_python_dependencies_38_wrapt": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "wrapt==1.16.0"
+            }
+          },
+          "grpc_python_dependencies_38_zipp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "zipp==3.17.0"
+            }
+          },
+          "grpc_python_dependencies_38_zope_event": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "zope.event==4.5.0"
+            }
+          },
+          "grpc_python_dependencies_38_zope_interface": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_8_host//:python",
+              "repo": "grpc_python_dependencies_38",
+              "requirement": "zope.interface==6.1"
+            }
+          },
+          "grpc_python_dependencies_39_absl_py": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "absl-py==1.4.0"
+            }
+          },
+          "grpc_python_dependencies_39_cachetools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "cachetools==5.3.2"
+            }
+          },
+          "grpc_python_dependencies_39_certifi": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "certifi==2023.7.22"
+            }
+          },
+          "grpc_python_dependencies_39_chardet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "chardet==3.0.4"
+            }
+          },
+          "grpc_python_dependencies_39_charset_normalizer": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "charset-normalizer==3.3.2"
+            }
+          },
+          "grpc_python_dependencies_39_coverage": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "coverage==4.5.4"
+            }
+          },
+          "grpc_python_dependencies_39_cython": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "cython==3.0.0"
+            }
+          },
+          "grpc_python_dependencies_39_deprecated": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "Deprecated==1.2.14"
+            }
+          },
+          "grpc_python_dependencies_39_gevent": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "gevent==22.08.0"
+            }
+          },
+          "grpc_python_dependencies_39_google_api_core": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "google-api-core==1.34.1"
+            }
+          },
+          "grpc_python_dependencies_39_google_auth": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "google-auth==2.23.4"
+            }
+          },
+          "grpc_python_dependencies_39_google_cloud_monitoring": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "google-cloud-monitoring==2.16.0"
+            }
+          },
+          "grpc_python_dependencies_39_google_cloud_trace": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "google-cloud-trace==1.11.3"
+            }
+          },
+          "grpc_python_dependencies_39_googleapis_common_protos": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "googleapis-common-protos==1.63.1"
+            }
+          },
+          "grpc_python_dependencies_39_greenlet": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "greenlet==1.1.3.post0"
+            }
+          },
+          "grpc_python_dependencies_39_idna": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "idna==2.7"
+            }
+          },
+          "grpc_python_dependencies_39_importlib_metadata": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "importlib-metadata==6.11.0"
+            }
+          },
+          "grpc_python_dependencies_39_oauth2client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "oauth2client==4.1.0"
+            }
+          },
+          "grpc_python_dependencies_39_opencensus_context": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "opencensus-context==0.1.3"
+            }
+          },
+          "grpc_python_dependencies_39_opentelemetry_api": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "opentelemetry-api==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_39_opentelemetry_exporter_prometheus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "opentelemetry-exporter-prometheus==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_39_opentelemetry_resourcedetector_gcp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "opentelemetry-resourcedetector-gcp==1.6.0a0"
+            }
+          },
+          "grpc_python_dependencies_39_opentelemetry_sdk": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "opentelemetry-sdk==1.25.0"
+            }
+          },
+          "grpc_python_dependencies_39_opentelemetry_semantic_conventions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "opentelemetry-semantic-conventions==0.46b0"
+            }
+          },
+          "grpc_python_dependencies_39_prometheus_client": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "prometheus_client==0.20.0"
+            }
+          },
+          "grpc_python_dependencies_39_proto_plus": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "proto-plus==1.22.3"
+            }
+          },
+          "grpc_python_dependencies_39_protobuf": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "protobuf>=5.27.1,<6.0dev"
+            }
+          },
+          "grpc_python_dependencies_39_pyasn1": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "pyasn1==0.5.0"
+            }
+          },
+          "grpc_python_dependencies_39_pyasn1_modules": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "pyasn1-modules==0.3.0"
+            }
+          },
+          "grpc_python_dependencies_39_requests": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "requests==2.25.1"
+            }
+          },
+          "grpc_python_dependencies_39_rsa": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "rsa==4.9"
+            }
+          },
+          "grpc_python_dependencies_39_setuptools": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "setuptools==44.1.1"
+            }
+          },
+          "grpc_python_dependencies_39_typing_extensions": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "typing-extensions==4.9.0"
+            }
+          },
+          "grpc_python_dependencies_39_urllib3": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "urllib3==1.26.18"
+            }
+          },
+          "grpc_python_dependencies_39_wheel": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "wheel==0.38.1"
+            }
+          },
+          "grpc_python_dependencies_39_wrapt": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "wrapt==1.16.0"
+            }
+          },
+          "grpc_python_dependencies_39_zipp": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "zipp==3.17.0"
+            }
+          },
+          "grpc_python_dependencies_39_zope_event": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "zope.event==4.5.0"
+            }
+          },
+          "grpc_python_dependencies_39_zope_interface": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@grpc_python_dependencies//{name}:{target}",
+              "python_interpreter_target": "@@rules_python++python+python_3_9_host//:python",
+              "repo": "grpc_python_dependencies_39",
+              "requirement": "zope.interface==6.1"
+            }
+          },
           "pip_deps_310_numpy": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
@@ -4750,6 +6601,96 @@
               "urls": [
                 "https://files.pythonhosted.org/packages/54/bf/5c0000c44ebc80123ecbdddba1f5dcd94a5ada602a9c225d84b5aaa55e86/zipp-3.20.2.tar.gz"
               ]
+            }
+          },
+          "grpc_python_dependencies": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:hub_repository.bzl%hub_repository",
+            "attributes": {
+              "repo_name": "grpc_python_dependencies",
+              "extra_hub_aliases": {},
+              "whl_map": {
+                "absl_py": "{\"grpc_python_dependencies_310_absl_py\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_absl_py\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_absl_py\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_absl_py\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_absl_py\":[{\"version\":\"3.9\"}]}",
+                "cachetools": "{\"grpc_python_dependencies_310_cachetools\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_cachetools\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_cachetools\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_cachetools\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_cachetools\":[{\"version\":\"3.9\"}]}",
+                "certifi": "{\"grpc_python_dependencies_310_certifi\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_certifi\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_certifi\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_certifi\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_certifi\":[{\"version\":\"3.9\"}]}",
+                "chardet": "{\"grpc_python_dependencies_310_chardet\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_chardet\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_chardet\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_chardet\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_chardet\":[{\"version\":\"3.9\"}]}",
+                "charset_normalizer": "{\"grpc_python_dependencies_310_charset_normalizer\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_charset_normalizer\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_charset_normalizer\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_charset_normalizer\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_charset_normalizer\":[{\"version\":\"3.9\"}]}",
+                "coverage": "{\"grpc_python_dependencies_310_coverage\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_coverage\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_coverage\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_coverage\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_coverage\":[{\"version\":\"3.9\"}]}",
+                "cython": "{\"grpc_python_dependencies_310_cython\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_cython\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_cython\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_cython\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_cython\":[{\"version\":\"3.9\"}]}",
+                "deprecated": "{\"grpc_python_dependencies_310_deprecated\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_deprecated\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_deprecated\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_deprecated\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_deprecated\":[{\"version\":\"3.9\"}]}",
+                "gevent": "{\"grpc_python_dependencies_310_gevent\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_gevent\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_gevent\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_gevent\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_gevent\":[{\"version\":\"3.9\"}]}",
+                "google_api_core": "{\"grpc_python_dependencies_310_google_api_core\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_google_api_core\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_google_api_core\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_google_api_core\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_google_api_core\":[{\"version\":\"3.9\"}]}",
+                "google_auth": "{\"grpc_python_dependencies_310_google_auth\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_google_auth\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_google_auth\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_google_auth\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_google_auth\":[{\"version\":\"3.9\"}]}",
+                "google_cloud_monitoring": "{\"grpc_python_dependencies_310_google_cloud_monitoring\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_google_cloud_monitoring\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_google_cloud_monitoring\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_google_cloud_monitoring\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_google_cloud_monitoring\":[{\"version\":\"3.9\"}]}",
+                "google_cloud_trace": "{\"grpc_python_dependencies_310_google_cloud_trace\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_google_cloud_trace\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_google_cloud_trace\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_google_cloud_trace\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_google_cloud_trace\":[{\"version\":\"3.9\"}]}",
+                "googleapis_common_protos": "{\"grpc_python_dependencies_310_googleapis_common_protos\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_googleapis_common_protos\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_googleapis_common_protos\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_googleapis_common_protos\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_googleapis_common_protos\":[{\"version\":\"3.9\"}]}",
+                "greenlet": "{\"grpc_python_dependencies_310_greenlet\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_greenlet\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_greenlet\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_greenlet\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_greenlet\":[{\"version\":\"3.9\"}]}",
+                "idna": "{\"grpc_python_dependencies_310_idna\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_idna\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_idna\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_idna\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_idna\":[{\"version\":\"3.9\"}]}",
+                "importlib_metadata": "{\"grpc_python_dependencies_310_importlib_metadata\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_importlib_metadata\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_importlib_metadata\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_importlib_metadata\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_importlib_metadata\":[{\"version\":\"3.9\"}]}",
+                "oauth2client": "{\"grpc_python_dependencies_310_oauth2client\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_oauth2client\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_oauth2client\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_oauth2client\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_oauth2client\":[{\"version\":\"3.9\"}]}",
+                "opencensus_context": "{\"grpc_python_dependencies_310_opencensus_context\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_opencensus_context\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_opencensus_context\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_opencensus_context\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_opencensus_context\":[{\"version\":\"3.9\"}]}",
+                "opentelemetry_api": "{\"grpc_python_dependencies_310_opentelemetry_api\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_opentelemetry_api\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_opentelemetry_api\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_opentelemetry_api\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_opentelemetry_api\":[{\"version\":\"3.9\"}]}",
+                "opentelemetry_exporter_prometheus": "{\"grpc_python_dependencies_310_opentelemetry_exporter_prometheus\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_opentelemetry_exporter_prometheus\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_opentelemetry_exporter_prometheus\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_opentelemetry_exporter_prometheus\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_opentelemetry_exporter_prometheus\":[{\"version\":\"3.9\"}]}",
+                "opentelemetry_resourcedetector_gcp": "{\"grpc_python_dependencies_310_opentelemetry_resourcedetector_gcp\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_opentelemetry_resourcedetector_gcp\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_opentelemetry_resourcedetector_gcp\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_opentelemetry_resourcedetector_gcp\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_opentelemetry_resourcedetector_gcp\":[{\"version\":\"3.9\"}]}",
+                "opentelemetry_sdk": "{\"grpc_python_dependencies_310_opentelemetry_sdk\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_opentelemetry_sdk\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_opentelemetry_sdk\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_opentelemetry_sdk\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_opentelemetry_sdk\":[{\"version\":\"3.9\"}]}",
+                "opentelemetry_semantic_conventions": "{\"grpc_python_dependencies_310_opentelemetry_semantic_conventions\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_opentelemetry_semantic_conventions\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_opentelemetry_semantic_conventions\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_opentelemetry_semantic_conventions\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_opentelemetry_semantic_conventions\":[{\"version\":\"3.9\"}]}",
+                "prometheus_client": "{\"grpc_python_dependencies_310_prometheus_client\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_prometheus_client\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_prometheus_client\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_prometheus_client\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_prometheus_client\":[{\"version\":\"3.9\"}]}",
+                "proto_plus": "{\"grpc_python_dependencies_310_proto_plus\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_proto_plus\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_proto_plus\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_proto_plus\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_proto_plus\":[{\"version\":\"3.9\"}]}",
+                "protobuf": "{\"grpc_python_dependencies_310_protobuf\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_protobuf\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_protobuf\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_protobuf\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_protobuf\":[{\"version\":\"3.9\"}]}",
+                "pyasn1": "{\"grpc_python_dependencies_310_pyasn1\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_pyasn1\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_pyasn1\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_pyasn1\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_pyasn1\":[{\"version\":\"3.9\"}]}",
+                "pyasn1_modules": "{\"grpc_python_dependencies_310_pyasn1_modules\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_pyasn1_modules\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_pyasn1_modules\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_pyasn1_modules\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_pyasn1_modules\":[{\"version\":\"3.9\"}]}",
+                "requests": "{\"grpc_python_dependencies_310_requests\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_requests\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_requests\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_requests\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_requests\":[{\"version\":\"3.9\"}]}",
+                "rsa": "{\"grpc_python_dependencies_310_rsa\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_rsa\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_rsa\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_rsa\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_rsa\":[{\"version\":\"3.9\"}]}",
+                "setuptools": "{\"grpc_python_dependencies_310_setuptools\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_setuptools\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_setuptools\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_setuptools\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_setuptools\":[{\"version\":\"3.9\"}]}",
+                "typing_extensions": "{\"grpc_python_dependencies_310_typing_extensions\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_typing_extensions\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_typing_extensions\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_typing_extensions\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_typing_extensions\":[{\"version\":\"3.9\"}]}",
+                "urllib3": "{\"grpc_python_dependencies_310_urllib3\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_urllib3\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_urllib3\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_urllib3\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_urllib3\":[{\"version\":\"3.9\"}]}",
+                "wheel": "{\"grpc_python_dependencies_310_wheel\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_wheel\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_wheel\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_wheel\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_wheel\":[{\"version\":\"3.9\"}]}",
+                "wrapt": "{\"grpc_python_dependencies_310_wrapt\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_wrapt\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_wrapt\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_wrapt\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_wrapt\":[{\"version\":\"3.9\"}]}",
+                "zipp": "{\"grpc_python_dependencies_310_zipp\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_zipp\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_zipp\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_zipp\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_zipp\":[{\"version\":\"3.9\"}]}",
+                "zope_event": "{\"grpc_python_dependencies_310_zope_event\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_zope_event\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_zope_event\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_zope_event\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_zope_event\":[{\"version\":\"3.9\"}]}",
+                "zope_interface": "{\"grpc_python_dependencies_310_zope_interface\":[{\"version\":\"3.10\"}],\"grpc_python_dependencies_311_zope_interface\":[{\"version\":\"3.11\"}],\"grpc_python_dependencies_312_zope_interface\":[{\"version\":\"3.12\"}],\"grpc_python_dependencies_38_zope_interface\":[{\"version\":\"3.8\"}],\"grpc_python_dependencies_39_zope_interface\":[{\"version\":\"3.9\"}]}"
+              },
+              "packages": [
+                "absl_py",
+                "cachetools",
+                "certifi",
+                "chardet",
+                "charset_normalizer",
+                "coverage",
+                "cython",
+                "deprecated",
+                "gevent",
+                "google_api_core",
+                "google_auth",
+                "google_cloud_monitoring",
+                "google_cloud_trace",
+                "googleapis_common_protos",
+                "greenlet",
+                "idna",
+                "importlib_metadata",
+                "oauth2client",
+                "opencensus_context",
+                "opentelemetry_api",
+                "opentelemetry_exporter_prometheus",
+                "opentelemetry_resourcedetector_gcp",
+                "opentelemetry_sdk",
+                "opentelemetry_semantic_conventions",
+                "prometheus_client",
+                "proto_plus",
+                "protobuf",
+                "pyasn1",
+                "pyasn1_modules",
+                "requests",
+                "rsa",
+                "setuptools",
+                "typing_extensions",
+                "urllib3",
+                "wheel",
+                "wrapt",
+                "zipp",
+                "zope_event",
+                "zope_interface"
+              ],
+              "groups": {}
             }
           },
           "pip_deps": {

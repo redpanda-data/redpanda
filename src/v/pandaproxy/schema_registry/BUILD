@@ -123,6 +123,7 @@ redpanda_cc_library(
         "@protobuf//src/google/protobuf/compiler:importer",
         "@protobuf//src/google/protobuf/io",
         "@protobuf//src/google/protobuf/io:tokenizer",
+        "@protovalidate//proto/protovalidate/buf/validate:validate_proto_cc",
         "@rapidjson",
         "@re2",
     ] + well_known_cc_protos,
