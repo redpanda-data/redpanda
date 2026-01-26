@@ -11,6 +11,7 @@
 #include "base/outcome.h"
 #include "security/acl.h"
 #include "security/fwd.h"
+#include "security/group_range.h"
 #include "security/sasl_authentication.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -23,7 +24,7 @@ struct authentication_data {
     acl_principal principal;
     ss::sstring sub;
     ss::lowres_system_clock::time_point expiry;
-    chunked_vector<acl_principal> groups;
+    group_range groups;
 };
 result<authentication_data> authenticate(
   const jws& jws,
@@ -90,9 +91,7 @@ public:
 
     const char* mechanism_name() const override { return name; }
 
-    const chunked_vector<acl_principal>& groups() const override {
-        return _auth_data.groups;
-    }
+    const group_range& groups() const override { return _auth_data.groups; }
 
 private:
     friend std::ostream&

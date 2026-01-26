@@ -13,6 +13,7 @@
 #include "config/property.h"
 #include "security/acl.h"
 #include "security/errc.h"
+#include "security/group_range.h"
 #include "security/jwt.h"
 #include "security/logger.h"
 #include "security/oidc_principal_mapping_applicator.h"
@@ -67,17 +68,13 @@ result<authentication_data> authenticate(
         return principal.assume_error();
     }
 
-    auto groups = group_policy_apply(group_policy, *jwt_ptr);
-    if (groups.has_error()) {
-        return groups.assume_error();
-    }
-    vlog(seclog.trace, "Groups found in claim: {}", groups.assume_value());
+    auto groups = group_range{jwt_ptr, group_policy};
 
     return {
       std::move(principal).assume_value(),
       ss::sstring{jwt_ptr->sub().value_or("")},
       exp,
-      std::move(groups).assume_value()};
+      std::move(groups)};
 }
 
 result<authentication_data> authenticate(

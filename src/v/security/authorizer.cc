@@ -17,6 +17,7 @@
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "security/group_range.h"
 #include "security/role.h"
 #include "security/role_store.h"
 
@@ -166,7 +167,7 @@ auth_result authorizer::authorized(
   const acl_principal& principal,
   const acl_host& host,
   superuser_required superuser_required,
-  const chunked_vector<acl_principal>& groups) const {
+  const group_range& groups) const {
     auth_result r = do_authorized(
       resource_name, operation, principal, host, superuser_required, groups);
     _probe->record_authz_result(
@@ -183,7 +184,7 @@ auth_result authorizer::do_authorized(
   const acl_principal& principal,
   const acl_host& host,
   superuser_required superuser_required,
-  const chunked_vector<acl_principal>& groups) const {
+  const group_range& groups) const {
     // Check superuser FIRST, before any ACL lookups
     if (_superusers.contains(principal)) {
         return auth_result::superuser_authorized(
@@ -322,7 +323,7 @@ template auth_result authorizer::authorized(
   const acl_principal&,
   const acl_host&,
   superuser_required,
-  const chunked_vector<acl_principal>&) const;
+  const group_range&) const;
 
 template auth_result authorizer::authorized(
   const kafka::group_id&,
@@ -330,7 +331,7 @@ template auth_result authorizer::authorized(
   const acl_principal&,
   const acl_host&,
   superuser_required,
-  const chunked_vector<acl_principal>& groups) const;
+  const group_range& groups) const;
 
 template auth_result authorizer::authorized(
   const security::acl_cluster_name&,
@@ -338,7 +339,7 @@ template auth_result authorizer::authorized(
   const acl_principal&,
   const acl_host&,
   superuser_required,
-  const chunked_vector<acl_principal>&) const;
+  const group_range&) const;
 
 template auth_result authorizer::authorized(
   const kafka::transactional_id&,
@@ -346,7 +347,7 @@ template auth_result authorizer::authorized(
   const acl_principal&,
   const acl_host&,
   superuser_required,
-  const chunked_vector<acl_principal>&) const;
+  const group_range&) const;
 
 template auth_result authorizer::authorized(
   const pandaproxy::schema_registry::subject&,
@@ -354,7 +355,7 @@ template auth_result authorizer::authorized(
   const acl_principal&,
   const acl_host&,
   superuser_required,
-  const chunked_vector<acl_principal>&) const;
+  const group_range&) const;
 
 template auth_result authorizer::authorized(
   const pandaproxy::schema_registry::registry_resource&,
@@ -362,7 +363,7 @@ template auth_result authorizer::authorized(
   const acl_principal&,
   const acl_host&,
   superuser_required,
-  const chunked_vector<acl_principal>&) const;
+  const group_range&) const;
 
 std::optional<security::acl_match> authorizer::acl_any_implied_ops_allowed(
   const acl_matches& acls,

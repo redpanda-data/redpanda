@@ -12,6 +12,7 @@
 #include "random/generators.h"
 #include "security/acl.h"
 #include "security/authorizer.h"
+#include "security/group_range.h"
 #include "security/role.h"
 #include "security/role_store.h"
 #include "utils/base64.h"
@@ -515,7 +516,7 @@ TEST(AUTHORIZER_TEST, authz_no_acls_allow) {
 static void do_implied_acls(
   const acl_principal& bind_principal,
   std::optional<role_store*> roles = std::nullopt,
-  chunked_vector<acl_principal> groups = {}) {
+  group_range groups = {}) {
     auto test_allow = [&bind_principal, &roles, &groups](
                         acl_operation op, std::set<acl_operation> allowed) {
         acl_principal user(principal_type::user, "alice");
@@ -2131,7 +2132,7 @@ TEST(AUTHORIZER_TEST, group_authz_simple_allow) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(bool(result));
     EXPECT_EQ(result.acl, acl1);
@@ -2177,7 +2178,7 @@ TEST(AUTHORIZER_TEST, group_authz_user_deny_applies_first) {
           user1,
           host1,
           security::superuser_required::no,
-          {group1});
+          group_range{{group1}});
         if (op == acl_operation::write) {
             EXPECT_FALSE(bool(result));
             EXPECT_EQ(result.acl, deny_user);
@@ -2232,7 +2233,7 @@ TEST(AUTHORIZER_TEST, group_authz_group_deny_applies_first) {
           user1,
           host1,
           security::superuser_required::no,
-          {group1});
+          group_range{{group1}});
         if (op == acl_operation::write) {
             EXPECT_FALSE(bool(result));
             EXPECT_EQ(result.acl, deny_group);
@@ -2279,7 +2280,7 @@ TEST(AUTHORIZER_TEST, group_authz_multiple_groups_deny_precedence) {
     auth.add_bindings(bindings);
 
     // Test with both groups - deny should take precedence for write operations
-    chunked_vector<acl_principal> both_groups{group_allow, group_deny};
+    security::group_range both_groups{{group_allow, group_deny}};
 
     for (auto op :
          {acl_operation::read, acl_operation::write, acl_operation::describe}) {
@@ -2309,7 +2310,7 @@ TEST(AUTHORIZER_TEST, group_authz_multiple_groups_deny_precedence) {
     }
 
     // Test with only the allow group - all operations should succeed
-    chunked_vector<acl_principal> allow_group_only{group_allow};
+    security::group_range allow_group_only{{group_allow}};
 
     for (auto op :
          {acl_operation::read, acl_operation::write, acl_operation::describe}) {
@@ -2329,8 +2330,7 @@ TEST(AUTHORIZER_TEST, group_authz_multiple_groups_deny_precedence) {
     }
 
     // Test with only the deny group - only write should be denied
-    chunked_vector<acl_principal> deny_group_only{group_deny};
-
+    security::group_range deny_group_only{{group_deny}};
     for (auto op :
          {acl_operation::read, acl_operation::write, acl_operation::describe}) {
         auto result = auth.authorized(
@@ -2340,7 +2340,6 @@ TEST(AUTHORIZER_TEST, group_authz_multiple_groups_deny_precedence) {
           host1,
           security::superuser_required::no,
           deny_group_only);
-
         if (op == acl_operation::write) {
             EXPECT_FALSE(bool(result));
             EXPECT_EQ(result.acl, deny_write_group);
@@ -2362,7 +2361,7 @@ TEST(AUTHORIZER_TEST, group_authz_multiple_groups_deny_precedence) {
 TEST(AUTHORIZER_TEST, group_authz_implied_acls) {
     acl_principal group1(principal_type::group, "group-admins");
 
-    do_implied_acls(group1, std::nullopt, {group1});
+    do_implied_acls(group1, std::nullopt, group_range{{group1}});
 }
 
 TEST(AUTHORIZER_TEST, group_authz_empty_groups_no_auth) {
@@ -2392,7 +2391,7 @@ TEST(AUTHORIZER_TEST, group_authz_empty_groups_no_auth) {
       user1,
       host1,
       security::superuser_required::no,
-      {});
+      group_range{});
 
     EXPECT_FALSE(result.authorized);
     EXPECT_FALSE(result.acl.has_value());
@@ -2425,7 +2424,7 @@ TEST(AUTHORIZER_TEST, group_authz_host_specific) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_group_host1);
@@ -2438,7 +2437,7 @@ TEST(AUTHORIZER_TEST, group_authz_host_specific) {
       user1,
       host2,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_FALSE(result.authorized);
     EXPECT_FALSE(result.acl.has_value());
@@ -2484,7 +2483,7 @@ TEST(AUTHORIZER_TEST, group_authz_roles_and_groups_priority) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_FALSE(result.authorized);
     EXPECT_EQ(result.acl, deny_group);
@@ -2531,7 +2530,7 @@ TEST(AUTHORIZER_TEST, group_authz_different_resource_types) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_topic_read);
@@ -2544,7 +2543,7 @@ TEST(AUTHORIZER_TEST, group_authz_different_resource_types) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_group_write);
@@ -2557,7 +2556,7 @@ TEST(AUTHORIZER_TEST, group_authz_different_resource_types) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_FALSE(result.authorized);
     EXPECT_FALSE(result.group.has_value());
@@ -2600,7 +2599,7 @@ TEST(AUTHORIZER_TEST, group_authz_prefixed_and_wildcard_resources) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_prefixed);
@@ -2614,7 +2613,7 @@ TEST(AUTHORIZER_TEST, group_authz_prefixed_and_wildcard_resources) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_wildcard);
@@ -2678,7 +2677,7 @@ TEST(AUTHORIZER_TEST, group_authz_superuser_overrides_group_deny) {
       superuser,
       host,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_TRUE(result.is_superuser);
@@ -2755,7 +2754,7 @@ TEST(AUTHORIZER_TEST, group_authz_large_number_of_groups) {
       user1,
       host1,
       security::superuser_required::no,
-      many_groups);
+      group_range{std::move(many_groups)});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.group.value().name(), "group42");
@@ -2794,7 +2793,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_simple_allow) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_role);
@@ -2841,7 +2840,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_deny_takes_precedence) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_FALSE(result.authorized);
     EXPECT_EQ(result.acl, deny_role);
@@ -2875,7 +2874,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_multiple_groups_one_in_role) {
     auth.add_bindings(bindings);
 
     // User in both groups should be authorized via group2 -> role path
-    chunked_vector<acl_principal> groups{group1, group2};
+    security::group_range groups{{group1, group2}};
     auto result = auth.authorized(
       default_topic,
       acl_operation::read,
@@ -2922,7 +2921,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_group_not_in_role) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_FALSE(result.authorized);
     EXPECT_FALSE(result.role.has_value());
@@ -2971,7 +2970,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_user_and_group_in_different_roles) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_FALSE(result.authorized);
     EXPECT_EQ(result.acl, deny_user_role);
@@ -3018,7 +3017,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_group_deny_via_role) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     // The deny via group's role should take precedence over user's direct allow
     EXPECT_FALSE(result.authorized);
@@ -3069,7 +3068,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_multiple_roles_for_group) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_role1);
@@ -3082,7 +3081,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_multiple_roles_for_group) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_role2);
@@ -3120,7 +3119,7 @@ TEST(AUTHORIZER_TEST, group_role_authz_implied_operations) {
       user1,
       host1,
       security::superuser_required::no,
-      {group1});
+      group_range{{group1}});
 
     EXPECT_TRUE(result.authorized);
     EXPECT_EQ(result.acl, allow_role);

@@ -19,7 +19,4 @@ namespace security::oidc {
 result<acl_principal>
 principal_mapping_rule_apply(const principal_mapping_rule&, const jwt& jwt);
 
-result<chunked_vector<acl_principal>>
-group_policy_apply(const group_claim_policy&, const jwt& jwt);
-
 } // namespace security::oidc

@@ -15,6 +15,7 @@
 #include "config/property.h"
 #include "security/acl.h"
 #include "security/fwd.h"
+#include "security/group_range.h"
 #include "security/types.h"
 
 #include <seastar/http/exception.hh>
@@ -61,7 +62,7 @@ public:
       security::credential_password password,
       ss::sstring sasl_mechanism,
       superuser is_superuser,
-      chunked_vector<security::acl_principal> groups)
+      security::group_range groups)
       : _username(std::move(username))
       , _password(std::move(password))
       , _sasl_mechanism(std::move(sasl_mechanism))
@@ -117,9 +118,7 @@ public:
     const ss::sstring& get_username() const { return _username; }
     const ss::sstring& get_password() const { return _password; }
     const ss::sstring& get_sasl_mechanism() const { return _sasl_mechanism; }
-    const chunked_vector<security::acl_principal>& get_groups() const {
-        return _groups;
-    }
+    const security::group_range& get_groups() const { return _groups; }
 
     bool is_authenticated() const { return _authenticated; };
     bool is_superuser() const { return _superuser; }
@@ -129,7 +128,7 @@ private:
     security::credential_user _username;
     security::credential_password _password;
     ss::sstring _sasl_mechanism;
-    chunked_vector<security::acl_principal> _groups;
+    security::group_range _groups;
     bool _authenticated{false};
     bool _superuser{false};
     bool _auth_required{false};

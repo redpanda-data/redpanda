@@ -130,6 +130,7 @@ redpanda_cc_btest(
         "jwt_test.cc",
     ],
     deps = [
+        "//src/v/container:chunked_vector",
         "//src/v/security",
         "//src/v/security:config",
         "//src/v/test_utils:seastar_boost",

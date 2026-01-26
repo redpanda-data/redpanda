@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "security/acl.h"
 #include "security/audit/schemas/types.h"
+#include "security/group_range.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -39,8 +40,8 @@ public:
     }
     virtual const audit::user& audit_user() const = 0;
     virtual const char* mechanism_name() const = 0;
-    virtual const chunked_vector<acl_principal>& groups() const {
-        static const chunked_vector<acl_principal> empty;
+    virtual const group_range& groups() const {
+        static const group_range empty;
         return empty;
     }
 };

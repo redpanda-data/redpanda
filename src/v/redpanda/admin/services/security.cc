@@ -1003,7 +1003,8 @@ security_service_impl::resolve_oidc_identity(
     resp.set_groups(
       {std::from_range,
        auth_result->get_groups()
-         | std::views::transform(&security::acl_principal::name)});
+         | std::views::transform(
+           [](const auto& principal) { return principal.name(); })});
 
     co_return resp;
 }
