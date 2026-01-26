@@ -52,6 +52,8 @@ bazel_dep(name = "bzip2", version = "1.0.8.bcr.2")
 bazel_dep(name = "buildifier_prebuilt", version = "7.3.1", dev_dependency = True)
 bazel_dep(name = "rules_python", version = "1.0.0", dev_dependency = True)
 
+bazel_dep(name = "protovalidate", version = "1.0.0")
+
 python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
 python.toolchain(
     ignore_root_user_error = True,
