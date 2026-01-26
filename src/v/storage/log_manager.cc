@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/memory_groups.h"
+#include "ssx/abort_source.h"
 #include "ssx/async-clear.h"
 #include "ssx/future-util.h"
 #include "ssx/watchdog.h"
@@ -85,7 +86,6 @@ log_config::log_config(
   , segment_size_jitter(0) // For deterministic behavior in unit tests.
   , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
   , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
-
   , retention_bytes(config::mock_binding<std::optional<size_t>>(std::nullopt))
   , compaction_interval(
       config::mock_binding<std::chrono::milliseconds>(std::chrono::minutes(10)))
@@ -382,11 +382,9 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
             continue;
         }
 
-        current_log.flags |= bflags::compacted;
-        current_log.last_compaction = ss::lowres_clock::now();
-
-        auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(
-          current_log.handle->config().ntp());
+        if (!current_log.link.is_linked()) {
+            continue;
+        }
 
         // Obtain housekeeping lock to prevent concurrency of
         // log->housekeeping() with gc fibre.
@@ -397,87 +395,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
             continue;
         }
 
-        // Until we better implement bailing out of compaction, the best thing
-        // we can do for observability is add a watchdog here.
-        auto ntp = current_log.handle->config().ntp();
-        ssx::watchdog wd5m(5min, [ntp] {
-            vlog(
-              gclog.warn, "{}: Housekeeping process exceeding 5 minutes", ntp);
-        });
-
-        // NOTE: housekeeping holds _compaction_housekeeping_gate, that prevents
-        // the removal of the parent object. this makes awaiting housekeeping
-        // safe against removal of segments from _logs_list
-        auto& log = current_log.handle;
-        auto pinned_kafka_offset
-          = current_log.handle->stm_manager()->lowest_pinned_data_offset();
-        std::optional<model::offset> max_unpinned_offset;
-        if (pinned_kafka_offset) {
-            auto local_log_start = log->offsets().start_offset;
-            auto kafka_local_start = model::offset_cast(
-              log->from_log_offset(local_log_start));
-            if (*pinned_kafka_offset >= kafka_local_start) {
-                // Translate the pinned Kafka offset.
-                max_unpinned_offset = model::prev_offset(
-                  log->to_log_offset(kafka::offset_cast(*pinned_kafka_offset)));
-            } else {
-                // The pin falls below the log start, in which case the entire
-                // local log is pinned.
-                max_unpinned_offset = model::prev_offset(
-                  log->offsets().start_offset);
-            }
-        }
-        model::offset max_compactible_offset
-          = current_log.handle->stm_manager()->max_removable_local_log_offset();
-        model::offset max_tombstone_remove_offset
-          = current_log.handle->stm_manager()->max_tombstone_remove_offset();
-        model::offset max_tx_end_remove_offset
-          = current_log.handle->stm_manager()->max_tx_end_remove_offset();
-        model::offset tx_snapshot_offset
-          = current_log.handle->stm_manager()->tx_snapshot_offset();
-        // We clamp the offset up to which we can remove transactional control
-        // batches to the last snapshot taken by the transactional stm. This
-        // ensures that we do not remove control batches that may be needed to
-        // reconstruct the state machine during recovery.
-        model::offset max_tx_remove_offset = std::min(
-          max_tx_end_remove_offset, tx_snapshot_offset);
-
-        vlog(
-          gclog.trace,
-          "{}: max tombstone remove offset: {}, max tx remove offset: {}, max "
-          "tx end remove snapshot: {}, tx_snapshot_offset: {}",
-          ntp,
-          max_tombstone_remove_offset,
-          max_tx_remove_offset,
-          max_tx_end_remove_offset,
-          tx_snapshot_offset);
-        if (
-          max_unpinned_offset
-          && *max_unpinned_offset < max_compactible_offset) {
-            vlog(
-              gclog.debug,
-              "{}: Compaction is pinned by offset: pinned Kafka offset: {}, "
-              "log offsets max unpinned {} < max removable {}",
-              ntp,
-              *pinned_kafka_offset,
-              *max_unpinned_offset,
-              max_compactible_offset);
-            max_compactible_offset = *max_unpinned_offset;
-        }
-        co_await current_log.handle->housekeeping(
-          housekeeping_config::make_config(
-            collection_threshold,
-            _config.retention_bytes(),
-            max_compactible_offset,
-            max_tombstone_remove_offset,
-            max_tx_remove_offset,
-            current_log.handle->config().delete_retention_ms(),
-            current_log.handle->config().delete_retention_ms(),
-            current_log.handle->config().min_compaction_lag_ms(),
-            _abort_source,
-            std::move(ntp_sanitizer_cfg),
-            _compaction_hash_key_map.get()));
-        _probe->housekeeping_log_processed();
+        co_await do_housekeeping(current_log, collection_threshold);
     }
 }
 
@@ -683,6 +601,110 @@ ss::future<> log_manager::gc_loop() {
               });
         }
     }
+}
+
+ss::future<> log_manager::do_housekeeping(
+  log_housekeeping_meta& meta,
+  model::timestamp collection_threshold,
+  model::opt_abort_source_t preempt_source) {
+    if (!meta.link.is_linked()) {
+        co_return;
+    }
+
+    auto ntp = meta.handle->config().ntp();
+    auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(ntp);
+
+    // Until we better implement bailing out of compaction, the best thing
+    // we can do for observability is add a watchdog here.
+    ssx::watchdog wd5m(5min, [ntp] {
+        vlog(gclog.warn, "{}: Housekeeping process exceeding 5 minutes", ntp);
+    });
+
+    // Create a composite abort source that triggers on shutdown or
+    // preemption. If no preempt_source is provided, just use _abort_source
+    // directly.
+    std::optional<ssx::composite_abort_source> composite_as;
+    auto& as = [this, &preempt_source, &composite_as]() -> ss::abort_source& {
+        if (preempt_source.has_value()) {
+            composite_as.emplace(_abort_source, preempt_source->get());
+            return composite_as->as();
+        }
+        return _abort_source;
+    }();
+
+    // NOTE: housekeeping holds _compaction_housekeeping_gate, that prevents
+    // the removal of the parent object. this makes awaiting housekeeping
+    // safe against removal of segments from _logs_list
+    auto& log = meta.handle;
+    auto pinned_kafka_offset = log->stm_manager()->lowest_pinned_data_offset();
+    std::optional<model::offset> max_unpinned_offset;
+    if (pinned_kafka_offset) {
+        auto local_log_start = log->offsets().start_offset;
+        auto kafka_local_start = model::offset_cast(
+          log->from_log_offset(local_log_start));
+        if (*pinned_kafka_offset >= kafka_local_start) {
+            max_unpinned_offset = model::prev_offset(
+              log->to_log_offset(kafka::offset_cast(*pinned_kafka_offset)));
+        } else {
+            max_unpinned_offset = model::prev_offset(
+              log->offsets().start_offset);
+        }
+    }
+
+    model::offset max_compactible_offset
+      = log->stm_manager()->max_removable_local_log_offset();
+    model::offset max_tombstone_remove_offset
+      = log->stm_manager()->max_tombstone_remove_offset();
+    model::offset max_tx_end_remove_offset
+      = log->stm_manager()->max_tx_end_remove_offset();
+    model::offset tx_snapshot_offset = log->stm_manager()->tx_snapshot_offset();
+    // We clamp the offset up to which we can remove transactional control
+    // batches to the last snapshot taken by the transactional stm. This
+    // ensures that we do not remove control batches that may be needed to
+    // reconstruct the state machine during recovery.
+    model::offset max_tx_remove_offset = std::min(
+      max_tx_end_remove_offset, tx_snapshot_offset);
+
+    vlog(
+      gclog.trace,
+      "{}: max tombstone remove offset: {}, max tx remove offset: {}, max "
+      "tx end remove snapshot: {}, tx_snapshot_offset: {}",
+      ntp,
+      max_tombstone_remove_offset,
+      max_tx_remove_offset,
+      max_tx_end_remove_offset,
+      tx_snapshot_offset);
+
+    if (max_unpinned_offset && *max_unpinned_offset < max_compactible_offset) {
+        vlog(
+          gclog.debug,
+          "{}: Compaction is pinned by offset: pinned Kafka offset: {}, "
+          "log offsets max unpinned {} < max removable {}",
+          ntp,
+          *pinned_kafka_offset,
+          *max_unpinned_offset,
+          max_compactible_offset);
+        max_compactible_offset = *max_unpinned_offset;
+    }
+
+    co_await log->housekeeping(
+      housekeeping_config::make_config(
+        collection_threshold,
+        _config.retention_bytes(),
+        max_compactible_offset,
+        max_tombstone_remove_offset,
+        max_tx_remove_offset,
+        log->config().delete_retention_ms(),
+        log->config().delete_retention_ms(),
+        log->config().min_compaction_lag_ms(),
+        as,
+        std::move(ntp_sanitizer_cfg),
+        _compaction_hash_key_map.get()));
+
+    meta.flags |= log_housekeeping_meta::bitflags::compacted;
+    meta.last_compaction = ss::lowres_clock::now();
+
+    _probe->housekeeping_log_processed();
 }
 
 /**

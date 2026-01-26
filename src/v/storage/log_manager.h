@@ -22,6 +22,7 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "random/simple_time_jitter.h"
 #include "storage/batch_cache.h"
 #include "storage/disk.h"
@@ -293,6 +294,14 @@ private:
     ss::future<> gc_loop();
     bool _gc_triggered{false};
     ssx::semaphore _gc_sem{0, "log_manager::gc"};
+
+    // Run housekeeping (gc + compaction) on a single partition.
+    // The optional abort source is combined with _abort_source to create
+    // a composite that triggers on either (used for timer-based preemption).
+    ss::future<> do_housekeeping(
+      log_housekeeping_meta& meta,
+      model::timestamp collection_threshold,
+      model::opt_abort_source_t preempt_source = std::nullopt);
 
     disk_space_alert _disk_space_alert{disk_space_alert::ok};
 
