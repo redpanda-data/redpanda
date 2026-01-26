@@ -589,7 +589,7 @@ BOOST_DATA_TEST_CASE(
     auto jwt = oidc::jwt::make(std::move(header), std::move(payload));
     BOOST_REQUIRE(!jwt.has_error());
     auto auth = oidc::authenticate(
-      jwt.assume_value(),
+      ss::make_lw_shared(std::move(jwt).assume_value()),
       security::oidc::principal_mapping_rule{},
       security::oidc::group_claim_policy{},
       d.issuer,
