@@ -295,6 +295,9 @@ private:
     bool _gc_triggered{false};
     ssx::semaphore _gc_sem{0, "log_manager::gc"};
 
+    // Check if an NTP is a priority partition for compaction.
+    bool is_priority_ntp(const model::ntp& ntp) const;
+
     // Run housekeeping (gc + compaction) on a single partition.
     // The optional abort source is combined with _abort_source to create
     // a composite that triggers on either (used for timer-based preemption).
@@ -302,6 +305,10 @@ private:
       log_housekeeping_meta& meta,
       model::timestamp collection_threshold,
       model::opt_abort_source_t preempt_source = std::nullopt);
+
+    // Compact any priority partitions that need it. Called before each
+    // regular compaction iteration to ensure priority logs aren't starved.
+    ss::future<> compact_priority_logs(model::timestamp collection_threshold);
 
     disk_space_alert _disk_space_alert{disk_space_alert::ok};
 
@@ -319,6 +326,8 @@ private:
     simple_time_jitter<ss::lowres_clock> _trigger_gc_jitter;
     logs_type _logs;
     compaction_list_type _logs_list;
+    // List of priority partitions managed by housekeeping_loop().
+    compaction_list_type _priority_logs_list;
     batch_cache _batch_cache;
 
     // Hash key-map to use across multiple compactions to reuse reserved memory
