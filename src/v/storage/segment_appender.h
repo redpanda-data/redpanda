@@ -72,6 +72,12 @@ public:
         // A counter of number of bytes copied into new chunk to avoid writing
         // to a chunk which write was already dispatched
         size_t bytes_copied_in_chunk_remainder{0};
+        // A counter of the number of writes that needed to be split across
+        // multiple chunks (i.e., the write didn't fit in the current chunk)
+        size_t split_writes{0};
+        // A counter of the number of physical writes (dma_write calls) that
+        // completed successfully
+        size_t writes_completed{0};
 
         fmt::iterator format_to(fmt::iterator it) const;
     };

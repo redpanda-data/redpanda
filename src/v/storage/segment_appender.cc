@@ -231,6 +231,9 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             co_return;
         }
 
+        // increment split writes
+        ++_opts.shared_stats->split_writes;
+
         // barrier. do not hold the units!
         auto units = co_await ss::get_units(_concurrent_flushes, 1);
         units.return_all();
@@ -653,6 +656,7 @@ void segment_appender::dispatch_background_head_write() {
 #pragma clang diagnostic pop
                   .then([this, w, dma_size](size_t got) {
                       _opts.shared_stats->bytes_written += dma_size;
+                      ++_opts.shared_stats->writes_completed;
                       /*
                        * the continuation that captured full=true is the
                        * end of the dependency chain for this chunk. it
@@ -811,7 +815,7 @@ fmt::iterator segment_appender::stats::format_to(fmt::iterator it) const {
       "{{ merged_writes: {}, bytes_requested : {}, bytes_written : {}, "
       "appends "
       ": {}, flushes: {}, fsyncs: {}, truncates: {}, fallocations: {}, "
-      "last_page_hydrations: {}}}",
+      "last_page_hydrations: {}, split_writes: {}, writes_completed: {}}}",
       merged_writes,
       bytes_requested,
       bytes_written,
@@ -820,7 +824,9 @@ fmt::iterator segment_appender::stats::format_to(fmt::iterator it) const {
       fsyncs,
       truncates,
       fallocations,
-      last_page_hydrations);
+      last_page_hydrations,
+      split_writes,
+      writes_completed);
 }
 
 std::ostream&
