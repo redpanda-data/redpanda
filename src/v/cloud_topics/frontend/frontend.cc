@@ -613,6 +613,13 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
         co_return default_errc;
     }
 
+    vlog(
+      cd_log.trace,
+      "[{}] moving to replicating batch in term {} with epoch {}",
+      ntp,
+      fence->term,
+      upload_res.value().front().id.epoch);
+
     chunked_vector<model::record_batch_header> headers;
     headers.push_back(header);
     auto placeholders = co_await convert_to_placeholders(
