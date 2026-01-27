@@ -31,6 +31,7 @@
 
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/range/combine.hpp>
+#include <buf/validate/validate.pb.h>
 #include <confluent/meta.pb.h>
 #include <confluent/types/decimal.pb.h>
 #include <fmt/core.h>
@@ -146,7 +147,9 @@ static const known_types_set known_types{
   google::protobuf::FieldMask::GetDescriptor()->file(),
   google::protobuf::Struct::GetDescriptor()->file(),
   google::protobuf::Timestamp::GetDescriptor()->file(),
-  google::protobuf::FieldDescriptorProto::GetDescriptor()->file()};
+  google::protobuf::FieldDescriptorProto::GetDescriptor()->file(),
+  buf::validate::Rule::GetDescriptor()->file(),
+};
 
 class io_error_collector final : public pb::io::ErrorCollector {
     enum class level {
