@@ -201,7 +201,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "+fcNQVnLOI5iivykMgnTGZjuCSYDWvUv2CHmv12MqGc=",
+        "bzlTransitiveDigest": "cCNLUiIbqupRP1KoQ7T7BIjP8VGTXnm++w0XmNBhRJY=",
         "usagesDigest": "8eEn6X1e7HKkx2OPWUwQBOEnT9TIkMhEcXbu/wRjGno=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -318,9 +318,9 @@
             "ruleClassName": "http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:libxml2.BUILD",
-              "sha256": "cdf9f952582c32a00513468585fb517270047ac0cfaed013ef08aa7b775fd6b4",
-              "strip_prefix": "libxml2-3b1742b8391e966be780bdc43fdf959f7b3a118c",
-              "url": "https://github.com/GNOME/libxml2/archive/3b1742b8391e966be780bdc43fdf959f7b3a118c.tar.gz"
+              "sha256": "546ab74561c040df210c88dbd3c652bf509d826954ab2002c8973f1fa8d10130",
+              "strip_prefix": "libxml2-2.14.6",
+              "url": "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/libxml2-v2.14.6.tar.gz"
             }
           },
           "lksctp": {
@@ -5471,7 +5471,7 @@
           "@@rules_rust~~rust_host_tools~rust_host_tools//bin/rustc": "b953c69e6f682bf55e39bdd55bdcbd3e1cc0cbdf9dfda24b9c6478ee2c38359b",
           "@@//bazel/thirdparty/Cargo.lock": "931fa1bc55d0e5d2e5b6d96da399569a4c2254a4bb1d99c98f71bb4b98eead73",
           "@@//bazel/thirdparty/Cargo.toml": "cb23768a6e7edc8f97215921e956f5be06521ad93cc0ecf64a932e3a8caada54",
-          "@@//MODULE.bazel": "5b75f6a77939534948aaa144c212cab23491bb5e6d19eecb22ef9b3de6654e54",
+          "@@//MODULE.bazel": "9880f9d656c241f2b3bba4f288ed983f7e596371b3401215efbb7a1523acbe8c",
           "@@//bazel/thirdparty/wasmtime.BUILD": "4b55deaf51f5b8be25fc3592f9bcf3d732f99632cd793c685436ddca9a177534",
           "@@rules_rust~~rust_host_tools~rust_host_tools//bin/cargo": "be459aeefa634aa6693a9a4741cfa4d63dd8a50af2d1a8ff221b7565e7eb4e4c"
         },
