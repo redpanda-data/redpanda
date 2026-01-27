@@ -20,6 +20,8 @@ auto fmt::formatter<cloud_topics::ctp_stm_key>::format(
         return fmt::format_to(ctx.out(), "advance_reconciled_offset");
     case cloud_topics::ctp_stm_key::set_start_offset:
         return fmt::format_to(ctx.out(), "set_start_offset");
+    case cloud_topics::ctp_stm_key::advance_epoch:
+        return fmt::format_to(ctx.out(), "advance_epoch");
     }
     return fmt::format_to(
       ctx.out(), "unknown ctp_stm_key({})", static_cast<int>(key));

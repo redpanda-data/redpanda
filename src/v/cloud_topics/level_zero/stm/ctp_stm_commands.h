@@ -71,4 +71,20 @@ struct set_start_offset_cmd
     kafka::offset new_start_offset;
 };
 
+struct advance_epoch_cmd
+  : public serde::
+      envelope<advance_epoch_cmd, serde::version<0>, serde::compat_version<0>> {
+    static constexpr cmd_key key = cmd_key(
+      std::to_underlying(ctp_stm_key::advance_epoch));
+
+    advance_epoch_cmd() noexcept = default;
+
+    explicit advance_epoch_cmd(cluster_epoch epoch)
+      : new_epoch(epoch) {}
+
+    auto serde_fields() { return std::tie(new_epoch); }
+
+    cluster_epoch new_epoch;
+};
+
 } // namespace cloud_topics

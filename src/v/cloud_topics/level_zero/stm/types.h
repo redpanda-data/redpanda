@@ -20,6 +20,7 @@ namespace cloud_topics {
 enum class ctp_stm_key : uint8_t {
     advance_reconciled_offset = 1,
     set_start_offset = 2,
+    advance_epoch = 3,
 };
 
 struct [[nodiscard]] cluster_epoch_fence {

@@ -290,6 +290,8 @@ ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
             case ctp_stm_key::set_start_offset:
                 apply_set_start_offset(std::move(r));
                 return ss::stop_iteration::no;
+            case ctp_stm_key::advance_epoch:
+                return ss::stop_iteration::no;
             }
             throw std::runtime_error(fmt_with_ctx(
               fmt::format, "Unknown ctp_stm_key({})", static_cast<int>(key)));
