@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
+#include <optional>
 
 namespace ppj = pandaproxy::json;
 
@@ -151,6 +152,93 @@ to_non_context_schema_ids(const chunked_vector<context_schema_id>& ids) {
            | std::ranges::views::transform(
              [](const context_schema_id& ctx_id) { return ctx_id.id; })
            | std::ranges::to<chunked_vector<schema_id>>();
+}
+
+ss::future<std::optional<schema_definition>> try_get_schema_definition(
+  const server::request_t& rq,
+  std::optional<request_auth_result>& auth_result,
+  schema_id id,
+  context_subject ctx_sub) {
+    const context& ctx = ctx_sub.ctx().empty() ? default_context : ctx_sub.ctx;
+    const subject& sub = ctx_sub.sub;
+    context_schema_id ctx_id{ctx, id};
+
+    auto schema_subjects
+      = co_await rq.service().schema_store().get_schema_subjects(
+        ctx_id, include_deleted::yes);
+
+    if (!sub().empty()) {
+        // If a subject is provided, ensure the schema ID is associated with it
+        if (std::ranges::contains(schema_subjects, ctx_sub)) {
+            // The schema ID is associated with the given subject in the
+            // given context.
+            schema_subjects = {ctx_sub};
+        } else {
+            // The schema ID is not associated with the given subject in the
+            // given context.
+            schema_subjects = {};
+        }
+    }
+
+    // Ensure requester is authorized to access at least one of the subjects
+    // associated with the schema ID in the given context.
+    enterprise::handle_get_schemas_ids_id_authz(
+      rq, auth_result, schema_subjects);
+
+    if (schema_subjects.empty()) {
+        // The schema ID is not associated with any subject that the requester
+        // is authorized to access.
+        co_return std::nullopt;
+    }
+
+    // Here, the schema ID is verified to be associated with a subject in the
+    // given context that the requester is authorized to access.
+    co_return co_await rq.service().schema_store().maybe_get_schema_definition(
+      ctx_id);
+}
+
+/// Resolve a schema definition, searching across contexts if needed.
+/// First tries the given context and subject. If a subject is provided, we're
+/// in the default context, and the schema is not found, then searches other
+/// contexts for the schema ID with that subject. Falls back to searching the
+/// default context without subject restriction if still not found.
+ss::future<std::optional<schema_definition>> resolve_schema_across_contexts(
+  const server::request_t& rq,
+  std::optional<request_auth_result>& auth_result,
+  schema_id id,
+  context_subject ctx_sub) {
+    // Try to get schema definition with given context and subject
+    auto schema_def = co_await try_get_schema_definition(
+      rq, auth_result, id, ctx_sub);
+    if (
+      ctx_sub.sub().empty() || ctx_sub.is_non_default_context()
+      || schema_def.has_value()) {
+        // Either no subject provided, or non-default context, or schema found
+        co_return schema_def;
+    }
+
+    // Here, subject is NOT empty and we're in the default context (either
+    // implicitly or explicitly). We did not find the schema with the given
+    // subject in the default context, so search other contexts for the schema
+    // ID with the given subject.
+    auto contexts
+      = co_await rq.service().schema_store().get_materialized_contexts();
+    for (const auto& ctx : contexts) {
+        if (ctx == default_context) {
+            // Already checked default context
+            continue;
+        }
+        schema_def = co_await try_get_schema_definition(
+          rq, auth_result, id, {ctx, ctx_sub.sub});
+        if (schema_def) {
+            co_return schema_def;
+        }
+    }
+
+    // Here, schema ID not found under any context with the given subject.
+    // Try searching in the default context without subject restriction.
+    co_return co_await try_get_schema_definition(
+      rq, auth_result, id, {ctx_sub.ctx, subject{}});
 }
 
 } // namespace
@@ -486,19 +574,23 @@ ss::future<server::reply_t> get_schemas_ids_id(
     const auto format = parse_output_format(*rq.req);
 
     co_await rq.service().writer().read_sync();
-    auto subjects = co_await rq.service().schema_store().get_schema_subjects(
-      id, include_deleted::yes);
 
-    enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, subjects);
+    // Parse optional subject query parameter to extract context
+    auto subject_param = parse::query_param<std::optional<ss::sstring>>(
+                           *rq.req, "subject")
+                           .value_or("");
 
-    // With deferred schema validation, there might be a schema that
-    // had invalid references. These might have already been posted, so
-    // we need to sync
-    co_await rq.service().writer().read_sync();
+    auto ctx_sub = context_subject::from_string(subject_param);
 
-    auto def = co_await get_or_load(rq, [&rq, id, format]() {
-        return rq.service().schema_store().get_schema_definition(id, format);
-    });
+    auto maybe_def = co_await resolve_schema_across_contexts(
+      rq, auth_result, id, ctx_sub);
+
+    if (!maybe_def) {
+        throw as_exception(not_found(id));
+    }
+
+    auto def = co_await rq.service().schema_store().format_schema(
+      std::move(*maybe_def), format);
 
     auto resp = ppj::rjson_serialize_iobuf(
       get_schemas_ids_id_response{.definition{std::move(def)}});
@@ -576,7 +668,8 @@ ss::future<server::reply_t> get_subjects(
     auto res = co_await rq.service().schema_store().get_subjects(
       inc_del, subject_prefix);
 
-    // Handle AuthZ - Filters res for the subjects the user is allowed to see
+    // Handle AuthZ - Filters res for the subjects the user is allowed to
+    // see
     enterprise::handle_get_subjects_authz(rq, auth_result, res);
 
     // Convert context_subject to qualified string format for JSON response
@@ -627,7 +720,8 @@ post_subject(server::request_t rq, server::reply_t rp) {
     const auto format = parse_output_format(*rq.req);
     vlog(
       srlog.debug,
-      "post_subject subject='{}', normalize='{}', deleted='{}', format='{}'",
+      "post_subject subject='{}', normalize='{}', deleted='{}', "
+      "format='{}'",
       ctx_sub,
       norm,
       inc_del,
@@ -790,7 +884,8 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
                 throw exception(
                   error_code::schema_incompatible,
                   fmt::format(
-                    "Schema being registered is incompatible with an earlier "
+                    "Schema being registered is incompatible with an "
+                    "earlier "
                     "schema for subject \"{}\", details: [{}]",
                     ctx_sub,
                     fmt::join(compat.messages, ", ")));
@@ -990,7 +1085,8 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     auto unparsed = co_await rjson_parse(
       *rq.req, post_subject_versions_request_handler<>{ctx_sub});
 
-    // Must read, in case we have the subject in cache with an outdated config
+    // Must read, in case we have the subject in cache with an outdated
+    // config
     co_await rq.service().writer().read_sync();
 
     vlog(
