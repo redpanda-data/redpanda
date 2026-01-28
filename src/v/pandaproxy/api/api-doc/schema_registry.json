@@ -454,6 +454,13 @@
             "required": false,
             "type": "string",
             "description": "Redpanda version 25.2 or later. For Avro and Protobuf schemas only. Supported values: an empty string `''` returns the schema in its current format (default), and `serialized` (Protobuf only) returns the schema in its Base64-encoded wire binary format. Unsupported values return a 501 error."
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "Optional qualified subject to search for the schema under. Use <:.context:> for context-only lookup, or <:.context:subject> to also verify the schema is associated with that subject. Defaults to searching the default context if unspecified."
           }
         ],
         "produces": [
