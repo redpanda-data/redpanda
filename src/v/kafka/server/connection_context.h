@@ -24,6 +24,7 @@
 #include "proto/redpanda/core/admin/v2/kafka_connections.proto.h"
 #include "security/acl.h"
 #include "security/authorizer.h"
+#include "security/group_range.h"
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "ssx/abort_source.h"
@@ -306,7 +307,7 @@ private:
       const T& name,
       authz_quiet quiet,
       superuser_required superuser_required,
-      const chunked_vector<security::acl_principal>& groups);
+      const security::group_range& groups);
 
     security::acl_principal get_principal() const {
         if (_mtls_state) {
@@ -318,7 +319,7 @@ private:
         return security::acl_principal{security::principal_type::user, {}};
     }
 
-    const chunked_vector<security::acl_principal>& get_groups() const;
+    const security::group_range& get_groups() const;
 
     bool is_finished_parsing() const;
 

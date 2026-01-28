@@ -312,7 +312,7 @@ security::auth_result connection_context::authorized_user(
   const T& name,
   authz_quiet quiet,
   superuser_required superuser_required,
-  const chunked_vector<security::acl_principal>& groups) {
+  const security::group_range& groups) {
     auto authorized = _server.authorizer().authorized(
       name,
       operation,
@@ -377,7 +377,7 @@ connection_context::authorized_user<model::topic>(
   const model::topic& name,
   authz_quiet quiet,
   superuser_required,
-  const chunked_vector<security::acl_principal>& groups);
+  const security::group_range& groups);
 
 template security::auth_result
 connection_context::authorized_user<kafka::group_id>(
@@ -386,7 +386,7 @@ connection_context::authorized_user<kafka::group_id>(
   const kafka::group_id& name,
   authz_quiet quiet,
   superuser_required,
-  const chunked_vector<security::acl_principal>& groups);
+  const security::group_range& groups);
 
 template security::auth_result
 connection_context::authorized_user<kafka::transactional_id>(
@@ -395,7 +395,7 @@ connection_context::authorized_user<kafka::transactional_id>(
   const kafka::transactional_id& name,
   authz_quiet quiet,
   superuser_required,
-  const chunked_vector<security::acl_principal>& groups);
+  const security::group_range& groups);
 
 template security::auth_result
 connection_context::authorized_user<security::acl_cluster_name>(
@@ -404,7 +404,7 @@ connection_context::authorized_user<security::acl_cluster_name>(
   const security::acl_cluster_name& name,
   authz_quiet quiet,
   superuser_required,
-  const chunked_vector<security::acl_principal>& groups);
+  const security::group_range& groups);
 
 ss::future<> connection_context::revoke_credentials(std::string_view name) {
     if (
@@ -617,12 +617,11 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
     co_await conn->write(std::move(msg));
 }
 
-const chunked_vector<security::acl_principal>&
-connection_context::get_groups() const {
+const security::group_range& connection_context::get_groups() const {
     if (_sasl && _sasl->has_mechanism()) {
         return _sasl->mechanism().groups();
     }
-    static const chunked_vector<security::acl_principal> empty;
+    static const security::group_range empty;
     return empty;
 }
 
