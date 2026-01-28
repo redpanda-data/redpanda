@@ -1000,10 +1000,17 @@ class SchemaRegistryRedpandaClient:
             "GET", "schemas/types", headers=headers, tls_enabled=tls_enabled, **kwargs
         )
 
-    def get_schemas_ids_id(self, id, format=None, headers=HTTP_GET_HEADERS, **kwargs):
-        format_arg = f"?format={format}" if format is not None else ""
+    def get_schemas_ids_id(
+        self, id, format=None, subject=None, headers=HTTP_GET_HEADERS, **kwargs
+    ):
+        params = []
+        if format is not None:
+            params.append(f"format={format}")
+        if subject is not None:
+            params.append(f"subject={subject}")
+        query_string = f"?{'&'.join(params)}" if params else ""
         return self.request(
-            "GET", f"schemas/ids/{id}{format_arg}", headers=headers, **kwargs
+            "GET", f"schemas/ids/{id}{query_string}", headers=headers, **kwargs
         )
 
     def get_schemas_ids_id_versions(self, id, headers=HTTP_GET_HEADERS, **kwargs):
@@ -5433,6 +5440,140 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             timeout_sec=10,
             err_msg=f"Failed to find replay log: {replay_pattern}",
         )
+
+    @cluster(num_nodes=1)
+    def test_get_schema_by_id_with_subject(self):
+        """Test GET /schemas/ids/{id} with subject query parameter for context lookup."""
+
+        # === SETUP ===
+        # Register in default context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="sub1", data=json.dumps({"schema": schema1_def})
+        )
+        assert result.status_code == requests.codes.ok
+        default_id1 = result.json()["id"]  # ID 1
+
+        # Register another schema in default context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="sub2", data=json.dumps({"schema": schema2_def})
+        )
+        assert result.status_code == requests.codes.ok
+
+        # Register in ctx1 context (same subject name, different context)
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=":.ctx1:sub1", data=json.dumps({"schema": schema1_def})
+        )
+        assert result.status_code == requests.codes.ok
+        ctx1_id1 = result.json()["id"]  # ID 1 in ctx1
+
+        # Register unique subject only in ctx1 (for cross-context search test)
+        # This subject name does NOT exist in default context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=":.ctx1:unique-sub", data=json.dumps({"schema": schema3_def})
+        )
+        assert result.status_code == requests.codes.ok
+        ctx1_unique_id = result.json()["id"]  # ID 2 in ctx1
+
+        # Register a third schema in ctx1 to create an ID that doesn't exist in default
+        # (for testing "ID only exists in non-default context")
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=":.ctx1:ctx-only-sub",
+            data=json.dumps({"schema": simple_proto_def, "schemaType": "PROTOBUF"}),
+        )
+        assert result.status_code == requests.codes.ok
+        ctx1_only_id = result.json()["id"]  # ID 3 in ctx1, no ID 3 in default
+
+        # === Test: Subject portion empty (sub().empty()) ===
+        self.logger.info("Testing: Subject portion empty")
+
+        # 1a. No subject param at all - uses default context
+        result = self.sr_client.get_schemas_ids_id(id=default_id1)
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema1_def
+
+        # 1b. Context-only param ":.ctx1:" - uses ctx1, no subject restriction
+        result = self.sr_client.get_schemas_ids_id(id=ctx1_id1, subject=":.ctx1:")
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema1_def
+
+        # 1c. Explicit default context-only ":.:" - uses default, no subject restriction
+        result = self.sr_client.get_schemas_ids_id(id=default_id1, subject=":.:")
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema1_def
+
+        # === Test: Non-default context (qualified, no cross-context search) ===
+        self.logger.info("Testing: Non-default context")
+
+        # 2a. Non-default context - schema found
+        result = self.sr_client.get_schemas_ids_id(id=ctx1_id1, subject=":.ctx1:sub1")
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema1_def
+
+        # 2b. Non-default context - wrong subject for ID (no fallback for non-default ctx)
+        result = self.sr_client.get_schemas_ids_id(
+            id=ctx1_id1, subject=":.ctx1:wrong-sub"
+        )
+        assert result.status_code == requests.codes.not_found
+
+        # 2c. Non-default context - context doesn't exist
+        result = self.sr_client.get_schemas_ids_id(
+            id=default_id1, subject=":.nonexistent:sub1"
+        )
+        assert result.status_code == requests.codes.not_found
+
+        # === Test: Default context (implicit or explicit), schema found ===
+        self.logger.info("Testing: Default context, schema found")
+
+        # 3a. Unqualified subject exists in default context
+        result = self.sr_client.get_schemas_ids_id(id=default_id1, subject="sub1")
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema1_def
+
+        # 3b. Explicit default context (:.:) - same behavior as unqualified
+        result = self.sr_client.get_schemas_ids_id(id=default_id1, subject=":.:sub1")
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema1_def
+
+        # === Test: Cross-context search ===
+        self.logger.info("Testing: Cross-context search")
+
+        # 4a. Unqualified subject "unique-sub" not in default, but exists in ctx1
+        # Should find it via cross-context search
+        result = self.sr_client.get_schemas_ids_id(
+            id=ctx1_unique_id, subject="unique-sub"
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema3_def
+
+        # 4b. Explicit default context (:.:) also triggers cross-context search
+        result = self.sr_client.get_schemas_ids_id(
+            id=ctx1_unique_id, subject=":.:unique-sub"
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema3_def
+
+        # === Test: Fallback without subject restriction ===
+        self.logger.info("Testing: Fallback without subject restriction")
+
+        # 5a. Subject "nonexistent-sub" doesn't exist anywhere, but ID exists in default
+        # Should fallback to returning schema without subject check
+        result = self.sr_client.get_schemas_ids_id(
+            id=default_id1, subject="nonexistent-sub"
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["schema"] == schema1_def
+
+        # === ERROR CASES ===
+        self.logger.info("Testing error cases")
+
+        # 6a. Schema ID doesn't exist at all
+        result = self.sr_client.get_schemas_ids_id(id=99999)
+        assert result.status_code == requests.codes.not_found
+
+        # 6b. Schema ID exists only in ctx1, no subject param (looks in default only)
+        # ctx1_only_id (ID 3) only exists in ctx1, not in default context (which only has IDs 1-2)
+        result = self.sr_client.get_schemas_ids_id(id=ctx1_only_id)
+        assert result.status_code == requests.codes.not_found
 
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
