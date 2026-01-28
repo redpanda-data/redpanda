@@ -76,13 +76,31 @@ class WriteCachingFailureInjectionE2ETest(RedpandaTest):
         if use_transactions:
             num_msg_per_round //= 10
 
+        def get_lost_offsets():
+            lost = consumer.consumer_status.validator.lost_offsets
+            if lost is None:
+                return 0
+            return lost.get("0", 0)
+
         total_produced = 0
         total_lost = 0
         prev_hwm = 0
+        prev_lost_offsets = 0
         for round_ix in range(0, num_restart_rounds + 1):
             if round_ix > 0:
                 self._crash_and_restart_cluster()
                 self._wait_for_leader()
+
+                # Wait for consumer to observe the lost offsets from crash/restart
+                if not use_transactions:
+                    wait_until(
+                        lambda: get_lost_offsets() > prev_lost_offsets,
+                        timeout_sec=60,
+                        backoff_sec=1,
+                        err_msg=f"Timed out waiting for lost offsets. Previous: {prev_lost_offsets}",
+                    )
+                    prev_lost_offsets = get_lost_offsets()
+
                 hwm = next(self.rpk.describe_topic(self.topic)).high_watermark
                 if use_transactions:
                     # Calculating lost messages based on the watermark when
