@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/common/remote_io.h"
 #include "cloud_topics/level_one/compaction/committer.h"
 #include "cloud_topics/level_one/compaction/log_collector.h"
 #include "cloud_topics/level_one/compaction/log_info_collector.h"
@@ -48,7 +48,7 @@ class compaction_scheduler {
 public:
     compaction_scheduler(
       compaction_cluster_state,
-      ss::sharded<file_io>*,
+      ss::sharded<remote_io>*,
       ss::sharded<l1::replicated_metastore>*);
 
     // Starts the contained `_log_collector`, `_worker_manager`, and the
@@ -86,10 +86,10 @@ private:
     ss::future<> scheduling_loop();
 
 private:
-    // Pointer to sharded `file_io` held by `app`. Used by the `worker_manager`
+    // Pointer to sharded `remote_io` held by `app`. Used by the `worker_manager`
     // for writing to local files and by the `committer` for writing to cloud
     // storage.
-    ss::sharded<file_io>* _io;
+    ss::sharded<remote_io>* _io;
 
     // Pointer to metastore.
     ss::sharded<replicated_metastore>* _metastore;

@@ -19,15 +19,14 @@
 namespace cloud_topics::l1 {
 
 // The IO implementation that hides caching and other complexities of
-// interacting with persistent storage of L1 objects.
+// interacting with cloud storage of L1 objects.
 //
-// For writing this persists the file to the local disk, then writes it
-// to object storage.
+// For writing, data is staged locally then uploaded to object storage.
 //
 // Reads are cached locally on disk in the cloud cache before being returned.
-class file_io : public io {
+class remote_io : public io {
 public:
-    file_io(
+    remote_io(
       std::filesystem::path staging_dir,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,

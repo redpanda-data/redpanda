@@ -10,7 +10,7 @@
 
 #include "cloud_topics/level_one/compaction/worker_manager.h"
 
-#include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/common/remote_io.h"
 #include "cloud_topics/level_one/compaction/committer.h"
 #include "cloud_topics/level_one/compaction/meta.h"
 #include "cloud_topics/level_one/compaction/worker.h"
@@ -23,7 +23,7 @@ namespace cloud_topics::l1 {
 
 worker_manager::worker_manager(
   log_compaction_queue& work_queue,
-  ss::sharded<file_io>* io,
+  ss::sharded<remote_io>* io,
   ss::sharded<replicated_metastore>* metastore,
   ss::sharded<compaction_committer>* committer,
   ss::sharded<cluster::metadata_cache>* metadata_cache,

@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/common/remote_io.h"
 
 #include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
@@ -89,7 +89,7 @@ struct one_time_stream_provider : public stream_provider {
 
 } // namespace
 
-file_io::file_io(
+remote_io::remote_io(
   std::filesystem::path staging_dir,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
@@ -100,13 +100,13 @@ file_io::file_io(
   , _cache(cache) {}
 
 ss::future<std::expected<std::unique_ptr<staging_file>, io::errc>>
-file_io::create_tmp_file() {
+remote_io::create_tmp_file() {
     co_return std::make_unique<staging_file_impl>(
       _staging_dir / fmt::format("{}.tmp", uuid_t::create()));
 }
 
 ss::future<std::expected<void, io::errc>>
-file_io::put_object(object_id oid, staging_file* file, ss::abort_source* as) {
+remote_io::put_object(object_id oid, staging_file* file, ss::abort_source* as) {
     auto file_size = co_await file->size();
     static constexpr auto timeout = 10s;
     static constexpr auto backoff = 100ms;
@@ -154,7 +154,7 @@ file_io::put_object(object_id oid, staging_file* file, ss::abort_source* as) {
     std::unreachable();
 }
 
-ss::future<uint64_t> file_io::save_to_cache(
+ss::future<uint64_t> remote_io::save_to_cache(
   ss::input_stream<char> stream,
   cloud_io::space_reservation_guard* reservation,
   std::filesystem::path cache_key,
@@ -164,7 +164,7 @@ ss::future<uint64_t> file_io::save_to_cache(
 }
 
 ss::future<std::expected<ss::input_stream<char>, io::errc>>
-file_io::read_object(object_extent extent, ss::abort_source* as) {
+remote_io::read_object(object_extent extent, ss::abort_source* as) {
     static constexpr auto timeout = 10s;
     static constexpr auto backoff = 100ms;
     retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);
@@ -252,7 +252,7 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
 }
 
 ss::future<std::expected<void, io::errc>>
-file_io::delete_objects(chunked_vector<object_id> ids, ss::abort_source* as) {
+remote_io::delete_objects(chunked_vector<object_id> ids, ss::abort_source* as) {
     static constexpr auto timeout = 10s;
     static constexpr auto backoff = 100ms;
     retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);

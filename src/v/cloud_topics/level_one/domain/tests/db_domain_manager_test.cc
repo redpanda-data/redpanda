@@ -11,7 +11,7 @@
 #include "cloud_io/remote.h"
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_io/tests/scoped_remote.h"
-#include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/common/remote_io.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/common/object_utils.h"
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
@@ -99,7 +99,7 @@ struct domain_manager_node {
     cloud_io::remote* remote;
     const cloud_storage_clients::bucket_name& bucket;
     temporary_dir staging_directory;
-    file_io object_io;
+    remote_io object_io;
     std::list<std::unique_ptr<db_domain_manager>> managers;
 };
 

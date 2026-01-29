@@ -84,9 +84,9 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "file_io",
-    srcs = ["file_io.cc"],
-    hdrs = ["file_io.h"],
+    name = "remote_io",
+    srcs = ["remote_io.cc"],
+    hdrs = ["remote_io.h"],
     visibility = [
         "//src/v/cloud_topics:__pkg__",
         "//src/v/cloud_topics/level_one:__subpackages__",

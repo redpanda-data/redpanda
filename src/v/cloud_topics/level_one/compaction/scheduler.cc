@@ -25,7 +25,7 @@ namespace cloud_topics::l1 {
 
 compaction_scheduler::compaction_scheduler(
   compaction_cluster_state state,
-  ss::sharded<file_io>* io,
+  ss::sharded<remote_io>* io,
   ss::sharded<l1::replicated_metastore>* metastore)
   : _io(io)
   , _metastore(metastore)

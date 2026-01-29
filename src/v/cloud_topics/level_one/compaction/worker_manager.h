@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/common/remote_io.h"
 #include "cloud_topics/level_one/compaction/committer.h"
 #include "cloud_topics/level_one/compaction/logger.h"
 #include "cloud_topics/level_one/compaction/meta.h"
@@ -42,7 +42,7 @@ public:
 
     worker_manager(
       log_compaction_queue&,
-      ss::sharded<file_io>*,
+      ss::sharded<remote_io>*,
       ss::sharded<replicated_metastore>*,
       ss::sharded<compaction_committer>*,
       ss::sharded<cluster::metadata_cache>*,
@@ -97,7 +97,7 @@ private:
     log_compaction_queue& _work_queue;
 
     // Owned by `app`.
-    ss::sharded<file_io>* _io;
+    ss::sharded<remote_io>* _io;
 
     // Owned by `app`.
     ss::sharded<replicated_metastore>* _metastore;

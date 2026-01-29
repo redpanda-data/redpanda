@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/common/remote_io.h"
 #include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 #include "cloud_topics/level_one/metastore/leader_router.h"
@@ -89,7 +89,7 @@ private:
     ss::sstring _logger_name;
     std::unique_ptr<data_plane_api> data_plane;
     ss::sharded<state_accessors> state;
-    ss::sharded<l1::file_io> l1_io;
+    ss::sharded<l1::remote_io> l1_io;
     ss::sharded<l1::replicated_metastore> replicated_metastore;
     ss::sharded<reconciler::reconciler> reconciler;
     ss::sharded<l1::domain_supervisor> domain_supervisor;
