@@ -107,6 +107,7 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
 
             auto proxy = ss::make_lw_shared<l0::read_request<>>(
               req->ntp,
+              req->tidp,
               std::move(curr_query.value()),
               timeout,
               &_pipeline_stage.get_root_rtc(),
@@ -125,6 +126,7 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
         if (!curr_query->meta.empty()) {
             auto proxy = ss::make_lw_shared<l0::read_request<>>(
               req->ntp,
+              req->tidp,
               std::move(curr_query.value()),
               timeout,
               &_pipeline_stage.get_root_rtc(),

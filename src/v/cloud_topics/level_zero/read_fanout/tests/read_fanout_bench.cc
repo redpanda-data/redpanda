@@ -34,6 +34,10 @@
 #include <limits>
 
 using namespace std::chrono_literals;
+
+static const model::topic_id_partition
+  bench_tidp(model::topic_id::create(), model::partition_id(0));
+
 namespace cloud_topics {
 
 /// The handler simulates L0 object downloads
@@ -166,6 +170,7 @@ public:
         perf_tests::do_not_optimize(
           co_await pipeline.local().make_reader(
             model::controller_ntp,
+            bench_tidp,
             std::move(query),
             ss::lowres_clock::now() + std::chrono::seconds(10)));
 
@@ -187,6 +192,7 @@ public:
               pipeline.local()
                 .make_reader(
                   model::controller_ntp,
+                  bench_tidp,
                   std::move(query),
                   ss::lowres_clock::now() + std::chrono::seconds(10))
                 .discard_result());
