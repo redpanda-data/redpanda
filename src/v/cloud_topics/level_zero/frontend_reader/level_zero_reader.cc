@@ -338,6 +338,7 @@ level_zero_log_reader_impl::materialize_batches(
     // Ask data layer to bring data from the cloud storage.
     auto mat_res = co_await _ct_api->materialize(
       _ctp->ntp(),
+      tidp,
       materialize_bytes,
       std::move(to_materialize),
       deadline,
