@@ -141,6 +141,59 @@ ctp_stm_api::set_start_offset(
     co_return std::monostate{};
 }
 
+ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+ctp_stm_api::advance_epoch(
+  cluster_epoch new_epoch,
+  model::timeout_clock::time_point deadline,
+  ss::abort_source& as) {
+    if (new_epoch < get_max_epoch()) {
+        co_return std::monostate{};
+    }
+    auto fence_fut = co_await ss::coroutine::as_future(fence_epoch(new_epoch));
+    if (fence_fut.failed()) {
+        auto e = fence_fut.get_exception();
+        vlogl(
+          _log,
+          ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                        : ss::log_level::warn,
+          "Failed to fence epoch {} for ntp {}, error: {}",
+          new_epoch,
+          _stm->ntp(),
+          fence_fut.get_exception());
+        co_return std::unexpected{ctp_stm_api_errc::failure};
+    }
+    auto fence = std::move(fence_fut).get();
+    if (!fence.has_value()) {
+        vlog(
+          _log.warn,
+          "Failed to fence epoch {} for ntp {}, ctp latest seen epoch is [{}, "
+          "{}]",
+          new_epoch,
+          _stm->ntp(),
+          fence.error().window_min,
+          fence.error().window_max);
+        co_return std::unexpected{ctp_stm_api_errc::failure};
+    }
+
+    vlog(_log.debug, "Replicating ctp_stm_cmd::advance_epoch{{{}}}", new_epoch);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::ctp_stm_command, model::offset(0));
+
+    builder.add_raw_kv(
+      serde::to_iobuf(advance_epoch_cmd::key),
+      serde::to_iobuf(advance_epoch_cmd(new_epoch)));
+
+    auto batch = std::move(builder).build();
+    auto apply_result = co_await replicated_apply(
+      std::move(batch), deadline, as);
+
+    if (!apply_result.has_value()) {
+        co_return std::unexpected(apply_result.error());
+    }
+    co_return std::monostate{};
+}
+
 kafka::offset ctp_stm_api::get_last_reconciled_offset() const {
     return _stm->state().get_last_reconciled_offset().value_or(kafka::offset());
 }

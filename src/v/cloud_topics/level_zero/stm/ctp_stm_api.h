@@ -68,6 +68,12 @@ public:
       model::timeout_clock::time_point deadline,
       ss::abort_source& as);
 
+    /// Fence and replicate an advance_epoch_cmd if new_epoch > max_epoch.
+    ss::future<std::expected<std::monostate, ctp_stm_api_errc>> advance_epoch(
+      cluster_epoch new_epoch,
+      model::timeout_clock::time_point deadline,
+      ss::abort_source& as);
+
     kafka::offset get_start_offset() const;
 
     /// Return the inactive epoch which is no longer referenced by this ctp_stm.
