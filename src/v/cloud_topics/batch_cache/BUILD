@@ -3,6 +3,8 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = [
     "//src/v/cloud_topics:__pkg__",
     "//src/v/cloud_topics/batch_cache/tests:__pkg__",
+    "//src/v/cloud_topics/level_zero/reader:__pkg__",
+    "//src/v/cloud_topics/level_zero/reader/tests:__pkg__",
 ])
 
 redpanda_cc_library(
@@ -23,6 +25,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "hydrated_cache_api",
+    hdrs = [
+        "hydrated_cache_api.h",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_topics:types",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
+    name = "hydrated_object_index",
+    srcs = [
+        "hydrated_object_index.cc",
+    ],
+    hdrs = [
+        "hydrated_object_index.h",
+    ],
+    deps = [
+        "//src/v/cloud_topics:types",
+        "//src/v/model",
+        "//src/v/storage:batch_cache",
+        "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/container:flat_hash_map",
+    ],
+)
+
+redpanda_cc_library(
     name = "batch_cache",
     srcs = [
         "batch_cache.cc",
@@ -31,6 +62,8 @@ redpanda_cc_library(
         "batch_cache.h",
     ],
     deps = [
+        ":hydrated_cache_api",
+        ":hydrated_object_index",
         ":probe",
         "//src/v/base",
         "//src/v/bytes",
