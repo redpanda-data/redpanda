@@ -43,13 +43,26 @@ namespace compaction {
 // co_await std::move(reducer).run();
 class sliding_window_reducer {
 public:
+    class source;
+
     // The sink for the data to be written by this round of compaction.
-    // This class needs to implement two functions:
-    // 1. `operator()(record_batch)`: This operator accepts a record batch
+    // This class needs to implement three functions:
+    // 1. `initialize(source&)`: This function occurs after the `source` has
+    // performed its `map_building_iteration()` but before the
+    // `deduplication_iteration()` stage has begun. It allows the `sink` an
+    // opportunity to initialize some of its state, and to access whatever
+    // shared state the `source` and `sink` may need to communicate to one
+    // another. The boolean return value dictates whether or not the
+    // `deduplication_iteration()` stage is required- for example, if the
+    // `source` didn't index any dirty ranges from the log and there is no
+    // meaningful compaction work to do, `initialize()` could return `false` to
+    // skip compaction. `finalize()` will still be called regardless of the
+    // return value here.
+    // 2. `operator()(record_batch)`: This operator accepts a record batch
     // (which has already been determined to be written by a
     // `compaction::filter`) and is responsible for writing its contents to
     // whichever data format/store this `sink` represents.
-    // 2. `finalize()`: perform any final steps required in the `sink` layer,
+    // 3. `finalize()`: perform any final steps required in the `sink` layer,
     // i.e flushing in progress writes, update final metadata, etc.
     class sink {
     public:
@@ -61,6 +74,7 @@ public:
         virtual ~sink() noexcept = default;
 
     public:
+        virtual ss::future<bool> initialize(source&) = 0;
         virtual ss::future<ss::stop_iteration>
         operator()(model::record_batch, model::compression) = 0;
         virtual ss::future<> finalize() = 0;

@@ -128,32 +128,23 @@ public:
       config::binding<size_t> max_buffered_bytes,
       std::chrono::milliseconds gc_interval = 10s);
 
+    ss::future<result<timeout_now_reply>>
+      timeout_now(model::node_id, timeout_now_request, rpc::client_opts) final;
+    ss::future<bool> ensure_disconnect(model::node_id) final;
+
+    ss::future<> reset_backoff(model::node_id n) final;
+
     ss::future<result<vote_reply>>
       vote(model::node_id, vote_request, rpc::client_opts) final;
 
     ss::future<result<append_entries_reply>> append_entries(
       model::node_id, append_entries_request, rpc::client_opts) final;
 
-    ss::future<result<heartbeat_reply>>
-      heartbeat(model::node_id, heartbeat_request, rpc::client_opts) final;
-
     ss::future<result<heartbeat_reply_v2>> heartbeat_v2(
       model::node_id, heartbeat_request_v2, rpc::client_opts) final;
 
     ss::future<result<install_snapshot_reply>> install_snapshot(
       model::node_id, install_snapshot_request, rpc::client_opts) final;
-
-    ss::future<result<timeout_now_reply>>
-      timeout_now(model::node_id, timeout_now_request, rpc::client_opts) final;
-    ss::future<bool> ensure_disconnect(model::node_id) final;
-
-    ss::future<result<transfer_leadership_reply>> transfer_leadership(
-      model::node_id, transfer_leadership_request, rpc::client_opts) final;
-
-    ss::future<> reset_backoff(model::node_id n) final;
-
-    ss::future<result<remake_learner_state_reply>> remake_learner_state(
-      model::node_id, remake_learner_state_request, rpc::client_opts) final;
 
     ss::future<result<get_compaction_mcco_reply>> get_compaction_mcco(
       model::node_id, get_compaction_mcco_request, rpc::client_opts) final;

@@ -32,6 +32,7 @@ redpanda_test_cc_library(
         "//src/v/pandaproxy/schema_registry:server",
         "//src/v/random:generators",
         "//src/v/resource_mgmt:cpu_scheduling",
+        "//src/v/resource_mgmt:memory_groups",
         "//src/v/security",
         "//src/v/ssx:thread_worker",
         "//src/v/storage",

@@ -1,7 +1,7 @@
 #include "raft/mutex_buffer.h"
+#include "ssx/mutex.h"
 #include "ssx/sformat.h"
 #include "test_utils/boost_fixture.h"
-#include "utils/mutex.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -24,7 +24,7 @@ struct fixture {
           response{r.content + "-response"});
     }
 
-    mutex lock{"mutex_buffer_test"};
+    ssx::mutex lock{"mutex_buffer_test"};
     raft::details::mutex_buffer<request, response> buf;
 };
 

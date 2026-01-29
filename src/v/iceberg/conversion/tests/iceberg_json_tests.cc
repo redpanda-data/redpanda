@@ -291,7 +291,8 @@ TEST(JsonSchema, Empty) {
         auto result = to_iceberg_type(schema_str);
         ASSERT_TRUE(result.has_error());
         ASSERT_STREQ(
-          "Unsupported JSON conversion: missing type keyword",
+          "Type constraint is not sufficient for transforming. Types: [null, "
+          "boolean, object, array, number, integer, string]",
           result.error().what());
     }
 }
@@ -306,7 +307,7 @@ TEST(JsonSchema, NullType) {
         auto result = to_iceberg_type(schema_str);
         ASSERT_TRUE(result.has_error());
         ASSERT_STREQ(
-          "Unsupported JSON conversion: missing type keyword",
+          "Type constraint is not sufficient for transforming. Types: [null]",
           result.error().what());
     }
 }
@@ -338,6 +339,48 @@ TEST(JsonSchema, PrimitiveTypesMixed) {
     ASSERT_STREQ(
       "Type constraint is not sufficient for transforming. Types: [integer, "
       "string]",
+      result.error().what());
+}
+
+TEST(JsonSchema, ThreeWayAmbiguousUnion) {
+    constexpr std::string_view schema = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": ["boolean", "integer", "string"]
+    })";
+
+    auto result = to_iceberg_type(schema);
+    ASSERT_TRUE(result.has_error());
+    ASSERT_STREQ(
+      "Type constraint is not sufficient for transforming. Types: [boolean, "
+      "integer, string]",
+      result.error().what());
+}
+
+TEST(JsonSchema, NullableAmbiguousUnion) {
+    constexpr std::string_view schema = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": ["null", "integer", "string"]
+    })";
+
+    auto result = to_iceberg_type(schema);
+    ASSERT_TRUE(result.has_error());
+    ASSERT_STREQ(
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "integer, string]",
+      result.error().what());
+}
+
+TEST(JsonSchema, ContainerTypeUnion) {
+    constexpr std::string_view schema = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": ["object", "array"]
+    })";
+
+    auto result = to_iceberg_type(schema);
+    ASSERT_TRUE(result.has_error());
+    ASSERT_STREQ(
+      "Type constraint is not sufficient for transforming. Types: [object, "
+      "array]",
       result.error().what());
 }
 
@@ -436,7 +479,8 @@ TEST(JsonSchema, ObjectWithInvalidProperty) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -469,7 +513,8 @@ TEST(JsonSchema, ObjectWithBooleanProperty) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -496,7 +541,8 @@ TEST(JsonSchema, ListWithInvalidItems) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -510,7 +556,8 @@ TEST(JsonSchema, ListWithInvalidItemsList) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -520,6 +567,24 @@ TEST(JsonSchema, ListWithItem) {
       "$id": "https://example.com/root.json",
       "type": "array",
       "items": { "type": "string" }
+    })";
+    auto result = to_iceberg_type(schema);
+    ASSERT_TRUE(result.has_value()) << result.error().what();
+
+    ASSERT_EQ(result.value().fields.size(), 1);
+    ASSERT_TRUE(field_matches(
+      result.value().fields[0],
+      "root",
+      iceberg::list_type::create(
+        0, iceberg::field_required::yes, iceberg::string_type{}),
+      iceberg::field_required::no));
+}
+
+TEST(JsonSchema, ListWithNullableItem) {
+    constexpr std::string_view schema = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": { "type": ["null", "string"] }
     })";
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_value()) << result.error().what();
@@ -643,7 +708,8 @@ TEST(JsonSchema, ListWithItemAndInvalidAdditionalItems) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -750,11 +816,84 @@ TEST(JsonSchema, Format) {
     }
 }
 
+TEST(JsonSchema, FormatIgnoredOnNonStringTypes) {
+    // Format annotations should be silently ignored on non-string types
+    // per JSON Schema spec (format is only meaningful for strings).
+    constexpr std::string_view schema = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "number",
+      "format": "date"
+    })";
+
+    auto result = to_iceberg_type(schema);
+    ASSERT_TRUE(result.has_value()) << result.error().what();
+    ASSERT_EQ(result.value().fields.size(), 1);
+    ASSERT_TRUE(field_matches(
+      result.value().fields[0],
+      "root",
+      iceberg::double_type{},
+      iceberg::field_required::no));
+}
+
+TEST(JsonSchema, RefInternalSubschema) {
+    constexpr std::string_view schema = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/root.json",
+      "definitions": {
+        "positiveInteger": {
+          "type": "integer",
+          "minimum": 0,
+          "exclusiveMinimum": true
+        }
+      },
+      "type": "object",
+      "properties": {
+        "age": { "$ref": "#/definitions/positiveInteger" }
+      }
+    })";
+
+    auto result = to_iceberg_type(schema);
+    ASSERT_TRUE(result.has_value()) << result.error().what();
+
+    ASSERT_EQ(result.value().fields.size(), 1);
+    ASSERT_TRUE(field_matches(
+      result.value().fields[0],
+      "age",
+      iceberg::long_type{},
+      iceberg::field_required::no));
+}
+
+TEST(JsonSchema, RefInfiniteRecursion) {
+    constexpr std::string_view schema = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/root.json",
+      "definitions": {
+        "node": {
+          "type": "object",
+          "properties": {
+            "value": { "type": "integer" },
+            "next": { "$ref": "#/definitions/node" }
+          }
+        }
+      },
+      "type": "object",
+      "properties": {
+        "head": { "$ref": "#/definitions/node" }
+      }
+    })";
+
+    auto result = to_iceberg_type(schema);
+    ASSERT_TRUE(result.has_error());
+    ASSERT_STREQ(
+      "Failed to convert JSON schema: Schema depth limit exceeded during "
+      "constraint collection",
+      result.error().what());
+}
+
 TEST(JsonSchema, BannedKeywords) {
     for (const auto& keyword : {
            "patternProperties",
            "dependencies",
-           "$ref",
            "allOf",
            "anyOf",
            "oneOf",

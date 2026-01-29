@@ -35,7 +35,7 @@ public:
     // Returns an `update_response` intended to let the caller know whether the
     // policy deems the accumulated updates immediately ready for committing
     // (`preempt`) or to continue waiting (`wait`).
-    virtual update_response on_update(const object_output_t&) = 0;
+    virtual update_response on_update(const file_and_md_info&) = 0;
 
     // Invoked when the `compaction_committer` is ready to potentially commit
     // some updates as part of its regularly scheduled polling.
@@ -46,7 +46,7 @@ public:
 // batching implemented.
 class commit_on_update_policy : public committing_policy {
 public:
-    update_response on_update(const object_output_t&) final;
+    update_response on_update(const file_and_md_info&) final;
 
     bool should_commit() const final;
 };

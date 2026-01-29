@@ -46,7 +46,7 @@ LIFECYCLE_STATE_UNSPECIFIED: LifecycleState.ValueType
 LIFECYCLE_STATE_LIVE: LifecycleState.ValueType
 LIFECYCLE_STATE_CLOSED: LifecycleState.ValueType
 LIFECYCLE_STATE_PURGED: LifecycleState.ValueType
-global___LifecycleState = LifecycleState
+Global___LifecycleState: typing_extensions.TypeAlias = LifecycleState
 
 @typing.final
 class GetCoordinatorStateRequest(google.protobuf.message.Message):
@@ -64,7 +64,7 @@ class GetCoordinatorStateRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['topics_filter', b'topics_filter']) -> None:
         ...
-global___GetCoordinatorStateRequest = GetCoordinatorStateRequest
+Global___GetCoordinatorStateRequest: typing_extensions.TypeAlias = GetCoordinatorStateRequest
 
 @typing.final
 class GetCoordinatorStateResponse(google.protobuf.message.Message):
@@ -72,10 +72,10 @@ class GetCoordinatorStateResponse(google.protobuf.message.Message):
     STATE_FIELD_NUMBER: builtins.int
 
     @property
-    def state(self) -> global___CoordinatorState:
+    def state(self) -> Global___CoordinatorState:
         ...
 
-    def __init__(self, *, state: global___CoordinatorState | None=...) -> None:
+    def __init__(self, *, state: Global___CoordinatorState | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['state', b'state']) -> builtins.bool:
@@ -83,7 +83,7 @@ class GetCoordinatorStateResponse(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['state', b'state']) -> None:
         ...
-global___GetCoordinatorStateResponse = GetCoordinatorStateResponse
+Global___GetCoordinatorStateResponse: typing_extensions.TypeAlias = GetCoordinatorStateResponse
 
 @typing.final
 class CoordinatorState(google.protobuf.message.Message):
@@ -97,10 +97,10 @@ class CoordinatorState(google.protobuf.message.Message):
         key: builtins.str
 
         @property
-        def value(self) -> global___TopicState:
+        def value(self) -> Global___TopicState:
             ...
 
-        def __init__(self, *, key: builtins.str=..., value: global___TopicState | None=...) -> None:
+        def __init__(self, *, key: builtins.str=..., value: Global___TopicState | None=...) -> None:
             ...
 
         def HasField(self, field_name: typing.Literal['value', b'value']) -> builtins.bool:
@@ -111,15 +111,15 @@ class CoordinatorState(google.protobuf.message.Message):
     TOPIC_STATES_FIELD_NUMBER: builtins.int
 
     @property
-    def topic_states(self) -> google.protobuf.internal.containers.MessageMap[builtins.str, global___TopicState]:
+    def topic_states(self) -> google.protobuf.internal.containers.MessageMap[builtins.str, Global___TopicState]:
         ...
 
-    def __init__(self, *, topic_states: collections.abc.Mapping[builtins.str, global___TopicState] | None=...) -> None:
+    def __init__(self, *, topic_states: collections.abc.Mapping[builtins.str, Global___TopicState] | None=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['topic_states', b'topic_states']) -> None:
         ...
-global___CoordinatorState = CoordinatorState
+Global___CoordinatorState: typing_extensions.TypeAlias = CoordinatorState
 
 @typing.final
 class DataFile(google.protobuf.message.Message):
@@ -145,7 +145,7 @@ class DataFile(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['file_size_bytes', b'file_size_bytes', 'partition_key', b'partition_key', 'partition_spec_id', b'partition_spec_id', 'remote_path', b'remote_path', 'row_count', b'row_count', 'table_schema_id', b'table_schema_id']) -> None:
         ...
-global___DataFile = DataFile
+Global___DataFile: typing_extensions.TypeAlias = DataFile
 
 @typing.final
 class TranslatedOffsetRange(google.protobuf.message.Message):
@@ -160,19 +160,19 @@ class TranslatedOffsetRange(google.protobuf.message.Message):
     kafka_processed_bytes: builtins.int
 
     @property
-    def data_files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___DataFile]:
+    def data_files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DataFile]:
         ...
 
     @property
-    def dlq_files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___DataFile]:
+    def dlq_files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DataFile]:
         ...
 
-    def __init__(self, *, start_offset: builtins.int=..., last_offset: builtins.int=..., data_files: collections.abc.Iterable[global___DataFile] | None=..., dlq_files: collections.abc.Iterable[global___DataFile] | None=..., kafka_processed_bytes: builtins.int=...) -> None:
+    def __init__(self, *, start_offset: builtins.int=..., last_offset: builtins.int=..., data_files: collections.abc.Iterable[Global___DataFile] | None=..., dlq_files: collections.abc.Iterable[Global___DataFile] | None=..., kafka_processed_bytes: builtins.int=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['data_files', b'data_files', 'dlq_files', b'dlq_files', 'kafka_processed_bytes', b'kafka_processed_bytes', 'last_offset', b'last_offset', 'start_offset', b'start_offset']) -> None:
         ...
-global___TranslatedOffsetRange = TranslatedOffsetRange
+Global___TranslatedOffsetRange: typing_extensions.TypeAlias = TranslatedOffsetRange
 
 @typing.final
 class PendingEntry(google.protobuf.message.Message):
@@ -182,10 +182,10 @@ class PendingEntry(google.protobuf.message.Message):
     added_pending_at: builtins.int
 
     @property
-    def data(self) -> global___TranslatedOffsetRange:
+    def data(self) -> Global___TranslatedOffsetRange:
         ...
 
-    def __init__(self, *, data: global___TranslatedOffsetRange | None=..., added_pending_at: builtins.int=...) -> None:
+    def __init__(self, *, data: Global___TranslatedOffsetRange | None=..., added_pending_at: builtins.int=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['data', b'data']) -> builtins.bool:
@@ -193,7 +193,7 @@ class PendingEntry(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['added_pending_at', b'added_pending_at', 'data', b'data']) -> None:
         ...
-global___PendingEntry = PendingEntry
+Global___PendingEntry: typing_extensions.TypeAlias = PendingEntry
 
 @typing.final
 class PartitionState(google.protobuf.message.Message):
@@ -203,10 +203,10 @@ class PartitionState(google.protobuf.message.Message):
     last_committed: builtins.int
 
     @property
-    def pending_entries(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___PendingEntry]:
+    def pending_entries(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___PendingEntry]:
         ...
 
-    def __init__(self, *, pending_entries: collections.abc.Iterable[global___PendingEntry] | None=..., last_committed: builtins.int | None=...) -> None:
+    def __init__(self, *, pending_entries: collections.abc.Iterable[Global___PendingEntry] | None=..., last_committed: builtins.int | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['_last_committed', b'_last_committed', 'last_committed', b'last_committed']) -> builtins.bool:
@@ -217,7 +217,7 @@ class PartitionState(google.protobuf.message.Message):
 
     def WhichOneof(self, oneof_group: typing.Literal['_last_committed', b'_last_committed']) -> typing.Literal['last_committed'] | None:
         ...
-global___PartitionState = PartitionState
+Global___PartitionState: typing_extensions.TypeAlias = PartitionState
 
 @typing.final
 class TopicState(google.protobuf.message.Message):
@@ -231,10 +231,10 @@ class TopicState(google.protobuf.message.Message):
         key: builtins.int
 
         @property
-        def value(self) -> global___PartitionState:
+        def value(self) -> Global___PartitionState:
             ...
 
-        def __init__(self, *, key: builtins.int=..., value: global___PartitionState | None=...) -> None:
+        def __init__(self, *, key: builtins.int=..., value: Global___PartitionState | None=...) -> None:
             ...
 
         def HasField(self, field_name: typing.Literal['value', b'value']) -> builtins.bool:
@@ -246,17 +246,19 @@ class TopicState(google.protobuf.message.Message):
     PARTITION_STATES_FIELD_NUMBER: builtins.int
     LIFECYCLE_STATE_FIELD_NUMBER: builtins.int
     TOTAL_KAFKA_PROCESSED_BYTES_FIELD_NUMBER: builtins.int
+    LAST_COMMITTED_SNAPSHOT_ID_FIELD_NUMBER: builtins.int
     revision: builtins.int
-    lifecycle_state: global___LifecycleState.ValueType
+    lifecycle_state: Global___LifecycleState.ValueType
     total_kafka_processed_bytes: builtins.int
+    last_committed_snapshot_id: builtins.int
 
     @property
-    def partition_states(self) -> google.protobuf.internal.containers.MessageMap[builtins.int, global___PartitionState]:
+    def partition_states(self) -> google.protobuf.internal.containers.MessageMap[builtins.int, Global___PartitionState]:
         ...
 
-    def __init__(self, *, revision: builtins.int=..., partition_states: collections.abc.Mapping[builtins.int, global___PartitionState] | None=..., lifecycle_state: global___LifecycleState.ValueType=..., total_kafka_processed_bytes: builtins.int=...) -> None:
+    def __init__(self, *, revision: builtins.int=..., partition_states: collections.abc.Mapping[builtins.int, Global___PartitionState] | None=..., lifecycle_state: Global___LifecycleState.ValueType=..., total_kafka_processed_bytes: builtins.int=..., last_committed_snapshot_id: builtins.int=...) -> None:
         ...
 
-    def ClearField(self, field_name: typing.Literal['lifecycle_state', b'lifecycle_state', 'partition_states', b'partition_states', 'revision', b'revision', 'total_kafka_processed_bytes', b'total_kafka_processed_bytes']) -> None:
+    def ClearField(self, field_name: typing.Literal['last_committed_snapshot_id', b'last_committed_snapshot_id', 'lifecycle_state', b'lifecycle_state', 'partition_states', b'partition_states', 'revision', b'revision', 'total_kafka_processed_bytes', b'total_kafka_processed_bytes']) -> None:
         ...
-global___TopicState = TopicState
+Global___TopicState: typing_extensions.TypeAlias = TopicState

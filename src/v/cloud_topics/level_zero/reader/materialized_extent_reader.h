@@ -10,15 +10,23 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
+#include "cloud_topics/level_zero/common/micro_probe.h"
 #include "model/record_batch_reader.h"
-#include "storage/log_reader.h"
 
 #include <seastar/core/lowres_clock.hh>
 
 namespace cloud_topics::l0 {
+
+/// Result of the materialization operation.
+/// Even in case of error the probe will track used resources.
+struct materialize_result {
+    result<chunked_vector<model::record_batch>> batches;
+    micro_probe probe;
+};
 
 /// Consume the 'underlying' reader that returns placeholders
 /// and materialize them by downloading from the cloud storage.
@@ -32,8 +40,7 @@ namespace cloud_topics::l0 {
 /// \param cache is a cloud storage cache instance
 /// \param rtc is a retry chain node to use
 /// \param rtc_logger is a logger that should track the progress
-ss::future<result<chunked_vector<model::record_batch>>>
-materialize_placeholders(
+ss::future<materialize_result> materialize_placeholders(
   cloud_storage_clients::bucket_name bucket,
   chunked_vector<extent_meta> query,
   cloud_io::remote_api<ss::lowres_clock>& api,

@@ -74,7 +74,7 @@ ss::future<> fetch_handler::bg_process_requests() {
             }
         } else {
             auto res = fut.get();
-            if (res.has_error()) {
+            if (!res.has_value()) {
                 if (res.error() == errc::shutting_down) {
                     vlog(_logger.debug, "Shutting down");
                     co_return;
@@ -125,8 +125,11 @@ ss::future<> fetch_handler::process_single_request(l0::read_request<>* req) {
             co_return;
         }
 
-        auto res = extent.get();
-        if (res.has_error()) {
+        auto [res, probe] = extent.get();
+        // The registration happens even for failed requests because
+        // failed requests are consuming resources (API calls).
+        _pipeline_stage.register_micro_probe(probe);
+        if (!res.has_value()) {
             vlog(
               req->rtc_logger.warn,
               "Failed to materialize placeholders, error: {} ({})",
@@ -174,7 +177,7 @@ ss::future<checked<bool, errc>> fetch_handler::process_requests() {
     // instances.
     // TODO: use proper limit
     auto to_process = co_await _pipeline_stage.pull_fetch_requests(100_MiB);
-    if (to_process.has_error()) {
+    if (!to_process.has_value()) {
         co_return to_process.error();
     }
     vlog(

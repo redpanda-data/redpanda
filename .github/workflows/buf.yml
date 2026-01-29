@@ -50,7 +50,7 @@ jobs:
           paths: proto
           lint: true
           format: false  # We use clang-tidy
-          breaking: false  # flip to true when we have a release
+          breaking: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'buf skip breaking') }} # Enable breaking change check unless the label 'buf skip breaking' is set
           push: false  # Only validate, don't push to registry
   # ===========================================================================
   # Job: push-to-registry (push events only - registry operations only)

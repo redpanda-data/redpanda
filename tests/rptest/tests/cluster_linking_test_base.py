@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
 from contextlib import contextmanager, nullcontext
 import time
 import socket
@@ -51,8 +50,9 @@ from rptest.services.multi_cluster_services import (
 from rptest.services.redpanda import LoggingConfig, TLSProvider
 from rptest.services.tls import CertificateAuthority, Certificate, TLSCertManager
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.util import bg_thread_cm
+from rptest.util import bg_thread_cm, wait_until_result
 from rptest.utils.node_operations import FailureInjectorBackgroundThread
+from threading import Lock
 from urllib3.exceptions import ProtocolError
 
 
@@ -112,6 +112,9 @@ class ClusterLinkingTLSProvider(TLSProvider):
 
 
 class ClusterLinkingProgressVerifier:
+    instance_lock = Lock()
+    instance_count = 0
+
     def __init__(
         self,
         test_context,
@@ -153,6 +156,14 @@ class ClusterLinkingProgressVerifier:
         self.validate_number_of_messages_on_target = (
             validate_number_of_messages_on_target
         )
+        self._instance_id = ClusterLinkingProgressVerifier.instance_id()
+
+    @staticmethod
+    def instance_id() -> int:
+        with ClusterLinkingProgressVerifier.instance_lock:
+            id = ClusterLinkingProgressVerifier.instance_count
+            ClusterLinkingProgressVerifier.instance_count += 1
+            return id
 
     def start(self):
         self.producer = KgoVerifierProducer(
@@ -177,7 +188,7 @@ class ClusterLinkingProgressVerifier:
             msg_size=self.msg_size,
             readers=readers,
             use_transactions=self.use_transactions,
-            group_name=f"source-cg-{self.topic}",
+            group_name=f"source-cg-{self._instance_id}",
             nodes=self.preallocated_nodes,
             continuous=True,
             **self.consumer_properties,
@@ -192,7 +203,7 @@ class ClusterLinkingProgressVerifier:
             max_msgs=self.msg_count,
             readers=readers,
             use_transactions=self.use_transactions,
-            group_name=f"test-kgo-consumer-group-{self.topic}",
+            group_name=f"target-cg-{self._instance_id}",
             nodes=self.preallocated_nodes,
             continuous=True,
             **self.consumer_properties,
@@ -248,58 +259,63 @@ class ClusterLinkingProgressVerifier:
             and self.target_consumer_finished()
         )
 
-    def _calculate_partition_lag(self):
-        ret = defaultdict(dict)
-
+    def check_topic_hwms(self, timeout: int = 120, debug_only: bool = False):
         # describe target first to make sure the lag is always greater than or equal to 0
-        target = list(self.target_rpk.describe_topic(self.topic))
-        source = list(self.source_rpk.describe_topic(self.topic))
+        def describe_topics():
+            def describe_once():
+                target = list(self.target_rpk.describe_topic(self.topic))
+                source = list(self.source_rpk.describe_topic(self.topic))
+                if len(source) != len(target):
+                    return False, None
+                return True, (target, source)
 
-        if len(source) != len(target):
-            return None
-        for source_partition, target_partition in zip(source, target):
-            if source_partition.id != target_partition.id:
-                return None
-            assert source_partition.high_watermark >= target_partition.high_watermark, (
-                f"Source partition high watermark must be greater than or equal to target partition high watermark (source: {source_partition.high_watermark}, target: {target_partition.high_watermark})"
+            return wait_until_result(
+                describe_once,
+                timeout_sec=timeout,
+                backoff_sec=0.5,
+                err_msg=f"Failed to describe topics for lag calculation in {timeout} seconds",
             )
-            lag = source_partition.high_watermark - target_partition.high_watermark
-            self.logger.debug(
-                f"Partition {self.topic}/{source_partition.id} - source: ({source_partition}), target: ({target_partition}) lag: {lag}"
+
+        try:
+            (target, source) = describe_topics()
+            assert len(target) == len(source), (
+                "Verification failed, Topic partitions count mismatch between source and target"
             )
-            ret[source_partition.id] = lag
+            partitions_with_lag = 0
+            for source_partition, target_partition in zip(source, target):
+                assert source_partition.id == target_partition.id, (
+                    f"Partition id mismatch {source_partition.id} != {target_partition.id}"
+                )
+                if target_partition.high_watermark != source_partition.high_watermark:
+                    lag = (
+                        source_partition.high_watermark
+                        - target_partition.high_watermark
+                    )
+                    self.logger.debug(
+                        f"Partition {self.topic}/{source_partition.id} - source: ({source_partition}), target: ({target_partition}) lag: {lag}"
+                    )
+                    partitions_with_lag += 1
+                assert debug_only or partitions_with_lag == 0, (
+                    f"Verification failed, {partitions_with_lag} partitions do not have synced high watermarks"
+                )
+        except Exception as e:
+            self.logger.warning(f"Verification failed: {e}")
+            if not debug_only:
+                raise
 
-        return ret
-
-    def total_lag(self, partition_lags) -> float:
-        if partition_lags is None:
-            return float("inf")
-        total = 0
-        for lag in partition_lags.values():
-            total += lag
-        return total
+    def stop_kgo_services(self):
+        self.source_consumer.stop()
+        self.target_consumer.stop()
+        self.producer.stop()
 
     def validate_progress(self, progress_timeout=60, backoff_delay=5):
-        total_last_lag = float("inf")
-        replication_last_progress = time.time()
-
         workload_last_progress = time.time()
         source_consumer_last_reads = 0
         target_consumer_last_reads = 0
         producer_last_acked = 0
 
-        while True:
-            # Check replication progress
-            current_lag = self._calculate_partition_lag()
-            total_current_lag = self.total_lag(current_lag)
+        while not self.workload_finished():
             now = time.time()
-            # track replication progress
-            if total_current_lag < total_last_lag or total_current_lag == 0:
-                self.logger.debug(
-                    f"Replication making progress - current_lag: {total_current_lag}, last_lag: {total_last_lag}"
-                )
-                replication_last_progress = now
-
             producer_acked = self.producer.produce_status.acked
             source_reads = self.source_consumer.consumer_status.validator.total_reads
             target_reads = self.target_consumer.consumer_status.validator.total_reads
@@ -315,29 +331,17 @@ class ClusterLinkingProgressVerifier:
                 target_consumer_last_reads = target_reads
                 producer_last_acked = producer_acked
 
-            if not self.workload_finished() and (
-                now - workload_last_progress > progress_timeout
-            ):
+            if now - workload_last_progress > progress_timeout:
                 self.logger.error(
                     f"No workload progress for {progress_timeout}s, source reads: {source_reads} (last: {source_consumer_last_reads}), target reads: {target_reads} (last: {target_consumer_last_reads}), producer acks: {producer_acked} (last: {producer_last_acked})"
                 )
-                self.source_consumer.stop()
-                self.target_consumer.stop()
-                self.producer.stop()
+                self.check_topic_hwms(debug_only=True)
                 raise Exception("Workload stalled")
 
-            total_last_lag = total_current_lag
-            if time.time() - replication_last_progress > progress_timeout:
-                self.logger.error(
-                    f"No replication progress for {progress_timeout}s, last lag: {total_last_lag}, current lag: {total_current_lag}"
-                )
-                raise Exception("Replication stalled")
+            if not self.workload_finished():
+                time.sleep(backoff_delay)
 
-            if self.workload_finished() and total_current_lag == 0:
-                self.logger.info("Replication finished")
-                break
-
-            time.sleep(backoff_delay)
+        self.check_topic_hwms()
 
     def consumer_groups_state_consistent(self):
         source_groups = self.source_rpk.group_list()
@@ -922,7 +926,7 @@ class ShadowLinkPreAllocTestBase(ShadowLinkTestBase):
         self.verifier: ClusterLinkingProgressVerifier
         self.started = False
 
-    def start_producer_consumer(
+    def _start_producer_consumer(
         self,
         topic: str = "test-topic",
         msg_size: int = 128,
@@ -947,6 +951,14 @@ class ShadowLinkPreAllocTestBase(ShadowLinkTestBase):
         )
         self.verifier.start()
         self.started = True
+
+    @contextmanager
+    def producer_consumer(self, **kwargs: Any):
+        self._start_producer_consumer(**kwargs)
+        try:
+            yield
+        finally:
+            self.verifier.stop_kgo_services()
 
     def verify(self):
         success, error = self.verifier.wait_and_verify()

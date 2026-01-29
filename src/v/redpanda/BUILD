@@ -5,6 +5,13 @@ redpanda_cc_library(
     name = "application",
     srcs = [
         "application.cc",
+        "application_admin.cc",
+        "application_bootstrap.cc",
+        "application_config.cc",
+        "application_rpc.cc",
+        "application_runtime.cc",
+        "application_services.cc",
+        "application_start.cc",
         "monitor_unsafe.cc",
     ],
     hdrs = [
@@ -25,6 +32,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:app",
         "//src/v/cloud_topics/level_one/metastore:leader_router",
         "//src/v/cloud_topics/level_one/metastore:simple_stm",
+        "//src/v/cloud_topics/level_one/metastore/lsm:stm",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_factory",
         "//src/v/cluster",
         "//src/v/cluster:cloud_metadata_offsets_recovery_router",
@@ -60,7 +68,6 @@ redpanda_cc_library(
         "//src/v/kafka/server:write_at_offset_stm",
         "//src/v/metrics",
         "//src/v/migrations",
-        "//src/v/model",
         "//src/v/net",
         "//src/v/net:tls",
         "//src/v/pandaproxy:core",
@@ -72,6 +79,7 @@ redpanda_cc_library(
         "//src/v/redpanda/admin/proxy:client",
         "//src/v/redpanda/admin/proxy:service",
         "//src/v/redpanda/admin/services:cluster",
+        "//src/v/redpanda/admin/services:security",
         "//src/v/redpanda/admin/services/datalake",
         "//src/v/redpanda/admin/services/internal:breakglass",
         "//src/v/redpanda/admin/services/internal:debug",
@@ -79,7 +87,6 @@ redpanda_cc_library(
         "//src/v/redpanda/admin/services/internal:shadow_link_internal",
         "//src/v/redpanda/admin/services/shadow_link",
         "//src/v/resource_mgmt:cpu_profiler",
-        "//src/v/resource_mgmt:cpu_scheduling",
         "//src/v/resource_mgmt:memory_groups",
         "//src/v/resource_mgmt:memory_sampling",
         "//src/v/resource_mgmt:scheduling_groups_probe",
@@ -88,9 +95,7 @@ redpanda_cc_library(
         "//src/v/rpc",
         "//src/v/security",
         "//src/v/security/audit",
-        "//src/v/ssx:abort_source",
         "//src/v/ssx:future_util",
-        "//src/v/ssx:semaphore",
         "//src/v/ssx:sharded_service_container",
         "//src/v/ssx:thread_worker",
         "//src/v/ssx:watchdog",
@@ -104,16 +109,13 @@ redpanda_cc_library(
         "//src/v/transform/stm",
         "//src/v/utils:file_io",
         "//src/v/utils:human",
-        "//src/v/utils:named_type",
         "//src/v/utils:stop_signal",
-        "//src/v/utils:uuid",
         "//src/v/version",
         "//src/v/wasm:api",
         "//src/v/wasm:cache",
         "//src/v/wasm:impl",
         "@abseil-cpp//absl/log:globals",
         "@boost//:program_options",
-        "@fmt",
         "@protobuf",
         "@protobuf//:protobuf_lite",
         "@seastar",
@@ -134,6 +136,20 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+# Enable or disable --emit-relocs for the redpanda binary (only)
+bool_flag(
+    name = "emit_relocs",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_emit_relocs",
+    flag_values = {
+        ":emit_relocs": "true",
+    },
+    visibility = ["//visibility:public"],
+)
+
 redpanda_cc_binary(
     name = "redpanda",
     srcs = [
@@ -144,6 +160,13 @@ redpanda_cc_binary(
             ":use_lto": [
                 "-flto=thin",
                 "-ffat-lto-objects",
+            ],
+            "//conditions:default": [
+            ],
+        }) +
+        select({
+            ":use_emit_relocs": [
+                "-Wl,--emit-relocs",
             ],
             "//conditions:default": [
             ],

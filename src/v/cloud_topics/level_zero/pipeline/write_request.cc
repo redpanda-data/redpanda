@@ -33,7 +33,7 @@ write_request<Clock>::write_request(
 template<class Clock>
 void write_request<Clock>::set_value(errc e) noexcept {
     try {
-        response.set_value(e);
+        response.set_value(std::unexpected(e));
     } catch (const ss::broken_promise&) {
         vlog(
           cd_log.error,

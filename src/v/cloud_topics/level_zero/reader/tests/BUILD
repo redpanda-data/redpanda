@@ -47,6 +47,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
+        "//src/v/cloud_topics/level_zero/common:micro_probe",
         "//src/v/cloud_topics/level_zero/reader:materialized_extent",
         "//src/v/cloud_topics/level_zero/reader/tests:materialized_extent_fixture",
         "//src/v/cloud_topics/level_zero/stm:placeholder",

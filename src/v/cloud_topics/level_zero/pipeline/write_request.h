@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
@@ -23,6 +22,8 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/weak_ptr.hh>
+
+#include <expected>
 
 namespace cloud_topics::l0 {
 
@@ -43,11 +44,12 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     /// with timeout error
     timestamp_t expiration_time;
     /// Current pipeline stage
+    /// Use write_pipeline::advance_next_stage to change stage.
     pipeline_stage stage;
     /// List of all write requests
     intrusive_list_hook _hook;
 
-    using response_t = checked<chunked_vector<extent_meta>, errc>;
+    using response_t = std::expected<chunked_vector<extent_meta>, errc>;
     /// The promise is used to signal to the caller
     /// after the upload is completed
     ss::promise<response_t> response;

@@ -6,6 +6,23 @@ package(default_visibility = [
 ])
 
 redpanda_cc_library(
+    name = "probe",
+    srcs = [
+        "probe.cc",
+    ],
+    hdrs = [
+        "probe.h",
+    ],
+    deps = [
+        "//src/v/metrics",
+        "//src/v/utils:hdr_hist",
+        "//src/v/utils:log_hist",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "batch_cache",
     srcs = [
         "batch_cache.cc",
@@ -14,6 +31,7 @@ redpanda_cc_library(
         "batch_cache.h",
     ],
     deps = [
+        ":probe",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

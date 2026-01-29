@@ -155,4 +155,138 @@ TEST_F_CORO(security_migrator_test, migrate_all_acls) {
       security::acl_host::wildcard_host(),
       security::acl_permission::allow));
 }
+
+TEST_F_CORO(security_migrator_test, migrate_group_acls) {
+    // This test verifies that Group: principal ACLs are properly migrated
+    security::resource_pattern topic_resource{
+      security::resource_type::topic,
+      "test-topic",
+      security::pattern_type::literal};
+    security::resource_pattern cluster_resource{
+      security::resource_type::cluster,
+      security::resource_pattern::wildcard,
+      security::pattern_type::literal};
+
+    fixture().get_cluster_mock().acl_store().add_bindings(
+      {// Group ACL on topic resource
+       security::acl_binding(
+         topic_resource,
+         security::acl_entry{
+           security::acl_principal::from_string("Group:test-group"),
+           security::acl_host::wildcard_host(),
+           security::acl_operation::read,
+           security::acl_permission::allow}),
+       // Group ACL on cluster resource
+       security::acl_binding(
+         cluster_resource,
+         security::acl_entry{
+           security::acl_principal::from_string("Group:test-group"),
+           security::acl_host::wildcard_host(),
+           security::acl_operation::describe,
+           security::acl_permission::allow})});
+
+    co_await fixture().upsert_link(get_default_metadata());
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      5s, [this] { return fixture().security_service().acls().size() >= 2; })
+
+    const auto& local_acls = fixture().security_service().acls();
+
+    EXPECT_EQ(local_acls.size(), 2);
+
+    const auto topic_it = local_acls.find(topic_resource);
+    ASSERT_NE_CORO(topic_it, local_acls.end())
+      << "Failed to find topic resource " << topic_resource;
+    ASSERT_FALSE_CORO(topic_it->second.empty())
+      << "Topic resource contains no acls";
+
+    EXPECT_TRUE(topic_it->second.contains(
+      security::acl_operation::read,
+      security::acl_principal::from_string("Group:test-group"),
+      security::acl_host::wildcard_host(),
+      security::acl_permission::allow));
+
+    const auto cluster_it = local_acls.find(cluster_resource);
+    ASSERT_NE_CORO(cluster_it, local_acls.end())
+      << "Failed to find cluster resource " << cluster_resource;
+    ASSERT_FALSE_CORO(cluster_it->second.empty())
+      << "Cluster resource contains no acls";
+
+    EXPECT_TRUE(cluster_it->second.contains(
+      security::acl_operation::describe,
+      security::acl_principal::from_string("Group:test-group"),
+      security::acl_host::wildcard_host(),
+      security::acl_permission::allow));
+}
+
+TEST_F_CORO(security_migrator_test, migrate_mixed_principal_acls) {
+    // This test verifies that a mix of User, Role, and Group ACLs are migrated
+    security::resource_pattern topic_resource{
+      security::resource_type::topic,
+      "test-topic",
+      security::pattern_type::literal};
+
+    fixture().get_cluster_mock().acl_store().add_bindings(
+      {// User ACL
+       security::acl_binding(
+         topic_resource,
+         security::acl_entry{
+           security::acl_principal::from_string("User:test-user"),
+           security::acl_host::wildcard_host(),
+           security::acl_operation::read,
+           security::acl_permission::allow}),
+       // Role ACL
+       security::acl_binding(
+         topic_resource,
+         security::acl_entry{
+           security::acl_principal::from_string("RedpandaRole:test-role"),
+           security::acl_host::wildcard_host(),
+           security::acl_operation::write,
+           security::acl_permission::allow}),
+       // Group ACL
+       security::acl_binding(
+         topic_resource,
+         security::acl_entry{
+           security::acl_principal::from_string("Group:test-group"),
+           security::acl_host::wildcard_host(),
+           security::acl_operation::describe,
+           security::acl_permission::allow})});
+
+    co_await fixture().upsert_link(get_default_metadata());
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      5s, [this] { return fixture().security_service().acls().size() >= 1; })
+
+    const auto& local_acls = fixture().security_service().acls();
+
+    EXPECT_EQ(local_acls.size(), 1);
+
+    const auto topic_it = local_acls.find(topic_resource);
+    ASSERT_NE_CORO(topic_it, local_acls.end())
+      << "Failed to find topic resource " << topic_resource;
+
+    // Verify User ACL
+    EXPECT_TRUE(topic_it->second.contains(
+      security::acl_operation::read,
+      security::acl_principal::from_string("User:test-user"),
+      security::acl_host::wildcard_host(),
+      security::acl_permission::allow))
+      << "User ACL not found";
+
+    // Verify Role ACL
+    EXPECT_TRUE(topic_it->second.contains(
+      security::acl_operation::write,
+      security::acl_principal::from_string("RedpandaRole:test-role"),
+      security::acl_host::wildcard_host(),
+      security::acl_permission::allow))
+      << "Role ACL not found";
+
+    // Verify Group ACL
+    EXPECT_TRUE(topic_it->second.contains(
+      security::acl_operation::describe,
+      security::acl_principal::from_string("Group:test-group"),
+      security::acl_host::wildcard_host(),
+      security::acl_permission::allow))
+      << "Group ACL not found";
+}
 } // namespace cluster_link::tests

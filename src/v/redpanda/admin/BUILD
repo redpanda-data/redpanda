@@ -68,6 +68,9 @@ seastar_cc_swagger_library(
 seastar_cc_swagger_library(
     name = "shadow_indexing",
     src = "api-doc/shadow_indexing.json",
+    definitions = [
+        "api-doc/shadow_indexing.def.json",
+    ],
 )
 
 seastar_cc_swagger_library(

@@ -19,7 +19,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/authtoken"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/spf13/afero"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -103,13 +103,13 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 			if a == nil || a.AuthToken == "" {
 				return nil, errors.New("no current auth found, please login with 'rpk cloud login'")
 			}
-			expired, err := oauth.ValidateToken(
+			expired, err := authtoken.ValidateToken(
 				a.AuthToken,
 				auth0.NewClient(p.DevOverrides()).Audience(),
 				a.ClientID,
 			)
 			if err != nil {
-				if errors.Is(err, oauth.ErrMissingToken) {
+				if errors.Is(err, authtoken.ErrMissingToken) {
 					return nil, err
 				}
 				return nil, fmt.Errorf("unable to validate cloud token, please login again using 'rpk cloud login': %v", err)

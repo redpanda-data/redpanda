@@ -16,7 +16,8 @@ def main():
     clang_tidy_bin = sys.argv[1]
     fake_output = sys.argv[2]
     user_config_file = sys.argv[3]
-    remaining_args = sys.argv[4:]
+    plugins_lib = sys.argv[4]
+    remaining_args = sys.argv[5:]
 
     # Bazel requires some kind of output file must be specified
     # so always create it
@@ -34,12 +35,14 @@ def main():
             f"--config-file={final_config_file.name}",
             "--quiet",
             "--verify-config",
+            f"--load={plugins_lib}",
         ]
         _ = subprocess.run(verify_command, check=True, capture_output=True, text=True)
 
         run_command = [
             clang_tidy_bin,
             f"--config-file={final_config_file.name}",
+            f"--load={plugins_lib}",
         ] + remaining_args
 
         _ = subprocess.run(run_command, check=True, capture_output=True, text=True)

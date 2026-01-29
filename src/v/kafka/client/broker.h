@@ -18,7 +18,7 @@
 #include "kafka/client/transport.h"
 #include "net/connection.h"
 #include "security/scram_algorithm.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/gate.hh>
@@ -191,6 +191,8 @@ private:
     ss::future<>
     do_authenticate_scram512(ss::sstring username, ss::sstring password);
     ss::future<> do_authenticate_oauthbearer(ss::sstring token);
+    ss::future<>
+    do_authenticate_plain(ss::sstring username, ss::sstring password);
     ss::future<security::server_first_message>
     send_scram_client_first(const security::client_first_message& client_first);
     ss::future<security::server_final_message>
@@ -199,7 +201,7 @@ private:
     model::node_id _node_id;
     std::unique_ptr<transport> _transport;
     const connection_configuration* _config;
-    mutex _reconnect_mutex{"broker::reconnect_mutex"};
+    ssx::mutex _reconnect_mutex{"broker::reconnect_mutex"};
     ss::gate _gate;
     prefix_logger _logger;
     auth_state _authentication_state = auth_state::none;

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "random/generators.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
@@ -38,22 +39,30 @@ inline constexpr cluster_epoch prev_cluster_epoch(cluster_epoch e) {
 }
 
 /// Is the identifier of a cloud topic object L0 object, it is a combination
-/// of a unique name (UUIDv4) and a cluster epoch.
+/// of a unique name (UUIDv4), a cluster epoch, and a random 3-digit numeric
+/// prefix.
 struct object_id
-  : serde::envelope<object_id, serde::version<0>, serde::version<0>> {
+  : serde::envelope<object_id, serde::version<1>, serde::compat_version<0>> {
     cluster_epoch epoch;
     uuid_t name;
+    using prefix_t = uint16_t;
+    prefix_t prefix;
     static object_id create(cluster_epoch epoch) {
-        return {.epoch = epoch, .name = uuid_t::create()};
+        return {
+          .epoch = epoch,
+          .name = uuid_t::create(),
+          .prefix = random_generators::get_int<prefix_t>(0, prefix_max)};
     }
-    auto serde_fields() { return std::tie(epoch, name); }
+    auto serde_fields() { return std::tie(epoch, name, prefix); }
     bool operator==(const object_id& other) const = default;
     auto operator<=>(const object_id& other) const = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const object_id& id) {
-        return H::combine(std::move(h), id.epoch(), id.name);
+        return H::combine(std::move(h), id.epoch(), id.name, id.prefix);
     }
+
+    static constexpr prefix_t prefix_max = 999;
 };
 
 /// Type of ownership

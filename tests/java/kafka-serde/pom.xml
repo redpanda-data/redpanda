@@ -30,7 +30,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <avro.version>1.12.0</avro.version>
-        <confluent.version>7.8.0</confluent.version>
+        <confluent.version>8.1.1</confluent.version>
         <slf4j.version>2.0.16</slf4j.version>
         <buildDir>${project.basedir}/target</buildDir>
     </properties>

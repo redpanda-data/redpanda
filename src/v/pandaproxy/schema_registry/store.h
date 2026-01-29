@@ -51,7 +51,7 @@ make_non_const_iterator(T& container, result<typename T::const_iterator> it) {
 
 class store {
 public:
-    using schema_id_set = absl::btree_set<schema_id>;
+    using schema_id_set = absl::btree_set<context_schema_id>;
 
     explicit store()
       : store(is_mutable::no) {}
@@ -75,36 +75,44 @@ public:
     /// return the schema_version and schema_id, and whether it's new.
     insert_result insert(subject_schema schema) {
         auto [sub, def] = std::move(schema).destructure();
-        auto id = insert_schema(std::move(def)).id;
+        auto id = insert_schema(sub.ctx, std::move(def)).id;
         auto [version, inserted] = insert_subject(std::move(sub), id);
         return {version, id, inserted};
     }
 
     ///\brief Return a schema definition by id.
-    result<schema_definition> get_schema_definition(const schema_id& id) const {
+    result<schema_definition>
+    get_schema_definition(const context_schema_id& id) const {
         auto it = _schemas.find(id);
         if (it == _schemas.end()) {
-            return not_found(id);
+            return not_found(id.id);
         }
         return {it->second.definition.share()};
     }
 
     ///\brief Return the id of the schema, if it already exists.
-    std::optional<schema_id> get_schema_id(const schema_definition& def) const {
+    std::optional<schema_id>
+    get_schema_id(const context& ctx, const schema_definition& def) const {
         // Iterate in decreasing order to return the maximal matching id
         auto rev = std::views::reverse(_schemas);
-        const auto s_it = std::ranges::find_if(
-          rev, [&](const auto& s) { return def == s.second.definition; });
-        return s_it == rev.end() ? std::optional<schema_id>{} : s_it->first;
+        const auto s_it = std::ranges::find_if(rev, [&](const auto& s) {
+            return ctx == s.first.ctx && def == s.second.definition;
+        });
+        return s_it == rev.end() ? std::optional<schema_id>{} : s_it->first.id;
     }
 
     ///\brief Return a list of subject-versions for the shema id.
-    chunked_vector<subject_version> get_schema_subject_versions(schema_id id) {
+    chunked_vector<subject_version>
+    get_schema_subject_versions(const context_schema_id& id) {
         chunked_vector<subject_version> svs;
         for (const auto& s : _subjects) {
+            if (s.first.ctx != id.ctx) {
+                continue;
+            }
             for (const auto& vs : s.second.versions) {
-                if (vs.id == id && !vs.deleted) {
-                    svs.emplace_back(s.first, vs.version);
+                if (vs.id == id.id && !vs.deleted) {
+                    // TODO: return the full context_subject here
+                    svs.emplace_back(s.first.sub, vs.version);
                 }
             }
         }
@@ -112,13 +120,16 @@ public:
     }
 
     ///\brief Return a list of subjects for the schema id.
-    chunked_vector<subject>
-    get_schema_subjects(schema_id id, include_deleted inc_del) {
-        chunked_vector<subject> subs;
+    chunked_vector<context_subject>
+    get_schema_subjects(const context_schema_id& id, include_deleted inc_del) {
+        chunked_vector<context_subject> subs;
         for (const auto& s : _subjects) {
+            if (s.first.ctx != id.ctx) {
+                continue;
+            }
             if (std::ranges::any_of(
-                  s.second.versions, [id, inc_del](const auto& vs) {
-                      return vs.id == id && (inc_del || !vs.deleted);
+                  s.second.versions, [&id, inc_del](const auto& vs) {
+                      return vs.id == id.id && (inc_del || !vs.deleted);
                   })) {
                 subs.emplace_back(s.first);
             }
@@ -128,7 +139,7 @@ public:
 
     ///\brief Return subject_version_id for a subject and version
     result<subject_version_entry> get_subject_version_id(
-      const subject& sub,
+      const context_subject& sub,
       std::optional<schema_version> version,
       include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
@@ -152,13 +163,14 @@ public:
 
     ///\brief Return a schema by subject and version.
     result<stored_schema> get_subject_schema(
-      const subject& sub,
+      const context_subject& sub,
       std::optional<schema_version> version,
       include_deleted inc_del) const {
         auto v_id = BOOST_OUTCOME_TRYX(
           get_subject_version_id(sub, version, inc_del));
 
-        auto def = BOOST_OUTCOME_TRYX(get_schema_definition(v_id.id));
+        auto def = BOOST_OUTCOME_TRYX(
+          get_schema_definition({sub.ctx, v_id.id}));
 
         return stored_schema{
           .schema = {sub, std::move(def)},
@@ -168,20 +180,20 @@ public:
     }
 
     ///\brief Return a list of subjects.
-    chunked_vector<subject> get_subjects(
+    chunked_vector<context_subject> get_subjects(
       include_deleted inc_del,
       const std::optional<ss::sstring>& subject_prefix = std::nullopt) const {
-        chunked_vector<subject> res;
+        chunked_vector<context_subject> res;
         res.reserve(_subjects.size());
-        for (const auto& sub : _subjects) {
-            if (inc_del || !sub.second.deleted) {
+        for (const auto& ctx_sub : _subjects) {
+            if (inc_del || !ctx_sub.second.deleted) {
                 auto has_version = std::ranges::any_of(
-                  sub.second.versions,
+                  ctx_sub.second.versions,
                   [inc_del](const auto& v) { return inc_del || !v.deleted; });
                 if (
                   has_version
-                  && sub.first().starts_with(subject_prefix.value_or(""))) {
-                    res.push_back(sub.first);
+                  && ctx_sub.first.starts_with(subject_prefix.value_or(""))) {
+                    res.push_back(ctx_sub.first);
                 }
             }
         }
@@ -189,8 +201,11 @@ public:
     }
 
     ///\brief Return if there are subjects.
-    bool has_subjects(include_deleted inc_del) const {
-        return std::ranges::any_of(_subjects, [inc_del](const auto& sub) {
+    bool has_subjects(const context& ctx, include_deleted inc_del) const {
+        return std::ranges::any_of(_subjects, [inc_del, &ctx](const auto& sub) {
+            if (sub.first.ctx != ctx) {
+                return false;
+            }
             return std::ranges::any_of(
               sub.second.versions,
               [inc_del](const auto& v) { return inc_del || !v.deleted; });
@@ -199,7 +214,7 @@ public:
 
     ///\brief Return a list of versions and associated schema_id.
     result<chunked_vector<schema_version>>
-    get_versions(const subject& sub, include_deleted inc_del) const {
+    get_versions(const context_subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& versions = sub_it->second.versions;
         if (versions.empty()) {
@@ -216,7 +231,7 @@ public:
     }
 
     ///\brief Return the value of the 'deleted' field on a subject
-    result<is_deleted> is_subject_deleted(const subject& sub) const {
+    result<is_deleted> is_subject_deleted(const context_subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
         return sub_it->second.deleted;
@@ -224,7 +239,7 @@ public:
 
     ///\brief Return the value of the 'deleted' field on a subject
     result<is_deleted> is_subject_version_deleted(
-      const subject& sub, const schema_version version) const {
+      const context_subject& sub, const schema_version version) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
         auto v_it = BOOST_OUTCOME_TRYX(
@@ -236,7 +251,7 @@ public:
     ///
     /// \return A vector with at least one element
     result<chunked_vector<seq_marker>>
-    get_subject_written_at(const subject& sub) const {
+    get_subject_written_at(const context_subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
 
@@ -262,7 +277,7 @@ public:
     ///
     /// \return A vector (possibly empty)
     result<chunked_vector<seq_marker>>
-    get_subject_config_written_at(const subject& sub) const {
+    get_subject_config_written_at(const context_subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
 
@@ -290,7 +305,7 @@ public:
     ///
     /// \return A vector (possibly empty)
     result<chunked_vector<seq_marker>>
-    get_subject_mode_written_at(const subject& sub) const {
+    get_subject_mode_written_at(const context_subject& sub) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
 
@@ -317,7 +332,7 @@ public:
     ///
     /// \return A vector with at least one element
     result<chunked_vector<seq_marker>> get_subject_version_written_at(
-      const subject& sub, schema_version version) const {
+      const context_subject& sub, schema_version version) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
 
@@ -351,7 +366,7 @@ public:
     ///\brief If this schema ID isn't already in the version list, return
     ///       what the version number will be if it is inserted.
     std::optional<schema_version>
-    project_version(const subject& sub, schema_id sid) const {
+    project_version(const context_subject& sub, schema_id sid) const {
         auto subject_iter = _subjects.find(sub);
         if (subject_iter == _subjects.end()) {
             // Subject doesn't exist yet.  First version will be 1.
@@ -383,7 +398,7 @@ public:
 
     ///\brief Return a list of versions and associated schema_id.
     result<chunked_vector<subject_version_entry>>
-    get_version_ids(const subject& sub, include_deleted inc_del) const {
+    get_version_ids(const context_subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         chunked_vector<subject_version_entry> res;
         std::ranges::copy_if(
@@ -398,7 +413,7 @@ public:
     ///\brief Return whether this subject has a version that references the
     /// schema_id.
     result<bool> has_version(
-      const subject& sub, schema_id id, include_deleted inc_del) const {
+      const context_subject& sub, schema_id id, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& vs = sub_it->second.versions;
         return std::ranges::any_of(vs, [id, inc_del](const auto& entry) {
@@ -406,8 +421,8 @@ public:
         });
     }
 
-    schema_id_set
-    referenced_by(const subject& sub, std::optional<schema_version> ver) {
+    schema_id_set referenced_by(
+      const context_subject& sub, std::optional<schema_version> ver) {
         schema_id_set references;
         for (const auto& s : _schemas) {
             for (const auto& r : s.second.definition.refs()) {
@@ -423,8 +438,9 @@ public:
         schema_id_set has_ids;
         for (const auto& s : _subjects) {
             for (const auto& r : s.second.versions) {
-                if (!r.deleted && ids.contains(r.id)) {
-                    has_ids.insert(r.id);
+                auto ctx_id = context_schema_id{s.first.ctx, r.id};
+                if (!r.deleted && ids.contains(ctx_id)) {
+                    has_ids.insert(ctx_id);
                 }
             }
         }
@@ -443,7 +459,9 @@ public:
 
     ///\brief Delete a subject.
     result<chunked_vector<schema_version>> delete_subject(
-      seq_marker marker, const subject& sub, permanent_delete permanent) {
+      seq_marker marker,
+      const context_subject& sub,
+      permanent_delete permanent) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
 
@@ -483,7 +501,9 @@ public:
 
     ///\brief Delete a subject version.
     result<bool> delete_subject_version(
-      const subject& sub, schema_version version, force force = force::no) {
+      const context_subject& sub,
+      schema_version version,
+      force force = force::no) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
         auto& versions = sub_it->second.versions;
@@ -517,30 +537,38 @@ public:
         return true;
     }
 
-    ///\brief Get the global mode.
-    result<mode> get_mode() const { return _mode; }
+    ///\brief Get the mode of a context.
+    result<mode> get_mode(const context& ctx) const {
+        auto it = _context_stores.find(ctx);
+        if (it == _context_stores.end() || !it->second._mode.has_value()) {
+            return mode::read_write;
+        }
+        return *it->second._mode;
+    }
 
     ///\brief Get the mode for a subject, or fallback to global.
     result<mode>
-    get_mode(const subject& sub, default_to_global fallback) const {
+    get_mode(const context_subject& sub, default_to_global fallback) const {
         auto sub_it = get_subject_iter(sub, include_deleted::yes);
         if (sub_it && (sub_it.assume_value())->second.mode.has_value()) {
             return (sub_it.assume_value())->second.mode.value();
         } else if (fallback) {
-            return _mode;
+            return get_mode(sub.ctx);
         }
         return mode_not_found(sub);
     }
 
-    ///\brief Set the global mode.
-    result<bool> set_mode(mode m, force f) {
+    ///\brief Set the mode of a context.
+    result<bool>
+    set_mode(seq_marker marker, const context& ctx, mode m, force f) {
         BOOST_OUTCOME_TRYX(check_mode_mutability(f));
-        return std::exchange(_mode, m) != m;
+        _context_stores[ctx]._mode_written_at.emplace_back(marker);
+        return std::exchange(_context_stores[ctx]._mode, m) != m;
     }
 
     ///\brief Set the mode for a subject.
     result<bool>
-    set_mode(seq_marker marker, const subject& sub, mode m, force f) {
+    set_mode(seq_marker marker, const context_subject& sub, mode m, force f) {
         BOOST_OUTCOME_TRYX(check_mode_mutability(f));
         auto& sub_entry = get_or_create_subject_entry(sub);
         sub_entry.written_at.push_back(marker);
@@ -549,7 +577,7 @@ public:
 
     ///\brief Clear the mode for a subject.
     result<bool>
-    clear_mode(const seq_marker& marker, const subject& sub, force f) {
+    clear_mode(const seq_marker& marker, const context_subject& sub, force f) {
         BOOST_OUTCOME_TRYX(check_mode_mutability(f));
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
@@ -558,36 +586,67 @@ public:
         return std::exchange(sub_it->second.mode, std::nullopt) != std::nullopt;
     }
 
-    ///\brief Get the global compatibility level.
-    result<compatibility_level> get_compatibility() const {
-        return _compatibility;
+    ///\brief Clear the mode for a context.
+    result<bool> clear_mode(const context& ctx, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        _context_stores[ctx]._mode_written_at.clear();
+        return std::exchange(_context_stores[ctx]._mode, std::nullopt)
+               != std::nullopt;
+    }
+
+    /// \brief Return the seq_marker write history of a context, but only
+    /// mode keys
+    result<chunked_vector<seq_marker>>
+    get_context_mode_written_at(const context& ctx) const {
+        auto it = _context_stores.find(ctx);
+        if (it == _context_stores.end()) {
+            return chunked_vector<seq_marker>{};
+        }
+        return it->second._mode_written_at.copy();
+    }
+
+    ///\brief Get the compatibility level of a context.
+    result<compatibility_level> get_compatibility(const context& ctx) const {
+        auto it = _context_stores.find(ctx);
+        if (
+          it == _context_stores.end()
+          || !it->second._compatibility.has_value()) {
+            return compatibility_level::backward;
+        }
+        return *it->second._compatibility;
     }
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
-    result<compatibility_level>
-    get_compatibility(const subject& sub, default_to_global fallback) const {
+    result<compatibility_level> get_compatibility(
+      const context_subject& sub, default_to_global fallback) const {
         auto sub_it_res = get_subject_iter(sub, include_deleted::no);
         if (sub_it_res.has_error()) {
             return compatibility_not_found(sub);
         }
         auto sub_it = std::move(sub_it_res).assume_value();
-        if (fallback) {
-            return sub_it->second.compatibility.value_or(_compatibility);
-        } else if (sub_it->second.compatibility) {
-            return sub_it->second.compatibility.value();
+        auto compat = sub_it->second.compatibility;
+        if (compat) {
+            return compat.value();
+        } else if (fallback) {
+            return get_compatibility(sub.ctx);
         }
         return compatibility_not_found(sub);
     }
 
-    ///\brief Set the global compatibility level.
-    result<bool> set_compatibility(compatibility_level compatibility) {
-        return std::exchange(_compatibility, compatibility) != compatibility;
+    ///\brief Set the compatibility level of a context.
+    result<bool> set_compatibility(
+      seq_marker marker,
+      const context& ctx,
+      compatibility_level compatibility) {
+        _context_stores[ctx]._config_written_at.push_back(marker);
+        return std::exchange(_context_stores[ctx]._compatibility, compatibility)
+               != compatibility;
     }
 
     ///\brief Set the compatibility level for a subject.
     result<bool> set_compatibility(
       seq_marker marker,
-      const subject& sub,
+      const context_subject& sub,
       compatibility_level compatibility) {
         auto& sub_entry = get_or_create_subject_entry(sub);
         sub_entry.written_at.push_back(marker);
@@ -595,9 +654,16 @@ public:
                != compatibility;
     }
 
+    ///\brief Clear the compatibility level of a context.
+    result<bool> clear_compatibility(const context& ctx) {
+        _context_stores[ctx]._config_written_at.clear();
+        return std::exchange(_context_stores[ctx]._compatibility, std::nullopt)
+               != std::nullopt;
+    }
+
     ///\brief Clear the compatibility level for a subject.
     result<bool>
-    clear_compatibility(const seq_marker& marker, const subject& sub) {
+    clear_compatibility(const seq_marker& marker, const context_subject& sub) {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::yes));
         auto& vec = sub_it->second.written_at;
@@ -606,38 +672,49 @@ public:
                != std::nullopt;
     }
 
+    /// \brief Return the seq_marker write history of a context, but only
+    /// config keys
+    result<chunked_vector<seq_marker>>
+    get_context_config_written_at(const context& ctx) const {
+        auto it = _context_stores.find(ctx);
+        if (it == _context_stores.end()) {
+            return chunked_vector<seq_marker>{};
+        }
+        return it->second._config_written_at.copy();
+    }
+
     struct insert_schema_result {
         schema_id id;
         bool inserted;
     };
-    insert_schema_result insert_schema(schema_definition def) {
-        const auto s_it = std::find_if(
-          _schemas.begin(), _schemas.end(), [&](const auto& s) {
-              const auto& entry = s.second;
-              return def == entry.definition;
-          });
-        if (s_it != _schemas.end()) {
-            return {s_it->first, false};
+    insert_schema_result
+    insert_schema(const context& ctx, schema_definition def) {
+        if (auto id = get_schema_id(ctx, def); id.has_value()) {
+            return {*id, false};
         }
 
-        const auto id = _schemas.empty() ? schema_id{1}
-                                         : std::prev(_schemas.end())->first + 1;
-        auto [_, inserted] = _schemas.try_emplace(id, std::move(def));
+        const auto id = _schemas.empty()
+                          ? schema_id{1}
+                          : std::prev(_schemas.end())->first.id + 1;
+        auto [_, inserted] = _schemas.try_emplace(
+          context_schema_id{ctx, id}, std::move(def));
         return {id, inserted};
     }
 
-    bool upsert_schema(schema_id id, schema_definition def, bool mark_schema) {
+    bool upsert_schema(
+      context_schema_id id, schema_definition def, bool mark_schema) {
         if (mark_schema) {
             _marked_schemas.push_back(id);
         }
-        return _schemas.insert_or_assign(id, schema_entry(std::move(def)))
+        return _schemas
+          .insert_or_assign(std::move(id), schema_entry(std::move(def)))
           .second;
     }
 
-    void delete_schema(schema_id id) { _schemas.erase(id); }
+    void delete_schema(const context_schema_id& id) { _schemas.erase(id); }
 
     // This function returns and unmarkes all marked schemas.
-    chunked_vector<schema_id> extract_marked_schemas() {
+    chunked_vector<context_schema_id> extract_marked_schemas() {
         return std::exchange(_marked_schemas, {});
     }
 
@@ -645,7 +722,7 @@ public:
         schema_version version;
         bool inserted;
     };
-    insert_subject_result insert_subject(subject sub, schema_id id) {
+    insert_subject_result insert_subject(context_subject sub, schema_id id) {
         auto& subject_entry = get_or_create_subject_entry(std::move(sub));
         subject_entry.deleted = is_deleted::no;
         auto& versions = subject_entry.versions;
@@ -666,7 +743,7 @@ public:
 
     bool upsert_subject(
       seq_marker marker,
-      subject sub,
+      context_subject sub,
       schema_version version,
       schema_id id,
       is_deleted deleted) {
@@ -780,6 +857,47 @@ public:
         }
     };
 
+    void maybe_update_max_schema_id(const context_schema_id& id) {
+        auto& nsi = _context_stores[id.ctx]._next_schema_id;
+        auto old = nsi;
+        nsi = std::max(nsi, id.id + schema_id{1});
+        vlog(
+          srlog.debug, "Context {} next_schema_id: {} -> {}", id.ctx, old, nsi);
+    }
+
+    /// \brief Get the schema ID to be used for next insert
+    schema_id project_schema_id(const context& ctx) {
+        // This is very simple because we only allow one write in
+        // flight at a time.  Could be extended to track N in flight
+        // operations if needed.  _next_schema_id gets updated
+        // if the operation was successful, as a side effect
+        // of applying the write to the store.
+        return _context_stores[ctx]._next_schema_id;
+    }
+
+    chunked_vector<context> get_materialized_contexts() const {
+        chunked_vector<context> result;
+        result.push_back(default_context);
+        for (const auto& [ctx, store] : _context_stores) {
+            if (store._materialized && ctx != default_context) {
+                result.push_back(ctx);
+            }
+        }
+        return result;
+    }
+
+    bool is_context_materialized(const context& ctx) const {
+        if (ctx == default_context) {
+            return true;
+        }
+        auto it = _context_stores.find(ctx);
+        return it != _context_stores.end() && it->second._materialized;
+    }
+
+    void set_context_materialized(const context& ctx, bool materialized) {
+        _context_stores[ctx]._materialized = materialized;
+    }
+
 private:
     struct schema_entry {
         explicit schema_entry(schema_definition definition)
@@ -790,7 +908,9 @@ private:
 
     class subject_entry {
     public:
-        explicit subject_entry(const subject& sub) { setup_metrics(sub); }
+        explicit subject_entry(const context_subject& sub) {
+            setup_metrics(sub);
+        }
         std::optional<compatibility_level> compatibility;
         std::optional<mode> mode;
         chunked_vector<subject_version_entry> versions;
@@ -802,7 +922,7 @@ private:
         metrics::internal_metric_groups _metrics;
         metrics::public_metric_groups _public_metrics;
 
-        void setup_metrics(const subject& sub) {
+        void setup_metrics(const context_subject& sub) {
             namespace sm = ss::metrics;
             auto group_name = prometheus_sanitize::metrics_name(
               "schema_registry_cache");
@@ -818,7 +938,8 @@ private:
                   },
                   sm::description("The number of versions in the subject"),
                   {
-                    sm::label{"subject"}(sub),
+                    sm::label{"context"}(sub.ctx),
+                    sm::label{"subject"}(sub.sub),
                     sm::label{"deleted"}(deleted),
                   });
             };
@@ -840,22 +961,22 @@ private:
             }
         }
     };
-    using schema_map = absl::btree_map<schema_id, schema_entry>;
-    using subject_map = absl::node_hash_map<subject, subject_entry>;
+    using schema_map = absl::btree_map<context_schema_id, schema_entry>;
+    using subject_map = absl::node_hash_map<context_subject, subject_entry>;
 
-    subject_entry& get_or_create_subject_entry(subject sub) {
+    subject_entry& get_or_create_subject_entry(context_subject sub) {
         return _subjects.try_emplace(sub, sub).first->second;
     }
 
     result<subject_map::iterator>
-    get_subject_iter(const subject& sub, include_deleted inc_del) {
+    get_subject_iter(const context_subject& sub, include_deleted inc_del) {
         const store* const_this = this;
         auto res = const_this->get_subject_iter(sub, inc_del);
         return detail::make_non_const_iterator(_subjects, res);
     }
 
-    result<subject_map::const_iterator>
-    get_subject_iter(const subject& sub, include_deleted inc_del) const {
+    result<subject_map::const_iterator> get_subject_iter(
+      const context_subject& sub, include_deleted inc_del) const {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
             return not_found(sub);
@@ -902,11 +1023,40 @@ private:
         return v_it;
     }
 
+    struct context_store {
+        std::optional<compatibility_level> _compatibility{std::nullopt};
+        std::optional<mode> _mode{std::nullopt};
+        schema_id _next_schema_id{1};
+        bool _materialized{false};
+
+        chunked_vector<seq_marker> _config_written_at;
+        chunked_vector<seq_marker> _mode_written_at;
+    };
+    using context_store_map = absl::node_hash_map<context, context_store>;
+
+    // NOTE: sharded_store shards data into multiple store instances, so some
+    // fields are only present on certain shards.
+    // _schemas: sharded by (context, schema_id)
+    // _subjects: sharded by (context, subject)
+    // _marked_schemas: sharded by (context, schema_id)
+    // context_store:
+    //  - next_schema_id: sharded by context
+    //  - compatibility: replicated across all shards
+    //  - mode: replicated across all shards
+    //  - materialized: replicated across all shards
+    //  - _config_written_at: replicated across all shards
+    //  - _mode_written_at: replicated across all shards
+    // _mutable: replicated across all shards
+
+    // Alternative: Keep the store as is, but key the existing state under a
+    // context. Yet shard state by (context, subject), (context, schema_id)
+    // still.
+
     schema_map _schemas;
     subject_map _subjects;
-    chunked_vector<schema_id> _marked_schemas;
-    compatibility_level _compatibility{compatibility_level::backward};
-    mode _mode{mode::read_write};
+    chunked_vector<context_schema_id> _marked_schemas;
+    context_store_map _context_stores;
+
     is_mutable _mutable;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;

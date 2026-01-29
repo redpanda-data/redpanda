@@ -48,12 +48,12 @@ void handle_error(cluster_link::errc err, ss::sstring info) {
     case cluster_link::errc::link_verification_unknown_error:
         throw serde::pb::rpc::failed_precondition_exception(std::move(info));
     case cluster_link::errc::link_id_not_found:
+    case cluster_link::errc::topic_not_being_mirrored:
         throw serde::pb::rpc::not_found_exception(std::move(info));
     case cluster_link::errc::invalid_configuration:
         throw serde::pb::rpc::invalid_argument_exception(std::move(info));
     case cluster_link::errc::topic_already_mirrored:
     case cluster_link::errc::topic_mirrored_by_other_link:
-    case cluster_link::errc::topic_not_being_mirrored:
         throw serde::pb::rpc::already_exists_exception(std::move(info));
     case cluster_link::errc::link_limit_reached:
         throw serde::pb::rpc::resource_exhausted_exception(std::move(info));

@@ -18,6 +18,7 @@
 #include "model/timestamp.h"
 #include "serde/envelope.h"
 #include "serde/rw/envelope.h"
+#include "serde/rw/optional.h"
 #include "serde/rw/set.h"
 
 #include <seastar/core/future.hh>
@@ -49,6 +50,18 @@ struct extent
     size_t len;
     // TODO: avoid duplicating the UUIDs with some indirection.
     object_id oid;
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "{{offsets:({}~{}), max_timestamp:{}, filepos:{}, len:{}, oid:{}",
+          base_offset,
+          last_offset,
+          max_timestamp,
+          filepos,
+          len,
+          oid);
+    }
 };
 
 // Offset that corresponds to the start of a given term.
@@ -178,7 +191,15 @@ struct partition_state
       envelope<partition_state, serde::version<0>, serde::compat_version<0>> {
     friend bool operator==(const partition_state&, const partition_state&)
       = default;
-    auto serde_fields() { return std::tie(extents, start_offset, next_offset); }
+    auto serde_fields() {
+        return std::tie(
+          extents,
+          start_offset,
+          next_offset,
+          compaction_state,
+          compaction_epoch,
+          term_starts);
+    }
 
     partition_state copy() const;
 
@@ -206,6 +227,16 @@ struct partition_state
     // Empty iff compaction has not been run for this partition.
     // TODO: should we remove this if cleanup policy is switched?
     std::optional<compaction_state> compaction_state;
+
+    using compaction_epoch_t
+      = named_type<int64_t, struct state_compaction_epoch>;
+    // The current epoch of this partition's compacted log. Effectively
+    // describes the number of logical changes made to the log's underlying
+    // data. Incremented when a compaction or partial compaction has been
+    // applied to this partition.
+    // This is a useful field for optimistic concurrency control, preventing a
+    // compaction job based on stale data from overwriting an updated log.
+    compaction_epoch_t compaction_epoch{0};
 
     // A mapping of terms (used instead of Kafka epochs) to the starting Kafka
     // offset for that term. Both the term and offsets are maintained to be

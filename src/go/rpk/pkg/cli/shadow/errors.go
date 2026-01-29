@@ -46,7 +46,7 @@ func handleConnectError(err error, operation, linkName string) error {
 			msg := fmt.Sprintf("permission denied: you don't have access to %s shadow links", operation)
 			// Preserve role requirement information from the original error
 			if strings.Contains(ce.Message(), "superuser role required") {
-				msg += " (superuser role required). Use a superuser account by updating your rpk profile (see 'rpk profile set --help')" // TODO: update once we have Cloud support.
+				msg += " (superuser role required). Use a superuser account by updating your rpk profile (see 'rpk profile set --help')"
 			} else {
 				msg += "; check your roles and permissions using 'rpk security' commands"
 			}

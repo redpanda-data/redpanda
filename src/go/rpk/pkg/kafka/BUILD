@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//src/go/rpk/pkg/adminapi",
         "//src/go/rpk/pkg/config",
-        "//src/go/rpk/pkg/oauth",
+        "//src/go/rpk/pkg/oauth/authtoken",
         "//src/go/rpk/pkg/oauth/providers/auth0",
         "@com_github_spf13_afero//:afero",
         "@com_github_twmb_franz_go//pkg/kerr",

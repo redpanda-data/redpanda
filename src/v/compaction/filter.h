@@ -46,6 +46,8 @@ protected:
     ss::future<std::optional<model::record_batch>> do_filter_batch(
       model::record_batch b, std::vector<int32_t> offset_deltas) const;
 
+    mutable stats _stats;
+
 private:
     // For a given batch, this function should return a vector containing offset
     // deltas from records in the batch which we intend on keeping when
@@ -75,8 +77,6 @@ private:
 
     sliding_window_reducer::sink& _sink;
     model::ntp _ntp;
-
-    stats _stats;
 };
 
 } // namespace compaction

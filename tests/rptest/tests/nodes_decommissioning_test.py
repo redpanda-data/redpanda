@@ -184,13 +184,17 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         wait_until(requested_status, timeout_sec=timeout_sec, backoff_sec=1)
 
-    def _set_recovery_rate(self, new_rate: int):
+    def _set_recovery_rate(self, new_rate: int, await_rehabilitation: bool = True):
         # use admin API to leverage the retry policy when controller returns 503
         patch_result = self.admin.patch_cluster_config(
             upsert={"raft_learner_recovery_rate": new_rate}
         )
         self.logger.debug(f"setting recovery rate to {new_rate} result: {patch_result}")
-        wait_for_recovery_throttle_rate(redpanda=self.redpanda, new_rate=new_rate)
+        wait_for_recovery_throttle_rate(
+            redpanda=self.redpanda,
+            new_rate=new_rate,
+            await_rehabilitation=await_rehabilitation,
+        )
 
     # after node was removed the state should be consistent on all other not removed nodes
     def _check_state_consistent(self, decommissioned_id: int):
@@ -434,6 +438,61 @@ class NodesDecommissioningTest(PreallocNodesTest):
         if not delete_topic:
             self.verify()
 
+    @cluster(num_nodes=6)
+    def test_decommission_status(self):
+        self.start_redpanda()
+        self._create_topics(replication_factors=[3])
+        self.start_producer()
+        to_decommission = random.choice(self.redpanda.nodes)
+        to_decommission_id = self.redpanda.node_id(to_decommission)
+        self.logger.info(
+            f"decommissioning node: {to_decommission_id}",
+        )
+        # Block recovery to ensure decommissioning takes some time
+        # and we see some status in the middle of decommissioning
+        self._set_recovery_rate(0)
+        self._decommission(to_decommission_id)
+
+        def validate_decommission_status():
+            def check_decommission_status(rpc_node: ClusterNode):
+                status = self.admin.get_decommission_status(
+                    id=to_decommission_id, node=rpc_node
+                )
+                finished = status["finished"]
+                replicas_left = status["replicas_left"]
+                partition_meta = []
+                for p in status.get("partitions", []):
+                    if p["topic"] != self._topic:
+                        # We are only producing data to self._topic
+                        continue
+                    has_valid_meta = (
+                        p["partition_size"] > 0 and p["bytes_left_to_move"] > 0
+                    )
+                    if not has_valid_meta:
+                        self.logger.debug(
+                            f"partition {p} is not reporting valid metadata"
+                        )
+                    partition_meta.append(has_valid_meta)
+                return (
+                    not finished
+                    and replicas_left > 0
+                    and partition_meta
+                    and all(partition_meta)
+                )
+
+            return all(check_decommission_status(n) for n in self.redpanda.nodes)
+
+        self.redpanda.wait_until(
+            validate_decommission_status,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Decommission status not reported as in_progress on all nodes",
+            retry_on_exc=True,
+        )
+        self._set_recovery_rate(2 << 30)
+
+        self._wait_for_node_removed(to_decommission_id)
+
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_decommissioning_node_rf_1_replica(self):
         self.start_redpanda()
@@ -497,7 +556,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         to_decommission = random.choice(brokers)["node_id"]
 
         # throttle recovery
-        self._set_recovery_rate(1)
+        self._set_recovery_rate(0)
 
         # schedule partition move to the node that is being decommissioned
 
@@ -547,7 +606,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         self.start_producer()
         self.start_consumer()
         # set recovery rate to small value to stop moves
-        self._set_recovery_rate(1)
+        self._set_recovery_rate(0)
 
         def calculate_total_learners_gap() -> int | None:
             gap = self.redpanda.metrics_sample("learners_gap_bytes")
@@ -619,7 +678,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         to_decommission = random.choice(brokers)["node_id"]
 
         # throttle recovery
-        self._set_recovery_rate(1)
+        self._set_recovery_rate(0)
 
         self.logger.info(
             f"decommissioning node: {to_decommission}",
@@ -651,7 +710,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         to_decommission = random.choice(brokers)["node_id"]
 
         # throttle recovery
-        self._set_recovery_rate(1)
+        self._set_recovery_rate(0)
 
         self.logger.info(
             f"decommissioning node: {to_decommission}",
@@ -689,7 +748,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         to_decommission = random.choice(brokers)["node_id"]
 
         # throttle recovery
-        self._set_recovery_rate(1)
+        self._set_recovery_rate(0)
 
         # schedule partition move from the node being decommissioned before actually calling decommission
 
@@ -752,7 +811,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         )
 
         # throttle recovery
-        self._set_recovery_rate(1)
+        self._set_recovery_rate(0)
 
         self.logger.info(
             f"decommissioning node: {to_decommission_1}",
@@ -812,7 +871,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         # throttle recovery
         self.redpanda.clean_node(self.redpanda.nodes[-1], preserve_current_install=True)
         self.redpanda.start_node(self.redpanda.nodes[-1])
-        self._set_recovery_rate(10)
+        self._set_recovery_rate(0, await_rehabilitation=False)
 
         # wait for rebalancing to start
         to_decommission = self.redpanda.nodes[-1]
@@ -897,7 +956,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         if not node_is_alive:
             self.redpanda.stop_node(to_decommission)
 
-        self._set_recovery_rate(1)
+        self._set_recovery_rate(0)
         for i in range(1, 10):
             # set recovery rate to small value to prevent node
             # from finishing decommission operation

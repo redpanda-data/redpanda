@@ -19,8 +19,8 @@
 #include "security/audit/fwd.h"
 #include "security/audit/probe.h"
 #include "security/audit/schemas/application_activity.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -97,7 +97,7 @@ private:
     /// Primitives for ensuring background work and toggling of switch w/ async
     /// work occur in lock step
     ss::gate _gate;
-    mutex _mutex{"audit_sink::mutex"};
+    ssx::mutex _mutex{"audit_sink::mutex"};
 
     /// In the case the client did not finish intialization this optional may be
     /// fufilled by a fiber attempting to shutdown the client. The future will

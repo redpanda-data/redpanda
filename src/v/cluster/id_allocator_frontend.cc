@@ -234,7 +234,8 @@ ss::future<bool> id_allocator_frontend::try_create_id_allocator_topic() {
     return _controller->get_topics_frontend()
       .local()
       .autocreate_topics(
-        {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
+        {std::move(topic)},
+        config::shard_local_cfg().internal_rpc_request_timeout_ms())
       .then([](std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected exactly one result");
           if (res[0].ec != cluster::errc::success) {

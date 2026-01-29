@@ -405,7 +405,9 @@ ss::future<> controller_backend::start() {
                 auto snapshot = create_topic_table_snapshot(_topics, _self);
                 ssx::spawn_with_gate(
                   _gate,
-                  [this, bootstrap_revision, snapshot = std::move(snapshot)] {
+                  [this,
+                   bootstrap_revision,
+                   snapshot = std::move(snapshot)] mutable {
                       return clear_orphan_topic_files(
                                bootstrap_revision, std::move(snapshot))
                         .handle_exception([](const std::exception_ptr& err) {
@@ -739,8 +741,15 @@ controller_backend::force_replica_set_update(
     if (!contains_node(new_replicas, _self)) {
         // This node will no longer be a part of the raft group,
         // will be cleaned up as a part of update_finished command.
+        // Make sure it can't be leader, though, s.t. update_finished can
+        // actually be sent out.
+        partition->block_new_leadership();
+        co_await partition->raft()->step_down("not_in_force_replica_set");
         co_return ss::stop_iteration::yes;
     }
+    // force of a force may return a replica to the config, make sure
+    // if it was prior blocked from leadership, it isn't anymore
+    partition->unblock_new_leadership();
     auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
       previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
     if (partition->cloud_data_available()) {
@@ -1158,15 +1167,6 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         }
         co_return ss::stop_iteration::no;
     }
-    case shard_placement_table::reconciliation_action::remake: {
-        auto ec = co_await do_remake_partition(ntp);
-
-        if (ec) {
-            co_return ec;
-        }
-
-        co_return ss::stop_iteration::no;
-    }
     case shard_placement_table::reconciliation_action::create:
         // After this point the partition object is expected to exist on current
         // shard, it will be created below.
@@ -1234,20 +1234,6 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           topic_md->get());
         if (ec) {
             co_return ec;
-        }
-
-        if (
-          placement.current().has_value()
-          && placement.current()->remake_state
-               != shard_placement_table::remake_partition_state::none) {
-            ec = co_await _shard_placement.set_remake_state(
-              ntp,
-              shard_placement_table::remake_partition_state::none,
-              expected_log_revision.value());
-
-            if (ec) {
-                co_return ec;
-            }
         }
 
         // The partition that we just created uses topic properties queried from
@@ -1953,7 +1939,6 @@ ss::future<> controller_backend::transfer_partition_from_extra_shard(
               case reconciliation_action::create:
               case reconciliation_action::transfer:
               case reconciliation_action::wait_for_target_update:
-              case reconciliation_action::remake:
                   vassert(
                     false,
                     "[{}] unexpected reconciliation action, placement: {}",
@@ -2160,79 +2145,6 @@ std::ostream& operator<<(
       op.last_error,
       std::error_code{op.last_error}.message());
     return o;
-}
-
-ss::future<std::error_code>
-controller_backend::do_remake_partition(const model::ntp& ntp) {
-    auto maybe_placement = _shard_placement.state_on_this_shard(ntp);
-
-    if (!maybe_placement.has_value()) {
-        co_return errc::partition_not_exists;
-    }
-
-    auto& current = maybe_placement->current();
-
-    if (!current.has_value()) {
-        co_return errc::waiting_for_shard_placement_update;
-    }
-
-    if (
-      current->remake_state
-      == shard_placement_table::remake_partition_state::none) {
-        co_return errc::waiting_for_shard_placement_update;
-    }
-
-    if (
-      current->remake_state
-      < shard_placement_table::remake_partition_state::deleted) {
-        auto p = _partition_manager.local().get(ntp);
-        if (p) {
-            co_await _partition_manager.local().remove(
-              ntp, partition_removal_mode::local_only);
-        }
-
-        co_await remove_persistent_state(
-          ntp, current->group, _storage.local().kvs());
-    }
-
-    auto ec = co_await _shard_placement.set_remake_state(
-      ntp,
-      shard_placement_table::remake_partition_state::deleted,
-      current->log_revision);
-
-    if (ec) {
-        co_return ec;
-    }
-
-    co_return errc::success;
-}
-
-ss::future<std::error_code>
-controller_backend::remake_partition(const model::ntp& ntp) {
-    auto maybe_placement = _shard_placement.state_on_this_shard(ntp);
-
-    if (!maybe_placement.has_value()) {
-        co_return errc::partition_not_exists;
-    }
-
-    auto& current = maybe_placement->current();
-
-    if (!current.has_value()) {
-        co_return errc::waiting_for_shard_placement_update;
-    }
-
-    auto ec = co_await _shard_placement.set_remake_state(
-      ntp,
-      shard_placement_table::remake_partition_state::initiated,
-      current->log_revision);
-
-    if (ec) {
-        co_return ec;
-    }
-
-    notify_reconciliation(ntp);
-
-    co_return errc::success;
 }
 
 } // namespace cluster

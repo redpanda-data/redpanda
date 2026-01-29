@@ -12,6 +12,8 @@
 #include "absl/container/flat_hash_map.h"
 #include "base/oncore.h"
 #include "base/outcome.h"
+#include "base/type_traits.h"
+#include "container/chunked_vector.h"
 #include "crypto/crypto.h"
 #include "json/document.h"
 #include "json/ostreamwrapper.h"
@@ -99,6 +101,48 @@ bytes base64_url_decode(std::string_view sv);
 
 std::optional<bytes>
 base64_url_decode(const json::Value& v, std::string_view field);
+
+template<typename T>
+std::optional<T> extract(const auto& claim) {
+    if constexpr (::detail::is_specialization_of_v<T, chunked_vector>) {
+        if (!claim.IsArray()) {
+            return std::nullopt;
+        }
+        chunked_vector<typename T::value_type> result;
+        result.reserve(claim.GetArray().Size());
+        for (const auto& element : claim.GetArray()) {
+            auto val = extract<typename T::value_type>(element);
+            if (!val) {
+                return std::nullopt;
+            }
+            result.emplace_back(std::move(*val));
+        }
+        return result;
+    } else if constexpr (std::is_same_v<T, std::string_view>) {
+        if (!claim.IsString()) {
+            return std::nullopt;
+        }
+        return detail::as_string_view(claim);
+    } else if constexpr (std::is_same_v<T, int64_t>) {
+        if (!claim.IsInt64()) {
+            return std::nullopt;
+        }
+        return claim.GetInt64();
+    } else if constexpr (std::is_same_v<T, double>) {
+        if (!claim.IsDouble()) {
+            return std::nullopt;
+        }
+        return claim.GetDouble();
+    } else if constexpr (std::is_same_v<T, bool>) {
+        if (!claim.IsBool()) {
+            return std::nullopt;
+        }
+        return claim.GetBool();
+    } else {
+        static_assert(
+          false, "Unsupported type for jwt::extract<T>(json::Value)");
+    }
+}
 
 } // namespace detail
 
@@ -231,12 +275,13 @@ public:
     }
 
     // Retrieve the Claim by JSON Pointer.
-    std::optional<std::string_view> claim(const json::Pointer& p) const {
+    template<typename T>
+    auto claim(const json::Pointer& p) const -> std::optional<T> {
         auto claim = p.Get(_payload);
-        if (!claim || !claim->IsString()) {
+        if (!claim) {
             return std::nullopt;
         }
-        return detail::as_string_view(*claim);
+        return detail::extract<T>(*claim);
     }
 
     // Retrieve the Algorithm Header Parameter
@@ -305,6 +350,13 @@ public:
     // Retrieve JWT ID Claim
     // https://www.rfc-editor.org/rfc/rfc7519#section-4.1.7
     auto jti() const { return claim("jti"); }
+
+    // Return all claim names in the payload
+    auto get_claim_names() const {
+        return std::views::transform(_payload.GetObject(), [](const auto& m) {
+            return ss::sstring(detail::as_string_view(m.name));
+        });
+    }
 
 private:
     friend std::ostream& operator<<(std::ostream& os, const jwt& jwt) {

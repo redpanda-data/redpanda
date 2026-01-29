@@ -174,13 +174,6 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _append_entries_buffer_flush; },
           sm::description("Number of append entries buffer flushes"),
           labels),
-        sm::make_gauge(
-          "recovery_resets",
-          [this] { return _recovery_resets; },
-          sm::description(
-            "Number of times that a learner was forcefully reset "
-            "during recovery due to potential divergence"),
-          labels),
       },
       {},
       {sm::shard_label, sm::label("partition")});

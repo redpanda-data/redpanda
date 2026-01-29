@@ -11,10 +11,10 @@
 #include "container/chunked_vector.h"
 #include "model/offset_interval.h"
 #include "model/record.h"
+#include "ssx/mutex.h"
 #include "storage/mvlog/file.h"
 #include "storage/mvlog/segment_identifier.h"
 #include "storage/ntp_config.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
@@ -126,7 +126,7 @@ private:
     segment_id next_segment_id_{0};
 
     // Lock protecting mutations that involve the active segment.
-    mutex active_segment_lock_{"active_segment_lock"};
+    ssx::mutex active_segment_lock_{"active_segment_lock"};
 
     // The segment containing the most recent data, that will be written to to
     // if an operation requires appending to the log.

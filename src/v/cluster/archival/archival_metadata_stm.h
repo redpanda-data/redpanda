@@ -23,8 +23,8 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "raft/persisted_stm.h"
+#include "ssx/mutex.h"
 #include "storage/record_batch_builder.h"
-#include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>
@@ -380,7 +380,7 @@ private:
 private:
     prefix_logger _logger;
 
-    mutex _lock{"archival_metadata_stm"};
+    ssx::mutex _lock{"archival_metadata_stm"};
 
     ss::shared_ptr<util::mem_tracker> _mem_tracker;
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;

@@ -23,6 +23,7 @@
 #include "cloud_topics/reconciler/reconciliation_consumer.h"
 #include "cloud_topics/reconciler/reconciliation_source.h"
 #include "cluster/partition.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
@@ -30,10 +31,12 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <expected>
 #include <iterator>
+#include <random>
 
 using namespace std::chrono_literals;
 
@@ -56,7 +59,18 @@ void log_error(
 
 reconciler::reconciler(l1::io* l1_io, l1::metastore* metastore)
   : _l1_io(l1_io)
-  , _metastore(metastore) {}
+  , _metastore(metastore)
+  , _scheduler(
+      config::shard_local_cfg().cloud_topics_reconciliation_min_interval.bind(),
+      config::shard_local_cfg().cloud_topics_reconciliation_max_interval.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_target_fill_ratio.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_speedup_blend.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_slowdown_blend.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_max_object_size.bind()) {}
 
 ss::future<> reconciler::start() {
     _probe.setup_metrics();
@@ -102,10 +116,6 @@ void reconciler::detach(const model::ntp& ntp) {
     }
 }
 
-ss::lowres_clock::duration reconciler::reconciliation_interval() const {
-    return config::shard_local_cfg().cloud_topics_reconciliation_interval();
-}
-
 ss::future<> reconciler::reconciliation_loop() {
     /*
      * Polling is not particularly efficient, and in practice, we'll probably
@@ -116,7 +126,7 @@ ss::future<> reconciler::reconciliation_loop() {
 
     auto deferred = ss::defer(
       [] { vlog(lg.debug, "Reconciliation loop exiting"); });
-    ss::lowres_clock::duration next_wait = reconciliation_interval();
+    ss::lowres_clock::duration next_wait = _scheduler.current_interval();
     while (!_gate.is_closed()) {
         try {
             co_await ss::sleep_abortable(next_wait, _as);
@@ -128,7 +138,8 @@ ss::future<> reconciler::reconciliation_loop() {
         if (config::shard_local_cfg()
               .cloud_topics_disable_reconciliation_loop()) {
             vlog(lg.debug, "Reconciliation loop disabled, skipping iteration");
-            next_wait = reconciliation_interval();
+            next_wait = config::shard_local_cfg()
+                          .cloud_topics_reconciliation_max_interval.value();
             continue;
         }
 
@@ -182,7 +193,6 @@ ss::future<> reconciler::reconciliation_loop() {
          *   except for shutdown
          */
         // clang-format on
-        auto round_start = ss::lowres_clock::now();
         try {
             co_await reconcile();
         } catch (...) {
@@ -194,10 +204,7 @@ ss::future<> reconciler::reconciliation_loop() {
               "Recoverable error during reconciliation: {}",
               std::current_exception());
         }
-        auto round_duration = ss::lowres_clock::now() - round_start;
-        next_wait = std::max(
-          reconciliation_interval() - round_duration,
-          ss::lowres_clock::duration(0));
+        next_wait = _scheduler.current_interval();
     }
 }
 
@@ -215,6 +222,49 @@ ss::future<> reconciler::reconcile() {
       sources.size());
     if (sources.empty()) {
         co_return;
+    }
+
+    auto source_sets = partition_sources_into_sets(std::move(sources));
+
+    // Adapt scheduling interval based on max object size produced.
+    // Note that we slow down if there's nothing to reconcile or if all
+    // objects failed. This is a sort of retry with backoff mechanism.
+    size_t max_bytes_produced = 0;
+    for (auto& source_set : source_sets) {
+        auto bytes = co_await reconcile_source_set(std::move(source_set));
+        max_bytes_produced = std::max(max_bytes_produced, bytes);
+    }
+
+    _scheduler.adapt(max_bytes_produced);
+}
+
+chunked_vector<chunked_vector<ss::shared_ptr<source>>>
+reconciler::partition_sources_into_sets(
+  chunked_vector<ss::shared_ptr<source>> sources) {
+    chunked_hash_map<model::topic_id, chunked_vector<ss::shared_ptr<source>>>
+      topic_id_to_sources;
+    for (auto& src : sources) {
+        auto& src_vec = topic_id_to_sources[src->topic_id_partition().topic_id];
+        src_vec.push_back(std::move(src));
+    }
+
+    vlog(
+      lg.debug,
+      "Partitioned sources into {} sets by topic_id",
+      topic_id_to_sources.size());
+
+    chunked_vector<chunked_vector<ss::shared_ptr<source>>> result;
+    result.reserve(topic_id_to_sources.size());
+    for (auto& [_, src_vec] : topic_id_to_sources) {
+        result.push_back(std::move(src_vec));
+    }
+    return result;
+}
+
+ss::future<size_t> reconciler::reconcile_source_set(
+  chunked_vector<ss::shared_ptr<source>> sources) {
+    if (sources.empty()) {
+        co_return 0;
     }
 
     // Begin by creating the set of objects to be built.
@@ -241,7 +291,7 @@ ss::future<> reconciler::reconcile() {
           "Could not create object metadata builder: {}",
           metadata_builder_res.error());
         _probe.increment_rounds_failed();
-        co_return;
+        co_return 0;
     }
     auto& metadata_builder = metadata_builder_res.value();
     chunked_hash_map<l1::object_id, chunked_vector<ss::shared_ptr<source>>>
@@ -252,46 +302,53 @@ ss::future<> reconciler::reconcile() {
         if (!oid.has_value()) {
             vlog(lg.warn, "Could not get object: {}", oid.error());
             _probe.increment_rounds_failed();
-            co_return;
+            co_return 0;
         }
         oid_to_sources[oid.value()].push_back(src);
     }
 
-    // Process sources by their object. This should be easier to
-    // improve than processing source-by-source.
+    // Process sources by their object in parallel.
+    chunked_vector<l1::object_id> oids;
+    chunked_vector<
+      ss::future<std::expected<built_object_metadata, reconcile_error>>>
+      futures;
+    oids.reserve(oid_to_sources.size());
+    futures.reserve(oid_to_sources.size());
+    for (const auto& [oid, srcs] : oid_to_sources) {
+        oids.push_back(oid);
+        futures.push_back(reconcile_sources(oid, srcs));
+    }
+    // Unbounded concurrency because #futures = #domains, which is small (3).
+    auto results = co_await ss::when_all(futures.begin(), futures.end());
+
+    // Process results.
     chunked_vector<built_object_metadata> successful_objects;
     chunked_vector<l1::object_id> failed_objects;
-    for (const auto& [oid, sources] : oid_to_sources) {
-        if (_as.abort_requested()) {
-            co_return;
-        }
-        auto object_fut = co_await ss::coroutine::as_future(
-          reconcile_sources(oid, sources));
+    for (size_t i = 0; i < results.size(); ++i) {
+        auto& oid = oids[i];
+        auto& object_fut = results[i];
+
         if (object_fut.failed()) {
             auto ex = object_fut.get_exception();
             const auto is_shutdown = ssx::is_shutdown_exception(ex);
             vlogl(
               lg,
               is_shutdown ? ss::log_level::debug : ss::log_level::error,
-              "Exception reconciling {} partitions into object {}: {}",
-              sources.size(),
+              "Exception reconciling object {}: {}",
               oid,
               ex);
             if (is_shutdown) {
-                co_return;
+                co_return 0;
             }
             failed_objects.push_back(oid);
-            continue; // Skip this object and move to the next
+            continue;
         }
 
         auto result = object_fut.get();
         if (!result.has_value()) {
             failed_objects.push_back(oid);
-            log_error(result.error().with_context(
-              "Exception reconciling {} partitions into object {}",
-              sources.size(),
-              oid));
-            continue; // Skip this object and move to the next
+            log_error(result.error());
+            continue;
         }
 
         auto obj_metadata = std::move(result).value();
@@ -300,10 +357,8 @@ ss::future<> reconciler::reconcile() {
         if (!add_result.has_value()) {
             failed_objects.push_back(oid);
             log_error(add_result.error().with_context(
-              "Exception reconciling {} partitions into object {}",
-              sources.size(),
-              oid));
-            continue; // Skip this object and move to the next
+              "adding metadata for object {}", oid));
+            continue;
         }
 
         // Success - collect the metadata for final processing.
@@ -316,12 +371,19 @@ ss::future<> reconciler::reconcile() {
           rm_ret.has_value(), "Removing object {} in non-pending state", oid);
     }
 
+    // Calculate the max object size produced for scheduling adaptation.
+    size_t max_bytes_produced = 0;
+    for (const auto& obj : successful_objects) {
+        max_bytes_produced = std::max(
+          max_bytes_produced, obj.object_info.size_bytes);
+    }
+
     // Check if we have any successful objects to commit.
     if (successful_objects.empty()) {
         // NB: This doesn't count as failing the round because it may be that
         // all sources are fully reconciled.
         vlog(lg.debug, "No successful objects to commit to metastore");
-        co_return;
+        co_return 0;
     }
 
     // Commit all successful objects to the metastore.
@@ -332,8 +394,10 @@ ss::future<> reconciler::reconcile() {
           "Abandoning reconciliation run because the L1 metastore operation "
           "failed"));
         _probe.increment_rounds_failed();
-        co_return;
+        co_return 0;
     }
+
+    co_return max_bytes_produced;
 }
 
 ss::future<std::expected<reconciler::built_object_metadata, reconcile_error>>
@@ -342,7 +406,8 @@ reconciler::reconcile_sources(
   const chunked_vector<ss::shared_ptr<source>>& sources) {
     auto ctx_result = co_await make_context();
     if (!ctx_result.has_value()) {
-        co_return std::unexpected(ctx_result.error());
+        co_return std::unexpected(ctx_result.error().with_context(
+          "reconciling {} sources into object {}", sources.size(), oid));
     }
     auto ctx = std::move(ctx_result.value());
 
@@ -376,11 +441,20 @@ reconciler::reconcile_sources(
         auto ex = fut.get_exception();
         co_return std::unexpected(
           reconcile_error(
-            "Exception building and putting object {}: {}", oid, ex)
+            "reconciling {} sources into object {}: {}",
+            sources.size(),
+            oid,
+            ex)
             .mark_benign(ssx::is_shutdown_exception(ex)));
     }
 
-    co_return fut.get();
+    auto result = fut.get();
+    if (!result.has_value()) {
+        co_return std::unexpected(result.error().with_context(
+          "reconciling {} sources into object {}", sources.size(), oid));
+    }
+
+    co_return result;
 }
 
 ss::future<std::expected<reconciler::built_object_metadata, reconcile_error>>
@@ -445,6 +519,8 @@ reconciler::make_context() {
     auto output_stream = stream_fut.get();
     ctx.builder = l1::object_builder::create(
       std::move(output_stream), l1::object_builder::options{});
+    ctx.size_budget
+      = config::shard_local_cfg().cloud_topics_reconciliation_max_object_size();
 
     co_return ctx;
 }
@@ -452,6 +528,8 @@ reconciler::make_context() {
 ss::future<std::expected<reconciler::built_object_metadata, reconcile_error>>
 reconciler::build_object(
   builder_context& ctx, const chunked_vector<ss::shared_ptr<source>>& sources) {
+    const auto max_size = ctx.size_budget;
+
     chunked_vector<commit_info> metas;
     metas.reserve(sources.size());
     for (const auto& src : sources) {
@@ -459,21 +537,24 @@ reconciler::build_object(
             co_return std::unexpected(
               reconcile_error("abort requested while building object"));
         }
-        auto start_offset = kafka::next_offset(src->last_reconciled_offset());
-        auto read_result = co_await add_source_to_object(
-          ctx, src, start_offset);
 
         // Enforce the size limit, but always allow one partition in.
         auto current_size = ctx.builder->file_size();
-        if (!metas.empty() && current_size >= max_object_size) {
+        if (!metas.empty() && current_size >= max_size) {
             vlog(
               lg.debug,
               "Stopping object build: size {} >= max {}",
               current_size,
-              max_object_size);
+              max_size);
             break;
         }
-        ctx.size_budget = max_object_size - current_size;
+        // Beware underflow if the first partition sneaks a batch in over the
+        // size limit.
+        ctx.size_budget = current_size >= max_size ? 0
+                                                   : max_size - current_size;
+        auto start_offset = kafka::next_offset(src->last_reconciled_offset());
+        auto read_result = co_await add_source_to_object(
+          ctx, src, start_offset);
 
         if (!read_result.has_value()) {
             // Log an error, we don't want a single stuck partition to
@@ -682,6 +763,11 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
           "Failed to add objects to the L1 metastore: {}",
           add_objects_result.error()));
     }
+
+    vlog(
+      lg.debug,
+      "Successfully added {} objects to L1 metastore",
+      objects.size());
 
     // Now update the LRO, taking into account any corrections from
     // the metastore.

@@ -14,9 +14,12 @@
 
 namespace cloud_topics::l1 {
 
+constexpr auto level_one_data_dir_str = "level_one/data/";
+
 cloud_storage_clients::object_key
 object_path_factory::level_one_path(object_id id) {
-    return cloud_storage_clients::object_key(ssx::sformat("l1_v0_{}", id));
+    return cloud_storage_clients::object_key(
+      ssx::sformat("{}v0_{}", level_one_data_dir_str, id));
 }
 
 } // namespace cloud_topics::l1

@@ -57,13 +57,6 @@ create_aws_sigv4_configuration(const config::configuration& cfg) {
                     : cfg.cloud_storage_region();
     s3_config.region = cloud_roles::aws_region_name{region.value_or("")};
 
-    s3_config._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{region.value_or("")},
-      cloud_storage_clients::endpoint_url{
-        cfg.iceberg_rest_catalog_endpoint().value_or("")});
-
     return cloud_storage_clients::client_configuration{std::move(s3_config)};
 }
 
@@ -232,7 +225,7 @@ ss::future<result<std::monostate>> credential_manager::maybe_sign(
 }
 
 void credential_manager::start_auth_refresh_if_needed() {
-    if (ss::this_shard_id() != cloud_io::auth_refresh_shard_id) {
+    if (ss::this_shard_id() != cloud_roles::auth_refresh_shard_id) {
         return;
     }
 
@@ -242,11 +235,16 @@ void credential_manager::start_auth_refresh_if_needed() {
         return;
     }
 
+    auto config_source
+      = cloud_storage_clients::build_refresh_credentials_source(
+        *client_config, cfg.cloud_storage_credentials_source);
+
     auth_refresh_bg_op_.emplace(
+      datalake_log,
       gate_,
       auth_refresh_as_,
-      std::move(client_config.value()),
-      get_credentials_source(cfg));
+      get_credentials_source(cfg),
+      std::move(config_source));
 
     auth_refresh_bg_op_->maybe_start_auth_refresh_op(
       [this](cloud_roles::credentials creds) -> ss::future<> {

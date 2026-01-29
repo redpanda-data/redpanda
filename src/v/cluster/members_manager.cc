@@ -1002,14 +1002,13 @@ void members_manager::join_raft0() {
         return ss::repeat([this] {
                    return dispatch_join_to_seed_server(
                             std::cbegin(_seed_servers),
-                            std::move(
-                              join_node_request{
-                                features::feature_table::
-                                  get_latest_logical_version(),
-                                features::feature_table::
-                                  get_earliest_logical_version(),
-                                _storage.local().node_uuid()().to_vector(),
-                                _self}))
+                            join_node_request{
+                              features::feature_table::
+                                get_latest_logical_version(),
+                              features::feature_table::
+                                get_earliest_logical_version(),
+                              _storage.local().node_uuid()().to_vector(),
+                              _self})
                      .then([this](result<join_node_reply> r) {
                          bool success = r && r.value().success;
                          // stop on success or closed gate
@@ -1477,7 +1476,7 @@ members_manager::dispatch_configuration_update(model::broker broker) {
         auto target = get_update_request_target(
           _raft0->get_leader_id(), brokers);
         auto r = co_await do_dispatch_configuration_update(
-          target.id(), std::move(target.rpc_address()), broker);
+          target.id(), target.rpc_address(), broker);
         if (r.has_error() || r.value().success == false) {
             co_await ss::sleep_abortable(
               _join_retry_jitter.base_duration(), _as.local());

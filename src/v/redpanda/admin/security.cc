@@ -164,21 +164,30 @@ security::scram_credential parse_scram_credential(const json::Document& doc) {
 
     if (!doc.HasMember("password") || !doc["password"].IsString()) {
         throw ss::httpd::bad_request_exception(
-          fmt::format("String password smissing"));
+          fmt::format("String password is missing"));
     }
     const auto password = doc["password"].GetString();
     validate_no_control(
       password, admin_server::string_conversion_exception{"password"});
 
+    const ss::sstring ss_password{password};
+
+    if (crypto::is_scram_password_too_short(ss_password)) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format(
+            "Password length less than {} characters",
+            crypto::hmac_key_fips_min_bytes));
+    }
+
     security::scram_credential credential;
 
     if (algorithm == security::scram_sha256_authenticator::name) {
         credential = security::scram_sha256::make_credentials(
-          password, security::scram_sha256::min_iterations);
+          ss_password, security::scram_sha256::min_iterations);
 
     } else if (algorithm == security::scram_sha512_authenticator::name) {
         credential = security::scram_sha512::make_credentials(
-          password, security::scram_sha512::min_iterations);
+          ss_password, security::scram_sha512::min_iterations);
 
     } else {
         throw ss::httpd::bad_request_exception(
@@ -1192,7 +1201,7 @@ generate_kafka_interface_report(
                   kface.name));
             }
 
-            report.supported_sasl_mechanisms = std::move(sasl_mechs);
+            report.supported_sasl_mechanisms = sasl_mechs;
         }
 
         report.authorization_enabled = config::kafka_authz_enabled();
@@ -1505,7 +1514,7 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
             _audit_mgr.local().get_client_config(),
             ephemeral_credentials::yes);
     }
-    report.interfaces = std::move(interfaces_report);
+    report.interfaces = interfaces_report;
 
     const auto min_secure_tls = config::tls_version::v1_2;
     if (config::shard_local_cfg().tls_min_version < min_secure_tls) {
@@ -1528,7 +1537,7 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
         alerts.push_back(std::move(alert));
     }
 
-    report.alerts = std::move(alerts);
+    report.alerts = alerts;
 
     return ss::make_ready_future<ss::json::json_return_type>(std::move(report));
 }

@@ -26,6 +26,8 @@ using namespace std::chrono_literals;
 
 namespace cloud_topics::l0 {
 
+struct micro_probe;
+
 // Materialized placeholder extent
 //
 // Extent represents ctp_placeholder with the data
@@ -48,7 +50,8 @@ ss::future<result<bool>> materialize(
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* api,
   cloud_io::basic_cache_service_api<>* cache,
-  basic_retry_chain_node<>* rtc);
+  basic_retry_chain_node<>* rtc,
+  micro_probe* probe);
 
 // Get ctp_placeholder and the payload of the object and generate a record
 // batch

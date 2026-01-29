@@ -24,9 +24,12 @@ go_library(
 go_test(
     name = "os_test",
     size = "small",
-    srcs = ["proc_test.go"],
+    srcs = [
+        "file_test.go",
+        "proc_test.go",
+    ],
+    embed = [":os"],
     deps = [
-        ":os",
         "//src/go/rpk/pkg/utils",
         "@com_github_spf13_afero//:afero",
         "@com_github_stretchr_testify//require",

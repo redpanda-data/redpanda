@@ -33,7 +33,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "raft/replicate.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -785,11 +785,11 @@ private:
         const group& _group;
     };
 
-    ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
+    ss::lw_shared_ptr<ssx::mutex> get_tx_lock(model::producer_id pid) {
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
             auto [new_it, _] = _tx_locks.try_emplace(
-              pid, ss::make_lw_shared<mutex>("tx_lock_group"));
+              pid, ss::make_lw_shared<ssx::mutex>("tx_lock_group"));
             lock_it = new_it;
         }
         return lock_it->second;
@@ -925,7 +925,7 @@ private:
         // Prior to this change group_tx_fence shared the fence record
         // batch type with data partitions (tx_fence). This made compaction
         // logic complicated particularly because different compaction rules
-        // applied for fence batch in groups and data paritions. With the new
+        // applied for fence batch in groups and data partitions. With the new
         // feature, group fence has a separate dedicated batch type so it is
         // easy to diambiguate both fence types.
         return _feature_table.local().is_active(
@@ -973,7 +973,8 @@ private:
      */
     bool _initial_join_in_progress = false;
 
-    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
+    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<ssx::mutex>>
+      _tx_locks;
     model::term_id _term;
     producers_map _producers;
     chunked_hash_map<model::topic_partition, offset_metadata>

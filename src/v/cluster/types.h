@@ -1559,7 +1559,7 @@ struct replica_recovery_state
 };
 struct recovery_state
   : serde::
-      envelope<recovery_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<recovery_state, serde::version<1>, serde::compat_version<0>> {
     model::offset local_last_offset;
     size_t local_size;
 
@@ -1570,7 +1570,9 @@ struct recovery_state
     friend bool operator==(const recovery_state&, const recovery_state&)
       = default;
 
-    auto serde_fields() { return std::tie(local_last_offset, replicas); }
+    auto serde_fields() {
+        return std::tie(local_last_offset, replicas, local_size);
+    }
 };
 
 struct backend_operation
@@ -2758,15 +2760,19 @@ struct partition_state_request
 struct partition_stm_state
   : serde::envelope<
       partition_stm_state,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     ss::sstring name;
     model::offset last_applied_offset;
     model::offset max_removable_local_log_offset;
+    model::offset last_local_snapshot_offset;
 
     auto serde_fields() {
         return std::tie(
-          name, last_applied_offset, max_removable_local_log_offset);
+          name,
+          last_applied_offset,
+          max_removable_local_log_offset,
+          last_local_snapshot_offset);
     }
 };
 
@@ -2899,7 +2905,7 @@ struct partition_raft_state
 
 struct partition_state
   : serde::
-      envelope<partition_state, serde::version<1>, serde::compat_version<0>> {
+      envelope<partition_state, serde::version<3>, serde::compat_version<0>> {
     model::offset start_offset;
     model::offset committed_offset;
     model::offset last_stable_offset;
@@ -2917,6 +2923,10 @@ struct partition_state
     ss::sstring read_replica_bucket;
     ss::sstring iceberg_mode;
     partition_raft_state raft_state;
+    model::offset max_tombstone_removable_offset;
+    model::offset max_transaction_removable_offset;
+    model::offset max_cleanly_compacted_offset;
+    model::offset max_transaction_free_offset;
 
     auto serde_fields() {
         return std::tie(
@@ -2936,7 +2946,11 @@ struct partition_state
           is_cloud_data_available,
           read_replica_bucket,
           raft_state,
-          iceberg_mode);
+          iceberg_mode,
+          max_tombstone_removable_offset,
+          max_transaction_removable_offset,
+          max_cleanly_compacted_offset,
+          max_transaction_free_offset);
     }
 
     friend bool operator==(const partition_state&, const partition_state&)

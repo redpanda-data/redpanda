@@ -189,7 +189,7 @@ class JavaCompressionTest(EndToEndTest):
         self.redpanda.stop_node(self.redpanda.nodes[0])
 
         # Delete all the compaction indices to force self compaction of segments.
-        storage = self.redpanda.storage(all_nodes=True)
+        storage = self.redpanda.storage(nodes=self.redpanda.nodes)
         partitions = storage.partitions("kafka", self.topic_spec.name)
         for p in partitions:
             p.delete_indices(allow_fail=True)

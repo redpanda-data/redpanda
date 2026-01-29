@@ -23,9 +23,9 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/ssx:thread_worker",
-        "//src/v/thirdparty/openssl",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/container:node_hash_map",
+        "@openssl",
     ],
     visibility = ["//visibility:public"],
     deps = [

@@ -40,7 +40,8 @@ segment_index::segment_index(
   std::optional<model::timestamp> clean_compact_timestamp,
   bool may_have_tombstone_records,
   std::optional<model::timestamp> self_compact_timestamp,
-  bool may_have_transaction_batches)
+  bool may_have_transaction_control_batches,
+  bool may_have_transaction_data_or_fence_batches)
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
@@ -53,7 +54,10 @@ segment_index::segment_index(
     _state.clean_compact_timestamp = clean_compact_timestamp;
     _state.may_have_tombstone_records = may_have_tombstone_records;
     _state.self_compact_timestamp = self_compact_timestamp;
-    _state.may_have_transaction_batches = may_have_transaction_batches;
+    _state.may_have_transaction_control_batches
+      = may_have_transaction_control_batches;
+    _state.may_have_transaction_data_or_fence_batches
+      = may_have_transaction_data_or_fence_batches;
 }
 
 segment_index::segment_index(
@@ -91,7 +95,10 @@ void segment_index::reset() {
     auto self_compact_timestamp = _state.self_compact_timestamp;
     auto clean_compact_timestamp = _state.clean_compact_timestamp;
     auto may_have_tombstone_records = _state.may_have_tombstone_records;
-    auto may_have_transaction_batches = _state.may_have_transaction_batches;
+    auto may_have_transaction_control_batches
+      = _state.may_have_transaction_control_batches;
+    auto may_have_transaction_data_or_fence_batches
+      = _state.may_have_transaction_data_or_fence_batches;
 
     _state = index_state::make_empty_index(
       base, storage::internal::should_apply_delta_time_offset(_feature_table));
@@ -99,7 +106,10 @@ void segment_index::reset() {
     _state.self_compact_timestamp = self_compact_timestamp;
     _state.clean_compact_timestamp = clean_compact_timestamp;
     _state.may_have_tombstone_records = may_have_tombstone_records;
-    _state.may_have_transaction_batches = may_have_transaction_batches;
+    _state.may_have_transaction_control_batches
+      = may_have_transaction_control_batches;
+    _state.may_have_transaction_data_or_fence_batches
+      = may_have_transaction_data_or_fence_batches;
 
     _acc = 0;
 }

@@ -147,6 +147,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <ranges>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -346,13 +347,19 @@ admin_server::admin_server(
       ss::engine().get_blocked_reactor_notify_ms())
   , _memory_semaphore(_cfg.max_memory_usage_bytes, "admin/server-mem") {
     _server.set_content_streaming(true);
+    _server.set_keepalive_parameters(
+      ss::net::tcp_keepalive_params{
+        .idle = std::chrono::seconds{120},
+        .interval = std::chrono::seconds{60},
+        .count = 3,
+      });
 }
 
 namespace {
 class rpc_handler : public ss::httpd::handler_base {
 public:
     rpc_handler(
-      ss::noncopyable_function<void(const ss::http::request&)>
+      ss::noncopyable_function<request_auth_result(const ss::http::request&)>
         authenticate_request,
       serde::pb::rpc::route_descriptor descriptor)
       : _authenticate_request(std::move(authenticate_request))
@@ -363,8 +370,9 @@ public:
       std::unique_ptr<ss::http::request> req,
       std::unique_ptr<ss::http::reply> rep) override {
         try {
-            check_authentication(*req);
+            auto auth_result = check_authentication(*req);
             auto ctx = make_context(*req);
+            ctx.set_value(std::move(auth_result));
             auto is_proto = ctx.content_type
                             == serde::pb::rpc::content_type::proto;
             iobuf request_payload = co_await extract_payload(std::move(req));
@@ -380,7 +388,7 @@ public:
                   return write_iobuf_to_output_stream(
                     payload.share(0, payload.size_bytes()), writer);
               });
-            rep->set_mime_type(
+            rep->set_content_type(
               is_proto ? "application/proto" : "application/json");
         } catch (const serde::pb::rpc::base_exception& e) {
             rep = e.handle(std::move(rep));
@@ -398,9 +406,9 @@ public:
     }
 
 private:
-    void check_authentication(const ss::http::request& req) {
+    request_auth_result check_authentication(const ss::http::request& req) {
         try {
-            _authenticate_request(req);
+            return _authenticate_request(req);
         } catch (const ss::httpd::base_exception& e) {
             switch (e.status()) {
             case seastar::http::reply::status_type::unauthorized:
@@ -449,7 +457,7 @@ private:
         co_return payload;
     }
 
-    ss::noncopyable_function<void(const ss::http::request&)>
+    ss::noncopyable_function<request_auth_result(const ss::http::request&)>
       _authenticate_request;
     serde::pb::rpc::route_descriptor _descriptor;
 };
@@ -467,27 +475,28 @@ void admin_server::add_service(
           /*path_parameters=*/{},
           /*mandatory_params=*/{},
         };
-        ss::noncopyable_function<void(const ss::http::request&)> auth_handler;
+        ss::noncopyable_function<request_auth_result(const ss::http::request&)>
+          auth_handler;
         switch (route.authz_level) {
         case serde::pb::rpc::authz_level::unauthenticated:
             auth_handler = [this](const ss::http::request& req) {
-                std::optional<request_auth_result> auth_state;
-                auth_state.emplace(apply_auth<publik>(req));
-                log_request(req, auth_state.value());
+                auto auth_result = apply_auth<publik>(req);
+                log_request(req, auth_result);
+                return auth_result;
             };
             break;
         case serde::pb::rpc::authz_level::user:
             auth_handler = [this](const ss::http::request& req) {
-                std::optional<request_auth_result> auth_state;
-                auth_state.emplace(apply_auth<user>(req));
-                log_request(req, auth_state.value());
+                auto auth_result = apply_auth<user>(req);
+                log_request(req, auth_result);
+                return auth_result;
             };
             break;
         case serde::pb::rpc::authz_level::superuser:
             auth_handler = [this](const ss::http::request& req) {
-                std::optional<request_auth_result> auth_state;
-                auth_state.emplace(apply_auth<superuser>(req));
-                log_request(req, auth_state.value());
+                auto auth_result = apply_auth<superuser>(req);
+                log_request(req, auth_result);
+                return auth_result;
             };
             break;
         }
@@ -671,38 +680,34 @@ namespace {
  * an integer.
  */
 std::optional<uint64_t>
-get_integer_query_param(const ss::http::request& req, std::string_view name) {
-    auto key = ss::sstring(name);
-    if (!req.query_parameters.contains(key)) {
+get_integer_query_param(const ss::http::request& req, std::string_view key) {
+    if (!req.has_query_param(key)) {
         return std::nullopt;
     }
 
-    const ss::sstring& str_param = req.query_parameters.at(key);
+    const ss::sstring& str_param = req.get_query_param(key);
     try {
         return std::stoull(str_param);
     } catch (const std::invalid_argument&) {
         throw ss::httpd::bad_request_exception(
-          fmt::format("Parameter {} must be an integer", name));
+          fmt::format("Parameter {} must be an integer", key));
     }
 }
 
 } // namespace
 
 void admin_server::configure_metrics_route() {
-    ss::prometheus::add_prometheus_routes(
-      _server,
-      {.metric_help = "redpanda metrics",
-       .prefix = "vectorized",
-       .handle = ss::metrics::default_handle(),
-       .route = "/metrics"})
-      .get();
-    ss::prometheus::add_prometheus_routes(
-      _server,
-      {.metric_help = "redpanda metrics",
-       .prefix = "redpanda",
-       .handle = metrics::public_metrics_handle,
-       .route = "/public_metrics"})
-      .get();
+    ss::prometheus::config private_config;
+    private_config.prefix = "vectorized";
+    private_config.handle = ss::metrics::default_handle();
+    private_config.route = "/metrics";
+    ss::prometheus::add_prometheus_routes(_server, private_config).get();
+
+    ss::prometheus::config public_config;
+    public_config.prefix = "redpanda";
+    public_config.handle = metrics::public_metrics_handle;
+    public_config.route = "/public_metrics";
+    ss::prometheus::add_prometheus_routes(_server, public_config).get();
 }
 
 ss::future<> admin_server::configure_listeners() {
@@ -1088,7 +1093,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     // next request being made, it may result in a valid redirect to the
     // new leader, and no backoff should be added. This leads to adding
     // client backoff every other redirect.
-    req.query_parameters[redirect_str] = ss::to_sstring(num_redirects);
+    req.set_query_param(redirect_str, ss::to_sstring(num_redirects));
     if (num_redirects % 2 == 0) {
         retry_after = retry_after_seconds;
         vlog(
@@ -1180,6 +1185,63 @@ fill_maintenance_status(const cluster::broker_state& b_state) {
     return ret;
 }
 
+ss::httpd::broker_json::broker get_broker_info(
+  model::node_id node_id,
+  const cluster::node_metadata& node_metadata,
+  const cluster::health_monitor_frontend& health_monitor,
+  const cluster::members_table& members_table,
+  const cluster::cluster_health_report& health_report) {
+    ss::httpd::broker_json::broker b;
+
+    // Populate basic fields from node metadata
+    b.node_id = node_id;
+    b.num_cores = node_metadata.broker.properties().cores;
+    if (node_metadata.broker.rack()) {
+        b.rack = *node_metadata.broker.rack();
+    }
+    b.membership_status = fmt::format(
+      "{}", node_metadata.state.get_membership_state());
+    b.is_alive = health_monitor.is_alive(node_id) == cluster::alive::yes;
+    b.maintenance_status = fill_maintenance_status(node_metadata.state);
+    b.internal_rpc_address = node_metadata.broker.rpc_address().host();
+    b.internal_rpc_port = node_metadata.broker.rpc_address().port();
+    b.in_fips_mode = fmt::format(
+      "{}", node_metadata.broker.properties().in_fips_mode);
+
+    // Enrich with data from health report
+    auto node_report_it = std::ranges::find_if(
+      health_report.node_reports.begin(),
+      health_report.node_reports.end(),
+      [node_id](const auto& report) { return report->id == node_id; });
+
+    if (node_report_it != health_report.node_reports.end()) {
+        const auto& node_report = *node_report_it;
+        b.version = node_report->local_state.redpanda_version;
+        b.recovery_mode_enabled
+          = node_report->local_state.recovery_mode_enabled;
+
+        auto nm = members_table.get_node_metadata_ref(node_id);
+        if (nm && node_report->drain_status) {
+            b.maintenance_status = fill_maintenance_status(
+              nm.value().get().state, node_report->drain_status.value());
+        }
+
+        auto add_disk = [&ds_list = b.disk_space](const storage::disk& ds) {
+            ss::httpd::broker_json::disk_space_info dsi;
+            dsi.path = ds.path;
+            dsi.free = ds.free;
+            dsi.total = ds.total;
+            ds_list.push(dsi);
+        };
+        add_disk(node_report->local_state.data_disk);
+        if (!node_report->local_state.shared_disk()) {
+            add_disk(node_report->local_state.get_cache_disk());
+        }
+    }
+
+    return b;
+}
+
 // Fetch brokers from the members table and enrich with
 // metadata from the health monitor.
 ss::future<std::vector<ss::httpd::broker_json::broker>>
@@ -1204,71 +1266,18 @@ get_brokers(cluster::controller* const controller) {
                 ss::http::reply::status_type::service_unavailable);
           }
 
-          std::map<model::node_id, ss::httpd::broker_json::broker> broker_map;
-
-          // Collect broker information from the members table.
-          auto& members_table = controller->get_members_table().local();
-          for (auto& [id, nm] : members_table.nodes()) {
-              ss::httpd::broker_json::broker b;
-              b.node_id = id;
-              b.num_cores = nm.broker.properties().cores;
-              if (nm.broker.rack()) {
-                  b.rack = *nm.broker.rack();
-              }
-              b.membership_status = fmt::format(
-                "{}", nm.state.get_membership_state());
-              b.is_alive = controller->get_health_monitor().local().is_alive(id)
-                           == cluster::alive::yes;
-
-              // These fields are defaults that will be overwritten with
-              // data from the health report.
-              b.maintenance_status = fill_maintenance_status(nm.state);
-              b.internal_rpc_address = nm.broker.rpc_address().host();
-              b.internal_rpc_port = nm.broker.rpc_address().port();
-              b.in_fips_mode = fmt::format(
-                "{}", nm.broker.properties().in_fips_mode);
-
-              broker_map[id] = b;
-          }
-
-          // Enrich the broker information with data from the health report.
-          for (auto& node_report : h_report.value().node_reports) {
-              auto it = broker_map.find(node_report->id);
-              if (it == broker_map.end()) {
-                  continue;
-              }
-
-              it->second.version = node_report->local_state.redpanda_version;
-              it->second.recovery_mode_enabled
-                = node_report->local_state.recovery_mode_enabled;
-              auto nm = members_table.get_node_metadata_ref(node_report->id);
-              if (nm && node_report->drain_status) {
-                  it->second.maintenance_status = fill_maintenance_status(
-                    nm.value().get().state, node_report->drain_status.value());
-              }
-
-              auto add_disk =
-                [&ds_list = it->second.disk_space](const storage::disk& ds) {
-                    ss::httpd::broker_json::disk_space_info dsi;
-                    dsi.path = ds.path;
-                    dsi.free = ds.free;
-                    dsi.total = ds.total;
-                    ds_list.push(dsi);
-                };
-              add_disk(node_report->local_state.data_disk);
-              if (!node_report->local_state.shared_disk()) {
-                  add_disk(node_report->local_state.get_cache_disk());
-              }
-          }
-
           std::vector<ss::httpd::broker_json::broker> brokers;
-          brokers.reserve(broker_map.size());
+          auto& members_table = controller->get_members_table().local();
+          auto& health_monitor = controller->get_health_monitor().local();
 
-          for (auto&& broker : broker_map) {
-              brokers.push_back(std::move(broker.second));
+          brokers.reserve(members_table.nodes().size());
+
+          for (auto& [id, nm] : members_table.nodes()) {
+              brokers.push_back(get_broker_info(
+                id, nm, health_monitor, members_table, h_report.value()));
           }
 
-          return ss::make_ready_future<decltype(brokers)>(std::move(brokers));
+          return ssx::now(std::move(brokers));
       });
 };
 
@@ -2028,6 +2037,15 @@ void config_multi_property_validation(
           updated_config.iceberg_rest_catalog_authentication_mode.name()}]
           = opt_err.value();
     }
+
+    // Validate cloud topics reconciliation intervals
+    auto interval_err = config::validate_cloud_topics_reconciliation_intervals(
+      updated_config);
+    if (interval_err.has_value()) {
+        errors[ss::sstring{
+          updated_config.cloud_topics_reconciliation_min_interval.name()}]
+          = interval_err.value();
+    }
 }
 } // namespace
 
@@ -2072,7 +2090,7 @@ void admin_server::register_cluster_config_routes() {
                     rs.unknown = s.second.unknown;
                 }
 
-                return ss::json::json_return_type(std::move(res));
+                return ss::json::json_return_type(res);
             });
       });
 
@@ -2306,7 +2324,7 @@ admin_server::patch_cluster_config_handler(
         // normal write.
         ss::httpd::cluster_config_json::cluster_config_write_result result;
         result.config_version = current_version;
-        co_return ss::json::json_return_type(std::move(result));
+        co_return ss::json::json_return_type(result);
     }
 
     if (
@@ -2323,7 +2341,7 @@ admin_server::patch_cluster_config_handler(
             [](cluster::config_manager& cm) { return cm.get_version(); });
         ss::httpd::cluster_config_json::cluster_config_write_result result;
         result.config_version = current_version;
-        co_return ss::json::json_return_type(std::move(result));
+        co_return ss::json::json_return_type(result);
     }
 
     vlog(
@@ -2351,7 +2369,7 @@ admin_server::patch_cluster_config_handler(
 
     ss::httpd::cluster_config_json::cluster_config_write_result result;
     result.config_version = patch_result.version;
-    co_return ss::json::json_return_type(std::move(result));
+    co_return ss::json::json_return_type(result);
 }
 
 ss::future<ss::json::json_return_type>
@@ -2794,30 +2812,29 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
           fmt::format("broker with id: {} not found", id));
     }
 
-    auto maybe_drain_status = co_await _controller->get_health_monitor()
-                                .local()
-                                .get_node_drain_status(
-                                  id, model::time_from_now(5s));
+    cluster::node_report_filter filter;
+    filter.include_partitions = cluster::include_partitions_info::no;
 
-    ss::httpd::broker_json::broker ret;
-    ret.node_id = node_meta->broker.id();
-    ret.internal_rpc_address = node_meta->broker.rpc_address().host();
-    ret.internal_rpc_port = node_meta->broker.rpc_address().port();
-    ret.num_cores = node_meta->broker.properties().cores;
-    if (node_meta->broker.rack()) {
-        ret.rack = node_meta->broker.rack().value();
-    }
-    ret.membership_status = fmt::format(
-      "{}", node_meta->state.get_membership_state());
-    ret.maintenance_status = fill_maintenance_status(node_meta->state);
-    if (
-      !maybe_drain_status.has_error()
-      && maybe_drain_status.value().has_value()) {
-        ret.maintenance_status = fill_maintenance_status(
-          node_meta->state, *maybe_drain_status.value());
+    auto h_report
+      = co_await _controller->get_health_monitor().local().get_cluster_health(
+        cluster::cluster_report_filter{
+          .node_report_filter = std::move(filter),
+        },
+        cluster::force_refresh::no,
+        model::time_from_now(5s));
+
+    if (h_report.has_error()) {
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Unable to get cluster health: {}", h_report.error().message()),
+          ss::http::reply::status_type::internal_server_error);
     }
 
-    co_return ret;
+    const auto& members_table = _controller->get_members_table().local();
+    const auto& health_monitor = _controller->get_health_monitor().local();
+
+    co_return get_broker_info(
+      id, *node_meta, health_monitor, members_table, h_report.value());
 }
 
 ss::future<ss::json::json_return_type>
@@ -2835,7 +2852,7 @@ admin_server::get_broker_uuids_handler() {
           }
           return ret;
       });
-    co_return ss::json::json_return_type(std::move(mappings));
+    co_return ss::json::json_return_type(mappings);
 }
 
 ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
@@ -3052,9 +3069,9 @@ void admin_server::register_broker_routes() {
 
                 ss::httpd::broker_json::cluster_view ret;
                 ret.version = members_table.version();
-                ret.brokers = std::move(brokers);
+                ret.brokers = brokers;
 
-                return ss::json::json_return_type(std::move(ret));
+                return ss::json::json_return_type(ret);
             });
       });
 
@@ -3063,7 +3080,7 @@ void admin_server::register_broker_routes() {
       [this](std::unique_ptr<ss::http::request>) {
           return get_brokers(_controller)
             .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
-                return ss::json::json_return_type(std::move(brokers));
+                return ss::json::json_return_type(brokers);
             });
       });
     register_route<user>(
@@ -3680,7 +3697,7 @@ admin_server::get_metrics_uuid(std::unique_ptr<ss::http::request>) {
       0, ([](cluster::controller_stm& s) {
           return s.get_metrics_reporter_cluster_info().uuid;
       }));
-    co_return ss::json::json_return_type(std::move(ret));
+    co_return ss::json::json_return_type(ret);
 }
 
 static json::validator make_post_cluster_partitions_validator() {
@@ -3902,7 +3919,7 @@ ss::future<ss::json::json_return_type>
 admin_server::get_cluster_partitions_handler(
   std::unique_ptr<ss::http::request> req) {
     std::optional<bool> disabled_filter;
-    if (req->query_parameters.contains("disabled")) {
+    if (req->has_query_param("disabled")) {
         disabled_filter = get_boolean_query_param(*req, "disabled");
     }
 
@@ -3993,7 +4010,7 @@ admin_server::get_cluster_partitions_topic_handler(
       model::topic{req->get_path_param("topic")}};
 
     std::optional<bool> disabled_filter;
-    if (req->query_parameters.contains("disabled")) {
+    if (req->has_query_param("disabled")) {
         disabled_filter = get_boolean_query_param(*req, "disabled");
     }
 
@@ -4054,12 +4071,15 @@ void admin_server::register_cluster_routes() {
                 ret.unhealthy_reasons._set = true;
                 ret.all_nodes._set = true;
                 ret.nodes_down._set = true;
+                ret.high_disk_usage_nodes._set = true;
                 ret.leaderless_partitions._set = true;
                 ret.under_replicated_partitions._set = true;
 
                 ret.unhealthy_reasons = health_overview.unhealthy_reasons;
                 ret.all_nodes = health_overview.all_nodes;
                 ret.nodes_down = health_overview.nodes_down;
+                ret.high_disk_usage_nodes
+                  = health_overview.high_disk_usage_nodes;
                 ret.nodes_in_recovery_mode
                   = health_overview.nodes_in_recovery_mode;
 
@@ -4120,7 +4140,7 @@ void admin_server::register_cluster_routes() {
           if (cluster_uuid) {
               ss::httpd::cluster_json::uuid ret;
               ret.cluster_uuid = ssx::sformat("{}", cluster_uuid.value());
-              return ss::json::json_return_type(std::move(ret));
+              return ss::json::json_return_type(ret);
           }
           return ss::json::json_return_type(ss::json::json_void());
       });
@@ -4657,8 +4677,8 @@ admin_server::get_cloud_storage_lifecycle(std::unique_ptr<ss::http::request>) {
 
     auto& topic_table = _controller->get_topics_state().local();
 
-    cluster::topic_table::lifecycle_markers_t markers
-      = topic_table.get_lifecycle_markers();
+    chunked_vector<cluster::topic_table::lifecycle_markers_t::value_type>
+      markers{std::from_range, topic_table.get_lifecycle_markers()};
 
     // Hack: persuade json response to always include the field even if empty
     response.markers._set = true;

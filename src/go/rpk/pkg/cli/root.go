@@ -89,8 +89,12 @@ func Execute() {
 
 	pf.StringVar(&p.ConfigFlag, "config", "", fmt.Sprintf("Redpanda or rpk config file; default search paths are %q, $PWD/redpanda.yaml, and /etc/redpanda/redpanda.yaml", searchLocal))
 	pf.StringVar(&p.Profile, "profile", "", "rpk profile to use")
+	pf.BoolVar(&p.IgnoreProfile, "ignore-profile", false, "Ignore rpk.yaml and redpanda.yaml; use default settings")
 	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
 	pf.BoolVarP(&p.DebugLogs, "verbose", "v", false, "Enable verbose logging")
+
+	root.MarkFlagsMutuallyExclusive("ignore-profile", "profile")
+	root.MarkFlagsMutuallyExclusive("ignore-profile", "config")
 
 	root.RegisterFlagCompletionFunc("config-opt", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		var opts []string

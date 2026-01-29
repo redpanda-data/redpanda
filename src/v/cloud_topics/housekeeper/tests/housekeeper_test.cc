@@ -28,9 +28,12 @@ class fake_l0_metastore
   : public cloud_topics::housekeeper::l0_metadata_storage {
 public:
     fake_l0_metastore(
-      model::topic_id_partition tidp, kafka::offset start_offset)
+      model::topic_id_partition tidp,
+      kafka::offset start_offset,
+      kafka::offset max_allowed_start_offset = kafka::offset::max())
       : _tidp(tidp)
-      , _start_offset(start_offset) {}
+      , _start_offset(start_offset)
+      , _max_allowed_start_offset(max_allowed_start_offset) {}
 
     kafka::offset
     get_start_offset(const model::topic_id_partition& tidp) override {
@@ -52,9 +55,19 @@ public:
 
     kafka::offset start_offset() const { return _start_offset; }
 
+    kafka::offset
+    get_max_allowed_start_offset(const model::topic_id_partition&) override {
+        return _max_allowed_start_offset;
+    }
+
+    void set_max_allowed_start_offset(kafka::offset offset) {
+        _max_allowed_start_offset = offset;
+    }
+
 private:
     model::topic_id_partition _tidp;
     kafka::offset _start_offset;
+    kafka::offset _max_allowed_start_offset;
 };
 
 struct simple_retention_config {
@@ -134,6 +147,10 @@ public:
     void set_start_offset(kafka::offset offset) {
         ss::abort_source as;
         _l0_metastore.set_start_offset(_tidp, offset, &as).get();
+    }
+
+    void set_max_allowed_start_offset(kafka::offset offset) {
+        _l0_metastore.set_max_allowed_start_offset(offset);
     }
 
     kafka::offset l1_start_offset() {
@@ -498,4 +515,122 @@ TEST_F(HousekeeperTest, SyncsToL1) {
 
     EXPECT_EQ(start_offset(), kafka::offset{50});
     EXPECT_EQ(l1_start_offset(), kafka::offset{50});
+}
+
+TEST_F(HousekeeperTest, TimeRetentionLimitedByMaxAllowedStartOffset) {
+    // Time retention would advance to offset 50, but max_allowed_start_offset
+    // limits it to 25.
+    simple_retention_config cfg;
+    cfg.duration = 30min;
+    auto housekeeper = make_housekeeper(cfg);
+    EXPECT_EQ(start_offset(), kafka::offset{0});
+
+    // Set max allowed before housekeeping runs
+    set_max_allowed_start_offset(kafka::offset{25});
+
+    // Add old object (would normally be deleted entirely)
+    add_object({
+      .records = 50,
+      .size = 500_KiB,
+      .max_timestamp = model::timestamp_clock::now() - 2h,
+    });
+
+    // Add recent object (should be kept)
+    add_object({
+      .records = 75,
+      .size = 750_KiB,
+      .max_timestamp = model::timestamp_clock::now() - 10min,
+    });
+
+    housekeeper.do_housekeeping().get();
+    // Should be clamped to max_allowed_start_offset (25), not 50
+    EXPECT_EQ(start_offset(), kafka::offset{25});
+}
+
+TEST_F(HousekeeperTest, BytesRetentionLimitedByMaxAllowedStartOffset) {
+    // Bytes retention would advance to offset 100, but max_allowed_start_offset
+    // limits it to 50.
+    simple_retention_config cfg;
+    cfg.bytes = 2_MiB;
+    auto housekeeper = make_housekeeper(cfg);
+    EXPECT_EQ(start_offset(), kafka::offset{0});
+
+    // Set max allowed before housekeeping runs
+    set_max_allowed_start_offset(kafka::offset{50});
+
+    // Add objects totaling more than 2MiB to trigger retention
+    add_object({
+      .records = 100,
+      .size = 3_MiB,
+      .max_timestamp = model::timestamp_clock::now() - 1h,
+    });
+    add_object({
+      .records = 150,
+      .size = 2_MiB,
+      .max_timestamp = model::timestamp_clock::now() - 30min,
+    });
+
+    housekeeper.do_housekeeping().get();
+    // Should be clamped to max_allowed_start_offset (50), not 100
+    EXPECT_EQ(start_offset(), kafka::offset{50});
+}
+
+TEST_F(HousekeeperTest, MixedRetentionLimitedByMaxAllowedStartOffset) {
+    // Both retention policies agree on deleting to offset 100, but
+    // max_allowed_start_offset limits to 75.
+    simple_retention_config cfg;
+    cfg.bytes = 1_MiB;
+    cfg.duration = 30min;
+    auto housekeeper = make_housekeeper(cfg);
+    EXPECT_EQ(start_offset(), kafka::offset{0});
+
+    // Set max allowed before housekeeping runs
+    set_max_allowed_start_offset(kafka::offset{75});
+
+    // Add old large object (violates both policies)
+    add_object({
+      .records = 100,
+      .size = 3_MiB,
+      .max_timestamp = model::timestamp_clock::now() - 2h,
+    });
+    // Add recent small object
+    add_object({
+      .records = 150,
+      .size = 500_KiB,
+      .max_timestamp = model::timestamp_clock::now() - 10min,
+    });
+
+    housekeeper.do_housekeeping().get();
+    // Should be clamped to max_allowed_start_offset (75), not 100
+    EXPECT_EQ(start_offset(), kafka::offset{75});
+}
+
+TEST_F(HousekeeperTest, MaxAllowedStartOffsetDoesNotLimitWhenHigher) {
+    // max_allowed_start_offset is higher than what retention computes,
+    // so it should not affect the result.
+    simple_retention_config cfg;
+    cfg.duration = 30min;
+    auto housekeeper = make_housekeeper(cfg);
+    EXPECT_EQ(start_offset(), kafka::offset{0});
+
+    // Set max allowed to a high value
+    set_max_allowed_start_offset(kafka::offset{1000});
+
+    // Add old object (should be deleted)
+    add_object({
+      .records = 50,
+      .size = 500_KiB,
+      .max_timestamp = model::timestamp_clock::now() - 2h,
+    });
+
+    // Add recent object (should be kept)
+    add_object({
+      .records = 75,
+      .size = 750_KiB,
+      .max_timestamp = model::timestamp_clock::now() - 10min,
+    });
+
+    housekeeper.do_housekeeping().get();
+    // Should advance to 50 as normal, not limited by max_allowed
+    EXPECT_EQ(start_offset(), kafka::offset{50});
 }

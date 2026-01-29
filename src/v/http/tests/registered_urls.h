@@ -26,6 +26,7 @@ struct response {
     ss::sstring body;
     std::vector<std::pair<ss::sstring, ss::sstring>> headers;
     status_type status;
+    std::optional<ss::sstring> content_type;
 };
 
 struct request_info {
@@ -55,7 +56,7 @@ struct request_info {
       , content_length(req.content_length) {
         q_list_type = req.get_query_param("list-type");
         q_prefix = req.get_query_param("prefix");
-        has_q_delete = req.query_parameters.contains("delete");
+        has_q_delete = req.has_query_param("delete");
     }
 
     std::optional<ss::sstring> header(const ss::sstring& key) const {

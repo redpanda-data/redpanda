@@ -16,6 +16,7 @@
 #include "cluster/snapshot.h"
 #include "cluster/types.h"
 #include "model/fips_config.h"
+#include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "storage/disk_log_impl.h"
@@ -145,7 +146,6 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
         case raft::errc::group_not_exists:
         case raft::errc::replicate_first_stage_exception:
         case raft::errc::invalid_input_records:
-        case raft::errc::not_learner:
             return errc::replication_error;
         }
         __builtin_unreachable();
@@ -257,7 +257,8 @@ std::optional<shard_placement_target> placement_target_on_node(
 
 partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     partition_state state{};
-    if (unlikely(!partition)) {
+    if (!partition || !partition->log() || !partition->log()->stm_manager())
+      [[unlikely]] {
         return state;
     }
     state.start_offset = partition->raft_start_offset();
@@ -270,6 +271,15 @@ partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     state.revision_id = partition->get_revision_id();
     state.log_size_bytes = partition->size_bytes();
     state.non_log_disk_size_bytes = partition->non_log_disk_size_bytes();
+    auto& coco = partition->raft()->get_compaction_coordinator();
+    state.max_tombstone_removable_offset
+      = coco.get_max_tombstone_remove_offset();
+    state.max_transaction_removable_offset
+      = coco.get_max_transaction_remove_offset();
+    state.max_cleanly_compacted_offset
+      = coco.get_local_max_cleanly_compacted_offset();
+    state.max_transaction_free_offset
+      = coco.get_local_max_transaction_free_offset();
     state.is_read_replica_mode_enabled
       = partition->is_read_replica_mode_enabled();
     state.is_remote_fetch_enabled = partition->is_remote_fetch_enabled();
@@ -379,6 +389,8 @@ std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr ptr) {
         state.last_applied_offset = stm->last_applied();
         state.max_removable_local_log_offset
           = stm->max_removable_local_log_offset();
+        state.last_local_snapshot_offset
+          = stm->last_locally_snapshotted_offset();
         result.push_back(std::move(state));
     }
     return result;

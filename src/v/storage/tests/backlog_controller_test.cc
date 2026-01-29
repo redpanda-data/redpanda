@@ -36,9 +36,12 @@ struct simple_backlog_sampler : storage::backlog_controller::sampler {
 };
 
 class backlog_controller_fixture : public ::testing::Test {
+    using labels_type = ss::metrics::impl::labels_type;
+    using label_value = labels_type::mapped_type;
+    const labels_type sch_group_label = {
+      {"group", label_value{"sch_control_gr"}}, {"shard", label_value{"0"}}};
+
 public:
-    const std::map<ss::sstring, ss::sstring> sch_group_label = {
-      {"group", "sch_control_gr"}, {"shard", "0"}};
     backlog_controller_fixture() {
         sg = ss::create_scheduling_group("sch_control_gr", 100).get();
         /**

@@ -35,7 +35,7 @@ func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			var users []string
-			if p.FromCloud && !p.CloudCluster.IsServerless() {
+			if p.CheckFromCloud() && !p.CloudCluster.IsServerless() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(p)
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 

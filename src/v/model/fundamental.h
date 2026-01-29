@@ -79,7 +79,31 @@ inline constexpr offset operator-(offset o, offset_delta d) { return o + (-d); }
 
 namespace cloud_storage_clients {
 
-using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
+/// Bucket name type stores a plain cloud storage bucket name or a data source
+/// name (DSN) that includes bucket name and optional connection parameters
+/// overriding cluster configuration.
+///
+/// No secret information is stored in this type. It can be logged or displayed
+/// to the user as is.
+///
+/// Examples:
+///   - my-bucket
+///   - my-bucket?region=us-west-2&endpoint=http://localhost:9000
+///
+/// History note: The connection parameters in DSN format were introduced to
+/// support cross-region bucket access for Remote Read Replicas feature
+/// (https://redpandadata.atlassian.net/browse/CORE-12797). In general, the new
+/// format can be used by any feature that requires overriding cluster-level
+/// connection settings on per-bucket basis.
+using bucket_name = named_type<ss::sstring, struct bucket_name_tag>;
+
+/// Plain bucket name is the actual bucket name without any connection
+/// parameters.
+///
+/// Examples:
+///   - my-bucket
+///   - another-bucket
+using plain_bucket_name = named_type<ss::sstring, struct plain_bucket_name_tag>;
 
 } // namespace cloud_storage_clients
 
@@ -282,9 +306,7 @@ inline constexpr model::offset prev_offset(model::offset o) {
     return o - model::offset{1};
 }
 
-// An invalid offset indicating that actual LSO is not yet ready to be returned.
-// Follows the policy that LSO is the next offset of the decided offset.
-inline constexpr model::offset invalid_lso{next_offset(model::offset::min())};
+inline constexpr model::offset invalid_lso{-1};
 
 struct topic_partition_view {
     topic_partition_view(model::topic_view tp, model::partition_id p)

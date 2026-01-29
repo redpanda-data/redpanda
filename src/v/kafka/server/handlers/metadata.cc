@@ -221,7 +221,7 @@ ss::future<metadata_response::topic> create_topic(
       topic,
       config::shard_local_cfg().default_topic_partitions(),
       config::shard_local_cfg().default_topic_replication()};
-    auto tout = config::shard_local_cfg().create_topic_timeout_ms();
+    auto tout = config::shard_local_cfg().internal_rpc_request_timeout_ms();
     try {
         auto res = co_await ctx.topics_frontend().autocreate_topics(
           {std::move(cfg)}, tout);

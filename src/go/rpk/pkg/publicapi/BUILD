@@ -15,6 +15,7 @@ go_library(
         "//src/go/rpk/pkg/cli/version",
         "//src/go/rpk/pkg/config",
         "//src/go/rpk/pkg/httpapi",
+        "//src/go/rpk/pkg/oauth/authtoken",
         "@build_buf_gen_go_redpandadata_cloud_connectrpc_go//redpanda/api/byocplugin/v1alpha1/byocpluginv1alpha1connect",
         "@build_buf_gen_go_redpandadata_cloud_connectrpc_go//redpanda/api/controlplane/v1/controlplanev1connect",
         "@build_buf_gen_go_redpandadata_cloud_connectrpc_go//redpanda/api/iam/v1/iamv1connect",

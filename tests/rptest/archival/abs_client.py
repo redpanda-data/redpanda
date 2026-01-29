@@ -69,7 +69,7 @@ class ABSClient:
         blob_service = BlobServiceClient.from_connection_string(self.conn_str)
         blob_service.create_container(name)
 
-    def empty_and_delete_bucket(self, name: str, parallel=False):
+    def empty_and_delete_bucket(self, name: str, parallel: bool = False) -> None:
         """
         Simply proxy into `delete_bucket` as that deletes the blobs too
         """
@@ -137,16 +137,12 @@ class ABSClient:
         )
         return blob_client.download_blob().content_as_bytes()
 
-    def put_object(self, bucket: str, key: str, data: str, is_bytes=False):
+    def put_object(self, bucket: str, key: str, data: str | bytes) -> None:
         container_client = ContainerClient.from_connection_string(
             self.conn_str, container_name=bucket
         )
-        if not is_bytes:
-            payload = bytes(data, encoding="utf-8")
-        else:
-            payload = data
         blob_client = container_client.upload_blob(
-            name=key, data=payload, blob_type=BlobType.BLOCKBLOB, overwrite=True
+            name=key, data=data, blob_type=BlobType.BLOCKBLOB, overwrite=True
         )
 
         assert blob_client.exists(), f"Failed to upload blob {key}"

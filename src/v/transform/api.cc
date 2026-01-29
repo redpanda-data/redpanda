@@ -424,7 +424,7 @@ public:
     }
 
 private:
-    mutex _mu{"proc_factory"};
+    ssx::mutex _mu{"proc_factory"};
     wasm_engine_factory _wasm_engine_factory;
     cluster::partition_manager* _partition_manager;
     rpc::client* _client;

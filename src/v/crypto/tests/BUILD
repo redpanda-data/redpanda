@@ -163,6 +163,7 @@ redpanda_test_cc_library(
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:runfiles",
         "@googletest//:gtest",
+        "@openssl",
     ],
 )
 
@@ -184,8 +185,8 @@ redpanda_cc_gtest(
         "//src/v/crypto",
         "//src/v/ssx:thread_worker",
         "//src/v/test_utils:gtest",
-        "//src/v/thirdparty/openssl",
         "@googletest//:gtest",
+        "@openssl",
         "@seastar",
     ],
 )

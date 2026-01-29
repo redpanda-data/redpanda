@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "base/vassert.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -235,9 +235,9 @@ private:
     // Flag indicating that the external process has completed
     bool _completed{false};
     // Protects against multiple calls to `terminate()`
-    mutex _terminate_mutex;
+    ssx::mutex _terminate_mutex;
     // Protects against multiple calls to `wait()`
-    mutex _wait_mutex;
+    ssx::mutex _wait_mutex;
     // Holds the future of the stdout consumer which will be cleaned up in
     // wait()
     std::optional<ss::future<>> _stdout_consumer{std::nullopt};

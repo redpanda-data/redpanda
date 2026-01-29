@@ -10,10 +10,10 @@
 
 #pragma once
 
+#include "cloud_roles/auth_refresh_bg_op.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "cloud_storage_clients/types.h"
 #include "model/metadata.h"
-#include "net/transport.h"
 #include "net/types.h"
 
 namespace cloud_storage_clients {
@@ -31,15 +31,34 @@ struct default_overrides {
 };
 
 /// Configuration options common across cloud storage clients
-struct common_configuration : net::base_transport::configuration {
+/// Primitive, copyable across shards.
+struct common_configuration {
     /// URI of the access point
     access_point_uri uri;
     /// Max time that connection can spend idle
     ss::lowres_clock::duration max_idle_time;
-    /// Metrics probe (should be created for every aws account on every shard)
-    ss::shared_ptr<client_probe> _probe;
 
     bool requires_self_configuration{false};
+
+    model::cloud_credentials_source cloud_credentials_source{
+      model::cloud_credentials_source::config_file};
+
+    net::metrics_disabled disable_metrics{net::metrics_disabled::no};
+    net::public_metrics_disabled disable_public_metrics{
+      net::public_metrics_disabled::no};
+
+    /// \defgroup Fields for constructing net::base_transport::configuration
+    /// @{
+    net::unresolved_address server_addr;
+
+    std::optional<ss::tls::credentials_builder> tls_credentials_builder;
+
+    /// Optional server name indication (SNI) for TLS connection
+    std::optional<ss::sstring> tls_sni_hostname;
+
+    /// Potentially skip wait for EOF after BYE message on TLS session end
+    bool wait_for_tls_server_eof = true;
+    /// @}
 };
 
 struct s3_configuration : common_configuration {
@@ -53,6 +72,9 @@ struct s3_configuration : common_configuration {
     std::optional<cloud_roles::private_key_str> secret_key;
     /// AWS URL style, either virtual-hosted-style or path-style.
     s3_url_style url_style = s3_url_style::virtual_host;
+    /// Whether the s3-compatible backend is GCS. Used in the client pool to
+    /// select between s3_client and gcs_client at client creation time.
+    bool is_gcs{false};
 
     /// \brief opinionated configuration initialization
     /// Generates uri field from region, initializes credentials for the
@@ -68,6 +90,7 @@ struct s3_configuration : common_configuration {
     ///        truststore
     /// \return future that returns initialized configuration
     static ss::future<s3_configuration> make_configuration(
+      model::cloud_credentials_source cloud_credentials_source,
       const std::optional<cloud_roles::public_key_str>& pkey,
       const std::optional<cloud_roles::private_key_str>& skey,
       const cloud_roles::aws_region_name& region,
@@ -79,6 +102,8 @@ struct s3_configuration : common_configuration {
       net::public_metrics_disabled disable_public_metrics
       = net::public_metrics_disabled::yes);
 
+    ss::shared_ptr<client_probe> make_probe() const;
+
     friend std::ostream& operator<<(std::ostream& o, const s3_configuration& c);
 };
 
@@ -87,15 +112,16 @@ struct abs_configuration : common_configuration {
     std::optional<cloud_roles::private_key_str> shared_key;
     bool is_hns_enabled{false};
 
-    abs_configuration make_adls_configuration() const;
-
     static ss::future<abs_configuration> make_configuration(
+      model::cloud_credentials_source cloud_credentials_source,
       const std::optional<cloud_roles::private_key_str>& shared_key,
       const cloud_roles::storage_account& storage_account_name,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
       net::public_metrics_disabled disable_public_metrics
       = net::public_metrics_disabled::yes);
+
+    ss::shared_ptr<client_probe> make_probe() const;
 
     friend std::ostream&
     operator<<(std::ostream& o, const abs_configuration& c);
@@ -140,5 +166,17 @@ infer_backend_from_uri(const access_point_uri& uri);
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,
   model::cloud_credentials_source cloud_storage_credentials_source);
+
+cloud_roles::auth_refresh_bg_op::credentials_source_config
+build_refresh_credentials_source(
+  const client_configuration& config,
+  model::cloud_credentials_source cloud_credentials_source);
+
+ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
+build_tls_credentials(const client_configuration& config);
+
+net::base_transport::configuration build_transport_configuration(
+  const client_configuration&,
+  ss::shared_ptr<ss::tls::certificate_credentials>);
 
 } // namespace cloud_storage_clients

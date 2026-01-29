@@ -21,14 +21,14 @@
 class prefix_logger {
 public:
     explicit prefix_logger(ss::logger& logger, ss::sstring prefix)
-      : _logger(logger)
+      : _logger(&logger)
       , _prefix(std::move(prefix)) {}
 
     template<typename... Args>
     void log(ss::log_level lvl, const char* format, Args&&... args) const {
-        if (_logger.is_enabled(lvl)) {
+        if (_logger->is_enabled(lvl)) {
             auto line_fmt = ss::sstring("{} - ") + format;
-            _logger.log(
+            _logger->log(
               lvl, line_fmt.c_str(), _prefix, std::forward<Args>(args)...);
         }
     }
@@ -67,9 +67,9 @@ public:
           std::forward<Args>(args)...);
     }
 
-    const ss::logger& logger() const { return _logger; }
+    const ss::logger& logger() const { return *_logger; }
 
 private:
-    ss::logger& _logger;
+    ss::logger* _logger;
     ss::sstring _prefix;
 };

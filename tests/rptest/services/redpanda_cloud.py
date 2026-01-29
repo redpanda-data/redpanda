@@ -1607,7 +1607,7 @@ class CloudCluster:
             max_partition_count=int(tier["max_partition_count"]),
         )
 
-    def scale_cluster(self, nodes_count):
+    def scale_cluster(self, nodes_count: int):
         """Scale out/in cluster to specified number of nodes.
 
         Uses cloud admin api.
@@ -1618,7 +1618,9 @@ class CloudCluster:
         )
 
     # Update cluster properties using Admin API
-    def set_cluster_config_overrides(self, cluster_id, config_values):
+    def set_cluster_config_overrides(
+        self, cluster_id: str, config_values: list[dict[str, str]]
+    ) -> Any:
         """
         Set configuration overrides for a specific Redpanda cloud cluster using Admin API
 
@@ -1745,3 +1747,148 @@ class CloudCluster:
             f"did not reach {target_state} within {timeout_sec // 60} minutes."
         )
         return False
+
+    def update_cluster_node_count(
+        self,
+        cluster_id: str,
+        node_count: int,
+        wait_for_completion: bool = True,
+        timeout_sec: int = 1200,  # 20 minutes for horizontal scaling
+    ) -> dict:
+        """
+        Scale cluster horizontally using PATCH /v1/clusters/{id}.
+        Horizontal scaling (within or across tier) adds/removes nodes to existing pool.
+        Cluster transitions to STATE_UPGRADING during operation.
+
+        Returns operation response dict containing operation.id and operation.state.
+        """
+        self._logger.warning(
+            f"Scaling cluster {cluster_id} to {node_count} nodes (horizontal)"
+        )
+        payload = {"redpanda_node_count": node_count}
+
+        self._logger.debug(
+            f"PATCH /v1/clusters/{cluster_id} body: {json.dumps(payload)}"
+        )
+
+        try:
+            response = self.public_api._http_patch(
+                base_url=self.config.public_api_url,
+                endpoint=f"/v1/clusters/{cluster_id}",
+                json=payload,
+            )
+
+            if wait_for_completion and "operation" in response:
+                operation_id = response["operation"]["id"]
+                self._logger.info(
+                    f"Waiting for horizontal scaling operation {operation_id} to complete"
+                )
+                success = self.wait_for_operation_complete(
+                    cluster_id, operation_id, timeout_sec
+                )
+                if not success:
+                    raise RuntimeError(
+                        f"Horizontal scaling operation {operation_id} did not complete"
+                    )
+
+            return response
+        except Exception as e:
+            self._logger.error(
+                f"Error scaling cluster {cluster_id} to {node_count} nodes: {e}"
+            )
+            raise
+
+    def update_cluster_tier(
+        self,
+        cluster_id: str,
+        tier_name: str,
+        wait_for_completion: bool = True,
+        timeout_sec: int = 2400,  # 40 minutes for vertical scaling
+    ) -> dict:
+        """
+        Change cluster tier using PATCH /v1/clusters/{id}.
+        Tier changes can be horizontal (same instance type, adds/removes nodes)
+        or vertical (different instance type, rolling node replacement).
+        Cluster transitions to STATE_UPGRADING during operation.
+
+        Returns operation response dict containing operation.id and operation.state.
+        """
+        self._logger.warning(f"Changing cluster {cluster_id} tier to {tier_name}")
+        payload = {"throughput_tier": tier_name}
+
+        self._logger.debug(
+            f"PATCH /v1/clusters/{cluster_id} body: {json.dumps(payload)}"
+        )
+
+        try:
+            response = self.public_api._http_patch(
+                base_url=self.config.public_api_url,
+                endpoint=f"/v1/clusters/{cluster_id}",
+                json=payload,
+            )
+
+            if wait_for_completion and "operation" in response:
+                operation_id = response["operation"]["id"]
+                self._logger.info(
+                    f"Waiting for tier change operation {operation_id} to complete"
+                )
+                success = self.wait_for_operation_complete(
+                    cluster_id, operation_id, timeout_sec
+                )
+                if not success:
+                    raise RuntimeError(
+                        f"Tier change operation {operation_id} did not complete"
+                    )
+
+            return response
+        except Exception as e:
+            self._logger.error(
+                f"Error changing cluster {cluster_id} tier to {tier_name}: {e}"
+            )
+            raise
+
+    def get_cluster_with_node_count(self, cluster_id: str) -> dict:
+        """
+        Get cluster info including redpanda_node_count using GET /v1/clusters/{id}.
+        During scaling, this shows the NEW desired values (state, throughput_tier,
+        redpanda_node_count).
+
+        Returns cluster dict with redpanda_node_count, state, throughput_tier fields.
+        """
+        try:
+            response = self.public_api._http_get(
+                endpoint=f"/v1/clusters/{cluster_id}",
+                base_url=self.config.public_api_url,
+            )
+            return response.get("cluster", {})
+        except Exception as e:
+            self._logger.error(f"Error getting cluster {cluster_id}: {e}")
+            raise
+
+    def list_throughput_tiers(
+        self,
+        cloud_provider: str | None = None,
+        cluster_type: str | None = None,
+        region: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        List available throughput tiers using GET /v1beta2/tiers.
+        Optional filters: cloud_provider (e.g., 'CLOUD_PROVIDER_AWS'),
+        cluster_type (e.g., 'TYPE_BYOC'), region (e.g., 'us-west-2').
+
+        Returns list of tier dictionaries.
+        """
+        params = {}
+        if cloud_provider:
+            params["filter.cloud_provider"] = cloud_provider
+        if cluster_type:
+            params["filter.cluster_type"] = cluster_type
+        if region:
+            params["filter.region"] = region
+
+        try:
+            tiers = self.public_api._http_get(endpoint="/v1beta2/tiers", params=params)
+            return tiers.get("throughput_tiers", [])
+        except Exception as e:
+            self._logger.error(f"Error listing throughput tiers: {e}")
+            raise

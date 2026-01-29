@@ -101,6 +101,7 @@ public:
     ss::future<result<replicate_result>>
       quorum_write_empty_batch(model::timeout_clock::time_point);
 
+    using barrier_ret_t = result<std::pair<model::offset, model::term_id>>;
     /**
      * Sends a round of heartbeats to followers, when majority of followers
      * replied with success to either this of any following request all reads up
@@ -110,7 +111,7 @@ public:
      *
      * Returns the barrier offset and its term if successful.
      */
-    ss::future<result<std::pair<model::offset, model::term_id>>>
+    ss::future<barrier_ret_t>
       insert_linearizable_barrier(model::timeout_clock::time_point);
 
 protected:

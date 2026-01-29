@@ -27,9 +27,9 @@
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "ssx/abort_source.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
 #include "utils/log_hist.h"
-#include "utils/mutex.h"
 #include "utils/named_type.h"
 #include "utils/windowed_sum_tracker.h"
 
@@ -298,15 +298,6 @@ public:
 
     connection_attributes& attributes() { return _attributes; }
 
-private:
-    template<typename T>
-    security::auth_result authorized_user(
-      security::acl_principal principal,
-      security::acl_operation operation,
-      const T& name,
-      authz_quiet quiet,
-      superuser_required superuser_required);
-
     security::acl_principal get_principal() const {
         if (_mtls_state) {
             return _mtls_state->principal();
@@ -316,6 +307,18 @@ private:
         // anonymous user
         return security::acl_principal{security::principal_type::user, {}};
     }
+
+private:
+    template<typename T>
+    security::auth_result authorized_user(
+      security::acl_principal principal,
+      security::acl_operation operation,
+      const T& name,
+      authz_quiet quiet,
+      superuser_required superuser_required,
+      const chunked_vector<security::acl_principal>& groups);
+
+    const chunked_vector<security::acl_principal>& get_groups() const;
 
     bool is_finished_parsing() const;
 
@@ -531,7 +534,7 @@ private:
         /**
          * Mutex is used to control concurrency per virtual connection.
          */
-        mutex _lock{"virtual_connection_state::lock"};
+        ssx::mutex _lock{"virtual_connection_state::lock"};
         ss::lowres_clock::time_point _last_request_timestamp;
     };
 

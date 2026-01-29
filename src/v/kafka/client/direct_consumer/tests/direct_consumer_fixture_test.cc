@@ -10,11 +10,14 @@
  */
 
 #include "kafka/client/direct_consumer/tests/direct_consumer_fixture.h"
+#include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 
 #include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
+
+#include <unordered_map>
 
 using namespace kafka::client;
 using ConsumerFixture = kafka::client::tests::consumer_fixture;
@@ -26,13 +29,33 @@ ss::logger logger{"direct-consumer-test"};
 
 TEST_P(BasicConsumerFixture, TestBasicConsumption) {
     assign_partitions(make_assignment(topic, {0, 1, 2}));
+    { // assert on intial updates, we should see each partition at most once,
+      // but maybe not at all
+        std::unordered_map<model::topic_partition, int> times_seen;
+        for (int i = 0; i < 10; ++i) {
+            auto fetched = consumer->fetch_next(100ms).get();
+            ASSERT_TRUE(fetched.has_value())
+              << "fetch should not have an error";
 
-    // no data should be available immediately, as the topic is empty
-    for (int i = 0; i < 10; ++i) {
-        auto fetched = consumer->fetch_next(100ms).get();
-        ASSERT_TRUE(fetched.value().empty());
+            for (auto& topic_data : fetched.value()) {
+                for (auto& partition_data : topic_data.partitions) {
+                    ASSERT_EQ(partition_data.size_bytes, 0);
+                    ASSERT_EQ(partition_data.data.size(), 0);
+                    ASSERT_EQ(partition_data.high_watermark, kafka::offset{0});
+                    ASSERT_EQ(
+                      partition_data.last_stable_offset, kafka::offset{0});
+                    ASSERT_EQ(partition_data.start_offset, kafka::offset{0});
+                    int& seen_counter = times_seen[model::topic_partition{
+                      topic_data.topic, partition_data.partition_id}];
+                    ++seen_counter;
+                }
+            }
+        }
+        ASSERT_TRUE(times_seen.size() <= 3);
+        for (auto [tp, counter] : times_seen) {
+            ASSERT_EQ(counter, 1);
+        }
     }
-
     // produce some data
     produce_to_partition(topic, 0, 1000).get();
     produce_to_partition(topic, 1, 400).get();
@@ -79,7 +102,6 @@ TEST_P(BasicConsumerFixture, TestBasicConsumption) {
         .last_offset(),
       model::offset(1019));
 }
-
 TEST_P(BasicConsumerFixture, TestBasicLeadershipTransfer) {
     // constants
     constexpr uint first_produce_count = 10;
@@ -609,11 +631,6 @@ TEST_F(FetchSessionFixture, TestFetchRequestContents) {
     assign_partitions(make_assignment(
       topic, initial_assignment | std::ranges::to<std::vector<int>>()));
 
-    for (int i = 0; i < 10; ++i) {
-        auto fetched = consumer->fetch_next(100ms).get();
-        ASSERT_TRUE(fetched.value().empty());
-    }
-
     constexpr int64_t n = 100;
 
     for (auto i : all_partitions) {
@@ -695,11 +712,6 @@ TEST_F(FetchSessionFixture, TestFetchRequestUnassignContents) {
 
     assign_partitions(make_assignment(
       topic, initial_assignment | std::ranges::to<std::vector<int>>()));
-
-    for (int i = 0; i < 10; ++i) {
-        auto fetched = consumer->fetch_next(100ms).get();
-        ASSERT_TRUE(fetched.value().empty());
-    }
 
     constexpr int64_t n = 100;
 

@@ -17,7 +17,7 @@
 #include "self_test/diskcheck.h"
 #include "self_test/netcheck.h"
 #include "self_test_rpc_types.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/scheduling.hh>
@@ -97,7 +97,7 @@ private:
     ss::scheduling_group _st_sg;
     bool _cancelling{false};
     self_test_stage _stage{self_test_stage::idle};
-    mutex _lock{"self_test"};
+    ssx::mutex _lock{"self_test"};
     self_test::diskcheck _disk_test;
     self_test::netcheck _network_test;
     self_test::cloudcheck _cloud_test;

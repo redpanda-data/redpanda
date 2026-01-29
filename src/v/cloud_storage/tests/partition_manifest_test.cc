@@ -1544,11 +1544,9 @@ struct metadata_stm_segment
 };
 
 namespace old {
-struct segment_meta_v0 {
-    using value_t = segment_meta_v0;
-    static constexpr serde::version_t redpanda_serde_version = 0;
-    static constexpr serde::version_t redpanda_serde_compat_version = 0;
-
+struct segment_meta_v0
+  : serde::
+      envelope<segment_meta_v0, serde::version<0>, serde::compat_version<0>> {
     bool is_compacted;
     size_t size_bytes;
     model::offset base_offset;
@@ -1570,11 +1568,9 @@ struct segment_meta_v0 {
 
     auto operator<=>(const segment_meta_v0&) const = default;
 };
-struct segment_meta_v1 {
-    using value_t = segment_meta_v1;
-    static constexpr serde::version_t redpanda_serde_version = 1;
-    static constexpr serde::version_t redpanda_serde_compat_version = 0;
-
+struct segment_meta_v1
+  : serde::
+      envelope<segment_meta_v1, serde::version<1>, serde::compat_version<0>> {
     bool is_compacted;
     size_t size_bytes;
     model::offset base_offset;

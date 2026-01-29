@@ -1,4 +1,3 @@
-import collections
 import os
 import pathlib
 import random
@@ -7,6 +6,7 @@ import subprocess
 import tempfile
 import typing
 from enum import Enum, IntEnum
+from typing import NamedTuple
 
 _ca_config_tmpl = """
 # OpenSSL CA configuration file
@@ -297,12 +297,21 @@ extendedKeyUsage        = serverAuth,clientAuth
 subjectKeyIdentifier    = hash
 """
 
-CertificateAuthority = collections.namedtuple(
-    "CertificateAuthority", ["cfg", "key", "crt", "crl"]
-)
-Certificate = collections.namedtuple(
-    "Certificate", ["cfg", "key", "crt", "ca", "p12_file", "p12_password"]
-)
+
+class CertificateAuthority(NamedTuple):
+    cfg: str
+    key: str
+    crt: str
+    crl: str | None
+
+
+class Certificate(NamedTuple):
+    cfg: str
+    key: str
+    crt: str
+    ca: CertificateAuthority
+    p12_file: str
+    p12_password: str
 
 
 class TLSKeyType(Enum):
@@ -355,14 +364,14 @@ class TLSCertManager:
 
     def _exec(self, cmd) -> str:
         self._logger.info(f"Running command: {cmd}")
-        retries = 0
+        retries = 1
         output = None
-        while retries < 3:
+        while True:
             try:
                 output = subprocess.check_output(
                     cmd.split(), cwd=self._dir.name, stderr=subprocess.STDOUT
                 )
-                retries = 3  # Stop retry
+                self._logger.debug(f"openssl output: {output}")
                 return output.decode("utf-8")
             except subprocess.CalledProcessError as e:
                 self._logger.error(f"openssl error: {e.output}")
@@ -375,8 +384,6 @@ class TLSCertManager:
 
                 if retries >= 3:
                     raise
-            else:
-                self._logger.debug(output)
 
             retries += 1
 
@@ -481,7 +488,7 @@ class TLSCertManager:
         elif format == DNFormat.RFC2253:
             nameopt = "-nameopt rfc2253"
         else:
-            raise ValueError(f"Unknown DN format: {format}")
+            raise ValueError(f"Unknown DN format: {format}")  # pyright: ignore[reportUnreachable]
 
         resp = self._exec(f"openssl x509 -in {cert.crt} -noout -subject {nameopt}")
         assert resp.startswith("subject="), (

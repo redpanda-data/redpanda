@@ -76,6 +76,8 @@ public:
     // equal to the high watermark.
     virtual std::optional<kafka::offset> lowest_pinned_data_offset() const = 0;
 
+    virtual model::offset last_locally_snapshotted_offset() const = 0;
+
     virtual model::offset last_applied() const = 0;
 
     virtual const ss::sstring& name() = 0;
@@ -88,6 +90,11 @@ public:
     virtual model::control_record_type
     parse_tx_control_batch(const model::record_batch&) {
         return model::control_record_type::unknown;
+    }
+
+    virtual bool is_last_batch_for_idempotent_producer(
+      const model::record_batch_header&) const {
+        return false;
     }
 };
 
@@ -149,6 +156,8 @@ public:
     std::optional<kafka::offset> lowest_pinned_data_offset() const;
     model::offset max_tombstone_remove_offset() const;
     void set_max_tombstone_remove_offset(model::offset);
+    model::offset max_tx_end_remove_offset() const;
+    void set_max_tx_end_remove_offset(model::offset);
 
     ss::future<chunked_vector<model::tx_range>>
     aborted_tx_ranges(model::offset to, model::offset from) {
@@ -182,10 +191,20 @@ public:
         return _tx_stm;
     }
 
+    /**
+     * Returns the offset of the last snapshot taken by the transactional state
+     * machine. if no transactional stm is registered, returns max offset.
+     */
+    model::offset tx_snapshot_offset() const;
+
+    bool is_last_batch_for_idempotent_producer(
+      const model::record_batch_header&) const;
+
 private:
     ss::shared_ptr<snapshotable_stm> _tx_stm;
     std::vector<ss::shared_ptr<snapshotable_stm>> _stms;
     model::offset _max_tombstone_remove_offset{};
+    model::offset _max_tx_end_remove_offset{};
 };
 
 /// returns base_offset's from batches. Not max_offsets
@@ -452,6 +471,7 @@ struct housekeeping_config {
       std::optional<size_t> max_bytes_in_log,
       model::offset max_collect_offset,
       model::offset max_tombstone_remove_offset,
+      model::offset max_tx_end_remove_offset,
       std::optional<std::chrono::milliseconds> tombstone_retention_ms,
       std::optional<std::chrono::milliseconds> tx_retention_ms,
       std::chrono::milliseconds min_lag_ms,
@@ -461,6 +481,7 @@ struct housekeeping_config {
       : compact(
           max_collect_offset,
           max_tombstone_remove_offset,
+          max_tx_end_remove_offset,
           tombstone_retention_ms,
           tx_retention_ms,
           as,
@@ -472,6 +493,33 @@ struct housekeeping_config {
 
     compaction::compaction_config compact;
     gc_config gc;
+
+    static housekeeping_config make_config(
+      model::timestamp upper,
+      std::optional<size_t> max_bytes_in_log,
+      model::offset max_collect_offset,
+      model::offset max_tombstone_remove_offset,
+      model::offset max_tx_end_remove_offset,
+      std::optional<std::chrono::milliseconds> tombstone_retention_ms,
+      std::optional<std::chrono::milliseconds> tx_retention_ms,
+      std::chrono::milliseconds min_lag_ms,
+      ss::abort_source& as,
+      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
+      compaction::hash_key_offset_map* key_map = nullptr) {
+        auto cfg = housekeeping_config(
+          upper,
+          max_bytes_in_log,
+          max_collect_offset,
+          max_tombstone_remove_offset,
+          max_tx_end_remove_offset,
+          tombstone_retention_ms,
+          tx_retention_ms,
+          min_lag_ms,
+          as,
+          san_cfg,
+          key_map);
+        return cfg;
+    }
 
     friend std::ostream& operator<<(std::ostream&, const housekeeping_config&);
 };

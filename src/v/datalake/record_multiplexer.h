@@ -16,6 +16,7 @@
 #include "datalake/partitioning_writer.h"
 #include "datalake/schema_identifier.h"
 #include "datalake/translation/translation_probe.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"

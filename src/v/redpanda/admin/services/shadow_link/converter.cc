@@ -30,6 +30,7 @@ using proto::admin::authentication_configuration;
 using proto::admin::consumer_offset_sync_options;
 using proto::admin::create_shadow_link_request;
 using proto::admin::name_filter;
+using proto::admin::plain_config;
 using proto::admin::schema_registry_sync_options;
 using proto::admin::schema_registry_sync_options_shadow_schema_registry_topic;
 using proto::admin::scram_config;
@@ -407,6 +408,19 @@ create_authn_settings(const authentication_configuration& authn_config) {
             scram_mechanism_to_string(scram.get_scram_mechanism())};
           return creds;
       },
+      [](const plain_config& plain)
+        -> cluster_link::model::connection_config::authn_variant {
+          if (plain.get_username().empty() || plain.get_password().empty()) {
+              throw std::invalid_argument(
+                "When setting PLAIN configuration, must provide username and "
+                "password");
+          }
+          cluster_link::model::scram_credentials creds;
+          creds.username = plain.get_username();
+          creds.password = plain.get_password();
+          creds.mechanism = "PLAIN";
+          return creds;
+      },
       [](std::monostate)
         -> cluster_link::model::connection_config::authn_variant {
           throw std::invalid_argument(
@@ -524,26 +538,38 @@ authentication_configuration create_authentication_configuration(
       authn,
       [](const cluster_link::model::scram_credentials& scram)
         -> authentication_configuration {
-          scram_config scram_proto;
-          scram_proto.set_username(ss::sstring{scram.username});
-          scram_proto.set_password_set(true);
-          scram_proto.set_password_set_at(
-            absl::FromChrono(
-              model::to_time_point(scram.password_last_updated)));
-          scram_proto.set_scram_mechanism(
-            proto::admin::scram_mechanism::unspecified);
-          if (scram.mechanism == "SCRAM-SHA-256") {
-              scram_proto.set_scram_mechanism(
-                proto::admin::scram_mechanism::scram_sha_256);
-          } else if (scram.mechanism == "SCRAM-SHA-512") {
-              scram_proto.set_scram_mechanism(
-                proto::admin::scram_mechanism::scram_sha_512);
-          } else {
-              throw std::invalid_argument(
-                ssx::sformat("Unknown SCRAM mechanism: {}", scram.mechanism));
-          }
           authentication_configuration authn;
-          authn.set_scram_configuration(std::move(scram_proto));
+          if (scram.mechanism == "PLAIN") {
+              plain_config plain_proto;
+              plain_proto.set_username(ss::sstring{scram.username});
+              plain_proto.set_password_set(true);
+              plain_proto.set_password_set_at(
+                absl::FromChrono(
+                  model::to_time_point(scram.password_last_updated)));
+              authn.set_plain_configuration(std::move(plain_proto));
+          } else {
+              scram_config scram_proto;
+              scram_proto.set_username(ss::sstring{scram.username});
+              scram_proto.set_password_set(true);
+              scram_proto.set_password_set_at(
+                absl::FromChrono(
+                  model::to_time_point(scram.password_last_updated)));
+              scram_proto.set_scram_mechanism(
+                proto::admin::scram_mechanism::unspecified);
+              if (scram.mechanism == "SCRAM-SHA-256") {
+                  scram_proto.set_scram_mechanism(
+                    proto::admin::scram_mechanism::scram_sha_256);
+              } else if (scram.mechanism == "SCRAM-SHA-512") {
+                  scram_proto.set_scram_mechanism(
+                    proto::admin::scram_mechanism::scram_sha_512);
+              } else {
+                  throw std::invalid_argument(
+                    ssx::sformat(
+                      "Unknown SCRAM mechanism: {}", scram.mechanism));
+              }
+
+              authn.set_scram_configuration(std::move(scram_proto));
+          }
           return authn;
       });
 }
@@ -991,6 +1017,13 @@ chunked_vector<shadow_topic> create_shadow_topics(
           return model_to_shadow_topic(p.first, p.second, status_report);
       });
 
+    std::ranges::sort(
+      shadow_topics.begin(),
+      shadow_topics.end(),
+      [](const shadow_topic& a, const shadow_topic& b) {
+          return a.get_name() < b.get_name();
+      });
+
     return shadow_topics;
 }
 
@@ -1151,6 +1184,7 @@ void update_timestamps(
                   *from.connection.authn_config);
               // If the passwords do not match, then update the timestamp of
               // when the password was set
+              c.password_last_updated = from_creds.password_last_updated;
               if (from_creds.password != c.password) {
                   c.password_last_updated = model::timestamp::now();
                   return;
@@ -1189,7 +1223,10 @@ chunked_vector<topic_partition_information> status_to_partition_information(
         info.set_high_watermark(report.shadow_partition_high_watermark);
         resp.emplace_back(std::move(info));
     }
-
+    std::ranges::sort(
+      resp,
+      std::ranges::less{},
+      &topic_partition_information::get_partition_id);
     return resp;
 }
 } // namespace
@@ -1214,14 +1251,14 @@ convert_create_to_metadata(create_shadow_link_request req) {
 }
 
 shadow_link metadata_to_shadow_link(
-  cluster_link::model::metadata md,
+  cluster_link::model::metadata_ptr md,
   cluster_link::model::shadow_link_status_report status_report) {
     shadow_link sl;
 
-    sl.set_name(std::move(md.name));
-    sl.set_uid(ssx::sformat("{}", md.uuid));
-    sl.set_configurations(create_shadow_link_configuration(md));
-    sl.set_status(create_shadow_link_status(md, status_report));
+    sl.set_name(ss::sstring{md->name()});
+    sl.set_uid(ssx::sformat("{}", md->uuid));
+    sl.set_configurations(create_shadow_link_configuration(*md));
+    sl.set_status(create_shadow_link_status(*md, status_report));
 
     return sl;
 }
@@ -1229,24 +1266,30 @@ shadow_link metadata_to_shadow_link(
 cluster_link::model::update_cluster_link_configuration_cmd
 create_update_cluster_link_config_cmd(
   update_shadow_link_request req,
-  cluster_link::model::metadata current_metadata) {
+  cluster_link::model::metadata_ptr current_metadata) {
     if (!req.get_update_mask().is_valid_for_message<shadow_link>()) {
         throw serde::pb::rpc::invalid_argument_exception(
           ssx::sformat(
             "Invalid update mask for shadow_link: {}", req.get_update_mask()));
     }
+    auto current_md_copy = ss::make_lw_shared<cluster_link::model::metadata>({
+      .name = current_metadata->name,
+      .uuid = current_metadata->uuid,
+      .connection = current_metadata->connection,
+      .configuration = current_metadata->configuration.copy(),
+    });
     // Save off client ID to reuse later
     // Client ID is an output only field so when the shadow link value is
     // converted back to metadata, the client ID is not set
-    auto current_sl = metadata_to_shadow_link(current_metadata.copy(), {});
+    auto current_sl = metadata_to_shadow_link(std::move(current_md_copy), {});
     req.get_update_mask().merge_into(
       std::move(req.get_shadow_link()), &current_sl);
-    merge_input_only_fields(current_metadata, current_sl);
+    merge_input_only_fields(*current_metadata, current_sl);
     try {
         auto updated_md = shadow_link_to_metadata(std::move(current_sl));
 
-        merge_output_only_fields(current_metadata, updated_md);
-        update_timestamps(current_metadata, updated_md);
+        merge_output_only_fields(*current_metadata, updated_md);
+        update_timestamps(*current_metadata, updated_md);
 
         return cluster_link::model::update_cluster_link_configuration_cmd{
           .connection = std::move(updated_md.connection),

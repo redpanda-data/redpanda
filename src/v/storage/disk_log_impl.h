@@ -15,6 +15,7 @@
 #include "compaction/fwd.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
+#include "ssx/mutex.h"
 #include "storage/disk_log_appender.h"
 #include "storage/failure_probes.h"
 #include "storage/lock_manager.h"
@@ -24,7 +25,6 @@
 #include "storage/readers_cache.h"
 #include "storage/types.h"
 #include "utils/moving_average.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -320,6 +320,9 @@ public:
     // Exclusive: returns the first offset that is not within the cleanly
     // compacted prefix
     model::offset cleanly_compacted_prefix_offset() const final;
+    // Exclusive as well. Returns the first offset that may contain
+    // transactional data or fence batches
+    model::offset transaction_free_prefix_offset() const final;
 
 private:
     friend class disk_log_appender; // for multi-term appends
@@ -445,6 +448,14 @@ private:
 
     void throw_if_closed() const;
 
+    // Walk segments from the beginning, calling the provided predicate on each
+    // segment index. Returns the base offset of the first "bad" segment for
+    // which the predicate returned false. The cached offset is updated to avoid
+    // repeated work on subsequent calls.
+    model::offset get_good_prefix_end_offset(
+      bool (segment_index::*good_segment_predicate)() const,
+      model::offset& cached) const;
+
 private:
     // Computes the segment size based on the latest max_segment_size
     // configuration. This takes into consideration any segment size
@@ -465,7 +476,7 @@ private:
     model::offset _start_offset;
     // Used to serialize updates to _start_offset. See the update_start_offset
     // method.
-    mutex _start_offset_lock{"disk_log_impl::start_offset_lock"};
+    ssx::mutex _start_offset_lock{"disk_log_impl::start_offset_lock"};
     lock_manager _lock_mngr;
     storage::offset_translator _offset_translator;
 
@@ -482,7 +493,7 @@ private:
     // repeatedly takes+releases segment read locks, and without this extra
     // coarse grained lock, the compaction can happen in between steps.
     // See https://github.com/redpanda-data/redpanda/issues/7118
-    mutex _segment_rewrite_lock{"segment_rewrite_lock"};
+    ssx::mutex _segment_rewrite_lock{"segment_rewrite_lock"};
 
     // Bytes written since last time we requested stm snapshot
     ssx::semaphore_units _stm_dirty_bytes_units;
@@ -496,7 +507,7 @@ private:
     // We need to take this irrespective of whether we're actually rolling or
     // not, in order to ensure that writers wait for a background roll to
     // complete if one is ongoing.
-    mutex _segments_rolling_lock{"segments_rolling_lock"};
+    ssx::mutex _segments_rolling_lock{"segments_rolling_lock"};
     // This counter is incremented when the log is truncated. It doesn't
     // count logical truncations and can be incremented multiple times.
     size_t _suffix_truncation_indicator{0};
@@ -560,6 +571,10 @@ private:
     // Exclusive: the offset that marks the first offset beyond the cleanly
     // compacted prefix.
     mutable model::offset _cleanly_compacted_offset{0};
+
+    // Exclusive as well: first offset beyond the prefix without transaction
+    // data or fence batches.
+    mutable model::offset _transaction_free_offset{0};
 };
 
 } // namespace storage

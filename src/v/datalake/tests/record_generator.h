@@ -12,6 +12,7 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "container/chunked_hash_map.h"
+#include "iceberg/conversion/json_schema/tests/data_generator.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "serde/avro/tests/data_generator.h"
@@ -35,12 +36,16 @@ public:
     using error = named_type<ss::sstring, struct error_tag>;
 
     // Registers the given schema with the given name.
-    ss::future<checked<pandaproxy::schema_registry::schema_id, error>>
+    ss::future<checked<pandaproxy::schema_registry::context_schema_id, error>>
     register_avro_schema(std::string_view name, std::string_view schema);
 
     // Registers the given schema with the given name.
     ss::future<checked<std::nullopt_t, error>>
     register_protobuf_schema(std::string_view name, std::string_view schema);
+
+    // Registers the given JSON schema with the given name.
+    ss::future<checked<std::nullopt_t, error>>
+    register_json_schema(std::string_view name, std::string_view schema);
 
     // Adds a record of the given schema to the builder.
     ss::future<checked<std::nullopt_t, error>> add_random_avro_record(
@@ -57,10 +62,17 @@ public:
       std::optional<iobuf> key,
       testing::protobuf_generator_config config = {});
 
+    // Adds a random JSON record of the given schema to the builder.
+    ss::future<checked<std::nullopt_t, error>> add_random_json_record(
+      storage::record_batch_builder&,
+      std::string_view schema_name,
+      std::optional<iobuf> key,
+      iceberg::conversion::json_schema::testing::generator_config config = {});
+
 private:
     chunked_hash_map<
       ss::sstring,
-      pandaproxy::schema_registry::schema_id,
+      pandaproxy::schema_registry::context_schema_id,
       sstring_hash,
       sstring_eq>
       _id_by_name;

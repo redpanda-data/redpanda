@@ -473,7 +473,7 @@ std::string_view security_migrator_factory::created_task_name() const noexcept {
 }
 
 std::unique_ptr<task> security_migrator_factory::create_task(link* link) {
-    return std::make_unique<security_migrator>(link, link->get_config());
+    return std::make_unique<security_migrator>(link, *(link->get_config()));
 }
 
 } // namespace cluster_link

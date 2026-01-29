@@ -77,9 +77,9 @@ public:
     /// offsets. All offset translation is done internally. The returned record
     /// batch reader will produce batches with kafka offsets and the config will
     /// be updated using kafka offsets.
-    ss::future<storage::translating_reader> make_reader(
-      cloud_storage::cloud_log_reader_config config,
-      std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
+    /// \param config is a reader config
+    ss::future<storage::translating_reader>
+    make_reader(cloud_storage::cloud_log_reader_config config);
 
     static size_t reader_mem_use_estimate() noexcept;
 

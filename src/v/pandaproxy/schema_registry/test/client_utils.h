@@ -34,10 +34,12 @@ inline iobuf make_body(const ss::sstring& body) {
 }
 
 inline auto put_config(
-  http::client& client, const pps::subject& sub, pps::compatibility_level lvl) {
+  http::client& client,
+  const pps::context_subject& sub,
+  pps::compatibility_level lvl) {
     return http_request(
       client,
-      fmt::format("/config/{}", sub()),
+      fmt::format("/config/{}", sub.to_string()),
       make_body(
         fmt::format(R"({{"compatibility": "{}"}})", to_string_view(lvl))),
       boost::beast::http::verb::put,
@@ -46,10 +48,12 @@ inline auto put_config(
 }
 
 inline auto lookup_schema(
-  http::client& client, const pps::subject& sub, const ss::sstring& payload) {
+  http::client& client,
+  const pps::context_subject& sub,
+  const ss::sstring& payload) {
     return http_request(
       client,
-      fmt::format("/subjects/{}", sub()),
+      fmt::format("/subjects/{}", sub.to_string()),
       make_body(payload),
       boost::beast::http::verb::post,
       ppj::serialization_format::schema_registry_v1_json,
@@ -57,10 +61,12 @@ inline auto lookup_schema(
 }
 
 inline auto post_schema(
-  http::client& client, const pps::subject& sub, const ss::sstring& payload) {
+  http::client& client,
+  const pps::context_subject& sub,
+  const ss::sstring& payload) {
     return http_request(
       client,
-      fmt::format("/subjects/{}/versions", sub()),
+      fmt::format("/subjects/{}/versions", sub.to_string()),
       make_body(payload),
       boost::beast::http::verb::post,
       ppj::serialization_format::schema_registry_v1_json,
@@ -69,11 +75,11 @@ inline auto post_schema(
 
 inline auto delete_subject(
   http::client& client,
-  const pps::subject& sub,
+  const pps::context_subject& sub,
   pps::permanent_delete del = {}) {
     return http_request(
       client,
-      fmt::format("/subjects/{}?permanent={}", sub(), del),
+      fmt::format("/subjects/{}?permanent={}", sub.to_string(), del),
       boost::beast::http::verb::delete_,
       ppj::serialization_format::schema_registry_v1_json,
       ppj::serialization_format::schema_registry_v1_json);
@@ -81,12 +87,13 @@ inline auto delete_subject(
 
 inline auto delete_subject_version(
   http::client& client,
-  const pps::subject& sub,
+  const pps::context_subject& sub,
   pps::schema_version ver,
   pps::permanent_delete del = {}) {
     return http_request(
       client,
-      fmt::format("/subjects/{}/versions/{}?permanent={}", sub(), ver(), del),
+      fmt::format(
+        "/subjects/{}/versions/{}?permanent={}", sub.to_string(), ver(), del),
       boost::beast::http::verb::delete_,
       ppj::serialization_format::schema_registry_v1_json,
       ppj::serialization_format::schema_registry_v1_json);
@@ -94,11 +101,11 @@ inline auto delete_subject_version(
 
 inline auto get_subject_versions(
   http::client& client,
-  const pps::subject& sub,
+  const pps::context_subject& sub,
   pps::include_deleted del = {}) {
     return http_request(
       client,
-      fmt::format("/subjects/{}/versions?deleted={}", sub(), del),
+      fmt::format("/subjects/{}/versions?deleted={}", sub.to_string(), del),
       boost::beast::http::verb::get,
       ppj::serialization_format::schema_registry_v1_json,
       ppj::serialization_format::schema_registry_v1_json);

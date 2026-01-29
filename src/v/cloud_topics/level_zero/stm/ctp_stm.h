@@ -10,15 +10,42 @@
 
 #pragma once
 
+#include "cloud_topics/level_zero/common/producer_queue.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_state.h"
 #include "cloud_topics/level_zero/stm/types.h"
 #include "raft/persisted_stm.h"
+#include "ssx/mutex.h"
 
-#include <seastar/core/rwlock.hh>
+#include <seastar/core/semaphore.hh>
+
+#include <expected>
 
 namespace cloud_topics {
 
 class ctp_stm_api;
+struct ctp_stm_accessor;
+
+// Log sliding window state, we use this to assert that the log contents
+// never break the invariants that the epoch fencing should enforce.
+struct epoch_window_checker
+  : serde::envelope<
+      epoch_window_checker,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() {
+        return std::tie(_min_epoch, _max_epoch, _latest_offset);
+    }
+
+    // Assert if the epoch at this offset in the log is valid or not.
+    void
+    check_epoch(const model::ntp&, cluster_epoch epoch, model::offset offset);
+
+    fmt::iterator format_to(fmt::iterator it) const;
+
+    cluster_epoch _min_epoch;
+    cluster_epoch _max_epoch;
+    model::offset _latest_offset;
+};
 
 /// The STM that tracks current cluster epoch and LRO.
 /// The goal is to guarantee that the cluster epoch is monotonic and
@@ -29,6 +56,7 @@ class ctp_stm_api;
 /// metadata batch to its in-memory state.
 class ctp_stm final : public raft::persisted_stm<> {
     friend class ctp_stm_api;
+    friend struct ctp_stm_accessor; // for tests
 
 public:
     static constexpr const char* name = "ctp_stm";
@@ -51,7 +79,8 @@ public:
         _state.advance_max_seen_epoch(epoch);
     }
 
-    ss::future<cluster_epoch_fence> fence_epoch(cluster_epoch e);
+    ss::future<std::expected<cluster_epoch_fence, stale_cluster_epoch>>
+    fence_epoch(cluster_epoch e);
 
     /// Return inactive epoch of the CTP
     ///
@@ -78,6 +107,11 @@ public:
     ss::future<bool> sync_in_term(
       model::timeout_clock::time_point deadline, ss::abort_source& as);
 
+    // The producer queue for this CTP.
+    //
+    // This is used to preserve ordering of concurrently uploading requests.
+    l0::producer_queue& producer_queue();
+
 private:
     ss::future<> do_apply(const model::record_batch&) override;
     void apply_placeholder(const model::record_batch&);
@@ -99,16 +133,30 @@ private:
     ss::future<> prefix_truncate_below_lro();
 
 private:
+    l0::producer_queue _producer_queue;
     /// Lock to protect the state from concurrent access.
     /// When the new epoch is applied we need to acquire a write lock.
     /// Otherwise, we need to acquire a read lock.
-    ss::rwlock _lock;
+    ss::semaphore _lock;
+    // We only need one updater for the state's epoch at a time - the updater
+    // still needs to obtain write lock units from `_lock`, but we can prevent
+    // pessimizing with multiple waiters on write lock units by having a
+    // separate lock for this purpose.
+    ssx::mutex _epoch_update_lock{"ctp_stm::epoch_update_lock"};
+    // Used to signal to waiters that the state's epoch has potentially been
+    // updated by the holder of `_epoch_update_lock` (it is possible that the
+    // lock holder may fail to update the epoch).
+    ss::condition_variable _epoch_updated_cv;
+
     /// Current in-memory state of the STM
     ctp_stm_state _state;
 
-    // The last observed epoch to be applied to the state machine. This value is
-    // used to check for violations of monotonicity in epoch order.
-    cluster_epoch _last_seen_epoch{};
+    // The checker of the STM state.
+    //
+    // this is seperate from the state object itself because the assertion
+    // is about the content of the log rather than the computed state. The state
+    // is purely idempotent in terms of operations applied.
+    epoch_window_checker _epoch_checker;
 
     // An abort source to stop the prefix truncation loop on stop.
     ss::condition_variable _lro_advanced;

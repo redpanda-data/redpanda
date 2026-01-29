@@ -616,6 +616,13 @@ public:
     }
 
     /*
+     * Testing interface that provides convenient access to the cache. The cache
+     * isn't exposed through storage/log_manager and some tests hook up to that
+     * cache and want to manually run reclaim.
+     */
+    void testing_reclaim_from_cache(size_t size) { _cache->reclaim(size); }
+
+    /*
      * Testing interface used to check if an index range exists even if its
      * associated batch has been evicted from the cache.
      */

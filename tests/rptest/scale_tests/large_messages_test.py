@@ -13,6 +13,8 @@ import time
 from enum import Enum
 from typing import Any
 
+from typing_extensions import assert_never
+
 import numpy
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -90,6 +92,10 @@ class LargeMessagesTest(RedpandaTest):
                 "fetch_max_bytes": self.FETCH_MAX_BYTES_MIB * 2**20,
                 # Similar to above, is deprecated in later versions of RP.
                 "kafka_max_bytes_per_fetch": self.FETCH_MAX_BYTES_MIB * 2**20,
+                # Set this property to something less than the shutdown timeout(30s).
+                # This way additional debug information will be in the logs when the
+                # shutdown timeout is exceeded.
+                "partition_manager_shutdown_watchdog_timeout": 5 * 1000,  # 5s
             },
             # Reduce per-partition log spam
             log_config=LoggingConfig(
@@ -335,7 +341,7 @@ class LargeMessagesTest(RedpandaTest):
             )
             self.unique = False
         else:
-            assert False
+            assert_never(mode)  # pyright: ignore[reportUnreachable]
 
         self.topic_prefix_template = "large-messages"
         self.topic_prefixes = [
@@ -553,4 +559,6 @@ class LargeMessagesTest(RedpandaTest):
         check_tput(recv_tput_avg, "input")
         check_tput(send_tput_avg, "output")
 
-        return
+        # The lines below were added to debug a shutdown hang.
+        # Remove once CORE-13977 is resolved.
+        self.redpanda._admin.set_log_level("raft", "debug")

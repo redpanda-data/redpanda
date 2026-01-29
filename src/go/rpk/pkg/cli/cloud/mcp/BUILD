@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//src/go/rpk/pkg/cli/version",
         "//src/go/rpk/pkg/config",
-        "//src/go/rpk/pkg/oauth",
+        "//src/go/rpk/pkg/oauth/authtoken",
         "//src/go/rpk/pkg/oauth/providers/auth0",
         "//src/go/rpk/pkg/os",
         "//src/go/rpk/pkg/out",

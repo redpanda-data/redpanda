@@ -192,6 +192,8 @@ public:
         return _cfg_file_path;
     }
 
+    ss::sstring store_name() const override { return "node"; }
+
 private:
     property<std::optional<net::unresolved_address>> _advertised_rpc_api;
     one_or_many_property<model::broker_endpoint> _advertised_kafka_api;

@@ -218,6 +218,7 @@ public:
     segment_appender& appender();
     const segment_appender& appender() const;
     bool has_appender() const;
+    segment_appender::stats_ptr get_appender_stats() const;
     compacted_index_writer& compaction_index();
     const compacted_index_writer& compaction_index() const;
     // We currently use `max_removable_local_log_offset` to control both
@@ -341,6 +342,7 @@ private:
     segment_index _idx;
     bitflags _flags{bitflags::none};
     segment_appender_ptr _appender;
+    segment_appender::stats_ptr _appender_stats;
     std::optional<size_t> _data_disk_usage_size;
 
     // compaction index size should be cleared whenever the size might change
@@ -399,7 +401,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   storage_resources&,
   ss::sharded<features::feature_table>& feature_table,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
-  size_t segment_size_hint);
+  size_t segment_size_hint,
+  segment_appender::stats_ptr shared_stats);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags
@@ -565,6 +568,9 @@ inline segment_appender_ptr segment::release_appender() {
 inline segment_appender& segment::appender() { return *_appender; }
 inline const segment_appender& segment::appender() const { return *_appender; }
 inline bool segment::has_appender() const { return !!_appender; }
+inline segment_appender::stats_ptr segment::get_appender_stats() const {
+    return _appender_stats;
+}
 inline compacted_index_writer& segment::compaction_index() {
     return *_compaction_index.value();
 }

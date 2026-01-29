@@ -657,7 +657,7 @@ redpanda_cc_btest(
 
 redpanda_cc_btest(
     name = "decommissioning_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "decommissioning_tests.cc",
     ],
@@ -852,30 +852,6 @@ redpanda_cc_btest(
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/raft",
-        "//src/v/redpanda/tests:fixture",
-        "//src/v/ssx:future_util",
-        "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:unresolved_address",
-        "@boost//:test",
-        "@fmt",
-        "@seastar",
-        "@seastar//:testing",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "remake_partition_tests",
-    timeout = "short",
-    srcs = ["remake_partition_tests.cc"],
-    cpu = 1,
-    deps = [
-        ":cluster_test_fixture",
-        "//src/v/base",
-        "//src/v/cluster",
-        "//src/v/kafka/server/tests:kafka_test_utils",
-        "//src/v/model",
-        "//src/v/raft",
-        "//src/v/redpanda/tests:fixture",
         "//src/v/ssx:future_util",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:unresolved_address",
@@ -1228,7 +1204,9 @@ redpanda_cc_btest(
         "//src/v/model/tests:random",
         "//src/v/raft",
         "//src/v/random:generators",
+        "//src/v/storage",
         "//src/v/storage:record_batch_builder",
+        "//src/v/storage/tests:batch_generators",
         "//src/v/storage/tests:disk_log_builder",
         "//src/v/test_utils:random",
         "//src/v/test_utils:seastar_boost",
@@ -1310,5 +1288,42 @@ redpanda_cc_gtest(
         "//src/v/security",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "partition_balancer_autodecom_test",
+    timeout = "short",
+    srcs = [
+        "partition_balancer_autodecom_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:to_string",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "client_quota_serde_test",
+    timeout = "short",
+    srcs = [
+        "client_quota_serde_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/serde",
+        "//src/v/serde:set",
+        "//src/v/serde:sstring",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )

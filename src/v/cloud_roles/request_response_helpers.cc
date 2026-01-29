@@ -33,23 +33,6 @@ using http_call = ss::noncopyable_function<ss::future<api_response>(
 
 namespace {
 
-ss::future<iobuf>
-drain_response_stream(http::client::response_stream_ref resp) {
-    return ss::do_with(
-      iobuf(), [resp = std::move(resp)](iobuf& outbuf) mutable {
-          return ss::do_until(
-                   [resp] { return resp->is_done(); },
-                   [resp, &outbuf] {
-                       return resp->recv_some().then([&outbuf](iobuf&& chunk) {
-                           outbuf.append(std::move(chunk));
-                       });
-                   })
-            .then([&outbuf] {
-                return ss::make_ready_future<iobuf>(std::move(outbuf));
-            });
-      });
-}
-
 /// Helper function to catch and log common HTTP errors around user supplied
 /// operation.
 ss::future<api_response>
@@ -83,7 +66,7 @@ do_request(http::client::request_header req, http_call func) {
 }
 
 ss::future<> log_error_response(http::client::response_stream_ref stream) {
-    auto buf = co_await drain_response_stream(stream);
+    auto buf = co_await http::drain(stream);
     iobuf_parser p{std::move(buf)};
     auto response_string = p.read_string(p.bytes_left());
     vlog(
@@ -111,7 +94,7 @@ ss::future<api_response> make_request_without_payload(
         co_return make_abort_error(
           fmt::format("http request failed:{}", status), status);
     }
-    co_return co_await drain_response_stream(std::move(response_stream));
+    co_return co_await http::drain(std::move(response_stream));
 }
 
 ss::future<api_response> make_request_with_payload(
@@ -140,7 +123,7 @@ ss::future<api_response> make_request_with_payload(
         co_return make_abort_error(
           fmt::format("http request failed:{}", status), status);
     }
-    auto data = co_await drain_response_stream(std::move(response));
+    auto data = co_await http::drain(std::move(response));
     co_await stream.close();
     co_return data;
 }

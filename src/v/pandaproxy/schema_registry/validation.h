@@ -11,7 +11,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cluster/fwd.h"
 #include "cluster/topic_properties.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
@@ -19,10 +18,6 @@
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 
 #include <seastar/core/future.hh>
-
-namespace cluster {
-class partition_probe;
-}
 
 namespace pandaproxy::schema_registry {
 
@@ -40,8 +35,7 @@ public:
     schema_id_validator& operator=(const schema_id_validator&) = delete;
     ~schema_id_validator() noexcept;
 
-    ss::future<kafka::error_code>
-    operator()(const model::record_batch&, cluster::partition_probe* probe);
+    ss::future<kafka::error_code> operator()(const model::record_batch&);
 
 private:
     std::unique_ptr<impl> _impl;
@@ -51,15 +45,5 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
   const std::unique_ptr<api>& api,
   const model::topic& topic,
   const cluster::topic_properties& props);
-
-inline ss::future<kafka::error_code> maybe_validate_schema_id(
-  std::optional<schema_id_validator> validator,
-  const model::record_batch& batch,
-  cluster::partition_probe* probe) {
-    if (validator) {
-        co_return co_await (*validator)(batch, probe);
-    }
-    co_return kafka::error_code::none;
-}
 
 } // namespace pandaproxy::schema_registry

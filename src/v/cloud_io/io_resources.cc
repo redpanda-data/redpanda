@@ -71,7 +71,9 @@ private:
             auto duration
               = std::chrono::duration_cast<std::chrono::milliseconds>(
                 throttled.value());
-            _tick_dl_throttled_metric(duration.count());
+            if (_tick_dl_throttled_metric) {
+                _tick_dl_throttled_metric(duration.count());
+            }
             vlog(
               log.trace,
               "Download throttled: sleep time is {} ms",

@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
     name = "backend_detection_test",
@@ -20,7 +20,9 @@ redpanda_cc_btest(
     srcs = [
         "client_pool_test.cc",
     ],
+    cpu = 1,
     deps = [
+        ":client_pool_builder",
         "//src/v/base",
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_storage_clients",
@@ -38,6 +40,7 @@ redpanda_cc_btest(
         "s3_client_test.cc",
     ],
     deps = [
+        ":client_pool_builder",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
@@ -46,6 +49,7 @@ redpanda_cc_btest(
         "//src/v/hashing:secure",
         "//src/v/http/tests:utils",
         "//src/v/net",
+        "//src/v/net:types",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:base64",
         "//src/v/utils:unresolved_address",
@@ -85,16 +89,18 @@ redpanda_cc_btest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "util_test",
     timeout = "short",
     srcs = [
         "util_test.cc",
     ],
     deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/cloud_storage_clients",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -111,6 +117,30 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "bucket_name_parts_test",
+    timeout = "short",
+    srcs = [
+        "bucket_name_parts_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_storage_clients",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "client_pool_builder",
+    hdrs = [
+        "client_pool_builder.h",
+    ],
+    deps = [
+        "//src/v/cloud_storage_clients",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "client_pool_mt_test",
     timeout = "short",
@@ -119,12 +149,52 @@ redpanda_cc_btest(
     ],
     cpu = 2,
     deps = [
+        ":client_pool_builder",
         "//src/v/base",
         "//src/v/cloud_storage_clients",
+        "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
         "@boost//:range",
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "abs_client_test",
+    timeout = "short",
+    srcs = [
+        "abs_client_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_storage_clients",
+        "//src/v/http/tests:utils",
+        "//src/v/net",
+        "//src/v/net:types",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:unresolved_address",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "gcs_client_test",
+    timeout = "short",
+    srcs = [
+        "gcs_client_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_storage_clients",
+        "//src/v/http/tests:utils",
+        "//src/v/net",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:unresolved_address",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )

@@ -120,7 +120,7 @@ public:
     }
 
 private:
-    mutex _mu{"wasm_shared_engine"};
+    ssx::mutex _mu{"wasm_shared_engine"};
     size_t _ref_count = 0;
     ss::shared_ptr<engine> _underlying;
     // This factory reference is here to keep the cache entry alive.
@@ -143,19 +143,20 @@ public:
       = default;
 
     static ss::future<factory_creation_lock_guard> acquire(
-      absl::btree_map<model::offset, std::unique_ptr<mutex>>* mu_map,
+      absl::btree_map<model::offset, std::unique_ptr<ssx::mutex>>* mu_map,
       model::offset offset) {
         auto it = mu_map->find(offset);
-        mutex* mu = nullptr;
+        ssx::mutex* mu = nullptr;
         if (it == mu_map->end()) {
             auto inserted = mu_map->emplace(
-              offset, std::make_unique<mutex>("factory_creation_lock_guard"));
+              offset,
+              std::make_unique<ssx::mutex>("factory_creation_lock_guard"));
             vassert(inserted.second, "expected mutex to be inserted");
             mu = inserted.first->second.get();
         } else {
             mu = it->second.get();
         }
-        mutex::units units = co_await mu->get_units();
+        ssx::mutex::units units = co_await mu->get_units();
         co_return factory_creation_lock_guard(
           offset, mu_map, mu, std::move(units));
     }
@@ -172,18 +173,18 @@ public:
 private:
     factory_creation_lock_guard(
       model::offset offset,
-      absl::btree_map<model::offset, std::unique_ptr<mutex>>* mu_map,
-      mutex* mu,
-      mutex::units underlying)
+      absl::btree_map<model::offset, std::unique_ptr<ssx::mutex>>* mu_map,
+      ssx::mutex* mu,
+      ssx::mutex::units underlying)
       : _offset(offset)
       , _mu_map(mu_map)
       , _mu(mu)
       , _underlying(std::move(underlying)) {}
 
     model::offset _offset;
-    absl::btree_map<model::offset, std::unique_ptr<mutex>>* _mu_map;
-    mutex* _mu;
-    mutex::units _underlying;
+    absl::btree_map<model::offset, std::unique_ptr<ssx::mutex>>* _mu_map;
+    ssx::mutex* _mu;
+    ssx::mutex::units _underlying;
 };
 } // namespace
 
@@ -195,7 +196,7 @@ public:
         _cache.insert_or_assign(offset, engine->weak_from_this());
     }
 
-    ss::future<mutex::units> lock() { return _mu.get_units(); }
+    ss::future<ssx::mutex::units> lock() { return _mu.get_units(); }
 
     ss::optimized_optional<ss::shared_ptr<engine>> get(model::offset offset) {
         auto it = _cache.find(offset);
@@ -208,7 +209,7 @@ public:
     ss::future<int64_t> gc() { return gc_btree_map(&_cache); }
 
 private:
-    mutex _mu{"wasm_engine_cache"};
+    ssx::mutex _mu{"wasm_engine_cache"};
     absl::btree_map<model::offset, ss::weak_ptr<shared_engine>> _cache;
 };
 

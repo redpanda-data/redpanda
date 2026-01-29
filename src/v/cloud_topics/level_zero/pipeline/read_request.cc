@@ -47,7 +47,7 @@ template<class Clock>
 void read_request<Clock>::set_value(errc e) noexcept {
     try {
         vlog(rtc_logger.debug, "Setting request error to: {}", e);
-        response.set_value(e);
+        response.set_value(std::unexpected(e));
     } catch (const ss::broken_promise&) {
         vlog(
           cd_log.error,

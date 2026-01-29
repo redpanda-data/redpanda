@@ -18,7 +18,12 @@ limitations under the License.
 import builtins
 import google.protobuf.descriptor
 import google.protobuf.message
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
@@ -37,4 +42,4 @@ class TopicPartition(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['partition', b'partition', 'topic', b'topic']) -> None:
         ...
-global___TopicPartition = TopicPartition
+Global___TopicPartition: typing_extensions.TypeAlias = TopicPartition

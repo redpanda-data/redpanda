@@ -10,6 +10,8 @@
 package topic
 
 import (
+	"os"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -25,7 +27,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newAddPartitionsCommand(fs, p),
 		newAlterConfigCommand(fs, p),
 		newConsumeCommand(fs, p),
-		newCreateCommand(fs, p),
+		newCreateCommand(fs, p, os.Exit),
 		newDeleteCommand(fs, p),
 		newDescribeCommand(fs, p),
 		newDescribeStorageCommand(fs, p),

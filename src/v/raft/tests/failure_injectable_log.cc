@@ -278,6 +278,10 @@ model::offset failure_injectable_log::cleanly_compacted_prefix_offset() const {
     return _underlying_log->cleanly_compacted_prefix_offset();
 }
 
+model::offset failure_injectable_log::transaction_free_prefix_offset() const {
+    return _underlying_log->transaction_free_prefix_offset();
+}
+
 bool failure_injectable_log::needs_compaction() const {
     return _underlying_log->needs_compaction();
 }

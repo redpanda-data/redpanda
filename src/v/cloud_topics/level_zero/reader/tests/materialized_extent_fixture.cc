@@ -84,12 +84,21 @@ void materialized_extent_fixture::produce_placeholders(
         }
         return std::move(builder).build();
     };
+    // Per-batch metadata for setting up cache range expectations
+    struct batch_cache_info {
+        std::filesystem::path path;
+        uint64_t offset;
+        uint64_t size;
+        iobuf data;
+    };
     // List of placeholder batches alongside the list of L0 objects
     // that has to be added to the cloud storage mock and (optionally) cache
     // mock
     struct placeholders_and_uploads {
         chunked_vector<model::record_batch> placeholders;
         std::map<std::filesystem::path, iobuf> uploads;
+        // Per-batch info for cache range reads
+        std::vector<batch_cache_info> batch_infos;
     };
     // Produce data for the partition and the cloud/cache. Group data
     // together using 'group_by' parameter.
@@ -99,26 +108,38 @@ void materialized_extent_fixture::produce_placeholders(
         std::queue<iobuf> serialized_batches) -> placeholders_and_uploads {
         chunked_vector<model::record_batch> placeholders;
         std::map<std::filesystem::path, iobuf> uploads;
+        std::vector<batch_cache_info> batch_infos;
         while (!sources.empty()) {
             iobuf current;
             auto id = cloud_topics::object_id::create(
               cloud_topics::cluster_epoch(1));
+            auto fname = cloud_topics::object_path_factory::level_zero_path(id);
             for (int i = 0; i < group_by; i++) {
                 auto buf = std::move(serialized_batches.front());
                 serialized_batches.pop();
                 auto batch = std::move(sources.front());
                 sources.pop();
+                auto offset = current.size_bytes();
+                auto size = buf.size_bytes();
                 auto placeholder = generate_placeholder(
-                  id, current.size_bytes(), buf.size_bytes(), batch);
+                  id, offset, size, batch);
                 placeholders.push_back(std::move(placeholder));
+                // Track per-batch info for cache expectations
+                batch_infos.push_back(
+                  batch_cache_info{
+                    .path = fname,
+                    .offset = offset,
+                    .size = size,
+                    .data = buf.copy(),
+                  });
                 current.append(std::move(buf));
             }
-            auto fname = cloud_topics::object_path_factory::level_zero_path(id);
             uploads[fname] = std::move(current);
         }
         return {
           .placeholders = std::move(placeholders),
           .uploads = std::move(uploads),
+          .batch_infos = std::move(batch_infos),
         };
     };
     std::queue<model::record_batch> sources;
@@ -147,34 +168,34 @@ void materialized_extent_fixture::produce_placeholders(
         serialized_batches.push(buf.copy());
         sources.push(b.copy());
     }
-    auto [placeholders, uploads] = generate_placeholders_and_uploads(
-      std::move(sources), std::move(serialized_batches));
+    auto [placeholders, uploads, batch_infos]
+      = generate_placeholders_and_uploads(
+        std::move(sources), std::move(serialized_batches));
     vlog(
       test_log.info,
       "Generated {} placeholders and {} L0 objects",
       placeholders.size(),
       uploads.size());
 
-    for (auto&& kv : uploads) {
-        auto sz = kv.second.size_bytes();
-        injected_failure failure = {};
-        if (!injected_failures.empty()) {
-            failure = injected_failures.back();
-            injected_failures.pop();
-        }
-        if (use_cache) {
-            // Simplified event flow:
-            // cache.is_cached() -> available
-            // cache.get() -> payload
-
+    if (use_cache) {
+        // For cache reads, set up per-batch expectations for range reads
+        // Simplified event flow per batch:
+        // cache.is_cached() -> available
+        // cache.get_stream_range() -> payload for this batch's range
+        for (auto&& info : batch_infos) {
+            injected_failure failure = {};
+            if (!injected_failures.empty()) {
+                failure = injected_failures.back();
+                injected_failures.pop();
+            }
             switch (failure.is_cached) {
             case injected_is_cached_failure::none:
                 cache.expect_is_cached(
-                  kv.first, cloud_io::cache_element_status::available);
+                  info.path, cloud_io::cache_element_status::available);
                 break;
             case injected_is_cached_failure::stall_then_ok:
                 cache.expect_is_cached(
-                  kv.first,
+                  info.path,
                   std::vector<cloud_io::cache_element_status>{
                     cloud_io::cache_element_status::in_progress,
                     cloud_io::cache_element_status::available});
@@ -187,39 +208,56 @@ void materialized_extent_fixture::produce_placeholders(
                 throw std::runtime_error("Not implemented");
             case injected_is_cached_failure::throw_error:
                 cache.expect_is_cached_throws(
-                  kv.first,
+                  info.path,
                   std::make_exception_ptr(std::runtime_error("dummy")));
                 continue;
             case injected_is_cached_failure::throw_shutdown:
                 cache.expect_is_cached_throws(
-                  kv.first,
+                  info.path,
                   std::make_exception_ptr(ss::gate_closed_exception()));
                 continue;
             };
 
             cloud_io::cache_item_stream s{
-              .body = make_iobuf_input_stream(kv.second.copy()),
-              .size = sz,
+              .body = make_iobuf_input_stream(std::move(info.data)),
+              .size = info.size,
             };
             switch (failure.cache_get) {
             case injected_cache_get_failure::none:
-                cache.expect_get_stream(kv.first, std::move(s));
+                cache.expect_get_stream_range(
+                  info.path, info.offset, info.size, std::move(s));
                 break;
             case injected_cache_get_failure::return_error:
-                cache.expect_get_stream(kv.first, std::nullopt);
+                cache.expect_get_stream_range(
+                  info.path, info.offset, info.size, std::nullopt);
                 break;
             case injected_cache_get_failure::throw_error:
-                cache.expect_get_stream_throws(
-                  kv.first,
+                cache.expect_get_stream_range_throws(
+                  info.path,
+                  info.offset,
+                  info.size,
                   std::make_exception_ptr(std::runtime_error("dummy")));
                 break;
             case injected_cache_get_failure::throw_shutdown:
-                cache.expect_get_stream_throws(
-                  kv.first,
+                cache.expect_get_stream_range_throws(
+                  info.path,
+                  info.offset,
+                  info.size,
                   std::make_exception_ptr(ss::gate_closed_exception()));
                 break;
             };
-        } else {
+        }
+    }
+
+    // For cloud storage reads (not cached), set up expectations per L0 object
+    if (!use_cache) {
+        for (auto&& kv : uploads) {
+            auto sz = kv.second.size_bytes();
+            injected_failure failure = {};
+            if (!injected_failures.empty()) {
+                failure = injected_failures.back();
+                injected_failures.pop();
+            }
             // Simplified event flow:
             // cache.is_cached() -> not_available
             // remote.download_object() -> payload

@@ -8,6 +8,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/cloud_roles:signature",
+        "//src/v/cloud_roles:types",
         "//src/v/http",
         "//src/v/test_utils:seastar_boost",
         "@abseil-cpp//absl/strings",

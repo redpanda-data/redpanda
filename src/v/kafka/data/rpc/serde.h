@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "cluster/errc.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
@@ -38,6 +39,8 @@ struct kafka_topic_data
     kafka_topic_data share();
 
     auto serde_fields() { return std::tie(tp, batches); }
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 struct produce_request
@@ -56,6 +59,8 @@ struct produce_request
 
     ss::chunked_fifo<kafka_topic_data> topic_data;
     model::timeout_clock::duration timeout{};
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 struct kafka_topic_data_result
@@ -72,6 +77,8 @@ struct kafka_topic_data_result
     cluster::errc err{cluster::errc::success};
 
     auto serde_fields() { return std::tie(tp, err); }
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 struct produce_reply
@@ -84,6 +91,8 @@ struct produce_reply
     auto serde_fields() { return std::tie(results); }
 
     ss::chunked_fifo<kafka_topic_data_result> results;
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 struct topic_partitions
   : serde::
@@ -97,6 +106,8 @@ struct topic_partitions
 
     model::topic topic;
     chunked_vector<model::partition_id> partitions;
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 struct partition_offsets
@@ -106,6 +117,8 @@ struct partition_offsets
 
     kafka::offset high_watermark;
     kafka::offset last_stable_offset;
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 struct partition_offset_result
   : serde::envelope<
@@ -124,6 +137,8 @@ struct partition_offset_result
 
     cluster::errc err{cluster::errc::success};
     partition_offsets offsets;
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 using partition_offsets_map = chunked_hash_map<
   model::topic,
@@ -142,6 +157,8 @@ struct get_offsets_request
     auto serde_fields() { return std::tie(topics); }
 
     chunked_vector<topic_partitions> topics;
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 struct get_offsets_reply
   : serde::
@@ -154,74 +171,61 @@ struct get_offsets_reply
     auto serde_fields() { return std::tie(partition_offsets); }
 
     partition_offsets_map partition_offsets;
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+struct consume_request
+  : serde::
+      envelope<consume_request, serde::version<0>, serde::compat_version<0>> {
+    consume_request() = default;
+    consume_request(
+      model::topic_partition tp,
+      kafka::offset start_offset,
+      kafka::offset max_offset,
+      size_t min_bytes,
+      size_t max_bytes,
+      model::timeout_clock::duration timeout)
+      : tp(std::move(tp))
+      , start_offset(start_offset)
+      , max_offset(max_offset)
+      , min_bytes(min_bytes)
+      , max_bytes(max_bytes)
+      , timeout(timeout) {}
+
+    auto serde_fields() {
+        return std::tie(
+          tp, start_offset, max_offset, min_bytes, max_bytes, timeout);
+    }
+
+    model::topic_partition tp;
+    kafka::offset start_offset;
+    kafka::offset max_offset;
+    size_t min_bytes;
+    size_t max_bytes;
+    model::timeout_clock::duration timeout{};
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+struct consume_reply
+  : serde::
+      envelope<consume_reply, serde::version<0>, serde::compat_version<0>> {
+    consume_reply() = default;
+    consume_reply(
+      model::topic_partition tp,
+      cluster::errc err,
+      chunked_vector<model::record_batch> batches)
+      : tp(std::move(tp))
+      , err(err)
+      , batches(std::move(batches)) {}
+
+    auto serde_fields() { return std::tie(tp, err, batches); }
+
+    model::topic_partition tp;
+    cluster::errc err{cluster::errc::success};
+    chunked_vector<model::record_batch> batches;
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 } // namespace kafka::data::rpc
-
-template<>
-struct fmt::formatter<kafka::data::rpc::produce_request>
-  : formatter<std::string_view> {
-    auto
-    format(const kafka::data::rpc::produce_request&, format_context& ctx) const
-      -> format_context::iterator;
-};
-
-template<>
-struct fmt::formatter<kafka::data::rpc::kafka_topic_data>
-  : formatter<std::string_view> {
-    auto
-    format(const kafka::data::rpc::kafka_topic_data&, format_context& ctx) const
-      -> format_context::iterator;
-};
-
-template<>
-struct fmt::formatter<kafka::data::rpc::produce_reply>
-  : formatter<std::string_view> {
-    auto
-    format(const kafka::data::rpc::produce_reply&, format_context& ctx) const
-      -> format_context::iterator;
-};
-
-template<>
-struct fmt::formatter<kafka::data::rpc::kafka_topic_data_result>
-  : formatter<std::string_view> {
-    auto format(
-      const kafka::data::rpc::kafka_topic_data_result&,
-      format_context& ctx) const -> format_context::iterator;
-};
-template<>
-struct fmt::formatter<kafka::data::rpc::topic_partitions>
-  : formatter<std::string_view> {
-    auto
-    format(const kafka::data::rpc::topic_partitions&, format_context& ctx) const
-      -> format_context::iterator;
-};
-
-template<>
-struct fmt::formatter<kafka::data::rpc::get_offsets_request>
-  : formatter<std::string_view> {
-    auto format(
-      const kafka::data::rpc::get_offsets_request&, format_context& ctx) const
-      -> format_context::iterator;
-};
-
-template<>
-struct fmt::formatter<kafka::data::rpc::partition_offsets>
-  : formatter<std::string_view> {
-    auto format(const kafka::data::rpc::partition_offsets&, format_context& ctx)
-      const -> format_context::iterator;
-};
-
-template<>
-struct fmt::formatter<kafka::data::rpc::partition_offset_result>
-  : formatter<std::string_view> {
-    auto format(
-      const kafka::data::rpc::partition_offset_result&,
-      format_context& ctx) const -> format_context::iterator;
-};
-
-template<>
-struct fmt::formatter<kafka::data::rpc::get_offsets_reply>
-  : formatter<std::string_view> {
-    auto format(const kafka::data::rpc::get_offsets_reply&, format_context& ctx)
-      const -> format_context::iterator;
-};

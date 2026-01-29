@@ -3,6 +3,7 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = [
     ":__subpackages__",
     "//src/v/cloud_topics:__pkg__",
+    "//src/v/cloud_topics/level_zero/tests:__pkg__",
     "//src/v/cloud_topics/level_zero/write_request_scheduler/tests:__pkg__",
 ])
 

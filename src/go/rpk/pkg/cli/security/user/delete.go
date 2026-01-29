@@ -53,7 +53,7 @@ delete any ACLs that may exist for this user.
 				out.Die("missing required username argument")
 			}
 
-			if p.FromCloud && !p.CloudCluster.IsServerless() {
+			if p.CheckFromCloud() && !p.CloudCluster.IsServerless() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(p)
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 

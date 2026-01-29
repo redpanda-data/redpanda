@@ -40,6 +40,7 @@ def _run_tidy(
         wrapper,
         exe,
         config,
+        plugins,
         flags,
         infile,
         discriminator,
@@ -48,7 +49,7 @@ def _run_tidy(
     py_toolchain = ctx.toolchains[Label("@rules_python//python:toolchain_type")]
     cc_toolchain = find_cpp_toolchain(ctx)
     direct_inputs = (
-        [infile, config] +
+        [infile, config, plugins] +
         ([exe.files_to_run.executable] if exe.files_to_run.executable else [])
     )
     for additional_input in additional_inputs:
@@ -68,6 +69,7 @@ def _run_tidy(
     args.add(exe.files_to_run.executable)
     args.add(outfile.path)
     args.add(config.path)
+    args.add(plugins.path)
 
     # add source to check
     args.add(infile.path)
@@ -253,6 +255,7 @@ def _clang_tidy_aspect_impl(target, ctx):
     wrapper = ctx.attr._clang_tidy_wrapper.files_to_run
     exe = ctx.attr._clang_tidy_executable
     config = ctx.attr._clang_tidy_config.files.to_list()[0]
+    plugins = ctx.attr._clang_tidy_plugins.files.to_list()[0]
 
     deps = [target] + getattr(ctx.rule.attr, "implementation_deps", [])
     rule_flags, additional_files = deps_flags(deps)
@@ -276,6 +279,7 @@ def _clang_tidy_aspect_impl(target, ctx):
             wrapper,
             exe,
             config,
+            plugins,
             c_flags if is_c_translation_unit(src, ctx.rule.attr.tags) else cxx_flags,
             src,
             target.label.name,
@@ -298,6 +302,7 @@ clang_tidy_aspect = aspect(
         "_clang_tidy_wrapper": attr.label(default = Label("//bazel/clang_tidy")),
         "_clang_tidy_executable": attr.label(default = Label("@current_llvm_toolchain//:clang-tidy")),
         "_clang_tidy_config": attr.label(default = Label("//:clang_tidy_config")),
+        "_clang_tidy_plugins": attr.label(default = Label("//bazel/clang_tidy/plugins:plugins.so")),
     },
     toolchains = [
         "@bazel_tools//tools/cpp:toolchain_type",

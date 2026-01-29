@@ -16,10 +16,16 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/optimized_optional.hh>
 
+#include <filesystem>
+
 namespace cluster {
 class controller;
 class partition;
 } // namespace cluster
+
+namespace cloud_io {
+class remote;
+} // namespace cloud_io
 
 namespace cloud_topics::l1 {
 class domain_manager;
@@ -31,7 +37,12 @@ class domain_supervisor {
     class impl;
 
 public:
-    explicit domain_supervisor(cluster::controller*, io*);
+    explicit domain_supervisor(
+      cluster::controller*,
+      io*,
+      std::filesystem::path staging_dir,
+      cloud_io::remote*,
+      cloud_storage_clients::bucket_name bucket);
     domain_supervisor(const domain_supervisor&) = delete;
     domain_supervisor(domain_supervisor&&) = delete;
     domain_supervisor& operator=(const domain_supervisor&) = delete;
@@ -51,7 +62,7 @@ public:
     // Returns nullopt if the domain manager for the given L1 metastore NTP, if
     // one exists (e.g. if it is currently leader and has processed the
     // appropriate leadership notification).
-    ss::lw_shared_ptr<domain_manager> get(const model::ntp&) const;
+    ss::shared_ptr<domain_manager> get(const model::ntp&) const;
 
     // Creates the L1 metastore topic, returning false if there was an issue
     // while creating.

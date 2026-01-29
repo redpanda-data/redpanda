@@ -54,6 +54,11 @@ public:
         virtual ss::future<> set_start_offset(
           const model::topic_id_partition&, kafka::offset, ss::abort_source*)
           = 0;
+
+        // Get the highest start offset we're allowed to prefix truncate to.
+        virtual kafka::offset
+        get_max_allowed_start_offset(const model::topic_id_partition&)
+          = 0;
     };
 
     // A wrapper around a source of configuration for a give topic id +

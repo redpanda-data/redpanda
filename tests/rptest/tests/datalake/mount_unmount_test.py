@@ -28,6 +28,7 @@ from rptest.tests.datalake.utils import supported_storage_types
 from rptest.utils.data_migrations import DataMigrationTestMixin
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.rpcn_utils import counter_stream_config
+from ducktape.utils.util import wait_until
 
 
 class MountUnmountIcebergTest(DataMigrationTestMixin):
@@ -102,6 +103,19 @@ class MountUnmountIcebergTest(DataMigrationTestMixin):
     def tearDown(self):
         self.dl.tearDown()
 
+    def wait_all_partitions_consuming(self, verifier, timeout_sec=60):
+        def all_partitions_started_consuming():
+            consumed = verifier.max_consumed_offsets
+            self.redpanda.logger.debug(f"Consumed offsets: {consumed}")
+            return (
+                all(offset > 0 for offset in consumed.values())
+                and len(consumed) == self.PARTITION_COUNT
+            )
+
+        wait_until(
+            all_partitions_started_consuming, timeout_sec=timeout_sec, backoff_sec=1
+        )
+
     @cluster(num_nodes=6)
     @skip_debug_mode
     @matrix(cloud_storage_type=supported_storage_types())
@@ -133,6 +147,8 @@ class MountUnmountIcebergTest(DataMigrationTestMixin):
             {"iceberg_catalog_commit_interval_ms": self.SLOW_COMMIT_INTVL_S * 1000}
         )
         verifier.start(wait_first_iceberg_msg=True)
+        self.wait_all_partitions_consuming(verifier, timeout_sec=60)
+
         self.admin = Admin(self.redpanda)
         ns_topic = NamespacedTopic(self.TOPIC_NAME)
 
@@ -165,22 +181,24 @@ class MountUnmountIcebergTest(DataMigrationTestMixin):
     @skip_debug_mode
     @matrix(cloud_storage_type=supported_storage_types())
     def test_simple_remount(self, cloud_storage_type):
+        # create topic
         self.dl.create_iceberg_enabled_topic(
             self.TOPIC_NAME,
             partitions=self.PARTITION_COUNT,
             replicas=3,
             iceberg_mode="value_schema_id_prefix",
         )
-        connect = RedpandaConnectService(self.test_context, self.redpanda)
-        connect.start()
-        verifier = DatalakeVerifier(
-            self.redpanda, self.TOPIC_NAME, self.dl.spark(), max_buffered_msgs=50000
-        )
+
+        # translation to lag significantly
         self.redpanda.set_cluster_config(
             {"iceberg_catalog_commit_interval_ms": self.SLOW_COMMIT_INTVL_S * 1000}
         )
+
+        # start ducky_stream1
+        connect = RedpandaConnectService(self.test_context, self.redpanda)
+        connect.start()
         connect.start_stream(
-            name="ducky_stream",
+            name="ducky_stream1",
             config=self.avro_stream_config(
                 self.TOPIC_NAME,
                 "verifier_schema",
@@ -188,6 +206,15 @@ class MountUnmountIcebergTest(DataMigrationTestMixin):
                 self.LOW_PRODUCTION_INTERVAL_MS,
             ),
         )
+
+        wait_until(
+            lambda: connect.total_records_sent("ducky_stream1") > 300,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="Timeout waiting for ducky_stream1 to produce messages",
+        )
+
+        # unmount
         self.admin = Admin(self.redpanda)
         ns_topic = NamespacedTopic(self.TOPIC_NAME)
         self.logger.info(f"unmounting {self.TOPIC_NAME}")
@@ -195,8 +222,10 @@ class MountUnmountIcebergTest(DataMigrationTestMixin):
         self.wait_partitions_disappear([self.TOPIC_NAME])
         self.logger.info(f"unmounted {self.TOPIC_NAME}")
 
-        connect.stop_stream("ducky_stream", should_finish=False)
+        # stop ducky_stream1
+        connect.stop_stream("ducky_stream1", should_finish=False)
 
+        # remount
         self.logger.info(f"remounting {self.TOPIC_NAME}")
         self.admin.mount_topics([InboundTopic(ns_topic)])
         self.wait_partitions_appear(
@@ -204,14 +233,23 @@ class MountUnmountIcebergTest(DataMigrationTestMixin):
         )
         self.logger.info(f"remounted {self.TOPIC_NAME}")
 
+        # start verifier
+        verifier = DatalakeVerifier(
+            self.redpanda, self.TOPIC_NAME, self.dl.spark(), max_buffered_msgs=50000
+        )
+        verifier.start()
+
+        # translation to lag less
         self.redpanda.set_cluster_config(
             {"iceberg_catalog_commit_interval_ms": self.FAST_COMMIT_INTVL_S * 1000}
         )
 
-        verifier.start()
+        # produce more data
         connect.start_stream(
             name="ducky_stream2",
-            config=self.avro_stream_config(self.TOPIC_NAME, "verifier_schema", 3000),
+            config=self.avro_stream_config(self.TOPIC_NAME, "verifier_schema", 300),
         )
         connect.stop_stream("ducky_stream2")
+
+        # verify consistency
         verifier.wait(progress_timeout_sec=2 * self.SLOW_COMMIT_INTVL_S)

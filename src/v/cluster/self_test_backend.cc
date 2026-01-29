@@ -184,19 +184,22 @@ get_status_response self_test_backend::start_test(start_test_request req) {
         _id = req.id;
         vlog(
           clusterlog.debug, "Request to start self-tests with id: {}", req.id);
-        ssx::background
-          = ssx::spawn_with_gate_then(_gate, [this, req = std::move(req)]() {
-                return do_start_test(std::move(req)).then([this](auto results) {
-                    for (auto& r : results) {
-                        r.test_id = _id;
-                    }
-                    _prev_run = get_status_response{
-                      .id = _id,
-                      .status = self_test_status::idle,
-                      .results = std::move(results),
-                      .stage = _stage};
-                });
-            }).finally([units = std::move(units)] {});
+        ssx::background = ssx::spawn_with_gate_then(
+                            _gate,
+                            [this, req = std::move(req)]() mutable {
+                                return do_start_test(std::move(req))
+                                  .then([this](auto results) {
+                                      for (auto& r : results) {
+                                          r.test_id = _id;
+                                      }
+                                      _prev_run = get_status_response{
+                                        .id = _id,
+                                        .status = self_test_status::idle,
+                                        .results = std::move(results),
+                                        .stage = _stage};
+                                  });
+                            })
+                            .finally([units = std::move(units)] {});
     } else {
         vlog(
           clusterlog.info,

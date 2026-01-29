@@ -1252,7 +1252,7 @@ redpanda_cc_library(
         "//src/v/iceberg/rest_client:client",
         "//src/v/iceberg/rest_client:error",
         "//src/v/json",
-        "//src/v/utils:mutex",
+        "//src/v/ssx:mutex",
     ],
 )
 

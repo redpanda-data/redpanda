@@ -27,11 +27,20 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/util/defer.hh>
 
 #include <charconv>
 #include <exception>
+#include <stdexcept>
 
 namespace cloud_roles {
+
+// Special type of the abort exception which indicates that the abort
+// is not triggered by the shutdown.
+struct transient_abort_requested : std::runtime_error {
+    transient_abort_requested()
+      : std::runtime_error("transient_abort_requested") {}
+};
 
 /// This environment variable can be used to override the default hostname and
 /// port for fetching temporary credentials for testing, in the format host:port
@@ -224,6 +233,8 @@ ss::future<> refresh_credentials::stop() {
     _probe->reset();
 }
 
+void refresh_credentials::refresh() { _impl->refresh(); }
+
 std::chrono::milliseconds
 refresh_credentials::impl::calculate_sleep_duration(uint32_t expiry_sec) const {
     vlog(
@@ -286,6 +297,14 @@ void refresh_credentials::impl::reset_retries() {
     }
 }
 
+void refresh_credentials::impl::refresh() {
+    vlog(clrl_log.trace, "refresh: {}", _per_sleep_as.has_value());
+    if (_per_sleep_as.has_value()) {
+        _per_sleep_as.value().request_abort_ex(
+          std::make_exception_ptr(transient_abort_requested()));
+    }
+}
+
 void refresh_credentials::impl::next_sleep_duration(
   std::chrono::milliseconds sd) {
     vlog(
@@ -315,7 +334,23 @@ refresh_credentials::impl::handle_response(api_response resp) {
 
 ss::future<> refresh_credentials::impl::sleep_until_expiry() const {
     if (_sleep_duration) {
-        co_await ss::sleep_abortable(*_sleep_duration, _as);
+        vassert(!_per_sleep_as.has_value(), "Already sleeping");
+        _per_sleep_as.emplace();
+        auto notification = _as.subscribe(
+          [this](const std::optional<std::exception_ptr>&) noexcept {
+              vlog(clrl_log.trace, "refresh abort source is triggered");
+              vassert(
+                _per_sleep_as.has_value(),
+                "The subscription is not terminated properly");
+              _per_sleep_as.value().request_abort();
+          });
+        auto auto_reset = ss::defer([this] { _per_sleep_as.reset(); });
+        try {
+            co_await ss::sleep_abortable(
+              *_sleep_duration, _per_sleep_as.value());
+        } catch (const transient_abort_requested&) {
+            vlog(clrl_log.trace, "sleep aborted by the refresh operation");
+        }
     }
 }
 

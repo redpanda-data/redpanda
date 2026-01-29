@@ -11,7 +11,7 @@
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_path_provider.h"
-#include "cloud_storage_clients/client_pool.h"
+#include "cluster/archival/adjacent_segment_merger.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/tests/service_fixture.h"
 #include "config/configuration.h"
@@ -253,6 +253,7 @@ struct reupload_fixture : public archiver_fixture {
             storage::housekeeping_config{
               model::timestamp::max(),
               std::nullopt,
+              max_removable,
               max_removable,
               max_removable,
               std::nullopt,
@@ -921,4 +922,97 @@ FIXTURE_TEST(test_upload_compacted_segments_cross_term, reupload_fixture) {
         BOOST_REQUIRE_EQUAL(it->committed_offset, model::offset(1009));
         BOOST_REQUIRE_EQUAL(it->segment_term, model::term_id(4));
     }
+}
+
+/// Test adjacent segment merging for a scenario where local segments are not
+/// aligned with the manifest segments. E.g. uploads were triggered by time
+/// thresholds or from different replica.
+FIXTURE_TEST(test_adjacent_merging, reupload_fixture) {
+    std::vector<segment_desc> segments = {
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(0),
+       .term = model::term_id(1),
+       .num_records = 10,
+       .records_per_batch = 1},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(10),
+       .term = model::term_id(1),
+       .num_records = 10,
+       .records_per_batch = 1},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(20),
+       .term = model::term_id(1),
+       .num_records = 10,
+       .records_per_batch = 1},
+    };
+
+    initialize(segments, false);
+    auto action = ss::defer([this] { archiver->stop().get(); });
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+
+    cluster::details::archival_metadata_stm_accessor stm_acc{
+      *part->archival_meta_stm()};
+
+    // Note that last offset is on purpose set to 100 to avoid merger bailing
+    // out because of reaching end of manifest.
+    static constexpr std::string_view manifest = R"json({
+"version": 1,
+"namespace": "kafka",
+"topic": "test-topic",
+"partition": 42,
+"revision": 0,
+"last_offset": 100,
+"segments": {
+    "0-1-v1.log": {
+        "is_compacted": false,
+        "size_bytes": 1,
+        "base_offset": 0,
+        "committed_offset": 4
+    },
+    "5-1-v1.log": {
+        "is_compacted": false,
+        "size_bytes": 1,
+        "base_offset": 5,
+        "committed_offset": 19
+    },
+    "20-1-v1.log": {
+        "is_compacted": false,
+        "size_bytes": 1,
+        "base_offset": 20,
+        "committed_offset": 29
+    }
+}
+})json";
+
+    stm_acc.replace_manifest(manifest);
+
+    ss::abort_source as;
+    retry_chain_node rcn{as};
+    retry_chain_logger ctxlog{test_log, rcn};
+
+    auto scanner = [&](
+                     model::offset local_start_offset,
+                     const cloud_storage::partition_manifest& manifest) {
+        return adjacent_segment_scanner::scan_manifest(
+          ctxlog,
+          archiver.value(),
+          local_start_offset,
+          manifest,
+          model::offset{0},
+          1024,
+          1024 * 1024,
+          true);
+    };
+
+    auto res = archiver->find_reupload_candidate(scanner, as).get();
+
+    // We don't get an upload stream due to an implementation detail were we
+    // validate that the local stream size must match scanner reported size. In
+    // this test we don't have real segments with real sizes so the sizes don't
+    // match.
+    //
+    // This is good enough for this test. We just want to verify that no errors
+    // are hit during the process and the scanner makes forward progress.
+    BOOST_REQUIRE_EQUAL(res.skip_to, model::offset{29});
 }

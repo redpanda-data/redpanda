@@ -211,7 +211,9 @@ class PartitionStateAPItest(RedpandaTest):
         # Invalid request
         try:
             self.redpanda._admin.get_offset_for_leader_epoch(
-                topic.name, 0, "unparseable_epoch"
+                topic.name,
+                0,
+                "unparseable_epoch",  # pyright: ignore[reportArgumentType]
             )
             assert False, "Expected request to fail with invalid epoch"
         except HTTPError as e:

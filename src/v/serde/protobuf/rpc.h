@@ -12,14 +12,14 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "bytes/iobuf.h"
 #include "container/chunked_hash_map.h"
-#include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 
-#include <algorithm>
+#include <any>
 #include <memory>
 
 namespace seastar::http {
@@ -54,18 +54,48 @@ struct context {
     ss::sstring service_name;
     ss::sstring method_name;
     content_type content_type;
-    // A list of nodes that have proxied this request.
+    // Arbitrary extra values to be able to pass through this context.
+    // Access this map using `get_value` and `set_value`.
+    // Types in this map may be copied, so ensure types are cheap to copy.
     //
-    // This is used to service similar purposes as the `Via` HTTP header.
-    //
-    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Via
-    std::vector<model::node_id> proxied_nodes;
+    // Types used in this map:
+    // - std::vector<model::node_id> nodes `Via` like header to prevent proxy
+    //   loops
+    // - request_auth_result the authorization result for the Admin V2 API
+    std::map<std::type_index, std::any> values;
 
-    // If the request is being proxied from another broker or not.
-    bool is_proxied() const { return !proxied_nodes.empty(); }
-    // Return true if the given node has already proxied this request.
-    bool has_visited_node(model::node_id node) const {
-        return std::ranges::contains(proxied_nodes, node);
+    // Return a value associated with this context.
+    template<typename T>
+    auto get_value(this auto&& self) -> std::conditional_t<
+      std::is_const_v<std::remove_reference_t<decltype(self)>>,
+      const T&,
+      T&> {
+        using result_type = std::conditional_t<
+          std::is_const_v<std::remove_reference_t<decltype(self)>>,
+          const T&,
+          T&>;
+        return std::any_cast<result_type>(
+          self.values.at(std::type_index(typeid(T))));
+    }
+    // Return a value associated with this context if it exists.
+    template<typename T>
+    auto get_optional_value(this auto&& self) -> std::conditional_t<
+      std::is_const_v<std::remove_reference_t<decltype(self)>>,
+      const T*,
+      T*> {
+        auto it = self.values.find(std::type_index(typeid(T)));
+        using result_type = std::conditional_t<
+          std::is_const_v<std::remove_reference_t<decltype(self)>>,
+          const T&,
+          T&>;
+        return it == self.values.end()
+                 ? nullptr
+                 : &std::any_cast<result_type>(it->second);
+    }
+    // Associate some value with this context.
+    template<typename T>
+    void set_value(T&& t) {
+        values.insert_or_assign(std::type_index(typeid(T)), std::forward<T>(t));
     }
 };
 

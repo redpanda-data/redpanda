@@ -9,14 +9,13 @@
 
 import databricks
 import databricks.sql
-from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
 from rptest.context.databricks import DatabricksContext as DatabricksContext
 from rptest.services.catalog_service import CatalogType
 from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 
 
-class DatabricksSQL(Service, QueryEngineBase):
+class DatabricksSQL(QueryEngineBase):
     def __init__(
         self,
         ctx: TestContext,

@@ -89,21 +89,8 @@ SEASTAR_THREAD_TEST_CASE(test_cpu_profiler) {
     BOOST_TEST(results.samples.size() >= 1);
 }
 
-// We should create the sgs only once and not destroy them because sgs may be
-// captured by the profiler in one test and leak into the next (e.g., because
-// they are still in the seastar-side sample buffer), where accessing them
-// would be UB as they are destroyed.
-static scheduling_groups get_sgs() {
-    static scheduling_groups sg = [] {
-        scheduling_groups sg;
-        sg.create_groups().get();
-        return sg;
-    }();
-    return sg;
-}
-
 SEASTAR_THREAD_TEST_CASE(test_cpu_scheduler_groups) {
-    scheduling_groups sg = get_sgs();
+    scheduling_groups& sg = scheduling_groups::instance();
 
     resources::cpu_profiler cp(
       config::mock_binding(true), config::mock_binding(2ms));

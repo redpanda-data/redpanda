@@ -10,6 +10,7 @@
 import json
 import socket
 import time
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -395,6 +396,16 @@ class TLSMetricsTestChain(TLSMetricsTestBase):
         assert all([int(v["value"]) == 3 for v in metric_values["certificate_serial"]])
 
 
+# This test installs an expired certificate on purpose. Security scanners
+# and other things might connect and cause a connection to be rejected
+# logging an error that we want to ignore.
+EXPIRED_CERT_ALLOW_LIST = [
+    re.compile(
+        ".*kafka.*OpenSSL.*Failed to establish SSL handshake.*alert certificate expired.*"
+    ),
+]
+
+
 class TLSMetricsTestExpiring(TLSMetricsTestBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, broker_faketime="-23.995h", **kwargs)
@@ -403,7 +414,7 @@ class TLSMetricsTestExpiring(TLSMetricsTestBase):
     def setUp(self):
         super().setUp()
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=EXPIRED_CERT_ALLOW_LIST)
     def test_detect_expired_cert(self):
         """
         Test that metrics detect an expired certificate

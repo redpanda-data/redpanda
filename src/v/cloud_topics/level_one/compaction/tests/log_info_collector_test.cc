@@ -39,10 +39,20 @@ private:
     cluster::topic_configuration _cfg{};
 };
 
+// A fake offset provider which always returns kafka::offset::max().
+class fake_offset_provider : public l1::max_compactible_offset_provider {
+public:
+    ss::future<> fill_max_compactible_offsets(
+      chunked_hash_map<model::ntp, kafka::offset>&) const final {
+        co_return;
+    }
+};
+
 TEST_F(LogInfoCollectorTestFixture, TestInfoCollector) {
     auto cfg_provider = std::make_unique<fake_cfg_provider>();
+    auto offset_provider = std::make_unique<fake_offset_provider>();
     l1::log_info_collector log_info_collector(
-      &_metastore, std::move(cfg_provider));
+      &_metastore, std::move(cfg_provider), std::move(offset_provider));
     std::vector<std::pair<model::ntp, model::topic_id_partition>> ntidps;
     const auto topic_names = {"topic_a", "topic_b", "topic_c"};
     const auto num_topics = topic_names.size();
@@ -71,7 +81,7 @@ TEST_F(LogInfoCollectorTestFixture, TestInfoCollector) {
       .get();
     ASSERT_EQ(cached_metadata.size(), num_topics);
     while (!cached_metadata.empty()) {
-        auto sample = std::move(cached_metadata.top());
+        auto sample = cached_metadata.top();
         cached_metadata.pop();
         ASSERT_TRUE(sample->info_and_ts.has_value());
         ASSERT_FLOAT_EQ(sample->info_and_ts->info.dirty_ratio, 1.0);

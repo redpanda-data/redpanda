@@ -12,11 +12,11 @@
 #include "base/outcome.h"
 #include "config/property.h"
 #include "config/sasl_mechanisms.h"
+#include "config/types.h"
 #include "security/fwd.h"
 
 #include <chrono>
 #include <memory>
-#include <optional>
 #include <string_view>
 
 namespace security::oidc {
@@ -33,7 +33,9 @@ public:
       config::binding<ss::sstring> token_audience,
       config::binding<std::chrono::seconds> clock_skew_tolerance,
       config::binding<ss::sstring> mapping,
-      config::binding<std::chrono::seconds> jwks_refresh_interval);
+      config::binding<std::chrono::seconds> jwks_refresh_interval,
+      config::binding<ss::sstring> group_claim_path,
+      config::binding<nested_group_behavior> nested_group_behavior);
     service(service&&) = delete;
     service& operator=(service&&) = delete;
     service(const service&) = delete;
@@ -48,6 +50,7 @@ public:
     std::string_view audience() const;
     result<std::string_view> issuer() const;
     std::chrono::seconds clock_skew_tolerance() const;
+    const group_claim_policy& get_group_claim_policy() const;
 
     ss::future<> refresh_keys();
 

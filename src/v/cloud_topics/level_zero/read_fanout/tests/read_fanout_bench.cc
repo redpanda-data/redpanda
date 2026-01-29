@@ -68,7 +68,7 @@ struct fetch_handler {
             auto result = co_await stage.pull_fetch_requests(
               std::numeric_limits<size_t>::max());
 
-            if (result.has_error()) {
+            if (!result.has_value()) {
                 // Expected during shutdown
                 co_return;
             }

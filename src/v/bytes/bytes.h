@@ -197,6 +197,11 @@ struct bytes_type_eq {
 ss::sstring to_hex(bytes_view b);
 ss::sstring to_hex(const bytes& b);
 
+// Write hex-encoded bytes directly into buffer at specified position. Expects
+// the size of the string to fit the bytes at the given position.
+// Returns the number of characters written.
+size_t to_hex(ss::sstring& out, size_t pos, bytes_view data);
+
 template<typename Char, size_t Size>
 inline bytes_view to_bytes_view(const std::array<Char, Size>& data) {
     static_assert(sizeof(Char) == 1, "to_bytes_view only accepts bytes");

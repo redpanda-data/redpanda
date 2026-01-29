@@ -69,9 +69,9 @@ public:
     static constexpr auto entity_part_filter =
       [](
         const std::pair<entity_key, entity_value>& kv,
-        const entity_key::part& target_part) {
+        const entity_key::part_t& target_part) {
           return std::ranges::any_of(
-            kv.first.parts, [&target_part](const entity_key::part& key_part) {
+            kv.first.parts, [&target_part](const entity_key::part_t& key_part) {
                 return key_part == target_part;
             });
       };
@@ -79,7 +79,7 @@ public:
     static constexpr auto prefix_group_filter(std::string_view client_id) {
         return [client_id](const std::pair<entity_key, entity_value>& kv) {
             return std::ranges::any_of(
-              kv.first.parts, [client_id](const entity_key::part& key_part) {
+              kv.first.parts, [client_id](const entity_key::part_t& key_part) {
                   return ss::visit(
                     key_part.part,
                     [client_id](

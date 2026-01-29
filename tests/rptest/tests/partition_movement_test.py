@@ -905,7 +905,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_consumer(1)
         self.await_startup(min_records=throughput * 10, timeout_sec=60)
 
-        self.redpanda.set_cluster_config({"raft_learner_recovery_rate": 1})
+        self.redpanda.set_cluster_config({"raft_learner_recovery_rate": 0})
         brokers = admin.get_brokers()
         for partition in range(0, partition_count):
             assignments = self._get_node_assignments(admin, self.topic, partition)

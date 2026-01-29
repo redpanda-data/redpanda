@@ -78,7 +78,7 @@ def _test_options():
         "ASAN_OPTIONS": "disable_coredump=0:abort_on_error=1",
         "ASAN_SYMBOLIZER_PATH": "$(rootpath @current_llvm_toolchain//:llvm-symbolizer)",
         "LSAN_OPTIONS": "suppressions=$(rootpath //:lsan_suppressions)",
-        "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:report_error_type=1:suppressions=$(rootpath //:ubsan_suppressions)",
+        "UBSAN_OPTIONS": "symbolize=1:print_stacktrace=1:halt_on_error=1:abort_on_error=1:report_error_type=1:suppressions=$(rootpath //:ubsan_suppressions)",
         # see https://redpandadata.atlassian.net/wiki/x/BwDSUw
         "REDPANDA_RNG_SEEDING_MODE_DEFAULT": "fixed",
     }
@@ -160,7 +160,7 @@ def _redpanda_cc_test(
             "layering_check",
         ],
         tags = resource_tags + tags,
-        env = {"RP_FIXTURE_ENV": "1"} | env | test_env,
+        env = {"RP_FIXTURE_ENV": "1"} | test_env | env,
         target_compatible_with = target_compatible_with,
         data = data + test_data,
         local_defines = local_defines,
@@ -189,6 +189,7 @@ def _redpanda_cc_fuzz_test(
       env: environment variables
       data: data file dependencies
     """
+    test_data, test_env = _test_options()
     cc_test(
         name = name,
         timeout = timeout,
@@ -203,8 +204,8 @@ def _redpanda_cc_fuzz_test(
         tags = [
             "fuzz",
         ],
-        env = env,
-        data = data,
+        env = test_env | env,
+        data = data + test_data,
         linkopts = [
             "-fsanitize=fuzzer",
         ],
@@ -219,7 +220,7 @@ def _redpanda_cc_unit_test(cpu, memory, **kwargs):
         "--unsafe-bypass-fsync 1",
         "--default-log-level=trace",
         "--logger-log-level='io=debug'",
-        "--logger-log-level='exception=debug'",
+        "--logger-log-level='exception=info'",
     ]
 
     # TODO(bazel): What are the right defaults here?
@@ -499,7 +500,7 @@ def redpanda_cc_bench(
         main = "bench_wrapper.py",
         tags = resource_tags + tags,
         srcs = ["//bazel:bench_wrapper"],
-        env = env | test_env,
+        env = test_env | env,
         args = args + ["--iterations=1 --runs=1 --duration=0 --no-stdout --overprovisioned"],
         data = [":" + binary_name] + data + test_data,
     )

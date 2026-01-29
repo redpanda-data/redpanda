@@ -127,6 +127,7 @@ void concatenate_segments_from_log(
     compaction::compaction_config cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       never_abort);
@@ -164,7 +165,7 @@ void concatenate_segments_from_log(
 
     auto segments_read_result = concat_read_segments(segments);
 
-    auto fake_segment_rewrite_lock = mutex{"fake_segment_rewrite_lock"};
+    auto fake_segment_rewrite_lock = ssx::mutex{"fake_segment_rewrite_lock"};
     auto holder = fake_segment_rewrite_lock.get_units().get();
 
     // the segment which will be expanded to replace

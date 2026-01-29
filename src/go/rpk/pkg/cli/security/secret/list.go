@@ -32,7 +32,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			if !p.FromCloud {
+			if !p.CheckFromCloud() {
 				out.Die("this command is only available for cloud clusters")
 			}
 			var url string
@@ -53,7 +53,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					NameContains: nameContains,
 				},
 			}
-			response, err := cl.Secrets.ListSecrets(cmd.Context(), connect.NewRequest(request))
+			response, err := cl.Secret.ListSecrets(cmd.Context(), connect.NewRequest(request))
 			out.MaybeDie(err, "unable to list secrets: %v", err)
 
 			tw := out.NewTable("NAME", "SCOPES")

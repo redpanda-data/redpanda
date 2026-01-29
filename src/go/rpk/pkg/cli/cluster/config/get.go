@@ -48,7 +48,7 @@ output, use the 'edit' and 'export' commands respectively.`,
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
 			p := cfg.VirtualProfile()
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				if p.CloudCluster.IsServerless() {
 					out.Die("rpk cluster config get is not supported for serverless clusters")
 				}

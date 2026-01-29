@@ -245,6 +245,8 @@ public:
     void trim_back(size_t n);
     void clear();
     size_t size_bytes() const;
+    // The approximate amount of memory being used.
+    size_t memory_usage() const { return sizeof(*this) + size_bytes(); }
     bool empty() const;
     /// compares that the _content_ is the same;
     /// ignores allocation strategy, and number of details::io_fragments
@@ -252,6 +254,7 @@ public:
     bool operator==(const iobuf&) const;
     bool operator<(const iobuf&) const;
     bool operator!=(const iobuf&) const;
+    /// Does an unsigned byte-wise comparison between this iobuf and the other.
     std::strong_ordering operator<=>(const iobuf&) const;
 
     bool operator==(std::string_view) const;

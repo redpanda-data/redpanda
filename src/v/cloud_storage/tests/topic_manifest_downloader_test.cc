@@ -10,12 +10,12 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_io/tests/s3_imposter.h"
+#include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/topic_manifest_downloader.h"
 #include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
-#include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -30,9 +30,6 @@ using namespace std::chrono_literals;
 namespace {
 
 ss::abort_source never_abort{};
-
-constexpr model::cloud_credentials_source config_file{
-  model::cloud_credentials_source::config_file};
 
 const ss::sstring test_uuid_str = "deadbeef-0000-0000-0000-000000000000";
 const model::cluster_uuid test_uuid{uuid_t::from_string(test_uuid_str)};
@@ -73,27 +70,16 @@ class TopicManifestDownloaderTest
   , public s3_imposter_fixture {
 public:
     void SetUp() override {
-        pool_.start(10, ss::sharded_parameter([this] { return conf; })).get();
-        io_
-          .start(
-            std::ref(pool_),
-            ss::sharded_parameter([this] { return conf; }),
-            ss::sharded_parameter([] { return config_file; }),
-            ss::sharded_parameter(
-              [] { return ss::default_scheduling_group(); }))
-          .get();
-        remote_
-          .start(std::ref(io_), ss::sharded_parameter([this] { return conf; }))
-          .get();
+        scoped_remote_io_ = cloud_io::scoped_remote::create(10, conf);
+        remote_.start(std::ref(scoped_remote_io_->remote), conf).get();
         // Tests will use the remote API, no hard coded responses.
         set_expectations_and_listen({});
     }
 
     void TearDown() override {
-        pool_.local().shutdown_connections();
+        scoped_remote_io_->request_stop();
         remote_.stop().get();
-        io_.stop().get();
-        pool_.stop().get();
+        scoped_remote_io_.reset();
     }
 
     void upload_labeled_bin_manifest(const topic_manifest& tm) {
@@ -163,8 +149,7 @@ public:
     }
 
 protected:
-    ss::sharded<cloud_storage_clients::client_pool> pool_;
-    ss::sharded<cloud_io::remote> io_;
+    std::unique_ptr<cloud_io::scoped_remote> scoped_remote_io_;
     ss::sharded<remote> remote_;
 };
 

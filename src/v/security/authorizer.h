@@ -64,6 +64,9 @@ struct auth_result {
     // If found, the role that was matched to provide authZ decision
     std::optional<security::role_name> role;
 
+    // If found, the group that was matched to provide authz decision
+    std::optional<acl_principal> group;
+
     friend std::ostream& operator<<(std::ostream& os, const auth_result& a);
 
     explicit operator bool() const noexcept { return is_authorized(); }
@@ -178,6 +181,27 @@ struct auth_result {
     }
 
     template<typename T>
+    static auth_result group_acl_match(
+      const security::acl_principal& principal,
+      const security::acl_principal& group,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource,
+      bool authorized,
+      const security::acl_match& match) {
+        return {
+          .authorized = authorized,
+          .resource_pattern = match.resource,
+          .acl = match.acl,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation,
+          .group = group};
+    }
+
+    template<typename T>
     static auth_result opt_acl_match(
       const security::acl_principal& principal,
       security::acl_host host,
@@ -254,7 +278,8 @@ public:
       acl_operation operation,
       const acl_principal& principal,
       const acl_host& host,
-      superuser_required superuser_required) const;
+      superuser_required superuser_required,
+      const chunked_vector<acl_principal>& groups) const;
 
     ss::future<chunked_vector<acl_binding>> all_bindings() const;
     ss::future<> reset_bindings(const chunked_vector<acl_binding>& bindings);
@@ -269,7 +294,8 @@ private:
       acl_operation operation,
       const acl_principal& principal,
       const acl_host& host,
-      superuser_required superuser_required) const;
+      superuser_required superuser_required,
+      const chunked_vector<acl_principal>& groups) const;
 
     /*
      * Compute whether the specified operation is allowed based on the implied

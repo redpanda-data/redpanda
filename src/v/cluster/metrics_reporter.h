@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/cluster_link/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/plugin_table.h"
 #include "cluster/types.h"
@@ -86,6 +87,15 @@ public:
         std::vector<net::unresolved_address> advertised_listeners;
     };
 
+    struct kubernetes_metrics {
+        std::optional<ss::sstring> deployment_type;
+        std::optional<ss::sstring> chart_version;
+        std::optional<ss::sstring> operator_image_version;
+        std::optional<ss::sstring> k8s_version;
+        std::optional<ss::sstring> k8s_environment;
+        std::optional<ss::sstring> k8s_cluster_id;
+    };
+
     struct metrics_snapshot {
         ss::sstring cluster_uuid;
         ss::sstring storage_uuid;
@@ -104,6 +114,7 @@ public:
         bool has_kafka_gssapi{false};
         bool has_oidc{false};
         uint32_t rbac_role_count{0};
+        uint32_t unique_group_count{0};
         uint32_t data_transforms_count{0};
 
         static constexpr int64_t max_size_for_rp_env = 80;
@@ -118,6 +129,12 @@ public:
         ss::sstring host_name;
         ss::sstring domain_name;
         std::vector<ss::sstring> fqdns;
+
+        uint32_t number_of_active_shadow_links{0};
+        uint32_t number_of_shadow_topics{0};
+        bool schema_registry_shadowed{false};
+
+        std::optional<kubernetes_metrics> kubernetes;
     };
     static constexpr ss::shard_id shard = 0;
 
@@ -130,9 +147,11 @@ public:
       ss::sharded<config_frontend>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<security::role_store>& role_store,
+      ss::sharded<security::authorizer>& authorizer,
       ss::sharded<plugin_table>*,
       ss::sharded<feature_manager>*,
       ss::sharded<storage::api>*,
+      ss::sharded<cluster_link::frontend>*,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -158,9 +177,11 @@ private:
     ss::sharded<config_frontend>& _config_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<security::role_store>& _role_store;
+    ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<plugin_table>* _plugin_table;
     ss::sharded<feature_manager>* _feature_manager;
     ss::sharded<storage::api>* _storage;
+    ss::sharded<cluster_link::frontend>* _clfe;
     ss::sharded<ss::abort_source>& _as;
     prefix_logger _logger;
     ss::timer<> _tick_timer;
@@ -170,6 +191,9 @@ private:
     ss::lowres_clock::time_point _last_success
       = ss::lowres_clock::time_point::min();
 };
+
+std::optional<metrics_reporter::kubernetes_metrics> get_kubernetes_metrics();
+
 } // namespace cluster
 namespace json {
 void rjson_serialize(
@@ -181,4 +205,7 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const cluster::metrics_reporter::node_metrics& v);
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::metrics_reporter::kubernetes_metrics& v);
 } // namespace json

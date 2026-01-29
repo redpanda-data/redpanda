@@ -72,46 +72,6 @@ public:
           failure_probes::name());
     }
 
-    [[gnu::always_inline]] ss::future<heartbeat_reply>
-    heartbeat(heartbeat_request r, rpc::streaming_context&) final {
-        using ret_t = std::vector<append_entries_reply>;
-        const auto req_sz = r.heartbeats.size();
-        auto grouped = group_hbeats_by_shard(std::move(r.heartbeats));
-
-        std::vector<ss::future<std::vector<append_entries_reply>>> futures;
-        futures.reserve(grouped.shard_requests.size());
-        for (auto& [shard, req] : grouped.shard_requests) {
-            // dispatch to each core in parallel
-            futures.push_back(dispatch_hbeats_to_core(shard, std::move(req)));
-        }
-        // replies for groups that are not yet registered at this node
-        std::vector<append_entries_reply> group_missing_replies;
-        group_missing_replies.reserve(grouped.group_missing_requests.size());
-        std::transform(
-          std::begin(grouped.group_missing_requests),
-          std::end(grouped.group_missing_requests),
-          std::back_inserter(group_missing_replies),
-          [](heartbeat_metadata& r) {
-              return append_entries_reply{
-                .group = r.meta.group,
-                .result = reply_result::group_unavailable};
-          });
-
-        return ss::when_all_succeed(futures.begin(), futures.end())
-          .then([req_sz, missing = std::move(group_missing_replies)](
-                  std::vector<ret_t> replies) mutable {
-              ret_t ret;
-              ret.reserve(req_sz);
-              // flatten responses
-              for (auto& part : replies) {
-                  std::move(part.begin(), part.end(), std::back_inserter(ret));
-              }
-              std::move(
-                missing.begin(), missing.end(), std::back_inserter(ret));
-              return heartbeat_reply{std::move(ret)};
-          });
-    }
-
     ss::future<heartbeat_reply_v2>
     heartbeat_v2(heartbeat_request_v2 r, rpc::streaming_context&) final {
         co_await ss::coroutine::switch_to(_hb_sg);
@@ -235,34 +195,6 @@ public:
         });
     }
 
-    [[gnu::always_inline]] ss::future<transfer_leadership_reply>
-    transfer_leadership(
-      transfer_leadership_request r, rpc::streaming_context&) final {
-        return _probe.transfer_leadership().then(
-          [this, r = std::move(r)]() mutable {
-              return dispatch_request(
-                std::move(r),
-                &service::make_failed_transfer_leadership_reply,
-                [](transfer_leadership_request&& r, consensus_ptr c) {
-                    return c->transfer_leadership(std::move(r));
-                });
-          });
-    }
-
-    [[gnu::always_inline]] ss::future<remake_learner_state_reply>
-    remake_learner_state(
-      remake_learner_state_request r, rpc::streaming_context&) final {
-        return _probe.remake_learner_state().then(
-          [this, r = std::move(r)]() mutable {
-              return dispatch_request(
-                std::move(r),
-                &service::make_failed_remake_learner_state_reply,
-                [](remake_learner_state_request&& r, consensus_ptr c) {
-                    return c->do_remake_learner_state(std::move(r));
-                });
-          });
-    }
-
     [[gnu::always_inline]] ss::future<get_compaction_mcco_reply>
     get_compaction_mcco(
       get_compaction_mcco_request r, rpc::streaming_context&) final {
@@ -273,8 +205,8 @@ public:
                 &service::make_failed_get_compaction_mcco_reply,
                 [](get_compaction_mcco_request&& r, consensus_ptr c) {
                     return ssx::now(
-                      c->get_compaction_coordinator().do_get_compaction_mcco(
-                        std::move(r)));
+                      c->get_compaction_coordinator()
+                        .do_get_local_replica_offsets(std::move(r)));
                 });
           });
     }
@@ -290,7 +222,7 @@ public:
                 [](distribute_compaction_mtro_request&& r, consensus_ptr c) {
                     return ssx::now(
                       c->get_compaction_coordinator()
-                        .do_distribute_compaction_mtro(std::move(r)));
+                        .do_distribute_group_offsets(std::move(r)));
                 });
           });
     }
@@ -344,18 +276,6 @@ private:
 
     static ss::future<timeout_now_reply> make_failed_timeout_now_reply() {
         return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{});
-    }
-
-    static ss::future<transfer_leadership_reply>
-    make_failed_transfer_leadership_reply() {
-        return ss::make_ready_future<transfer_leadership_reply>(
-          transfer_leadership_reply{});
-    }
-
-    static ss::future<remake_learner_state_reply>
-    make_failed_remake_learner_state_reply() {
-        return ss::make_ready_future<remake_learner_state_reply>(
-          remake_learner_state_reply{});
     }
 
     static ss::future<get_compaction_mcco_reply>

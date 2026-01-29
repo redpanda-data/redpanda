@@ -51,6 +51,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
         self.max_records = 40
 
     def is_node_isolated(self):
+        assert self.isolated_node is not None
         return self.admin.is_node_isolated(self.isolated_node)
 
     def check_consume(self, isolation_handler_mode):

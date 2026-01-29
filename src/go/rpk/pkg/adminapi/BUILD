@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/go/rpk/pkg/config",
-        "//src/go/rpk/pkg/oauth",
+        "//src/go/rpk/pkg/oauth/authtoken",
         "//src/go/rpk/pkg/oauth/providers/auth0",
         "@com_github_kr_text//:text",
         "@com_github_moby_term//:term",

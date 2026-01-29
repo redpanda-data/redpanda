@@ -6,6 +6,7 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
+#include "security/acl.h"
 #define BOOST_TEST_MODULE kafka_security
 #include "random/generators.h"
 #include "security/scram_algorithm.h"
@@ -318,6 +319,42 @@ BOOST_AUTO_TEST_CASE(validate_password) {
       garbage, creds.stored_key(), creds.salt(), creds.iterations());
     BOOST_REQUIRE_EQUAL(check_password, true);
     BOOST_REQUIRE_EQUAL(check_garbage, false);
+}
+
+// Verify that make_credentials populates the password_set_at timestamp field by
+// default. This timestamp is used to track when credentials were created or
+// last updated.
+BOOST_AUTO_TEST_CASE(make_credentials_sets_timestamp) {
+    acl_principal principal{principal_type::user, "testuser"};
+    ss::sstring password = "testpassword";
+
+    {
+        auto before = model::timestamp::now();
+        auto creds = scram_sha256::make_credentials(
+          password, scram_sha256::min_iterations);
+        auto after = model::timestamp::now();
+        BOOST_REQUIRE_GE(creds.password_set_at(), before);
+        BOOST_REQUIRE_LE(creds.password_set_at(), after);
+    }
+
+    {
+        auto before = model::timestamp::now();
+        auto creds = scram_sha256::make_credentials(
+          principal, password, scram_sha256::min_iterations);
+        auto after = model::timestamp::now();
+        BOOST_REQUIRE_GE(creds.password_set_at(), before);
+        BOOST_REQUIRE_LE(creds.password_set_at(), after);
+    }
+
+    {
+        auto before = model::timestamp::now();
+        auto [creds, salted_password]
+          = scram_sha256::make_credentials_and_return_password(
+            password, scram_sha256::min_iterations);
+        auto after = model::timestamp::now();
+        BOOST_REQUIRE_GE(creds.password_set_at(), before);
+        BOOST_REQUIRE_LE(creds.password_set_at(), after);
+    }
 }
 
 } // namespace security

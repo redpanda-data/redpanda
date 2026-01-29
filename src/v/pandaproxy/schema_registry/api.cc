@@ -68,6 +68,13 @@ api::api(
 api::~api() noexcept = default;
 
 ss::future<> api::start() {
+    co_await enable_qualified_subjects::initialize(
+      config::shard_local_cfg().schema_registry_enable_qualified_subjects());
+    vlog(
+      srlog.info,
+      "Qualified subject parsing enabled: {}",
+      enable_qualified_subjects::get());
+
     _store = std::make_unique<sharded_store>();
     co_await _store->start(is_mutable(_cfg.mode_mutability), _sg);
     co_await _schema_id_validation_probe.start();
@@ -123,6 +130,7 @@ ss::future<> api::stop() {
     if (_store) {
         co_await _store->stop();
     }
+    co_await enable_qualified_subjects::reset();
     vlog(srlog.debug, "Stopped schema registry API...");
 }
 

@@ -46,6 +46,7 @@ type bundleParams struct {
 	partitions              []topicPartitionFilter
 	labelSelector           map[string]string
 	cpuProfilerWait         time.Duration
+	connectionLimit         int32
 }
 
 type topicPartitionFilter struct {
@@ -125,6 +126,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				metricsInterval:         opts.MetricsInterval,
 				metricsSampleCount:      opts.MetricsSampleCount,
 				cpuProfilerWait:         opts.CPUProfilerWait,
+				connectionLimit:         int32(opts.KafkaConnectionLimit),
 			}
 			if len(opts.LabelSelector) > 0 {
 				labelsMap, err := labels.ConvertSelectorToLabelsMap(strings.Join(opts.LabelSelector, ","))

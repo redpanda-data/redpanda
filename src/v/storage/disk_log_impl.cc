@@ -225,6 +225,9 @@ size_t disk_log_impl::compute_max_segment_size() {
 ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
 
+    vlog(
+      stlog.debug, "waiting for locks before removing log {}", config().ntp());
+
     // Request abort of compaction before obtaining rewrite lock holder.
     _compaction_as.request_abort();
 
@@ -284,6 +287,9 @@ ss::future<> disk_log_impl::start(
 
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
+
+    vlog(
+      stlog.debug, "waiting for locks before closing log {}", config().ntp());
 
     // Request abort of compaction before obtaining rewrite lock holder.
     _compaction_as.request_abort();
@@ -872,7 +878,10 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
         const bool segment_needs_rewrite
           = internal::may_have_removable_tombstones(seg, cfg)
-            || internal::has_removable_transaction_batches(seg, cfg)
+            || internal::has_removable_transaction_batches(
+              seg,
+              cfg,
+              compaction::is_tx_batch_compaction_enabled(_feature_table))
             || co_await segment_needs_rewrite_with_offset_map(cfg, seg, map);
         if (!segment_needs_rewrite) {
             vlog(
@@ -1514,7 +1523,10 @@ ss::future<bool> disk_log_impl::chunked_sliding_window_compact(
 
             const bool segment_needs_rewrite
               = internal::may_have_removable_tombstones(s, compact_cfg)
-                || internal::has_removable_transaction_batches(s, compact_cfg)
+                || internal::has_removable_transaction_batches(
+                  s,
+                  compact_cfg,
+                  compaction::is_tx_batch_compaction_enabled(_feature_table))
                 || co_await segment_needs_rewrite_with_offset_map(
                   compact_cfg, s, map);
             if (!segment_needs_rewrite) {
@@ -1643,7 +1655,11 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
 
     const auto size_before = seg->size_bytes();
     auto appender = co_await internal::make_segment_appender(
-      tmpname, size_before, resources(), cfg.sanitizer_config);
+      tmpname,
+      size_before,
+      resources(),
+      cfg.sanitizer_config,
+      seg->get_appender_stats());
 
     auto cmp_idx_name = seg->path().to_compacted_index();
     auto compacted_idx_writer = make_file_backed_compacted_index(
@@ -1666,6 +1682,7 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
           seg,
           *appender,
           *compacted_idx_writer,
+          _stm_manager,
           *_probe,
           storage::internal::should_apply_delta_time_offset(_feature_table),
           _feature_table);
@@ -2190,6 +2207,11 @@ ss::future<> disk_log_impl::force_roll() {
     auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
     auto t = term();
     auto next_offset = model::next_offset(offsets().dirty_offset);
+    vlog(
+      stlog.debug,
+      "{} force_roll: new segment start offset {}",
+      config().ntp(),
+      next_offset);
     if (_segs.empty()) {
         co_return co_await new_segment(next_offset, t);
     }
@@ -2493,27 +2515,39 @@ auto disk_log_impl::get_file_offset(
     };
 }
 
-model::offset disk_log_impl::cleanly_compacted_prefix_offset() const {
-    _cleanly_compacted_offset = std::max(
-      _cleanly_compacted_offset, _start_offset);
+model::offset disk_log_impl::get_good_prefix_end_offset(
+  bool (segment_index::*good_segment_predicate)() const,
+  model::offset& cached) const {
+    cached = std::max(cached, _start_offset);
     if (!_segs.empty()) {
-        auto first_seg_to_check_it = _segs.lower_bound(
-          _cleanly_compacted_offset);
+        auto first_seg_to_check_it = _segs.lower_bound(cached);
         auto first_non_clean_seg_it = std::find_if(
-          first_seg_to_check_it, _segs.end(), [](const segment_set::type& seg) {
-              return !seg->index().has_clean_compact_timestamp();
+          first_seg_to_check_it,
+          _segs.end(),
+          [good_segment_predicate](const segment_set::type& seg) {
+              return !(seg->index().*good_segment_predicate)();
           });
         if (first_non_clean_seg_it == _segs.end()) [[unlikely]] {
-            // This should not happen, as we never compact the last segment.
-            // If it does for any reason, underreport cleanly compacted offset
-            // by the length of the last segment rather than use its max_offset
-            // which may be uninitialized.
+            // This should not happen, as we never compact the last segment, so
+            // it's always "bad". If it does for any reason, underreport cleanly
+            // compacted offset by the length of the last segment rather than
+            // use its max_offset which may be uninitialized.
             --first_non_clean_seg_it;
         }
-        _cleanly_compacted_offset
-          = (*first_non_clean_seg_it)->index().base_offset();
+        cached = (*first_non_clean_seg_it)->index().base_offset();
     }
-    return _cleanly_compacted_offset;
+    return cached;
+}
+
+model::offset disk_log_impl::cleanly_compacted_prefix_offset() const {
+    return get_good_prefix_end_offset(
+      &segment_index::has_clean_compact_timestamp, _cleanly_compacted_offset);
+}
+
+model::offset disk_log_impl::transaction_free_prefix_offset() const {
+    return get_good_prefix_end_offset(
+      &segment_index::has_no_transaction_data_or_fence_batches,
+      _transaction_free_offset);
 }
 
 bool disk_log_impl::log_contains_offset(model::offset o) const noexcept {

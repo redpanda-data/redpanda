@@ -17,6 +17,17 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "context",
+    srcs = ["context.cc"],
+    hdrs = ["context.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/model",
+        "//src/v/serde/protobuf:rpc",
+    ],
+)
+
 redpanda_cc_rpc_library(
     name = "proxy_rpc",
     src = "proxy_service.json",
@@ -35,6 +46,7 @@ redpanda_cc_library(
         "client.h",
     ],
     implementation_deps = [
+        ":context",
         ":proxy_rpc",
     ],
     visibility = ["//visibility:public"],
@@ -60,6 +72,7 @@ redpanda_cc_library(
         "service.h",
     ],
     implementation_deps = [
+        ":context",
         "//src/v/rpc",
     ],
     visibility = ["//visibility:public"],

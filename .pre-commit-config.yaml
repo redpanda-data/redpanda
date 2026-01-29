@@ -10,9 +10,11 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.10
     hooks:
-      # we can't enable this one yet because we aren't ruff-check clean
-      # - id: ruff-check
-      #   args: [--fix, --exit-non-zero-on-fix]
+      # checked in CI by lint-python.yml
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+        files: '^tests/.*\.pyi?$'
+      # checked in CI by lint-python.yml
       - id: ruff-format
 
   # Shell script formatting
@@ -40,6 +42,12 @@ repos:
         name: C++ formatting (clang-format)
         entry: ./tools/clang-format -i
         language: script
-        types_or: [c++, c]
-        files: '\.(cc|h)$'
+        types_or: [c++, c, proto]
+
+      - id: bazel/buildifier
+        name: Bazel formatting
+        entry: bazel run //tools:buildifier.fix
+        language: system
+        files: '^MODULE.bazel$|^BUILD$|/BUILD$|\.(BUILD|bzl)$'
+        pass_filenames: false
 

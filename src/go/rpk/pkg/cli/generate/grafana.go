@@ -74,6 +74,11 @@ var (
 			"Provides throughput, read/write rates, and on-disk sizes of each/all topics.",
 			"6cfbd0d7bb51e2ef0d9b699388ab1e10b1d6ee91176e52594ee196187c1d4ef5",
 		},
+		"serverless": {
+			"Redpanda-Serverless-Dashboard.json",
+			"Monitoring dashboard for Redpanda Serverless clusters.",
+			"29078f9b13e9566c50b2f45cc34128e588b8f186ecca95cba1773a231eb18dfa",
+		},
 		"legacy": {
 			"",
 			"Generates dashboard based on selected metrics endpoint (--metrics-endpoint). Modify prometheus datasource and job-name with --datasource and --job-name flags.",

@@ -66,25 +66,26 @@ public:
     }
 
     ss::future<ppsr::schema_definition>
-    get_schema_definition(ppsr::schema_id id) const override {
+    get_schema_definition(ppsr::context_schema_id id) const override {
         auto [reader, _] = co_await service();
         co_return co_await reader->get_schema_definition(id);
     }
     ss::future<ppsr::stored_schema> get_subject_schema(
-      ppsr::subject sub,
+      ppsr::context_subject sub,
       std::optional<ppsr::schema_version> version) const override {
         auto [reader, _] = co_await service();
         co_return co_await reader->get_subject_schema(
           sub, version, ppsr::include_deleted::no);
     }
-    ss::future<ppsr::schema_id>
+    ss::future<ppsr::context_schema_id>
     create_schema(ppsr::subject_schema schema) override {
         auto [reader, writer] = co_await service();
         co_await writer->read_sync();
         _last_sync_time = ss::lowres_clock::now();
         auto parsed = co_await reader->make_canonical_schema(std::move(schema));
-        co_return co_await writer->write_subject_version(
+        auto result = co_await writer->write_subject_version(
           {.schema = std::move(parsed)});
+        co_return result.id;
     }
 
 private:
@@ -117,16 +118,18 @@ public:
           "invalid attempted usage of a disabled schema registry");
     }
     ss::future<ppsr::schema_definition>
-    get_schema_definition(ppsr::schema_id) const override {
+    get_schema_definition(ppsr::context_schema_id) const override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
     ss::future<ppsr::stored_schema> get_subject_schema(
-      ppsr::subject, std::optional<ppsr::schema_version>) const override {
+      ppsr::context_subject,
+      std::optional<ppsr::schema_version>) const override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
-    ss::future<ppsr::schema_id> create_schema(ppsr::subject_schema) override {
+    ss::future<ppsr::context_schema_id>
+    create_schema(ppsr::subject_schema) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
@@ -134,7 +137,7 @@ public:
 } // namespace
 
 ss::future<std::optional<ppsr::valid_schema>>
-registry::get_valid_schema(ppsr::schema_id schema_id) const {
+registry::get_valid_schema(ppsr::context_schema_id schema_id) const {
     auto reader = co_await getter();
     auto schema_def_opt = co_await reader->maybe_get_schema_definition(
       schema_id);

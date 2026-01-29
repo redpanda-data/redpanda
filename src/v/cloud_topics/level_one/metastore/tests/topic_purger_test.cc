@@ -53,10 +53,8 @@ private:
 class TopicPurgerTest : public testing::Test {
 public:
     void SetUp() override {
-        ss::smp::invoke_on_all([] {
-            config::node().node_id.set_value(model::node_id{1});
-        }).get();
-        topic_table = std::make_unique<cluster::topic_table>(mr);
+        topic_table = std::make_unique<cluster::topic_table>(
+          mr, model::node_id{1});
     }
     model::offset next_topic_table_offset() const {
         return model::offset(topic_table->last_applied_revision()() + 1);

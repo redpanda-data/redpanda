@@ -154,7 +154,8 @@ public:
     public:
         using verb = boost::beast::http::verb;
         /// C-tor can only be called by http_request
-        explicit response_stream(client* client, verb v, ss::sstring target);
+        explicit response_stream(client* client, verb v);
+        ~response_stream() override;
 
         response_stream(response_stream&&) = delete;
         response_stream(const response_stream&) = delete;
@@ -193,7 +194,7 @@ public:
 
     private:
         client* _client;
-        prefix_logger _ctxlog;
+        prefix_logger& _ctxlog;
         response_parser _parser;
         iobuf _buffer; /// store incomplete tail elements
         iobuf _prefetch;
@@ -233,7 +234,7 @@ public:
 
     private:
         client* _client;
-        prefix_logger _ctxlog;
+        prefix_logger& _ctxlog;
         http_request _request;
         http_serializer _serializer;
         chunked_encoder _chunk_encode;
@@ -268,6 +269,9 @@ public:
       request_header&& request,
       std::optional<iobuf> payload = std::nullopt,
       ss::lowres_clock::duration timeout = default_connect_timeout) final;
+
+    /// Whether the client has a valid connection.
+    using net::base_transport::is_valid;
 
     /**
      * Dispatch a request with the provided headers and body.
@@ -310,6 +314,7 @@ private:
     /// Throw exception if _as is aborted
     void check() const;
 
+    prefix_logger _ctxlog;
     bool _stopped{false};
     bool _shutdown_now{false};
     std::string _host_with_port;
@@ -360,7 +365,15 @@ redacted_fields();
 ss::future<boost::beast::http::status>
 status(client::response_stream_ref response);
 
+template<typename T = iobuf>
+requires std::same_as<T, iobuf> || std::same_as<T, void>
+ss::future<T> drain(client::response_stream_ref response);
+
+template<>
 ss::future<iobuf> drain(client::response_stream_ref response);
+
+template<>
+ss::future<> drain(client::response_stream_ref response);
 
 } // namespace http
 

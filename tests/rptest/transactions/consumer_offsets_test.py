@@ -79,7 +79,7 @@ class VerifyConsumerOffsetsThruUpgrades(RedpandaTest):
                             )
                 return len(collectible) == 3 and all(collectible)
             except Exception as e:
-                self.redpanda.logger.debug(f"failed to get parition state: {e}")
+                self.redpanda.logger.debug(f"failed to get partition state: {e}")
 
         wait_until(
             consumer_offsets_is_compactible,

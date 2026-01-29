@@ -451,9 +451,9 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             )
 
             def are_all_local_segments_removed():
-                local_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-                    "kafka", TEST_TOPIC_NAME, 0
-                )
+                local_snapshot = self.redpanda.storage(
+                    nodes=self.redpanda.nodes
+                ).segments_by_node("kafka", TEST_TOPIC_NAME, 0)
                 return all(
                     [
                         all_segments_removed(
@@ -474,9 +474,9 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             self.redpanda.logger.info(
                 "Timed out waiting for segments, ensure no orphaned segments exist nodes that didn't crash"
             )
-            snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-                "kafka", TEST_TOPIC_NAME, 0
-            )
+            snapshot = self.redpanda.storage(
+                nodes=self.redpanda.nodes
+            ).segments_by_node("kafka", TEST_TOPIC_NAME, 0)
             for node_name, segments in snapshot.items():
                 if node_name != stopped_node.name:
                     self.redpanda.logger.debug(

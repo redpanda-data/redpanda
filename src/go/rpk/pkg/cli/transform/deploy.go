@@ -133,7 +133,7 @@ committed offset. Recall that this state is maintained until the transform is de
 				CompressionMode: cfg.Compression,
 				FromOffset:      offset,
 			}
-			if p.FromCloud && !p.CloudCluster.IsServerless() {
+			if p.CheckFromCloud() && !p.CloudCluster.IsServerless() {
 				url, err := p.CloudCluster.CheckClusterURL()
 				out.MaybeDie(err, "unable to get cluster information: %v", err)
 

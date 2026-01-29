@@ -66,8 +66,9 @@ ss::future<kafka::coordinator_response> partition_to_coordinator(
         co_return return_element;
     }
 
-    auto timeout = ss::lowres_clock::now()
-                   + config::shard_local_cfg().wait_for_leader_timeout_ms();
+    auto timeout
+      = ss::lowres_clock::now()
+        + config::shard_local_cfg().internal_rpc_request_timeout_ms();
 
     model::ntp consumer_offsets_ntp{
       model::kafka_namespace,

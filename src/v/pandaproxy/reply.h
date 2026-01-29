@@ -87,7 +87,7 @@ public:
     }
 
     auto& set_mime_type(const ss::sstring& mime) {
-        _rep->set_mime_type(mime);
+        _rep->set_content_type(mime);
         return *this;
     }
 

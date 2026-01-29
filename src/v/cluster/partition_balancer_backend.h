@@ -19,7 +19,7 @@
 #include "features/enterprise_features.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -43,6 +43,8 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<members_frontend>&,
       config::binding<std::chrono::seconds>&& availability_timeout,
+      config::binding<std::optional<std::chrono::seconds>>&&
+        autodecommission_timeout,
       config::binding<unsigned> max_disk_usage_percent,
       config::binding<std::chrono::milliseconds>&& tick_interval,
       config::binding<size_t>&& max_concurrent_actions,
@@ -102,6 +104,8 @@ private:
       config::enum_property<model::partition_autobalancing_mode>>
       _mode;
     config::binding<std::chrono::seconds> _availability_timeout;
+    config::binding<std::optional<std::chrono::seconds>>
+      _autodecommission_timeout;
     config::binding<unsigned> _max_disk_usage_percent;
     config::binding<std::chrono::milliseconds> _tick_interval;
     config::binding<size_t> _max_concurrent_actions;
@@ -112,7 +116,7 @@ private:
     config::binding<size_t> _raft_learner_recovery_rate;
     config::binding<bool> _topic_aware;
 
-    mutex _lock{"partition_balancer_backend::lock"};
+    ssx::mutex _lock{"partition_balancer_backend::lock"};
     ss::gate _gate;
     ss::timer<clock_t> _timer;
     notification_id_type _topic_table_updates;

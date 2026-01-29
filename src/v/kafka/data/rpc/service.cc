@@ -11,7 +11,9 @@
 
 #include "kafka/data/rpc/service.h"
 
+#include "kafka/data/log_reader_config.h"
 #include "kafka/data/partition_proxy.h"
+#include "logger.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -69,6 +71,11 @@ local_service::local_service(
   : _metadata_cache(std::move(metadata_cache))
   , _partition_manager(std::move(partition_manager))
   , _shadow_link_registry(std::move(shadow_link_registry)) {}
+
+ss::future<> local_service::stop() {
+    _as.request_abort();
+    co_await _gate.close();
+}
 
 ss::future<ss::chunked_fifo<kafka_topic_data_result>> local_service::produce(
   ss::chunked_fifo<kafka_topic_data> topic_data,
@@ -155,6 +162,88 @@ local_service::get_partition_offsets(
       });
 }
 
+ss::future<consume_reply> local_service::consume(consume_request req) {
+    auto ktp = model::ktp(req.tp.topic, req.tp.partition);
+    auto result = co_await consume(
+      ktp,
+      req.start_offset,
+      req.max_offset,
+      req.min_bytes,
+      req.max_bytes,
+      req.timeout);
+
+    if (result.has_error()) {
+        co_return consume_reply(req.tp, result.error(), {});
+    }
+    co_return consume_reply(
+      req.tp, cluster::errc::success, std::move(result.value()));
+}
+
+ss::future<result<chunked_vector<model::record_batch>, cluster::errc>>
+local_service::consume(
+  const model::ktp& ktp,
+  kafka::offset start_offset,
+  kafka::offset max_offset,
+  size_t min_bytes,
+  size_t max_bytes,
+  model::timeout_clock::duration timeout) {
+    auto gh = _gate.hold();
+
+    auto topic_cfg = _metadata_cache->find_topic_cfg(
+      model::topic_namespace_view(model::kafka_namespace, ktp.get_topic()));
+    if (!topic_cfg) {
+        co_return cluster::errc::topic_not_exists;
+    }
+
+    auto shard = _partition_manager->shard_owner(ktp);
+    if (!shard) {
+        co_return cluster::errc::not_leader;
+    }
+
+    co_return co_await _partition_manager->consume_from_shard(
+      *shard,
+      ktp,
+      [this, start_offset, max_offset, min_bytes, max_bytes, timeout](
+        this auto, kafka::partition_proxy* partition)
+        -> ss::future<
+          result<chunked_vector<model::record_batch>, cluster::errc>> {
+          if (!partition->is_leader()) {
+              co_return cluster::errc::not_leader;
+          }
+
+          // Create log reader config
+          kafka::log_reader_config reader_cfg(
+            start_offset,
+            max_offset,
+            min_bytes,
+            max_bytes,
+            std::nullopt,  // first_timestamp
+            std::ref(_as), // abort_source
+            std::nullopt,  // client_address
+            false);        // strict_max_bytes
+
+          auto deadline = model::timeout_clock::now() + timeout;
+
+          // Create reader
+          auto translating_reader = co_await partition->make_reader(reader_cfg);
+
+          // Consume batches from reader
+          try {
+              co_return co_await model::consume_reader_to_chunked_vector(
+                std::move(translating_reader.reader), deadline);
+          } catch (const ss::timed_out_error&) {
+              co_return cluster::errc::timeout;
+          } catch (...) {
+              vlog(
+                log.warn,
+                "Error consuming from partition {}: {}",
+                partition->ntp(),
+                std::current_exception());
+              co_return cluster::errc::partition_operation_failed;
+          }
+      });
+}
+
 ss::future<kafka_topic_data_result> local_service::produce(
   kafka_topic_data data, model::timeout_clock::duration timeout) {
     auto ktp = model::ktp(data.tp.topic, data.tp.partition);
@@ -235,6 +324,12 @@ ss::future<get_offsets_reply> network_service::get_offsets(
     auto results = co_await _service->local().get_offsets(
       std::move(req.topics));
     co_return get_offsets_reply(std::move(results));
+}
+
+ss::future<consume_reply>
+network_service::consume(consume_request req, ::rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    co_return co_await _service->local().consume(std::move(req));
 }
 
 } // namespace kafka::data::rpc

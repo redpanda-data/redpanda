@@ -39,6 +39,16 @@ struct partitions_memory_reservation {
     size_t reserved_bytes(size_t total_memory) const;
 };
 
+/**
+ * Configurations to reserve memory for cloud topics compaction.
+ */
+struct cloud_topics_compaction_memory_reservation {
+    // Maximum amount of memory in bytes to reserve for cloud topics compaction.
+    size_t max_bytes{0};
+
+    size_t reserved_bytes() const { return max_bytes; }
+};
+
 namespace testing {
 class system_memory_groups_accessor;
 }
@@ -55,6 +65,7 @@ public:
     system_memory_groups(
       size_t total_available_memory,
       compaction_memory_reservation compaction,
+      cloud_topics_compaction_memory_reservation cloud_topics_compaction,
       bool wasm_enabled,
       bool datalake_enabled,
       bool cloud_topics_enabled,
@@ -94,6 +105,10 @@ public:
         return _compaction_reserved_memory;
     }
 
+    size_t cloud_topics_compaction_reserved_memory() const {
+        return _cloud_topics_compaction_reserved_memory;
+    }
+
     size_t datalake_max_memory() const;
 
     size_t cloud_topics_memory() const;
@@ -120,6 +135,7 @@ private:
     size_t subsystem_memory() const;
 
     size_t _compaction_reserved_memory;
+    size_t _cloud_topics_compaction_reserved_memory;
     size_t _partitions_reserved_memory;
     size_t _total_system_memory;
     bool _wasm_enabled;

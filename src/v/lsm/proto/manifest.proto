@@ -1,0 +1,62 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+syntax = "proto3";
+
+package redpanda.core.internal.lsm;
+
+import "proto/redpanda/core/pbgen/options.proto";
+
+option (pbgen.cpp_namespace) = "lsm::proto";
+
+// The message used for manifest files in our LSM Database.
+message Manifest {
+    // The version of the database this manifest points to.
+    Version version = 1;
+    // The next file ID to be used.
+    uint64 next_file_id = 2;
+    // The last seqno written.
+    uint64 last_seqno = 3;
+    // The epoch of the database at which this was written.
+    uint64 database_epoch = 4;
+}
+
+// An immutable version of the database
+message Version {
+    // A level in the LSM tree
+    message Level {
+        // The level's number
+        int32 number = 1;
+        // The files in this level, if the level is > 0 then
+        // they will be disjoint and sorted by key range.
+        repeated FileMetaData files = 2;
+    }
+    // All the levels in the database there will be an entry for each level,
+    // even if there are no files in that level.
+    repeated Level levels = 1;
+}
+
+// Metadata for an SST file in the database.
+message FileMetaData {
+    // The file's ID.
+    uint64 id = 1;
+    // The database epoch when the file as created.
+    uint64 database_epoch = 2;
+    // The size of the file in bytes.
+    uint64 file_size = 3;
+    // The smallest key in the table.
+    bytes encoded_smallest_key = 4;
+    // The largest key in the table.
+    bytes encoded_largest_key = 5;
+    // The oldest seqno in this table.
+    uint64 oldest_seqno = 6;
+    // the newest seqno in this table.
+    uint64 newest_seqno = 7;
+}

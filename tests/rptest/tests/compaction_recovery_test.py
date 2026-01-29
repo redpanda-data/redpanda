@@ -76,7 +76,7 @@ class CompactionRecoveryTest(RedpandaTest):
         # could be outdated by the time we stop the redpanda nodes,
         # e.g due to adjacent segment compaction. Query it here
         # after stopping the cluster.
-        storage = self.redpanda.storage(all_nodes=True)
+        storage = self.redpanda.storage(nodes=self.redpanda.nodes)
         partitions = storage.partitions("kafka", self.topic)
 
         for p in partitions:

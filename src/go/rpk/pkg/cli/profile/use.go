@@ -44,6 +44,7 @@ func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDieErr(err)
 			fmt.Printf("Set current profile to %q.\n", name)
 			config.MaybePrintAuthSwitchMessage(priorAuth, currentAuth)
+			config.MaybePrintProfileEnvOverrideWarning(name)
 		},
 	}
 

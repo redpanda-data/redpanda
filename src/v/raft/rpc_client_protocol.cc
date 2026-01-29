@@ -21,6 +21,39 @@
 
 namespace raft {
 
+ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
+    struct resetter {
+        ss::lw_shared_ptr<rpc::transport> transport;
+        resetter(ss::lw_shared_ptr<rpc::transport> t)
+          : transport(t) {}
+    };
+
+    return _connection_cache.local()
+      .with_node_client<resetter>(
+        _self,
+        ss::this_shard_id(),
+        n,
+        std::chrono::milliseconds(100),
+        [](resetter r) {
+            // Give the caller a bool clue as to whether we really shut
+            // anything down (false indicates this was a no-op)
+            bool was_valid = r.transport->is_valid();
+
+            r.transport->shutdown();
+            return was_valid;
+        })
+      .then([]([[maybe_unused]] result<bool> r) {
+          // if result contains an error no connection was shut down, return
+          // false
+          return r.has_value() ? r.value() : false;
+      });
+}
+
+ss::future<> rpc_client_protocol::reset_backoff(model::node_id n) {
+    return _connection_cache.local().reset_client_backoff(
+      _self, ss::this_shard_id(), n);
+}
+
 ss::future<result<vote_reply>> rpc_client_protocol::vote(
   model::node_id n, vote_request r, rpc::client_opts opts) {
     auto timeout = opts.timeout;
@@ -54,20 +87,6 @@ ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
       });
 }
 
-ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
-  model::node_id n, heartbeat_request r, rpc::client_opts opts) {
-    auto timeout = opts.timeout;
-    return _connection_cache.local().with_node_client<raftgen_client_protocol>(
-      _self,
-      ss::this_shard_id(),
-      n,
-      timeout,
-      [r = std::move(r),
-       opts = std::move(opts)](raftgen_client_protocol client) mutable {
-          return client.heartbeat(std::move(r), std::move(opts))
-            .then(&rpc::get_ctx_data<heartbeat_reply>);
-      });
-}
 ss::future<result<heartbeat_reply_v2>> rpc_client_protocol::heartbeat_v2(
   model::node_id n, heartbeat_request_v2 r, rpc::client_opts opts) {
     auto timeout = opts.timeout;
@@ -112,72 +131,6 @@ ss::future<result<timeout_now_reply>> rpc_client_protocol::timeout_now(
           return client.timeout_now(std::move(r), std::move(opts))
             .then(&rpc::get_ctx_data<timeout_now_reply>);
       });
-}
-
-ss::future<> rpc_client_protocol::reset_backoff(model::node_id n) {
-    return _connection_cache.local().reset_client_backoff(
-      _self, ss::this_shard_id(), n);
-}
-
-ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
-    struct resetter {
-        ss::lw_shared_ptr<rpc::transport> transport;
-        resetter(ss::lw_shared_ptr<rpc::transport> t)
-          : transport(t) {}
-    };
-
-    return _connection_cache.local()
-      .with_node_client<resetter>(
-        _self,
-        ss::this_shard_id(),
-        n,
-        std::chrono::milliseconds(100),
-        [](resetter r) {
-            // Give the caller a bool clue as to whether we really shut
-            // anything down (false indicates this was a no-op)
-            bool was_valid = r.transport->is_valid();
-
-            r.transport->shutdown();
-            return was_valid;
-        })
-      .then([]([[maybe_unused]] result<bool> r) {
-          // if result contains an error no connection was shut down, return
-          // false
-          return r.has_value() ? r.value() : false;
-      });
-}
-
-ss::future<result<transfer_leadership_reply>>
-rpc_client_protocol::transfer_leadership(
-  model::node_id n, transfer_leadership_request r, rpc::client_opts opts) {
-    auto timeout = opts.timeout;
-    return _connection_cache.local().with_node_client<raftgen_client_protocol>(
-      _self,
-      ss::this_shard_id(),
-      n,
-      timeout,
-      [r = std::move(r),
-       opts = std::move(opts)](raftgen_client_protocol client) mutable {
-          return client.transfer_leadership(std::move(r), std::move(opts))
-            .then(&rpc::get_ctx_data<transfer_leadership_reply>);
-      });
-}
-
-ss::future<result<remake_learner_state_reply>>
-rpc_client_protocol::remake_learner_state(
-  model::node_id n, remake_learner_state_request r, rpc::client_opts opts) {
-    auto timeout = opts.timeout;
-    return _connection_cache.local()
-      .with_node_client<raftgen_client_protocol>(
-        _self,
-        ss::this_shard_id(),
-        n,
-        timeout,
-        [r = std::move(r),
-         opts = std::move(opts)](raftgen_client_protocol client) mutable {
-            return client.remake_learner_state(std::move(r), std::move(opts));
-        })
-      .then(&rpc::get_ctx_data<remake_learner_state_reply>);
 }
 
 ss::future<result<get_compaction_mcco_reply>>

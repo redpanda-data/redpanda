@@ -10,6 +10,7 @@
 #pragma once
 
 #include "metrics/metrics.h"
+#include "storage/segment_appender.h"
 
 #include <cstdint>
 
@@ -34,10 +35,19 @@ public:
     void housekeeping_log_processed() { ++_housekeeping_log_processed; }
     void urgent_gc_run() { ++_urgent_gc_runs; }
 
+    // Returns shared pointer to segment appender stats for this shard.
+    // Segment appenders increment these stats directly.
+    segment_appender::stats_ptr get_appender_stats() { return _appender_stats; }
+
 private:
     uint32_t _log_count = 0;
     uint64_t _urgent_gc_runs = 0;
     uint64_t _housekeeping_log_processed = 0;
+
+    // Segment appender stats (accumulated across all segment appenders on this
+    // shard)
+    segment_appender::stats_ptr _appender_stats
+      = ss::make_lw_shared<segment_appender::stats>();
 
     metrics::internal_metric_groups _metrics;
 };

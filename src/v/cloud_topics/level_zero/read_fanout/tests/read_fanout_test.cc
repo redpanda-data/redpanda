@@ -66,7 +66,7 @@ struct fake_fetch_handler {
             auto result = co_await stage.pull_fetch_requests(
               std::numeric_limits<size_t>::max());
 
-            if (result.has_error()) {
+            if (!result.has_value()) {
                 // Expected during shutdown
                 co_return;
             }
@@ -162,7 +162,7 @@ TEST_F_CORO(read_fanout_fixture, test_bypass) {
       extent_meta{.byte_range_size = byte_range_size_t{1_MiB}});
     auto result = co_await pipeline.local().make_reader(
       test_ntp0, std::move(query), ss::lowres_clock::now() + 10s);
-    ASSERT_FALSE_CORO(result.has_error());
+    ASSERT_TRUE_CORO(result.has_value());
     ASSERT_EQ_CORO(result.value().results.size(), 1);
     ASSERT_EQ_CORO(
       result.value().results.front().header().base_offset, model::offset{0});
@@ -208,7 +208,7 @@ TEST_F_CORO(read_fanout_fixture, test_scatter_gather) {
     auto result = co_await pipeline.local().make_reader(
       test_ntp0, std::move(query), ss::lowres_clock::now() + 10s);
 
-    ASSERT_FALSE_CORO(result.has_error());
+    ASSERT_TRUE_CORO(result.has_value());
     ASSERT_EQ_CORO(result.value().results.size(), 4);
     ASSERT_EQ_CORO(
       result.value().results.front().header().base_offset, model::offset{0});
@@ -252,7 +252,7 @@ TEST_F_CORO(read_fanout_fixture, test_failure) {
     auto result = co_await pipeline.local().make_reader(
       test_ntp0, std::move(query), ss::lowres_clock::now() + 10s);
 
-    ASSERT_TRUE_CORO(result.has_error());
+    ASSERT_TRUE_CORO(!result.has_value());
 
     auto [in, out, fail] = this->fanout.local().get_stats();
     ASSERT_NE_CORO(in, out);

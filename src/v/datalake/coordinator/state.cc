@@ -44,6 +44,7 @@ topic_state topic_state::copy() const {
     }
     result.lifecycle_state = lifecycle_state;
     result.total_kafka_bytes_processed = total_kafka_bytes_processed;
+    result.last_committed_snapshot_id = last_committed_snapshot_id;
     return result;
 }
 

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
@@ -59,7 +60,15 @@ public:
     kafka::offset start_offset() const noexcept;
 
     /// Find the maximum cluster epoch registered in the state.
-    std::optional<cluster_epoch> get_max_epoch() const noexcept;
+    std::optional<cluster_epoch> get_max_applied_epoch() const noexcept;
+
+    /// Return the previous epoch value.
+    /// The request can be replicated only if its epoch is greater or
+    /// equal to epoch returned by this method. If the method returns
+    /// nullopt then the epoch wasn't advanced yet so there is no
+    /// previous epoch.
+    /// Note that this value is not necessary equal to estimate_min_epoch.
+    std::optional<cluster_epoch> get_previous_applied_epoch() const noexcept;
 
     /// Return the max_seen_epoch epoch.
     ///
@@ -74,9 +83,20 @@ public:
     /// \return max_seen_epoch epoch.
     std::optional<cluster_epoch> get_max_seen_epoch() const noexcept;
 
+    /// Return the previous_seen_epoch epoch.
+    std::optional<cluster_epoch> get_previous_seen_epoch() const noexcept;
+
     /// Estimate the minimum epoch referenced by this ctp_stm.
     /// \note This value might be stale.
     std::optional<cluster_epoch> estimate_min_epoch() const noexcept;
+
+    /// Return true if the epoch can be replicated
+    bool epoch_in_window(cluster_epoch epoch) const noexcept;
+    /// Return true if the epoch is above the current window
+    bool epoch_above_window(cluster_epoch epoch) const noexcept;
+
+    /// Estimate inactive epoch
+    std::optional<cluster_epoch> estimate_inactive_epoch() const noexcept;
 
     /// Advance LRO and it's translated log offset counterpart.
     void advance_last_reconciled_offset(
@@ -93,8 +113,9 @@ public:
           _max_applied_epoch,
           _last_reconciled_offset,
           _last_reconciled_log_offset,
-          _max_applied_epoch_offset,
+          _current_epoch_window_offset,
           _min_epoch_lower_bound,
+          _previous_applied_epoch,
           _start_offset);
     }
 
@@ -111,6 +132,8 @@ public:
     /// \return Max collectible offset.
     model::offset get_max_collectible_offset() const noexcept;
 
+    fmt::iterator format_to(fmt::iterator) const;
+
 private:
     /// The max epoch after the current in flight requests are applied.
     ///
@@ -119,15 +142,30 @@ private:
     /// that is lower than this value.
     std::optional<cluster_epoch> _max_seen_epoch;
 
+    /// The previous epoch after the current in flight requests are applied.
+    /// Requests with epochs below this value are fenced and not allowed to be
+    /// applied to the STM.
+    ///
+    /// Not persisted with the snapshot because it reflects the state of
+    /// in-flight requests.
+    std::optional<cluster_epoch> _previous_seen_epoch;
+
     /// The maximum epoch of applied batches to the STM.
     ///
     /// We enforce no epochs applied or replicated are less than this value.
     std::optional<cluster_epoch> _max_applied_epoch;
 
-    /// The offset at which the max_applied_epoch was recorded first.
-    std::optional<model::offset> _max_applied_epoch_offset;
+    /// The previous max epoch applied to the STM state.
+    /// Invariant:
+    /// - _previous_epoch < _max_applied_epoch
+    /// - _previous_epoch <= _previous_seen_epoch
+    std::optional<cluster_epoch> _previous_applied_epoch;
 
-    /// The epoch which is less or equal to the epoch referenced
+    /// The offset at which the current applied epoch window was transitioned
+    /// to.
+    std::optional<model::offset> _current_epoch_window_offset;
+
+    /// The epoch which is less or equal to the current epoch window referenced
     /// by the first record batch after the last reconciled offset.
     /// This epoch is not guaranteed to be "active" (from the point of
     /// view of the partition) but it's guaranteed that all epochs before

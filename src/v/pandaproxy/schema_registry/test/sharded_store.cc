@@ -61,7 +61,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
       = store.referenced_by(referenced_schema.sub(), ver1).get();
 
     BOOST_REQUIRE_EQUAL(referenced_by.size(), 1);
-    BOOST_REQUIRE_EQUAL(referenced_by[0], pps::schema_id{2});
+    BOOST_REQUIRE_EQUAL(referenced_by[0].id, pps::schema_id{2});
 
     BOOST_REQUIRE(
       store.is_referenced(pps::subject{"simple.proto"}, pps::schema_version{1})

@@ -41,7 +41,14 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
     reclaimable if they are updated following the upgrade.
     """
 
-    topics = (TopicSpec(), TopicSpec(), TopicSpec(), TopicSpec(), TopicSpec())
+    topics = (
+        TopicSpec(),
+        TopicSpec(),
+        TopicSpec(),
+        TopicSpec(),
+        TopicSpec(),
+        TopicSpec(),
+    )
 
     # pre-defined named topics used to simulate use of topics that are used only
     # pre-v23, both pre and post upgrade, and only after upgrade to v23. the
@@ -51,6 +58,7 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
     prepost_v23_topic_idle = topics[2].name
     post_v23_topic = topics[3].name
     post_v23_topic_idle = topics[4].name
+    init_topic = topics[5].name
 
     feature_config_timing = {
         "group_offset_retention_sec",
@@ -209,17 +217,23 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
         4. test that retention works properly
         """
         period = 30
+        rpk = RpkTool(self.redpanda)
 
         # work-around for rule that params must roundtrip through json
         initial_version = cast(tuple[int, int, int], tuple(initial_version_as_list))
 
         # in old cluster offset retention should not be active
         self._validate_pre_upgrade(initial_version)
+
+        # This produce is here with a higher timeout to ensure there is enough time for
+        # the id_allocator to be properly initiated.
+        # This is a fix to a flakiness where the first produce would timeout
+        rpk.produce(self.init_topic, "k", "v", timeout=20)
+
         assert not self._offset_removal_occurred(period, True, True)
 
         # in cluster upgraded from pre-v23 retention should not be active
         self._perform_upgrade(initial_version, (23, 1))
-        rpk = RpkTool(self.redpanda)
         rpk.cluster_config_set("group_offset_retention_sec", str(period))
         rpk.cluster_config_set("group_offset_retention_check_ms", str(1000))
         assert not self._offset_removal_occurred(period, False, True)
@@ -256,6 +270,9 @@ class OffsetRetentionTest(RedpandaTest):
         def offsets_exist():
             desc = self.rpk.group_describe(group)
             return len(desc.partitions) > 0
+
+        # This is a fix to a flakiness where the first produce would timeout
+        self.rpk.produce(self.topic, "k", "v", timeout=20)
 
         # consume from the group for twice as long as the retention period
         # setting and verify that group offsets exist for the entire time.

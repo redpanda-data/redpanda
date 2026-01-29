@@ -11,7 +11,7 @@
 
 #pragma once
 #include "kafka/client/client.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/rwlock.hh>

@@ -15,6 +15,7 @@
 #include "net/connection.h"
 #include "random/generators.h"
 #include "security/oidc_authenticator.h"
+#include "security/plain_authenticator.h"
 #include "security/scram_authenticator.h"
 #include "thirdparty/c-ares/ares.h"
 #include "utils/backoff_policy.h"
@@ -320,7 +321,8 @@ ss::future<> remote_broker::do_authenticate() {
     if (
       mechanism != security::scram_sha256_authenticator::name
       && mechanism != security::scram_sha512_authenticator::name
-      && mechanism != security::oidc::sasl_authenticator::name) {
+      && mechanism != security::oidc::sasl_authenticator::name
+      && mechanism != security::plain_authenticator::name) {
         throw broker_error{
           _node_id,
           error_code::sasl_authentication_failed,
@@ -348,11 +350,17 @@ ss::future<> remote_broker::do_authenticate() {
 
     if (mechanism == security::scram_sha256_authenticator::name) {
         co_await do_authenticate_scram256(username, password);
-
     } else if (mechanism == security::scram_sha512_authenticator::name) {
         co_await do_authenticate_scram512(username, password);
     } else if (mechanism == security::oidc::sasl_authenticator::name) {
         co_await do_authenticate_oauthbearer(password);
+    } else if (mechanism == security::plain_authenticator::name) {
+        co_await do_authenticate_plain(username, password);
+    } else {
+        throw broker_error{
+          _node_id,
+          error_code::sasl_authentication_failed,
+          fmt_with_ctx(ssx::sformat, "Unknown mechanism: {}", mechanism)};
     }
 }
 
@@ -417,8 +425,7 @@ remote_broker::send_scram_client_final(
           client_last_resp.data.error_message.value_or("<no error message>")};
     }
 
-    co_return security::server_final_message(
-      std::move(client_last_resp.data.auth_bytes));
+    co_return security::server_final_message(client_last_resp.data.auth_bytes);
 }
 
 template<typename ScramAlgo>
@@ -510,6 +517,27 @@ ss::future<> remote_broker::do_authenticate_oauthbearer(ss::sstring token) {
     sasl_authenticate_request req;
     req.data.auth_bytes = bytes::from_string(
       fmt::format("n,,\1auth={}\1\1", token));
+    auto res = co_await do_dispatch(
+      std::move(req), get_sasl_authenticate_request_version());
+    if (res.data.errored()) {
+        throw broker_error{
+          _node_id,
+          res.data.error_code,
+          res.data.error_message.value_or("<no error message>")};
+    }
+}
+
+ss::future<> remote_broker::do_authenticate_plain(
+  ss::sstring username, ss::sstring password) {
+    sasl_authenticate_request req;
+    std::string bytes;
+    // 2 - number of null characters in the PLAIN auth message
+    bytes.reserve(2 + username.size() + password.size());
+    bytes.push_back('\0');
+    bytes.append(username.cbegin(), username.cend());
+    bytes.push_back('\0');
+    bytes.append(password.cbegin(), password.cend());
+    req.data.auth_bytes = bytes::from_string(std::move(bytes));
     auto res = co_await do_dispatch(
       std::move(req), get_sasl_authenticate_request_version());
     if (res.data.errored()) {

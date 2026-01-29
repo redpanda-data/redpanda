@@ -101,7 +101,8 @@ ss::future<bool> group_initializer::try_create_consumer_group_topic() {
     }
     return _topics_frontend.local()
       .autocreate_topics(
-        {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
+        {std::move(topic)},
+        config::shard_local_cfg().internal_rpc_request_timeout_ms())
       .then([this](std::vector<cluster::topic_result> res) {
           /*
            * kindly ask client to retry on error

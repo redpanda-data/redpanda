@@ -70,17 +70,22 @@ public:
           _opts.schema, std::move(row), [this](shredded_value sv) {
               return write_value(std::move(sv));
           });
-        file_stats stats;
-        stats.buffered_size = 0;
+        int64_t buffered_size = 0;
         for (auto& [_, col] : _columns) {
             int64_t usage = col.writer.current_page_memory_usage();
             if (usage > _opts.page_buffer_size) {
                 co_await col.writer.next_page();
             }
-            stats.buffered_size += col.writer.memory_usage();
+            buffered_size += col.writer.memory_usage();
         }
-        stats.flushed_size = _flushed_bytes;
-        co_return stats;
+        if (buffered_size >= _opts.row_group_size) {
+            co_await flush_row_group();
+            co_return stats();
+        }
+        co_return file_stats{
+          .flushed_size = _flushed_bytes,
+          .buffered_size = buffered_size,
+        };
     }
 
     file_stats stats() const {

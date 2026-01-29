@@ -106,8 +106,7 @@ consensus::consensus(
   config::binding<std::chrono::milliseconds> disk_timeout,
   config::binding<bool> enable_longest_log_detection,
   consensus_client_protocol client,
-  remake_cb_t remake_cb,
-  consensus::leader_cb_t leader_cb,
+  consensus::leader_cb_t cb,
   storage::api& storage,
   std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
     recovery_throttle,
@@ -124,8 +123,7 @@ consensus::consensus(
   , _disk_timeout(std::move(disk_timeout))
   , _enable_longest_log_detection(std::move(enable_longest_log_detection))
   , _client_protocol(client)
-  , _remake_notification(std::move(remake_cb))
-  , _leader_notification(std::move(leader_cb))
+  , _leader_notification(std::move(cb))
   , _fstates(_self)
   , _ctxlog(group, _log->config().ntp())
   , _features(ft)
@@ -145,7 +143,7 @@ consensus::consensus(
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
-      config::shard_local_cfg().recovery_append_timeout_ms())
+      config::shard_local_cfg().internal_rpc_request_timeout_ms())
   , _heartbeat_disconnect_failures(
       config::shard_local_cfg().raft_heartbeat_disconnect_failures())
   , _storage(storage)
@@ -282,6 +280,7 @@ void consensus::shutdown_input() {
         _commit_index_updated.broken();
         _follower_reply.broken();
         _consumable_offset_monitor.stop();
+        _leadership_changed.broken();
     }
 }
 
@@ -481,7 +480,7 @@ consensus::success_reply consensus::update_follower_index(
     }
 
     if (reply.result == reply_result::success) {
-        successfull_append_entries_reply(idx, std::move(reply));
+        successfull_append_entries_reply(idx, reply);
         return success_reply::yes;
     } else {
         idx.expected_log_end_offset = model::offset{};
@@ -596,7 +595,7 @@ void consensus::process_append_entries_reply(
 }
 
 void consensus::successfull_append_entries_reply(
-  follower_index_metadata& idx, append_entries_reply reply) {
+  follower_index_metadata& idx, const append_entries_reply& reply) {
     // follower and leader logs matches
     idx.last_dirty_log_index = reply.last_dirty_log_index;
     idx.last_flushed_log_index = reply.last_flushed_log_index;
@@ -905,22 +904,10 @@ consensus::do_make_reader(storage::local_log_reader_config config) {
     return _log->make_reader(config);
 }
 
-ss::future<model::record_batch_reader> consensus::make_reader(
-  storage::local_log_reader_config config,
-  std::optional<clock_type::time_point> debounce_timeout) {
-    return ss::try_with_gate(_bg, [this, config, debounce_timeout] {
-        if (!debounce_timeout) {
-            // fast path, do not wait
-            return do_make_reader(config);
-        }
-
-        return _consumable_offset_monitor
-          .wait(
-            model::next_offset(_majority_replicated_index),
-            *debounce_timeout,
-            _as)
-          .then([this, config]() mutable { return do_make_reader(config); });
-    });
+ss::future<model::record_batch_reader>
+consensus::make_reader(storage::local_log_reader_config config) {
+    return ss::try_with_gate(
+      _bg, [this, config] { return do_make_reader(config); });
 }
 
 bool consensus::should_skip_vote(bool ignore_heartbeat) {
@@ -1707,18 +1694,6 @@ ss::future<> consensus::write_last_applied(model::offset o) {
       storage::kvstore::key_space::consensus, std::move(key), std::move(val));
 }
 
-ss::future<> consensus::truncate_state(model::offset truncate_at) {
-    co_await _log->truncate(storage::truncate_config(truncate_at));
-    _probe->log_truncated();
-    // update flushed offset
-    _flushed_offset = std::min(
-      model::prev_offset(truncate_at), _flushed_offset);
-
-    co_await _configuration_manager.truncate(truncate_at);
-    _probe->configuration_update();
-    update_follower_states(_configuration_manager.get_latest());
-}
-
 model::offset consensus::read_last_applied() const {
     const auto key = last_applied_key();
     auto value = _storage.kvs().get(
@@ -2246,6 +2221,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           last_visible_index(),
           _last_leader_visible_offset,
           truncate_at);
+        _probe->log_truncated();
 
         _majority_replicated_index = std::min(
           model::prev_offset(truncate_at), _majority_replicated_index);
@@ -2258,7 +2234,17 @@ consensus::do_append_entries(append_entries_request&& r) {
           model::prev_offset(truncate_at), _flushed_offset);
 
         try {
-            co_await truncate_state(truncate_at);
+            co_await _log->truncate(storage::truncate_config(truncate_at));
+            // update flushed offset once again after truncation as flush is
+            // executed concurrently to append entries and it may race with
+            // the truncation
+            _flushed_offset = std::min(
+              model::prev_offset(truncate_at), _flushed_offset);
+
+            co_await _configuration_manager.truncate(truncate_at);
+            _probe->configuration_update();
+            update_follower_states(_configuration_manager.get_latest());
+
             auto lstats = _log->offsets();
             if (unlikely(lstats.dirty_offset != adjusted_prev_log_index)) {
                 vlog(
@@ -3320,6 +3306,7 @@ void consensus::trigger_leadership_notification() {
         _follower_recovery_state->yield();
     }
     _compaction_coordinator.on_leadership_change(_leader_id);
+    _leadership_changed.broadcast();
 }
 
 std::ostream& operator<<(std::ostream& o, const consensus& c) {
@@ -4294,87 +4281,6 @@ size_t consensus::bytes_to_deliver_to_learners() const {
         }
     }
     return total;
-}
-
-ss::future<remake_learner_state_reply>
-consensus::remake_learner_state(vnode target) {
-    _probe->recovery_reset();
-    remake_learner_state_request req{
-      .node_id = _self,
-      .target_node_id = target,
-      .group = _group,
-      .term = _term};
-    vlog(_ctxlog.info, "Issuing remake group request {}", req);
-    static constexpr auto timeout = 10s;
-    result<remake_learner_state_reply> reply
-      = co_await _client_protocol.remake_learner_state(
-        target.id(), req, rpc::client_opts(timeout));
-    if (!reply) {
-        vlog(
-          _ctxlog.warn,
-          "Unable to issue remake group request {}, {}",
-          req,
-          reply.error());
-        co_return remake_learner_state_reply{};
-    }
-
-    co_return reply.value();
-}
-
-ss::future<remake_learner_state_reply>
-consensus::do_remake_learner_state(remake_learner_state_request req) {
-    remake_learner_state_reply reply{};
-    using is_success = remake_learner_state_reply::is_success;
-    try {
-        auto units = co_await _op_lock.get_units();
-
-        // Perform validation of request under _op_lock
-        auto maybe_err = [&]() -> std::optional<raft::errc> {
-            if (req.term != _term) {
-                return raft::errc::not_leader;
-            }
-            if (req.source_node() != _leader_id) {
-                return raft::errc::leadership_transfer_in_progress;
-            }
-            if (req.target_node() != _self) {
-                return raft::errc::invalid_target_node;
-            }
-            if (!is_learner()) {
-                return raft::errc::not_learner;
-            }
-            if (req.group != _group) {
-                return raft::errc::group_not_exists;
-            }
-
-            return std::nullopt;
-        }();
-
-        if (maybe_err.has_value()) {
-            reply.success = is_success::no;
-            vlog(
-              _ctxlog.warn,
-              "Unable to process remake group request {}, raft::errc {}",
-              req,
-              maybe_err.value());
-        } else {
-            auto cluster_err = co_await _remake_notification(req.group);
-            reply.success = cluster_err ? is_success::no : is_success::yes;
-            vlog(
-              _ctxlog.warn,
-              "Unable to process remake group request {}, cluster::errc {}",
-              req,
-              cluster_err);
-        }
-    } catch (...) {
-        vlog(
-          _ctxlog.warn,
-          "Unable to process remake group request {}, caught exception: {}",
-          req,
-          std::current_exception());
-        reply.success = is_success::no;
-    }
-
-    co_return reply;
 }
 
 ss::future<bool>

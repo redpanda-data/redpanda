@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "config/property.h"
+#include "security/acl.h"
 #include "security/fwd.h"
 #include "security/types.h"
 
@@ -59,10 +60,12 @@ public:
       security::credential_user username,
       security::credential_password password,
       ss::sstring sasl_mechanism,
-      superuser is_superuser)
+      superuser is_superuser,
+      chunked_vector<security::acl_principal> groups)
       : _username(std::move(username))
       , _password(std::move(password))
       , _sasl_mechanism(std::move(sasl_mechanism))
+      , _groups(std::move(groups))
       , _authenticated(true)
       , _superuser(is_superuser)
       , _auth_required(true) {};
@@ -83,7 +86,16 @@ public:
     request_auth_result operator=(request_auth_result&&) = delete;
     request_auth_result operator=(const request_auth_result&) = delete;
 
-    request_auth_result(const request_auth_result&) = default;
+    request_auth_result(const request_auth_result& rhs)
+      : _username(rhs._username)
+      , _password(rhs._password)
+      , _sasl_mechanism(rhs._sasl_mechanism)
+      , _groups(rhs._groups.copy())
+      , _authenticated(rhs._authenticated)
+      , _superuser(rhs._superuser)
+      , _auth_required(rhs._auth_required)
+      , _checked(rhs._checked) {}
+
     request_auth_result(request_auth_result&&) noexcept;
     ~request_auth_result() noexcept(false);
 
@@ -105,6 +117,9 @@ public:
     const ss::sstring& get_username() const { return _username; }
     const ss::sstring& get_password() const { return _password; }
     const ss::sstring& get_sasl_mechanism() const { return _sasl_mechanism; }
+    const chunked_vector<security::acl_principal>& get_groups() const {
+        return _groups;
+    }
 
     bool is_authenticated() const { return _authenticated; };
     bool is_superuser() const { return _superuser; }
@@ -114,6 +129,7 @@ private:
     security::credential_user _username;
     security::credential_password _password;
     ss::sstring _sasl_mechanism;
+    chunked_vector<security::acl_principal> _groups;
     bool _authenticated{false};
     bool _superuser{false};
     bool _auth_required{false};

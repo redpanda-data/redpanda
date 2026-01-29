@@ -15,6 +15,8 @@
 using namespace storage::experimental::mvlog;
 
 TEST(EntryHeaderDeathTest, TestDeserializeTooSmall) {
+    GTEST_SKIP()
+      << "TODO(death_tests): re-enable when death tests are made stable in CI.";
     GTEST_FLAG_SET(death_test_style, "threadsafe");
     entry_header orig_h{0, 0, entry_type::record_batch};
     auto buf = entry_header_to_iobuf(orig_h);

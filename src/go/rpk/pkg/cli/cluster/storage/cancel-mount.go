@@ -46,7 +46,7 @@ Cancel a mount/unmount operation
 			migrationID, err := strconv.Atoi(from[0])
 			out.MaybeDie(err, "invalid migration ID: %v", err)
 
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(p)
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 

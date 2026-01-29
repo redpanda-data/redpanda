@@ -31,6 +31,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/kafka/data:log_reader_config",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/model",
         "//src/v/raft",

@@ -46,6 +46,14 @@ int64_t offset_translator_state::delta(model::offset o) const {
         // that the offset range is empty and manually set the end of the
         // translated range to prev(translated(start_offset)).
 
+        vlog(
+          stlog.info,
+          "ntp {}: log offset {} is outside the translation range (starting at "
+          "{})",
+          _ntp,
+          o,
+          model::next_offset(_last_offset2batch.begin()->first));
+
         throw std::runtime_error{fmt::format(
           "ntp {}: log offset {} is outside the translation range (starting at "
           "{})",

@@ -99,6 +99,7 @@ public:
     }
 
 protected:
+    // Callers to maintain the object lifetime via a gate or otherwise.
     ss::future<> parse(model::record_batch b) {
         switch (b.header().type) {
         case model::record_batch_type::raft_data:

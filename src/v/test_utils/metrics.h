@@ -40,7 +40,7 @@ std::optional<T> find_metric_value(
     }
 
     ss::metrics::impl::labels_type label_set{
-      {ss::metrics::shard_label.name(), std::to_string(ss::this_shard_id())}};
+      {ss::metrics::shard_label.name(), ss::metrics::impl::shard()}};
     for (const auto& [key, value] : labels) {
         label_set.emplace(key, value);
     }

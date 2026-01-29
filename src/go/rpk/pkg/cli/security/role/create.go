@@ -12,9 +12,12 @@ package role
 import (
 	"fmt"
 
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -37,22 +40,30 @@ flag in the 'rpk security acl create' command.`,
 			if h, ok := f.Help(createResponse{}); ok {
 				out.Exit(h)
 			}
-			p, err := p.LoadVirtualProfile(fs)
+			prof, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(p)
-
-			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
-			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+			config.CheckExitServerlessAdmin(prof)
 
 			roleName := args[0]
-			_, err = cl.CreateRole(cmd.Context(), roleName)
-			out.MaybeDie(err, "unable to create role %q: %v", roleName, adminapi.TryDecodeMessageFromErr(err))
+			if prof.CheckFromCloud() {
+				cl, err := publicapi.DataplaneClientFromRpkProfile(prof)
+				out.MaybeDie(err, "unable to initialize cloud API client: %v", err)
 
+				_, err = cl.Security.CreateRole(cmd.Context(), connect.NewRequest(&dataplanev1.CreateRoleRequest{
+					Role: &dataplanev1.Role{Name: roleName},
+				}))
+				out.MaybeDie(err, "unable to create role %q: %v", roleName, err)
+			} else {
+				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
+				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+				_, err = cl.CreateRole(cmd.Context(), roleName)
+				out.MaybeDie(err, "unable to create role %q: %v", roleName, adminapi.TryDecodeMessageFromErr(err))
+			}
 			if isText, _, s, err := f.Format(createResponse{[]string{roleName}}); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				out.Exit(s)
 			}
-
 			fmt.Printf(`Successfully created role %[1]q
 
 ACLs can now be added to this role using

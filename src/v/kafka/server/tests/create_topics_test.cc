@@ -691,3 +691,45 @@ FIXTURE_TEST(create_topic_assigns_topic_id, create_topic_fixture) {
     BOOST_REQUIRE(tp_id.has_value());
     BOOST_REQUIRE_EQUAL(resp.data.topics[0].topic_id, *tp_id);
 }
+
+FIXTURE_TEST(test_tristate_handling_create_topic, create_topic_fixture) {
+    auto topic = make_topic(
+      "tapioca",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"segment.ms", "0"},
+        {"min.cleanable.dirty.ratio", "0"},
+        {"retention.ms", "-1"},
+        {"retention.bytes", "-999"},
+        {"delete.retention.ms", "1000"}});
+
+    auto client = make_kafka_client().get();
+    auto deferred_close = ss::defer([&client] { client.stop().get(); });
+    client.connect().get();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+    BOOST_CHECK_EQUAL(resp.data.topics[0].error_code, kafka::error_code::none);
+    BOOST_CHECK_EQUAL(resp.data.topics[0].name, "tapioca");
+
+    auto tpn = model::topic_namespace{
+      model::kafka_namespace, model::topic{"tapioca"}};
+    auto md = app.controller->get_topics_state().local().get_topic_metadata(
+      tpn);
+    auto ntp_config = md->get_configuration().make_ntp_config(
+      "work_dir",
+      model::partition_id{0},
+      model::revision_id{0},
+      model::revision_id{0},
+      model::initial_revision_id{0});
+
+    BOOST_REQUIRE(ntp_config.segment_ms().has_value());
+    BOOST_REQUIRE(ntp_config.min_cleanable_dirty_ratio().has_value());
+    BOOST_REQUIRE(!ntp_config.retention_duration().has_value());
+    BOOST_REQUIRE(!ntp_config.retention_bytes().has_value());
+    BOOST_REQUIRE(ntp_config.delete_retention_ms().has_value());
+
+    BOOST_REQUIRE_EQUAL(0ms, ntp_config.segment_ms().value());
+    BOOST_REQUIRE_EQUAL(0.0, ntp_config.min_cleanable_dirty_ratio().value());
+    BOOST_REQUIRE_EQUAL(1000ms, ntp_config.delete_retention_ms().value());
+}

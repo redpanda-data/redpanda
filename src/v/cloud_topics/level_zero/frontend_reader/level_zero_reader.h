@@ -9,10 +9,13 @@
  */
 #pragma once
 
+#include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "cloud_topics/log_reader_config.h"
 #include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
+
+#include <expected>
 
 namespace cluster {
 class partition;
@@ -80,35 +83,6 @@ public:
     void print(std::ostream& o) final;
 
 private:
-    // States
-    enum class state {
-        empty_state,
-        ready_state,
-        materialized_state,
-        end_of_stream_state,
-    };
-
-    bool cache_enabled() const;
-
-    // Prepare a local log reader configuration for reading placeholder and
-    // other metadata batches from the CTP.
-    storage::local_log_reader_config ctp_read_config();
-
-    ss::future<> fetch_metadata(model::timeout_clock::time_point deadline);
-    ss::future<> materialize_batches(model::timeout_clock::time_point deadline);
-    void consume_materialized_batches(
-      chunked_circular_buffer<model::record_batch>* dest);
-    // Return data from the record batch cache.
-    // This method could change state of the reader to end_of_stream_state
-    // when it reaches committed offset.
-    std::optional<chunked_circular_buffer<model::record_batch>>
-    maybe_load_slices_from_cache();
-
-    // If adding a batch of `size` would cause this to go over the bytes limit.
-    bool is_over_limit(size_t size) const;
-
-    state _current{state::empty_state};
-
     // A batch read from the local log, these can be either placeholder batches
     // with pointers to the actual data in cloud storage, or it can be control
     // batches from the local log (i.e. transaction markers). We need to
@@ -123,6 +97,34 @@ private:
         std::variant<cloud_topics::extent_meta, payload> data;
     };
 
+    bool cache_enabled() const;
+
+    // Prepare a local log reader configuration for reading placeholder and
+    // other metadata batches from the CTP.
+    storage::local_log_reader_config ctp_read_config() const;
+
+    ss::future<model::record_batch_reader::storage_t>
+      read_some(model::timeout_clock::time_point);
+
+    ss::future<
+      chunked_circular_buffer<level_zero_log_reader_impl::local_log_batch>>
+    fetch_metadata(
+      storage::local_log_reader_config cfg,
+      model::timeout_clock::time_point deadline) const;
+    ss::future<
+      std::expected<chunked_circular_buffer<model::record_batch>, errc>>
+    materialize_batches(
+      chunked_circular_buffer<local_log_batch> unhydrated,
+      model::timeout_clock::time_point deadline);
+    // Return data from the record batch cache.
+    // This method could change state of the reader to end_of_stream_state
+    // when it reaches committed offset.
+    chunked_circular_buffer<model::record_batch>
+    maybe_read_batches_from_cache();
+
+    // If adding a batch of `size` would cause this to go over the bytes limit.
+    bool is_over_limit_with_bytes(size_t size) const;
+
     // Data from the local log that is not yet hydrated from data in L0
     //
     // The data stored in this buffer is ascending order by offset.
@@ -130,15 +132,16 @@ private:
     // All batches in _unhydrated come after the _hydrated batches (in offset
     // ordering).
     chunked_circular_buffer<local_log_batch> _unhydrated;
-    // Data that has been hydrated from L0 and is ready to be returned.
-    //
-    // The data stored in this buffer is ascending order by offset.
-    chunked_circular_buffer<model::record_batch> _hydrated;
+
+    void set_end_of_stream();
+    bool _end_of_stream{false};
 
     cloud_topic_log_reader_config _config;
+    kafka::offset _next_offset;
     ss::lw_shared_ptr<cluster::partition> _ctp;
     data_plane_api* _ct_api;
     prefix_logger _log;
+    size_t _bytes_consumed{0};
 };
 
 } // namespace cloud_topics

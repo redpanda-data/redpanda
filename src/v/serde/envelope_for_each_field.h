@@ -9,8 +9,6 @@
 
 #pragma once
 
-#include "reflection/arity.h"
-#include "reflection/to_tuple.h"
 #include "serde/envelope.h"
 
 #include <tuple>
@@ -29,26 +27,13 @@ concept check_for_more_fn = requires(Fn&& fn, int& f) {
 
 template<is_envelope T, typename Fn>
 inline auto envelope_for_each_field(T& t, Fn&& fn) {
-    if constexpr (inherits_from_envelope<std::decay_t<T>>) {
-        std::apply(
-          [&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
-    } else {
-        std::apply(
-          [&](auto&&... args) { (fn(args), ...); }, reflection::to_tuple(t));
-    }
+    std::apply([&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
 }
 
 template<is_envelope T, check_for_more_fn Fn>
 inline auto envelope_for_each_field(T& t, Fn&& fn) {
-    if constexpr (inherits_from_envelope<std::decay_t<T>>) {
-        std::apply(
-          [&](auto&&... args) { (void)(fn(args) && ...); },
-          envelope_to_tuple(t));
-    } else {
-        std::apply(
-          [&](auto&&... args) { (void)(fn(args) && ...); },
-          reflection::to_tuple(t));
-    }
+    std::apply(
+      [&](auto&&... args) { (void)(fn(args) && ...); }, envelope_to_tuple(t));
 }
 
 } // namespace serde

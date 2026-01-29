@@ -49,7 +49,10 @@ class batched_output_stream {
 public:
     static constexpr size_t default_max_unflushed_bytes = 1024 * 1024;
 
-    batched_output_stream() = default;
+    // default-constructed ss::output_streams are deprecated so don't offer
+    // default constructor here either - if you need deferred construction
+    // consider std::optional<batched_output_stream>.
+    batched_output_stream() = delete;
     explicit batched_output_stream(
       ss::output_stream<char>, size_t cache = default_max_unflushed_bytes);
     ~batched_output_stream() noexcept = default;

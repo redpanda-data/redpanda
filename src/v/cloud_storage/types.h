@@ -85,11 +85,8 @@ struct offset_range {
     model::offset end_rp;
 };
 
-struct segment_meta {
-    using value_t = segment_meta;
-    static constexpr serde::version_t redpanda_serde_version = 3;
-    static constexpr serde::version_t redpanda_serde_compat_version = 0;
-
+struct segment_meta
+  : serde::envelope<segment_meta, serde::version<3>, serde::compat_version<0>> {
     bool is_compacted;
     size_t size_bytes;
     model::offset base_offset;
@@ -110,6 +107,23 @@ struct segment_meta {
     segment_name_format sname_format{segment_name_format::v1};
     /// Size of the metadata (optional)
     uint64_t metadata_size_hint{0};
+
+    auto serde_fields() {
+        return std::tie(
+          is_compacted,
+          size_bytes,
+          base_offset,
+          committed_offset,
+          base_timestamp,
+          max_timestamp,
+          delta_offset,
+          ntp_revision,
+          archiver_term,
+          segment_term,
+          delta_offset_end,
+          sname_format,
+          metadata_size_hint);
+    }
 
     kafka::offset base_kafka_offset() const {
         // Manifests created with the old version of redpanda won't have the

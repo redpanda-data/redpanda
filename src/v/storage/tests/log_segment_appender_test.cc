@@ -10,21 +10,17 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
-#include "config/configuration.h"
 #include "random/generators.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "storage/storage_resources.h"
 #include "test_utils/random_bytes.h"
 
+#include <seastar/core/file.hh>
+#include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/reactor.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
-#include <seastar/core/thread.hh>
-#include <seastar/testing/thread_test_case.hh>
-
-// test gate
-#include <seastar/core/gate.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 
@@ -77,7 +73,6 @@ struct storage::segment_appender_test_accessor {
     }
     auto inflight_dispatched() { return sa._inflight_dispatched; }
     auto total_dispatched() { return sa._dispatched_writes; }
-    auto total_merged() { return sa.get_stats().merged_writes; }
     auto info() {
         return segment_appender_info{
           .committed_offset = sa._committed_offset,
@@ -100,10 +95,13 @@ ss::file open_file(std::string_view filename) {
       .get();
 }
 
-segment_appender
-make_segment_appender(ss::file file, storage::storage_resources& resources) {
+segment_appender make_segment_appender(
+  ss::file file,
+  storage::storage_resources& resources,
+  segment_appender::stats_ptr stats = nullptr) {
     return segment_appender(
-      std::move(file), segment_appender::options(std::nullopt, resources));
+      std::move(file),
+      segment_appender::options(std::nullopt, resources, std::move(stats)));
 }
 
 iobuf make_random_data(size_t len) {
@@ -165,7 +163,8 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
     auto f = open_file("test_log_segment_mixed.log");
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
-    auto appender = make_segment_appender(f, resources);
+    auto stats = ss::make_lw_shared<segment_appender::stats>();
+    auto appender = make_segment_appender(f, resources, stats);
     auto close = ss::defer([&appender] { appender.close().get(); });
     auto alignment = f.disk_write_dma_alignment();
     constexpr size_t iterations = 100;
@@ -233,7 +232,7 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
     EXPECT_LT(write_count, 2 * iterations);
 
     // we expect 0 merges with the A+F pattern
-    EXPECT_EQ(access(appender).total_merged(), 0);
+    EXPECT_EQ(stats->merged_writes, 0);
 }
 
 TEST(log_segment_appender_test, test_can_append_mixed) {
@@ -245,7 +244,8 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
     auto f = open_file("test_segment_appender.log");
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
-    auto appender = make_segment_appender(f, resources);
+    auto stats = ss::make_lw_shared<segment_appender::stats>();
+    auto appender = make_segment_appender(f, resources, stats);
     auto close = ss::defer([&appender] { appender.close().get(); });
 
     constexpr size_t iterations = 10;
@@ -276,7 +276,7 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
     EXPECT_EQ(write_count, expected_writes);
 
     // we expect 0 merges with the A+F pattern
-    EXPECT_EQ(access(appender).total_merged(), 0);
+    EXPECT_EQ(stats->merged_writes, 0);
 }
 
 TEST(log_segment_appender_test, test_can_append_10MB) {
@@ -334,7 +334,8 @@ static void run_concurrent_append_flush(
       "run_concurrent_append_flush_{}_{}.log", fallocate_size, max_buf_size);
     auto seg_file = open_file(filename);
     storage::storage_resources resources(config::mock_binding(+fallocate_size));
-    auto appender = make_segment_appender(seg_file, resources);
+    auto stats = ss::make_lw_shared<segment_appender::stats>();
+    auto appender = make_segment_appender(seg_file, resources, stats);
     auto close = ss::defer([&appender] { appender.close().get(); });
 
     auto seed = random_generators::get_int<size_t>();
@@ -479,7 +480,7 @@ static void run_concurrent_append_flush(
 
     // check that we got some writes and merges (we don't know how many)
     EXPECT_GT(access(appender).total_dispatched(), 0);
-    EXPECT_GT(access(appender).total_merged(), 0);
+    EXPECT_GT(stats->merged_writes, 0);
 
     // now we expect all the prior flush futures to be available
     // we don't guarantee this is in the API currently but it is how it

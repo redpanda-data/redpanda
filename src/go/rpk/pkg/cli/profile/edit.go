@@ -10,6 +10,7 @@
 package profile
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -17,6 +18,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -28,6 +30,10 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 This command opens your default editor to edit the specified profile, or
 the current profile if no profile is specified. If the profile does not
 exist, this command creates it and switches to it.
+
+The editor will display all available configuration fields. Fields that are
+not currently set are shown as comments with documentation. To set a field,
+uncomment it and provide a value.
 `,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: ValidProfiles(fs, p),
@@ -50,9 +56,10 @@ exist, this command creates it and switches to it.
 				p = y.Profile(name)
 			}
 
+			original := *p
 			preFromCloud := p.FromCloud
 			preCloudDetails := p.CloudCluster
-			update, err := rpkos.EditTmpYAMLFile(fs, *p)
+			update, err := rpkos.EditTmpYAMLFileWithEncoder(fs, *p, config.ProfileToDocumentedYAML)
 			out.MaybeDieErr(err)
 
 			if preFromCloud {
@@ -64,6 +71,11 @@ exist, this command creates it and switches to it.
 			// If a user clears the name by accident, we keep the old name.
 			if update.Name == "" {
 				update.Name = name
+			}
+
+			if profilesEqual(original, update) {
+				fmt.Printf("No changes made to profile %q.\n", name)
+				return
 			}
 
 			var renamed, updatedCurrent bool
@@ -89,4 +101,20 @@ exist, this command creates it and switches to it.
 			}
 		},
 	}
+}
+
+// profilesEqual compares two profiles by their YAML representations. We use
+// YAML marshaling instead of reflect.DeepEqual because internal fields
+// (like 'c') differ between original and parsed profiles. If Marshalling fails,
+// we return false.
+func profilesEqual(a, b config.RpkProfile) bool {
+	aYAML, err := yaml.Marshal(a)
+	if err != nil {
+		return false
+	}
+	bYAML, err := yaml.Marshal(b)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(aYAML, bYAML)
 }

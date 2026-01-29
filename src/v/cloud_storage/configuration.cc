@@ -102,6 +102,7 @@ ss::future<configuration> configuration::get_s3_config() {
 
     auto s3_conf
       = co_await cloud_storage_clients::s3_configuration::make_configuration(
+        cloud_credentials_source,
         access_key,
         secret_key,
         region,
@@ -167,6 +168,7 @@ ss::future<configuration> configuration::get_abs_config() {
 
     auto abs_conf
       = co_await cloud_storage_clients::abs_configuration::make_configuration(
+        cloud_credentials_source,
         shared_key,
         storage_account,
         get_default_overrides(),

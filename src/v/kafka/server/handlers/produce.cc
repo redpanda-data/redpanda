@@ -22,6 +22,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/validation.h"
 #include "raft/errc.h"
@@ -72,14 +73,6 @@ struct topic_produce_stages {
     ss::future<> dispatched;
     ss::future<produce_response::topic> produced;
 };
-
-partition_produce_stages make_ready_stage(produce_response::partition p) {
-    return partition_produce_stages{
-      .dispatched = ss::now(),
-      .produced = ss::make_ready_future<produce_response::partition>(
-        std::move(p)),
-    };
-}
 
 raft::replicate_options
 acks_to_replicate_options(int16_t acks, std::chrono::milliseconds timeout) {
@@ -154,6 +147,14 @@ partition_produce_stages partition_append(
   int32_t num_records,
   int64_t num_bytes,
   std::chrono::milliseconds timeout_ms) {
+    // https://github.com/redpanda-data/redpanda/blob/dev/src/v/kafka/protocol/schemata/produce_response.json
+    // If CreateTime is used for the topic, the timestamp will be -1. If
+    // LogAppendTime is used for the topic, the timestamp will be the broker
+    // local time when the messages are appended.
+    auto log_append_time_ms = batch->header().attrs.timestamp_type()
+                                  == model::timestamp_type::create_time
+                                ? model::timestamp::missing()
+                                : batch->header().max_timestamp;
     auto stages = partition.replicate(
       bid, std::move(*batch), acks_to_replicate_options(acks, timeout_ms));
     return partition_produce_stages{
@@ -162,7 +163,9 @@ partition_produce_stages partition_append(
         [partition = std::move(partition),
          id,
          num_records = num_records,
-         num_bytes](ss::future<result<raft::replicate_result>> f) mutable {
+         num_bytes,
+         log_append_time_ms = log_append_time_ms](
+          ss::future<result<raft::replicate_result>> f) mutable {
             produce_response::partition p{.partition_index = id};
             try {
                 auto r = f.get();
@@ -171,6 +174,7 @@ partition_produce_stages partition_append(
                     // is inclusive
                     p.base_offset = model::offset(
                       r.value().last_offset - (num_records - 1));
+                    p.log_append_time_ms = log_append_time_ms;
                     p.error_code = error_code::none;
                     partition.probe().add_records_produced(num_records);
                     partition.probe().add_bytes_produced(num_bytes);
@@ -186,10 +190,10 @@ partition_produce_stages partition_append(
     };
 }
 
-ss::future<produce_response::partition> finalize_request_with_error_code(
+produce_response::partition finalize_request_with_error_code(
   error_code ec,
   std::unique_ptr<ss::promise<>> dispatch,
-  model::ntp ntp,
+  const model::ntp& ntp,
   ss::shard_id source_shard,
   std::optional<ss::sstring> err_msg = std::nullopt) {
     // submit back to promise source shard
@@ -198,11 +202,169 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
           dispatch->set_value();
           dispatch.reset();
       });
-    return ss::make_ready_future<produce_response::partition>(
-      produce_response::partition{
-        .partition_index = ntp.tp.partition,
-        .error_code = ec,
-        .error_message = std::move(err_msg)});
+    return produce_response::partition{
+      .partition_index = ntp.tp.partition,
+      .error_code = ec,
+      .error_message = std::move(err_msg)};
+}
+
+struct ntp_produce_request {
+    model::ntp ntp;
+    std::unique_ptr<model::record_batch> batch;
+    std::optional<pandaproxy::schema_registry::schema_id_validator>
+      schema_id_validator;
+
+    size_t batch_max_bytes;
+    model::timestamp_type timestamp_type;
+    std::chrono::milliseconds message_timestamp_before_max_ms;
+    std::chrono::milliseconds message_timestamp_after_max_ms;
+};
+
+ss::future<produce_response::partition> do_produce_topic_partition(
+  produce_ctx& octx,
+  ntp_produce_request req,
+  std::unique_ptr<ss::promise<>> dispatched) {
+    auto start = std::chrono::steady_clock::now();
+    auto validate_batch_res = co_await validate_batch(
+      {.batch = *req.batch,
+       .timestamp_type = req.timestamp_type,
+       .message_timestamp_before_max_ms = req.message_timestamp_before_max_ms,
+       .message_timestamp_after_max_ms = req.message_timestamp_after_max_ms,
+       .probe = octx.rctx.probe(),
+       .ntp = req.ntp,
+       .client_id = octx.rctx.header().client_id});
+
+    if (validate_batch_res.has_value()) {
+        co_return finalize_request_with_error_code(
+          validate_batch_res->err,
+          std::move(dispatched),
+          req.ntp,
+          ss::this_shard_id(),
+          std::move(validate_batch_res->msg));
+    }
+
+    auto batch_size = req.batch->size_bytes();
+    if (static_cast<uint32_t>(batch_size) > req.batch_max_bytes) {
+        auto msg = ssx::sformat(
+          "batch size {} exceeds max {}", batch_size, req.batch_max_bytes);
+        thread_local static ss::logger::rate_limit rate(1s);
+        vloglr(klog, ss::log_level::warn, rate, "{}", msg);
+        co_return finalize_request_with_error_code(
+          error_code::message_too_large,
+          std::move(dispatched),
+          req.ntp,
+          ss::this_shard_id(),
+          std::move(msg));
+    }
+
+    if (auto& validator = req.schema_id_validator) {
+        auto ec = co_await (*validator)(*req.batch);
+        if (ec != error_code::none) {
+            // TODO: It's a bit much to post this to the partition probe for
+            // this metric. We should probably move the metric.
+            auto shard = octx.rctx.shards().shard_for(req.ntp);
+            if (shard) {
+                co_await octx.rctx.partition_manager().invoke_on(
+                  *shard,
+                  [](cluster::partition_manager& pm, const model::ntp& ntp) {
+                      if (auto p = pm.get(ntp)) {
+                          p->probe().add_schema_id_validation_failed();
+                      }
+                      return ss::now();
+                  },
+                  req.ntp);
+            }
+            co_return finalize_request_with_error_code(
+              ec, std::move(dispatched), req.ntp, ss::this_shard_id());
+        }
+    }
+
+    // A single produce request may contain record batches for many
+    // different partitions that are managed different cores.
+    auto shard = octx.rctx.shards().shard_for(req.ntp);
+    if (!shard) {
+        co_return finalize_request_with_error_code(
+          error_code::not_leader_for_partition,
+          std::move(dispatched),
+          req.ntp,
+          ss::this_shard_id());
+    }
+
+    auto m = octx.rctx.probe().auto_produce_measurement();
+    octx.rctx.probe().record_batch(
+      batch_size, req.batch->header().attrs.compression());
+    octx.rctx.connection()->attributes().produce_bytes.record(batch_size);
+    octx.rctx.connection()->attributes().produce_batch_count.record(1);
+
+    auto timeout = octx.request.data.timeout_ms;
+    if (timeout < 0ms) {
+        static constexpr std::chrono::milliseconds max_timeout{
+          std::numeric_limits<int32_t>::max()};
+        // negative timeout translates to no timeout
+        timeout = max_timeout;
+    }
+
+    auto p = co_await octx.rctx.partition_manager().invoke_on(
+      *shard,
+      octx.ssg,
+      [batch = std::move(req.batch),
+       ntp = std::move(req.ntp),
+       dispatch = std::move(dispatched),
+       acks = octx.request.data.acks,
+       timeout,
+       source_shard = ss::this_shard_id()](
+        cluster::partition_manager& mgr) mutable {
+          auto partition = kafka::make_partition_proxy(ntp, mgr);
+          if (!partition || !partition->is_leader()) {
+              return ss::as_ready_future(finalize_request_with_error_code(
+                error_code::not_leader_for_partition,
+                std::move(dispatch),
+                ntp,
+                source_shard));
+          }
+
+          auto bid = model::batch_identity::from(batch->header());
+          auto num_records = batch->record_count();
+          auto batch_size = batch->size_bytes();
+          auto stages = partition_append(
+            ntp.tp.partition,
+            std::move(*partition),
+            bid,
+            std::move(batch),
+            acks,
+            num_records,
+            batch_size,
+            timeout);
+          return stages.dispatched
+            .then_wrapped([source_shard, dispatch = std::move(dispatch)](
+                            ss::future<> f) mutable {
+                if (f.failed()) {
+                    ssx::background = ss::smp::submit_to(
+                      source_shard,
+                      [dispatch = std::move(dispatch),
+                       e = f.get_exception()]() mutable {
+                          dispatch->set_exception(e);
+                          dispatch.reset();
+                      });
+                    return;
+                }
+                ssx::background = ss::smp::submit_to(
+                  source_shard, [dispatch = std::move(dispatch)]() mutable {
+                      dispatch->set_value();
+                      dispatch.reset();
+                  });
+            })
+            .then([f = std::move(stages.produced)]() mutable {
+                return std::move(f);
+            });
+      });
+    if (p.error_code == error_code::none) {
+        auto dur = std::chrono::steady_clock::now() - start;
+        octx.rctx.connection()->server().update_produce_latency(dur);
+    } else {
+        m->cancel();
+    }
+    co_return p;
 }
 
 struct topic_configuration_context {
@@ -223,177 +385,28 @@ partition_produce_stages produce_topic_partition(
   const topic_configuration_context& cfg_ctx) {
     auto ntp = model::ntp(
       model::kafka_namespace, topic.name, part.partition_index);
-
-    /*
-     * A single produce request may contain record batches for many
-     * different partitions that are managed different cores.
-     */
-    auto shard = octx.rctx.shards().shard_for(ntp);
-
-    if (!shard) {
-        return make_ready_stage(
-          produce_response::partition{
-            .partition_index = ntp.tp.partition,
-            .error_code = error_code::not_leader_for_partition});
-    }
-
-    // steal the batch from the adapter
-    auto batch = std::make_unique<model::record_batch>(
-      std::move(part.records->adapter.batch.value()));
-
-    auto validate_batch_res = validate_batch(
-      {.batch = *batch,
-       .timestamp_type = cfg_ctx.timestamp_type,
-       .message_timestamp_before_max_ms
-       = cfg_ctx.message_timestamp_before_max_ms,
-       .message_timestamp_after_max_ms = cfg_ctx.message_timestamp_after_max_ms,
-       .probe = octx.rctx.probe()});
-
-    if (validate_batch_res.has_value()) {
-        auto dispatch_f = ss::now();
-        auto f = ss::make_ready_future<produce_response::partition>(
-          produce_response::partition{
-            .partition_index = ntp.tp.partition,
-            .error_code = validate_batch_res->err,
-            .error_message = std::move(validate_batch_res->msg)});
-        return partition_produce_stages{
-          .dispatched = std::move(dispatch_f), .produced = std::move(f)};
-    }
-
-    const auto& hdr = batch->header();
-    auto bid = model::batch_identity::from(hdr);
-    auto batch_size = batch->size_bytes();
-    auto num_records = batch->record_count();
     auto validator
       = pandaproxy::schema_registry::maybe_make_schema_id_validator(
         octx.rctx.schema_registry(), topic.name, *cfg_ctx.properties);
-    auto start = std::chrono::steady_clock::now();
-
+    // steal the batch from the adapter
+    auto batch = std::make_unique<model::record_batch>(
+      std::move(part.records->adapter.batch.value()));
     auto dispatch = std::make_unique<ss::promise<>>();
     auto dispatch_f = dispatch->get_future();
-    auto m = octx.rctx.probe().auto_produce_measurement();
-    octx.rctx.probe().record_batch(batch_size, hdr.attrs.compression());
-    octx.rctx.connection()->attributes().produce_bytes.record(batch_size);
-    octx.rctx.connection()->attributes().produce_batch_count.record(1);
-    auto timeout = octx.request.data.timeout_ms;
-    if (timeout < 0ms) {
-        static constexpr std::chrono::milliseconds max_timeout{
-          std::numeric_limits<int32_t>::max()};
-        // negative timeout translates to no timeout
-        timeout = max_timeout;
-    }
-    auto f
-      = octx.rctx.partition_manager()
-          .invoke_on(
-            *shard,
-            octx.ssg,
-            [batch = std::move(batch),
-             validator = std::move(validator),
-             ntp = std::move(ntp),
-             dispatch = std::move(dispatch),
-             num_records,
-             batch_size,
-             bid,
-             acks = octx.request.data.acks,
-             batch_max_bytes = cfg_ctx.batch_max_bytes,
-             timeout,
-             source_shard = ss::this_shard_id()](
-              cluster::partition_manager& mgr) mutable {
-                auto partition = kafka::make_partition_proxy(ntp, mgr);
-                if (!partition) {
-                    return finalize_request_with_error_code(
-                      error_code::not_leader_for_partition,
-                      std::move(dispatch),
-                      ntp,
-                      source_shard);
-                }
-                if (unlikely(
-                      static_cast<uint32_t>(batch_size) > batch_max_bytes)) {
-                    auto msg = ssx::sformat(
-                      "batch size {} exceeds max {}",
-                      batch_size,
-                      batch_max_bytes);
-                    thread_local static ss::logger::rate_limit rate(1s);
-                    vloglr(klog, ss::log_level::warn, rate, "{}", msg);
-                    return finalize_request_with_error_code(
-                      error_code::message_too_large,
-                      std::move(dispatch),
-                      ntp,
-                      source_shard,
-                      std::move(msg));
-                }
-                if (unlikely(!partition->is_leader())) {
-                    return finalize_request_with_error_code(
-                      error_code::not_leader_for_partition,
-                      std::move(dispatch),
-                      ntp,
-                      source_shard);
-                }
-
-                auto probe = std::addressof(partition->probe());
-                auto f = pandaproxy::schema_registry::maybe_validate_schema_id(
-                  std::move(validator), *batch, probe);
-
-                return std::move(f).then(
-                  [ntp{std::move(ntp)},
-                   partition{std::move(*partition)},
-                   dispatch = std::move(dispatch),
-                   bid,
-                   acks,
-                   source_shard,
-                   num_records,
-                   batch_size,
-                   timeout,
-                   batch = std::move(batch)](kafka::error_code err) mutable {
-                      if (err != kafka::error_code::none) {
-                          return finalize_request_with_error_code(
-                            err, std::move(dispatch), ntp, source_shard);
-                      }
-                      auto stages = partition_append(
-                        ntp.tp.partition,
-                        std::move(partition),
-                        bid,
-                        std::move(batch),
-                        acks,
-                        num_records,
-                        batch_size,
-                        timeout);
-                      return stages.dispatched
-                        .then_wrapped(
-                          [source_shard, dispatch = std::move(dispatch)](
-                            ss::future<> f) mutable {
-                              if (f.failed()) {
-                                  (void)ss::smp::submit_to(
-                                    source_shard,
-                                    [dispatch = std::move(dispatch),
-                                     e = f.get_exception()]() mutable {
-                                        dispatch->set_exception(e);
-                                        dispatch.reset();
-                                    });
-                                  return;
-                              }
-                              (void)ss::smp::submit_to(
-                                source_shard,
-                                [dispatch = std::move(dispatch)]() mutable {
-                                    dispatch->set_value();
-                                    dispatch.reset();
-                                });
-                          })
-                        .then([f = std::move(stages.produced)]() mutable {
-                            return std::move(f);
-                        });
-                  });
-            })
-          .then([&octx, start, m = std::move(m)](
-                  produce_response::partition p) {
-              if (p.error_code == error_code::none) {
-                  auto dur = std::chrono::steady_clock::now() - start;
-                  octx.rctx.connection()->server().update_produce_latency(dur);
-              } else {
-                  m->cancel();
-              }
-              return p;
-          });
+    auto f = do_produce_topic_partition(
+      octx,
+      ntp_produce_request{
+        .ntp = std::move(ntp),
+        .batch = std::move(batch),
+        .schema_id_validator = std::move(validator),
+        .batch_max_bytes = cfg_ctx.batch_max_bytes,
+        .timestamp_type = cfg_ctx.timestamp_type,
+        .message_timestamp_before_max_ms
+        = cfg_ctx.message_timestamp_before_max_ms,
+        .message_timestamp_after_max_ms
+        = cfg_ctx.message_timestamp_after_max_ms,
+      },
+      std::move(dispatch));
     return partition_produce_stages{
       .dispatched = std::move(dispatch_f),
       .produced = std::move(f),

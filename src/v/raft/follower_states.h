@@ -20,8 +20,9 @@ namespace raft {
 struct follower_index_metadata {
     explicit follower_index_metadata(vnode node)
       : node_id(node)
-      , mcco_getter{std::make_unique<void_executor>()}
-      , mtro_sender{std::make_unique<void_executor>()} {}
+      , coordinated_compaction_offsets_getter{std::make_unique<void_executor>()}
+      , coordinated_compaction_offsets_sender{
+          std::make_unique<void_executor>()} {}
 
     follower_index_metadata(const follower_index_metadata&) = delete;
     follower_index_metadata& operator=(const follower_index_metadata&) = delete;
@@ -139,13 +140,15 @@ struct follower_index_metadata {
      */
     // in the follower log; model::offset{} if follower never reported its MCCO
     model::offset max_cleanly_compacted_offset;
+    // in the follower log; model::offset{} if follower never reported its MXFO
+    model::offset max_transaction_free_offset;
     using void_executor = ssx::single_fiber_executor<
       ss::noncopyable_function<ss::future<>(ss::abort_source&)>>;
     using void_executor_ptr = std::unique_ptr<void_executor>;
-    // state for requesting latest MCCO calculated on the follower
-    void_executor_ptr mcco_getter;
-    // state for sending latest MTRO to the follower
-    void_executor_ptr mtro_sender;
+    // state for requesting latest MCCO and MXFO calculated on the follower
+    void_executor_ptr coordinated_compaction_offsets_getter;
+    // state for sending latest MTRO and MXRO to the follower
+    void_executor_ptr coordinated_compaction_offsets_sender;
 
     friend std::ostream&
     operator<<(std::ostream& o, const follower_index_metadata& i);

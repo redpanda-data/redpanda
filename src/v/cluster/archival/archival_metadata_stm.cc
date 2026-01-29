@@ -707,6 +707,7 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     if (start_rp_offset < get_start_offset()) {
         co_return errc::success;
     }
@@ -720,6 +721,7 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
   kafka::offset start_kafka_offset,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     auto builder = batch_start(deadline, as);
     builder.update_start_kafka_offset(start_kafka_offset);
     co_return co_await builder.replicate();
@@ -729,6 +731,7 @@ ss::future<std::error_code> archival_metadata_stm::spillover(
   const cloud_storage::segment_meta& manifest_meta,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     auto start_rp_offset = model::next_offset(manifest_meta.committed_offset);
     if (start_rp_offset < get_start_offset()) {
         co_return errc::success;
@@ -743,6 +746,7 @@ ss::future<std::error_code> archival_metadata_stm::truncate_archive_init(
   model::offset_delta delta,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     if (start_rp_offset < get_archive_start_offset()) {
         co_return errc::success;
     }
@@ -756,6 +760,7 @@ ss::future<std::error_code> archival_metadata_stm::cleanup_archive(
   uint64_t removed_size_bytes,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     if (start_rp_offset < get_archive_clean_offset()) {
         co_return errc::success;
     }
@@ -766,6 +771,7 @@ ss::future<std::error_code> archival_metadata_stm::cleanup_archive(
 
 ss::future<std::error_code> archival_metadata_stm::cleanup_metadata(
   ss::lowres_clock::time_point deadline, ss::abort_source& as) {
+    auto holder = _gate.hold();
     auto builder = batch_start(deadline, as);
     builder.cleanup_metadata();
     co_return co_await builder.replicate();
@@ -778,6 +784,7 @@ ss::future<std::error_code> archival_metadata_stm::process_anomalies(
   cloud_storage::anomalies detected,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     auto builder = batch_start(deadline, as);
     builder.process_anomalies(
       scrub_timestamp, last_scrubbed_offset, status, std::move(detected));
@@ -791,22 +798,24 @@ archival_metadata_stm::sync(model::timeout_clock::duration timeout) {
 
 ss::future<std::optional<model::offset>> archival_metadata_stm::sync(
   model::timeout_clock::duration timeout, ss::abort_source* as) {
-    return _lock
-      .with(
-        timeout,
-        [this, timeout, as] {
-            return do_sync(timeout, as).then([this](bool synced) {
-                std::optional<model::offset> res;
-                if (synced) {
-                    res = _manifest->get_applied_offset();
-                }
-                return res;
+    return ss::with_gate(_gate, [this, timeout, as] {
+        return _lock
+          .with(
+            timeout,
+            [this, timeout, as] {
+                return do_sync(timeout, as).then([this](bool synced) {
+                    std::optional<model::offset> res;
+                    if (synced) {
+                        res = _manifest->get_applied_offset();
+                    }
+                    return res;
+                });
+            })
+          .handle_exception_type(
+            [](const ss::semaphore_timed_out&) -> std::optional<model::offset> {
+                return std::nullopt;
             });
-        })
-      .handle_exception_type(
-        [](const ss::semaphore_timed_out&) -> std::optional<model::offset> {
-            return std::nullopt;
-        });
+    });
 }
 
 ss::future<bool> archival_metadata_stm::do_sync(
@@ -942,6 +951,7 @@ ss::future<std::error_code> archival_metadata_stm::mark_clean(
   ss::lowres_clock::time_point deadline,
   model::offset clean_offset,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     auto builder = batch_start(deadline, as);
     builder.mark_clean(clean_offset);
     co_return co_await builder.replicate();

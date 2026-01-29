@@ -20,7 +20,12 @@ import collections.abc
 import google.protobuf.descriptor
 import google.protobuf.internal.containers
 import google.protobuf.message
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
@@ -40,7 +45,7 @@ class ControllerForcedReconfigurationRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['dead_node_ids', b'dead_node_ids', 'surviving_node_count', b'surviving_node_count']) -> None:
         ...
-global___ControllerForcedReconfigurationRequest = ControllerForcedReconfigurationRequest
+Global___ControllerForcedReconfigurationRequest: typing_extensions.TypeAlias = ControllerForcedReconfigurationRequest
 
 @typing.final
 class ControllerForcedReconfigurationResponse(google.protobuf.message.Message):
@@ -48,4 +53,4 @@ class ControllerForcedReconfigurationResponse(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___ControllerForcedReconfigurationResponse = ControllerForcedReconfigurationResponse
+Global___ControllerForcedReconfigurationResponse: typing_extensions.TypeAlias = ControllerForcedReconfigurationResponse

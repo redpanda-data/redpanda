@@ -26,8 +26,10 @@ var Comments = map[string]string{
  that are named ` + "`" + `*` + "`" + ``,
 	"redpanda.core.admin.v2.ACLResourceFilter.pattern_type":  "The pattern to apply to name",
 	"redpanda.core.admin.v2.ACLResourceFilter.resource_type": "The ACL resource type to match",
-	"redpanda.core.admin.v2.AuthenticationConfiguration": `Authentication config.  Currently only supporting SASL/SCRAM,
- however made as a oneof for expansion`,
+	"redpanda.core.admin.v2.AuthenticationConfiguration": `Authentication config.  Supports:
+ * SASL/SCRAM
+ * SASL/PLAIN`,
+	"redpanda.core.admin.v2.AuthenticationConfiguration.plain_configuration": "SASL/PLAIN configuration",
 	"redpanda.core.admin.v2.AuthenticationConfiguration.scram_configuration": "SASL/SCRAM configuration",
 	"redpanda.core.admin.v2.ConsumerOffsetSyncOptions":                       "Options for syncing consumer offsets",
 	"redpanda.core.admin.v2.ConsumerOffsetSyncOptions.effective_interval":    "The effective interval for the task",
@@ -74,10 +76,17 @@ var Comments = map[string]string{
 	"redpanda.core.admin.v2.NameFilter.name": `The resource name, or "*"
  Note if "*", must be the _only_ character
  and ` + "`" + `pattern_type` + "`" + ` must be ` + "`" + `PATTERN_TYPE_LITERAL` + "`" + ``,
-	"redpanda.core.admin.v2.NameFilter.pattern_type":         "Literal or prefix",
-	"redpanda.core.admin.v2.PATTERN_TYPE_LITERAL":            "Must match the filter exactly",
-	"redpanda.core.admin.v2.PATTERN_TYPE_PREFIX":             "Will match anything that starts with filter",
-	"redpanda.core.admin.v2.PatternType":                     "The matching pattern type",
+	"redpanda.core.admin.v2.NameFilter.pattern_type":  "Literal or prefix",
+	"redpanda.core.admin.v2.PATTERN_TYPE_LITERAL":     "Must match the filter exactly",
+	"redpanda.core.admin.v2.PATTERN_TYPE_PREFIX":      "Will match anything that starts with filter",
+	"redpanda.core.admin.v2.PATTERN_TYPE_PREFIXED":    "Will match anything that starts with filter",
+	"redpanda.core.admin.v2.PatternType":              "The matching pattern type",
+	"redpanda.core.admin.v2.PlainConfig":              "PLAIN settings",
+	"redpanda.core.admin.v2.PlainConfig.password":     "Password",
+	"redpanda.core.admin.v2.PlainConfig.password_set": "Indicates that the password has been set",
+	"redpanda.core.admin.v2.PlainConfig.password_set_at": `Timestamp of when the password was last set - only valid if password_set
+ is true`,
+	"redpanda.core.admin.v2.PlainConfig.username":            "PLAIN username",
 	"redpanda.core.admin.v2.SCRAM_MECHANISM_SCRAM_SHA_256":   "SCRAM-SHA-256",
 	"redpanda.core.admin.v2.SCRAM_MECHANISM_SCRAM_SHA_512":   "SCRAM-SHA-512",
 	"redpanda.core.admin.v2.SHADOW_LINK_STATE_ACTIVE":        "Shadow link is active",

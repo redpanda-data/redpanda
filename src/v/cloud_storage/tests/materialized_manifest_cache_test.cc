@@ -8,15 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "bytes/iostream.h"
-#include "cloud_io/tests/s3_imposter.h"
+#include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/spillover_manifest.h"
-#include "cloud_storage/tests/cloud_storage_fixture.h"
-#include "cloud_storage/tests/util.h"
+#include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "model/timeout_clock.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -27,10 +23,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
-#include <chrono>
-#include <iterator>
-#include <numeric>
-
+using namespace std::chrono_literals;
 using namespace cloud_storage;
 
 static ss::logger test_log("async_manifest_view_log");
@@ -48,11 +41,11 @@ static spillover_manifest make_manifest(model::offset base) {
 }
 
 manifest_cache_key make_key(int64_t off) {
-    return std::make_tuple(manifest_ntp, model::offset{off});
+    return std::make_tuple(manifest_ntp, manifest_rev, model::offset{off});
 }
 
 manifest_cache_key make_key(model::offset off) {
-    return std::make_tuple(manifest_ntp, off);
+    return std::make_tuple(manifest_ntp, manifest_rev, off);
 }
 
 // Add elements to an empty cache and verify that they are added correctly.

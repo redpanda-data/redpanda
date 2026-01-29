@@ -22,6 +22,12 @@ using namespace raft;
 
 class test_protocol : public consensus_client_protocol::impl {
 public:
+    ss::future<bool> ensure_disconnect(model::node_id) final {
+        return ss::make_ready_future<bool>(true);
+    }
+    ss::future<> reset_backoff(model::node_id) final {
+        return ss::make_ready_future<>();
+    }
     ss::future<result<raft::vote_reply>>
     vote(model::node_id, raft::vote_request, rpc::client_opts) final {
         return ss::make_ready_future<result<raft::vote_reply>>(
@@ -31,11 +37,6 @@ public:
       model::node_id, raft::append_entries_request, rpc::client_opts) final {
         return ss::make_ready_future<result<raft::append_entries_reply>>(
           raft::append_entries_reply{});
-    }
-    ss::future<result<raft::heartbeat_reply>>
-    heartbeat(model::node_id, raft::heartbeat_request, rpc::client_opts) final {
-        return ss::make_ready_future<result<raft::heartbeat_reply>>(
-          raft::heartbeat_reply{});
     }
     ss::future<result<raft::heartbeat_reply_v2>> heartbeat_v2(
       model::node_id, raft::heartbeat_request_v2, rpc::client_opts) final {
@@ -51,24 +52,6 @@ public:
       model::node_id, raft::timeout_now_request, rpc::client_opts) final {
         return ss::make_ready_future<result<raft::timeout_now_reply>>(
           raft::timeout_now_reply{});
-    }
-    ss::future<bool> ensure_disconnect(model::node_id) final {
-        return ss::make_ready_future<bool>(true);
-    }
-    ss::future<result<raft::transfer_leadership_reply>> transfer_leadership(
-      model::node_id,
-      raft::transfer_leadership_request,
-      rpc::client_opts) final {
-        return ss::make_ready_future<result<raft::transfer_leadership_reply>>(
-          raft::transfer_leadership_reply{});
-    }
-    ss::future<> reset_backoff(model::node_id) final {
-        return ss::make_ready_future<>();
-    }
-    ss::future<result<remake_learner_state_reply>> remake_learner_state(
-      model::node_id, remake_learner_state_request, rpc::client_opts) final {
-        return ss::make_ready_future<result<raft::remake_learner_state_reply>>(
-          raft::remake_learner_state_reply{});
     }
     ss::future<result<get_compaction_mcco_reply>> get_compaction_mcco(
       model::node_id, get_compaction_mcco_request, rpc::client_opts) final {

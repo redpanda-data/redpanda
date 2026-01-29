@@ -40,6 +40,7 @@ bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
 bazel_dep(name = "rules_cc", version = "0.2.0")
 bazel_dep(name = "rules_foreign_cc", version = "0.12.0")
 bazel_dep(name = "rules_go", version = "0.56.1")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.5.1")
 bazel_dep(name = "rules_rust", version = "0.60.0")
@@ -52,7 +53,16 @@ bazel_dep(name = "bzip2", version = "1.0.8.bcr.2")
 bazel_dep(name = "googleapis", version = "0.0.0-20250703-f9d6fe4a")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
+single_version_override(
+    module_name = "buildifier_prebuilt",
+    patches = [
+        "//bazel/thirdparty:buildifier-find.patch",
+    ],
+)
+
 bazel_dep(name = "rules_shell", version = "0.4.1", dev_dependency = True)
+
+bazel_dep(name = "protovalidate", version = "1.0.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
 python.toolchain(
@@ -138,31 +148,31 @@ COMPILE_FLAGS = {
 }
 
 COMPILERS = {
-    "previous": {
-        "tars": {
-            "aarch64": {
-                "build_date": "2025-03-15",
-                "sha": "cdba86609d71cfc379bfce9fb5ce97389cc08320fb713c6abab8d698a53e3fa2",
-            },
-            "x86_64": {
-                "build_date": "2025-03-15",
-                "sha": "196ae29712c646f3ccc39edea880e8637025bd0aeae5892c48bfb1382fe127db",
-            },
-        },
-        "version": "19.1.7",
-    },
     "current": {
         "tars": {
             "aarch64": {
-                "build_date": "2025-07-22",
-                "sha": "ce0a8d7f4df980dd3aa0deacd390804f887d31065cd79b71827bba6cd4d2e2e8",
+                "build_date": "2025-11-14",
+                "sha": "f51afb38ca39cc93c6ed065a0c463d3587b975204d6028a63de33153caf3e104",
             },
             "x86_64": {
-                "build_date": "2025-07-22",
-                "sha": "c424df0195e1641b6226dbb380a849d2013975150af40932392361d9893005ac",
+                "build_date": "2025-11-14",
+                "sha": "616e3f50b1f03b61ec712f4f28fa67668d60ae3edccea8508065a3f49dbbb24a",
             },
         },
         "version": "20.1.8",
+    },
+    "next": {
+        "tars": {
+            "aarch64": {
+                "build_date": "2025-11-25",
+                "sha": "37257804087a26b0ede7c0349d3f44db7b7439e551fc6c753f7934ead654c1b8",
+            },
+            "x86_64": {
+                "build_date": "2025-11-25",
+                "sha": "b3aa9cb72c2e46bd1cc3f17f3772b37a424e54f796253961382163eab2f4a9c0",
+            },
+        },
+        "version": "21.1.6",
     },
 }
 
@@ -258,6 +268,7 @@ use_repo(
     "com_github_avast_retry_go",
     "com_github_aws_aws_sdk_go",
     "com_github_beevik_ntp",
+    "com_github_briandowns_spinner",
     "com_github_bufbuild_protocompile",
     "com_github_cespare_xxhash",
     "com_github_containerd_errdefs",
@@ -272,6 +283,7 @@ use_repo(
     "com_github_kballard_go_shellquote",
     "com_github_kr_pretty",
     "com_github_kr_text",
+    "com_github_ladicle_tabwriter",
     "com_github_lestrrat_go_jwx_v2",
     "com_github_linkedin_goavro_v2",
     "com_github_lithammer_go_jump_consistent_hash",
@@ -410,14 +422,21 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file(
-    name = "minio",
+    name = "minio_x86_64",
     executable = True,
     integrity = "sha256-zr1iiuhZtGcN6cBLDL9WAKSYFm2iAxrWNMmHII2JrpQ=",
     urls = ["https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.2025-04-03T14-56-28Z"],
 )
 
+http_file(
+    name = "minio_aarch64",
+    executable = True,
+    integrity = "sha256-Xs94kSmK6+SVko+E5urztZy33dtJnHrdjFAn6wuo8Ok=",
+    urls = ["https://dl.min.io/server/minio/release/linux-arm64/archive/minio.RELEASE.2025-04-03T14-56-28Z"],
+)
+
 http_archive(
-    name = "prometheus",
+    name = "prometheus_x86_64",
     add_prefix = "prom",
     build_file = "//bazel/thirdparty:prometheus.BUILD",
     integrity = "sha256-ouionAmxSyJ35hUeh/yO0YhYSGy/iTcmVtcfzWZrUdo=",
@@ -426,9 +445,35 @@ http_archive(
 )
 
 http_archive(
-    name = "grafana",
+    name = "prometheus_aarch64",
+    add_prefix = "prom",
+    build_file = "//bazel/thirdparty:prometheus.BUILD",
+    integrity = "sha256-ft4/PwVBub/SzMqc71evgFVPExuOeviQCJbG5J7S1O8=",
+    strip_prefix = "prometheus-3.7.1.linux-arm64",
+    urls = ["https://github.com/prometheus/prometheus/releases/download/v3.7.1/prometheus-3.7.1.linux-arm64.tar.gz"],
+)
+
+http_archive(
+    name = "grafana_x86_64",
     build_file = "//bazel/thirdparty:grafana.BUILD",
-    integrity = "sha256-L+f4mkpjbAHVS6BQnkLZnrirmH8tEeJcxcVeaAkBa/c=",
-    strip_prefix = "grafana-12.2.1",
-    urls = ["https://dl.grafana.com/grafana/release/12.2.1/grafana_12.2.1_18655849634_linux_amd64.tar.gz"],
+    integrity = "sha256-ddA7WsLcewCWJYaTVSJdc+WymGbvvZmUeb3SRCmmlds=",
+    strip_prefix = "grafana-12.3.1",
+    urls = ["https://dl.grafana.com/grafana/release/12.3.1/grafana_12.3.1_20271043721_linux_amd64.tar.gz"],
+)
+
+http_archive(
+    name = "grafana_aarch64",
+    build_file = "//bazel/thirdparty:grafana.BUILD",
+    integrity = "sha256-iJysZjSjZdrLxxLh5J6iIz1AuclY5hJm85lJU3zmPN0=",
+    strip_prefix = "grafana-12.3.1",
+    urls = ["https://dl.grafana.com/grafana/release/12.3.1/grafana_12.3.1_20271043721_linux_arm64.tar.gz"],
+)
+
+http_archive(
+    name = "omb",
+    add_prefix = "omb",
+    build_file = "//bazel/thirdparty:omb.BUILD",
+    sha256 = "9d1f651d98a624dcfb09c213a8b77732bd08e037d32922b06c06e6027841e8ee",
+    strip_prefix = "openmessaging-benchmark-0.0.1-SNAPSHOT",
+    urls = ["https://vectorized-public.s3.amazonaws.com/dependencies/omb/omb_minimal_3c624daad47f16ae7036b67142c384d3e59150bf.tar.gz"],
 )

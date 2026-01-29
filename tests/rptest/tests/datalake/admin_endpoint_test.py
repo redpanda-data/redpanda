@@ -16,7 +16,12 @@ from rptest.clients.admin import v2 as admin_v2
 from rptest.clients.rpk import RpkTool
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, SchemaRegistryConfig
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    SchemaRegistryConfig,
+    get_cloud_storage_type,
+)
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.redpanda_test import RedpandaTest
@@ -46,7 +51,7 @@ class DatalakeAdminEndpointTest(RedpandaTest):
 
     @cluster(num_nodes=6)
     @matrix(
-        cloud_storage_type=[CloudStorageType.S3],
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
         catalog_type=[CatalogType.REST_JDBC],
     )
     def test_get_coordinator_state(
@@ -120,6 +125,10 @@ class DatalakeAdminEndpointTest(RedpandaTest):
                 t2_state.lifecycle_state
                 == admin_v2.datalake_pb.LifecycleState.LIFECYCLE_STATE_LIVE
             )
+            assert t1_state.last_committed_snapshot_id is not None
+            assert t1_state.last_committed_snapshot_id > 0
+            assert t2_state.last_committed_snapshot_id is not None
+            assert t2_state.last_committed_snapshot_id > 0
 
             assert len(t1_state.partition_states) == 3
             assert len(t2_state.partition_states) == 2
@@ -147,7 +156,7 @@ class DatalakeAdminEndpointTest(RedpandaTest):
 
     @cluster(num_nodes=7)
     @matrix(
-        cloud_storage_type=[CloudStorageType.S3],
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
         catalog_type=[CatalogType.REST_JDBC],
     )
     def test_get_coordinator_state_pending(

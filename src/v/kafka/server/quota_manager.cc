@@ -166,7 +166,7 @@ quota_manager::quota_manager(
         _global_map = global_map_t{};
 
         _gc_timer.set_callback([this]() { gc(); });
-        _global_map_mutex = mutex{"quota_manager/global_map"};
+        _global_map_mutex = ssx::mutex{"quota_manager/global_map"};
     }
 }
 
@@ -314,6 +314,7 @@ ss::future<> quota_manager::do_update_client_quotas() {
 }
 
 ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
+  std::optional<std::string_view> user,
   std::optional<std::string_view> client_id,
   uint32_t mutations,
   clock::time_point now) {
@@ -325,6 +326,7 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
     }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::partition_mutation_quota,
+      .user = user,
       .client_id = client_id,
     };
     auto [key, value] = _translator.find_quota(ctx);
@@ -391,6 +393,7 @@ clock::duration quota_manager::cap_to_max_delay(
 
 // record a new observation and return <previous delay, new delay>
 ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
+  std::optional<std::string_view> user,
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
@@ -399,6 +402,7 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
     }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::produce_quota,
+      .user = user,
       .client_id = client_id,
     };
     auto [key, value] = _translator.find_quota(ctx);
@@ -443,6 +447,7 @@ ss::future<clock::duration> quota_manager::record_produce_tp_and_throttle(
 }
 
 ss::future<> quota_manager::record_fetch_tp(
+  std::optional<std::string_view> user,
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
@@ -451,6 +456,7 @@ ss::future<> quota_manager::record_fetch_tp(
     }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::fetch_quota,
+      .user = user,
       .client_id = client_id,
     };
     auto [key, value] = _translator.find_quota(ctx);
@@ -477,12 +483,15 @@ ss::future<> quota_manager::record_fetch_tp(
 }
 
 ss::future<clock::duration> quota_manager::throttle_fetch_tp(
-  std::optional<std::string_view> client_id, clock::time_point now) {
+  std::optional<std::string_view> user,
+  std::optional<std::string_view> client_id,
+  clock::time_point now) {
     if (_translator.is_empty()) {
         co_return 0ms;
     }
     auto ctx = client_quota_request_ctx{
       .q_type = client_quota_type::fetch_quota,
+      .user = user,
       .client_id = client_id,
     };
     auto [key, value] = _translator.find_quota(ctx);

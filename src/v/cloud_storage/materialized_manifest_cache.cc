@@ -38,9 +38,9 @@ template<>
 struct fmt::formatter<cloud_storage::manifest_cache_key>
   : public fmt::formatter<std::string_view> {
     auto format(const cloud_storage::manifest_cache_key& key, auto& ctx) const {
-        const auto& [ntp, o] = key;
+        const auto& [ntp, revision, o] = key;
         return formatter<std::string_view>::format(
-          fmt::format("[{}:{}]", ntp, o), ctx);
+          fmt::format("[{}:{}:{}]", ntp, revision, o), ctx);
     }
 };
 
@@ -169,7 +169,9 @@ void materialized_manifest_cache::put(
       manifest.get_ntp());
     const model::ntp& ntp = manifest.get_ntp();
     auto key = manifest_cache_key(
-      ntp, manifest.get_start_offset().value_or(model::offset{}));
+      ntp,
+      manifest.get_revision_id(),
+      manifest.get_start_offset().value_or(model::offset{}));
     vlog(ctxlog.debug, "Cache PUT key {}, {} units", key, s.count());
     if (!_eviction_rollback.empty()) {
         auto it = lookup_eviction_rollback_list(key);

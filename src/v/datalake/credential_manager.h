@@ -10,8 +10,8 @@
 #pragma once
 
 #include "base/outcome.h"
-#include "cloud_io/auth_refresh_bg_op.h"
 #include "cloud_roles/apply_credentials.h"
+#include "cloud_roles/auth_refresh_bg_op.h"
 #include "cloud_roles/types.h"
 
 #include <seastar/core/abort_source.hh>
@@ -52,7 +52,7 @@ private:
     ss::gate gate_;
 
     // Background operation for refreshing AWS credentials for Iceberg/Glue
-    std::optional<cloud_io::auth_refresh_bg_op> auth_refresh_bg_op_;
+    std::optional<cloud_roles::auth_refresh_bg_op> auth_refresh_bg_op_;
 
     // Shared credentials applier for Iceberg REST clients
     ss::lw_shared_ptr<cloud_roles::apply_credentials> apply_credentials_;

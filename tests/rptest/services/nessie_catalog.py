@@ -96,6 +96,26 @@ class NessieCatalog(CatalogService):
 
     def _make_env(self):
         env = dict()
+        # Disable OpenTelemetry AWS and GCP resource providers that attempt to contact
+        # cloud metadata services (AWS IMDS at 169.254.169.254, GCP metadata at
+        # metadata.google.internal). When running in Docker containers not on these
+        # clouds, these connections hang until timeout, causing slow startup.
+        # In case there are other resource providers to disable in the future, we
+        # can change it to
+        # env["OTEL_JAVA_ENABLED_RESOURCE_PROVIDERS"] = "non.existing.class.name"
+        # (at least one entry needs to be present for the setting to take effect).
+        env["OTEL_JAVA_DISABLED_RESOURCE_PROVIDERS"] = ",".join(
+            [
+                # AWS resource providers
+                "io.opentelemetry.contrib.aws.resource.Ec2ResourceProvider",
+                "io.opentelemetry.contrib.aws.resource.EcsResourceProvider",
+                "io.opentelemetry.contrib.aws.resource.EksResourceProvider",
+                "io.opentelemetry.contrib.aws.resource.BeanstalkResourceProvider",
+                "io.opentelemetry.contrib.aws.resource.LambdaResourceProvider",
+                # GCP resource provider
+                "io.opentelemetry.contrib.gcp.resource.GCPResourceProvider",
+            ]
+        )
         env["NESSIE_CATALOG_DEFAULT_WAREHOUSE"] = NessieCatalog.NESSIE_DEFAULT_WAREHOUSE
         env[
             f"NESSIE_CATALOG_WAREHOUSES_{NessieCatalog.NESSIE_DEFAULT_WAREHOUSE.upper()}_LOCATION"

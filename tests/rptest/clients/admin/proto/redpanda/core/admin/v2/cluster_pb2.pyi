@@ -21,7 +21,12 @@ import google.protobuf.descriptor
 import google.protobuf.internal.containers
 import google.protobuf.message
 from ...... import proto
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
@@ -45,7 +50,7 @@ class ListKafkaConnectionsRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['filter', b'filter', 'order_by', b'order_by', 'page_size', b'page_size']) -> None:
         ...
-global___ListKafkaConnectionsRequest = ListKafkaConnectionsRequest
+Global___ListKafkaConnectionsRequest: typing_extensions.TypeAlias = ListKafkaConnectionsRequest
 
 @typing.final
 class ListKafkaConnectionsResponse(google.protobuf.message.Message):
@@ -72,4 +77,4 @@ class ListKafkaConnectionsResponse(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['connections', b'connections', 'total_size', b'total_size']) -> None:
         ...
-global___ListKafkaConnectionsResponse = ListKafkaConnectionsResponse
+Global___ListKafkaConnectionsResponse: typing_extensions.TypeAlias = ListKafkaConnectionsResponse

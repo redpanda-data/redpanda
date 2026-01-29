@@ -241,7 +241,7 @@ std::ostream& operator<<(std::ostream& o, const partition_constraints& pc) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const allocation_request& req) {
-    fmt::print(o, "{{partion_constraints: {}}}", req.partitions);
+    fmt::print(o, "{{partition_constraints: {}}}", req.partitions);
     return o;
 }
 std::ostream&

@@ -11,14 +11,10 @@
 #include "pandaproxy/schema_registry/validation.h"
 
 #include "bytes/iobuf_parser.h"
-#include "cluster/partition_probe.h"
-#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "model/batch_compression.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
-#include "model/timeout_clock.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/json.h"
@@ -37,11 +33,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/exception.hh>
 
-#include <algorithm>
-#include <iterator>
 #include <optional>
-#include <stdexcept>
-#include <type_traits>
 
 namespace pandaproxy::schema_registry {
 
@@ -110,11 +102,11 @@ ss::future<std::optional<ss::sstring>> get_record_name(
         co_return "";
     }
 
-    auto schema_type = schema.type();
-    switch (schema_type) {
+    subject_schema sub_schema{subject("r"), std::move(schema)};
+    switch (sub_schema.type()) {
     case schema_type::avro: {
         auto s = co_await make_avro_schema_definition(
-          store, {subject("r"), {std::move(schema).raw(), schema_type}});
+          store, std::move(sub_schema));
         co_return s().root()->name().fullname();
     } break;
     case schema_type::protobuf: {
@@ -122,7 +114,7 @@ ss::future<std::optional<ss::sstring>> get_record_name(
             co_return std::nullopt;
         }
         auto s = co_await make_protobuf_schema_definition(
-          store, {subject("r"), {std::move(schema).raw(), schema_type}});
+          store, std::move(sub_schema));
         auto r = s.name(*offsets);
         if (!r) {
             co_return std::nullopt;
@@ -131,7 +123,7 @@ ss::future<std::optional<ss::sstring>> get_record_name(
     } break;
     case schema_type::json: {
         auto s = co_await make_json_schema_definition(
-          store, {subject("r"), {std::move(schema).raw(), schema_type}});
+          store, std::move(sub_schema));
         co_return s.title();
     } break;
     }
@@ -443,20 +435,13 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
     return std::nullopt;
 }
 
-ss::future<kafka::error_code> schema_id_validator::operator()(
-  const model::record_batch& batch, cluster::partition_probe* probe) {
+ss::future<kafka::error_code>
+schema_id_validator::operator()(const model::record_batch& batch) {
     using futurator = ss::futurize<kafka::error_code>;
-    return (*_impl)(batch)
-      .handle_exception([](std::exception_ptr e) {
-          vlog(srlog.warn, "Invalid record due to exception: {}", e);
-          return futurator::convert(kafka::error_code::invalid_record);
-      })
-      .then([probe](futurator::value_type res) {
-          if (res != kafka::error_code::none) {
-              probe->add_schema_id_validation_failed();
-          }
-          return res;
-      });
+    return (*_impl)(batch).handle_exception([](std::exception_ptr e) {
+        vlog(srlog.warn, "Invalid record due to exception: {}", e);
+        return futurator::convert(kafka::error_code::invalid_record);
+    });
 }
 
 } // namespace pandaproxy::schema_registry

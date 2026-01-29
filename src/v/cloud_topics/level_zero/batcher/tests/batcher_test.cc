@@ -227,7 +227,9 @@ TEST_CORO(batcher_test, many_write_requests) {
 
     const auto timeout = 1s;
     auto deadline = ss::manual_clock::now() + timeout;
-    std::vector<ss::future<result<chunked_vector<cloud_topics::extent_meta>>>>
+    std::vector<ss::future<std::expected<
+      chunked_vector<cloud_topics::extent_meta>,
+      std::error_code>>>
       futures;
     futures.push_back(pipeline.write_and_debounce(
       model::controller_ntp, min_epoch, std::move(reader1), deadline));
@@ -338,7 +340,7 @@ TEST_CORO(batcher_test, expired_write_request) {
     auto [pass_result, fail_result] = co_await ss::when_all_succeed(
       std::move(expect_pass_fut), std::move(expect_fail_fut));
 
-    ASSERT_TRUE_CORO(fail_result.has_error());
+    ASSERT_TRUE_CORO(!fail_result.has_value());
 
     ASSERT_TRUE_CORO(pass_result.has_value());
     auto placeholder_batches = std::move(pass_result.value());

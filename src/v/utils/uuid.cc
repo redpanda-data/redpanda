@@ -61,3 +61,6 @@ std::strong_ordering operator<=>(const uuid_t& u, const uuid_t& v) {
 uuid_t::operator ss::sstring() const { return fmt::format("{}", _uuid); }
 
 bool operator<(const uuid_t& l, const uuid_t& r) { return l.uuid() < r.uuid(); }
+
+bool uuid_t::is_nil() const noexcept { return _uuid.is_nil(); }
+uuid_t::operator bool() const noexcept { return !is_nil(); }

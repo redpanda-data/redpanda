@@ -33,6 +33,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <expected>
+
 static ss::logger e2e_test_log("e2e_test");
 using namespace cloud_topics;
 using namespace testing;
@@ -40,11 +42,17 @@ using namespace testing;
 class mock_api : public data_plane_api {
 public:
     MOCK_METHOD(
-      ss::future<result<chunked_vector<extent_meta>>>,
-      write_and_debounce,
+      (ss::future<std::expected<staged_write, std::error_code>>),
+      stage_write,
+      (chunked_vector<model::record_batch>),
+      (override));
+
+    MOCK_METHOD(
+      (ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>),
+      execute_write,
       (model::ntp,
        cluster_epoch,
-       chunked_vector<model::record_batch>,
+       staged_write,
        model::timeout_clock::time_point),
       (override));
 
@@ -54,20 +62,23 @@ public:
       (model::ntp ntp,
        size_t output_size_estimate,
        chunked_vector<extent_meta> metadata,
-       model::timeout_clock::time_point timeout),
+       model::timeout_clock::time_point timeout,
+       model::opt_abort_source_t),
       (override));
 
     MOCK_METHOD(
       void,
       cache_put,
-      (const model::ntp&, const model::record_batch&),
+      (const model::topic_id_partition&, const model::record_batch&),
       (override));
 
     MOCK_METHOD(
       std::optional<model::record_batch>,
       cache_get,
-      (const model::ntp&, model::offset o),
+      (const model::topic_id_partition&, model::offset o),
       (override));
+
+    MOCK_METHOD(size_t, materialize_max_bytes, (), (const, override));
 
     MOCK_METHOD(ss::future<>, start, (), (override));
 
@@ -84,7 +95,8 @@ auto make_extent_fut(model::offset o, cluster_epoch epoch) {
 
     chunked_vector<extent_meta> vec;
     vec.push_back(std::move(m));
-    return ss::make_ready_future<result<chunked_vector<extent_meta>>>(
+    return ss::make_ready_future<
+      std::expected<chunked_vector<extent_meta>, std::error_code>>(
       std::move(vec));
 }
 
@@ -124,27 +136,18 @@ TEST_F(frontend_fixture, test_replicate_epoch) {
     cloud_topics::frontend frontend(std::move(partition), _data_plane.get());
 
     EXPECT_CALL(*_data_plane, cache_put(_, _)).Times(2);
-    EXPECT_CALL(*_data_plane, write_and_debounce(_, _, _, _))
-      .WillOnce(Return(make_extent_fut(model::offset(0), cluster_epoch(0))))
-      .WillOnce(Return(make_extent_fut(model::offset(1), cluster_epoch(1))))
+    using stage_result = std::expected<staged_write, std::error_code>;
+    EXPECT_CALL(*_data_plane, stage_write(_))
+      .WillOnce(Return(ss::as_ready_future(stage_result{})))
+      .WillOnce(Return(ss::as_ready_future(stage_result{})))
+      .WillOnce(Return(ss::as_ready_future(stage_result{})));
+    EXPECT_CALL(*_data_plane, execute_write(_, _, _, _))
+      .WillOnce(Return(make_extent_fut(model::offset(0), cluster_epoch(1))))
+      .WillOnce(Return(make_extent_fut(model::offset(1), cluster_epoch(2))))
       .WillOnce(Return(make_extent_fut(model::offset(2), cluster_epoch(0))));
 
     {
-        // First batch with offset 0
-        auto batch = model::test::make_random_batch(model::offset{0}, false);
-        chunked_vector<model::record_batch> buf;
-        buf.push_back(std::move(batch));
-        auto res = frontend
-                     .replicate(
-                       std::move(buf),
-                       raft::replicate_options(
-                         raft::consistency_level::quorum_ack))
-                     .get();
-        ASSERT_TRUE(res.has_value());
-    }
-
-    {
-        // First batch with offset 1
+        // First batch with offset 0 (epoch 1)
         auto batch = model::test::make_random_batch(model::offset{1}, false);
         chunked_vector<model::record_batch> buf;
         buf.push_back(std::move(batch));
@@ -158,7 +161,21 @@ TEST_F(frontend_fixture, test_replicate_epoch) {
     }
 
     {
-        // First batch with offset 2 (breaks invariant)
+        // First batch with offset 1 (epoch 2)
+        auto batch = model::test::make_random_batch(model::offset{2}, false);
+        chunked_vector<model::record_batch> buf;
+        buf.push_back(std::move(batch));
+        auto res = frontend
+                     .replicate(
+                       std::move(buf),
+                       raft::replicate_options(
+                         raft::consistency_level::quorum_ack))
+                     .get();
+        ASSERT_TRUE(res.has_value());
+    }
+
+    {
+        // First batch with offset 2 (epoch 0, breaks invariant)
         auto batch = model::test::make_random_batch(model::offset{2}, false);
         chunked_vector<model::record_batch> buf;
         buf.push_back(std::move(batch));

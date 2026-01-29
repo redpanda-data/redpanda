@@ -136,11 +136,10 @@ kafka::leader_epoch cloud_topic_partition::leader_epoch() const {
     return kafka::leader_epoch(static_cast<int32_t>(term()));
 }
 
-ss::future<storage::translating_reader> cloud_topic_partition::make_reader(
-  kafka::log_reader_config cfg,
-  std::optional<model::timeout_clock::time_point> deadline) {
+ss::future<storage::translating_reader>
+cloud_topic_partition::make_reader(kafka::log_reader_config cfg) {
     auto config = kafka_to_cloud_topic_log_reader_config(cfg);
-    return _fe->make_reader(config, deadline);
+    return _fe->make_reader(config);
 }
 
 ss::future<std::vector<cluster::tx::tx_range>>
@@ -165,12 +164,6 @@ ss::future<result<model::offset>> cloud_topic_partition::replicate(
         co_return res.error();
     }
     co_return kafka::offset_cast(res.value());
-}
-
-ss::future<result<model::offset>> cloud_topic_partition::replicate(
-  model::record_batch batch, raft::replicate_options opts) {
-    return replicate(
-      chunked_vector<model::record_batch>::single(std::move(batch)), opts);
 }
 
 raft::replicate_stages cloud_topic_partition::replicate(

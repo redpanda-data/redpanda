@@ -9,6 +9,18 @@ redpanda_cc_rpc_library(
 )
 
 redpanda_cc_library(
+    name = "domain_uuid",
+    hdrs = [
+        "domain_uuid.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/utils:named_type",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
     name = "garbage_collector",
     srcs = [
         "garbage_collector.cc",
@@ -142,6 +154,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":metastore",
+        ":offset_interval_set",
         ":state",
         "//src/v/base",
         "//src/v/cloud_topics/level_one/common:object_id",
@@ -185,6 +198,7 @@ redpanda_cc_library(
     hdrs = [
         "state.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":offset_interval_set",
         "//src/v/base",
@@ -194,11 +208,29 @@ redpanda_cc_library(
         "//src/v/serde",
         "//src/v/serde:map",
         "//src/v/serde:named_type",
+        "//src/v/serde:optional",
         "//src/v/serde:set",
         "//src/v/serde:uuid",
         "//src/v/serde:vector",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "state_update_utils",
+    srcs = [
+        "state_update_utils.cc",
+    ],
+    hdrs = [
+        "state_update_utils.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":offset_interval_set",
+        ":state",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
     ],
 )
 
@@ -216,6 +248,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":state",
+        ":state_update_utils",
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
@@ -263,6 +296,23 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/ssx:work_queue",
         "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "extent_metadata_reader",
+    srcs = [
+        "extent_metadata_reader.cc",
+    ],
+    hdrs = [
+        "extent_metadata_reader.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":metastore",
+        ":retry",
+        "//src/v/model",
         "@seastar",
     ],
 )

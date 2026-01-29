@@ -43,100 +43,90 @@ produce_request produce_request::share() {
     return {std::move(shared), timeout};
 }
 
-} // namespace kafka::data::rpc
-
-auto fmt::formatter<kafka::data::rpc::produce_request>::format(
-  const kafka::data::rpc::produce_request& req, format_context& ctx) const
-  -> format_context::iterator {
+fmt::iterator kafka_topic_data::format_to(fmt::iterator it) const {
     return fmt::format_to(
-      ctx.out(),
+      it, "{{ tp: {}, batches_size: {} }}", tp, batches.size());
+}
+
+fmt::iterator produce_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
       "{{ topic_data: {}, timeout: {} }}",
-      fmt::join(req.topic_data, ", "),
-      req.timeout);
+      fmt::join(topic_data, ", "),
+      timeout);
 }
 
-auto fmt::formatter<kafka::data::rpc::kafka_topic_data>::format(
-  const kafka::data::rpc::kafka_topic_data& data, format_context& ctx) const
-  -> format_context::iterator {
-    return fmt::format_to(
-      ctx.out(),
-      "{{ tp: {}, batches_size: {} }}",
-      data.tp,
-      data.batches.size());
+fmt::iterator kafka_topic_data_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ tp: {}, err: {} }}", tp, err);
 }
 
-auto fmt::formatter<kafka::data::rpc::produce_reply>::format(
-  const kafka::data::rpc::produce_reply& reply, format_context& ctx) const
-  -> format_context::iterator {
-    return fmt::format_to(
-      ctx.out(), "{{ results: {} }}", fmt::join(reply.results, ", "));
+fmt::iterator produce_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ results: {} }}", fmt::join(results, ", "));
 }
 
-auto fmt::formatter<kafka::data::rpc::kafka_topic_data_result>::format(
-  const kafka::data::rpc::kafka_topic_data_result& result,
-  format_context& ctx) const -> format_context::iterator {
+fmt::iterator topic_partitions::format_to(fmt::iterator it) const {
     return fmt::format_to(
-      ctx.out(), "{{ errc: {}, tp: {} }}", result.err, result.tp);
-}
-
-auto fmt::formatter<kafka::data::rpc::topic_partitions>::format(
-  const kafka::data::rpc::topic_partitions& tp, format_context& ctx) const
-  -> format_context::iterator {
-    return fmt::format_to(
-      ctx.out(),
+      it,
       "{{ topic: {}, partitions: {} }}",
-      tp.topic,
-      fmt::join(tp.partitions, ", "));
+      topic,
+      fmt::join(partitions, ", "));
 }
 
-auto fmt::formatter<kafka::data::rpc::get_offsets_request>::format(
-  const kafka::data::rpc::get_offsets_request& req, format_context& ctx) const
-  -> format_context::iterator {
+fmt::iterator partition_offsets::format_to(fmt::iterator it) const {
     return fmt::format_to(
-      ctx.out(), "{{ topics: {} }}", fmt::join(req.topics, ", "));
-}
-
-auto fmt::formatter<kafka::data::rpc::partition_offsets>::format(
-  const kafka::data::rpc::partition_offsets& po, format_context& ctx) const
-  -> format_context::iterator {
-    return fmt::format_to(
-      ctx.out(),
+      it,
       "{{ high_watermark: {}, last_stable_offset: {} }}",
-      po.high_watermark,
-      po.last_stable_offset);
+      high_watermark,
+      last_stable_offset);
 }
 
-auto fmt::formatter<kafka::data::rpc::partition_offset_result>::format(
-  const kafka::data::rpc::partition_offset_result& result,
-  format_context& ctx) const -> format_context::iterator {
-    return fmt::format_to(
-      ctx.out(), "{{ err: {}, offsets: {} }}", result.err, result.offsets);
+fmt::iterator partition_offset_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ err: {}, offsets: {} }}", err, offsets);
 }
 
-auto fmt::formatter<kafka::data::rpc::get_offsets_reply>::format(
-  const kafka::data::rpc::get_offsets_reply& reply, format_context& ctx) const
-  -> format_context::iterator {
-    fmt::format_to(ctx.out(), "{{ partition_offsets: [");
+fmt::iterator get_offsets_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{ topics: {} }}", fmt::join(topics, ", "));
+}
+
+fmt::iterator get_offsets_reply::format_to(fmt::iterator it) const {
+    fmt::format_to(it, "{{ partition_offsets: [");
     bool first_topic = true;
-    for (const auto& [topic, partitions] : reply.partition_offsets) {
+    for (const auto& [topic, partitions] : partition_offsets) {
         if (!first_topic) {
-            fmt::format_to(ctx.out(), ", ");
+            fmt::format_to(it, ", ");
         }
         first_topic = false;
-        fmt::format_to(ctx.out(), "{{ topic: {}, partitions: [", topic);
+        fmt::format_to(it, "{{ topic: {}, partitions: [", topic);
         bool first_partition = true;
         for (const auto& [partition_id, result] : partitions) {
             if (!first_partition) {
-                fmt::format_to(ctx.out(), ", ");
+                fmt::format_to(it, ", ");
             }
             first_partition = false;
             fmt::format_to(
-              ctx.out(),
-              "{{ partition: {}, result: {} }}",
-              partition_id,
-              result);
+              it, "{{ partition: {}, result: {} }}", partition_id, result);
         }
-        fmt::format_to(ctx.out(), "] }}");
+        fmt::format_to(it, "] }}");
     }
-    return fmt::format_to(ctx.out(), "] }}");
+    return fmt::format_to(it, "] }}");
 }
+
+fmt::iterator consume_request::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{ tp: {}, start_offset: {}, max_offset: {}, min_bytes: {}, "
+      "max_bytes: {}, timeout: {} }}",
+      tp,
+      start_offset,
+      max_offset,
+      min_bytes,
+      max_bytes,
+      timeout);
+}
+
+fmt::iterator consume_reply::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "{{ tp: {}, err: {}, batches_size: {} }}", tp, err, batches.size());
+}
+
+} // namespace kafka::data::rpc

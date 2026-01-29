@@ -502,6 +502,7 @@ struct compact_op final : opfuzz::op {
           std::nullopt,
           model::offset::max(),
           model::offset::max(),
+          model::offset::max(),
           std::nullopt,
           std::nullopt,
           std::chrono::milliseconds{0},

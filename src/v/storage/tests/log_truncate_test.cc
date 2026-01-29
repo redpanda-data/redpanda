@@ -342,6 +342,7 @@ TEST_F(
         std::nullopt,
         model::offset::max(),
         model::offset::max(),
+        model::offset::max(),
         std::nullopt,
         std::nullopt,
         std::chrono::milliseconds{0},
@@ -516,6 +517,7 @@ TEST_F(storage_test_fixture, test_concurrent_prefix_truncate_and_gc) {
       std::nullopt,
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       std::chrono::milliseconds{0},
@@ -568,6 +570,7 @@ TEST_F(storage_test_fixture, test_concurrent_truncate_and_compaction) {
     compaction::compaction_config compaction_cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       as);
@@ -590,6 +593,7 @@ TEST_F(storage_test_fixture, test_concurrent_truncate_and_compaction) {
     housekeeping_config housekeeping_cfg(
       ts,
       std::nullopt,
+      model::offset::max(),
       model::offset::max(),
       model::offset::max(),
       std::nullopt,

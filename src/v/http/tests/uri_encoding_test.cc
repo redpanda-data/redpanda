@@ -25,9 +25,17 @@ TEST(uri_encoding, encode_special_chars) {
       "40%5B%5Dafgz0119");
 
     ASSERT_EQ(
+      http::uri_decode(http::uri_encode(input, http::uri_encode_slash::yes)),
+      input);
+
+    ASSERT_EQ(
       http::uri_encode(input, http::uri_encode_slash::no),
       "afgz0119%21%23%24%26%27%28%29%2A%2B%2C/"
       "%3A%3B%3D%3F%40%5B%5Dafgz0119");
+
+    ASSERT_EQ(
+      http::uri_decode(http::uri_encode(input, http::uri_encode_slash::no)),
+      input);
 }
 
 TEST(uri_encoding, form_encoded_data) {
@@ -49,4 +57,12 @@ TEST(uri_encoding, form_encoded_data) {
         "afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%"
         "40%5B%5Dafgz0119=afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%"
         "3B%3D%3F%40%5B%5Dafgz0119&foo=bar"));
+}
+
+TEST(uri_decoding, invalid_hex) {
+    constexpr auto input = "afgz0119%2G"; // invalid hex '2G'
+    ASSERT_EQ(http::uri_decode(input), "afgz0119%2G");
+
+    constexpr auto short_input = "afgz0119%2"; // incomplete hex '2'
+    ASSERT_EQ(http::uri_decode(short_input), "afgz0119%2");
 }

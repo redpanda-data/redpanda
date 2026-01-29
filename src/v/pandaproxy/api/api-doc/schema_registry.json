@@ -6,6 +6,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject to get the config for. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context. Use :.<context>: for context-level config.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -48,6 +49,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject to set the config for. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context. Use :.<context>: for context-level config.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -86,6 +88,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject to delete the config for. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context. Use :.<context>: for context-level config.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -264,7 +267,7 @@
         "parameters": [
           {
             "name": "subject",
-            "description": "The subject to get the mode for.",
+            "description": "The subject to get the mode for. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context. Use :.<context>: for context-level mode.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -314,7 +317,7 @@
         "parameters": [
           {
             "name": "subject",
-            "description": "The subject to set the mode for.",
+            "description": "The subject to set the mode for. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context. Use :.<context>: for context-level mode.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -372,7 +375,7 @@
         "parameters": [
           {
             "name": "subject",
-            "description": "The subject to delete the mode for.",
+            "description": "The subject to delete the mode for. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context. Use :.<context>: for context-level mode.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -462,7 +465,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/schema_def"
+              "$ref": "#/definitions/schema_def_response"
             }
           },
           "404": {
@@ -638,6 +641,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -665,7 +669,7 @@
             "name": "schema_def",
             "in": "body",
             "schema": {
-              "$ref": "#/definitions/schema_def"
+              "$ref": "#/definitions/schema_def_request"
             }
           }
         ],
@@ -678,7 +682,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/stored_schema"
+              "$ref": "#/definitions/stored_schema_response"
             }
           },
           "404": {
@@ -719,6 +723,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -767,6 +772,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -787,10 +793,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "integer"
-              }
+              "$ref": "#/definitions/post_subject_versions_response"
             }
           },
           "404": {
@@ -818,6 +821,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -829,10 +833,10 @@
             "type": "boolean"
           },
           {
-            "name": "schema_def",
+            "name": "request",
             "in": "body",
             "schema": {
-              "$ref": "#/definitions/stored_schema"
+              "$ref": "#/definitions/stored_schema_request"
             }
           }
         ],
@@ -845,12 +849,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "integer"
-                }
-              }
+              "$ref": "#/definitions/post_subject_versions_response"
             }
           },
           "409": {
@@ -881,6 +880,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -888,6 +888,7 @@
           {
             "name": "version",
             "in": "path",
+            "description": "The schema version to retrieve. Use an integer for a specific version or 'latest' for the most recent version.",
             "required": true,
             "type": "string"
           },
@@ -914,7 +915,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/stored_schema"
+              "$ref": "#/definitions/get_subject_versions_version_response"
             }
           },
           "404": {
@@ -949,6 +950,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -956,6 +958,7 @@
           {
             "name": "version",
             "in": "path",
+            "description": "The schema version to delete. Use an integer for a specific version or 'latest' for the most recent version.",
             "required": true,
             "type": "string"
           },
@@ -1007,6 +1010,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -1014,6 +1018,7 @@
           {
             "name": "version",
             "in": "path",
+            "description": "The schema version to retrieve. Use an integer for a specific version or 'latest' for the most recent version.",
             "required": true,
             "type": "string"
           },
@@ -1077,6 +1082,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -1084,6 +1090,7 @@
           {
             "name": "version",
             "in": "path",
+            "description": "The schema version to check. Use an integer for a specific version or 'latest' for the most recent version.",
             "required": true,
             "type": "string"
           }
@@ -1132,6 +1139,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -1139,6 +1147,7 @@
           {
             "name": "version",
             "in": "path",
+            "description": "The schema version to check. Use an integer for a specific version or 'latest' for the most recent version.",
             "required": true,
             "type": "string"
           }
@@ -1191,6 +1200,7 @@
         "parameters": [
           {
             "name": "subject",
+            "description": "The subject name. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context.",
             "in": "path",
             "required": true,
             "type": "string"
@@ -1198,14 +1208,15 @@
           {
             "name": "version",
             "in": "path",
+            "description": "The schema version to check compatibility against. Use an integer for a specific version or 'latest' for the most recent version.",
             "required": true,
-            "type": "integer"
+            "type": "string"
           },
           {
             "name": "schema_def",
             "in": "body",
             "schema": {
-              "$ref": "#/definitions/schema_def"
+              "$ref": "#/definitions/schema_def_request"
             }
           },
           {

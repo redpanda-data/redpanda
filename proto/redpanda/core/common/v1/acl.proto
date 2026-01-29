@@ -42,6 +42,7 @@ enum ACLResource {
 }
 // The ACL pattern type
 enum ACLPattern {
+    option allow_alias = true;
     ACL_PATTERN_UNSPECIFIED = 0;
     // Wildcard to match any pattern
     ACL_PATTERN_ANY = 1;
@@ -49,6 +50,8 @@ enum ACLPattern {
     ACL_PATTERN_LITERAL = 2;
     // Match a prefix
     ACL_PATTERN_PREFIXED = 3;
+    // Match a prefix
+    ACL_PATTERN_PREFIX = 3;
     // Match serves as a catch-all for all the names of a topic
     // the principal is authorized to access
     ACL_PATTERN_MATCH = 4;

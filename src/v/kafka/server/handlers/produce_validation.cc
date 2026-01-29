@@ -34,7 +34,8 @@ std::optional<error_code_and_msg> validate_timestamp(
   model::timestamp_type timestamp_type,
   std::chrono::milliseconds message_timestamp_before_max_ms,
   std::chrono::milliseconds message_timestamp_after_max_ms,
-  kafka::kafka_probe& probe) {
+  kafka::kafka_probe& probe,
+  const model::ntp& ntp) {
     if (timestamp_type == model::timestamp_type::append_time) {
         // These validations are skipped for `APPEND_TIME`.
         // https://kafka.apache.org/documentation/#brokerconfigs_log.message.timestamp.after.max.ms
@@ -49,9 +50,10 @@ std::optional<error_code_and_msg> validate_timestamp(
     if (is_invalid) {
         thread_local static ss::logger::rate_limit rate(validate_rate_interval);
         auto msg = ssx::sformat(
-          "Timestamp {} of message with offset {} is out of range. The "
-          "timestamp should be within [{}, {}] of the broker time.",
+          "Timestamp {} of message for partition {} with offset {} is out of "
+          "range. The timestamp should be within [{}, {}] of the broker time.",
           timestamp,
+          ntp,
           offset,
           message_timestamp_before_max_ms,
           message_timestamp_after_max_ms);
@@ -78,7 +80,8 @@ std::optional<error_code_and_msg> validate_batch_timestamps(
   model::timestamp_type timestamp_type,
   std::chrono::milliseconds message_timestamp_before_max_ms,
   std::chrono::milliseconds message_timestamp_after_max_ms,
-  kafka::kafka_probe& probe) {
+  kafka::kafka_probe& probe,
+  const model::ntp& ntp) {
     if (timestamp_type == model::timestamp_type::append_time) {
         // These validations are skipped for `APPEND_TIME`.
         // https://kafka.apache.org/documentation/#brokerconfigs_log.message.timestamp.after.max.ms
@@ -97,7 +100,8 @@ std::optional<error_code_and_msg> validate_batch_timestamps(
       timestamp_type,
       message_timestamp_before_max_ms,
       message_timestamp_after_max_ms,
-      probe);
+      probe,
+      ntp);
 
     if (res.has_value()) {
         return res;
@@ -111,7 +115,8 @@ std::optional<error_code_and_msg> validate_batch_timestamps(
       timestamp_type,
       message_timestamp_before_max_ms,
       message_timestamp_after_max_ms,
-      probe);
+      probe,
+      ntp);
 
     return res;
 }
@@ -197,7 +202,8 @@ validate_records_and_compute_max_timestamp(
   model::timestamp_type timestamp_type,
   std::chrono::milliseconds message_timestamp_before_max_ms,
   std::chrono::milliseconds message_timestamp_after_max_ms,
-  kafka::kafka_probe& probe) {
+  kafka::kafka_probe& probe,
+  const model::ntp& ntp) {
     std::optional<error_code_and_msg> res;
     int64_t max_timestamp = -1;
     auto iterable_res = iterate_over_records(
@@ -212,7 +218,8 @@ validate_records_and_compute_max_timestamp(
             timestamp_type,
             message_timestamp_before_max_ms,
             message_timestamp_after_max_ms,
-            probe);
+            probe,
+            ntp);
           max_timestamp = std::max(timestamp(), max_timestamp);
 
           return res.has_value() ? ss::stop_iteration::yes
@@ -269,7 +276,9 @@ std::optional<error_code_and_msg> validate_batch(
   model::timestamp_type timestamp_type,
   std::chrono::milliseconds message_timestamp_before_max_ms,
   std::chrono::milliseconds message_timestamp_after_max_ms,
-  kafka::kafka_probe& probe) {
+  kafka::kafka_probe& probe,
+  const model::ntp& ntp,
+  std::optional<std::string_view> client_id) {
     std::optional<error_code_and_msg> res{std::nullopt};
     const auto broker_time = model::timestamp::now();
     const auto has_iterable_batch = iterable_batch_ref.has_value();
@@ -301,7 +310,8 @@ std::optional<error_code_and_msg> validate_batch(
           timestamp_type,
           message_timestamp_before_max_ms,
           message_timestamp_after_max_ms,
-          probe);
+          probe,
+          ntp);
 
         if (res.has_value()) {
             return res;
@@ -315,10 +325,12 @@ std::optional<error_code_and_msg> validate_batch(
             klog.log(
               ss::log_level::warn,
               rate,
-              "Produced batch has max_timestamp left unset ({{-1}}) by "
-              "client. Accepting batch since '{}' is set to '{}'. It is "
-              "strongly recommended that you update your client to set the "
-              "max_timestamp when producing: {}.",
+              "Produced batch for partition {} has max_timestamp left unset "
+              "({{-1}}) by client (client_id: {}). Accepting batch since '{}' "
+              "is set to '{}'. It is strongly recommended that you update your "
+              "client to set the max_timestamp when producing: {}.",
+              ntp,
+              client_id,
               config::shard_local_cfg().kafka_produce_batch_validation.name(),
               validation_mode,
               batch.header());
@@ -343,10 +355,13 @@ std::optional<error_code_and_msg> validate_batch(
             klog.log(
               ss::log_level::warn,
               rate,
-              "Produced batch has max_timestamp left unset ({{-1}}) by "
-              "client. Decompressing batch and setting max_timestamp manually "
-              "since '{}' to set to '{}'. It is strongly recommended that you "
-              "update your client to set the max_timestamp when producing: {}.",
+              "Produced batch for partition {} has max_timestamp left unset "
+              "({{-1}}) by client (client_id: {}). Decompressing batch and "
+              "setting max_timestamp manually since '{}' is set to '{}'. It is "
+              "strongly recommended that you update your client to set the "
+              "max_timestamp when producing: {}.",
+              ntp,
+              client_id,
               config::shard_local_cfg().kafka_produce_batch_validation.name(),
               validation_mode,
               batch.header());
@@ -362,7 +377,8 @@ std::optional<error_code_and_msg> validate_batch(
               timestamp_type,
               message_timestamp_before_max_ms,
               message_timestamp_after_max_ms,
-              probe);
+              probe,
+              ntp);
             if (!max_ts_res.has_value()) {
                 return max_ts_res.error();
             } else {
@@ -382,7 +398,8 @@ std::optional<error_code_and_msg> validate_batch(
               timestamp_type,
               message_timestamp_before_max_ms,
               message_timestamp_after_max_ms,
-              probe);
+              probe,
+              ntp);
         }
 
         if (res.has_value()) {
@@ -413,7 +430,8 @@ std::optional<error_code_and_msg> validate_batch(
           timestamp_type,
           message_timestamp_before_max_ms,
           message_timestamp_after_max_ms,
-          probe);
+          probe,
+          ntp);
 
         if (!max_ts_res.has_value()) {
             return max_ts_res.error();
@@ -432,7 +450,8 @@ std::optional<error_code_and_msg> validate_batch(
 
 } // namespace
 
-std::optional<error_code_and_msg> validate_batch(const validation_args& args) {
+ss::future<std::optional<error_code_and_msg>>
+validate_batch(const validation_args& args) {
     const auto& validation_mode
       = config::shard_local_cfg().kafka_produce_batch_validation();
 
@@ -444,21 +463,31 @@ std::optional<error_code_and_msg> validate_batch(const validation_args& args) {
 
     if (batch.compressed()) {
         if (should_decompress(batch, validation_mode)) {
-            maybe_decompressed_batch = model::decompress_batch_sync(batch);
+            try {
+                maybe_decompressed_batch = co_await model::decompress_batch(
+                  batch);
+            } catch (...) {
+                co_return error_code_and_msg{
+                  .err = error_code::corrupt_message,
+                  .msg = "unable to decompress batch",
+                };
+            }
             maybe_decompressed_batch_ref = maybe_decompressed_batch.value();
         }
     } else {
         maybe_decompressed_batch_ref = batch;
     }
 
-    return validate_batch(
+    co_return validate_batch(
       batch,
       maybe_decompressed_batch_ref,
       validation_mode,
       args.timestamp_type,
       args.message_timestamp_before_max_ms,
       args.message_timestamp_after_max_ms,
-      args.probe);
+      args.probe,
+      args.ntp,
+      args.client_id);
 }
 
 } // namespace kafka

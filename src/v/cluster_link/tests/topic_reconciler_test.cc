@@ -87,19 +87,21 @@ public:
         auto id = model::id_t(_next_link_id++);
         return ss::do_with(
           id, std::move(md), [this](model::id_t& id, model::metadata& md) {
-              return _table.invoke_on_all(
-                [id, &md](cluster::cluster_link::table& t) {
-                    return t
-                      .apply_update(
-                        cluster::cluster_link::testing::create_upsert_command(
-                          ::model::offset{id()}, md.copy()))
-                      .then([](std::error_code ec) {
-                          vassert(
-                            ec.value() == 0,
-                            "failed to upsert link: {}",
-                            ec.message());
-                      });
-                });
+              return _table.invoke_on_all([id, &md](
+                                            cluster::cluster_link::table& t) {
+                  return md.copy().then([id, &t](model::metadata md) {
+                      return t
+                        .apply_update(
+                          cluster::cluster_link::testing::create_upsert_command(
+                            ::model::offset{id()}, std::move(md)))
+                        .then([](std::error_code ec) {
+                            vassert(
+                              ec.value() == 0,
+                              "failed to upsert link: {}",
+                              ec.message());
+                        });
+                  });
+              });
           });
     }
 
@@ -264,7 +266,7 @@ TEST_F_CORO(topic_reconciler_test, test_topic_failure) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(
       10s, [this, topic = ::model::topic_namespace_view{topic}] {
           auto link = link_registry()->find_link_by_name(default_link_name);
-          const auto& mirror_topics = link->get().state.mirror_topics;
+          const auto& mirror_topics = link->state.mirror_topics;
           return mirror_topics.contains(topic.tp)
                  && mirror_topics.at(topic.tp).status
                       == model::mirror_topic_status::failed;

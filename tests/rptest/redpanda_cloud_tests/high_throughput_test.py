@@ -787,14 +787,14 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
             # Stop a node, wait for enough time for movement to occur, then
             # restart.
-            self.stage_stop_wait_start(
+            self.stage_stop_wait_start(  # pyright: ignore[reportUnreachable]
                 forced_stop=False, downtime=self.unavailable_timeout
             )
 
             # Block traffic to/from one node.
             self.stage_block_node_traffic()
 
-        self.redpanda.assert_cluster_is_reusable()
+        self.redpanda.assert_cluster_is_reusable()  # pyright: ignore[reportUnreachable]
 
     NOS3_LOG_ALLOW_LIST = [
         re.compile(

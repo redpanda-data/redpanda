@@ -53,6 +53,7 @@ FIXTURE_TEST(test_tx_compaction_combinations, rm_stm_test_fixture) {
     scoped_config cfg;
     cfg.get("log_disable_housekeeping_for_tests").set_value(true);
     cfg.get("log_segment_ms_min").set_value(1ms);
+    cfg.get("log_compaction_tx_batch_removal_enabled").set_value(true);
     for (auto num_tx : {10, 20, 30}) {
         for (auto num_rolls : {0, 1, 2, 3, 5}) {
             for (auto type :

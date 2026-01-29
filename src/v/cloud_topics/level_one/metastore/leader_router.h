@@ -89,6 +89,12 @@ public:
     ss::future<rpc::remove_topics_reply>
       remove_topics(rpc::remove_topics_request, local_only = local_only::no);
 
+    ss::future<rpc::get_compaction_infos_reply> get_compaction_infos(
+      rpc::get_compaction_infos_request, local_only = local_only::no);
+
+    ss::future<rpc::get_extent_metadata_reply> get_extent_metadata(
+      rpc::get_extent_metadata_request, local_only = local_only::no);
+
     std::optional<model::partition_id>
     metastore_partition(const model::topic_id_partition&) const;
 
@@ -171,6 +177,16 @@ private:
 
     ss::future<rpc::remove_topics_reply> remove_topics_locally(
       rpc::remove_topics_request,
+      const model::ntp& metastore_ntp,
+      ss::shard_id);
+
+    ss::future<rpc::get_compaction_infos_reply> get_compaction_infos_locally(
+      rpc::get_compaction_infos_request,
+      const model::ntp& metastore_ntp,
+      ss::shard_id);
+
+    ss::future<rpc::get_extent_metadata_reply> get_extent_metadata_locally(
+      rpc::get_extent_metadata_request,
       const model::ntp& metastore_ntp,
       ss::shard_id);
 

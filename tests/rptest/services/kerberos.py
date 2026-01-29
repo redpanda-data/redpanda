@@ -129,7 +129,7 @@ def render_local_kadmin_command(command):
     return LOCAL_KADMIN_TMPL.format(command=command)
 
 
-def render_add_principal_command(principal: str, password: str = None):
+def render_add_principal_command(principal: str, password: str | None = None):
     if password is None:
         keytype = "-randkey"
     else:

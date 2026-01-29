@@ -107,7 +107,7 @@ class SaramaTest(RedpandaTest):
             storage = self.redpanda.storage()
             return len(list(storage.partitions("kafka", self.topic))) == 3
 
-        # Must wait for the paritions to materialize or else
+        # Must wait for the partitions to materialize or else
         # kaf may try to produce during leadership election.
         # This results in a skipped record since kaf doesn't auto-retry.
         wait_until(

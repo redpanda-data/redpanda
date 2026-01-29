@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/ioarray.h"
 #include "bytes/iobuf.h"
 #include "utils/object_pool.h"
 
@@ -34,6 +35,7 @@ public:
 
     ss::future<iobuf> compress(iobuf);
     ss::future<iobuf> uncompress(iobuf);
+    ss::future<ioarray> uncompress(ioarray);
 
     size_t decompression_size() const;
 

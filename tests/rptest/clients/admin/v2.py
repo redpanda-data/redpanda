@@ -1,3 +1,4 @@
+import logging
 import random
 from typing import Literal, Protocol, final, Any
 
@@ -11,6 +12,8 @@ from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
     cluster_pb2,
     cluster_pb2_connect,
     kafka_connections_pb2,
+    security_pb2,
+    security_pb2_connect,
     shadow_link_pb2,
     shadow_link_pb2_connect,
 )
@@ -38,11 +41,15 @@ from rptest.clients.admin.proto.redpanda.core.common.v1 import ntp_pb2
 class RedpandaServiceProto(Protocol):
     def started_nodes(self) -> list[ClusterNode]: ...
 
+    @property
+    def logger(self) -> logging.Logger: ...
+
 
 # Re-export some protobufs for convenience
 broker_pb = broker_pb2
 cluster_pb = cluster_pb2
 datalake_pb = datalake_pb2
+security_pb2 = security_pb2
 shadow_link_pb = shadow_link_pb2
 shadow_link_internal_pb = shadow_link_internal_pb2
 debug_pb = debug_pb2
@@ -54,8 +61,11 @@ ntp_pb = ntp_pb2
 
 # A hacky workaround for https://github.com/connectrpc/connect-python/issues/37
 class HeaderInjectingClient:
-    def __init__(self, client, headers_to_inject: dict[str, str]):
+    def __init__(
+        self, client, logger: logging.Logger, headers_to_inject: dict[str, str]
+    ):
         self.client = client
+        self.logger = logger
         self.headers_to_inject = headers_to_inject
 
     def call_unary(
@@ -66,6 +76,7 @@ class HeaderInjectingClient:
         extra_headers: dict[str, str] | None = None,
         timeout_seconds: float | None = None,
     ):
+        self.logger.debug(f"making admin RPC {url}")
         if extra_headers is None:
             extra_headers = self.headers_to_inject
         else:
@@ -101,6 +112,7 @@ class Admin:
     def _make_service(self, service_clazz, node: ClusterNode | None = None):
         if not node:
             node = random.choice(self._rp.started_nodes())
+            assert node, "must have at least one started node"
         client = service_clazz(
             base_url=f"http://{node.account.hostname}:9644",
             protocol=ConnectProtocol.CONNECT_PROTOBUF
@@ -108,7 +120,7 @@ class Admin:
             else ConnectProtocol.CONNECT_JSON,
         )
         client._connect_client = HeaderInjectingClient(
-            client._connect_client, self._headers.copy()
+            client._connect_client, self._rp.logger, self._headers.copy()
         )
         return client
 
@@ -123,6 +135,9 @@ class Admin:
 
     def debug(self, **kwargs: Any) -> debug_pb2_connect.DebugServiceClient:
         return self._make_service(debug_pb2_connect.DebugServiceClient, **kwargs)
+
+    def security(self, **kwargs: Any) -> security_pb2_connect.SecurityServiceClient:
+        return self._make_service(security_pb2_connect.SecurityServiceClient, **kwargs)
 
     def shadow_link(
         self, **kwargs: Any

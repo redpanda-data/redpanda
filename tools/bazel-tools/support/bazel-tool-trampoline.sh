@@ -30,6 +30,15 @@ if [[ -z ${BAZEL_TOOL_TRAMPOLINE_TARGET-} ]]; then
   exit 1
 fi
 
+if [[ $BAZEL_TOOL_TRAMPOLINE_TARGET == *clang-tidy ]]; then
+  if [[ -z ${BUILD_WORKSPACE_DIRECTORY-} ]]; then
+    export BAZEL_BIN=$(bazel info bazel-bin)
+  else
+    export BAZEL_BIN="${BUILD_WORKSPACE_DIRECTORY}/bazel-bin"
+  fi
+  export LOADS=" -load ${BAZEL_BIN}/bazel/clang_tidy/plugins/plugins.so"
+fi
+
 export BAZEL_TOOL_TRAMPOLINE_CWD=$PWD
 
 # switch to the directory containing this script so that bazel has the right
@@ -51,4 +60,6 @@ exec bazel run "$BAZEL_TOOL_TRAMPOLINE_TARGET" \
   --ui_event_filters=,+error,+fail \
   --show_result=0 \
   --logging=0 \
-  -- "$@"
+  -- \
+  ${LOADS-} \
+  "$@"

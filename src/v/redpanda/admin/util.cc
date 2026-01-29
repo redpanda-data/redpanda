@@ -26,13 +26,12 @@ void apply_validator(
 }
 
 bool get_boolean_query_param(
-  const ss::http::request& req, std::string_view name) {
-    auto key = ss::sstring(name);
-    if (!req.query_parameters.contains(key)) {
+  const ss::http::request& req, std::string_view key) {
+    if (!req.has_query_param(key)) {
         return false;
     }
 
-    const ss::sstring& str_param = req.query_parameters.at(key);
+    const ss::sstring& str_param = req.get_query_param(key);
     return ss::internal::case_insensitive_cmp()(str_param, "true")
            || str_param == "1";
 }

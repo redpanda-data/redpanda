@@ -21,8 +21,17 @@ constexpr model::cloud_credentials_source config_file{
 std::unique_ptr<scoped_remote> scoped_remote::create(
   size_t pool_size, cloud_storage_clients::s3_configuration config) {
     auto ret = std::unique_ptr<scoped_remote>(new scoped_remote);
+    ret->upstreams.start(config).get();
     auto sharded_config = ss::sharded_parameter([&config] { return config; });
-    ret->pool.start(pool_size, config).get();
+    ret->pool
+      .start(
+        ss::sharded_parameter([&] { return std::ref(ret->upstreams.local()); }),
+        pool_size,
+        config)
+      .get();
+    ret->pool
+      .invoke_on_all(&cloud_storage_clients::client_pool::start, std::nullopt)
+      .get();
     ret->remote
       .start(
         std::ref(ret->pool),
@@ -53,6 +62,7 @@ scoped_remote::~scoped_remote() {
     request_stop();
     remote.stop().get();
     pool.stop().get();
+    upstreams.stop().get();
 }
 
 } // namespace cloud_io

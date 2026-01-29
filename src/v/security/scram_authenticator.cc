@@ -44,6 +44,7 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
         case principal_type::ephemeral_user:
             return audit::user::type::system;
         case principal_type::role:
+        case principal_type::group:
             return audit::user::type::other;
         }
     };

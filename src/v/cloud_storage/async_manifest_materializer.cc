@@ -61,7 +61,11 @@ ss::future<
   result<async_manifest_materializer::materialized_manifest_ptr, error_outcome>>
 async_manifest_materializer::materialize_manifest(const segment_meta& meta) {
     auto res = _manifest_cache->get(
-      std::make_tuple(_stm_manifest->get_ntp(), meta.base_offset), _ctxlog);
+      std::make_tuple(
+        _stm_manifest->get_ntp(),
+        _stm_manifest->get_revision_id(),
+        meta.base_offset),
+      _ctxlog);
     if (res) {
         return ss::make_ready_future<
           result<materialized_manifest_ptr, error_outcome>>(std::move(res));
@@ -110,6 +114,7 @@ ss::future<> async_manifest_materializer::run_bg_loop() {
                 if (!_manifest_cache->contains(
                       std::make_tuple(
                         _stm_manifest->get_ntp(),
+                        _stm_manifest->get_revision_id(),
                         front.search_vec.base_offset))) {
                     // Manifest is not cached and has to be hydrated and/or
                     // materialized.
@@ -185,7 +190,9 @@ ss::future<> async_manifest_materializer::run_bg_loop() {
                 }
                 auto cached = _manifest_cache->get(
                   std::make_tuple(
-                    _stm_manifest->get_ntp(), front.search_vec.base_offset),
+                    _stm_manifest->get_ntp(),
+                    _stm_manifest->get_revision_id(),
+                    front.search_vec.base_offset),
                   _ctxlog);
                 front.promise.set_value(cached);
                 vlog(

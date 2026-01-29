@@ -52,6 +52,10 @@ public:
         // group). Ecosystem libraries tend to default between 256Kib-1MiB
         static constexpr int64_t default_page_size = 512_KiB;
         int64_t page_buffer_size = default_page_size;
+
+        // Row groups are flushed to disk internally if they exceed this size.
+        static constexpr int64_t default_row_group_size = 128_MiB;
+        int64_t row_group_size = default_row_group_size;
     };
 
     // Create a new parquet file writer using the given options that

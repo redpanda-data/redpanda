@@ -39,7 +39,7 @@ def create_user_and_wait(redpanda, admin: Admin, creds: SaslCredentials):
 
 
 # A user account who is not the default superuser
-ALICE = SaslCredentials("alice", "itsMeH0nest", "SCRAM-SHA-256")
+ALICE = SaslCredentials("alice", "itsMeH0nest000", "SCRAM-SHA-256")
 
 
 class AdminApiAuthTest(RedpandaTest):

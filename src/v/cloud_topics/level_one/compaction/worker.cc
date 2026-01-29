@@ -15,9 +15,12 @@
 #include "cloud_topics/level_one/compaction/sink.h"
 #include "cloud_topics/level_one/compaction/source.h"
 #include "cloud_topics/level_one/compaction/worker_manager.h"
+#include "cluster/metadata_cache.h"
 #include "compaction/reducer.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
+#include "resource_mgmt/memory_groups.h"
 #include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
@@ -28,19 +31,26 @@ compaction_worker::compaction_worker(
   worker_manager* worker_manager,
   io* io,
   metastore* metastore,
-  compaction_committer* committer)
+  compaction_committer* committer,
+  cluster::metadata_cache* metadata_cache)
   : _worker_update_queue([](const std::exception_ptr& ex) {
       vlog(
         compaction_log.error,
         "Unexpected compaction worker update queue error: {}",
         ex);
   })
+  , _poll_interval(
+      config::shard_local_cfg().cloud_topics_compaction_interval_ms.bind())
   , _worker_manager(worker_manager)
   , _io(io)
   , _metastore(metastore)
-  , _committer(committer) {}
+  , _committer(committer)
+  , _metadata_cache(metadata_cache) {
+    _poll_interval.watch([this]() { _worker_cv.signal(); });
+}
 
 ss::future<> compaction_worker::start() {
+    _probe.setup_metrics();
     start_work_loop();
     co_return;
 }
@@ -48,14 +58,19 @@ ss::future<> compaction_worker::start() {
 ss::future<> compaction_worker::stop() {
     terminate_current_job();
     _worker_state = worker_state::stopped;
-    co_await _worker_update_queue.shutdown();
-
     _as.request_abort();
     _worker_cv.broken();
+
+    co_await _worker_update_queue.shutdown();
 
     auto close_fut = _gate.close();
 
     co_await clear_work_fut();
+
+    if (_map) {
+        co_await _map->initialize(0);
+        _map.reset();
+    }
 
     co_await std::move(close_fut);
 }
@@ -69,13 +84,17 @@ void compaction_worker::start_work_loop() {
 }
 
 ss::future<> compaction_worker::work_loop() {
-    constexpr std::chrono::seconds poll_frequency(60);
-
     while (is_active()) {
+        auto poll_interval = _poll_interval();
         try {
-            co_await _worker_cv.wait(poll_frequency);
-        } catch (const ss::semaphore_timed_out&) {
+            co_await _worker_cv.wait(_poll_interval());
+        } catch (const ss::condition_variable_timed_out&) {
             // Fall through
+        }
+
+        if (poll_interval != _poll_interval()) {
+            // Cluster config was changed while waiting.
+            continue;
         }
 
         while (is_active()) {
@@ -155,26 +174,67 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
     _job_state = compaction_job_state::running;
     _inflight_ntp = ntp;
 
-    // Copy
-    auto compaction_offsets = log->info_and_ts->info.offsets_response;
+    auto compaction_offsets = metastore::compaction_offsets_response{
+      .dirty_ranges = log->info_and_ts->info.offsets_response.dirty_ranges,
+      .removable_tombstone_ranges
+      = log->info_and_ts->info.offsets_response.removable_tombstone_ranges};
+    auto expected_compaction_epoch = log->info_and_ts->info.compaction_epoch;
+    auto start_offset = log->info_and_ts->info.start_offset;
+    auto max_compactible_offset = log->info_and_ts->max_compactible_offset;
 
     // Lazy initialization of offset map.
     if (!_map) {
         co_await initialize_map();
+    } else {
+        co_await _map->reset();
     }
+
+    auto dirty_range_intervals = compaction_offsets.dirty_ranges.to_vec();
+
+    auto min_lag_ms = [this, &ntp]() -> std::chrono::milliseconds {
+        std::optional<std::chrono::milliseconds> topic_min_lag_override;
+        if (likely(_metadata_cache)) {
+            auto topic_md_ref = _metadata_cache->get_topic_metadata_ref(
+              model::topic_namespace_view(ntp));
+            if (topic_md_ref.has_value()) {
+                topic_min_lag_override = topic_md_ref.value()
+                                           .get()
+                                           .get_configuration()
+                                           .properties.min_compaction_lag_ms;
+            }
+        }
+        return topic_min_lag_override.value_or(
+          config::shard_local_cfg().min_compaction_lag_ms());
+    }();
 
     auto src = std::make_unique<compaction_source>(
       std::move(ntp),
       tidp,
-      compaction_offsets,
+      dirty_range_intervals,
+      compaction_offsets.removable_tombstone_ranges,
+      start_offset,
+      max_compactible_offset,
       _map.get(),
+      min_lag_ms,
       _metastore,
       _io,
       _as,
-      _job_state);
-    auto sink = std::make_unique<compaction_sink>(_io, _committer, tidp);
+      _job_state,
+      _probe);
+    auto sink = std::make_unique<compaction_sink>(
+      tidp,
+      dirty_range_intervals,
+      compaction_offsets.removable_tombstone_ranges,
+      expected_compaction_epoch,
+      start_offset,
+      _io,
+      _committer,
+      config::shard_local_cfg().cloud_topics_compaction_max_object_size.bind());
     auto reducer = compaction::sliding_window_reducer(
       std::move(src), std::move(sink));
+
+    // Start measuring time-to-compact here.
+    auto m = _probe.auto_compaction_measurement();
 
     auto compact_fut = co_await ss::coroutine::as_future(
       std::move(reducer).run());
@@ -189,6 +249,9 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
           "Caught exception {} while compacting CTP {}.",
           eptr,
           tidp);
+
+        // Don't let failed compaction runs contribute to the histogram.
+        m->cancel();
     } else {
         vlog(compaction_log.info, "Finished compacting CTP {}", tidp);
     }
@@ -303,10 +366,8 @@ ss::future<> compaction_worker::initialize_map() {
         co_return;
     }
 
-    // TODO: use memory group reservation.
-    // auto compaction_mem_bytes = memory_groups().compaction_reserved_memory();
     auto compaction_mem_bytes
-      = config::shard_local_cfg().storage_compaction_key_map_memory();
+      = memory_groups().cloud_topics_compaction_reserved_memory();
     auto compaction_map = std::make_unique<compaction::hash_key_offset_map>();
     co_await compaction_map->initialize(compaction_mem_bytes);
     _map = std::move(compaction_map);

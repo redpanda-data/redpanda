@@ -169,7 +169,8 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
         msg_count,
         already_produced=0,
         gen_record=None,
-        wait_time_s=30,
+        wait_time_s=90,
+        progress_sec=None,
     ):
         # Have all records share the same timestamp, so that they are
         # guaranteed to end up in the same hour partition.
@@ -193,7 +194,10 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
             )
         producer.flush()
         dl.wait_for_translation(
-            topic_name, msg_count=already_produced + msg_count, timeout=wait_time_s
+            topic_name,
+            msg_count=already_produced + msg_count,
+            timeout=wait_time_s,
+            progress_sec=wait_time_s // 3 if progress_sec is None else progress_sec,
         )
 
     def describe_partitioning(self, dl, topic_name):
@@ -668,6 +672,7 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
                     "timestamp_us": int(t + n),
                 },
                 wait_time_s=900,
+                progress_sec=900,
             )
 
             describe_partitioning = self.describe_partitioning(dl, topic_name)

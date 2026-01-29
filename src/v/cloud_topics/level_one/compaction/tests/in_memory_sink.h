@@ -29,6 +29,8 @@ public:
       chunked_vector<object_output_t>*,
       object_builder::options = {});
 
+    ss::future<bool>
+    initialize(compaction::sliding_window_reducer::source&) final;
     ss::future<ss::stop_iteration>
     operator()(model::record_batch, model::compression) final;
     ss::future<> finalize() final;

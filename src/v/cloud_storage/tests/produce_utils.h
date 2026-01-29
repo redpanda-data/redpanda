@@ -25,7 +25,10 @@ public:
       kafka::client::transport transport, cluster::partition& partition)
       : _producer(std::move(transport))
       , _partition(partition) {}
-
+    remote_segment_generator& start_ix(size_t ix) {
+        _current_ix = ix;
+        return *this;
+    }
     remote_segment_generator& num_segments(size_t n) {
         _num_remote_segs = n;
         return *this;
@@ -65,14 +68,13 @@ public:
         auto log = _partition.log();
         auto& archiver = _partition.archiver().value().get();
 
-        size_t total_records = 0;
         auto cur_timestamp = _base_timestamp;
         while (_partition.archival_meta_stm()->manifest().size()
                < _num_remote_segs) {
             for (size_t i = 0; i < _batches_per_seg; i++) {
                 std::vector<kv_t> records = kv_t::sequence(
-                  total_records, _records_per_batch);
-                total_records += _records_per_batch;
+                  _current_ix, _records_per_batch);
+                _current_ix += _records_per_batch;
                 co_await _producer.produce_to_partition(
                   _partition.ntp().tp.topic,
                   _partition.ntp().tp.partition,
@@ -114,8 +116,8 @@ public:
         for (size_t i = 0; i < _num_local_segs; i++) {
             for (size_t i = 0; i < _batches_per_seg; i++) {
                 std::vector<kv_t> records = kv_t::sequence(
-                  total_records, _records_per_batch);
-                total_records += _records_per_batch;
+                  _current_ix, _records_per_batch);
+                _current_ix += _records_per_batch;
                 co_await _producer.produce_to_partition(
                   _partition.ntp().tp.topic,
                   _partition.ntp().tp.partition,
@@ -129,7 +131,7 @@ public:
             co_await log->flush();
             co_await log->force_roll();
         }
-        co_return total_records;
+        co_return _current_ix;
     }
 
 private:
@@ -143,6 +145,7 @@ private:
     size_t _batches_per_seg{1};
     std::optional<model::timestamp> _base_timestamp{std::nullopt};
     int _batch_time_delta_ms{1};
+    size_t _current_ix{0};
 };
 
 } // namespace tests

@@ -19,7 +19,7 @@ namespace cluster {
 
 class topic_table_probe {
 public:
-    explicit topic_table_probe(const topic_table&);
+    explicit topic_table_probe(const topic_table&, model::node_id);
 
     topic_table_probe(const topic_table_probe&) = delete;
     topic_table_probe(topic_table_probe&&) = delete;

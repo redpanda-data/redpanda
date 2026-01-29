@@ -677,7 +677,6 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
-        ":test_schemas",
         "//src/v/cloud_io:provider",
         "//src/v/iceberg:uri",
         "//src/v/test_utils:gtest",

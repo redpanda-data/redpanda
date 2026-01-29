@@ -176,8 +176,9 @@ ss::future<> cluster::dispatch_and_apply_metadata_updates(
 
         co_await apply_metadata(std::move(mu));
     } catch (const broker_error& e) {
+        // TODO(CORE-14956) - We need to improve handling of broker errors
         vlog(
-          _logger.warn, "Failed to dispatch metadata request - {}", e.what());
+          _logger.debug, "Failed to dispatch metadata request - {}", e.what());
     }
 }
 
@@ -337,8 +338,10 @@ ss::future<metadata_response> cluster::dispatch_metadata_request(
       metadata_request{.data{
         .topics = std::move(topics_to_request),
         .allow_auto_topic_creation = false,
-        .include_cluster_authorized_operations = true,
-        .include_topic_authorized_operations = true}},
+        .include_cluster_authorized_operations = bool(
+          _config.include_authorized_operations),
+        .include_topic_authorized_operations = bool(
+          _config.include_authorized_operations)}},
       metadata_version);
     vassert(
       std::holds_alternative<kafka::metadata_response>(reply),
@@ -356,8 +359,9 @@ cluster::dispatch_describe_cluster_request(shared_broker_t broker) {
     auto request_version = co_await get_describe_cluster_request_version(
       broker, _as);
     auto reply = co_await broker->dispatch(
-      describe_cluster_request{
-        .data{.include_cluster_authorized_operations = true}},
+      describe_cluster_request{.data{
+        .include_cluster_authorized_operations = bool(
+          _config.include_authorized_operations)}},
       request_version);
     vassert(
       std::holds_alternative<kafka::describe_cluster_response>(reply),
@@ -373,7 +377,7 @@ void cluster::set_sasl_configuration(std::optional<sasl_configuration> creds) {
 }
 
 void cluster::update_configuration(connection_configuration config) {
-    _update_config_queue.submit([this, config = std::move(config)] {
+    _update_config_queue.submit([this, config = std::move(config)] mutable {
         return do_update_configuration(std::move(config))
           .handle_exception([this](std::exception_ptr ex) {
               vlog(_logger.warn, "Failed to update broker config: {}", ex);

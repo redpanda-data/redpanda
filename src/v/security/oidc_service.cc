@@ -13,6 +13,7 @@
 #include "config/configuration.h"
 #include "config/sasl_mechanisms.h"
 #include "config/tls_config.h"
+#include "config/types.h"
 #include "http/client.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
@@ -150,7 +151,9 @@ struct service::impl {
       config::binding<ss::sstring> token_audience,
       config::binding<std::chrono::seconds> clock_skew_tolerance,
       config::binding<ss::sstring> mapping,
-      config::binding<std::chrono::seconds> jwks_refresh_interval)
+      config::binding<std::chrono::seconds> jwks_refresh_interval,
+      config::binding<ss::sstring> group_claim_path,
+      config::binding<nested_group_behavior> nested_group_behavior)
       : _verifier{}
       , _sasl_mechanisms{std::move(sasl_mechanisms)}
       , _sasl_mechanisms_overrides{std::move(sasl_mechanisms_overrides)}
@@ -161,6 +164,8 @@ struct service::impl {
       , _mapping{std::move(mapping)}
       , _rule{}
       , _jwks_refresh_interval{std::move(jwks_refresh_interval)}
+      , _group_claim_path(std::move(group_claim_path))
+      , _nested_group_behavior(std::move(nested_group_behavior))
       , _jwks_refresh{[this]() {
           ssx::spawn_with_gate(_gate, [this] { return update(); });
       }} {
@@ -178,6 +183,9 @@ struct service::impl {
         });
         _mapping.watch([this]() { update_rule(); });
         update_rule();
+        _group_claim_path.watch([this]() { update_group_claim_policy(); });
+        _nested_group_behavior.watch([this]() { update_group_claim_policy(); });
+        update_group_claim_policy();
         _jwks_refresh_interval.watch([this]() {
             if (_gate.is_closed()) {
                 return;
@@ -190,8 +198,8 @@ struct service::impl {
     }
 
     ss::future<> start() {
-        auto holder = _gate.hold();
-        co_await update();
+        ssx::spawn_with_gate(_gate, [this] { return update(); });
+        return ss::now();
     }
     ss::future<> stop() {
         _jwks_refresh.cancel();
@@ -347,6 +355,20 @@ struct service::impl {
         }
     }
 
+    void update_group_claim_policy() {
+        if (auto r = parse_group_claim_path(
+              _group_claim_path(), _nested_group_behavior());
+            !r) {
+            vlog(
+              seclog.error,
+              "Group claim path failed to parse ({}): {}",
+              r.error().message(),
+              _group_claim_path());
+        } else {
+            _group_claim_policy = std::move(r).value();
+        }
+    }
+
     ss::future<ss::sstring> make_request(parsed_url url) {
         auto is_https = url.scheme == "https";
         std::optional<ss::sstring> tls_host;
@@ -422,6 +444,9 @@ struct service::impl {
     config::binding<ss::sstring> _mapping;
     principal_mapping_rule _rule;
     config::binding<std::chrono::seconds> _jwks_refresh_interval;
+    config::binding<ss::sstring> _group_claim_path;
+    config::binding<nested_group_behavior> _nested_group_behavior;
+    group_claim_policy _group_claim_policy;
     std::optional<parsed_url> _parsed_discovery_url;
     std::optional<parsed_url> _parsed_jwks_url;
     std::optional<ss::sstring> _issuer;
@@ -439,7 +464,9 @@ service::service(
   config::binding<ss::sstring> token_audience,
   config::binding<std::chrono::seconds> clock_skew_tolerance,
   config::binding<ss::sstring> mapping,
-  config::binding<std::chrono::seconds> keys_refresh_interval)
+  config::binding<std::chrono::seconds> keys_refresh_interval,
+  config::binding<ss::sstring> group_claim_path,
+  config::binding<nested_group_behavior> nested_group_behavior)
   : _impl{std::make_unique<impl>(
       std::move(sasl_mechanisms),
       std::move(sasl_mechanisms_overrides),
@@ -448,7 +475,9 @@ service::service(
       std::move(token_audience),
       std::move(clock_skew_tolerance),
       std::move(mapping),
-      std::move(keys_refresh_interval))} {}
+      std::move(keys_refresh_interval),
+      std::move(group_claim_path),
+      std::move(nested_group_behavior))} {}
 
 service::~service() noexcept = default;
 
@@ -471,6 +500,10 @@ const verifier& service::get_verifier() const { return _impl->_verifier; }
 
 const principal_mapping_rule& service::get_principal_mapping_rule() const {
     return _impl->_rule;
+}
+
+const group_claim_policy& service::get_group_claim_policy() const {
+    return _impl->_group_claim_policy;
 }
 
 ss::future<> service::refresh_keys() { return _impl->update_jwks(); }

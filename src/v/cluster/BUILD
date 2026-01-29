@@ -277,6 +277,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_utils",
+    srcs = [
+        "cluster_link/table_utils.cc",
+    ],
+    hdrs = [
+        "cluster_link/table_utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/ssx:async_algorithm",
+    ],
+    visibility = ["__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "//src/v/cluster_link/model",
+        "//src/v/container:chunked_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster",
     srcs = [
         "archival/adjacent_segment_merger.cc",
@@ -411,7 +431,6 @@ redpanda_cc_library(
         "service.cc",
         "shard_balancer.cc",
         "shard_placement_table.cc",
-        "shard_placement_table_probe.cc",
         "tm_stm.cc",
         "tm_stm_types.cc",
         "topic_metrics_watcher.cc",
@@ -611,7 +630,6 @@ redpanda_cc_library(
         "service.h",
         "shard_balancer.h",
         "shard_placement_table.h",
-        "shard_placement_table_probe.h",
         "shard_table.h",
         "simple_batch_builder.h",
         "snapshot.h",
@@ -647,6 +665,7 @@ redpanda_cc_library(
         "version.h",
     ],
     implementation_deps = [
+        ":table_utils",
         ":topic_memory_per_partition_default",
         "//src/v/cloud_storage:logger",
         "//src/v/crash_tracker",
@@ -712,6 +731,7 @@ redpanda_cc_library(
         "//src/v/model:fips_config",
         "//src/v/net",
         "//src/v/net:tls",
+        "//src/v/net:types",
         "//src/v/pandaproxy/schema_registry:config",
         "//src/v/pandaproxy/schema_registry:subject_name_strategy",
         "//src/v/raft",
@@ -736,11 +756,13 @@ redpanda_cc_library(
         "//src/v/serde:uuid",
         "//src/v/serde:variant",
         "//src/v/serde:vector",
+        "//src/v/ssx:abort_source",
         "//src/v/ssx:async_algorithm",
         "//src/v/ssx:async_clear",
         "//src/v/ssx:checkpoint_mutex",
         "//src/v/ssx:event",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:mutex",
         "//src/v/ssx:rate_limited_function",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
@@ -767,7 +789,6 @@ redpanda_cc_library(
         "//src/v/utils:lazy_abort_source",
         "//src/v/utils:move_canary",
         "//src/v/utils:moving_average",
-        "//src/v/utils:mutex",
         "//src/v/utils:named_type",
         "//src/v/utils:notification_list",
         "//src/v/utils:prefix_logger",

@@ -20,7 +20,7 @@ from typing import Optional
 from uuid import uuid4
 
 import payload_pb2
-from confluent_kafka import DeserializingConsumer, SerializingProducer
+from confluent_kafka import DeserializingConsumer, SerializingProducer, Message
 from confluent_kafka.cimpl import KafkaError
 from confluent_kafka.schema_registry import (
     SchemaRegistryClient,
@@ -268,7 +268,7 @@ class SerdeClient:
         }
 
     def produce(self, count: int):
-        def increment(err: KafkaError, msg):
+        def increment(err: KafkaError | None, msg: Message | None):
             if err is not None:
                 self.logger.error(f"Produce err: {err}")
                 sys.exit(err.code())

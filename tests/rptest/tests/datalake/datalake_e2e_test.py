@@ -343,6 +343,30 @@ JSON_SCHEMA_TEST_CASES = {
             ("Part 0", "hours(redpanda.timestamp)", ""),
         ],
     ),
+    "array_items": JsonSchemaTestCase(
+        schema_str="""{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "numbers": {
+                    "type": "array",
+                    "items": {"type": ["null", "integer"]}
+                }
+            },
+            "required": ["numbers"]
+        }""",
+        record_generator=lambda t: {
+            "numbers": [
+                random.choice([None, int(t) + i]) for i in range(randint(0, 10))
+            ]
+        },
+        expected_spark=[
+            ("numbers", "array<bigint>", None),
+            ("", "", ""),
+            ("# Partitioning", "", ""),
+            ("Part 0", "hours(redpanda.timestamp)", ""),
+        ],
+    ),
 }
 
 JSON_SCHEMA_DLQ_TEST_CASES = {
@@ -1129,7 +1153,7 @@ message_type {
         custom_partition_spec=[None, "(timestamp_us)", "(number)"],
     )
     def test_iceberg_partition_key_file_location(
-        self, cloud_storage_type, catalog_type, custom_partition_spec: str
+        self, cloud_storage_type, catalog_type, custom_partition_spec: str | None
     ):
         """
         Test that the data file location includes the partition key
@@ -1725,4 +1749,48 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             assert bytes_read_after <= max_read_bytes, (
                 f"Enabling Iceberg in the cluster should not cause a major read increase,"
                 f" expected ({bytes_read_after=}) <= ({max_read_bytes=})"
+            )
+
+
+class DatalakeCustomNamespaceTest(RedpandaTest):
+    test_namespace = ("rp", "eng", "core")
+
+    def __init__(self, test_ctx, *args, **kwargs):
+        super().__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+                "iceberg_default_catalog_namespace": self.test_namespace,
+            },
+            *args,
+            **kwargs,
+        )
+        self.test_ctx = test_ctx
+        self.topic_name = "test"
+
+    def setUp(self):
+        pass
+
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_custom_namespace(self, cloud_storage_type, catalog_type):
+        count = 10
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=catalog_type,
+        ) as dl:
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=1)
+            dl.produce_to_topic(self.topic_name, 1024, count)
+            dl.wait_for_translation(
+                self.topic_name,
+                msg_count=count,
+                namespace=self.test_namespace,
             )

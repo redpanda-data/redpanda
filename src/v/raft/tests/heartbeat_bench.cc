@@ -46,78 +46,32 @@ struct fixture {
         return ret;
     }
 
-    raft::heartbeat_request make_request(size_t full_beats_cnt) {
-        raft::heartbeat_request req;
-        req.heartbeats.reserve(full_beats_cnt);
-        auto groups = make_groups(full_beats_cnt);
-        auto source = tests::random_named_int<model::node_id>();
-        auto target = tests::random_named_int<model::node_id>();
-        for (auto gr : groups) {
-            raft::protocol_metadata meta{
-              .group = gr,
-              .commit_index = tests::random_named_int<model::offset>(),
-              .term = tests::random_named_int<model::term_id>(),
-              .prev_log_index = tests::random_named_int<model::offset>(),
-              .prev_log_term = tests::random_named_int<model::term_id>(),
-              .last_visible_index = tests::random_named_int<model::offset>(),
-            };
-            meta.dirty_offset = meta.prev_log_index;
-            req.heartbeats.push_back(
-              raft::heartbeat_metadata{
-                .meta = meta,
-                .node_id = raft::vnode(
-                  source, tests::random_named_int<model::revision_id>()),
-                .target_node_id = raft::vnode(
-                  target, tests::random_named_int<model::revision_id>()),
-              });
-        }
-
-        return req;
-    }
-
-    raft::heartbeat_request_v2 make_new_request(size_t full_heartbeat_count) {
+    raft::heartbeat_request_v2
+    make_new_request(size_t full_heartbeat_count, size_t lw_heartbeat_count) {
         raft::heartbeat_request_v2 req(
-          old_req.heartbeats.front().node_id.id(),
-          old_req.heartbeats.front().target_node_id.id());
-
-        auto i = 0;
-        for (auto& hb_meta : old_req.heartbeats) {
-            raft::group_heartbeat group_beat{.group = hb_meta.meta.group};
-            if (std::cmp_less(i, full_heartbeat_count)) {
-                group_beat.data = raft::heartbeat_request_data{
-                  .source_revision = hb_meta.node_id.revision(),
-                  .target_revision = hb_meta.target_node_id.revision(),
-                  .commit_index = hb_meta.meta.commit_index,
-                  .term = hb_meta.meta.term,
-                  .prev_log_index = hb_meta.meta.prev_log_index,
-                  .prev_log_term = hb_meta.meta.prev_log_term,
-                  .last_visible_index = hb_meta.meta.last_visible_index,
-                };
-            }
-            req.add(group_beat);
-            ++i;
+          tests::random_named_int<model::node_id>(),
+          tests::random_named_int<model::node_id>());
+        for (raft::group_id group : make_groups(full_heartbeat_count)) {
+            req.add(
+              {.group = group,
+               .data = {
+                 {.source_revision
+                  = tests::random_named_int<model::revision_id>(),
+                  .target_revision
+                  = tests::random_named_int<model::revision_id>(),
+                  .commit_index = tests::random_named_int<model::offset>(),
+                  .term = tests::random_named_int<model::term_id>(),
+                  .prev_log_index = tests::random_named_int<model::offset>(),
+                  .prev_log_term = tests::random_named_int<model::term_id>(),
+                  .last_visible_index
+                  = tests::random_named_int<model::offset>()}}});
+        }
+        for (raft::group_id group : make_groups(lw_heartbeat_count)) {
+            req.add({.group = group});
         }
         return req;
     }
 
-    raft::heartbeat_reply make_reply() {
-        raft::heartbeat_reply reply;
-        reply.meta.reserve(old_req.heartbeats.size());
-        for (auto& hb : old_req.heartbeats) {
-            reply.meta.push_back(
-              raft::append_entries_reply{
-                .target_node_id = hb.node_id,
-                .node_id = hb.target_node_id,
-                .group = hb.meta.group,
-                .term = hb.meta.term,
-                .last_flushed_log_index = hb.meta.prev_log_index,
-                .last_dirty_log_index = hb.meta.prev_log_index,
-                .last_term_base_offset = hb.meta.prev_log_index,
-                .result = raft::reply_result::success,
-              });
-        }
-        return reply;
-    }
     raft::heartbeat_reply_v2
     make_new_reply(const raft::heartbeat_request_v2& req) {
         raft::heartbeat_reply_v2 reply(req.target(), req.source());
@@ -152,23 +106,19 @@ struct fixture {
     }
 
     fixture() {
-        old_req = make_request(10000);
-        new_req_full = make_new_request(10000);
-        new_req_lw = make_new_request(0);
-        new_req_mixed = make_new_request(2000);
-        old_reply = make_reply();
+        new_req_full = make_new_request(10000, 0);
+        new_req_lw = make_new_request(0, 10000);
+        new_req_mixed = make_new_request(2000, 8000);
         new_reply_full = make_new_reply(new_req_full);
         new_reply_mixed = make_new_reply(new_req_mixed);
         new_reply_lw = make_new_reply(new_req_lw);
     }
 
-    raft::heartbeat_request old_req;
     raft::heartbeat_request_v2 new_req;
     raft::heartbeat_request_v2 new_req_full;
     raft::heartbeat_request_v2 new_req_mixed;
     raft::heartbeat_request_v2 new_req_lw;
 
-    raft::heartbeat_reply old_reply;
     raft::heartbeat_reply_v2 new_reply_full;
     raft::heartbeat_reply_v2 new_reply_mixed;
     raft::heartbeat_reply_v2 new_reply_lw;
@@ -182,17 +132,6 @@ struct fixture {
     }
 };
 
-PERF_TEST_C(fixture, test_old_hb_request) {
-    perf_tests::start_measuring_time();
-
-    iobuf buffer;
-    co_await serde::write_async(buffer, old_req);
-
-    perf_tests::stop_measuring_time();
-    cnt++;
-    sz += buffer.size_bytes();
-}
-
 PERF_TEST_C(fixture, test_new_hb_request_full) {
     co_await test_serde_write(new_req_full);
 }
@@ -202,17 +141,6 @@ PERF_TEST_C(fixture, test_new_hb_request_mixed) {
 
 PERF_TEST_C(fixture, test_new_hb_request_lw) {
     co_await test_serde_write(new_req_lw);
-}
-
-PERF_TEST_C(fixture, test_old_hb_reply) {
-    perf_tests::start_measuring_time();
-
-    iobuf buffer;
-    co_await serde::write_async(buffer, old_reply);
-
-    perf_tests::stop_measuring_time();
-    cnt++;
-    sz += buffer.size_bytes();
 }
 
 PERF_TEST_C(fixture, test_new_hb_reply_full) {

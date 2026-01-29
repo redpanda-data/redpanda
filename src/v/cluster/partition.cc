@@ -39,6 +39,7 @@
 #include <seastar/util/defer.hh>
 
 #include <chrono>
+#include <optional>
 
 namespace cluster {
 
@@ -327,14 +328,13 @@ model::offset partition::next_cloud_offset() const {
     return kafka::offset_cast(_cloud_storage_partition->next_kafka_offset());
 }
 
-ss::future<storage::translating_reader> partition::make_cloud_reader(
-  cloud_storage::cloud_log_reader_config config,
-  std::optional<model::timeout_clock::time_point> deadline) {
+ss::future<storage::translating_reader>
+partition::make_cloud_reader(cloud_storage::cloud_log_reader_config config) {
     vassert(
       cloud_data_available(),
       "Method can only be called if cloud data is available, ntp: {}",
       _raft->ntp());
-    return _cloud_storage_partition->make_reader(config, deadline);
+    return _cloud_storage_partition->make_reader(config);
 }
 
 ss::future<result<kafka_result>> partition::replicate(
@@ -593,11 +593,16 @@ ss::future<> partition::stop() {
     }
 
     _probe.clear_metrics();
+    _cloud_storage_probe->clear_metrics();
     vlog(clusterlog.debug, "Stopped partition {}", partition_ntp);
 }
 
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
+    if (cfg.min_offset > cfg.max_offset) {
+        co_return std::nullopt;
+    }
+
     // Read replicas never consider local raft data
     if (_raft->log_config().is_read_replica_mode_enabled()) {
         co_return co_await cloud_storage_timequery(cfg);
@@ -609,58 +614,36 @@ partition::timequery(storage::timequery_config cfg) {
         && cfg.min_offset < kafka::offset_cast(
              _cloud_storage_partition->next_kafka_offset());
 
-    if (_raft->log()->start_timestamp() <= cfg.time) {
-        // The query is ahead of the local data's start_timestamp: this
-        // means it _might_ hit on local data: start_timestamp is not
-        // precise, so once we query we might still fall back to cloud
-        // storage
+    const bool local_covers_timestamp = _raft->log()->start_timestamp()
+                                        <= cfg.time;
+    auto local_start_offset = log()->from_log_offset(_raft->start_offset());
+    const bool local_covers_offsets = local_start_offset <= cfg.max_offset;
+    const bool may_answer_from_local = local_covers_timestamp
+                                       && local_covers_offsets;
+    if (may_answer_from_local || !may_answer_from_cloud) {
+        // The query is ahead of the local data's start_timestamp and
+        // potentially overlaps with the local data offset range: this means it
+        // _might_ hit on local data: start_timestamp is not precise, so once we
+        // query we might still fall back to cloud storage
         //
         // We also need to adjust the lower bound for the local query as the
         // min_offset corresponds to the full log (including tiered storage).
         auto local_query_cfg = cfg;
         local_query_cfg.min_offset = std::max(
-          log()->from_log_offset(_raft->start_offset()),
-          local_query_cfg.min_offset);
-
-        // If the min_offset is ahead of max_offset, the local log is empty
-        // or was truncated since the timequery_config was created.
-        if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
-            co_return std::nullopt;
-        }
+          local_start_offset, local_query_cfg.min_offset);
 
         auto result = co_await local_timequery(
           local_query_cfg, may_answer_from_cloud);
         if (result.has_value()) {
             co_return result;
-        } else {
-            // The local storage hit a case where it needs to fall back
-            // to querying cloud storage.
-            co_return co_await cloud_storage_timequery(cfg);
-        }
-    } else {
-        if (may_answer_from_cloud) {
-            // Timestamp is before local storage but within cloud storage
-            co_return co_await cloud_storage_timequery(cfg);
-        } else {
-            // No cloud data OR not allowed to read from cloud: queries earlier
-            // than the start of the log will hit on the start of the log.
-            //
-            // Adjust the lower bound for the local query as the min_offset
-            // corresponds to the full log (including tiered storage).
-            auto local_query_cfg = cfg;
-            local_query_cfg.min_offset = std::max(
-              log()->from_log_offset(_raft->start_offset()),
-              local_query_cfg.min_offset);
-
-            // If the min_offset is ahead of max_offset, the local log is empty
-            // or was truncated since the timequery_config was created.
-            if (local_query_cfg.min_offset > local_query_cfg.max_offset) {
-                co_return std::nullopt;
-            }
-
-            co_return co_await local_timequery(local_query_cfg, false);
         }
     }
+
+    if (may_answer_from_cloud) {
+        co_return co_await cloud_storage_timequery(cfg);
+    }
+
+    co_return std::nullopt;
 }
 
 bool partition::may_read_from_cloud() const {
@@ -680,6 +663,12 @@ partition::cloud_storage_timequery(storage::timequery_config cfg) {
     // find the earliest data that has timestamp >= the query time.
     vlog(clusterlog.debug, "timequery (cloud) {} cfg(k)={}", _raft->ntp(), cfg);
 
+    // Test before translation to handle empty log cases where
+    // max_offset is before min_offset = start_offset.
+    if (cfg.min_offset > cfg.max_offset) {
+        co_return std::nullopt;
+    }
+
     // remote_partition pre-translates offsets for us, so no call into
     // the offset translator here
     auto result = co_await _cloud_storage_partition->timequery(cfg);
@@ -698,6 +687,12 @@ partition::cloud_storage_timequery(storage::timequery_config cfg) {
 ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
   storage::timequery_config cfg, bool allow_cloud_fallback) {
     vlog(clusterlog.debug, "timequery (raft) {} cfg(k)={}", _raft->ntp(), cfg);
+
+    // Test before translation to handle empty log cases where
+    // max_offset is before min_offset = start_offset.
+    if (cfg.min_offset > cfg.max_offset) {
+        co_return std::nullopt;
+    }
 
     cfg.min_offset = _raft->log()->to_log_offset(cfg.min_offset);
     cfg.max_offset = _raft->log()->to_log_offset(cfg.max_offset);
@@ -1618,10 +1613,9 @@ partition::remote_partition() const {
     return _cloud_storage_partition;
 }
 
-ss::future<model::record_batch_reader> partition::make_local_reader(
-  storage::local_log_reader_config config,
-  std::optional<model::timeout_clock::time_point> debounce_deadline) {
-    return _raft->make_reader(std::move(config), debounce_deadline);
+ss::future<model::record_batch_reader>
+partition::make_local_reader(storage::local_log_reader_config config) {
+    return _raft->make_reader(config);
 }
 
 model::term_id partition::term() const { return _raft->term(); }

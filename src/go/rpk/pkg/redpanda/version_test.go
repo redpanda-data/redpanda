@@ -59,9 +59,30 @@ func TestVersion_Less(t *testing.T) {
 		{"lower patch", Version{23, 4, 12}, Version{23, 4, 22}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := test.a.Less(test.b); got != test.exp {
-				t.Errorf("IsHigherOrEqual() = %v, want %v", got, test.exp)
-			}
+			require.Equal(t, test.a.Less(test.b), test.exp)
+		})
+	}
+}
+
+func TestVersion_IsAtLeast(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		a    Version
+		b    Version
+		exp  bool
+	}{
+		{"equal", Version{12, 1, 1}, Version{12, 1, 1}, true},
+		{"equal empty", Version{}, Version{}, true},
+		{"higher year", Version{23, 1, 1}, Version{24, 1, 1}, false},
+		{"higher feature", Version{22, 1, 1}, Version{22, 2, 1}, false},
+		{"higher patch", Version{23, 4, 12}, Version{23, 4, 13}, false},
+		{"lower year", Version{23, 1, 1}, Version{22, 1, 1}, true},
+		{"lower feature", Version{22, 3, 23}, Version{22, 2, 23}, true},
+		{"lower patch", Version{23, 4, 23}, Version{23, 4, 22}, true},
+		{"next major with lower minor and patch", Version{26, 1, 1}, Version{25, 3, 2}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.a.IsAtLeast(test.b), test.exp)
 		})
 	}
 }

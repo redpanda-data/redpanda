@@ -53,7 +53,8 @@ message TLSPEMSettings {
     string ca = 1;
     // Key and Cert are optional but if one is provided, then both must be
     // The key
-    string key = 2 [(google.api.field_behavior) = INPUT_ONLY];
+    string key = 2
+        [(google.api.field_behavior) = INPUT_ONLY, debug_redact = true];
     // The SHA-256 of the key, in base64 format
     string key_fingerprint = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
     // The cert

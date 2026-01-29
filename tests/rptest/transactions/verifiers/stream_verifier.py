@@ -79,7 +79,6 @@ class StreamVerifier(Service):
                     f"'{r['status']}' "
                 )
                 return False
-            return True
         except requests.exceptions.ConnectionError:
             return False
 

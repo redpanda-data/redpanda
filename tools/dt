@@ -1,0 +1,1020 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.8"
+# dependencies = [
+#     "jinja2",
+# ]
+# ///
+"""
+Redpanda Ducktape Test Runner
+
+This script runs Redpanda ducktape integration tests by:
+1. Building the bazel ducktape package
+2. Linking bazel artifacts to the expected locations
+3. Starting docker compose cluster with test nodes
+4. Generating ducktape cluster configuration
+5. Running ducktape tests in a docker container
+
+Usage:
+    ./run_ducktape.py [OPTIONS] [DUCKTAPE_ARGS...]
+
+Examples:
+    # Run quick test suite (default)
+    ./tools/dt run
+
+    # Run specific test
+    ./tools/dt run tests/rptest/tests/test_partition_movement.py
+
+    # Run with specific parameters
+    ./tools/dt run --max-parallel 4 --node-count 8 tests/rptest/test_suite_quick.yml
+
+    # Manually manage the lifecycle of the compose cluster
+    ./tools/dt start --node-count 8
+    ./tools/dt exec tests/rptest/tests/test_partition_movement.py
+    ./tools/dt stop
+"""
+
+import argparse
+import json
+import multiprocessing
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+from typing import Dict, List, Optional
+
+from jinja2 import Template
+
+
+class DucktapeRunner:
+    """Orchestrates the ducktape test infrastructure."""
+
+    def __init__(self, args: argparse.Namespace):
+        self.args = args
+
+        # Determine paths
+        self.src_dir = pathlib.Path(__file__).resolve().parent.parent
+        self.build_root = self.src_dir / "vbuild"
+        self.build_root.mkdir(exist_ok=True)
+
+        # Bazel config
+        self.build_type = args.build_type if hasattr(args, "build_type") else None
+        self.bazel_config = f"--config={self.build_type}"
+        if hasattr(args, "bazel_args"):
+            self.bazel_config += f" {args.bazel_args}"
+
+        # Paths for artifacts
+        self.bazel_out = self.build_root / "bazel-out"
+        self.rp_install_dir = self.bazel_out / "redpanda"
+        self.dcv_install_dir = self.bazel_out / "direct_consumer_verifier"
+        self.rp_installs_dir = self.build_root / "redpanda_installs"
+        self.ducktape_dir = self.build_root / "ducktape"
+
+        # Docker settings
+        self.ducktape_test_node_image = "vectorized/redpanda-test-node"
+        self.node_count = (
+            args.node_count if hasattr(args, "node_count") else None
+        ) or multiprocessing.cpu_count()
+
+        # Test settings
+        self.ducktape_args = (
+            args.ducktape_args if hasattr(args, "ducktape_args") else None
+        ) or ["tests/rptest/test_suite_quick.yml"]
+        self.max_parallel = args.max_parallel if hasattr(args, "max_parallel") else 1
+        self.repeat = args.repeat if hasattr(args, "repeat") else 1
+        self.test_timeout = (
+            args.test_timeout if hasattr(args, "test_timeout") else 1800000
+        )
+
+    def log(self, msg: str):
+        """Print a log message."""
+        print(f"[ducktape-runner] {msg}", flush=True)
+
+    def run_cmd(
+        self,
+        cmd: List[str],
+        cwd: Optional[pathlib.Path] = None,
+        check: bool = True,
+        env: Optional[Dict] = None,
+    ) -> subprocess.CompletedProcess:
+        """Run a command and return the result."""
+        self.log(f"Running: {' '.join(str(c) for c in cmd)}")
+        return subprocess.run(cmd, cwd=cwd, check=check, env=env)
+
+    def build_ducktape_package(self):
+        """Build the bazel ducktape package."""
+        self.log("Building ducktape package with bazel...")
+
+        # Build redpanda ducktape package
+        self.run_cmd(
+            [
+                "bazel",
+                "build",
+                *self.bazel_config.split(),
+                "//bazel/packaging:ducktape",
+            ],
+            cwd=self.src_dir,
+        )
+
+        # Build direct consumer verifier
+        self.run_cmd(
+            [
+                "bazel",
+                "build",
+                *self.bazel_config.split(),
+                "//bazel/packaging:direct_consumer_verifier_ducktape",
+            ],
+            cwd=self.src_dir,
+        )
+
+    def link_bazel_artifacts(self):
+        """Link bazel build artifacts to expected locations."""
+        self.log("Linking bazel artifacts...")
+
+        # Remove the existing bazel-out directory to prevent stale state
+        if self.bazel_out.exists():
+            shutil.rmtree(self.bazel_out)
+        self.bazel_out.mkdir(parents=True, exist_ok=True)
+
+        # Check if bazel-bin and vbuild are on the same filesystem
+        bazel_bin = self.src_dir / "bazel-bin"
+
+        def get_device(path: pathlib.Path) -> int:
+            """Get the device ID for a path."""
+            return path.resolve().stat().st_dev
+
+        vbuild_dev = get_device(self.build_root)
+        bzlbin_dev = get_device(bazel_bin)
+
+        if vbuild_dev != bzlbin_dev:
+            self.log(
+                "NOTE: bazel .cache and vbuild directory on different FS, using copy for packaging"
+            )
+            use_hardlink = False
+        else:
+            self.log(
+                "NOTE: bazel .cache and vbuild directory on same FS, using hardlink for packaging"
+            )
+            use_hardlink = True
+
+        # Create redpanda_installs directory
+        self.rp_installs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Link artifacts for each package
+        self._link_package_artifacts("redpanda_ducktape", "redpanda", use_hardlink)
+        self._link_package_artifacts(
+            "direct_consumer_verifier_ducktape",
+            "direct_consumer_verifier",
+            use_hardlink,
+        )
+
+        # CORE-13183: symlink libexec/redpanda to bin/redpanda for ducktape
+        rp_bazel_out = self.bazel_out / "redpanda"
+        libexec_dir = rp_bazel_out / "libexec"
+        libexec_dir.mkdir(parents=True, exist_ok=True)
+
+        libexec_link = libexec_dir / "redpanda"
+        if libexec_link.exists() or libexec_link.is_symlink():
+            libexec_link.unlink()
+        libexec_link.symlink_to("../bin/redpanda")
+
+        # Add path to fips.so in fips module cnf for redpanda to find it
+        openssl_dir = rp_bazel_out / "openssl"
+        fips_mod_cnf = openssl_dir / "fipsmodule.cnf"
+        fips_so = openssl_dir / "fips.so"
+        os.chmod(fips_mod_cnf, 0o664)
+        with open(fips_mod_cnf, 'a') as file:
+            file.write(f"module = {fips_so}\n")
+
+
+    def _link_package_artifacts(
+        self, package_target_name: str, out_dir_name: str, use_hardlink: bool
+    ):
+        """Link or copy artifacts from bazel-bin to bazel-out."""
+        out_path = self.bazel_out / out_dir_name
+        source_base = (
+            self.src_dir / "bazel-bin" / "bazel" / "packaging" / package_target_name
+        )
+
+        def get_out_dir(name):
+            if name == "fips":
+                return "openssl"
+            return name
+        for dir_name in ["bin", "lib", "fips"]:
+            source_dir = source_base / dir_name
+            if not source_dir.exists():
+                continue
+
+            out_dir = out_path / get_out_dir(dir_name)
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            # Link/copy all files in the directory
+            for source_file in source_dir.rglob("*"):
+                if source_file.is_file():
+                    dest_file = out_dir / source_file.name
+
+                    if use_hardlink:
+                        if dest_file.exists():
+                            dest_file.unlink()
+                        os.link(source_file, dest_file)
+                    else:
+                        # Copy file
+                        shutil.copy2(source_file, dest_file)
+
+        # Create symlink in redpanda_installs
+        install_link = self.rp_installs_dir / out_dir_name
+        if install_link.exists() or install_link.is_symlink():
+            if install_link.is_symlink():
+                install_link.unlink()
+            else:
+                shutil.rmtree(install_link)
+        install_link.symlink_to(out_path)
+
+    def build_test_docker_image(self):
+        """Build the docker image for test nodes."""
+        self.log("Building test docker image...")
+
+        # Copy dockerignore
+        dockerignore_src = self.src_dir / "tests" / "docker" / "Dockerfile.dockerignore"
+        dockerignore_dst = self.src_dir / ".dockerignore"
+        shutil.copy(dockerignore_src, dockerignore_dst)
+
+        try:
+            # Build with docker
+            docker_cmd = [
+                "docker",
+                "build",
+                "--tag",
+                self.ducktape_test_node_image,
+                "--file",
+                str(self.src_dir / "tests" / "docker" / "Dockerfile"),
+                str(self.src_dir),
+            ]
+            self.run_cmd(docker_cmd)
+        finally:
+            # Clean up dockerignore
+            if dockerignore_dst.exists():
+                dockerignore_dst.unlink()
+
+    def start_compose_cluster(self):
+        """Start the docker compose cluster."""
+        self.log(f"Starting docker compose cluster with {self.node_count} nodes...")
+
+        # Create redpanda_installs directory
+        self.rp_installs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Set environment for docker compose
+        env = os.environ.copy()
+        env["BUILD_ROOT"] = str(self.build_root)
+        env["DOCKER_CLIENT_TIMEOUT"] = "120"
+        env["COMPOSE_HTTP_TIMEOUT"] = "120"
+
+        # Run docker compose
+        compose_dir = self.src_dir / "tests" / "docker"
+        self.run_cmd(
+            ["docker", "compose", "up", "--detach", "--scale", f"rp={self.node_count}"],
+            cwd=compose_dir,
+            env=env,
+        )
+
+        # Show container info
+        result = subprocess.run(
+            ["docker", "compose", "ps", "-q"],
+            cwd=compose_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            container_ids = result.stdout.strip().split("\n")
+            for cid in container_ids:
+                subprocess.run(
+                    [
+                        "docker",
+                        "inspect",
+                        "-f",
+                        "{{.Config.Hostname}} {{range $i, $value := .NetworkSettings.Networks}} [{{$i}}:{{.IPAddress}}]{{end}}",
+                        cid,
+                    ]
+                )
+
+    def generate_cluster_config(self):
+        """Generate ducktape cluster configuration JSON."""
+        self.log("Generating ducktape cluster configuration...")
+
+        # Create directories
+        (self.ducktape_dir / "config" / "metadata").mkdir(parents=True, exist_ok=True)
+        (self.ducktape_dir / "cluster").mkdir(parents=True, exist_ok=True)
+        (self.ducktape_dir / "cache").mkdir(parents=True, exist_ok=True)
+
+        # Generate cluster config using the existing script
+        cluster_config_path = self.ducktape_dir / "cluster" / "ducktape_cluster.json"
+
+        # Use jinja2 template
+        template_path = self.src_dir / "tests" / "docker" / "ducktape_cluster.json.j2"
+
+        with open(template_path) as f:
+            template = Template(f.read())
+
+        cluster_config = template.render(scale=self.node_count)
+
+        with open(cluster_config_path, "w") as f:
+            f.write(cluster_config)
+
+        self.log(f"Wrote cluster config to {cluster_config_path}")
+
+    def build_ducktape_globals(self) -> str:
+        """Build the globals JSON for ducktape."""
+        globals_dict = {
+            "rp_install_path_root": str(self.rp_install_dir),
+            "direct_consumer_verifier_root": str(self.dcv_install_dir),
+            "redpanda_log_level": self.args.log_level,
+            "scale": "local",
+            "enable_cov": "OFF",
+            "use_xfs_partitions": False,
+            "trim_logs": self.args.trim_logs,
+            "random_seed": None,
+        }
+
+        # Merge with any additional globals from JSON string
+        if self.args.ducktape_globals:
+            try:
+                extra_globals = json.loads(self.args.ducktape_globals)
+                globals_dict.update(extra_globals)
+            except json.JSONDecodeError as e:
+                self.log(f"Warning: Could not parse ducktape_globals: {e}")
+
+        return json.dumps(globals_dict)
+
+    def run_ducktape_tests(self):
+        """Run ducktape tests in docker container."""
+        self.log("Running ducktape tests...")
+
+        # Clean up any existing ducktape container from previous interrupted runs
+        subprocess.run(
+            ["docker", "rm", "-f", "ducktape"],
+            capture_output=True,
+            check=False,
+        )
+
+        # Build globals
+        globals_json = self.build_ducktape_globals()
+
+        # Build docker run command
+        docker_cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "--privileged",
+            "--ulimit",
+            "nofile=65535:65535",
+            "--name",
+            "ducktape",
+            "--network",
+            "redpanda-test",
+            "--dns",
+            "192.168.215.126",
+            "--volume",
+            f"{self.ducktape_dir / 'config'}:/root/.ducktape/",
+            "--volume",
+            f"{self.ducktape_dir}:/build/tests/",
+            "--volume",
+            f"{self.rp_installs_dir}:/opt/redpanda_installs/",
+            "--volume",
+            f"{self.build_root}:{self.build_root}",
+            "--volume",
+            f"{self.src_dir / 'tests'}:/root/tests/",
+            "--volume",
+            f"{self.src_dir / 'tools'}:/root/tools/",
+            "--volume",
+            f"{self.ducktape_dir / 'cluster' / 'ducktape_cluster.json'}:/cluster.json",
+            "--volume",
+            f"{self.ducktape_dir / 'cache'}:/tmp/ducktape_cache",
+            "--entrypoint",
+            "ducktape",
+            "--env",
+            "PYTHONPATH=/root/tools",
+            "--env",
+            f"BUILD_TYPE={self.build_type}",
+            "--workdir",
+            "/root",
+        ]
+
+        # Pass through some optional environment variables if they exist
+        for env_var in ["REDPANDA_SAMPLE_LICENSE", "REDPANDA_SECOND_SAMPLE_LICENSE"]:
+            if env_var in os.environ:
+                docker_cmd.extend(["--env", f"{env_var}={os.environ[env_var]}"])
+
+        # Enable fips permissive
+        if self.args.with_fips:
+            docker_cmd.extend(["--env", f"REDPANDA_FIPS_PERMISSIVE=1"])
+
+        # Add the image
+        docker_cmd.append(self.ducktape_test_node_image)
+
+        # Add ducktape arguments
+        docker_cmd.extend(
+            [
+                "--cluster=ducktape.cluster.json.JsonCluster",
+                "--cluster-file=/cluster.json",
+                "--results-root=/build/tests/results",
+                f"--max-parallel={self.max_parallel}",
+                f"--test-runner-timeout={self.test_timeout}",
+                f"--repeat={self.repeat}",
+                "--fail-bad-cluster-utilization",
+                f"--globals={globals_json}",
+            ]
+        )
+
+        # Add user-provided ducktape args
+        docker_cmd.extend(self.ducktape_args)
+
+        # Run with tee to log output
+        log_file = self.ducktape_dir / "runner.log"
+
+        # Run the docker command
+        with open(log_file, "w") as log:
+            process = subprocess.Popen(
+                docker_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            # Tee output to both stdout and log file
+            for line in process.stdout:
+                print(line, end="", flush=True)
+                log.write(line)
+                log.flush()
+
+            process.wait()
+            exit_code = process.returncode
+
+        return exit_code
+
+    def stop_compose_cluster(self):
+        """Stop the docker compose cluster."""
+        self.log("Stopping docker compose cluster...")
+
+        # Also stop the ducktape container if it's running.
+        # This can happen e.g. if a test is Ctrl-C'd.
+        subprocess.run(
+            ["docker", "stop", "ducktape"],
+            capture_output=True,
+            check=False,
+        )
+
+        env = os.environ.copy()
+        env["BUILD_ROOT"] = str(self.build_root)
+
+        compose_dir = self.src_dir / "tests" / "docker"
+
+        # Try to fetch logs from minio and azurite if they exist
+        try:
+            # Check if minio-s3 container is running
+            result = subprocess.run(
+                ["docker", "ps", "-q", "-f", "name=minio-s3"],
+                capture_output=True,
+                text=True,
+            )
+            if result.stdout.strip():
+                logs_dir = self.src_dir / "logs"
+                logs_dir.mkdir(exist_ok=True)
+                with open(logs_dir / "minio.log", "w") as f:
+                    subprocess.run(
+                        ["docker", "logs", "minio-s3"],
+                        stdout=f,
+                        stderr=subprocess.STDOUT,
+                        check=False,
+                    )
+        except Exception as e:
+            self.log(f"Could not fetch minio logs: {e}")
+
+        try:
+            # Check if azurite container is running
+            result = subprocess.run(
+                ["docker", "ps", "-q", "-f", "name=azurite"],
+                capture_output=True,
+                text=True,
+            )
+            if result.stdout.strip():
+                logs_dir = self.src_dir / "logs"
+                logs_dir.mkdir(exist_ok=True)
+                with open(logs_dir / "azurite.log", "w") as f:
+                    subprocess.run(
+                        ["docker", "logs", "azurite"],
+                        stdout=f,
+                        stderr=subprocess.STDOUT,
+                        check=False,
+                    )
+        except Exception as e:
+            self.log(f"Could not fetch azurite logs: {e}")
+
+        # Stop docker compose
+        self.run_cmd(
+            ["docker", "compose", "down"], cwd=compose_dir, env=env, check=False
+        )
+
+    def cmd_run(self) -> int:
+        """Run the full ducktape test pipeline."""
+        try:
+            # Build docker image
+            if not self.args.skip_docker_build:
+                self.build_test_docker_image()
+
+            # Start cluster
+            self.start_compose_cluster()
+            self.generate_cluster_config()
+
+            # Build and link artifacts, then run tests
+            if not self.args.skip_bazel_build:
+                self.build_ducktape_package()
+                self.link_bazel_artifacts()
+
+            exit_code = self.run_ducktape_tests()
+
+            return exit_code
+
+        finally:
+            if not self.args.cleanup:
+                self.stop_compose_cluster()
+
+    def cmd_start(self) -> int:
+        """Start the docker-compose cluster."""
+        # Build docker image
+        if not self.args.skip_docker_build:
+            self.build_test_docker_image()
+
+        # Start cluster
+        self.start_compose_cluster()
+        self.generate_cluster_config()
+
+        self.log("Cluster started successfully")
+        self.log(f"Results will be written to: {self.ducktape_dir / 'results'}")
+        self.log("To run tests: ./tools/ducktape/run_ducktape.py test [ARGS]")
+        self.log("To stop cluster: ./tools/ducktape/run_ducktape.py stop")
+        return 0
+
+    def cmd_exec(self) -> int:
+        """Run tests on existing cluster (assumes cluster is already started)."""
+        # Verify cluster config exists
+        cluster_config = self.ducktape_dir / "cluster" / "ducktape_cluster.json"
+        if not cluster_config.exists():
+            self.log("ERROR: Cluster config not found. Did you run 'start' first?")
+            return 1
+
+        # Build and link artifacts
+        if not self.args.skip_bazel_build:
+            self.build_ducktape_package()
+            self.link_bazel_artifacts()
+
+        return self.run_ducktape_tests()
+
+    def cmd_stop(self) -> int:
+        """Stop the docker-compose cluster."""
+        self.stop_compose_cluster()
+        self.log("Cluster stopped successfully")
+        return 0
+
+    def cmd_repl(self) -> int:
+        """Interactive REPL for running tests repeatedly."""
+        import readline  # Enable command history and editing
+        import glob
+
+        class ReplCompleter:
+            """Tab completion for REPL commands and test files."""
+
+            def __init__(self, src_dir: pathlib.Path):
+                self.src_dir = src_dir
+                self.builtin_commands = [
+                    "help",
+                    "rebuild",
+                    "rb",
+                    "status",
+                    "exit",
+                    "quit",
+                    "q",
+                ]
+                self.matches = []
+
+            def complete(self, text: str, state: int) -> Optional[str]:
+                """
+                Called by readline for tab completion.
+                state=0 initializes matches, state>0 returns successive matches.
+                """
+                try:
+                    if state == 0:
+                        # Initialize matches on first call
+                        self.matches = []
+
+                        # If text is empty or looks like a command, suggest builtin commands
+                        if not text or (
+                            not text.startswith("tests/") and "/" not in text
+                        ):
+                            # Add matching builtin commands
+                            self.matches.extend(
+                                cmd
+                                for cmd in self.builtin_commands
+                                if cmd.startswith(text)
+                            )
+
+                        # Always search for test files if text looks like a path or is empty
+                        if not text or text.startswith("tests/") or "/" in text:
+                            # Search for test files
+                            search_pattern = text + "*" if text else "tests/*"
+                            base_path = self.src_dir
+
+                            # Find matching files and directories
+                            matches = glob.glob(str(base_path / search_pattern))
+
+                            for match in matches:
+                                # Make path relative to src_dir
+                                rel_path = pathlib.Path(match).relative_to(base_path)
+                                path_str = str(rel_path)
+
+                                # Add trailing slash for directories
+                                if pathlib.Path(match).is_dir():
+                                    path_str += "/"
+
+                                self.matches.append(path_str)
+
+                        # Sort matches for consistent ordering
+                        self.matches = sorted(self.matches)
+
+                    # Return the match at index state, or None if exhausted
+                    if state < len(self.matches):
+                        return self.matches[state]
+                    return None
+
+                except Exception:
+                    # readline swallows exceptions, so we fail silently
+                    return None
+
+        try:
+            # Build docker image
+            if not self.args.skip_docker_build:
+                self.build_test_docker_image()
+
+            # Start cluster
+            self.start_compose_cluster()
+            self.generate_cluster_config()
+
+            self.log("Cluster started successfully")
+            self.log(
+                "Interactive test REPL - enter ducktape test arguments (or 'help' for commands)"
+            )
+            self.log("")
+
+            # Set up tab completion
+            completer = ReplCompleter(self.src_dir)
+            readline.set_completer(completer.complete)
+            readline.parse_and_bind("tab: complete")
+            # Set delimiters to treat paths as single tokens
+            readline.set_completer_delims(" \t\n")
+
+            # Keep track of command history
+            history_file = self.build_root / ".ducktape_repl_history"
+            if history_file.exists():
+                readline.read_history_file(str(history_file))
+
+            while True:
+                try:
+                    # Read user input
+                    user_input = input("ducktape> ").strip()
+
+                    # Save to history
+                    readline.write_history_file(str(history_file))
+
+                    # Skip empty input
+                    if not user_input:
+                        continue
+
+                    # Handle special commands
+                    if user_input in ["exit", "quit", "q"]:
+                        self.log("Exiting REPL...")
+                        break
+                    elif user_input == "help":
+                        print("\nAvailable commands:")
+                        print(
+                            "  <test_args>     - Run ducktape tests (e.g., tests/rptest/tests/test_partition_movement.py)"
+                        )
+                        print("  help            - Show this help message")
+                        print("  rebuild/rb      - Rebuild bazel artifacts")
+                        print("  status          - Show cluster status")
+                        print("  exit/quit/q     - Exit REPL and stop cluster")
+                        print("")
+                        continue
+                    elif user_input in ["rebuild", "rb"]:
+                        self.log("Rebuilding bazel artifacts...")
+                        self.build_ducktape_package()
+                        self.link_bazel_artifacts()
+                        self.log("Rebuild complete")
+                        continue
+                    elif user_input == "status":
+                        # Show docker containers
+                        result = subprocess.run(
+                            ["docker", "ps", "--filter", "name=docker-rp"],
+                            capture_output=True,
+                            text=True,
+                        )
+                        print("\nCluster status:")
+                        print(result.stdout)
+                        continue
+
+                    # Parse test arguments
+                    self.ducktape_args = user_input.split()
+
+                    exit_code = self.run_ducktape_tests()
+
+                    if exit_code == 0:
+                        self.log("✓ Tests passed")
+                    else:
+                        self.log(f"✗ Tests failed (exit code: {exit_code})")
+
+                except KeyboardInterrupt:
+                    print("\n(Use 'exit' or Ctrl+D to quit)")
+                    continue
+                except EOFError:
+                    print("\nExiting...")
+                    break
+
+            return 0
+
+        finally:
+            self.stop_compose_cluster()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Redpanda ducktape integration tests",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        # This allows you to specify the arguments to this script as a text file
+        # this merges with normal flags, so you can add default flags in a
+        # standard file.
+        fromfile_prefix_chars="@",
+    )
+
+    # Create subparsers for commands
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    # 'run' subcommand
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run full pipeline: build, start cluster, run tests, stop cluster",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    run_parser.add_argument(
+        "--build-type",
+        default="fastbuild",
+        choices=["release", "debug", "fastbuild"],
+        help="Build type",
+    )
+    run_parser.add_argument(
+        "--bazel-args", default="", help="Additional bazel arguments"
+    )
+    run_parser.add_argument(
+        "--skip-bazel-build",
+        action="store_true",
+        help="Skip building bazel package (use existing artifacts)",
+    )
+    run_parser.add_argument(
+        "--skip-docker-build",
+        action="store_true",
+        help="Skip building docker image",
+    )
+    run_parser.add_argument(
+        "--node-count", type=int, help="Number of test nodes (default: CPU count)"
+    )
+    run_parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=1,
+        help="Maximum parallel tests (default: 1)",
+    )
+    run_parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="Number of times to repeat tests (default: 1)",
+    )
+    run_parser.add_argument(
+        "--test-timeout",
+        type=int,
+        default=1800000,
+        help="Test timeout in milliseconds (default: 1800000)",
+    )
+    run_parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Do stop docker-compose cluster after tests",
+    )
+    run_parser.add_argument(
+        "--ducktape-globals",
+        default="",
+        help='Additional ducktape globals as JSON string (e.g. \'{"s3_bucket": "my-bucket"}\')',
+    )
+    run_parser.add_argument(
+        "ducktape_args",
+        nargs="*",
+        help="Arguments to pass to ducktape (default: tests/rptest/test_suite_quick.yml)",
+    )
+    run_parser.add_argument(
+        "--with-fips",
+        action="store_true",
+        default=False,
+        help="Run redpanda in fips permissive mode",
+    )
+    run_parser.add_argument(
+        "--trim-logs",
+        action="store_true",
+        default=False,
+        help="Enable redpanda log trimming",
+    )
+    run_parser.add_argument(
+        "--log-level",
+        default="info",
+        help="Set the Redpanda log level",
+    )
+
+
+    # 'start' subcommand
+    start_parser = subparsers.add_parser(
+        "start",
+        help="Start docker-compose cluster (without running tests)",
+    )
+    start_parser.add_argument(
+        "--skip-docker-build",
+        action="store_true",
+        help="Skip building docker image",
+    )
+    start_parser.add_argument(
+        "--node-count", type=int, help="Number of test nodes (default: CPU count)"
+    )
+
+    # 'exec' subcommand
+    test_parser = subparsers.add_parser(
+        "exec",
+        help="Execute tests on existing cluster (must run 'start' first)",
+    )
+    test_parser.add_argument(
+        "--build-type",
+        default="fastbuild",
+        choices=["release", "debug", "fastbuild"],
+        help="Build type",
+    )
+    test_parser.add_argument(
+        "--bazel-args", default="", help="Additional bazel arguments"
+    )
+    test_parser.add_argument(
+        "--skip-bazel-build",
+        action="store_true",
+        help="Skip building bazel package (use existing artifacts)",
+    )
+    test_parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=1,
+        help="Maximum parallel tests (default: 1)",
+    )
+    test_parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="Number of times to repeat tests (default: 1)",
+    )
+    test_parser.add_argument(
+        "--test-timeout",
+        type=int,
+        default=1800000,
+        help="Test timeout in milliseconds (default: 1800000)",
+    )
+    test_parser.add_argument(
+        "--ducktape-globals",
+        default="",
+        help='Additional ducktape globals as JSON string (e.g. \'{"s3_bucket": "my-bucket"}\')',
+    )
+    test_parser.add_argument(
+        "ducktape_args",
+        nargs="*",
+        help="Arguments to pass to ducktape (default: tests/rptest/test_suite_quick.yml)",
+    )
+    test_parser.add_argument(
+        "--with-fips",
+        action="store_true",
+        default=False,
+        help="Run redpanda in fips permissive mode",
+    )
+    test_parser.add_argument(
+        "--trim-logs",
+        action="store_true",
+        default=False,
+        help="Enable redpanda log trimming",
+    )
+    test_parser.add_argument(
+        "--log-level",
+        default="info",
+        help="Set the Redpanda log level",
+    )
+
+    # 'stop' subcommand
+    _ = subparsers.add_parser(
+        "stop",
+        help="Stop docker-compose cluster",
+    )
+
+    # 'repl' subcommand
+    repl_parser = subparsers.add_parser(
+        "repl",
+        help="Interactive REPL: start cluster, run tests repeatedly, stop on exit",
+    )
+    repl_parser.add_argument(
+        "--build-type",
+        default="fastbuild",
+        choices=["release", "debug", "fastbuild"],
+        help="Build type",
+    )
+    repl_parser.add_argument(
+        "--bazel-args", default="", help="Additional bazel arguments"
+    )
+    repl_parser.add_argument(
+        "--skip-bazel-build",
+        action="store_true",
+        help="Skip building bazel package (use existing artifacts)",
+    )
+    repl_parser.add_argument(
+        "--skip-docker-build",
+        action="store_true",
+        help="Skip building docker image",
+    )
+    repl_parser.add_argument(
+        "--node-count", type=int, help="Number of test nodes (default: CPU count)"
+    )
+    repl_parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=1,
+        help="Maximum parallel tests (default: 1)",
+    )
+    repl_parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="Number of times to repeat tests (default: 1)",
+    )
+    repl_parser.add_argument(
+        "--test-timeout",
+        type=int,
+        default=1800000,
+        help="Test timeout in milliseconds (default: 1800000)",
+    )
+    repl_parser.add_argument(
+        "--ducktape-globals",
+        default="",
+        help='Additional ducktape globals as JSON string (e.g. \'{"s3_bucket": "my-bucket"}\')',
+    )
+    repl_parser.add_argument(
+        "--with-fips",
+        action="store_true",
+        default=False,
+        help="Run redpanda in fips permissive mode",
+    )
+    repl_parser.add_argument(
+        "--trim-logs",
+        action="store_true",
+        default=False,
+        help="Enable redpanda log trimming",
+    )
+    repl_parser.add_argument(
+        "--log-level",
+        default="info",
+        help="Set the Redpanda log level",
+    )
+
+    args = parser.parse_args()
+
+    # Show help if no command specified
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    # Create runner and execute appropriate command
+    runner = DucktapeRunner(args)
+
+    if args.command == "run":
+        sys.exit(runner.cmd_run())
+    elif args.command == "start":
+        sys.exit(runner.cmd_start())
+    elif args.command == "exec":
+        sys.exit(runner.cmd_exec())
+    elif args.command == "stop":
+        sys.exit(runner.cmd_stop())
+    elif args.command == "repl":
+        sys.exit(runner.cmd_repl())
+
+
+if __name__ == "__main__":
+    main()
+# vim: set ft=python:

@@ -9,11 +9,16 @@
  */
 
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
+#include "cloud_topics/level_one/metastore/tests/state_utils.h"
 #include "cloud_topics/tests/cluster_fixture.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/memory_persistence.h"
+#include "lsm/lsm.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "serde/rw/rw.h"
 
 using namespace cloud_topics::l1;
 
@@ -25,17 +30,89 @@ MATCHER_P2(MatchesRange, base, last, "") {
 }
 
 } // namespace
+
+enum class metastore_backend { simple, lsm };
+
 class ReplicatedMetastoreTest
   : public cloud_topics::cluster_fixture
-  , public ::testing::Test {
+  , public ::testing::TestWithParam<metastore_backend> {
 public:
     static constexpr size_t num_brokers = 3;
+
+    bool is_lsm_backend() const { return GetParam() == metastore_backend::lsm; }
+
     void SetUp() override {
         for (size_t i = 0; i < num_brokers; i++) {
-            add_node();
+            add_node(is_lsm_backend());
         }
         wait_for_all_members(5s).get();
     }
+
+    // For simple_stm, this returns the state directly.
+    // For lsm_stm, this reconstructs state from the database.
+    state get_stm_state(model::partition_id pid) {
+        if (!is_lsm_backend()) {
+            auto stm = get_l1_stm(pid);
+            if (!stm) {
+                return {};
+            }
+            return stm->state().copy();
+        }
+        auto lsm_stm = get_l1_lsm_stm(pid);
+        if (!lsm_stm) {
+            return {};
+        }
+        auto* remote
+          = &get_node_application(model::node_id{0})->cloud_io.local();
+        return lsm_state_to_state(lsm_stm->state(), remote);
+    }
+
+private:
+    // Build the state by loading the cloud database and then replaying the
+    // rows in the volatile buffer.
+    state
+    lsm_state_to_state(const lsm_state& lsm_st, cloud_io::remote* remote) {
+        // Create a database using cloud metadata persistence pointing at the
+        // LSM state's domain prefix in the bucket.
+        auto domain_prefix = cloud_storage_clients::object_key{
+          fmt::format("{}", lsm_st.domain_uuid)};
+        auto meta_persist = lsm::io::open_cloud_metadata_persistence(
+                              remote, bucket_name, domain_prefix)
+                              .get();
+        auto db = lsm::database::open(
+                    {.database_epoch = 0},
+                    lsm::io::persistence{
+                      .data = lsm::io::make_memory_data_persistence(),
+                      .metadata = std::move(meta_persist),
+                    })
+                    .get();
+
+        // Apply volatile buffer rows to the database.
+        if (!lsm_st.volatile_buffer.empty()) {
+            auto wb = db.create_write_batch();
+            auto max_persisted = db.max_persisted_seqno();
+            for (const auto& vol_row : lsm_st.volatile_buffer) {
+                if (max_persisted && vol_row.seqno <= *max_persisted) {
+                    // Already applied, skip.
+                    continue;
+                }
+                if (vol_row.row.value.empty()) {
+                    wb.remove(vol_row.row.key, vol_row.seqno);
+                } else {
+                    wb.put(
+                      vol_row.row.key, vol_row.row.value.copy(), vol_row.seqno);
+                }
+            }
+            db.apply(std::move(wb)).get();
+        }
+
+        // Extract state from database snapshot
+        auto result = snapshot_to_state(db);
+        db.close().get();
+        return result;
+    }
+
+public:
     model::topic_id_partition make_tp(int i) {
         return model::topic_id_partition::from(
           fmt::format("deadbeef-aaaa-0000-0000-000000000000/{}", i));
@@ -120,7 +197,7 @@ public:
     }
 };
 
-TEST_F(ReplicatedMetastoreTest, TestMissingMetastore) {
+TEST_P(ReplicatedMetastoreTest, TestMissingMetastore) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto obj_builder = meta.object_builder().get().value();
@@ -156,7 +233,7 @@ TEST_F(ReplicatedMetastoreTest, TestMissingMetastore) {
     ASSERT_TRUE(oid.has_value());
 }
 
-TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
+TEST_P(ReplicatedMetastoreTest, TestAddNotFinished) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto tp = make_tp(0);
@@ -178,7 +255,7 @@ TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
     ASSERT_EQ(commit_res.error(), metastore::errc::invalid_request);
 }
 
-TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
+TEST_P(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore m(app.get_sharded_l1_metastore_router()->local());
     auto tp = make_tp(0);
@@ -217,7 +294,7 @@ TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
 
 // Regression test, where removing an object from the builder left some
 // metadata behind, which would result in a failure.
-TEST_F(ReplicatedMetastoreTest, TestBuilderRemoveObjectRemovesPartition) {
+TEST_P(ReplicatedMetastoreTest, TestBuilderRemoveObjectRemovesPartition) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore m(app.get_sharded_l1_metastore_router()->local());
     auto tp1 = make_tp(0);
@@ -254,7 +331,7 @@ TEST_F(ReplicatedMetastoreTest, TestBuilderRemoveObjectRemovesPartition) {
     ASSERT_TRUE(commit_res.has_value());
 }
 
-TEST_F(ReplicatedMetastoreTest, TestBasicAdd) {
+TEST_P(ReplicatedMetastoreTest, TestBasicAdd) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -267,9 +344,7 @@ TEST_F(ReplicatedMetastoreTest, TestBasicAdd) {
     size_t state_partitions_count = 0;
     size_t state_extents_count = 0;
     for (int i = 0; i < 3; ++i) {
-        auto l1_stm = get_l1_stm(model::partition_id{i});
-        ASSERT_TRUE(l1_stm != nullptr);
-        auto& l1_state = l1_stm->state();
+        auto l1_state = get_stm_state(model::partition_id{i});
         ASSERT_EQ(l1_state.topic_to_state.size(), 1);
 
         auto& p_states = l1_state.topic_to_state.begin()->second.pid_to_state;
@@ -326,10 +401,12 @@ TEST_F(ReplicatedMetastoreTest, TestBasicAdd) {
           testing::ElementsAre(MatchesRange(o{0}, o{999})));
         EXPECT_FLOAT_EQ(cmp_info->dirty_ratio, 1.0);
         EXPECT_TRUE(cmp_info->earliest_dirty_ts.has_value());
+        EXPECT_EQ(cmp_info->compaction_epoch, metastore::compaction_epoch{0});
+        EXPECT_EQ(cmp_info->start_offset, o{0});
     }
 }
 
-TEST_F(ReplicatedMetastoreTest, TestBasicCompact) {
+TEST_P(ReplicatedMetastoreTest, TestBasicCompact) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -345,9 +422,10 @@ TEST_F(ReplicatedMetastoreTest, TestBasicCompact) {
     for (int i = 0; i < partitions_count; ++i) {
         metastore::compaction_update update;
         update.cleaned_at = model::timestamp::now();
-        update.new_cleaned_range.emplace();
-        update.new_cleaned_range->base_offset = o{0};
-        update.new_cleaned_range->last_offset = o{999};
+        update.new_cleaned_ranges.push_back(
+          metastore::compaction_update::cleaned_range{
+            .base_offset = o{0}, .last_offset = o{999}});
+        update.expected_compaction_epoch = metastore::compaction_epoch{0};
         cmap[make_tp(i)] = std::move(update);
     }
     auto cmp_res = meta.compact_objects(*new_objs, cmap).get();
@@ -358,9 +436,7 @@ TEST_F(ReplicatedMetastoreTest, TestBasicCompact) {
     size_t state_partitions_count = 0;
     size_t state_extents_count = 0;
     for (int i = 0; i < 3; ++i) {
-        auto l1_stm = get_l1_stm(model::partition_id{i});
-        ASSERT_TRUE(l1_stm != nullptr);
-        auto& l1_state = l1_stm->state();
+        auto l1_state = get_stm_state(model::partition_id{i});
         ASSERT_EQ(l1_state.topic_to_state.size(), 1);
 
         auto& p_states = l1_state.topic_to_state.begin()->second.pid_to_state;
@@ -417,10 +493,12 @@ TEST_F(ReplicatedMetastoreTest, TestBasicCompact) {
           << fmt::format("{} is not cleaned", tp);
         EXPECT_FLOAT_EQ(cmp_info->dirty_ratio, 0.0);
         EXPECT_TRUE(!cmp_info->earliest_dirty_ts.has_value());
+        EXPECT_EQ(cmp_info->compaction_epoch, metastore::compaction_epoch{1});
+        EXPECT_EQ(cmp_info->start_offset, o{0});
     }
 }
 
-TEST_F(ReplicatedMetastoreTest, TestMissingNTP) {
+TEST_P(ReplicatedMetastoreTest, TestMissingNTP) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto offsets = meta.get_offsets(make_tp(0)).get();
@@ -428,7 +506,7 @@ TEST_F(ReplicatedMetastoreTest, TestMissingNTP) {
     ASSERT_EQ(offsets.error(), metastore::errc::missing_ntp);
 }
 
-TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
+TEST_P(ReplicatedMetastoreTest, TestNotLeader) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
     auto tp = make_tp(0);
@@ -509,9 +587,7 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
 
     // Check the validity of the resulting state -- that it's contiguous with
     // no gaps or overlap.
-    auto l1_stm = get_l1_stm(*meta_pid);
-    ASSERT_TRUE(l1_stm != nullptr);
-    auto& l1_state = l1_stm->state();
+    auto l1_state = get_stm_state(*meta_pid);
     ASSERT_EQ(l1_state.topic_to_state.size(), 1);
 
     auto& p_states = l1_state.topic_to_state.begin()->second.pid_to_state;
@@ -528,7 +604,7 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
     }
 }
 
-TEST_F(ReplicatedMetastoreTest, TestInvalidTermRequest) {
+TEST_P(ReplicatedMetastoreTest, TestInvalidTermRequest) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -551,7 +627,7 @@ TEST_F(ReplicatedMetastoreTest, TestInvalidTermRequest) {
     ASSERT_EQ(add_res.error(), metastore::errc::invalid_request);
 }
 
-TEST_F(ReplicatedMetastoreTest, TestGetTermForOffset) {
+TEST_P(ReplicatedMetastoreTest, TestGetTermForOffset) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -609,7 +685,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetTermForOffset) {
     ASSERT_EQ(term_missing.error(), metastore::errc::missing_ntp);
 }
 
-TEST_F(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
+TEST_P(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -667,7 +743,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
     ASSERT_EQ(end_missing.error(), metastore::errc::missing_ntp);
 }
 
-TEST_F(ReplicatedMetastoreTest, TestSetStartOffset) {
+TEST_P(ReplicatedMetastoreTest, TestSetStartOffset) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -681,6 +757,15 @@ TEST_F(ReplicatedMetastoreTest, TestSetStartOffset) {
           ASSERT_TRUE(offsets.has_value());
           ASSERT_EQ(expected_start, offsets->start_offset);
           ASSERT_EQ(expected_next, offsets->next_offset);
+
+          // Sanity check the start offset returned by get_compaction_info() as
+          // well.
+          auto spec = metastore::compaction_info_spec{
+            .tidp = tp,
+            .tombstone_removal_upper_bound_ts = model::timestamp::now()};
+          auto cmp_info = meta.get_compaction_info(spec).get();
+          ASSERT_TRUE(cmp_info.has_value());
+          ASSERT_EQ(cmp_info->start_offset, expected_start);
       };
 
     // Get initial offsets
@@ -693,8 +778,7 @@ TEST_F(ReplicatedMetastoreTest, TestSetStartOffset) {
 
     // Test setting below the start.
     auto set_start_invalid = meta.set_start_offset(tp, o{0}).get();
-    ASSERT_FALSE(set_start_invalid.has_value());
-    ASSERT_EQ(set_start_invalid.error(), metastore::errc::invalid_request);
+    ASSERT_TRUE(set_start_invalid.has_value());
     ASSERT_NO_FATAL_FAILURE(assert_get_offsets(o{50}, o{100}));
 
     // Test setting start offset for missing ntp
@@ -715,7 +799,7 @@ TEST_F(ReplicatedMetastoreTest, TestSetStartOffset) {
     ASSERT_EQ(term_res.value(), model::term_id{0});
 }
 
-TEST_F(ReplicatedMetastoreTest, TestBasicRemoveTopics) {
+TEST_P(ReplicatedMetastoreTest, TestBasicRemoveTopics) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -725,8 +809,13 @@ TEST_F(ReplicatedMetastoreTest, TestBasicRemoveTopics) {
     // Sanity check that all topics exist.
     for (int i = 0; i < topics_count; ++i) {
         auto tp = make_topic_p0(i);
-        auto offsets = meta.get_offsets(tp).get();
-        ASSERT_TRUE(offsets.has_value());
+        std::expected<metastore::offsets_response, metastore::errc> offsets;
+        RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+            return meta.get_offsets(tp).then([&](auto offsets_res) {
+                offsets = std::move(offsets_res);
+                return offsets.has_value();
+            });
+        });
         ASSERT_EQ(offsets->next_offset, o{100});
     }
 
@@ -751,14 +840,12 @@ TEST_F(ReplicatedMetastoreTest, TestBasicRemoveTopics) {
         ASSERT_EQ(offsets.error(), metastore::errc::missing_ntp);
     }
     for (int i = 0; i < 3; ++i) {
-        auto l1_stm = get_l1_stm(model::partition_id{i});
-        ASSERT_TRUE(l1_stm != nullptr);
-        auto& l1_state = l1_stm->state();
+        auto l1_state = get_stm_state(model::partition_id{i});
         EXPECT_TRUE(l1_state.topic_to_state.empty());
     }
 }
 
-TEST_F(ReplicatedMetastoreTest, TestRemoveTopicsWithShuffleLoop) {
+TEST_P(ReplicatedMetastoreTest, TestRemoveTopicsWithShuffleLoop) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
 
@@ -817,10 +904,72 @@ TEST_F(ReplicatedMetastoreTest, TestRemoveTopicsWithShuffleLoop) {
 
     // Verify metastore state is clean across all partitions.
     for (int i = 0; i < 3; ++i) {
-        auto l1_stm = get_l1_stm(model::partition_id{i});
-        ASSERT_TRUE(l1_stm != nullptr);
-        auto& l1_state = l1_stm->state();
+        auto l1_state = get_stm_state(model::partition_id{i});
         EXPECT_TRUE(l1_state.topic_to_state.empty())
           << "Partition " << i << " still has topics";
     }
 }
+
+TEST_P(ReplicatedMetastoreTest, TestGetCompactionInfos) {
+    auto& app = get_ct_app(model::node_id{0});
+    replicated_metastore meta(app.get_sharded_l1_metastore_router()->local());
+
+    constexpr auto partitions_count = 100;
+    ASSERT_NO_FATAL_FAILURE(
+      add_initial_objects(meta, partitions_count, 999).get());
+    chunked_vector<metastore::compaction_info_spec> info_specs;
+    info_specs.reserve(partitions_count);
+    for (int i = 0; i < partitions_count; ++i) {
+        auto tp = make_tp(i);
+        info_specs.emplace_back(tp, model::timestamp::max());
+    }
+
+    {
+        auto compaction_infos_res = meta.get_compaction_infos(info_specs).get();
+        ASSERT_TRUE(compaction_infos_res.has_value());
+        ASSERT_EQ(compaction_infos_res->size(), partitions_count);
+        for (const auto& [log, info] : compaction_infos_res.value()) {
+            ASSERT_TRUE(info.has_value());
+            ASSERT_DOUBLE_EQ(info->dirty_ratio, 1.0);
+            ASSERT_EQ(info->compaction_epoch, metastore::compaction_epoch{0});
+            ASSERT_EQ(info->start_offset, o{0});
+        }
+    }
+
+    // Compact every partition.
+    std::unique_ptr<metastore::object_metadata_builder> new_objs;
+    ASSERT_NO_FATAL_FAILURE(
+      create_initial_objects(meta, partitions_count, 999, &new_objs));
+    metastore::compaction_map_t cmap;
+    for (int i = 0; i < partitions_count; ++i) {
+        metastore::compaction_update update;
+        update.cleaned_at = model::timestamp::now();
+        update.new_cleaned_ranges.push_back(
+          metastore::compaction_update::cleaned_range{
+            .base_offset = o{0}, .last_offset = o{999}});
+        update.expected_compaction_epoch = metastore::compaction_epoch{0};
+        cmap[make_tp(i)] = std::move(update);
+    }
+    auto cmp_res = meta.compact_objects(*new_objs, cmap).get();
+    ASSERT_TRUE(cmp_res.has_value()) << fmt::to_string(cmp_res.error());
+
+    {
+        auto compaction_infos_res = meta.get_compaction_infos(info_specs).get();
+        ASSERT_TRUE(compaction_infos_res.has_value());
+        ASSERT_EQ(compaction_infos_res->size(), partitions_count);
+        for (const auto& [log, info] : compaction_infos_res.value()) {
+            ASSERT_TRUE(info.has_value());
+            ASSERT_DOUBLE_EQ(info->dirty_ratio, 0.0);
+            ASSERT_EQ(info->compaction_epoch, metastore::compaction_epoch{1});
+            ASSERT_EQ(info->start_offset, o{0});
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  MetastoreBackends,
+  ReplicatedMetastoreTest,
+  testing::Values(metastore_backend::simple, metastore_backend::lsm),
+  [](const testing::TestParamInfo<metastore_backend>& info) {
+      return info.param == metastore_backend::simple ? "Simple" : "LSM";
+  });

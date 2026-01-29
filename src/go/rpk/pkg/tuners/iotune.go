@@ -27,6 +27,7 @@ type ioTuner struct {
 	fs              afero.Fs
 	ioConfigFile    string
 	timeout         time.Duration
+	iotunePath      string
 }
 
 func NewIoTuneTuner(
@@ -34,6 +35,7 @@ func NewIoTuneTuner(
 	evalDirectories []string,
 	ioConfigFile string,
 	duration, timeout time.Duration,
+	iotunePath string,
 ) Tunable {
 	return &ioTuner{
 		duration:        duration,
@@ -41,18 +43,27 @@ func NewIoTuneTuner(
 		fs:              fs,
 		ioConfigFile:    ioConfigFile,
 		timeout:         timeout,
+		iotunePath:      iotunePath,
 	}
 }
 
+func (tuner *ioTuner) getIotunePath() string {
+	if tuner.iotunePath != "" {
+		return tuner.iotunePath
+	}
+	return iotune.DefaultBin
+}
+
 func (tuner *ioTuner) CheckIfSupported() (bool, string) {
-	if exists, _ := afero.Exists(tuner.fs, iotune.Bin); !exists {
-		return false, fmt.Sprintf("'%s' not found in PATH", iotune.Bin)
+	binPath := tuner.getIotunePath()
+	if exists, _ := afero.Exists(tuner.fs, binPath); !exists {
+		return false, fmt.Sprintf("'%s' not found in PATH", binPath)
 	}
 	return true, ""
 }
 
 func (tuner *ioTuner) Tune() TuneResult {
-	ioTune := iotune.NewIoTune(os.NewProc(), tuner.timeout)
+	ioTune := iotune.NewIoTune(os.NewProc(), tuner.getIotunePath(), tuner.timeout)
 	args := iotune.IoTuneArgs{
 		Dirs:           tuner.evalDirectories,
 		Format:         iotune.Seastar,

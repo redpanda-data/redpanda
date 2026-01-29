@@ -129,7 +129,7 @@ class KcatConsumer(BackgroundThreadService):
             if isinstance(offset_default, KcatConsumer.OffsetDefaultMeta):
                 self._cmd += ["-X", f"auto.offset.reset={offset_default.value}"]
             else:
-                assert False, "offset_default must be an OffsetMeta"
+                assert False, "offset_default must be an OffsetMeta"  # pyright: ignore[reportUnreachable]
 
         if num_msgs is not None:
             self._cmd += ["-c", f"{num_msgs}"]

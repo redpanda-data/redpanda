@@ -1,5 +1,19 @@
 load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
+redpanda_cc_gtest(
+    name = "adaptive_interval_test",
+    timeout = "short",
+    srcs = [
+        "adaptive_interval_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics/reconciler:adaptive_interval",
+        "//src/v/config",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
 redpanda_test_cc_library(
     name = "test_utils",
     hdrs = [
@@ -52,6 +66,7 @@ redpanda_cc_gtest(
         "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random_bytes",
+        "//src/v/test_utils:scoped_config",
         "@googletest//:gtest",
         "@seastar",
     ],

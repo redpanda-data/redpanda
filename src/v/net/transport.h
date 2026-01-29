@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "base/seastarx.h"
+#include "base/vassert.h"
 #include "net/batched_output_stream.h"
 #include "net/client_probe.h"
 #include "net/types.h"
@@ -83,7 +84,7 @@ public:
     void set_keepalive(bool);
 
     [[gnu::always_inline]] bool is_valid() const {
-        return _fd && !_shutdown && !_in.eof();
+        return _fd && !_shutdown && (_in && !in().eof());
     }
 
     const unresolved_address& server_address() const { return _server_addr; }
@@ -93,17 +94,42 @@ public:
      */
     void set_probe(client_probe*);
 
+    bool has_tls() const { return static_cast<bool>(_creds); }
+
 protected:
     virtual void fail_outstanding_futures() {}
 
-    ss::input_stream<char> _in;
-    net::batched_output_stream _out;
+    // Return the input stream associated with the transport.
+    // The transport must not be in initial/stopped state.
+    const ss::input_stream<char>& in() const {
+        vassert(_in.has_value(), "input stream not initialized");
+        return *_in;
+    }
+
+    ss::input_stream<char>& in() {
+        vassert(_in.has_value(), "input stream not initialized");
+        return *_in;
+    }
+
+    const net::batched_output_stream& out() const {
+        vassert(_out.has_value(), "output stream not initialized");
+        return *_out;
+    }
+
+    net::batched_output_stream& out() {
+        vassert(_out.has_value(), "output stream not initialized");
+        return *_out;
+    }
+
     ss::gate _dispatch_gate;
 
 private:
     ss::future<> do_connect(clock_type::time_point);
 
     std::unique_ptr<ss::connected_socket> _fd;
+    std::optional<ss::input_stream<char>> _in;
+    std::optional<net::batched_output_stream> _out;
+
     unresolved_address _server_addr;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
     std::optional<ss::sstring> _tls_sni_hostname;

@@ -169,7 +169,7 @@ admin_server::find_tx_coordinator_handler(
     }
     reply.ec = static_cast<int>(r.ec);
 
-    co_return ss::json::json_return_type(std::move(reply));
+    co_return ss::json::json_return_type(reply);
 }
 
 ss::future<ss::json::json_return_type>

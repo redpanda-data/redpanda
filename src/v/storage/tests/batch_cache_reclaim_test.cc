@@ -91,7 +91,7 @@ TEST(BatchCacheReclaimTest, reclaim) {
     for (size_t i = 0; i < pages_until_reclaim; i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        auto e = cache.put(index, std::move(batch), is_dirty_entry::no);
+        auto e = cache.put(index, batch, is_dirty_entry::no);
         ASSERT_TRUE((bool)e.range());
         cache_entries.emplace_back(std::move(e));
     }

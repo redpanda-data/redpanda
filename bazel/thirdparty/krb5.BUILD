@@ -10,12 +10,6 @@ int_flag(
 )
 
 string_flag(
-    name = "sanitizers",
-    build_setting_default = "no",
-    make_variable = "SANITIZERS",
-)
-
-string_flag(
     name = "linker",
     build_setting_default = "lld",
     make_variable = "LINKER",
@@ -52,8 +46,11 @@ configure_make(
         # duplicate symbol error
         "--enable-shared",
         "--disable-static",
-        "--enable-asan=$(SANITIZERS)",
-    ],
+    ] + select({
+        "@com_github_redpanda_data_redpanda//bazel:sanitizers_none": ["--enable-asan=no"],
+        "@com_github_redpanda_data_redpanda//bazel:sanitizers_asan": ["--enable-asan=address"],
+        "@com_github_redpanda_data_redpanda//bazel:sanitizers_all": ["--enable-asan=address,undefined,vptr,function,alignment"],
+    }),
     copts = [
         "-fuse-ld=$LINKER",
     ],
@@ -72,13 +69,12 @@ configure_make(
     ],
     toolchains = [
         ":build_jobs",
-        ":sanitizers",
         ":linker",
     ],
     visibility = [
         "//visibility:public",
     ],
     deps = [
-        "@openssl",
+        "@openssl//:openssl_foreign_cc",
     ],
 )

@@ -682,8 +682,14 @@ func (c *consumer) filterEmptyPartitions() (allEmpty bool) {
 			for lp, lat := range lps {
 				rat, exists := rps[lp]
 				if exists && rat <= lat {
+					zap.L().Sugar().Warnf("no data to consume for %s/%d: requested end offset %d, available start offset %d",
+						lt, lp, rat, lat)
 					delete(rps, lp)
 					delete(lps, lp)
+				} else if rat > lat {
+					// There is data to consume. We consume from the available start offset (lat),
+					// which automatically adjusts if the user's requested start was too low.
+					zap.L().Sugar().Debugf("consuming %s/%d from offset %d", lt, lp, lat)
 				}
 			}
 		}

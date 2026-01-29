@@ -45,7 +45,13 @@ class RemoteCommandError(RemoteAccountError):
 
 class RemoteAccount:
     ssh_config: RemoteAccountSSHConfig
-    hostname: Optional[str]
+    # in principle hostname or ssh_hostname could be None, i.e., the
+    # constructor does not exclude that possibility, but in practice
+    # these are always non-None for us, see ducktape_cluster.json.j2
+    # in this repo (for docker) and vtools (for CDT), so we type them
+    # as str here, to avoid constant pointless hoop jumping later on
+    # to deal with their possible-None-ness-but-not-really-None-ness.
+    hostname: str
     ssh_hostname: str
     user: Optional[str]
     externally_routable_ip: Optional[str]

@@ -23,6 +23,8 @@ namespace http {
 using uri_encode_slash = ss::bool_class<struct uri_encode_slash_t>;
 ss::sstring uri_encode(std::string_view input, uri_encode_slash encode_slash);
 
+ss::sstring uri_decode(std::string_view input);
+
 iobuf form_encode_data(
   const absl::flat_hash_map<ss::sstring, ss::sstring>& data);
 

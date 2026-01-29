@@ -271,7 +271,12 @@ security::auth_result connection_context::authorized(
     }
 
     return authorized_user(
-      get_principal(), operation, name, quiet, superuser_required);
+      get_principal(),
+      operation,
+      name,
+      quiet,
+      superuser_required,
+      get_groups());
 }
 
 template security::auth_result connection_context::authorized<model::topic>(
@@ -306,7 +311,8 @@ security::auth_result connection_context::authorized_user(
   security::acl_operation operation,
   const T& name,
   authz_quiet quiet,
-  superuser_required superuser_required) {
+  superuser_required superuser_required,
+  const chunked_vector<security::acl_principal>& groups) {
     auto authorized = _server.authorizer().authorized(
       name,
       operation,
@@ -314,7 +320,8 @@ security::auth_result connection_context::authorized_user(
       security::acl_host(_client_addr),
       security::superuser_required{
         superuser_required ? security::superuser_required::yes
-                           : security::superuser_required::no});
+                           : security::superuser_required::no},
+      groups);
 
     if (!authorized) {
         if (_sasl) {
@@ -369,7 +376,8 @@ connection_context::authorized_user<model::topic>(
   security::acl_operation operation,
   const model::topic& name,
   authz_quiet quiet,
-  superuser_required);
+  superuser_required,
+  const chunked_vector<security::acl_principal>& groups);
 
 template security::auth_result
 connection_context::authorized_user<kafka::group_id>(
@@ -377,7 +385,8 @@ connection_context::authorized_user<kafka::group_id>(
   security::acl_operation operation,
   const kafka::group_id& name,
   authz_quiet quiet,
-  superuser_required);
+  superuser_required,
+  const chunked_vector<security::acl_principal>& groups);
 
 template security::auth_result
 connection_context::authorized_user<kafka::transactional_id>(
@@ -385,7 +394,8 @@ connection_context::authorized_user<kafka::transactional_id>(
   security::acl_operation operation,
   const kafka::transactional_id& name,
   authz_quiet quiet,
-  superuser_required);
+  superuser_required,
+  const chunked_vector<security::acl_principal>& groups);
 
 template security::auth_result
 connection_context::authorized_user<security::acl_cluster_name>(
@@ -393,7 +403,8 @@ connection_context::authorized_user<security::acl_cluster_name>(
   security::acl_operation operation,
   const security::acl_cluster_name& name,
   authz_quiet quiet,
-  superuser_required);
+  superuser_required,
+  const chunked_vector<security::acl_principal>& groups);
 
 ss::future<> connection_context::revoke_credentials(std::string_view name) {
     if (
@@ -606,6 +617,15 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
     co_await conn->write(std::move(msg));
 }
 
+const chunked_vector<security::acl_principal>&
+connection_context::get_groups() const {
+    if (_sasl && _sasl->has_mechanism()) {
+        return _sasl->mechanism().groups();
+    }
+    static const chunked_vector<security::acl_principal> empty;
+    return empty;
+}
+
 bool connection_context::is_finished_parsing() const {
     return conn->input().eof() || abort_requested();
 }
@@ -617,11 +637,12 @@ connection_context::record_tp_and_calculate_throttle(
     static_assert(std::is_same_v<clock, delay_t::clock>);
     const auto now = clock::now();
 
+    const auto principal = get_principal();
     // Throttle on client based quotas
     connection_context::delay_t client_quota_delay{};
     if (r_data.request_key == fetch_api::key) {
         auto fetch_delay = co_await _server.quota_mgr().throttle_fetch_tp(
-          r_data.client_id, now);
+          principal.name_view(), r_data.client_id, now);
         auto fetch_enforced = _throttling_state.update_fetch_delay(
           fetch_delay, now);
         client_quota_delay = delay_t{
@@ -631,7 +652,7 @@ connection_context::record_tp_and_calculate_throttle(
     } else if (r_data.request_key == produce_api::key) {
         auto produce_delay
           = co_await _server.quota_mgr().record_produce_tp_and_throttle(
-            r_data.client_id, request_size, now);
+            principal.name_view(), r_data.client_id, request_size, now);
         auto datalake_produce_delay
           = co_await _server.get_datalake_producer_throttle(r_data.client_id);
 
@@ -687,8 +708,8 @@ connection_context::record_tp_and_calculate_throttle(
     co_return delay_t{.request = delay_request, .enforce = delay_enforce};
 }
 
-ss::future<request_resources> connection_context::throttle_request(
-  const request_data r_data, size_t request_size) {
+ss::future<request_resources>
+connection_context::throttle_request(request_data r_data, size_t request_size) {
     // note that when throttling is first determined, the request is
     // allowed to pass through, and only subsequent requests are
     // delayed. this is a similar strategy used by kafka 2.0: the
@@ -1110,9 +1131,10 @@ ss::future<> connection_context::client_protocol_state::handle_response(
     if (disconnected) {
         vlog(
           klog.info,
-          "Disconnected {} ({})",
+          "Disconnected {} ({}), {}",
           connection_ctx->conn->addr,
-          disconnected.value());
+          disconnected.value(),
+          e);
     } else {
         vlog(klog.warn, "Error processing request: {}", e);
     }
@@ -1161,7 +1183,9 @@ connection_context::client_protocol_state::do_process_responses(
 
     auto msg = response_as_scattered(std::move(resp_and_res.response));
     if (resp_and_res.resources->request_data.request_key == fetch_api::key) {
+        const auto principal = connection_ctx->get_principal();
         co_await connection_ctx->_server.quota_mgr().record_fetch_tp(
+          principal.name_view(),
           resp_and_res.resources->request_data.client_id,
           msg.size(),
           quota_manager::clock::now());

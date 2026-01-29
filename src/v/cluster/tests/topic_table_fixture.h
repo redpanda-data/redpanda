@@ -45,9 +45,10 @@ struct topic_table_fixture {
     topic_table_fixture() {
         migrated_resources.start().get();
         table
-          .start(ss::sharded_parameter([this] {
-              return std::ref(migrated_resources.local());
-          }))
+          .start(
+            ss::sharded_parameter(
+              [this] { return std::ref(migrated_resources.local()); }),
+            model::node_id{1})
           .get();
         members.start_single().get();
         features.start().get();
@@ -179,15 +180,6 @@ struct topic_table_fixture {
         return total;
     }
 
-    struct set_config_node_id {
-        set_config_node_id() {
-            ss::smp::invoke_on_all([] {
-                config::node().node_id.set_value(model::node_id{1});
-            }).get();
-        }
-    };
-
-    set_config_node_id setter;
     ss::sharded<cluster::members_table> members;
     ss::sharded<features::feature_table> features;
     ss::sharded<cluster::partition_allocator> allocator;

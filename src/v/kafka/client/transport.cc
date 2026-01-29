@@ -81,7 +81,7 @@ void transport::request_entry::set_error(errc ec) {
 
 ss::future<> transport::read_loop() {
     while (is_valid()) {
-        auto reply_sz = co_await protocol::parse_size(_in);
+        auto reply_sz = co_await protocol::parse_size(in());
 
         if (!reply_sz) {
             // If we can't read the size, we are disconnected.
@@ -90,7 +90,7 @@ ss::future<> transport::read_loop() {
         auto bytes_remaining = reply_sz.value();
 
         // TODO: add validation for correlation id here
-        auto correlation_id = co_await read_correlation_id(_in);
+        auto correlation_id = co_await read_correlation_id(in());
         bytes_remaining -= sizeof(correlation_id);
         auto it = _pending_requests.find(correlation_id);
 
@@ -107,7 +107,7 @@ ss::future<> transport::read_loop() {
         _pending_requests.erase(it);
         std::optional<tagged_fields> reply_tags;
         if (entry->is_flexible) {
-            auto [tags, bytes_read] = co_await parse_tags(_in);
+            auto [tags, bytes_read] = co_await parse_tags(in());
             reply_tags = std::move(tags);
             bytes_remaining -= bytes_read;
         }
@@ -116,7 +116,7 @@ ss::future<> transport::read_loop() {
           "reading response for correlation_id: {}, bytes_remaining: {}",
           correlation_id,
           bytes_remaining);
-        auto reply_buffer = co_await read_iobuf_exactly(_in, bytes_remaining);
+        auto reply_buffer = co_await read_iobuf_exactly(in(), bytes_remaining);
 
         entry->response_promise.set_value(
           response_data{

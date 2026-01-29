@@ -11,7 +11,8 @@ import itertools
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Iterable, Optional
+from ducktape.cluster.cluster import ClusterNode
 
 
 class Segment:
@@ -71,7 +72,7 @@ class Segment:
 
 
 class Partition:
-    def __init__(self, idx, rev, node, path):
+    def __init__(self, idx: int, rev: int, node: ClusterNode, path: str) -> None:
         self.num = idx
         self.rev = rev
         self.node = node
@@ -79,7 +80,7 @@ class Partition:
         self.files = set()
         self.segments = dict()
 
-    def add_files(self, files):
+    def add_files(self, files: Iterable[str]) -> None:
         self.files = set(files)
         for fn in self.files:
             seg, ext = os.path.splitext(fn)
@@ -90,7 +91,7 @@ class Partition:
             seg = self.segments[seg]
             seg.add_file(fn, ext)
 
-    def set_segment_size(self, segment_name: str, size: int):
+    def set_segment_size(self, segment_name: str, size: int) -> None:
         """Set the data size of a segment: this is not the physical size of
         all the segment's files, but just the size of the data part, excluding
         space used by any indices.  This is usually what you care about, because
@@ -100,23 +101,25 @@ class Partition:
             return
         self.segments[seg].set_size(size)
 
-    def set_segment_compaction_footer(self, segment_name: str, compaction_footer: dict):
+    def set_segment_compaction_footer(
+        self, segment_name: str, compaction_footer: dict[str, Any]
+    ) -> None:
         seg, ext = os.path.splitext(segment_name)
         if not (re.match(r"^\d+\-\d+\-v\d+$", seg) and ext == ".compaction_index"):
             return
         self.segments[seg].set_compaction_footer(compaction_footer)
 
-    def delete_segment(self, segment_name: str):
+    def delete_segment(self, segment_name: str) -> None:
         try:
             del self.segments[segment_name]
         except KeyError:
             pass
 
-    def delete_indices(self, allow_fail=False):
+    def delete_indices(self, allow_fail: bool = False) -> None:
         for _, segment in self.segments.items():
             segment.delete_indices(allow_fail)
 
-    def recovered(self):
+    def recovered(self) -> bool:
         n_recovered = sum(
             1
             for s in map(
@@ -130,44 +133,44 @@ class Partition:
         # until they're sealed)
         return n_recovered >= len(self.segments) - 1
 
-    def get_mtime(self, filename):
+    def get_mtime(self, filename: str) -> int:
         path = os.path.join(self.path, filename)
         out = self.node.account.ssh_capture(f"stat --format=%Y {path}")
         mtime = "".join(out).strip()
         return int(mtime)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "part-{}-{}-{}".format(self.node.name, self.num, self.segments)
 
 
 class Topic:
-    def __init__(self, name, path):
+    def __init__(self, name: str, path: str) -> None:
         self.name = name
         self.path = path
         self.partitions = dict()
 
-    def add_partition(self, num, node_id, path):
+    def add_partition(self, num: str, node_id: ClusterNode, path: str) -> Partition:
         (idx, rev) = num.split("_")
         p = Partition(int(idx), int(rev), node_id, path)
         self.partitions[num] = p
         return p
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.name
 
 
 class Namespace:
-    def __init__(self, name, path):
+    def __init__(self, name: str, path: str) -> None:
         self.name = name
         self.path = path
-        self.topics = dict()
+        self.topics: dict[str, "Topic"] = dict()
 
-    def add_topic(self, topic, path):
+    def add_topic(self, topic: str, path: str) -> "Topic":
         t = Topic(topic, path)
         self.topics[topic] = t
         return t
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.name
 
 
@@ -189,14 +192,14 @@ class NodeCacheStorage:
 
 
 class NodeStorage:
-    def __init__(self, name: str, data_dir: str, cache_dir: str):
+    def __init__(self, name: str, data_dir: str, cache_dir: str) -> None:
         self.data_dir = data_dir
         self.cache_dir = cache_dir
-        self.ns = dict()
+        self.ns: dict[str, Namespace] = dict()
         self.name = name
-        self.cache = None
+        self.cache: NodeCacheStorage | None = None
 
-    def add_namespace(self, ns, path):
+    def add_namespace(self, ns: str, path: str) -> Namespace:
         n = Namespace(ns, path)
         self.ns[ns] = n
         return n
@@ -225,10 +228,10 @@ class NodeStorage:
 
 
 class ClusterStorage:
-    def __init__(self):
-        self.nodes = []
+    def __init__(self) -> None:
+        self.nodes: list[NodeStorage] = []
 
-    def add_node(self, node_storage):
+    def add_node(self, node_storage: NodeStorage) -> None:
         self.nodes.append(node_storage)
 
     def partitions(self, ns, topic):

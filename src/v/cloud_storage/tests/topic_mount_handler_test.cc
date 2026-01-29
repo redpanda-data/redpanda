@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "cloud_io/tests/s3_imposter.h"
+#include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_mount_handler.h"
 #include "cloud_storage/types.h"
@@ -41,8 +42,6 @@ static const model::topic_namespace test_tp_ns{
 static const model::topic_namespace test_tp_ns_override{
   model::ns{"kafka"}, model::topic{"override"}};
 static ss::abort_source never_abort;
-static constexpr model::cloud_credentials_source config_file{
-  model::cloud_credentials_source::config_file};
 static const model::initial_revision_id rev_id{123};
 
 static cluster::topic_configuration
@@ -57,28 +56,17 @@ get_topic_configuration(cluster::topic_properties topic_props) {
 
 struct TopicMountHandlerFixture : public s3_imposter_fixture {
     TopicMountHandlerFixture() {
-        pool.start(10, ss::sharded_parameter([this] { return conf; })).get();
-        io.start(
-            std::ref(pool),
-            ss::sharded_parameter([this] { return conf; }),
-            ss::sharded_parameter([] { return config_file; }),
-            ss::sharded_parameter(
-              [] { return ss::default_scheduling_group(); }))
-          .get();
-        remote
-          .start(std::ref(io), ss::sharded_parameter([this] { return conf; }))
-          .get();
+        scoped_remote_io_ = cloud_io::scoped_remote::create(10, conf);
+        remote.start(std::ref(scoped_remote_io_->remote), conf).get();
     }
 
     ~TopicMountHandlerFixture() {
-        pool.local().shutdown_connections();
+        scoped_remote_io_->request_stop();
         remote.stop().get();
-        io.stop().get();
-        pool.stop().get();
+        scoped_remote_io_.reset();
     }
 
-    ss::sharded<cloud_storage_clients::client_pool> pool;
-    ss::sharded<cloud_io::remote> io;
+    std::unique_ptr<cloud_io::scoped_remote> scoped_remote_io_;
     ss::sharded<remote> remote;
 };
 

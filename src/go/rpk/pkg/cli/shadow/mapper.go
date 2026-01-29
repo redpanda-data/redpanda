@@ -10,6 +10,7 @@
 package shadow
 
 import (
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	corecommonv1 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/common/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -34,6 +35,26 @@ func shadowLinkConfigToProto(slCfg *ShadowLinkConfig) *adminv2.ShadowLink {
 		SchemaRegistrySyncOptions: mapSchemaRegistrySyncOptions(slCfg.SchemaRegistrySyncOptions),
 	}
 	return shadowLink
+}
+
+func shadowLinkConfigToCloudCreate(slCfg *ShadowLinkConfig) *controlplanev1.ShadowLinkCreate {
+	if slCfg == nil {
+		return nil
+	}
+	cloudSl := &controlplanev1.ShadowLinkCreate{
+		Name: slCfg.Name,
+	}
+	if slc := slCfg.CloudOptions; slc != nil {
+		cloudSl.ShadowRedpandaId = slc.ShadowRedpandaID
+		cloudSl.SourceRedpandaId = slc.SourceRedpandaID
+	}
+
+	cloudSl.ClientOptions = mapCloudClientOptions(slCfg.ClientOptions)
+	cloudSl.TopicMetadataSyncOptions = mapTopicMetadataSyncOptions(slCfg.TopicMetadataSyncOptions)
+	cloudSl.ConsumerOffsetSyncOptions = mapConsumerOffsetSyncOptions(slCfg.ConsumerOffsetSyncOptions)
+	cloudSl.SecuritySyncOptions = mapSecuritySyncOptions(slCfg.SecuritySyncOptions)
+	cloudSl.SchemaRegistrySyncOptions = mapSchemaRegistrySyncOptions(slCfg.SchemaRegistrySyncOptions)
+	return cloudSl
 }
 
 func mapClientOptions(opts *ShadowLinkClientOptions) *adminv2.ShadowLinkClientOptions {
@@ -63,6 +84,59 @@ func mapClientOptions(opts *ShadowLinkClientOptions) *adminv2.ShadowLinkClientOp
 	}
 
 	return pbOpts
+}
+
+func mapCloudClientOptions(opts *ShadowLinkClientOptions) *controlplanev1.ShadowLinkClientOptions {
+	if opts == nil {
+		return nil
+	}
+
+	pbOpts := &controlplanev1.ShadowLinkClientOptions{
+		BootstrapServers:       opts.BootstrapServers,
+		SourceClusterId:        opts.SourceClusterID,
+		MetadataMaxAgeMs:       opts.MetadataMaxAgeMs,
+		ConnectionTimeoutMs:    opts.ConnectionTimeoutMs,
+		RetryBackoffMs:         opts.RetryBackoffMs,
+		FetchWaitMaxMs:         opts.FetchWaitMaxMs,
+		FetchMinBytes:          opts.FetchMinBytes,
+		FetchMaxBytes:          opts.FetchMaxBytes,
+		FetchPartitionMaxBytes: opts.FetchPartitionMaxBytes,
+		// ClientId is intentionally left empty; It's output only.
+	}
+
+	if opts.TLSSettings != nil {
+		pbOpts.TlsSettings = mapCloudTLSSettings(opts.TLSSettings)
+	}
+
+	if opts.AuthenticationConfiguration != nil {
+		pbOpts.AuthenticationConfiguration = mapAuthenticationConfiguration(opts.AuthenticationConfiguration)
+	}
+
+	return pbOpts
+}
+
+func mapCloudTLSSettings(tls *TLSSettings) *controlplanev1.TLSSettings {
+	if tls == nil {
+		return nil
+	}
+
+	cloudTLS := &controlplanev1.TLSSettings{
+		Enabled:             tls.Enabled,
+		DoNotSetSniHostname: tls.DoNotSetSniHostname,
+	}
+
+	// Cloud proto only supports inline PEM content, not file paths
+	if tls.TLSPEMSettings != nil {
+		cloudTLS.Ca = tls.TLSPEMSettings.CA
+		cloudTLS.Key = tls.TLSPEMSettings.Key
+		cloudTLS.Cert = tls.TLSPEMSettings.Cert
+	}
+	// Note: TLSFileSettings cannot be mapped directly to cloud proto
+	// since the cloud API requires inline PEM content, not file paths.
+	// If only TLSFileSettings is present (and TLSPEMSettings is nil),
+	// certificate information will be omitted from the returned proto.
+	// The caller is responsible for providing inline PEM content.
+	return cloudTLS
 }
 
 func mapTLSSettings(tls *TLSSettings) *corecommonv1.TLSSettings {
@@ -106,12 +180,23 @@ func mapAuthenticationConfiguration(auth *AuthenticationConfiguration) *adminv2.
 
 	pbAuth := &adminv2.AuthenticationConfiguration{}
 
-	if a := auth.ScramConfiguration; a != nil {
+	switch {
+	case auth.ScramConfiguration != nil:
+		a := auth.ScramConfiguration
 		pbAuth.Authentication = &adminv2.AuthenticationConfiguration_ScramConfiguration{
 			ScramConfiguration: &adminv2.ScramConfig{
 				Username:       a.Username,
 				Password:       a.Password,
 				ScramMechanism: mapScramMechanism(a.ScramMechanism),
+				// password_set and password_set_at are output-only
+			},
+		}
+	case auth.PlainConfiguration != nil:
+		a := auth.PlainConfiguration
+		pbAuth.Authentication = &adminv2.AuthenticationConfiguration_PlainConfiguration{
+			PlainConfiguration: &adminv2.PlainConfig{
+				Username: a.Username,
+				Password: a.Password,
 				// password_set and password_set_at are output-only
 			},
 		}
@@ -464,7 +549,8 @@ func adminAuthToCfg(auth *adminv2.AuthenticationConfiguration) *AuthenticationCo
 		return nil
 	}
 
-	if a, ok := auth.GetAuthentication().(*adminv2.AuthenticationConfiguration_ScramConfiguration); ok {
+	switch a := auth.GetAuthentication().(type) {
+	case *adminv2.AuthenticationConfiguration_ScramConfiguration:
 		if a.ScramConfiguration == nil {
 			return nil
 		}
@@ -473,6 +559,16 @@ func adminAuthToCfg(auth *adminv2.AuthenticationConfiguration) *AuthenticationCo
 				Username:       a.ScramConfiguration.GetUsername(),
 				Password:       a.ScramConfiguration.GetPassword(),
 				ScramMechanism: adminScramMechanismToCfg(a.ScramConfiguration.GetScramMechanism()),
+			},
+		}
+	case *adminv2.AuthenticationConfiguration_PlainConfiguration:
+		if a.PlainConfiguration == nil {
+			return nil
+		}
+		return &AuthenticationConfiguration{
+			PlainConfiguration: &PlainConfiguration{
+				Username: a.PlainConfiguration.GetUsername(),
+				Password: a.PlainConfiguration.GetPassword(),
 			},
 		}
 	}
@@ -728,5 +824,91 @@ func adminPermissionTypeToCfg(permType corecommonv1.ACLPermissionType) ACLPermis
 		return ACLPermissionTypeDeny
 	default:
 		return ""
+	}
+}
+
+func cloudShadowLinkToConfig(sl *controlplanev1.ShadowLink) *ShadowLinkConfig {
+	if sl == nil {
+		return nil
+	}
+
+	cfg := &ShadowLinkConfig{
+		Name: sl.GetName(),
+		CloudOptions: &CloudShadowLinkOptions{
+			ShadowRedpandaID: sl.GetShadowRedpandaId(),
+		},
+	}
+
+	cfg.ClientOptions = cloudClientOptsToCfg(sl.GetClientOptions())
+	// Sync options use the same adminv2 types, so we can reuse the existing functions
+	cfg.TopicMetadataSyncOptions = adminTopicMetadataSyncToCfg(sl.GetTopicMetadataSyncOptions())
+	cfg.ConsumerOffsetSyncOptions = adminConsumerOffsetSyncToCfg(sl.GetConsumerOffsetSyncOptions())
+	cfg.SecuritySyncOptions = adminSecuritySyncToCfg(sl.GetSecuritySyncOptions())
+	cfg.SchemaRegistrySyncOptions = adminSchemaRegistrySyncToCfg(sl.GetSchemaRegistrySyncOptions())
+
+	return cfg
+}
+
+func cloudClientOptsToCfg(opts *controlplanev1.ShadowLinkClientOptions) *ShadowLinkClientOptions {
+	if opts == nil {
+		return nil
+	}
+
+	cfg := &ShadowLinkClientOptions{
+		BootstrapServers:       opts.GetBootstrapServers(),
+		SourceClusterID:        opts.GetSourceClusterId(),
+		MetadataMaxAgeMs:       opts.GetMetadataMaxAgeMs(),
+		ConnectionTimeoutMs:    opts.GetConnectionTimeoutMs(),
+		RetryBackoffMs:         opts.GetRetryBackoffMs(),
+		FetchWaitMaxMs:         opts.GetFetchWaitMaxMs(),
+		FetchMinBytes:          opts.GetFetchMinBytes(),
+		FetchMaxBytes:          opts.GetFetchMaxBytes(),
+		FetchPartitionMaxBytes: opts.GetFetchPartitionMaxBytes(),
+	}
+
+	if tls := opts.GetTlsSettings(); tls != nil {
+		cfg.TLSSettings = cloudTLSToCfg(tls)
+	}
+
+	if opts.GetAuthenticationConfiguration() != nil {
+		cfg.AuthenticationConfiguration = adminAuthToCfg(opts.GetAuthenticationConfiguration())
+	}
+
+	return cfg
+}
+
+func cloudTLSToCfg(tls *controlplanev1.TLSSettings) *TLSSettings {
+	if tls == nil {
+		return nil
+	}
+	tlsSettings := &TLSSettings{
+		Enabled:             tls.GetEnabled(),
+		DoNotSetSniHostname: tls.GetDoNotSetSniHostname(),
+	}
+
+	// Cloud only supports PEM content, not file paths
+	if tls.GetCa() != "" || tls.GetKey() != "" || tls.GetCert() != "" {
+		tlsSettings.TLSPEMSettings = &TLSPEMSettings{
+			CA:   tls.GetCa(),
+			Key:  tls.GetKey(),
+			Cert: tls.GetCert(),
+		}
+	}
+
+	return tlsSettings
+}
+
+func shadowLinkConfigToCloudUpdate(slCfg *ShadowLinkConfig, id string) *controlplanev1.ShadowLinkUpdate {
+	if slCfg == nil {
+		return nil
+	}
+
+	return &controlplanev1.ShadowLinkUpdate{
+		Id:                        id,
+		ClientOptions:             mapCloudClientOptions(slCfg.ClientOptions),
+		TopicMetadataSyncOptions:  mapTopicMetadataSyncOptions(slCfg.TopicMetadataSyncOptions),
+		ConsumerOffsetSyncOptions: mapConsumerOffsetSyncOptions(slCfg.ConsumerOffsetSyncOptions),
+		SecuritySyncOptions:       mapSecuritySyncOptions(slCfg.SecuritySyncOptions),
+		SchemaRegistrySyncOptions: mapSchemaRegistrySyncOptions(slCfg.SchemaRegistrySyncOptions),
 	}
 }

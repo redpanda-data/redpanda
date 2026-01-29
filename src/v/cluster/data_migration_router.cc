@@ -19,6 +19,7 @@
 #include "partition_leaders_table.h"
 #include "partition_manager.h"
 #include "rpc/connection_cache.h"
+#include "ssx/abort_source.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -40,7 +41,8 @@ router::router(
   ss::sharded<shard_table>& shard_table,
   ss::sharded<metadata_cache>& metadata_cache,
   ss::sharded<rpc::connection_cache>& connection_cache,
-  ss::sharded<partition_leaders_table>& leaders)
+  ss::sharded<partition_leaders_table>& leaders,
+  ss::abort_source& as)
   : _group_proxy(group_proxy)
   , _get_group_offsets_handler{.parent = *this}
   , _get_group_offsets_router(
@@ -61,7 +63,16 @@ router::router(
       _set_group_offsets_handler,
       self,
       10,
-      max_backoff) {}
+      max_backoff)
+  , _as_sub(ssx::subscribe_or_trigger(as, [this] noexcept {
+      _get_group_offsets_router.request_stop();
+      _set_group_offsets_router.request_stop();
+  })) {}
+
+ss::future<> router::stop() {
+    co_await _set_group_offsets_router.stop();
+    co_await _get_group_offsets_router.stop();
+}
 
 ss::future<get_group_offsets_reply>
 router::get_group_offsets(get_group_offsets_request&& req) {

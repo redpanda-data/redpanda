@@ -19,7 +19,7 @@ from rptest.util import expect_exception
 
 class RpkACLTest(RedpandaTest):
     username = "red"
-    password = "panda"
+    password = "panda012345678"
     mechanism = "SCRAM-SHA-256"
 
     def __init__(
@@ -139,7 +139,7 @@ class RpkACLTest(RedpandaTest):
     @cluster(num_nodes=1)
     def test_create_update(self):
         topic = "create-update"
-        new_password = "new-pass"
+        new_password = "new-pass012345"
         self._rpk.sasl_create_user(self.username, self.password, self.mechanism)
         # Only the super user can add ACLs
         self._rpk.sasl_allow_principal(
@@ -189,7 +189,9 @@ class RpkACLTest(RedpandaTest):
 
         # with --new-password
         out = self._rpk.sasl_create_user(
-            new_username="foo_2", new_password="any-pass", mechanism=self.mechanism
+            new_username="foo_2",
+            new_password="any-pass012345",
+            mechanism=self.mechanism,
         )
         assert "Automatically generated password" not in out
 
@@ -197,7 +199,7 @@ class RpkACLTest(RedpandaTest):
         out = self._rpk.sasl_create_user_basic(
             new_username="foo_3",
             auth_user="anyUser",
-            auth_password="any_pw",
+            auth_password="any_pw01234567",
             mechanism=self.mechanism,
         )
         assert "Automatically generated password" in out
@@ -205,8 +207,8 @@ class RpkACLTest(RedpandaTest):
         # with --password AND --new-password, NO --user
         out = self._rpk.sasl_create_user_basic(
             new_username="foo_4",
-            new_password="my_pass",
-            auth_password="any_pw",
+            new_password="my_pass0123456",
+            auth_password="any_pw01234567",
             mechanism=self.mechanism,
         )
         assert "Automatically generated password" not in out
@@ -214,9 +216,9 @@ class RpkACLTest(RedpandaTest):
         # with --new-password, --user, and --password
         out = self._rpk.sasl_create_user_basic(
             new_username="foo_5",
-            new_password="my_pass",
+            new_password="my_pass0123456",
             auth_user="anyUser",
-            auth_password="any_pw",
+            auth_password="any_pw01234567",
             mechanism=self.mechanism,
         )
         assert "Automatically generated password" not in out
@@ -231,7 +233,7 @@ class RpkACLTest(RedpandaTest):
         # This uses --user, --password, and --new-password
         out = self._rpk.sasl_create_user_basic(
             new_username=user_1,
-            new_password="my_pass",
+            new_password="my_pass0123456",
             auth_user=self.username,
             auth_password=self.password,
             mechanism=self.mechanism,
@@ -242,7 +244,7 @@ class RpkACLTest(RedpandaTest):
         # This uses -X user, --password, and -X pass
         out = self._rpk.sasl_create_user_basic_mix(
             new_username=user_2,
-            new_password="my_pass",
+            new_password="my_pass0123456",
             auth_user=self.username,
             auth_password=self.password,
             mechanism=self.mechanism,

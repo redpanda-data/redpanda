@@ -90,7 +90,7 @@ class PartitionMovementMixin:
         return [dict(node_id=a["node_id"]) for a in res["replicas"]]
 
     @staticmethod
-    def _equal_assignments(r0, r1):
+    def _equal_assignments(r0: list[dict[Any, Any]], r1: list[dict[Any, Any]]):
         # Core in an assignment can be unknown (None). In this case it is
         # considered equal to any core value in the other assignment.
         def node2core(assignments):

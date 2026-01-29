@@ -13,9 +13,9 @@
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "pandaproxy/schema_registry/test/store_fixture.h"
 #include "pandaproxy/schema_registry/test/utils.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "pandaproxy/schema_registry/util.h"
 
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
@@ -76,9 +76,8 @@ constexpr std::string_view del_sub_value_0{
   R"({"subject":"subject_0","version":2})"};
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
-    pps::sharded_store s;
-    s.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
-    auto stop_store = ss::defer([&s]() { s.stop().get(); });
+    auto fixture = pandaproxy::schema_registry::test_utils::store_fixture{};
+    auto& s = fixture.store();
 
     // This kafka client will not be used by the sequencer
     // (which itself is only instantiated to receive consume_to_store's
@@ -139,12 +138,14 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
       c(make_record_batch(schema_key_0, std::nullopt, base_offset++)).get());
 
     // Test mode default
-    BOOST_REQUIRE_EQUAL(c._store.get_mode().get(), pps::mode::read_write);
+    BOOST_REQUIRE_EQUAL(
+      c._store.get_mode(pps::default_context).get(), pps::mode::read_write);
 
     // Test mode READONLY
     BOOST_REQUIRE_NO_THROW(
       c(make_record_batch(mode_key_0, mode_value_ro, base_offset++)).get());
-    BOOST_REQUIRE_EQUAL(c._store.get_mode().get(), pps::mode::read_only);
+    BOOST_REQUIRE_EQUAL(
+      c._store.get_mode(pps::default_context).get(), pps::mode::read_only);
 
     // Test mode no subject, no fallback
     BOOST_REQUIRE_EXCEPTION(
@@ -164,7 +165,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     // test mode READWRITE
     BOOST_REQUIRE_NO_THROW(
       c(make_record_batch(mode_key_0, mode_value_rw, base_offset++)).get());
-    BOOST_REQUIRE_EQUAL(c._store.get_mode().get(), pps::mode::read_write);
+    BOOST_REQUIRE_EQUAL(
+      c._store.get_mode(pps::default_context).get(), pps::mode::read_write);
 
     // test mode subject override
     BOOST_REQUIRE_NO_THROW(

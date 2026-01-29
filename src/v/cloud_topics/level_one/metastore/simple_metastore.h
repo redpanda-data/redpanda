@@ -31,11 +31,14 @@ public:
 
     std::expected<object_id, error>
     get_or_create_object_for(const model::topic_id_partition&) override;
+    std::expected<object_id, error>
+    create_object_for(const model::topic_id_partition&) override;
     std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
       add(object_id, metastore::object_metadata::ntp_metadata) override;
     std::expected<void, error>
     finish(object_id, size_t footer_pos, size_t object_size) override;
+    bool is_empty() const override;
 
     std::expected<chunked_vector<metastore::object_metadata>, error> release();
 
@@ -48,7 +51,7 @@ private:
 
 // Wrapper around state to implement the `metastore` interface.
 // Not replicated or persisted, used for tests only.
-class domain_manager;
+class simple_domain_manager;
 class simple_metastore : public metastore {
 public:
     ss::future<std::expected<std::unique_ptr<object_metadata_builder>, errc>>
@@ -101,8 +104,25 @@ public:
     ss::future<std::expected<compaction_info_response, errc>>
     get_compaction_info(const compaction_info_spec&) override;
 
+    ss::future<std::expected<compaction_info_map, errc>>
+    get_compaction_infos(const chunked_vector<compaction_info_spec>&) override;
+
+    ss::future<std::expected<extent_metadata_response, errc>>
+    get_extent_metadata_forwards(
+      const model::topic_id_partition&,
+      kafka::offset,
+      kafka::offset,
+      size_t) override;
+
+    ss::future<std::expected<extent_metadata_response, errc>>
+    get_extent_metadata_backwards(
+      const model::topic_id_partition&,
+      kafka::offset,
+      kafka::offset,
+      size_t) override;
+
 private:
-    friend class domain_manager;
+    friend class simple_domain_manager;
     static std::expected<offsets_response, errc>
     get_offsets(const state&, const model::topic_id_partition&);
     static std::expected<object_response, errc>
@@ -121,12 +141,28 @@ private:
     get_dirty_ratio(const state&, const model::topic_id_partition&);
     static std::expected<std::optional<model::timestamp>, errc>
     get_earliest_dirty_ts(const state&, const model::topic_id_partition&);
+    static std::expected<compaction_epoch, errc>
+    get_compaction_epoch(const state&, const model::topic_id_partition&);
     static std::expected<compaction_info_response, errc> get_compaction_info(
       const state&, const model::topic_id_partition&, model::timestamp);
     static std::expected<kafka::offset, errc> get_end_offset_for_term(
       const state&, const model::topic_id_partition&, model::term_id);
     static std::expected<model::term_id, errc> get_term_for_offset(
       const state&, const model::topic_id_partition&, kafka::offset);
+    static std::expected<extent_metadata_response, errc>
+    get_extent_metadata_forwards(
+      const state&,
+      const model::topic_id_partition&,
+      kafka::offset,
+      kafka::offset,
+      size_t);
+    static std::expected<extent_metadata_response, errc>
+    get_extent_metadata_backwards(
+      const state&,
+      const model::topic_id_partition&,
+      kafka::offset,
+      kafka::offset,
+      size_t);
 
     state state_;
 };

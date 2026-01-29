@@ -9,7 +9,6 @@
 
 import json
 import time
-
 from typing import Any
 
 from ducktape.mark import parametrize
@@ -146,11 +145,12 @@ class AdminV2ListKafkaConnectionsScaleTest(RedpandaTest):
             duration = time.perf_counter() - start
 
             resp = json.loads(raw_resp)
+            conns = resp.get("connections", [])
 
             matching_conns = [
-                conn for conn in resp if len(conn.get("group_member_id", "")) > 0
+                conn for conn in conns if len(conn.get("group_member_id", "")) > 0
             ]
-            non_matching = [conn for conn in resp if conn not in matching_conns]
+            non_matching = [conn for conn in conns if conn not in matching_conns]
 
             succeeded = len(matching_conns) == client_count and len(non_matching) == 0
             if succeeded:

@@ -12,50 +12,37 @@
 #pragma once
 
 #include "json/iobuf_writer.h"
-#include "pandaproxy/json/rjson_util.h"
-#include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/rjson.h"
 
 namespace pandaproxy::schema_registry {
 
-struct post_subject_versions_version_response {
-    subject_schema schema;
-    schema_id id;
-    schema_version version;
+struct get_subject_versions_version_response {
+    stored_schema stored_schema;
 };
 
 template<typename Buffer>
 void rjson_serialize(
   ::json::iobuf_writer<Buffer>& w,
-  const post_subject_versions_version_response& res) {
+  const get_subject_versions_version_response& res) {
     w.StartObject();
     w.Key("subject");
-    ::json::rjson_serialize(w, res.schema.sub());
+    w.String(res.stored_schema.schema.sub().to_string());
     w.Key("version");
-    ::json::rjson_serialize(w, res.version);
+    ::json::rjson_serialize(w, res.stored_schema.version);
     w.Key("id");
-    ::json::rjson_serialize(w, res.id);
-    auto type = res.schema.type();
-    if (type != schema_type::avro) {
-        w.Key("schemaType");
-        ::json::rjson_serialize(w, to_string_view(type));
-    }
-    if (!res.schema.def().refs().empty()) {
+    ::json::rjson_serialize(w, res.stored_schema.id);
+    auto type = res.stored_schema.schema.type();
+    w.Key("schemaType");
+    ::json::rjson_serialize(w, to_string_view(type));
+    if (!res.stored_schema.schema.def().refs().empty()) {
         w.Key("references");
-        w.StartArray();
-        for (const auto& ref : res.schema.def().refs()) {
-            w.StartObject();
-            w.Key("name");
-            ::json::rjson_serialize(w, ref.name);
-            w.Key("subject");
-            ::json::rjson_serialize(w, ref.sub);
-            w.Key("version");
-            ::json::rjson_serialize(w, ref.version);
-            w.EndObject();
-        }
-        w.EndArray();
+        ::json::rjson_serialize(w, res.stored_schema.schema.def().refs());
     }
+    ::json::rjson_serialize(w, res.stored_schema.schema.def().meta());
     w.Key("schema");
-    ::json::rjson_serialize(w, res.schema.def().raw());
+    ::json::rjson_serialize(w, res.stored_schema.schema.def().raw());
+    w.Key("deleted");
+    ::json::rjson_serialize(w, bool(res.stored_schema.deleted));
     w.EndObject();
 }
 

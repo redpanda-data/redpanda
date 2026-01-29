@@ -44,6 +44,8 @@ struct sort_field {
     sort_direction direction;
     null_order null_order;
 
+    sort_field copy() const;
+
     friend bool operator==(const sort_field&, const sort_field&) = default;
 };
 
@@ -53,6 +55,8 @@ struct sort_order {
 
     id_t order_id;
     chunked_vector<sort_field> fields;
+
+    sort_order copy() const;
 
     friend bool operator==(const sort_order&, const sort_order&) = default;
 };
@@ -105,6 +109,8 @@ struct table_metadata {
     // the list to short circuit on the common case (desired type is current,
     // latest schema)
     const schema* get_equivalent_schema(const struct_type& type) const;
+
+    table_metadata copy() const;
 
     // TODO: consider making this a lazy data member if it gets used by many
     // callers for the same metadata.

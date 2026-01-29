@@ -46,24 +46,24 @@ LEVEL_UNSPECIFIED: RPCAuthZLevel.ValueType
 PUBLIC: RPCAuthZLevel.ValueType
 USER: RPCAuthZLevel.ValueType
 SUPERUSER: RPCAuthZLevel.ValueType
-global___RPCAuthZLevel = RPCAuthZLevel
+Global___RPCAuthZLevel: typing_extensions.TypeAlias = RPCAuthZLevel
 
 @typing.final
 class RPCOptions(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     AUTHZ_FIELD_NUMBER: builtins.int
     HTTP_ROUTE_FIELD_NUMBER: builtins.int
-    authz: global___RPCAuthZLevel.ValueType
+    authz: Global___RPCAuthZLevel.ValueType
     "The authentication level required to invoke the handler. Must be\n    specified.\n\n    APIs should default to SUPERUSER, if you'd like to create an admin API at\n    another level, please consult the Redpanda core team first.\n    "
     http_route: builtins.str
     'The alternative HTTP route to use for this handler. This is used to give\n    "prettier" HTTP routes to the user. This is an additional route used to\n    alias the ConnectRPC route that is automatically generated.\n    '
 
-    def __init__(self, *, authz: global___RPCAuthZLevel.ValueType=..., http_route: builtins.str=...) -> None:
+    def __init__(self, *, authz: Global___RPCAuthZLevel.ValueType=..., http_route: builtins.str=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['authz', b'authz', 'http_route', b'http_route']) -> None:
         ...
-global___RPCOptions = RPCOptions
+Global___RPCOptions: typing_extensions.TypeAlias = RPCOptions
 RPC_FIELD_NUMBER: builtins.int
-rpc: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.MethodOptions, global___RPCOptions]
+rpc: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.MethodOptions, Global___RPCOptions]
 'A RPC method option for the authentication required to invoke\nthe handler. Must be specified.\n\nExample:\n\n```proto\nservice Foo {\n\n  rpc GetFoo(GetFooRequest) returns (GetFooResponse) {\n    option (redpanda.core.pbgen.rpc) = {\n      authz: USER,\n      http_route: "/v2/myapi/foo",\n  }\n\n}\n```\n'

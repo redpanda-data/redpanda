@@ -59,7 +59,7 @@ ctp_stm_api::replicated_apply(
     opts.set_force_flush();
     auto res = co_await _stm->_raft->replicate(std::move(batch), opts);
 
-    if (res.has_error()) {
+    if (!res.has_value()) {
         vlog(_log.debug, "Failed to replicate batch: {}", res.error());
         if (res.error() == raft::errc::not_leader) {
             co_return std::unexpected(ctp_stm_api_errc::not_leader);
@@ -174,23 +174,29 @@ ss::future<bool> ctp_stm_api::sync_in_term(
     co_return co_await _stm->sync_in_term(deadline, as);
 }
 
-ss::future<cluster_epoch_fence> ctp_stm_api::fence_epoch(cluster_epoch e) {
+ss::future<std::expected<cluster_epoch_fence, stale_cluster_epoch>>
+ctp_stm_api::fence_epoch(cluster_epoch e) {
     vlog(_log.debug, "Fencing epoch {} in term {}", e, _stm->_raft->term());
     auto res = co_await _stm->fence_epoch(e);
     vlog(
       _log.debug,
-      "Fence acquired = {} in term {}",
-      res.unit.has_value(),
-      res.term);
+      "Fence acquired = {} for epoch {} in term {}",
+      res.has_value(),
+      e,
+      res.has_value() ? res->term : model::term_id{-1});
     co_return std::move(res);
 }
 
 std::optional<cluster_epoch> ctp_stm_api::get_max_epoch() const {
-    return _stm->state().get_max_epoch();
+    return _stm->state().get_max_applied_epoch();
 }
 
 std::optional<cluster_epoch> ctp_stm_api::get_max_seen_epoch() const {
     return _stm->state().get_max_seen_epoch();
+}
+
+l0::producer_queue& ctp_stm_api::producer_queue() {
+    return _stm->producer_queue();
 }
 
 }; // namespace cloud_topics

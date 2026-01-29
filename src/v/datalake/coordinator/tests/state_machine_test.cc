@@ -25,11 +25,6 @@ using stm = datalake::coordinator::coordinator_stm;
 using stm_ptr = ss::shared_ptr<stm>;
 
 struct coordinator_stm_fixture : stm_raft_fixture<stm> {
-    static void SetUpTestSuite() {
-        ss::smp::invoke_on_all([] {
-            config::node().node_id.set_value(model::node_id{0});
-        }).get();
-    }
     ss::future<> TearDownAsync() override {
         for (auto& [_, coordinator] : coordinators) {
             co_await coordinator->stop_and_wait();
@@ -191,7 +186,7 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
     model::topic_partition tp{tp_ns.tp, model::partition_id{0}};
     model::revision_id rev{123};
     cluster::data_migrations::migrated_resources mr;
-    cluster::topic_table topic_table{mr};
+    cluster::topic_table topic_table{mr, model::node_id{0}};
     datalake::binary_type_resolver type_resolver;
     datalake::simple_schema_manager schema_mgr;
     datalake::coordinator::simple_file_committer file_committer;

@@ -36,8 +36,9 @@
 namespace cluster {
 
 topic_table::topic_table(
-  data_migrations::migrated_resources& migrated_resources)
-  : _probe(*this)
+  data_migrations::migrated_resources& migrated_resources,
+  model::node_id node_id)
+  : _probe(*this, node_id)
   , _migrated_resources(migrated_resources) {}
 
 ss::future<std::error_code>
@@ -1718,7 +1719,8 @@ ss::future<> topic_table::apply_snapshot(
 
     // Lifecycle markers is a simple static collection without notifications
     // etc, so we can just copy directly into place.
-    _lifecycle_markers = controller_snap.topics.lifecycle_markers;
+    _lifecycle_markers.replace(
+      controller_snap.topics.lifecycle_markers.values().copy());
 
     reset_partitions_to_force_reconfigure(
       controller_snap.topics.partitions_to_force_recover);

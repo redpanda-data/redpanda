@@ -530,7 +530,7 @@ ss::future<http::downloaded_response> handle_load_table_check_concurrency(
   boost::beast::http::request_header<>&& r,
   std::optional<iobuf>,
   [[maybe_unused]] ss::lowres_clock::duration timeout) {
-    static thread_local mutex m("test/rest_catalog");
+    static thread_local ssx::mutex m("test/rest_catalog");
 
     // the mutex must always be ready as there is currently only one inflight
     // request

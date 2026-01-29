@@ -11,7 +11,10 @@
 
 #pragma once
 
+#include "absl/container/btree_map.h"
+#include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_map.h"
 #include "base/seastarx.h"
 
@@ -59,6 +62,12 @@ struct fmt::formatter<ss::chunked_fifo<T, chunk_size>> {
 };
 
 namespace absl {
+
+template<typename E>
+std::ostream& operator<<(std::ostream& o, const absl::flat_hash_set<E>& s) {
+    return o << fmt::format("{{{}}}", fmt::join(s, ","));
+}
+
 template<typename K, typename V>
 std::ostream& operator<<(std::ostream& o, const absl::flat_hash_map<K, V>& r) {
     o << "{";
@@ -88,6 +97,37 @@ std::ostream& operator<<(std::ostream& o, const absl::node_hash_map<K, V>& r) {
     o << "}";
     return o;
 }
+
+template<typename K, typename V>
+std::ostream& operator<<(std::ostream& o, const absl::btree_map<K, V>& r) {
+    o << "{";
+    bool first = true;
+    for (const auto& [k, v] : r) {
+        if (!first) {
+            o << ", ";
+        }
+        o << "{" << k << " -> " << v << "}";
+        first = false;
+    }
+    o << "}";
+    return o;
+}
+
+template<typename K>
+std::ostream& operator<<(std::ostream& o, const absl::btree_set<K>& s) {
+    o << "{";
+    bool first = true;
+    for (const auto& k : s) {
+        if (!first) {
+            o << ", ";
+        }
+        o << k;
+        first = false;
+    }
+    o << "}";
+    return o;
+}
+
 } // namespace absl
 
 template<>

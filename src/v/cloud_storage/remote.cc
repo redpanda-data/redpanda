@@ -279,6 +279,7 @@ void remote::notify_external_subscribers(
           "Filter object is not initialized properly");
         flt._promise->set_value(event);
         flt._promise = std::nullopt;
+        flt._gate_holder.release();
         // NOTE: the filter object can be reused by the owner
     }
 
@@ -616,13 +617,11 @@ ss::future<upload_result> remote::upload_object(upload_request req) {
 ss::future<api_activity_notification>
 remote::subscribe(remote::event_filter& filter) {
     _as.check();
-    auto holder = _gate.hold();
     vassert(filter._hook.is_linked() == false, "Filter is already in use");
     _filters.push_back(filter);
+    filter._gate_holder = _gate.hold();
     filter._promise.emplace();
-    return filter._promise->get_future().then(
-      [h = std::move(holder)](api_activity_notification r) { return r; });
-    ;
+    return filter._promise->get_future();
 }
 
 std::function<void(size_t)>

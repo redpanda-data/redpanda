@@ -28,7 +28,7 @@ redpanda_cc_btest(
 
 redpanda_cc_gtest(
     name = "iobuf_mt_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "iobuf_tests_mt.cc",
     ],
@@ -101,6 +101,8 @@ redpanda_cc_fuzz_test(
     args = [
         "-max_total_time=30",
         "-rss_limit_mb=8192",
+        "-max_len=1048576",
+        "-len_control=15",
     ],
     deps = [
         "//src/v/base",
@@ -123,6 +125,24 @@ redpanda_cc_bench(
 )
 
 redpanda_cc_gtest(
+    name = "ioarray_test",
+    timeout = "short",
+    srcs = [
+        "ioarray_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "iobuf_parser_test",
     timeout = "short",
     srcs = [
@@ -134,5 +154,15 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "ioarray_rpbench",
+    srcs = ["ioarray_bench.cc"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "@seastar//:benchmark",
     ],
 )

@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
 #include "cluster/security_frontend.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -377,6 +378,8 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
     model::topic t{"topic"};
     kafka::group_id g{"group"};
     kafka::group_instance_id gi("group-instance");
+    kafka::group_id ug1{"unrelated_group1"};
+    kafka::group_id ug2{"unrelated_group2"};
 
     add_topic(model::topic_namespace_view{model::kafka_namespace, t}).get();
     wait_for_consumer_offsets_topic(gi);
@@ -425,7 +428,12 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
 
     auto set_blocked = [&](bool blocked) {
         auto res = app._group_manager.local()
-                     .set_blocked_for_groups(gntp, {g}, blocked)
+                     .set_blocked_for_groups(
+                       gntp,
+                       // triggering a bug where the wrong group gets unblocked
+                       blocked ? chunked_vector<kafka::group_id>{ug1, g, ug2}
+                               : chunked_vector<kafka::group_id>{g},
+                       blocked)
                      .get();
         BOOST_REQUIRE(res.has_value());
     };

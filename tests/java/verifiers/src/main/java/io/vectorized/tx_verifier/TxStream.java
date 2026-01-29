@@ -1,12 +1,15 @@
 package io.vectorized.tx_verifier;
 
 import java.lang.Math;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -96,22 +99,24 @@ public class TxStream {
     producer.beginTransaction();
     offsets = new HashMap<>();
     offsets.put(tp, new OffsetAndMetadata(start));
-    producer.sendOffsetsToTransaction(offsets, groupId);
+    producer.sendOffsetsToTransaction(offsets, consumer.groupMetadata());
     producer.commitTransaction();
   }
 
   public long getGroupOffset() throws Exception {
-    return this.consumer.committed(new TopicPartition(topic, 0)).offset();
+    var tp = new TopicPartition(topic, 0);
+    return this.consumer.committed(Set.of(tp)).get(tp).offset();
   }
 
-  public Map<Long, Long> process(
-      long end, Function<String, String> transform, int batchSize,
-      String target_topic) throws Exception {
+  public Map<Long, Long>
+  process(long end, Function<String, String> transform, String target_topic)
+      throws Exception {
     Map<TopicPartition, OffsetAndMetadata> offsets;
     Map<Long, Long> mapping = new HashMap<>();
 
     while (true) {
-      ConsumerRecords<String, String> records = consumer.poll(batchSize);
+      ConsumerRecords<String, String> records
+          = consumer.poll(Duration.ofMillis(10000));
       var it = records.iterator();
       while (it.hasNext()) {
         var record = it.next();
@@ -126,7 +131,7 @@ public class TxStream {
         long target_offset = future.get().offset();
         offsets = new HashMap<>();
         offsets.put(tp, new OffsetAndMetadata(source_offset + 1));
-        producer.sendOffsetsToTransaction(offsets, groupId);
+        producer.sendOffsetsToTransaction(offsets, consumer.groupMetadata());
         producer.commitTransaction();
 
         mapping.put(target_offset, source_offset);

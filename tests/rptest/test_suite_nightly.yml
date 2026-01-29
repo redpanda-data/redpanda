@@ -1,0 +1,16 @@
+# Copyright 2026 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+# This suite is used by the nightly re-test of dev, see e.g.:
+# https://buildkite.com/redpanda/redpanda/settings/schedules/607aec04-b4a7-4504-ac0b-d3b5fdc4ab15
+
+import:
+  - test_suite_quick.yml
+  - test_suite_chaos.yml
+  - test_suite_fuzz.yml

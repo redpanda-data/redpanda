@@ -10,7 +10,48 @@
         }
       }
     },
-    "schema_def": {
+    "schema_reference": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name used to reference this schema in the dependent schema definition."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The subject name of the referenced schema. Use [:.<context>:]<subject> for context-qualified subjects, or just <subject> for the default context."
+        },
+        "version": {
+          "type": "integer",
+          "description": "The version of the referenced schema."
+        }
+      }
+    },
+    "schema_metadata_request": {
+      "type": "object",
+      "description": "A map of user-defined properties associated with this schema",
+      "properties": {
+        "properties": {
+          "type": "object",
+          "description": "Accepted values may be string, number, or boolean, they are converted to strings.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "schema_metadata_response": {
+      "type": "object",
+      "properties": {
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "schema_def_request": {
       "type": "object",
       "properties": {
         "schema": {
@@ -22,23 +63,35 @@
         "references": {
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "subject": {
-                "type": "string"
-              },
-              "version": {
-                "type": "integer"
-              }
-            }
+            "$ref": "#/definitions/schema_reference"
           }
+        },
+        "metadata": {
+          "$ref": "#/definitions/schema_metadata_request"
         }
       }
     },
-    "stored_schema": {
+    "schema_def_response": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/schema_reference"
+          }
+        },
+        "metadata": {
+          "$ref": "#/definitions/schema_metadata_response"
+        }
+      }
+    },
+    "stored_schema_request": {
       "type": "object",
       "properties": {
         "subject": {
@@ -56,19 +109,98 @@
         "references": {
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "subject": {
-                "type": "string"
-              },
-              "version": {
-                "type": "integer"
-              }
-            }
+            "$ref": "#/definitions/schema_reference"
           }
+        },
+        "metadata": {
+          "$ref": "#/definitions/schema_metadata_request"
+        },
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "stored_schema_response": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/schema_reference"
+          }
+        },
+        "metadata": {
+          "$ref": "#/definitions/schema_metadata_response"
+        },
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "get_subject_versions_version_response": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/schema_reference"
+          }
+        },
+        "metadata": {
+          "$ref": "#/definitions/schema_metadata_response"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "post_subject_versions_response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/schema_reference"
+          }
+        },
+        "metadata": {
+          "$ref": "#/definitions/schema_metadata_response"
         },
         "schema": {
           "type": "string"

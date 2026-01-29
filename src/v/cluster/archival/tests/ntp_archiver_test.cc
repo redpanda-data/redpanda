@@ -12,34 +12,21 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/fwd.h"
-#include "cloud_storage/read_path_probes.h"
-#include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/types.h"
-#include "cloud_storage_clients/client_pool.h"
-#include "cluster/archival/adjacent_segment_merger.h"
 #include "cluster/archival/archival_metadata_stm.h"
-#include "cluster/archival/archival_policy.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/archival/tests/service_fixture.h"
 #include "config/configuration.h"
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/record_batch_types.h"
-#include "net/types.h"
 #include "ssx/sformat.h"
-#include "storage/disk_log_impl.h"
 #include "storage/parser.h"
-#include "storage/storage_resources.h"
-#include "storage/tests/utils/disk_log_builder.h"
 #include "storage/types.h"
-#include "test_utils/archival.h"
 #include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
-#include "utils/retry_chain_node.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sstring.hh>
@@ -332,6 +319,8 @@ FIXTURE_TEST(
     // This test asserts that uploading of segment index will only happen if the
     // segment upload is successful. Indices uploaded without segments are not
     // found during cleanup, thus leaving behind orphan items in the bucket.
+    // The test triggers ExpiredToken error which forces token to be refreshed.
+    // There is a check that validates that the refresh was requested.
 
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1)},
@@ -346,12 +335,14 @@ FIXTURE_TEST(
     auto fail_resp = http_test_utils::response{
       .body = R"xml(<?xml version="1.0" encoding="UTF-8"?>
 <Error>
-    <Code>AccessDenied</Code>
-    <Message>Access Denied</Message>
+    <Code>ExpiredToken</Code>
+    <Message>ExpiredToken</Message>
     <Resource>resource</Resource>
     <RequestId>requestid</RequestId>
 </Error>)xml",
-      .status = http_test_utils::response::status_type::forbidden};
+      .status = http_test_utils::response::status_type::forbidden,
+      .content_type = "xml",
+    };
     std::regex logexpr{".*/0-.*log\\.\\d+"};
     fail_request_if(
       [&logexpr](const ss::http::request& req) {
@@ -392,6 +383,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 0);
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 1);
     requests_size_eventually(1);
+    auth_token_refresh_eventually(1);
 }
 
 // NOLINTNEXTLINE

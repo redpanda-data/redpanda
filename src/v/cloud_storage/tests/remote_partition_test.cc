@@ -996,6 +996,21 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(headers_read.size(), 0);
 }
 
+class slow_consumer final {
+public:
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        co_await ss::sleep(100ms);
+        headers.push_back(b.header());
+        co_return ss::stop_iteration::no;
+    }
+
+    std::vector<model::record_batch_header> end_of_stream() {
+        return std::move(headers);
+    }
+
+    std::vector<model::record_batch_header> headers;
+};
+
 FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // This test checks index materialization code path.
     // It's triggered when the segment is already present in the cache
@@ -1076,6 +1091,32 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         BOOST_REQUIRE(!headers_read.empty());
+    }
+
+    /// Test that the reader respects the deadline
+    {
+        partition_probe probe(manifest.get_ntp());
+        auto manifest_view = ss::make_shared<async_manifest_view>(
+          api, cache, manifest, bucket_name, path_provider);
+        auto partition = ss::make_shared<remote_partition>(
+          manifest_view, api.local(), cache.local(), bucket_name, probe);
+        auto partition_stop = ss::defer(
+          [&partition] { partition->stop().get(); });
+        partition->start().get();
+
+        cloud_log_reader_config reader_config(
+          model::offset_cast(base), model::offset_cast(max));
+        reader_config.start_offset = model::offset_cast(
+          segments.front().base_offset);
+        reader_config.max_bytes = max_bytes_limit;
+        vlog(test_log.info, "read last segment: {}", reader_config);
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(slow_consumer(), model::timeout_clock::now() + 10ms)
+              .get();
+        // We expect the consumer to consume the first batch, then stall
+        // then consume the second batch and bail out due to timeout.
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 2);
     }
 }
 

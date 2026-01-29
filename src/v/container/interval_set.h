@@ -11,9 +11,11 @@
 #pragma once
 
 #include "absl/container/btree_map.h"
+#include "base/format_to.h"
 #include "bytes/iobuf_parser.h"
 #include "serde/rw/map.h"
 #include "serde/rw/rw.h"
+#include "utils/to_string.h"
 
 /**
  * A container that contains non-empty, open intervals.
@@ -38,6 +40,7 @@ class interval_set {
 
 public:
     using const_iterator = set_t::const_iterator;
+    using const_reverse_iterator = set_t::const_reverse_iterator;
     using iterator = set_t::iterator;
     struct interval {
         T start;
@@ -75,6 +78,18 @@ public:
     [[nodiscard]] const_iterator end() const;
 
     /**
+     * Return an reverse iterator to the last entry in the set.
+     *
+     * If the set is empty then rend() is returned.
+     */
+    [[nodiscard]] const_reverse_iterator rbegin() const;
+
+    /**
+     * Return an reverse iterator to the end of the set.
+     */
+    [[nodiscard]] const_reverse_iterator rend() const;
+
+    /**
      * Return true if the set contains no intervals.
      */
     [[nodiscard]] bool empty() const;
@@ -105,6 +120,10 @@ public:
     friend void write(iobuf& out, interval_set is) {
         using serde::write;
         return write(out, std::move(is.set_));
+    }
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(it, "{}", set_);
     }
 
 private:
@@ -230,6 +249,16 @@ interval_set<T>::const_iterator interval_set<T>::begin() const {
 template<std::integral T>
 interval_set<T>::const_iterator interval_set<T>::end() const {
     return set_.cend();
+}
+
+template<std::integral T>
+interval_set<T>::const_reverse_iterator interval_set<T>::rbegin() const {
+    return set_.crbegin();
+}
+
+template<std::integral T>
+interval_set<T>::const_reverse_iterator interval_set<T>::rend() const {
+    return set_.crend();
 }
 
 template<std::integral T>

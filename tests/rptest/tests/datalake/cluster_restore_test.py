@@ -31,6 +31,10 @@ from rptest.utils.si_utils import NTP, BucketView
 KiB = 1024
 MiB = KiB * KiB
 
+DISABLED_WRITES_ALLOWED_LOGS = [
+    "Adjacent segment merging refusing to run on topic with remote.write disabled",
+]
+
 
 class DatalakeClusterRestoreTest(RedpandaTest):
     segment_size = 1 * MiB
@@ -441,7 +445,7 @@ class DatalakeClusterRestoreTest(RedpandaTest):
                 "Expected one table per topic (i.e. no DLQ tables)"
             )
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, log_allow_list=DISABLED_WRITES_ALLOWED_LOGS)
     @matrix(
         cloud_storage_type=supported_storage_types(),
         catalog_type=supported_catalog_types(),
@@ -555,7 +559,7 @@ class DatalakeClusterRestoreTest(RedpandaTest):
                 rpk.alter_topic_config(t, "redpanda.remote.write", "true")
             rpk.alter_topic_config("_schemas", "redpanda.remote.write", "true")
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, log_allow_list=DISABLED_WRITES_ALLOWED_LOGS)
     @matrix(
         cloud_storage_type=supported_storage_types(),
         catalog_type=supported_catalog_types(),

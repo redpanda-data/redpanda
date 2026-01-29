@@ -282,8 +282,9 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
 std::ostream& operator<<(std::ostream& o, const recovery_state& r) {
     fmt::print(
       o,
-      "{{local_last_offset: {}, replicas: {}}}",
+      "{{local_last_offset: {}, local_size: {}, replicas: {}}}",
       r.local_last_offset,
+      r.local_size,
       r.replicas);
     return o;
 }

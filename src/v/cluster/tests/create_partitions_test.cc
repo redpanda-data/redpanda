@@ -18,8 +18,8 @@ FIXTURE_TEST(test_creating_partitions, rebalancing_tests_fixture) {
     start_cluster(3);
     /**
      * Test setup:
-     * topic test-1, 3 paritions, replication factor 1
-     * topic test-2, 4 paritions, replication factor 3
+     * topic test-1, 3 partitions, replication factor 1
+     * topic test-2, 4 partitions, replication factor 3
      */
     create_topic(create_topic_cfg("test-1", 3, 1));
     create_topic(create_topic_cfg("test-2", 4, 3));
@@ -64,7 +64,7 @@ FIXTURE_TEST(test_error_handling, rebalancing_tests_fixture) {
     start_cluster(3);
     /**
      * Test setup:
-     * topic test-1, 3 paritions, replication factor 1
+     * topic test-1, 3 partitions, replication factor 1
      */
     create_topic(create_topic_cfg("test-1", 3, 1));
 

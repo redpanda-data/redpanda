@@ -19,9 +19,9 @@
 #include "raft/consensus_utils.h"
 #include "raft/fundamental.h"
 #include "raft/logger.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -219,7 +219,7 @@ private:
     model::offset _highest_known_offset;
     storage::api& _storage;
     ss::condition_variable _config_changed;
-    mutex _lock{"configuration_manager"};
+    ssx::mutex _lock{"configuration_manager"};
     /**
      * We will persist highest known offset every 64MB, given this during
      * bootstrap redpanda will have to read up to 64MB per raft group.

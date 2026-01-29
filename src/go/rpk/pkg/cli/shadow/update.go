@@ -11,15 +11,20 @@ package shadow
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	"connectrpc.com/connect"
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -48,24 +53,59 @@ Update a Shadow Link configuration:
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			prof, err := p.LoadVirtualProfile(fs)
+			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load rpk config: %v", err)
-			config.CheckExitCloudAdmin(prof)
+			prof := cfg.VirtualProfile()
+			config.CheckExitServerlessAdmin(prof)
 
-			cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
+			// This commands retrieves the current ShadowLink configuration from
+			// 2 different sources depending on whether it's for Cloud or SH.
+			// The user will be prompted for changes in their editor of choice,
+			// and we calculate the diff from it. At the end, we need to call
+			// the appropriate API to submit the update.
+			fromCloud := prof.CheckFromCloud()
 			linkName := args[0]
-			link, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
-				Name: linkName,
-			}))
-			out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
+			var (
+				originalCfg *ShadowLinkConfig
+				adminClient *rpadmin.AdminAPI
+				cloudClient *publicapi.CloudClientSet
+				cloudLinkID string
+			)
 
-			shadowLink := link.Msg.GetShadowLink()
-			originalCfg := shadowLinkToConfig(shadowLink)
-			addRedactedPasswordString(originalCfg, shadowLink)
+			// First part: retrieve current configuration.
+			if fromCloud {
+				cloudClient, err = publicapi.NewValidatedCloudClientSet(
+					cfg.DevOverrides().PublicAPIURL,
+					prof.CurrentAuth().AuthToken,
+					auth0.NewClient(cfg.DevOverrides()).Audience(),
+					[]string{prof.CurrentAuth().ClientID},
+				)
+				out.MaybeDieErr(err)
 
-			// Open editor to modify the configuration.
+				link, err := cloudClient.ShadowLinkByNameAndRPID(cmd.Context(), linkName, prof.CloudCluster.ClusterID)
+				out.MaybeDie(err, "unable to find Shadow Link %q", linkName)
+
+				cloudLinkID = link.GetId()
+				originalCfg = cloudShadowLinkToConfig(link)
+
+				// Cloud uses secrets for passwords so we don't need to add the
+				// redacted string here.
+			} else {
+				adminClient, err = adminapi.NewClient(cmd.Context(), fs, prof)
+				out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+				link, err := adminClient.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
+					Name: linkName,
+				}))
+				out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
+
+				shadowLink := link.Msg.GetShadowLink()
+				originalCfg = shadowLinkToConfig(shadowLink)
+
+				addRedactedPasswordString(originalCfg, shadowLink)
+			}
+
+			// Second part: open editor and get updated configuration.
 			updatedCfg, err := rpkos.EditTmpYAMLFile(fs, originalCfg)
 			out.MaybeDie(err, "unable to edit Shadow Link configuration: %v", err)
 
@@ -76,24 +116,57 @@ Update a Shadow Link configuration:
 				out.Die("Shadow Link name cannot be changed; if you need to rename, please delete and recreate the shadow link")
 			}
 
+			// Third part: calculate diff.
 			diff := diffConfigs(originalCfg, updatedCfg)
 			if diff == nil {
 				out.Exit("No changes detected")
 			}
+
+			// Finally: submit the update request, for that we calculate the
+			// field mask from the diff.
+			if fromCloud {
+				updatedSL := shadowLinkConfigToCloudUpdate(updatedCfg, cloudLinkID)
+
+				// Cloud proto doesn't have the "configurations" wrapper, so we
+				// need to strip it from the paths.
+				cloudDiff := make([]string, len(diff))
+				for i, path := range diff {
+					cloudDiff[i] = strings.TrimPrefix(path, "configurations.")
+				}
+
+				fm, err := fieldmaskpb.New(updatedSL, cloudDiff...)
+				out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
+
+				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(cloudDiff, ", "))
+				op, err := cloudClient.ShadowLink.UpdateShadowLink(cmd.Context(), connect.NewRequest(&controlplanev1.UpdateShadowLinkRequest{
+					ShadowLink: updatedSL,
+					UpdateMask: fm,
+				}))
+				out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
+				spinner := out.NewSpinner(cmd.Context(), "Updating Shadow Link...")
+				isComplete, err := waitForOperation(cmd.Context(), cloudClient, op.Msg.GetOperation().GetId())
+				if err != nil {
+					spinner.Fail(fmt.Sprintf("unable to confirm Shadow Link update: %v", err))
+					os.Exit(1)
+				}
+				if !isComplete {
+					spinner.Stop()
+					out.Exit("Shadow link update is taking longer than expected. Please check the status of the shadow link using 'rpk shadow status %q'", linkName)
+				}
+				spinner.Success(fmt.Sprintf("Successfully updated shadow link %q", linkName))
+				os.Exit(0)
+			}
+			// Self-hosted path
 			updatedSL := shadowLinkConfigToProto(updatedCfg)
 			fm, err := fieldmaskpb.New(updatedSL, diff...)
-			// This should not be possible, as diff is generated from valid
-			// fields, but better to catch the errors here than submit an update
-			// that the user didn't ask for.
 			out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
 
 			zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
-			_, err = cl.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
+			_, err = adminClient.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
 				ShadowLink: updatedSL,
 				UpdateMask: fm,
 			}))
 			out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
-
 			fmt.Printf("Successfully updated shadow link %q.\n", linkName)
 		},
 	}

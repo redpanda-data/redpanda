@@ -22,7 +22,8 @@ struct appender_fixture {
     make_appender(tmpbuf_file::store_t& store) {
         auto file = ss::file(ss::make_shared<tmpbuf_file>(store));
 
-        storage::segment_appender::options opts(std::nullopt, _resources);
+        storage::segment_appender::options opts(
+          std::nullopt, _resources, nullptr);
 
         co_return std::make_unique<storage::segment_appender>(
           std::move(file), opts);

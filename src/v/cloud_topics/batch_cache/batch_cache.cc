@@ -10,6 +10,7 @@
 
 #include "cloud_topics/batch_cache/batch_cache.h"
 
+#include "config/configuration.h"
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
 #include "storage/log_manager.h"
@@ -24,7 +25,8 @@ namespace cloud_topics {
 batch_cache::batch_cache(
   storage::log_manager* log_manager, std::chrono::milliseconds gc_interval)
   : _gc_interval(gc_interval)
-  , _lm(log_manager) {}
+  , _lm(log_manager)
+  , _probe(config::shard_local_cfg().disable_metrics()) {}
 
 batch_cache::batch_cache(
   ss::sharded<storage::api>& log_manager, std::chrono::milliseconds gc_interval)
@@ -44,12 +46,17 @@ ss::future<> batch_cache::stop() {
     co_await _gate.close();
 }
 
-void batch_cache::put(const model::ntp& ntp, const model::record_batch& b) {
+void batch_cache::put(
+  const model::topic_id_partition& tidp, const model::record_batch& b) {
+    vassert(
+      b.term() > model::term_id{-1},
+      "Batch without term in the cache: {}",
+      b.header());
     if (_lm == nullptr) {
         return;
     }
     _gate.check();
-    auto it = _index.find(ntp);
+    auto it = _index.find(tidp);
     if (it == _index.end()) {
         auto cache_ix = _lm->create_cache(storage::with_cache::yes);
         if (!cache_ix.has_value()) {
@@ -57,7 +64,7 @@ void batch_cache::put(const model::ntp& ntp, const model::record_batch& b) {
         }
         auto [new_it, ok] = _index.insert(
           std::make_pair(
-            ntp,
+            tidp,
             std::make_unique<storage::batch_cache_index>(
               std::move(*cache_ix))));
         if (ok) {
@@ -67,17 +74,36 @@ void batch_cache::put(const model::ntp& ntp, const model::record_batch& b) {
         }
     }
     it->second->put(b, storage::batch_cache::is_dirty_entry::no);
+    _probe.register_put(b.size_bytes());
 }
 
 std::optional<model::record_batch>
-batch_cache::get(const model::ntp& ntp, model::offset o) {
+batch_cache::get(const model::topic_id_partition& tidp, model::offset o) {
     if (_lm == nullptr) {
         return std::nullopt;
     }
     _gate.check();
-    if (auto it = _index.find(ntp); it != _index.end()) {
-        return it->second->get(o);
+    if (auto it = _index.find(tidp); it != _index.end()) {
+        auto rb = it->second->get(o);
+        if (rb.has_value()) {
+            vassert(
+              rb->term() > model::term_id{-1},
+              "Batch without term in the cache: {}",
+              rb->header());
+            vassert(
+              rb->base_offset() <= o && o <= rb->last_offset(),
+              "Unexpected batch for {}, got range: [{},{}] for offset {}",
+              tidp,
+              rb->base_offset(),
+              rb->last_offset(),
+              o);
+            _probe.register_get(rb->size_bytes());
+        } else {
+            _probe.register_miss();
+        }
+        return rb;
     }
+    _probe.register_miss();
     return std::nullopt;
 }
 
@@ -88,13 +114,13 @@ ss::future<> batch_cache::cleanup_index_entries() {
     // '_index'  collection to avoid accumulating orphaned entries.
     auto it = _index.begin();
     while (it != _index.end()) {
-        if (!it->second->empty()) {
+        if (it->second->empty()) {
             it = _index.erase(it);
         } else {
             ++it;
         }
         if (ss::need_preempt() && it != _index.end()) {
-            model::ntp next = it->first;
+            model::topic_id_partition next = it->first;
             co_await ss::yield();
             it = _index.lower_bound(next);
         }

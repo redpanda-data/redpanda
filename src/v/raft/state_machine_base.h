@@ -16,7 +16,7 @@
 #include "model/record.h"
 #include "raft/fwd.h"
 #include "raft/offset_monitor.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 namespace raft {
 using snapshot_at_offset_supported
@@ -147,7 +147,7 @@ protected:
     model::offset next() const { return _next; }
     void set_next(model::offset offset);
 
-    mutex _apply_lock{"state_machine_base::apply_lock"};
+    ssx::mutex _apply_lock{"state_machine_base::apply_lock"};
 
     friend class batch_applicator;
     friend class state_machine_manager;

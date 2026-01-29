@@ -114,6 +114,15 @@ request_auth_result request_authenticator::do_authenticate(
         username = security::credential_user{decoded_bytes.substr(0, colon)};
         security::credential_password password{decoded_bytes.substr(colon + 1)};
 
+        if (crypto::is_scram_password_too_short(password())) {
+            vlog(
+              logger.info,
+              "Client auth failure: password length less than {} characters",
+              crypto::hmac_key_fips_min_bytes);
+            throw ss::httpd::bad_request_exception(
+              "Malformed Authorization header");
+        }
+
         const auto cred_opt = cred_store.get<security::scram_credential>(
           username);
         if (!cred_opt.has_value()) {
@@ -145,7 +154,8 @@ request_auth_result request_authenticator::do_authenticate(
                   std::move(username),
                   std::move(password),
                   ss::sstring{*sasl_mechanism},
-                  request_auth_result::superuser(superuser));
+                  request_auth_result::superuser(superuser),
+                  {});
             }
         }
     } else if (supports("OIDC") && auth_hdr.starts_with(authz_bearer_prefix)) {
@@ -167,11 +177,13 @@ request_auth_result request_authenticator::do_authenticate(
         auto found = std::find(superusers.begin(), superusers.end(), principal);
         bool superuser = (found != superusers.end()) || (!require_auth);
         vlog(logger.trace, "Authenticated principal {}", principal);
+        vlog(logger.trace, "OIDC groups: {}", res.assume_value().groups);
         return request_auth_result{
           security::credential_user{principal},
           security::credential_password{auth_hdr},
           security::oidc::sasl_authenticator::name,
-          request_auth_result::superuser{superuser}};
+          request_auth_result::superuser{superuser},
+          std::move(res.assume_value()).groups};
     } else if (!auth_hdr.empty()) {
         throw ss::httpd::bad_request_exception(
           "Unsupported Authorization method");
@@ -222,6 +234,7 @@ request_auth_result::request_auth_result(request_auth_result&& other) noexcept
   : _username{std::move(other._username)}
   , _password{std::move(other._password)}
   , _sasl_mechanism{std::move(other._sasl_mechanism)}
+  , _groups{std::move(other._groups)}
   , _authenticated{other._authenticated}
   , _superuser{other._superuser}
   , _auth_required{other._auth_required}

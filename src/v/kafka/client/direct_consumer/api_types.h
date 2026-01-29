@@ -59,15 +59,20 @@ struct topic_assignment {
  * Data exposed to the `fetch_next()` caller
  */
 struct fetched_partition_data {
-    model::partition_id partition_id;
-    kafka::leader_epoch leader_epoch;
-    kafka::offset start_offset;
-    kafka::offset high_watermark;
-    kafka::offset last_stable_offset;
-    chunked_vector<model::record_batch> data;
+    // these should always be set, initialize to invalid
+    model::partition_id partition_id{-1};
+    kafka::leader_epoch leader_epoch{-1};
+    kafka::offset start_offset{-1};
+    kafka::offset high_watermark{-1};
+    kafka::offset last_stable_offset{model::invalid_lso};
+
+    // the following have reasonable defaults
+    chunked_vector<model::record_batch> data{};
     kafka::error_code error = kafka::error_code::none;
-    std::optional<chunked_vector<aborted_transaction>> aborted_transactions;
-    subscription_epoch subscription_epoch;
+    std::optional<chunked_vector<aborted_transaction>> aborted_transactions{
+      std::nullopt};
+    subscription_epoch
+      subscription_epoch; // should always be set but no invalid value
     size_t size_bytes{0};
 };
 
@@ -87,9 +92,17 @@ struct source_partition_offsets {
     // The source partition's log high watermark
     kafka::offset high_watermark{-1};
     // The source partition's log last stable offset
-    kafka::offset last_stable_offset{-1};
+    kafka::offset last_stable_offset{model::offset_cast(model::invalid_lso)};
     // The timestamp that the fetch response was received by the client
     ss::lowres_clock::time_point last_offset_update_timestamp{};
+
+    // check all except timestamp, useful for checking if offsets have changed
+    // over time
+    bool are_offsets_equal(const source_partition_offsets& other) const {
+        return log_start_offset == other.log_start_offset
+               && high_watermark == other.high_watermark
+               && last_stable_offset == other.last_stable_offset;
+    }
 };
 
 struct partition_offset {

@@ -605,7 +605,7 @@ class DebugBundleSCRAMAuthn(DebugBundleTestBase):
     """
 
     test_user = SaslCredentials(
-        username="test", password="test1234", algorithm="SCRAM-SHA-256"
+        username="test", password="test1234567890", algorithm="SCRAM-SHA-256"
     )
 
     user_accessible_topic = "user_topic"

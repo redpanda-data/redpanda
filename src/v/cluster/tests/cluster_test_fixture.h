@@ -59,11 +59,6 @@ get_cloud_storage_configurations(std::string_view hosthame, uint16_t port) {
     s3_conf.secret_key = cloud_roles::private_key_str("secret-key");
     s3_conf.region = cloud_roles::aws_region_name("us-east-1");
     s3_conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
-    s3_conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{},
-      cloud_storage_clients::endpoint_url{});
     s3_conf.server_addr = server_addr;
 
     archival::configuration a_conf{
@@ -94,9 +89,7 @@ public:
     using fixture_ptr = std::unique_ptr<redpanda_thread_fixture>;
 
     cluster_test_fixture()
-      : _sgroups(create_scheduling_groups())
-      , _group_deleter([this] { _sgroups.destroy_groups().get(); })
-      , _base_dir(
+      : _base_dir(
           "cluster_test."
           + random_generators::with_random_seed().gen_alphanum_string(6)) {
         // Disable all metrics to guard against double_registration errors
@@ -116,8 +109,8 @@ public:
       model::node_id node_id,
       int16_t kafka_port,
       int16_t rpc_port,
-      int16_t proxy_port,
-      int16_t schema_reg_port,
+      std::optional<int16_t> proxy_port,
+      std::optional<int16_t> schema_reg_port,
       std::vector<config::seed_server> seeds,
       configure_node_id use_node_id,
       empty_seed_starts_cluster empty_seed_starts_cluster_val,
@@ -128,7 +121,8 @@ public:
       bool enable_legacy_upload_mode = true,
       bool iceberg_enabled = false,
       bool cloud_topics_enabled = false,
-      bool cluster_linking_enabled = false) {
+      bool cluster_linking_enabled = false,
+      bool use_lsm_metastore = false) {
         return std::make_unique<redpanda_thread_fixture>(
           node_id,
           kafka_port,
@@ -137,7 +131,6 @@ public:
           schema_reg_port,
           seeds,
           ssx::sformat("{}.{}", _base_dir, node_id()),
-          _sgroups,
           false,
           s3_config,
           archival_cfg,
@@ -148,15 +141,16 @@ public:
           enable_legacy_upload_mode,
           iceberg_enabled,
           cloud_topics_enabled,
-          cluster_linking_enabled);
+          cluster_linking_enabled,
+          use_lsm_metastore);
     }
 
     void add_node(
       model::node_id node_id,
       int16_t kafka_port,
       int16_t rpc_port,
-      int16_t proxy_port,
-      int16_t schema_reg_port,
+      std::optional<int16_t> proxy_port,
+      std::optional<int16_t> schema_reg_port,
       std::vector<config::seed_server> seeds,
       configure_node_id use_node_id = configure_node_id::yes,
       empty_seed_starts_cluster empty_seed_starts_cluster_val
@@ -168,7 +162,8 @@ public:
       bool enable_legacy_upload_mode = true,
       bool iceberg_enabled = false,
       bool cloud_topics_enabled = false,
-      bool cluster_linking_enabled = false) {
+      bool cluster_linking_enabled = false,
+      bool use_lsm_metastore = true) {
         _instances.emplace(
           node_id,
           make_redpanda_fixture(
@@ -186,7 +181,8 @@ public:
             enable_legacy_upload_mode,
             iceberg_enabled,
             cloud_topics_enabled,
-            cluster_linking_enabled));
+            cluster_linking_enabled,
+            use_lsm_metastore));
     }
 
     application* get_node_application(model::node_id id) {
@@ -215,8 +211,8 @@ public:
       model::node_id node_id,
       int kafka_port_base = 9092,
       int rpc_port_base = 11000,
-      int proxy_port_base = 8082,
-      int schema_reg_port_base = 8081,
+      std::optional<int> proxy_port_base = std::nullopt,
+      std::optional<int> schema_reg_port_base = std::nullopt,
       configure_node_id use_node_id = configure_node_id::yes,
       empty_seed_starts_cluster empty_seed_starts_cluster_val
       = empty_seed_starts_cluster::yes,
@@ -228,7 +224,8 @@ public:
       bool iceberg_enabled = false,
       bool cloud_topics_enabled = false,
       bool cluster_linking_enabled = false,
-      model::node_id seed_node_id = model::node_id{0}) {
+      model::node_id seed_node_id = model::node_id{0},
+      bool use_lsm_metastore = true) {
         std::vector<config::seed_server> seeds = {};
         if (!empty_seed_starts_cluster_val || node_id != 0) {
             seeds.push_back(
@@ -239,8 +236,10 @@ public:
           node_id,
           kafka_port_base + node_id(),
           rpc_port_base + node_id(),
-          proxy_port_base + node_id(),
-          schema_reg_port_base + node_id(),
+          proxy_port_base.transform(
+            [node_id](auto port) { return port + node_id(); }),
+          schema_reg_port_base.transform(
+            [node_id](auto port) { return port + node_id(); }),
           std::move(seeds),
           use_node_id,
           empty_seed_starts_cluster_val,
@@ -250,7 +249,8 @@ public:
           legacy_upload_mode_enabled,
           iceberg_enabled,
           cloud_topics_enabled,
-          cluster_linking_enabled);
+          cluster_linking_enabled,
+          use_lsm_metastore);
         return get_node_application(node_id);
     }
 
@@ -267,8 +267,8 @@ public:
           node_id,
           9092,
           11000,
-          8082,
-          8081,
+          std::nullopt,
+          std::nullopt,
           use_node_id,
           empty_seed_starts_cluster_val,
           s3_config,
@@ -292,16 +292,6 @@ public:
 
     ss::future<> wait_for_controller_leadership(model::node_id id) {
         return _instances[id]->wait_for_controller_leadership();
-    }
-
-    /**
-     * Common scheduling groups instance for all nodes, we are limited by
-     * max_scheduling_group == 16
-     */
-    scheduling_groups create_scheduling_groups() {
-        scheduling_groups groups;
-        groups.create_groups().get();
-        return groups;
     }
 
     ss::future<> create_topic(
@@ -432,10 +422,7 @@ protected:
         return _instances[id].get();
     }
 
-    scheduling_groups _sgroups;
-
 private:
-    ss::deferred_action<std::function<void()>> _group_deleter;
     absl::flat_hash_map<model::node_id, fixture_ptr> _instances;
 
 protected:

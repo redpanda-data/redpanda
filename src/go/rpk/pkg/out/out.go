@@ -19,9 +19,9 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/Ladicle/tabwriter"
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 

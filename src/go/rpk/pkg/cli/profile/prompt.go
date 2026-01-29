@@ -67,6 +67,15 @@ The "bg-" prefix modifies the background color: "bg-black", "bg-hi-red", etc.
 MODIFIERS
 
 Four modifiers are supported, "bold", "faint", "underline", and "invert".
+
+RAW MODE
+
+The "raw" modifier disables ANSI color escapes entirely, outputting plain text.
+This is useful when your shell has issues with ANSI escape sequences affecting
+terminal width calculations.
+
+    prompt: raw, "%n"
+    prompt: raw, "[%p]"
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, _ []string) {
@@ -106,14 +115,18 @@ Four modifiers are supported, "bold", "faint", "underline", and "invert".
 
 			var sb strings.Builder
 			for _, g := range parens {
-				text, attrs, err := parsePrompt(g, p.Name)
+				text, attrs, raw, err := parsePrompt(g, p.Name)
 				if err != nil {
 					errmsg = err.Error()
 					return
 				}
-				c := color.New(attrs...)
-				c.EnableColor()
-				sb.WriteString(c.Sprint(text))
+				if raw {
+					sb.WriteString(text)
+				} else {
+					c := color.New(attrs...)
+					c.EnableColor()
+					sb.WriteString(c.Sprint(text))
+				}
 			}
 			if validate {
 				fmt.Print("Prompt ok! Output:\nvvv\n")
@@ -126,11 +139,12 @@ Four modifiers are supported, "bold", "faint", "underline", and "invert".
 	return cmd
 }
 
-func parsePrompt(s string, name string) (string, []color.Attribute, error) {
+func parsePrompt(s string, name string) (string, []color.Attribute, bool, error) {
 	var (
 		b       = make([]byte, 0, 16) // current text or attribute buffer
 		text    []byte                // if non nil, this has been initialized; we cannot have multiple quoted strings
 		attrs   []color.Attribute
+		raw     bool
 		inQuote bool
 	)
 	for i := 0; i < len(s); i++ {
@@ -138,7 +152,7 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 		switch c {
 		case '\\':
 			if !inQuote {
-				return "", nil, errors.New("backslash is only allowed inside a quoted string")
+				return "", nil, false, errors.New("backslash is only allowed inside a quoted string")
 			}
 			if len(s) > i+1 {
 				b = append(b, s[i+1])
@@ -150,11 +164,11 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 				b = b[:0]
 				inQuote = false
 			} else if text != nil {
-				return "", nil, errors.New("only one quoted string can appear in a prompt, we saw a second")
+				return "", nil, false, errors.New("only one quoted string can appear in a prompt, we saw a second")
 			} else {
 				b = bytes.TrimSpace(b)
 				if len(b) > 0 {
-					return "", nil, fmt.Errorf("unexpected text %q before quoted string", string(b))
+					return "", nil, false, fmt.Errorf("unexpected text %q before quoted string", string(b))
 				}
 				inQuote = true
 			}
@@ -167,9 +181,14 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 			if len(b) == 0 {
 				continue
 			}
+			if strings.EqualFold(string(b), "raw") {
+				raw = true
+				b = b[:0]
+				continue
+			}
 			attr, ok := out.ParseColor(string(b))
 			if !ok {
-				return "", nil, fmt.Errorf("invalid color or attribute %q", string(b))
+				return "", nil, false, fmt.Errorf("invalid color or attribute %q", string(b))
 			}
 			attrs = append(attrs, attr)
 			b = b[:0]
@@ -181,11 +200,15 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 	// If b is non-empty, the prompt either ended in unneeded spaces or it
 	// ended in an attr -- any ending quote is handled in the above block.
 	if b = bytes.TrimSpace(b); len(b) > 0 {
-		attr, ok := out.ParseColor(string(b))
-		if !ok {
-			return "", nil, fmt.Errorf("invalid color or attribute %q", string(b))
+		if strings.EqualFold(string(b), "raw") {
+			raw = true
+		} else {
+			attr, ok := out.ParseColor(string(b))
+			if !ok {
+				return "", nil, false, fmt.Errorf("invalid color or attribute %q", string(b))
+			}
+			attrs = append(attrs, attr)
 		}
-		attrs = append(attrs, attr)
 	}
 
 	output := make([]byte, 0, len(s)+len(text))
@@ -202,7 +225,7 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 					output = append(output, '%')
 					i++
 				default:
-					return "", nil, fmt.Errorf("unknown escape %%%c", text[i+1])
+					return "", nil, false, fmt.Errorf("unknown escape %%%c", text[i+1])
 				}
 			}
 		default:
@@ -212,7 +235,7 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 	if len(s) != 0 && len(text) == 0 {
 		output = append(output, name...)
 	}
-	return string(output), attrs, nil
+	return string(output), attrs, raw, nil
 }
 
 func splitPromptParens(s string) ([]string, error) {

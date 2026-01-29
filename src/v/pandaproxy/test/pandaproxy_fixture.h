@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "http/client.h"
 #include "redpanda/tests/fixture.h"
 
@@ -26,16 +27,18 @@ public:
     ~pandaproxy_test_fixture() = default;
 
     http::client make_proxy_client() {
+        vassert(proxy_port.has_value(), "Proxy port not set");
         net::base_transport::configuration transport_cfg;
         transport_cfg.server_addr = net::unresolved_address{
-          "localhost", proxy_port};
+          "localhost", *proxy_port};
         return http::client(transport_cfg);
     }
 
     http::client make_schema_reg_client() {
+        vassert(schema_reg_port.has_value(), "Schema registry port not set");
         net::base_transport::configuration transport_cfg;
         transport_cfg.server_addr = net::unresolved_address{
-          "localhost", schema_reg_port};
+          "localhost", *schema_reg_port};
         return http::client(transport_cfg);
     }
 

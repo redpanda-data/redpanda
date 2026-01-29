@@ -1,4 +1,5 @@
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 
 bool_flag(
     name = "gofips",
@@ -12,16 +13,49 @@ config_setting(
     },
 )
 
-bool_flag(
-    name = "has_sanitizers",
-    build_setting_default = False,
+# Selects the sanitizer configuration to use for this build.
+# Note that simply setting this flag is not enough, you also need
+# to enable specific additional flags (see .bazelrc) to actually
+# enable the sanitizers. This flag is set *in addition* to those
+# flags so that downstream build files can made local decisions
+# based on whether sanitizers are enabled or not (e.g., krb5).
+string_flag(
+    name = "sanitizer_mode",
+    build_setting_default = "none",
+    values = [
+        "none",
+        "asan",
+        "all",
+    ],
 )
 
 config_setting(
-    name = "enable_fuzz_testing",
+    name = "sanitizers_none",
     flag_values = {
-        ":has_sanitizers": "true",
+        ":sanitizer_mode": "none",
     },
+)
+
+config_setting(
+    name = "sanitizers_asan",
+    flag_values = {
+        ":sanitizer_mode": "asan",
+    },
+)
+
+config_setting(
+    name = "sanitizers_all",
+    flag_values = {
+        ":sanitizer_mode": "all",
+    },
+)
+
+selects.config_setting_group(
+    name = "enable_fuzz_testing",
+    match_any = [
+        ":sanitizers_asan",
+        ":sanitizers_all",
+    ],
 )
 
 config_setting(

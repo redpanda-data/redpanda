@@ -70,7 +70,7 @@ void link_probe::setup_counter_metrics() {
         return;
     }
 
-    const auto sl_name = shadow_link_name(_link.get_config().name);
+    const auto sl_name = shadow_link_name(_link.get_config()->name);
 
     _public_counter_metrics.add_group(
       shadow_link_group,
@@ -111,7 +111,7 @@ void link_probe::setup_status_metrics() {
         return;
     }
 
-    const auto sl_name = shadow_link_name(_link.get_config().name);
+    const auto sl_name = shadow_link_name(_link.get_config()->name);
 
     // topics per mirror_topic_status
     auto status_to_metric = std::views::transform(
@@ -141,8 +141,7 @@ void link_probe::setup_status_metrics() {
 
     std::ranges::copy(statuses | status_to_metric, std::back_inserter(defs));
 
-    _public_status_metrics.emplace().add_group(
-      shadow_link_group, std::move(defs));
+    _public_status_metrics.emplace().add_group(shadow_link_group, defs);
 }
 
 } // namespace cluster_link

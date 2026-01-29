@@ -170,6 +170,7 @@ public:
           std::nullopt,
           max_collect_offset,
           max_collect_offset,
+          max_collect_offset,
           std::nullopt,
           std::nullopt,
           std::chrono::milliseconds{0},

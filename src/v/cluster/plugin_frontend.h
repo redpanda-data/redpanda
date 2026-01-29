@@ -18,7 +18,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <variant>
 
@@ -172,6 +172,6 @@ private:
 
     // is null if not on shard0
     controller_stm* _controller;
-    mutex _mu{"plugin_frontend::mu"};
+    ssx::mutex _mu{"plugin_frontend::mu"};
 };
 } // namespace cluster

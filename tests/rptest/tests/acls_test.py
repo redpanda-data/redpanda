@@ -15,12 +15,18 @@ from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import RawKCL
-from rptest.clients.rpk import AclList, ClusterAuthorizationError, RpkException, RpkTool
+from rptest.clients.rpk import (
+    AclList,
+    ClusterAuthorizationError,
+    RpkException,
+    RpkTool,
+    RPKACLInput,
+)
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, SecurityConfig, TLSProvider
-from rptest.services.redpanda_installer import wait_for_num_versions
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -68,7 +74,7 @@ class AccessControlListTestBase(RedpandaTest):
         # an indirect way to check that ACLs (and users) have propagated
         # to all nodes before we proceed.
         checkpoint_user = "_test_checkpoint"
-        self.admin.create_user(checkpoint_user, "_password", self.algorithm)
+        self.admin.create_user(checkpoint_user, "_checkpoint_password", self.algorithm)
 
         # wait for users to propagate to nodes
         def auth_metadata_propagated():
@@ -84,7 +90,7 @@ class AccessControlListTestBase(RedpandaTest):
 
 
 class AccessControlListTest(AccessControlListTestBase):
-    password = "password"
+    password = "password012345"
     algorithm = "SCRAM-SHA-256"
 
     def __init__(self, *args, **kwargs):
@@ -609,7 +615,7 @@ class AccessControlListTest(AccessControlListTestBase):
             elif format == tls.DNFormat.RFC2253:
                 return "rfc2253"
             else:
-                raise ValueError(f"Unknown format: {format}")
+                raise ValueError(f"Unknown format: {format}")  # pyright: ignore[reportUnreachable]
 
         dn_name = self.tls.get_cert_subject_dn(
             self.cluster_describe_user_cert, format=dn_format
@@ -625,6 +631,30 @@ class AccessControlListTest(AccessControlListTestBase):
         )
         # Expect failure when set to RFC2253 format
         self.check_permissions(pass_w_cluster_user=True)
+
+    @cluster(num_nodes=3)
+    def test_group_acl_smoke_test(self):
+        """
+        Simple test that validates that ACL principals with Group: prefix are
+        permitted
+        """
+        self.prepare_cluster(use_tls=False, use_sasl=True)
+
+        acl_input = RPKACLInput()
+        acl_input.allow_principal = ["Group:test_group"]
+        acl_input.allow_host = ["*"]
+        acl_input.operation = ["all"]
+        acl_input.cluster = True
+
+        self.get_super_client().acl_create(acl=acl_input)
+
+        acls = self.get_super_client().acl_list(format="json")
+        self.logger.debug(f"ACLs: {acls}")
+        group_acl = next(
+            (acl for acl in acls["matches"] if acl["principal"] == "Group:test_group"),
+            None,
+        )
+        assert group_acl is not None, "Group:test_group ACL not found"
 
 
 class AccessControlListTestUpgrade(AccessControlListTest):
@@ -669,9 +699,59 @@ class AccessControlListTestUpgrade(AccessControlListTest):
             err_msg="check_permissions failed after upgrade",
         )
 
+    @cluster(num_nodes=3)
+    def test_upgrade_gbac(self):
+        # Start with a version installed that's not aware of GBAC
+        self.installer.install(self.redpanda.nodes, (25, 3, 1))
+        self.prepare_cluster(use_tls=False, use_sasl=True)
+
+        # Upgrades nodes 0 and 1 and halt node 2
+        # This ensures we have controller quorum but the old version node
+        # is stopped so ACL creation fails due to the GBAC feature not being active
+        self.installer.install(
+            [self.redpanda.nodes[0], self.redpanda.nodes[1]], RedpandaInstaller.HEAD
+        )
+        self.redpanda.restart_nodes([self.redpanda.nodes[0], self.redpanda.nodes[1]])
+        self.redpanda.stop_node(self.redpanda.nodes[2])
+
+        admin = Admin(self.redpanda)
+
+        admin.await_stable_leader(namespace="redpanda", topic="controller", partition=0)
+
+        acl_input = RPKACLInput()
+        acl_input.allow_principal = ["Group:test_group"]
+        acl_input.allow_host = ["*"]
+        acl_input.operation = ["all"]
+        acl_input.cluster = True
+
+        result = self.get_super_client().acl_create(acl=acl_input)
+        self.logger.debug(f"Result: {result}")
+
+        assert "INVALID_CONFIG: GBAC feature not yet active" in result, (
+            f"Unexpected result: {result}"
+        )
+
+        # Upgrade remaining nodes
+        self.installer.install([self.redpanda.nodes[2]], RedpandaInstaller.HEAD)
+        self.redpanda.start_node(self.redpanda.nodes[2])
+
+        wait_until(
+            lambda: admin.supports_feature("group_based_authorization"),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timed out waiting for GBAC support to be active",
+        )
+
+        result = self.get_super_client().acl_create(acl=acl_input)
+        self.logger.debug(f"Result post upgrade: {result}")
+
+        assert "INVALID_CONFIG: GBAC feature not yet active" not in result, (
+            f"Unexpected result: {result}"
+        )
+
 
 class AccessControlListAuthzTest(AccessControlListTestBase):
-    password = "password"
+    password = "password012345"
     algorithm = "SCRAM-SHA-256"
 
     def __init__(self, *args, **kwargs):

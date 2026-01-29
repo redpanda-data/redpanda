@@ -127,9 +127,8 @@ public:
     raft::replicate_stages replicate(
       model::batch_identity, model::record_batch, raft::replicate_options);
 
-    ss::future<storage::translating_reader> make_reader(
-      cloud_topic_log_reader_config cfg,
-      std::optional<model::timeout_clock::time_point>);
+    ss::future<storage::translating_reader>
+    make_reader(cloud_topic_log_reader_config cfg);
 
     ss::future<std::vector<model::tx_range>> aborted_transactions(
       kafka::offset base,
@@ -186,8 +185,7 @@ private:
 
     bool cache_enabled() const;
 
-    std::optional<model::topic_id_partition>
-    ntp_to_topic_id_partition(const model::ntp& ntp) const;
+    model::topic_id_partition topic_id_partition() const;
 
     std::unique_ptr<model::record_batch_reader::impl>
     make_l0_reader(const cloud_topic_log_reader_config& cfg) const;

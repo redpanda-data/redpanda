@@ -110,9 +110,8 @@ public:
     prefix_truncate(model::offset, ss::lowres_clock::time_point) final {
         throw std::runtime_error("unimplemented");
     }
-    ss::future<storage::translating_reader> make_reader(
-      kafka::log_reader_config config,
-      std::optional<model::timeout_clock::time_point>) final {
+    ss::future<storage::translating_reader>
+    make_reader(kafka::log_reader_config config) final {
         if (config.first_timestamp.has_value()) {
             throw std::runtime_error("unimplemented");
         }
@@ -164,11 +163,6 @@ public:
       model::batch_identity,
       model::record_batch,
       raft::replicate_options) final {
-        throw std::runtime_error("unimplemented");
-    }
-
-    ss::future<result<model::offset>>
-    replicate(model::record_batch, raft::replicate_options) final {
         throw std::runtime_error("unimplemented");
     }
 
@@ -501,6 +495,15 @@ public:
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<
         result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)> fn,
+      require_leader) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+
+    ss::future<result<chunked_vector<model::record_batch>, cluster::errc>>
+    consume_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      consume_fn fn,
       require_leader) final {
         return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
     }

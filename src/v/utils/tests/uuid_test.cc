@@ -34,11 +34,15 @@ SEASTAR_THREAD_TEST_CASE(test_uuid_default_construct) {
     auto uuid = uuid_t{};
     BOOST_REQUIRE_EQUAL(
       uuid, uuid_t::from_string("00000000-0000-0000-0000-000000000000"));
+    BOOST_REQUIRE(uuid.is_nil());
+    BOOST_REQUIRE(!uuid);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_lt) {
-    BOOST_REQUIRE_LT(
-      uuid_t{}, uuid_t::from_string("00000000-0000-0000-0000-000000000001"));
+    auto uuid = uuid_t::from_string("00000000-0000-0000-0000-000000000001");
+    BOOST_REQUIRE_LT(uuid_t{}, uuid);
+    BOOST_REQUIRE(!uuid.is_nil());
+    BOOST_REQUIRE(uuid);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_named_uuid_type) {

@@ -1,0 +1,74 @@
+---
+name: Dispatch docs updates on latest release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  dispatch-if-latest:
+    runs-on: ubuntu-latest
+    # Skip prereleases and drafts
+    if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+    steps:
+      - name: Log release info
+        run: |
+          echo "Tag:        ${{ github.event.release.tag_name }}"
+          echo "Prerelease: ${{ github.event.release.prerelease }}"
+          echo "Draft:      ${{ github.event.release.draft }}"
+
+      # Assume AWS role and fetch ACTIONS_BOT_TOKEN
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+
+      - id: ghsecrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+          parse-json-secrets: true
+
+      # Check if this is the latest release
+      - name: Determine if release is latest
+        id: latest
+        env:
+          GH_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          CUR="${{ github.event.release.tag_name }}"
+          LATEST="$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name')"
+          echo "Current tag: $CUR"
+          echo "Latest tag:  $LATEST"
+          if [ "$CUR" = "$LATEST" ]; then
+            echo "is_latest=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_latest=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Dispatch to api-docs repo if latest
+      - name: Dispatch to api-docs repo
+        if: steps.latest.outputs.is_latest == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
+          repository: redpanda-data/api-docs
+          event-type: redpanda-openapi-bundle
+          client-payload: |
+            { "tag": "${{ github.event.release.tag_name }}" }
+
+      # Dispatch to docs repo for property docs generation if latest
+      - name: Dispatch property docs generation to docs repo
+        if: steps.latest.outputs.is_latest == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
+          repository: redpanda-data/docs
+          event-type: trigger-property-docs-generation
+          client-payload: |
+            { "tag": "${{ github.event.release.tag_name }}" }

@@ -174,7 +174,7 @@ to include all properties including these low level tunables.
 			err = exportConfig(file, schema, currentConfig, all)
 			out.MaybeDie(err, "failed to write out config %q: %v", file.Name(), err)
 			err = file.Close()
-			fmt.Printf("Wrote configuration to file %q.\n", file.Name())
+			fmt.Fprintf(os.Stderr, "Wrote configuration to file %q.\n", file.Name())
 			out.MaybeDie(err, "error closing file %q: %v", file.Name(), err)
 		},
 	}

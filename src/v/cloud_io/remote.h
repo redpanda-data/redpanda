@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "cloud_io/auth_refresh_bg_op.h"
 #include "cloud_io/io_resources.h"
 #include "cloud_io/io_result.h"
 #include "cloud_io/provider.h"
@@ -73,7 +72,6 @@ public:
     /// can perform.
     size_t concurrency() const;
 
-    model::cloud_storage_backend backend() const;
     const provider& provider() const;
 
     bool is_batch_delete_supported() const;
@@ -210,15 +208,11 @@ public:
     const io_resources& resources() const { return *_resources; }
 
 private:
-    ss::future<> propagate_credentials(cloud_roles::credentials credentials);
-
     ss::sharded<cloud_storage_clients::client_pool>& _pool;
+
     ss::gate _gate;
     ss::abort_source _as;
-    auth_refresh_bg_op _auth_refresh_bg_op;
     std::unique_ptr<io_resources> _resources;
-
-    config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
 
     model::cloud_storage_backend _cloud_storage_backend;
     cloud_io::provider _provider;

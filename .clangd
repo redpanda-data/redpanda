@@ -1,5 +1,7 @@
 Diagnostics:
   ClangTidy:
     Remove: bugprone-unchecked-optional-access
+  Includes:
+    AnalyzeAngledIncludes: true
 CompileFlags:
   Remove: [-ferror-limit=*]

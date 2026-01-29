@@ -11,7 +11,7 @@
 #pragma once
 
 #include "iceberg/catalog.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 namespace datalake {
 class credential_manager;
@@ -50,7 +50,7 @@ public:
     ss::future<checked<void, errc>>
     drop_table(const table_identifier& table_ident, bool purge) final;
 
-    ss::future<checked<std::nullopt_t, errc>>
+    ss::future<checked<table_metadata, errc>>
     commit_txn(const table_identifier& table_ident, transaction) final;
 
     ~rest_catalog() final = default;
@@ -66,7 +66,7 @@ private:
     std::optional<ss::sstring> base_location_;
     // currently we use very simple concurrency control i.e. we only allow one
     // REST request at a time
-    mutex lock_;
+    ssx::mutex lock_;
     ss::abort_source as_;
 };
 }; // namespace iceberg

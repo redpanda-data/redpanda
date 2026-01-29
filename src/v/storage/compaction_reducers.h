@@ -142,6 +142,7 @@ public:
       model::offset segment_last_offset,
       bool compaction_placeholder_enabled,
       bool unset_transaction_bit_enabled,
+      ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
       compacted_index_writer* cidx = nullptr,
       bool inject_failure = false,
       ss::abort_source* as = nullptr)
@@ -151,6 +152,7 @@ public:
       , _compaction_placeholder_enabled(compaction_placeholder_enabled)
       , _unset_transaction_bit_enabled(unset_transaction_bit_enabled)
       , _appender(a)
+      , _stm_mgr(stm_mgr)
       , _compacted_idx(cidx)
       , _idx(index_state::make_empty_index(index_base_offset, apply_offset))
       , _internal_topic(internal_topic)
@@ -191,6 +193,8 @@ private:
     bool _unset_transaction_bit_enabled;
 
     segment_appender* _appender;
+
+    ss::lw_shared_ptr<storage::stm_manager> _stm_mgr;
 
     // Compacted index writer for the newly written segment. May not be
     // supplied if the compacted index isn't expected to change, e.g. when
@@ -252,13 +256,13 @@ public:
       ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
       chunked_vector<model::tx_range>&& txs,
       compacted_index_writer* w,
-      ss::sharded<features::feature_table>& feature_table) noexcept
+      bool tx_batch_compaction_enabled) noexcept
       : _ntp(std::move(ntp))
       , _delegate(index_rebuilder_reducer(w))
       , _aborted_txs(model::tx_range_cmp(), std::move(txs))
       , _stm_mgr(stm_mgr)
       , _transactional_stm_type(stm_mgr->transactional_stm_type())
-      , _feature_table(feature_table) {
+      , _tx_batch_compaction_enabled(tx_batch_compaction_enabled) {
         _stats.num_aborted_txes = _aborted_txs.size();
     }
     ss::future<ss::stop_iteration> operator()(model::record_batch&&);
@@ -309,7 +313,7 @@ private:
     // Set if a transactional stm is attached to this partition.
     std::optional<storage::stm_type> _transactional_stm_type;
 
-    ss::sharded<features::feature_table>& _feature_table;
+    bool _tx_batch_compaction_enabled;
 };
 
 // Builds up a key_offset_map for a segment, starting from the offset

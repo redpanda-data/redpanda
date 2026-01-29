@@ -95,7 +95,7 @@ cloudcheck::run(cloudcheck_opts opts) {
 ss::future<>
 cloudcheck::clear_self_test_folder(cloud_storage_clients::bucket_name bucket) {
     auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
-    const cloud_storage::remote::list_result object_list
+    cloud_storage::remote::list_result object_list
       = co_await _cloud_storage_api.local().list_objects(
         bucket, rtc, self_test_prefix);
 

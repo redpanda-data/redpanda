@@ -21,7 +21,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "ssx/async_algorithm.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/abort_source.hh>
@@ -208,7 +208,7 @@ private:
      * Store version to check for concurrent updates
      */
     version _topic_map_version{0};
-    mutex _mutex{"leaders_table/state"};
+    ssx::mutex _mutex{"leaders_table/state"};
     ss::gate _gate;
     ss::abort_source& _as;
 };

@@ -46,8 +46,9 @@ namespace cloud_topics::l0 {
 /// forces all shards to send write requests to a single target shard for
 /// upload. The target shard is chosen based on having the most data in the
 /// pipeline to minimize CPU cache invalidation.
+template<typename Clock = seastar::lowres_clock>
 class write_request_scheduler
-  : public ss::peering_sharded_service<write_request_scheduler> {
+  : public ss::peering_sharded_service<write_request_scheduler<Clock>> {
     friend struct write_request_balancer_accessor;
 
     struct shard_info {
@@ -56,7 +57,7 @@ class write_request_scheduler
     };
 
 public:
-    explicit write_request_scheduler(write_pipeline<>::stage s);
+    explicit write_request_scheduler(write_pipeline<Clock>::stage s);
 
     ss::future<> start();
 
@@ -112,7 +113,7 @@ private:
     /// \note The method is invoked on the target shard (the shard that uploads
     /// the data).
     ss::future<std::expected<foreign_ptr_t, errc>> proxy_write_request(
-      write_request<>* req, ss::gate::holder target_gate_holder) noexcept;
+      write_request<Clock>* req, ss::gate::holder target_gate_holder) noexcept;
 
     /// Forward all write requests to the target shard
     /// \param shard is a target shard that should perform the upload
@@ -125,7 +126,7 @@ private:
     ///       to the target shard to complete the operation.
     ss::future<> roundtrip(
       ss::shard_id shard,
-      write_pipeline<>::write_requests_list list,
+      write_pipeline<Clock>::write_requests_list list,
       ss::foreign_ptr<gate_holder_ptr> target_shard_gate_holder);
 
     /// Acknowledge the write request with the response
@@ -134,7 +135,7 @@ private:
     /// \note The response is created on the target shard, the method
     ///       is invoked on the shard that owns the write request.
     void ack_write_response(
-      write_request<>* req, std::expected<foreign_ptr_t, errc> resp);
+      write_request<Clock>* req, std::expected<foreign_ptr_t, errc> resp);
 
     /// Forward all write requests to the target shard
     /// \param shard is a target shard that should perform the upload
@@ -144,7 +145,7 @@ private:
       ss::shard_id shard,
       ss::foreign_ptr<gate_holder_ptr> target_shard_gate_holder);
 
-    write_pipeline<>::stage _stage;
+    write_pipeline<Clock>::stage _stage;
     ss::abort_source _as;
     ss::gate _gate;
 

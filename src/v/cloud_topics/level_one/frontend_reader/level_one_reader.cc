@@ -257,7 +257,7 @@ level_one_log_reader_impl::read_batches(l1::object_reader& reader) {
                 set_end_of_stream();
                 break;
             }
-            _config.bytes_consumed += batch_size;
+            _bytes_consumed += batch_size;
 
             batches.push_back(std::move(batch));
 
@@ -355,8 +355,8 @@ bool level_one_log_reader_impl::is_end_of_stream() const {
 }
 
 bool level_one_log_reader_impl::is_over_limit_with_bytes(size_t size) const {
-    return (_config.strict_max_bytes || _config.bytes_consumed > 0)
-           && (_config.bytes_consumed + size) > _config.max_bytes;
+    return (_config.strict_max_bytes || _bytes_consumed > 0)
+           && (_bytes_consumed + size) > _config.max_bytes;
 }
 
 } // namespace cloud_topics

@@ -69,8 +69,8 @@ void follower_index_metadata::reset() {
     last_sent_protocol_meta.reset();
     follower_state_change.broadcast();
     max_cleanly_compacted_offset = {};
-    mcco_getter = std::make_unique<void_executor>();
-    mtro_sender = std::make_unique<void_executor>();
+    coordinated_compaction_offsets_getter = std::make_unique<void_executor>();
+    coordinated_compaction_offsets_sender = std::make_unique<void_executor>();
 }
 
 std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i) {

@@ -140,6 +140,10 @@ model::record_batch copy_data_segment_reducer::make_placeholder_batch(
     new_hdr.last_offset_delta = hdr.last_offset_delta;
     new_hdr.first_timestamp = hdr.first_timestamp;
     new_hdr.max_timestamp = hdr.max_timestamp;
+    // Maintain idempotency related state
+    new_hdr.base_sequence = hdr.base_sequence;
+    new_hdr.producer_id = hdr.producer_id;
+    new_hdr.producer_epoch = hdr.producer_epoch;
     auto no_records = iobuf{};
     new_hdr.reset_size_checksum_metadata(no_records);
     return model::record_batch(
@@ -150,13 +154,14 @@ ss::future<std::optional<model::record_batch>>
 copy_data_segment_reducer::filter(model::record_batch batch) {
     const auto is_last_batch_in_segment = batch.last_offset()
                                           == _segment_last_offset;
-    // Compaction placeholder batches can actually be removed under one
-    // condition- that they are _not_ the last batch in a segment. This can
-    // happen if e.g. two segments containing placeholder batches are adjacently
-    // merged.
+    // Compaction placeholder batches can actually be removed under two
+    // conditions- that they are _not_ the last batch in a segment, nor are they
+    // the last batch for an idempotent producer. The former can happen if e.g.
+    // two segments containing placeholder batches are adjacently merged.
     if (
       (batch.header().type == model::record_batch_type::compaction_placeholder)
-      && !is_last_batch_in_segment) {
+      && !is_last_batch_in_segment
+      && !_stm_mgr->is_last_batch_for_idempotent_producer(batch.header())) {
         co_return std::nullopt;
     }
 
@@ -177,21 +182,23 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
             batch, r, batch.record_count() == records_seen, offset_deltas);
       });
 
-    if (
-      _compaction_placeholder_enabled && is_last_batch_in_segment
-      && offset_deltas.empty()) {
-        // last batch in the segment has been compacted away.
-        // This is most likely caused by aborted data batches getting compacted
-        // away during self compaction of the segment if they are the last batch
-        // in the segment. We install a placeholder batch of same size to retain
-        // contiguousness of the offset space.
-        auto placeholder = make_placeholder_batch(batch.header());
-        vlog(
-          gclog.debug,
-          "installing a placeholder {} for compacted batch: {}",
-          placeholder,
-          batch);
-        co_return placeholder;
+    if (offset_deltas.empty() && _compaction_placeholder_enabled) {
+        auto is_last_batch_for_producer
+          = _stm_mgr->is_last_batch_for_idempotent_producer(batch.header());
+        if (is_last_batch_in_segment || is_last_batch_for_producer) {
+            // last batch in the segment or for the producer has been compacted
+            // away. This is most likely caused by aborted data batches getting
+            // compacted away during self compaction of the segment if they are
+            // the last batch in the segment. We install a placeholder batch of
+            // same size to retain contiguousness of the offset space.
+            auto placeholder = make_placeholder_batch(batch.header());
+            vlog(
+              gclog.debug,
+              "installing a placeholder {} for compacted batch: {}",
+              placeholder,
+              batch);
+            co_return placeholder;
+        }
     }
 
     // 2. no record to keep
@@ -471,7 +478,7 @@ bool tx_reducer::can_discard_consumer_offsets_batch(
     // batches, so no need to retain originally written group_prepare_tx
     // batches while the transaction is in progress.
     return compaction::is_removable_control_batch(
-      _ntp, b.header().type, _feature_table);
+      _ntp, b.header().type, _tx_batch_compaction_enabled);
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {

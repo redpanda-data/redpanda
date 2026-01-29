@@ -73,6 +73,27 @@ using chunked_hash_map = ankerl::unordered_dense::segmented_map<
   ankerl::unordered_dense::bucket_type::standard,
   chunked_vector<ankerl::unordered_dense::bucket_type::standard>>;
 
+namespace detail {
+template<typename Range>
+struct chunked_hash_map_from_range_impl {
+    using value_t = std::ranges::range_value_t<std::decay_t<Range>>;
+    using first_t = typename value_t::first_type;
+    using second_t = typename value_t::second_type;
+    using ret_t = chunked_hash_map<first_t, second_t>;
+};
+} // namespace detail
+
+// reserves if range size is known
+template<typename Range>
+typename detail::chunked_hash_map_from_range_impl<Range>::ret_t
+chunked_hash_map_from_range(Range&& range) {
+    size_t size = 0;
+    if constexpr (std::ranges::sized_range<Range>) {
+        size = std::ranges::size(range);
+    }
+    return {std::ranges::begin(range), std::ranges::end(range), size};
+};
+
 /**
  * @brief A set counterpart of chunked_hash_map (uses a chunked vector as the
  * underlying storage).
@@ -146,3 +167,16 @@ memory_usage_lower_bound(const chunked_hash_map<K, V, Hash, EqualTo>& m) {
              * sizeof(typename chunked_hash_map<K, V>::bucket_type)
            + m.values().capacity() * sizeof(m.values()[0]);
 }
+
+template<typename K>
+struct fmt::formatter<chunked_hash_set<K>> {
+    using type = chunked_hash_set<K>;
+
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    typename FormatContext::iterator
+    format(const type& set, FormatContext& ctx) const {
+        return fmt::format_to(ctx.out(), "[{}]", fmt::join(set, ","));
+    }
+};

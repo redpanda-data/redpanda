@@ -15,10 +15,10 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/state_machine_base.h"
+#include "ssx/mutex.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
 #include "utils/expiring_promise.h"
-#include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -223,6 +223,10 @@ public:
 
     const prefix_logger& log() const { return _log; }
 
+    model::offset last_locally_snapshotted_offset() const override {
+        return _last_snapshot_offset;
+    }
+
 protected:
     ss::future<> start() override;
 
@@ -259,6 +263,19 @@ protected:
     model::term_id _insync_term;
     raft::consensus* _raft;
     prefix_logger _log;
+    /*
+     * Despite having a gate, STM implementations do not use it for the
+     * following operations. The component specified in brackets is responsible
+     * for keeping STM alive.
+     * - apply_raft_snapshot (state_machine_manager)
+     * - take_raft_snapshot (state_machine_manager)
+     * - take_local_snapshot (persisted_stm)
+     * - apply_local_snapshot (persisted_stm)
+     * - do_apply (batch_applicator)
+     * Externally called async functions such as replicate*() or sync() must
+     * hold the gate unless a code comment describes how STM lifetime is
+     * maintained.
+     */
     ss::gate _gate;
 
 private:
@@ -276,7 +293,7 @@ private:
     ss::future<> wait_for_snapshot_hydrated();
 
     ss::future<> do_write_local_snapshot();
-    mutex _op_lock{"persisted_stm::op_lock"};
+    ssx::mutex _op_lock{"persisted_stm::op_lock"};
     std::vector<ss::lw_shared_ptr<expiring_promise<bool>>> _sync_waiters;
     ss::condition_variable _on_snapshot_hydrated;
     bool _snapshot_hydrated{false};

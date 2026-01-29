@@ -144,7 +144,7 @@ class TxDisableTopicTest(RedpandaTest):
                 f"expected status ongoing found status {active_transaction['status']}"
             )
 
-    # consume from the first topic's 0th parition, return the found records
+    # consume from the first topic's 0th partition, return the found records
     def consume(self, count: int):
         default_topic = self.topics[0].name
         payloads = []

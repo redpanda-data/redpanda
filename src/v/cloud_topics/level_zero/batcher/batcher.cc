@@ -88,17 +88,26 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 
         auto path = object_path_factory::level_zero_path(id);
 
+        micro_probe probe;
+
         cloud_io::basic_transfer_details<Clock> td{
           .bucket = _bucket,
           .key = path,
           .parent_rtc = local_rtc,
-        };
+          .success_cb =
+            [&probe, sz = payload.size_bytes()] {
+                probe.num_cloud_writes++;
+                probe.cloud_write_bytes += sz;
+            },
+          .backoff_cb = [&probe] { probe.num_cloud_writes++; }};
 
         auto upl_result = co_await _remote.upload_object({
           .transfer_details = std::move(td),
           .display_str = "L0_object",
           .payload = std::move(payload),
         });
+
+        _stage.register_micro_probe(probe);
 
         switch (upl_result) {
         case cloud_io::upload_result::success:
@@ -231,7 +240,7 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
     while (!_as.abort_requested()) {
         if (!more_work) {
             auto wait_res = co_await _stage.wait_next(&_as);
-            if (wait_res.has_error()) {
+            if (!wait_res.has_value()) {
                 // Shutting down
                 vlog(
                   _logger.info,

@@ -19,16 +19,18 @@
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
+#include "cloud_storage_clients/upstream.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/types.h"
+#include "container/chunked_hash_map.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "http/utils.h"
-#include "net/types.h"
-#include "ssx/sformat.h"
+#include "json/istreamwrapper.h"
+#include "json/reader.h"
 #include "utils/base64.h"
 
 #include <seastar/core/abort_source.hh>
@@ -48,7 +50,7 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 
-#include <bit>
+#include <charconv>
 #include <exception>
 #include <utility>
 #include <variant>
@@ -86,7 +88,7 @@ request_creator::request_creator(
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> request_creator::make_get_object_request(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   std::optional<http_byte_range> byte_range) {
     http::client::request_header header{};
@@ -125,7 +127,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
 }
 
 result<http::client::request_header> request_creator::make_head_object_request(
-  const bucket_name& name, const object_key& key) {
+  const plain_bucket_name& name, const object_key& key) {
     http::client::request_header header{};
     // Virtual Style:
     // HEAD /{object-id} HTTP/1.1
@@ -155,7 +157,9 @@ result<http::client::request_header> request_creator::make_head_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
+  const plain_bucket_name& name,
+  const object_key& key,
+  size_t payload_size_bytes) {
     // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
     // Host: {bucket-name}.s3.{region}.amazonaws.com
@@ -194,7 +198,7 @@ request_creator::make_unsigned_put_object_request(
 
 result<http::client::request_header>
 request_creator::make_list_objects_v2_request(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -213,19 +217,35 @@ request_creator::make_list_objects_v2_request(
     auto host = make_host(name);
     auto key = fmt::format("?list-type=2");
     if (prefix.has_value()) {
-        key = fmt::format("{}&prefix={}", key, (*prefix)().string());
+        key = fmt::format(
+          "{}&prefix={}",
+          key,
+          http::uri_encode((*prefix)().string(), http::uri_encode_slash::yes));
     }
     if (start_after.has_value()) {
-        key = fmt::format("{}&start-after={}", key, *start_after);
+        key = fmt::format(
+          "{}&start-after={}",
+          key,
+          http::uri_encode(
+            (*start_after)().string(), http::uri_encode_slash::yes));
     }
     if (max_keys.has_value()) {
         key = fmt::format("{}&max-keys={}", key, *max_keys);
     }
     if (continuation_token.has_value()) {
-        key = fmt::format("{}&continuation-token={}", key, *continuation_token);
+        key = fmt::format(
+          "{}&continuation-token={}",
+          key,
+          http::uri_encode(
+            std::string_view(*continuation_token),
+            http::uri_encode_slash::yes));
     }
     if (delimiter.has_value()) {
-        key = fmt::format("{}&delimiter={}", key, *delimiter);
+        key = fmt::format(
+          "{}&delimiter={}",
+          key,
+          http::uri_encode(
+            std::string_view{&*delimiter, 1}, http::uri_encode_slash::yes));
     }
     auto target = make_target(name, object_key{key});
     header.method(boost::beast::http::verb::get);
@@ -246,7 +266,7 @@ request_creator::make_list_objects_v2_request(
 
 result<http::client::request_header>
 request_creator::make_delete_object_request(
-  const bucket_name& name, const object_key& key) {
+  const plain_bucket_name& name, const object_key& key) {
     http::client::request_header header{};
     // Virtual Style:
     // DELETE /{object-id} HTTP/1.1
@@ -278,7 +298,7 @@ request_creator::make_delete_object_request(
 
 result<std::tuple<http::client::request_header, ss::input_stream<char>>>
 request_creator::make_delete_objects_request(
-  const bucket_name& name, const chunked_vector<object_key>& keys) {
+  const plain_bucket_name& name, const chunked_vector<object_key>& keys) {
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // will generate this request:
     //
@@ -368,7 +388,127 @@ request_creator::make_delete_objects_request(
     return {std::move(header), make_iobuf_input_stream(std::move(body))};
 }
 
-std::string request_creator::make_host(const bucket_name& name) const {
+result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+request_creator::make_gcs_batch_delete_request(
+  const plain_bucket_name& name, const chunked_vector<object_key>& keys) {
+    // Google Cloud Storage Batch API
+    // https://cloud.google.com/storage/docs/batch
+    //
+    // POST /batch/storage/v1 HTTP/1.1
+    // Host: storage.googleapis.com
+    // Content-Type: multipart/mixed; boundary=<boundary>
+    // Authorization: Bearer <token>  # added by 'add_auth'
+    // Content-Length: <...>
+    //
+    // Body structure:
+    // --<boundary>
+    // Content-Type: application/http
+    // Content-ID: <id>
+    //
+    // DELETE /storage/v1/b/<bucket>/o/<object> HTTP/1.1
+    //
+    // --<boundary>
+    // ... (repeat for each object)
+    // --<boundary>--
+    //
+    // Note: GCS batch API requires path-only URLs in subrequests
+    // Max 100 requests per batch, max 10MB payload
+
+    // Generate unique boundary
+    auto boundary = fmt::format("batch_{}", uuid_t::create());
+
+    // Build the multipart body
+    iobuf body;
+    iobuf_ostreambuf obuf(body);
+    std::ostream out(&obuf);
+
+    auto encoded_bucket = http::uri_encode(name(), http::uri_encode_slash::yes);
+
+    for (size_t i = 0; i < keys.size(); ++i) {
+        const auto& key = keys[i];
+
+        auto encoded_key = http::uri_encode(
+          key().string(), http::uri_encode_slash::yes);
+
+        // Boundary line
+        fmt::print(out, "--{}\r\n", boundary);
+
+        http::client::request_header part_header{};
+        part_header.insert(
+          boost::beast::http::field::content_type, "application/http");
+        part_header.insert(
+          boost::beast::http::field::content_transfer_encoding, "binary");
+        part_header.insert(
+          boost::beast::http::field::content_id, fmt::to_string(i));
+
+        http::client::request_header subrequest_header{};
+        subrequest_header.method(boost::beast::http::verb::delete_);
+        subrequest_header.target(
+          fmt::format("/storage/v1/b/{}/o/{}", encoded_bucket, encoded_key));
+
+        // NOTE: Per docs.cloud.google.com/storage/docs/batch#http:
+        // if you provide an [Auth] header for a specific nested request, then
+        // that header applies only to the request that specified it. If you
+        // provide an [Auth] header for the outer request, then that header
+        // applies to all of the nested requests unless they override it with an
+        // [Auth] header of their own.
+
+        // part header
+
+        for (const auto& f : part_header) {
+            fmt::print(out, "{}: {}\r\n", f.name_string(), f.value());
+        }
+        fmt::print(out, "\r\n");
+
+        // subrequest header
+
+        fmt::print(
+          out,
+          "{} {} HTTP/1.1\r\n",
+          subrequest_header.method_string(),
+          subrequest_header.target());
+
+        for (const auto& f : subrequest_header) {
+            fmt::print(out, "{}: {}\r\n", f.name_string(), f.value());
+        }
+        fmt::print(out, "\r\n");
+    }
+
+    // Final boundary marker
+    fmt::print(out, "--{}--\r\n", boundary);
+
+    if (!out.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "failed to create GCS batch delete request, state: {}",
+          out.rdstate()));
+    }
+
+    // Create the main request header
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::post);
+    // GCS batch endpoint uses a fixed path, not bucket-specific
+    header.target("/batch/storage/v1");
+    header.insert(boost::beast::http::field::host, "storage.googleapis.com");
+    header.insert(
+      boost::beast::http::field::content_type,
+      fmt::format("multipart/mixed; boundary={}", boundary));
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", body.size_bytes()));
+
+    auto ec = _apply_credentials->add_auth(header);
+    if (ec) {
+        return ec;
+    }
+
+    // Convert iobuf to input_stream
+    auto stream = make_iobuf_input_stream(std::move(body));
+
+    return {std::move(header), std::move(stream)};
+}
+
+std::string request_creator::make_host(const plain_bucket_name& name) const {
     switch (_ap_style) {
     case s3_url_style::virtual_host:
         // Host: bucket-name.s3.region-code.amazonaws.com
@@ -380,7 +520,7 @@ std::string request_creator::make_host(const bucket_name& name) const {
 }
 
 std::string request_creator::make_target(
-  const bucket_name& name, const object_key& key) const {
+  const plain_bucket_name& name, const object_key& key) const {
     switch (_ap_style) {
     case s3_url_style::virtual_host:
         // Target: /homepage.html
@@ -490,6 +630,142 @@ ss::future<ResultT> parse_rest_error_response(
       ""));
 }
 
+namespace {
+struct gcs_error_handler
+  : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>, gcs_error_handler> {
+    enum class state : uint8_t { init, in_error, in_message, found };
+    state st = state::init;
+    std::optional<ss::sstring> message;
+    bool Key(const char* str, rapidjson::SizeType len, bool) {
+        std::string_view k{str, len};
+        if (st == state::init && k == "error") {
+            st = state::in_error;
+        } else if (st == state::in_error && k == "message") {
+            st = state::in_message;
+        }
+        return true;
+    }
+
+    bool String(const char* str, rapidjson::SizeType len, bool) {
+        if (st == state::in_message) {
+            message.emplace(str, len);
+            st = state::found;
+        }
+        return true;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        if (st == state::in_error) {
+            st = state::init;
+        }
+        return true;
+    }
+};
+
+ss::sstring parse_gcs_error_reason(iobuf body) {
+    iobuf_istreambuf ibuf(body);
+    std::istream stream(&ibuf);
+    json::IStreamWrapper wrapper(stream);
+    json::Reader reader;
+    gcs_error_handler handler;
+    auto res = reader.Parse(wrapper, handler);
+    if (res && handler.message.has_value()) {
+        return std::move(handler.message).value();
+    } else {
+        return "Unknown";
+    }
+};
+} // namespace
+
+/// Parse GCS batch delete response using multipart parsing utilities
+/// GCS batch responses follow the multipart/mixed format similar to ABS
+static cloud_storage_clients::client::delete_objects_result
+parse_gcs_batch_delete_response(
+  iobuf buf,
+  std::string_view boundary,
+  const chunked_vector<object_key>& keys) {
+    cloud_storage_clients::client::delete_objects_result result;
+
+    // Parse multipart response - split by boundary
+    auto boundary_delim = ssx::sformat("--{}", boundary);
+    util::multipart_response_parser parts{std::move(buf), boundary_delim};
+
+    constexpr auto convert_content_id =
+      [](std::string_view raw) -> std::optional<size_t> {
+        constexpr std::string_view pfx = "response-";
+        std::optional<size_t> result{};
+        if (auto pos = raw.find(pfx); pos != raw.npos) {
+            raw = raw.substr(pos + pfx.size());
+            size_t v{};
+            auto res = std::from_chars(raw.data(), raw.data() + raw.size(), v);
+            // reject if from_chars found any junk on the end of the raw ID
+            if (res.ec == std::errc{} && res.ptr == raw.data() + raw.size()) {
+                result = v;
+            }
+        }
+        return result;
+    };
+
+    chunked_hash_set<size_t> content_ids_seen;
+    std::optional<iobuf> part;
+    while ((part = parts.get_part()).has_value()) {
+        iobuf_parser part_parser{std::move(part).value()};
+        auto mime = util::mime_header::from(part_parser);
+        auto maybe_content_id = mime.content_id<size_t>(convert_content_id);
+        if (!maybe_content_id.has_value()) {
+            vlog(
+              s3_log.debug,
+              "MIME header missing 'Content-ID' from batch response, skipping "
+              "part");
+            continue;
+        }
+        content_ids_seen.insert(maybe_content_id.value());
+        // having stripped off the leading MIME headers, we should have a
+        // complete HTTP response at the front of the parser
+        auto subrequest = util::multipart_subresponse::from(part_parser);
+
+        if (maybe_content_id.value() >= keys.size()) {
+            vlog(
+              s3_log.warn,
+              "batch_delete_response: Content-ID in response part {} out of "
+              "range, expected [{},{}): Error message: '{}'",
+              maybe_content_id.value(),
+              0,
+              keys.size(),
+              subrequest.error(parse_gcs_error_reason));
+            continue;
+        }
+
+        vlog(
+          s3_log.trace,
+          "batch_delete_response: Processing Content-ID {} (key: {})",
+          maybe_content_id,
+          keys[maybe_content_id.value()]);
+
+        if (auto maybe_error_message = subrequest.error(parse_gcs_error_reason);
+            maybe_error_message.has_value()) {
+            // Extract error message from response if available
+            // GCS error responses may contain error details in the body
+            result.undeleted_keys.push_back({
+              .key = keys[maybe_content_id.value()],
+              .reason = std::move(maybe_error_message).value(),
+            });
+        }
+    }
+
+    // Check for any keys that were not in the response
+    for (auto id : std::views::iota(0ul, keys.size())) {
+        if (!content_ids_seen.contains(id)) {
+            result.undeleted_keys.push_back({
+              .key = keys[id],
+              .reason = "Object missing from batch response",
+            });
+        }
+    }
+
+    return result;
+}
+
 /// Head response doesn't give us an XML encoded error object in
 /// the body. This method uses headers to generate an error object.
 template<class ResultT = void>
@@ -529,7 +805,7 @@ ss::future<ResultT> parse_head_error_response(
 template<typename T>
 ss::future<result<T, error_outcome>> s3_client::send_request(
   ss::future<T> request_future,
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const object_key& key) {
     auto outcome = error_outcome::retry;
 
@@ -567,6 +843,20 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               key,
               bucket);
             outcome = error_outcome::retry;
+        } else if (
+          err.code() == s3_error_code::expired_token
+          || err.code() == s3_error_code::authentication_required) {
+            // Unexpected REST API error, we can't recover from this
+            vlog(
+              s3_log.error,
+              "{} auth error response received {} in {}",
+              err.code(),
+              key,
+              bucket);
+            outcome = error_outcome::authentication_failed;
+            if (auto p = _upstream_ptr.get()) {
+                p->maybe_refresh_credentials();
+            }
         } else {
             // Unexpected REST API error, we can't recover from this
             // because the issue is not temporary (e.g. bucket doesn't
@@ -593,19 +883,27 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
 }
 
 s3_client::s3_client(
+  ss::weak_ptr<upstream> upstream_ptr,
   const s3_configuration& conf,
+  const net::base_transport::configuration& transport_conf,
+  ss::shared_ptr<client_probe> probe,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : _requestor(conf, std::move(apply_credentials))
-  , _client(conf)
-  , _probe(conf._probe) {}
+  : client(std::move(upstream_ptr))
+  , _requestor(conf, std::move(apply_credentials))
+  , _client(transport_conf, nullptr, probe)
+  , _probe(std::move(probe)) {}
 
 s3_client::s3_client(
+  ss::weak_ptr<upstream> upstream_ptr,
   const s3_configuration& conf,
+  const net::base_transport::configuration& transport_conf,
+  ss::shared_ptr<client_probe> probe,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : _requestor(conf, std::move(apply_credentials))
-  , _client(conf, &as, conf._probe, conf.max_idle_time)
-  , _probe(conf._probe) {}
+  : client(std::move(upstream_ptr))
+  , _requestor(conf, std::move(apply_credentials))
+  , _client(transport_conf, &as, probe, conf.max_idle_time)
+  , _probe(std::move(probe)) {}
 
 ss::future<result<client_self_configuration_output, error_outcome>>
 s3_client::self_configure() {
@@ -656,7 +954,11 @@ s3_client::self_configure() {
         co_return result;
     }
 
-    const auto bucket = cloud_storage_clients::bucket_name{
+    // TODO: Review this code. It is likely buggy when Remote Read Replicas are
+    // used. We are testing HNS on default storage account, but in RRR setup, we
+    // actually use a different storage account for reads.
+    // A similar issue exists in ABS client.
+    const auto bucket = cloud_storage_clients::plain_bucket_name{
       bucket_config.value().value()};
 
     // Test virtual_host style.
@@ -693,7 +995,8 @@ s3_client::self_configure() {
     co_return error_outcome::fail;
 }
 
-ss::future<bool> s3_client::self_configure_test(const bucket_name& bucket) {
+ss::future<bool>
+s3_client::self_configure_test(const plain_bucket_name& bucket) {
     // Check that the current addressing-style works by issuing a ListObjects
     // request.
     auto list_objects_result = co_await list_objects(
@@ -707,7 +1010,7 @@ void s3_client::shutdown() { _client.shutdown_now(); }
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
 s3_client::get_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
@@ -720,7 +1023,7 @@ s3_client::get_object(
 }
 
 ss::future<http::client::response_stream_ref> s3_client::do_get_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
@@ -776,7 +1079,7 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
                   }
                   const auto content_type = util::get_response_content_type(
                     ref->get_headers());
-                  return util::drain_response_stream(std::move(ref))
+                  return http::drain(std::move(ref))
                     .then([content_type, result](iobuf&& res) {
                         return parse_rest_error_response<
                           http::client::response_stream_ref>(
@@ -791,14 +1094,14 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
 
 ss::future<result<s3_client::head_object_result, error_outcome>>
 s3_client::head_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     return send_request(do_head_object(name, key, timeout), name, key);
 }
 
 ss::future<s3_client::head_object_result> s3_client::do_head_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_head_object_request(name, key);
@@ -811,7 +1114,7 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
       .then(
         [key](const http::client::response_stream_ref& ref)
           -> ss::future<head_object_result> {
-            return ref->prefetch_headers().then(
+            return http::drain<void>(ref).then(
               [ref, key]() -> ss::future<head_object_result> {
                   auto status = ref->get_headers().result();
                   if (status == boost::beast::http::status::not_found) {
@@ -852,7 +1155,7 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
 }
 
 ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
@@ -868,7 +1171,7 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
 }
 
 ss::future<> s3_client::do_put_object(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   const object_key& id,
   size_t payload_size,
   ss::input_stream<char> body,
@@ -894,27 +1197,26 @@ ss::future<> s3_client::do_put_object(
           return ss::futurize_invoke(make_request)
             .then([id, accept_no_content](
                     const http::client::response_stream_ref& ref) {
-                return util::drain_response_stream(ref).then(
-                  [ref, id, accept_no_content](iobuf&& res) {
-                      auto status = ref->get_headers().result();
-                      using enum boost::beast::http::status;
-                      if (const auto is_no_content_and_accepted
-                          = status == no_content && accept_no_content;
-                          status != ok && !is_no_content_and_accepted) {
-                          vlog(
-                            s3_log.warn,
-                            "S3 PUT request failed for key {}: {} {:l}",
-                            id,
-                            status,
-                            ref->get_headers());
-                          const auto content_type
-                            = util::get_response_content_type(
-                              ref->get_headers());
-                          return parse_rest_error_response<>(
-                            content_type, status, std::move(res));
-                      }
-                      return ss::now();
-                  });
+                return http::drain(ref).then([ref, id, accept_no_content](
+                                               iobuf&& res) {
+                    auto status = ref->get_headers().result();
+                    using enum boost::beast::http::status;
+                    if (const auto is_no_content_and_accepted
+                        = status == no_content && accept_no_content;
+                        status != ok && !is_no_content_and_accepted) {
+                        vlog(
+                          s3_log.warn,
+                          "S3 PUT request failed for key {}: {} {:l}",
+                          id,
+                          status,
+                          ref->get_headers());
+                        const auto content_type
+                          = util::get_response_content_type(ref->get_headers());
+                        return parse_rest_error_response<>(
+                          content_type, status, std::move(res));
+                    }
+                    return ss::now();
+                });
             })
             .handle_exception_type(
               [](const ss::abort_requested_exception& err) {
@@ -945,7 +1247,7 @@ ss::future<> s3_client::do_put_object(
 
 ss::future<result<s3_client::list_bucket_result, error_outcome>>
 s3_client::list_objects(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -969,7 +1271,7 @@ s3_client::list_objects(
 }
 
 ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
-  const bucket_name& name,
+  const plain_bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -1006,7 +1308,7 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
                       header);
                     // In the error path we drain the response stream fully, the
                     // error response should not be very large.
-                    return util::drain_chunked_response_stream(resp).then(
+                    return http::drain(resp).then(
                       [result = header.result(), content_type](iobuf buf) {
                           return parse_rest_error_response<list_bucket_result>(
                             content_type, result, std::move(buf));
@@ -1021,7 +1323,7 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
 
 ss::future<result<s3_client::no_response, error_outcome>>
 s3_client::delete_object(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     using ret_t = result<s3_client::no_response, error_outcome>;
@@ -1055,7 +1357,7 @@ s3_client::delete_object(
 }
 
 ss::future<> s3_client::do_delete_object(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_delete_object_request(bucket, key);
@@ -1065,7 +1367,7 @@ ss::future<> s3_client::do_delete_object(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
       .then([key](const http::client::response_stream_ref& ref) {
-          return util::drain_response_stream(ref).then([ref, key](iobuf&& res) {
+          return http::drain(ref).then([ref, key](iobuf&& res) {
               auto status = ref->get_headers().result();
               if (
                 status != boost::beast::http::status::ok
@@ -1146,7 +1448,7 @@ iobuf_to_delete_objects_result(iobuf&& buf) {
 }
 
 auto s3_client::do_delete_objects(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const chunked_vector<object_key>& keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<client::delete_objects_result> {
@@ -1166,35 +1468,134 @@ auto s3_client::do_delete_objects(
                    .finally([&] { return to_delete.close(); });
              })
       .then([](const http::client::response_stream_ref& response) {
-          return util::drain_response_stream(response).then(
-            [response](iobuf&& res) {
-                auto status = response->get_headers().result();
-                if (status != boost::beast::http::status::ok) {
-                    const auto content_type = util::get_response_content_type(
-                      response->get_headers());
-                    return parse_rest_error_response<delete_objects_result>(
-                      content_type, status, std::move(res));
-                }
-                auto parse_result = iobuf_to_delete_objects_result(
-                  std::move(res));
-                if (std::holds_alternative<client::delete_objects_result>(
-                      parse_result)) {
-                    return ss::make_ready_future<delete_objects_result>(
-                      std::get<client::delete_objects_result>(parse_result));
-                }
-                return ss::make_exception_future<delete_objects_result>(
-                  std::get<rest_error_response>(parse_result));
-            });
+          return http::drain(response).then([response](iobuf&& res) {
+              auto status = response->get_headers().result();
+              if (status != boost::beast::http::status::ok) {
+                  const auto content_type = util::get_response_content_type(
+                    response->get_headers());
+                  return parse_rest_error_response<delete_objects_result>(
+                    content_type, status, std::move(res));
+              }
+              auto parse_result = iobuf_to_delete_objects_result(
+                std::move(res));
+              if (std::holds_alternative<client::delete_objects_result>(
+                    parse_result)) {
+                  return ss::make_ready_future<delete_objects_result>(
+                    std::get<client::delete_objects_result>(parse_result));
+              }
+              return ss::make_exception_future<delete_objects_result>(
+                std::get<rest_error_response>(parse_result));
+          });
       });
 }
 
 auto s3_client::delete_objects(
-  const bucket_name& bucket,
+  const plain_bucket_name& bucket,
   const chunked_vector<object_key>& keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<result<delete_objects_result, error_outcome>> {
     const object_key dummy{""};
     co_return co_await send_request(
       do_delete_objects(bucket, keys, timeout), bucket, dummy);
+}
+
+bool s3_client::is_valid() const noexcept {
+    // If the upstream is gone (evicted) credentials may be stale so we consider
+    // the client no longer valid. maybe_refresh_credentials() would be a
+    // no-op.
+    return _upstream_ptr.get() != nullptr;
+}
+
+gcs_client::gcs_client(
+  ss::weak_ptr<upstream> upstream_ptr,
+  const s3_configuration& conf,
+  const net::base_transport::configuration& transport_conf,
+  ss::shared_ptr<client_probe> probe,
+  ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
+  : s3_client(
+      std::move(upstream_ptr),
+      conf,
+      transport_conf,
+      std::move(probe),
+      std::move(apply_credentials)) {}
+
+gcs_client::gcs_client(
+  ss::weak_ptr<upstream> upstream_ptr,
+  const s3_configuration& conf,
+  const net::base_transport::configuration& transport_conf,
+  ss::shared_ptr<client_probe> probe,
+  const ss::abort_source& as,
+  ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
+  : s3_client(
+      std::move(upstream_ptr),
+      conf,
+      transport_conf,
+      std::move(probe),
+      as,
+      std::move(apply_credentials)) {}
+
+auto gcs_client::delete_objects(
+  const plain_bucket_name& bucket,
+  const chunked_vector<object_key>& keys,
+  ss::lowres_clock::duration timeout)
+  -> ss::future<result<delete_objects_result, error_outcome>> {
+    const object_key dummy{""};
+    co_return co_await send_request(
+      do_delete_objects(bucket, keys, timeout), bucket, dummy);
+}
+
+auto gcs_client::do_delete_objects(
+  const plain_bucket_name& bucket,
+  const chunked_vector<object_key>& keys,
+  ss::lowres_clock::duration timeout)
+  -> ss::future<client::delete_objects_result> {
+    auto request = _requestor.make_gcs_batch_delete_request(bucket, keys);
+    if (!request) {
+        co_return ss::coroutine::exception(
+          std::make_exception_ptr(std::system_error(request.error())));
+    }
+    auto& [header, body] = request.value();
+    vlog(s3_log.trace, "send GCS batch delete request:\n{}", header);
+
+    std::exception_ptr ex;
+    std::optional<delete_objects_result> result;
+    try {
+        auto response_stream = co_await _client.request(
+          std::move(header), body, timeout);
+
+        co_await response_stream->prefetch_headers();
+        vassert(response_stream->is_header_done(), "Header is not received");
+
+        const auto status = response_stream->get_headers().result();
+        // GCS batch API returns 200 OK for successful batch requests
+        // Individual subrequest failures are encoded in the multipart response
+        if (status != boost::beast::http::status::ok) {
+            const auto content_type = util::get_response_content_type(
+              response_stream->get_headers());
+            auto buf = co_await http::drain(std::move(response_stream));
+            co_await body.close();
+            co_return co_await parse_rest_error_response<delete_objects_result>(
+              content_type, status, std::move(buf));
+        }
+
+        // Extract boundary from Content-Type header
+        const auto& headers = response_stream->get_headers();
+        auto boundary = util::find_multipart_boundary(headers);
+        auto response_buf = co_await http::drain(std::move(response_stream));
+        if (!boundary.has_value()) {
+            throw std::runtime_error(boundary.error());
+        }
+        result = parse_gcs_batch_delete_response(
+          std::move(response_buf), boundary.value(), keys);
+    } catch (...) {
+        ex = std::current_exception();
+    }
+
+    co_await body.close();
+
+    if (ex) {
+        std::rethrow_exception(ex);
+    }
+    co_return std::move(result).value();
 }
 } // namespace cloud_storage_clients

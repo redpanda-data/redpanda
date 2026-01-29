@@ -336,6 +336,7 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	opts = append(opts, []kgo.Opt{
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		kgo.ProducerLinger(0),
 	}...)
 
 	if pw.transactionsEnabled {

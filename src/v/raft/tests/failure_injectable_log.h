@@ -149,6 +149,8 @@ public:
 
     virtual model::offset cleanly_compacted_prefix_offset() const final;
 
+    virtual model::offset transaction_free_prefix_offset() const final;
+
     bool needs_compaction() const final;
 
 private:

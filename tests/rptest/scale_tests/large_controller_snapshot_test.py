@@ -97,16 +97,27 @@ class LargeControllerSnapshotTest(RedpandaTest):
         # create a lot of users
         self.logger.info(f"creating {n_users} users...")
 
-        def create_users(names):
+        def create_users(names: list[str]):
             # create own admin and rpk instances to avoid concurrent accesses
             # to common ones
             admin = Admin(self.redpanda, default_node=seed_nodes[0])
             rpk = RpkTool(self.redpanda)
             for un in names:
-                admin.create_user(
-                    username=un, password="p4ssw0rd", algorithm="SCRAM-SHA-256"
-                )
-                rpk.acl_create_allow_cluster(username=un, op="describe")
+                # Both calls get a single retry if they fail
+                try:
+                    admin.create_user(
+                        username=un, password="p4ssw0rd", algorithm="SCRAM-SHA-256"
+                    )
+                except Exception as e:
+                    self.logger.info(f"Error during creation of {un}: {e}")
+                    admin.create_user(
+                        username=un, password="p4ssw0rd", algorithm="SCRAM-SHA-256"
+                    )
+                try:
+                    rpk.acl_create_allow_cluster(username=un, op="describe")
+                except Exception as e:
+                    self.logger.info(f"Error during acl creation for {un}: {e}")
+                    rpk.acl_create_allow_cluster(username=un, op="describe")
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             step = 10
@@ -114,7 +125,13 @@ class LargeControllerSnapshotTest(RedpandaTest):
                 [f"user_{i:06d}" for i in range(start, start + step)]
                 for start in range(0, n_users, step)
             ]
-            executor.map(create_users, user_names)
+            futures = executor.map(create_users, user_names)
+            try:
+                # accessing a future will raise the underlying exception, if any
+                for _ in futures:
+                    pass
+            except Exception as e:
+                raise Exception("Error in creation of users. Test setup failed.") from e
 
         # wait until everything is snapshotted
         self.logger.info("waiting until all commands are snapshotted...")
@@ -123,6 +140,14 @@ class LargeControllerSnapshotTest(RedpandaTest):
             admin.get_controller_status(n)["committed_index"] for n in seed_nodes
         )
         self.logger.info(f"controller max offset is {controller_max_offset}")
+
+        # check that all created users are there
+        for n in seed_nodes:
+            actual = len(admin.list_users(node=n))
+            # + 1 comes from the admin user which is created automatically
+            assert actual == n_users + 1, (
+                f"unexpected number of users {actual} - expected {n_users + 1} - test setup failed"
+            )
 
         for n in seed_nodes:
             self.redpanda.wait_for_controller_snapshot(
@@ -167,8 +192,10 @@ class LargeControllerSnapshotTest(RedpandaTest):
         # check that all created users are there
         for n in self.redpanda.nodes:
             actual = len(admin.list_users(node=n))
-            # + 1 comes from the admin user which is created autmatically
-            assert actual == n_users + 1, f"unexpected number of users {actual}"
+            # + 1 comes from the admin user which is created automatically
+            assert actual == n_users + 1, (
+                f"unexpected number of users {actual} - expected {n_users + 1}"
+            )
 
         # wait until rebalance on node addition is finished
         self.logger.info("waiting until partitions are rebalanced to the new node...")

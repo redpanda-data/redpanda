@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:common_settings.bzl", "int_flag", "string_flag")
 load("@bazel_skylib//rules:select_file.bzl", "select_file")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make", "runnable_binary")
 
 # Make this build faster by setting `build --@openssl//:build_jobs=16` in user.bazelrc
@@ -41,12 +42,12 @@ filegroup(
 )
 
 configure_make(
-    name = "openssl",
+    name = "openssl_foreign_cc",
     # These don't get make variables expanded, so use the injected environment variable.
     args = [
         "-j$OPENSSL_BUILD_JOBS",
         # This will cause OpenSSL to ignore the prefix flag and install at the specified DESTDIR
-        "DESTDIR=$BUILD_TMPDIR/openssl",
+        "DESTDIR=$BUILD_TMPDIR/openssl_foreign_cc",
     ],
     configure_command = "Configure",
     configure_options = [
@@ -58,6 +59,7 @@ configure_make(
         "--openssldir=/etc/ssl",
         "--libdir=lib",
         "no-tests",
+        "no-docs",
     ] + select({
         ":debug_mode": ["--debug"],
         ":release_mode": ["--release"],
@@ -88,7 +90,7 @@ configure_make(
 # binary and it pickup the proper shared libraries.
 filegroup(
     name = "openssl_binary",
-    srcs = [":openssl"],
+    srcs = [":openssl_foreign_cc"],
     output_group = "openssl",
     visibility = [
         "//visibility:public",
@@ -97,7 +99,7 @@ filegroup(
 
 select_file(
     name = "openssl_data",
-    srcs = ":openssl",
+    srcs = ":openssl_foreign_cc",
     subpath = "ssl",
     visibility = [
         "//visibility:public",
@@ -108,6 +110,18 @@ select_file(
 runnable_binary(
     name = "openssl_exe",
     binary = "openssl",
-    foreign_cc_target = ":openssl",
+    foreign_cc_target = ":openssl_foreign_cc",
     visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "openssl",
+    hdrs = [
+        ":openssl_foreign_cc",
+    ],
+    includes = ["openssl_foreign_cc/include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":openssl_foreign_cc",
+    ],
 )

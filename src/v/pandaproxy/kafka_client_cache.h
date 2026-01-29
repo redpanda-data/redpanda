@@ -12,7 +12,7 @@
 #pragma once
 #include "config/rest_authn_endpoint.h"
 #include "pandaproxy/types.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -101,6 +101,6 @@ private:
     std::list<timestamped_user> _evicted_items;
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gc_gate;
-    mutex _gc_lock{"kafka_client_cache::gc_lock"};
+    ssx::mutex _gc_lock{"kafka_client_cache::gc_lock"};
 };
 } // namespace pandaproxy

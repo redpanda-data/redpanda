@@ -16,6 +16,14 @@
 
 namespace datalake {
 
+namespace {
+chunked_vector<ss::sstring> default_namespace() {
+    const auto& ns
+      = config::shard_local_cfg().iceberg_default_catalog_namespace();
+    return {ns.begin(), ns.end()};
+}
+} // namespace
+
 model::topic table_id_provider::sanitize_topic_name(const model::topic& topic) {
     const auto& dot_replacement
       = config::shard_local_cfg().iceberg_topic_name_dot_replacement();
@@ -28,8 +36,7 @@ model::topic table_id_provider::sanitize_topic_name(const model::topic& topic) {
 
 iceberg::table_identifier table_id_provider::table_id(const model::topic& t) {
     return {
-      // TODO: namespace as a topic property? Keep it in the table metadata?
-      .ns = {"redpanda"},
+      .ns = default_namespace(),
       .table = sanitize_topic_name(t),
     };
 }
@@ -37,8 +44,7 @@ iceberg::table_identifier table_id_provider::table_id(const model::topic& t) {
 iceberg::table_identifier
 table_id_provider::dlq_table_id(const model::topic& t) {
     return {
-      // TODO: namespace as a topic property? Keep it in the table metadata?
-      .ns = {"redpanda"},
+      .ns = default_namespace(),
       .table = fmt::format(
         "{}{}",
         sanitize_topic_name(t),

@@ -18,6 +18,7 @@
 #include "raft/consensus.h"
 #include "raft/persisted_stm.h"
 #include "ssx/future-util.h"
+#include "ssx/watchdog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sleep.hh>
@@ -49,8 +50,18 @@ cluster_epoch extract_epoch(model::record_batch&& batch) {
 class ctp_stm_consumer {
 public:
     ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
-        _first_epoch = extract_epoch(std::move(batch));
-        co_return ss::stop_iteration::yes;
+        if (_first_epoch.has_value()) {
+            _first_epoch = std::min(
+              _first_epoch.value(), extract_epoch(std::move(batch)));
+        } else {
+            _first_epoch = extract_epoch(std::move(batch));
+        }
+        // Since we're accepting out of order epoch we have to read all
+        // placeholders. The epochs in the partition are not strictly monotonic
+        // so we need to read up until the end.
+        // This code is only used for testing so it doesn't make sense to
+        // optimize it.
+        co_return ss::stop_iteration::no;
     }
 
     std::optional<cluster_epoch> end_of_stream() { return _first_epoch; }
@@ -61,7 +72,8 @@ private:
 } // namespace
 
 ctp_stm::ctp_stm(ss::logger& logger, raft::consensus* raft)
-  : raft::persisted_stm<>(name, logger, raft) {}
+  : raft::persisted_stm<>(name, logger, raft)
+  , _lock(ss::semaphore::max_counter()) {}
 
 ss::future<> ctp_stm::start() {
     ssx::spawn_with_gate(_gate, [this] { return prefix_truncate_below_lro(); });
@@ -71,7 +83,28 @@ ss::future<> ctp_stm::start() {
 ss::future<> ctp_stm::stop() {
     _lro_advanced.broken();
     _as.request_abort();
+    _epoch_update_lock.broken();
+    _epoch_updated_cv.broken();
+    // We can't break the lock because that could cause UAF
+    // as the units are held outside of this class.
+    // however lock acquisition uses the above abort_source so
+    // we should not be acquiring new waiters.
+    // _lock.broken();
     co_await raft::persisted_stm<>::stop();
+    static constexpr auto epoch_fence_lock_timeout = 10s;
+    ssx::watchdog wd(epoch_fence_lock_timeout, [this] {
+        // This is basically the number of produce requests still in flight
+        auto num_read_locks_held = ss::semaphore::max_counter()
+                                   - _lock.available_units();
+        vlog(
+          _log.debug,
+          "timeout waiting for epoch fencing lock units to be returned: {} "
+          "units outstanding",
+          num_read_locks_held);
+    });
+    // Wait for all the units to be returned otherwise when the units are
+    // destructed we could get a UAF.
+    co_await _lock.wait(ss::semaphore::max_counter());
 }
 
 ss::future<> ctp_stm::prefix_truncate_below_lro() {
@@ -126,7 +159,8 @@ ss::future<> ctp_stm::prefix_truncate_below_lro() {
         // truncating it again so if LRO is making lots of rapid but small
         // progress we aren't snapshotting too much.
         if (_raft->last_snapshot_index() > snapshot_index) {
-            co_await ss::sleep_abortable(min_truncate_period, _as);
+            co_await ss::sleep_abortable<ss::lowres_clock>(
+              min_truncate_period, _as);
         }
     }
 }
@@ -135,6 +169,7 @@ const model::ntp& ctp_stm::ntp() const noexcept { return _raft->ntp(); }
 
 ss::future<bool> ctp_stm::sync_in_term(
   model::timeout_clock::time_point deadline, ss::abort_source& as) {
+    auto holder = _gate.hold();
     auto sync_result = co_await sync(
       deadline - model::timeout_clock::now(), as);
     if (!sync_result) {
@@ -166,10 +201,11 @@ ss::future<bool> ctp_stm::sync_in_term(
 }
 
 std::optional<cluster_epoch> ctp_stm::estimate_inactive_epoch() const noexcept {
-    return _state.estimate_min_epoch().transform(prev_cluster_epoch);
+    return _state.estimate_inactive_epoch();
 }
 
 ss::future<std::optional<cluster_epoch>> ctp_stm::get_inactive_epoch() {
+    auto holder = _gate.hold();
     // Consume the first epoch from the partition starting from
     // start offset if nothing was reconciled yet or from the last
     // reconciled offset + 1 otherwise.
@@ -222,7 +258,7 @@ ss::future<std::optional<cluster_epoch>> ctp_stm::get_inactive_epoch() {
           _log.debug,
           "No epochs found in partition {}, max epoch {}, returning nullopt",
           _raft->ntp(),
-          _state.get_max_epoch());
+          _state.get_max_applied_epoch());
         co_return std::nullopt;
     }
 }
@@ -291,33 +327,55 @@ void ctp_stm::apply_placeholder(const model::record_batch& batch) {
     });
     auto placeholder = serde::from_iobuf<ctp_placeholder>(std::move(value));
     auto id = placeholder.id;
-    // this assertion is made here rather than inside the state object itself
-    // because the assertion is about the physical content of the log rather
-    // than the computed state.
-    vassert(
-      id.epoch >= _last_seen_epoch,
-      "Observed a non-monotonic epoch sequence {} < {}",
-      id.epoch,
-      _last_seen_epoch);
-    _last_seen_epoch = id.epoch;
+    _epoch_checker.check_epoch(ntp(), id.epoch, batch.header().base_offset);
     _state.advance_epoch(id.epoch, batch.header().base_offset);
 }
 
+struct ctp_stm_snapshot
+  : serde::
+      envelope<ctp_stm_snapshot, serde::version<0>, serde::compat_version<0>> {
+    ctp_stm_state state;
+    epoch_window_checker checker;
+
+    auto serde_fields() { return std::tie(state, checker); }
+};
+
 ss::future<raft::local_snapshot_applied>
-ctp_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&& buf) {
-    _state = serde::from_iobuf<ctp_stm_state>(std::move(buf));
+ctp_stm::apply_local_snapshot(raft::stm_snapshot_header header, iobuf&& buf) {
+    auto snap = serde::from_iobuf<ctp_stm_snapshot>(std::move(buf));
+    _state = snap.state;
+    _epoch_checker = snap.checker;
+    vlog(
+      _log.debug,
+      "applied local snapshot to state={}, checker={}",
+      _state,
+      _epoch_checker);
     co_return raft::local_snapshot_applied::yes;
 }
 
 ss::future<raft::stm_snapshot>
 ctp_stm::take_local_snapshot(ssx::semaphore_units) {
-    auto buf = serde::to_iobuf(_state);
-    co_return raft::stm_snapshot::create(
-      0, this->last_applied(), std::move(buf));
+    auto buf = serde::to_iobuf(
+      ctp_stm_snapshot{.state = _state, .checker = _epoch_checker});
+    auto snapshot_offset = last_applied();
+    vlog(
+      _log.debug,
+      "taking local snapshot@{} with state={}, checker={}",
+      last_applied(),
+      _state,
+      _epoch_checker);
+    co_return raft::stm_snapshot::create(0, snapshot_offset, std::move(buf));
 }
 
 ss::future<> ctp_stm::apply_raft_snapshot(const iobuf& buf) {
-    _state = serde::from_iobuf<ctp_stm_state>(buf.copy());
+    auto snap = serde::from_iobuf<ctp_stm_snapshot>(buf.copy());
+    _state = snap.state;
+    _epoch_checker = snap.checker;
+    vlog(
+      _log.debug,
+      "applied raft snapshot to state={}, checker={}",
+      _state,
+      _epoch_checker);
     co_return;
 }
 
@@ -327,41 +385,117 @@ ss::future<iobuf> ctp_stm::take_raft_snapshot(model::offset snapshot_at) {
       "The snapshot is taken at offset {} but current insync offset is {}",
       snapshot_at,
       last_applied());
-    co_return serde::to_iobuf(_state);
+    vlog(
+      _log.debug,
+      "taking raft snapshot @ {} with state={}, checker={}",
+      last_applied(),
+      _state,
+      _epoch_checker);
+    co_return serde::to_iobuf(
+      ctp_stm_snapshot{.state = _state, .checker = _epoch_checker});
 }
 
-ss::future<cluster_epoch_fence> ctp_stm::fence_epoch(cluster_epoch e) {
-    if (!co_await sync(sync_timeout)) {
+ss::future<std::expected<cluster_epoch_fence, stale_cluster_epoch>>
+ctp_stm::fence_epoch(cluster_epoch e) {
+    auto holder = _gate.hold();
+    if (!co_await sync(sync_timeout, _as)) {
+        // Prevent the below log spam if we are shutting down.
+        _as.check();
         vlog(_log.warn, "ctp_stm::fence_epoch sync timeout");
         throw std::runtime_error(fmt_with_ctx(fmt::format, "Sync timeout"));
     }
     auto term = _raft->confirmed_term();
-    auto max_seen_epoch = _state.get_max_seen_epoch();
-    if (max_seen_epoch.has_value() && max_seen_epoch.value() == e) {
-        // Case 1. Same epoch, need to acquire read-lock.
-        auto unit = co_await _lock.hold_read_lock();
-        // Invariant: the max_seen_epoch is not nullopt because once
-        // set the max_seen_epoch is never resets.
-        if (_state.get_max_seen_epoch() == e) {
-            // The max_seen_epoch didn't advance after the scheduling point
-            co_return cluster_epoch_fence{std::move(unit), term};
+    while (true) {
+        if (_state.epoch_in_window(e)) {
+            // Case 1.1. Same epoch, need to acquire read-lock.
+            // Case 1.2. This epoch is out of order. We can accept it if it lies
+            //           in [previous-epoch, max-seen-epoch) range. We also need
+            //           to acquire a read fence as in 1.1.
+            auto unit = co_await ss::get_units(_lock, 1, _as);
+            if (_state.epoch_in_window(e)) {
+                co_return cluster_epoch_fence{
+                  .unit = std::move(unit), .term = term};
+            }
+        } else if (_state.epoch_above_window(e)) {
+            // Case 2. New epoch, need to acquire write-lock.
+            auto epoch_update_lock = _epoch_update_lock.try_get_units();
+            if (!epoch_update_lock) {
+                // Someone else is updating the epoch - wait for the update and
+                // then re-check.
+                co_await _epoch_updated_cv.wait();
+                continue;
+            }
+
+            // We're the epoch updater, get a write-lock
+            auto unit = co_await ss::get_units(
+              _lock, ss::semaphore::max_counter(), _as);
+
+            std::optional<cluster_epoch_fence> epoch_fence_opt;
+            if (_state.epoch_in_window(e) || _state.epoch_above_window(e)) {
+                vlog(_log.debug, "Bumping max seen epoch to {}", e);
+                _state.advance_max_seen_epoch(e);
+                // Demote to reader lock after max_seen_epoch is updated.
+                unit.return_units(unit.count() - 1);
+                epoch_fence_opt.emplace(std::move(unit), term);
+            }
+
+            // Clear units and broadcast to any waiters on success or failure to
+            // update the epoch.
+            epoch_update_lock.reset();
+            _epoch_updated_cv.broadcast();
+
+            if (epoch_fence_opt.has_value()) {
+                co_return std::move(epoch_fence_opt).value();
+            }
         }
-    } else {
-        // Case 2. New epoch, need to acquire write-lock.
-        auto unit = co_await _lock.hold_write_lock();
-        auto current_epoch = _state.get_max_seen_epoch();
-        if (!current_epoch.has_value() || current_epoch.value() <= e) {
-            _state.advance_max_seen_epoch(e);
-            // Demote to reader lock after max_seen_epoch is updated.
-            unit.return_units(unit.count() - 1);
-            co_return cluster_epoch_fence{std::move(unit), term};
-        }
+
+        // If we reach here, it means that we need to discard the batch.
+        co_return std::unexpected(
+          stale_cluster_epoch{
+            .window_min = _state.get_previous_seen_epoch()
+                            .or_else([this] {
+                                return _state.get_previous_applied_epoch();
+                            })
+                            .value_or(cluster_epoch{-1}),
+            .window_max = _state.get_max_seen_epoch()
+                            .or_else(
+                              [this] { return _state.get_max_applied_epoch(); })
+                            .value_or(cluster_epoch{-1}),
+          });
     }
-    // If we reach here, it means that we need to discard the batch.
-    co_return cluster_epoch_fence{};
 }
 
 model::offset ctp_stm::max_removable_local_log_offset() {
     return _state.get_max_collectible_offset();
+}
+
+l0::producer_queue& ctp_stm::producer_queue() { return _producer_queue; }
+
+void epoch_window_checker::check_epoch(
+  const model::ntp& ntp, cluster_epoch epoch, model::offset offset) {
+    if (offset < _latest_offset) {
+        return;
+    }
+    if (epoch > _max_epoch) {
+        _min_epoch = _max_epoch;
+        _max_epoch = epoch;
+        if (_min_epoch == cluster_epoch::min()) {
+            _min_epoch = epoch;
+        }
+    }
+    vassert(
+      _min_epoch <= epoch && epoch <= _max_epoch,
+      "[{}] epoch {} at {} is outside of sliding window [{}, {}]",
+      ntp,
+      epoch,
+      offset,
+      _min_epoch,
+      _max_epoch);
+    _latest_offset = offset;
+}
+
+fmt::iterator epoch_window_checker::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it, "window=[{}, {}], offset={}", _min_epoch, _max_epoch, _latest_offset);
 }
 }; // namespace cloud_topics

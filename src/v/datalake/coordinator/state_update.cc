@@ -201,6 +201,7 @@ mark_files_committed_update::apply(topics_state& state) {
     const auto& pid = tp.partition;
 
     auto& tp_state = state.topic_to_state[topic];
+    tp_state.last_committed_snapshot_id = snapshot_id;
 
     // Mark all files that fall entirely below `new_committed` as committed.
     auto& files_state = tp_state.pid_to_pending_files[pid];

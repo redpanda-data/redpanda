@@ -68,6 +68,13 @@ struct kv_t {
         return records;
     }
 };
+
+model::record_batch batch_from_kvs(
+  const std::vector<kv_t>& records,
+  model::offset base_offset,
+  std::optional<model::timestamp> ts,
+  model::compression compression_type);
+
 using pid_to_kvs_map_t
   = absl::flat_hash_map<model::partition_id, std::vector<kv_t>>;
 

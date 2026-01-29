@@ -125,7 +125,6 @@ private:
     ss::future<bool> do_transfer(reassignment);
     ss::future<bool> do_transfer_local(reassignment) const;
     ss::future<bool> do_transfer_remote(reassignment);
-    ss::future<bool> do_transfer_remote_legacy(reassignment);
 
     bool can_schedule_sooner() const;
     void schedule_sooner(clock_type::duration timeout);

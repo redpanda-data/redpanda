@@ -25,7 +25,8 @@
 
 namespace cloud_storage {
 
-using manifest_cache_key = std::tuple<model::ntp, model::offset>;
+using manifest_cache_key
+  = std::tuple<model::ntp, model::initial_revision_id, model::offset>;
 
 /// Materialized spillover manifest
 ///
@@ -47,6 +48,7 @@ struct materialized_manifest
     manifest_cache_key get_key() const {
         return std::make_tuple(
           manifest.get_ntp(),
+          manifest.get_revision_id(),
           manifest.get_start_offset().value_or(model::offset{}));
     }
 

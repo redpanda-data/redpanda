@@ -85,16 +85,13 @@ create_groups(std::vector<std::string_view> strings) {
 struct data_migration_table_fixture : public seastar_test {
     ss::future<> SetUpAsync() override {
         // for all new topics to be created with it
-        ss::smp::invoke_on_all([] {
-            config::node().node_id.set_value(model::node_id{1});
-        }).get();
         config::shard_local_cfg().cloud_storage_enable_remote_write.set_value(
           true);
 
         co_await resources.start();
-        co_await topics.start(ss::sharded_parameter([this] {
-            return std::ref(resources.local());
-        }));
+        co_await topics.start(
+          ss::sharded_parameter([this] { return std::ref(resources.local()); }),
+          model::node_id{1});
         table = std::make_unique<cluster::data_migrations::migrations_table>(
           resources, topics, true);
         table->register_notification([this](cluster::data_migrations::id id) {

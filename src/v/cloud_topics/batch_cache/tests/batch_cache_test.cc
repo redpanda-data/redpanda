@@ -20,12 +20,19 @@
 
 namespace cloud_topics {
 struct batch_cache_accessor {
-    static void
-    evict_offset(batch_cache& c, const model::ntp& ntp, model::offset o) {
-        c._index[ntp]->testing_evict_from_cache(o);
+    static void evict_offset(
+      batch_cache& c, const model::topic_id_partition& tidp, model::offset o) {
+        c._index[tidp]->testing_evict_from_cache(o);
     }
-    static bool contains_ntp(const batch_cache& c, const model::ntp& ntp) {
-        return c._index.contains(ntp);
+    static void reclaim(
+      batch_cache& c, const model::topic_id_partition& tidp, size_t size) {
+        // it doesn't really matter what tidp is used, all the indices point to
+        // the same cache.
+        c._index[tidp]->testing_reclaim_from_cache(size);
+    }
+    static bool
+    contains_tidp(const batch_cache& c, const model::topic_id_partition& tidp) {
+        return c._index.contains(tidp);
     }
 };
 
@@ -43,51 +50,59 @@ public:
 
     cloud_topics::batch_cache _cache;
 
-    bool contains_ntp(const model::ntp& ntp) {
-        return cloud_topics::batch_cache_accessor::contains_ntp(_cache, ntp);
+    bool contains_tidp(const model::topic_id_partition& tidp) {
+        return cloud_topics::batch_cache_accessor::contains_tidp(_cache, tidp);
     }
 
-    void evict_offset(const model::ntp& ntp, model::offset o) {
-        cloud_topics::batch_cache_accessor::evict_offset(_cache, ntp, o);
+    void evict_offset(const model::topic_id_partition& tidp, model::offset o) {
+        cloud_topics::batch_cache_accessor::evict_offset(_cache, tidp, o);
+    }
+
+    void reclaim(const model::topic_id_partition& tidp, size_t size) {
+        cloud_topics::batch_cache_accessor::reclaim(_cache, tidp, size);
     }
 };
 
 TEST_F(batch_cache_test_fixture, test_batch_cache_put_get) {
-    model::ntp test_ntp("ns", "topic", 0);
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
     auto batch = model::test::make_random_batch(model::offset(0), 10, false);
 
     // Put batch in cache
-    _cache.put(test_ntp, batch);
+    _cache.put(tidp, batch);
 
     // Get batch
-    auto retrieved = _cache.get(test_ntp, model::offset(0));
+    auto retrieved = _cache.get(tidp, model::offset(0));
     ASSERT_TRUE(retrieved.has_value());
     ASSERT_EQ(retrieved->base_offset(), batch.base_offset());
     ASSERT_EQ(retrieved->header().record_count, batch.header().record_count);
 }
 
 TEST_F(batch_cache_test_fixture, test_batch_cache_get_nonexistent) {
-    model::ntp test_ntp("ns", "topic", 0);
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
 
     // Try to get batch that doesn't exist
-    auto retrieved = _cache.get(test_ntp, model::offset(0));
+    auto retrieved = _cache.get(tidp, model::offset(0));
     ASSERT_TRUE(!retrieved.has_value());
 }
 
-TEST_F(batch_cache_test_fixture, test_batch_cache_multiple_ntps) {
-    model::ntp ntp1("ns1", "topic1", 0);
-    model::ntp ntp2("ns2", "topic2", 1);
+TEST_F(batch_cache_test_fixture, test_batch_cache_multiple_tidps) {
+    auto tidp1 = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+    auto tidp2 = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(1)};
 
     auto batch1 = model::test::make_random_batch(model::offset(0), 5, false);
     auto batch2 = model::test::make_random_batch(model::offset(10), 8, false);
 
     // Put batches in cache
-    _cache.put(ntp1, batch1);
-    _cache.put(ntp2, batch2);
+    _cache.put(tidp1, batch1);
+    _cache.put(tidp2, batch2);
 
     // Get batches
-    auto retrieved1 = _cache.get(ntp1, model::offset(0));
-    auto retrieved2 = _cache.get(ntp2, model::offset(10));
+    auto retrieved1 = _cache.get(tidp1, model::offset(0));
+    auto retrieved2 = _cache.get(tidp2, model::offset(10));
 
     ASSERT_TRUE(retrieved1.has_value());
     ASSERT_TRUE(retrieved2.has_value());
@@ -96,32 +111,69 @@ TEST_F(batch_cache_test_fixture, test_batch_cache_multiple_ntps) {
     ASSERT_EQ(retrieved2->base_offset(), batch2.base_offset());
 
     // Try to get batch with wrong offset
-    auto retrieved = _cache.get(ntp2, model::offset(0));
+    auto retrieved = _cache.get(tidp2, model::offset(0));
     ASSERT_TRUE(!retrieved.has_value());
 }
 
 TEST_F(batch_cache_test_fixture, test_batch_cache_eviction) {
-    model::ntp test_ntp("ns", "topic", 0);
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
     auto batch = model::test::make_random_batch(model::offset(42), 10, false);
 
     // The cleanup will start in 100ms
     _cache.start().get();
 
     // Put batch in cache
-    _cache.put(test_ntp, batch);
-    auto retrieved = _cache.get(test_ntp, model::offset(42));
+    _cache.put(tidp, batch);
+    auto retrieved = _cache.get(tidp, model::offset(42));
     ASSERT_TRUE(retrieved.has_value());
 
-    ASSERT_TRUE(contains_ntp(test_ntp));
+    ASSERT_TRUE(contains_tidp(tidp));
 
-    evict_offset(test_ntp, model::offset(42));
+    reclaim(tidp, 1);
 
-    ASSERT_TRUE(contains_ntp(test_ntp));
+    ASSERT_TRUE(contains_tidp(tidp));
 
-    // This should evict the NTP
+    // This should evict the topic_id_partition
     ss::sleep(cache_check_interval * 2).get();
 
-    ASSERT_FALSE(contains_ntp(test_ntp));
+    ASSERT_FALSE(contains_tidp(tidp));
 
     _cache.stop().get();
+}
+
+TEST_F(batch_cache_test_fixture, test_batch_cache_topic_recreation) {
+    // Test that recreating a topic with the same name doesn't resurrect batches
+    auto topic_id_1 = model::topic_id::create();
+    auto topic_id_2 = model::topic_id::create();
+    auto tidp1 = model::topic_id_partition{topic_id_1, model::partition_id(0)};
+    auto tidp2 = model::topic_id_partition{topic_id_2, model::partition_id(0)};
+
+    auto batch1 = model::test::make_random_batch(model::offset(0), 5, false);
+    auto batch2 = model::test::make_random_batch(model::offset(0), 8, false);
+
+    // Put batch for first topic
+    _cache.put(tidp1, batch1);
+
+    // Verify we can get it back
+    auto retrieved1 = _cache.get(tidp1, model::offset(0));
+    ASSERT_TRUE(retrieved1.has_value());
+    ASSERT_EQ(retrieved1->base_offset(), batch1.base_offset());
+
+    // Put batch for second topic (simulating topic recreation)
+    _cache.put(tidp2, batch2);
+
+    // Verify we get the correct batch for each topic
+    auto retrieved1_again = _cache.get(tidp1, model::offset(0));
+    auto retrieved2 = _cache.get(tidp2, model::offset(0));
+
+    ASSERT_TRUE(retrieved1_again.has_value());
+    ASSERT_TRUE(retrieved2.has_value());
+
+    // The batches should be different
+    ASSERT_EQ(retrieved1_again->base_offset(), batch1.base_offset());
+    ASSERT_EQ(retrieved2->base_offset(), batch2.base_offset());
+    ASSERT_NE(
+      retrieved1_again->header().record_count,
+      retrieved2->header().record_count);
 }

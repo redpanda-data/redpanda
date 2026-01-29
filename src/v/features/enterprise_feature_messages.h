@@ -112,6 +112,13 @@ inline ss::sstring acl_with_rbac() {
       request_or_trial);
 }
 
+inline ss::sstring acl_with_group() {
+    return ssx::sformat(
+      "{} to create an ACL with a group principal. {}",
+      required,
+      request_or_trial);
+}
+
 inline ss::sstring audit_log_fetch() {
     return ssx::sformat(
       "{} to consume the audit log topic. {}", required, request_or_trial);

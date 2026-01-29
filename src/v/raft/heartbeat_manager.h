@@ -21,7 +21,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/fundamental.h"
 #include "raft/group_configuration.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/util/log.hh>
@@ -198,11 +198,6 @@ private:
     void process_reply(
       model::node_id n,
       const absl::node_hash_map<raft::group_id, follower_request_meta>& groups,
-      result<heartbeat_reply> result);
-
-    void process_reply(
-      model::node_id n,
-      const absl::node_hash_map<raft::group_id, follower_request_meta>& groups,
       result<heartbeat_reply_v2> result);
 
     consensus_ptr validate_heartbeat_reply(
@@ -215,7 +210,7 @@ private:
     ss::future<heartbeat_requests> requests_for_range();
     // private members
 
-    mutex _lock{"heartbeat_manager"};
+    ssx::mutex _lock{"heartbeat_manager"};
     clock_type::time_point _hbeat = clock_type::now();
     ss::scheduling_group _scheduling_group;
     config::binding<std::chrono::milliseconds> _heartbeat_interval;

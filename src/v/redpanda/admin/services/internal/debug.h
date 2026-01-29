@@ -45,6 +45,9 @@ public:
       serde::pb::rpc::context,
       proto::admin::stop_stress_fiber_request) override;
 
+    seastar::future<proto::admin::log_message_response> log_message(
+      serde::pb::rpc::context, proto::admin::log_message_request) override;
+
 private:
     admin::proxy::client _client;
     ss::sharded<stress_fiber_manager>& _stress_fiber_manager;

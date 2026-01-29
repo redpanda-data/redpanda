@@ -12,8 +12,7 @@
 #pragma once
 
 #include "json/iobuf_writer.h"
-#include "pandaproxy/json/rjson_util.h"
-#include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/rjson.h"
 
 namespace pandaproxy::schema_registry {
 
@@ -33,19 +32,9 @@ void rjson_serialize(
     ::json::rjson_serialize(w, res.definition.raw());
     if (!res.definition.refs().empty()) {
         w.Key("references");
-        w.StartArray();
-        for (const auto& ref : res.definition.refs()) {
-            w.StartObject();
-            w.Key("name");
-            ::json::rjson_serialize(w, ref.name);
-            w.Key("subject");
-            ::json::rjson_serialize(w, ref.sub);
-            w.Key("version");
-            ::json::rjson_serialize(w, ref.version);
-            w.EndObject();
-        }
-        w.EndArray();
+        ::json::rjson_serialize(w, res.definition.refs());
     }
+    ::json::rjson_serialize(w, res.definition.meta());
     w.EndObject();
 }
 

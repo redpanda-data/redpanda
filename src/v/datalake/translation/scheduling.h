@@ -102,6 +102,7 @@ public:
     virtual bool memory_exhausted() const = 0;
 
     virtual size_t allocated_memory() const = 0;
+    virtual size_t reservation_block_size() const = 0;
 
     /**
      * Returns a reservation of disk space. The reservation may be any size,

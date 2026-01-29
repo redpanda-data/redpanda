@@ -30,6 +30,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes",
+        "//src/v/bytes:ioarray",
         "//src/v/bytes:iobuf",
         "//src/v/utils:object_pool",
         "//src/v/utils:static_deleter_fn",

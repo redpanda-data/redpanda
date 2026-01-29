@@ -40,7 +40,7 @@ from rptest.services.redpanda import (
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout
-from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.mode_checks import in_fips_environment, skip_debug_mode
 from rptest.utils.utf8 import CONTROL_CHARS_MAP
 
 
@@ -1462,7 +1462,7 @@ class PandaProxyTest(PandaProxyTestMethods):
 
 class PandaProxyBasicAuthTest(PandaProxyEndpoints):
     username = "red"
-    password = "panda"
+    password = "panda012345678"
 
     def __init__(self, context):
         security = SecurityConfig()
@@ -1475,6 +1475,24 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         super(PandaProxyBasicAuthTest, self).__init__(
             context, security=security, pandaproxy_config=pandaproxy_config
         )
+
+    @cluster(num_nodes=3)
+    def test_short_password(self):
+        # In non fips, this should fail because this user doesn't exist
+        # In fips, it should fail earlier than that, because the password is too short to be valid
+        res = self._get_brokers(auth=("non_existent_user", "short_pwd")).json()
+        warn_in_logs = self.redpanda.search_log_any(
+            "Client auth failure: password length less than 14 characters"
+        )
+
+        if in_fips_environment():
+            assert res["error_code"] == 40002, f"Result: {res}"
+            assert warn_in_logs, "request should have failed because of password length"
+        else:
+            assert res["error_code"] == 40101, f"Result: {res}"
+            assert not warn_in_logs, (
+                "warning about password length should not be present"
+            )
 
     @cluster(num_nodes=3)
     def test_get_brokers(self):
@@ -1760,14 +1778,14 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
 
         # Change admin password
         admin = Admin(self.redpanda)
-        admin.update_user(super_username, "new-secret", super_algorithm)
+        admin.update_user(super_username, "new-secret-password", super_algorithm)
 
         # Old password should fail
         result_raw = self._get_topics(auth=(super_username, super_password))
         assert result_raw.json()["error_code"] == 40101
 
         # New password should succeed.
-        result_raw = self._get_topics(auth=(super_username, "new-secret"))
+        result_raw = self._get_topics(auth=(super_username, "new-secret-password"))
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()[0] == self.topic
 
@@ -1792,7 +1810,7 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
 
 class PandaProxyClientStopTest(PandaProxyEndpoints):
     username = "red"
-    password = "panda"
+    password = "panda012345678"
     algorithm = "SCRAM-SHA-256"
 
     topics = [TopicSpec()]
@@ -1886,7 +1904,7 @@ class PandaProxyClientStopTest(PandaProxyEndpoints):
 class User:
     def __init__(self, idx: int):
         self.username = f"user_{idx}"
-        self.password = f"secret_{self.username}"
+        self.password = f"secret_password_{self.username}"
         self.algorithm = "SCRAM-SHA-256"
         self.certificate = None
 

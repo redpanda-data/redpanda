@@ -81,8 +81,6 @@ redpanda_cc_gtest(
     srcs = [
         "entry_stream_utils_death_test.cc",
     ],
-    # CORE-14523
-    flaky = True,
     deps = [
         "//src/v/bytes:iostream",
         "//src/v/storage/mvlog",
@@ -98,8 +96,6 @@ redpanda_cc_gtest(
     srcs = [
         "file_test.cc",
     ],
-    # CORE-14523
-    flaky = True,
     deps = [
         "//src/v/container:chunked_vector",
         "//src/v/storage/mvlog",

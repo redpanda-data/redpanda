@@ -103,7 +103,7 @@ private:
           resource, name.substr(0, 1), pattern_type::prefixed));
 
         return std::ranges::subrange(it, end)
-               | std::views::filter([&name](const auto& e) {
+               | std::views::filter([name](const auto& e) {
                      return std::string_view(name).starts_with(e.first.name());
                  })
                | std::views::transform(

@@ -309,9 +309,9 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
                   return _controller_api
                     .wait_for_topic(
                       tp_ns, ss::lowres_clock::now() + permit.delay)
-                    .then([&done, tp_ns](std::error_code ec) {
+                    .then([&done, tp_ns](std::error_code ec) mutable {
                         if (!ec) {
-                            done.emplace_back(std::move(tp_ns));
+                            done.push_back(std::move(tp_ns));
                         } else {
                             vlog(
                               clusterlog.debug,

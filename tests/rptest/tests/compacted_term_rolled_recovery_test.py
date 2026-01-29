@@ -73,7 +73,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         kafka_tools = KafkaCliTools(self.redpanda)
 
         def done():
-            kafka_tools.produce(self.topic, 1024, 1024)
+            kafka_tools.produce(self.topic, 1024, 1024, enable_idempotence=False)
             curr = self._compacted_segments(nodes, topic)
             return all(map(lambda cnt: cnt[0] > cnt[1], zip(curr, target)))
 

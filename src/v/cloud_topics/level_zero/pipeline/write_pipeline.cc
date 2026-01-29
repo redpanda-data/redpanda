@@ -13,10 +13,12 @@
 #include "base/units.h"
 #include "cloud_topics/level_zero/pipeline/event_filter.h"
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
+#include "cloud_topics/level_zero/pipeline/serializer.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
 #include "cloud_topics/logger.h"
 #include "config/configuration.h"
 #include "resource_mgmt/memory_groups.h"
+#include "ssx/semaphore.h"
 #include "utils/human.h"
 
 #include <seastar/core/abort_source.hh>
@@ -64,27 +66,30 @@ template<class Clock>
 write_pipeline<Clock>::~write_pipeline() = default;
 
 template<class Clock>
-ss::future<result<chunked_vector<extent_meta>>>
+ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
 write_pipeline<Clock>::write_and_debounce(
   model::ntp ntp,
   cluster_epoch min_epoch,
   chunked_vector<model::record_batch> batches,
   Clock::time_point timeout) {
+    auto staged = co_await prepare_write(std::move(batches));
+    if (!staged.has_value()) {
+        co_return std::unexpected(staged.error());
+    }
+    co_return co_await execute_write(
+      std::move(ntp), min_epoch, std::move(staged.value()), timeout);
+}
+
+template<class Clock>
+auto write_pipeline<Clock>::prepare_write(
+  chunked_vector<model::record_batch> batches)
+  -> ss::future<std::expected<prepared_data, std::error_code>> {
     auto h = this->hold_gate();
-    // The write request is stored on the stack of the
-    // fiber until the 'response' promise is set. The
-    // promise can be set by any fiber that completed
-    // the request processing.
     auto data_chunk = co_await l0::serialize_batches(std::move(batches));
     auto sz = data_chunk.payload.size_bytes();
-
     // Register data influx
     _probe.register_bytes_in(sz);
-    _probe.set_memory_usage_gauge(_current_size + sz);
-    _probe.register_request();
-    auto lat_measure = _probe.register_request_processing_time();
-    auto err_probe = ss::defer([this] { _probe.register_request_error(); });
-
+    _probe.set_memory_usage_gauge(current_size() + sz);
     // Grab the semaphore after the size of the write request
     // is known. It's impossible to do this in advance because
     // the memory is actually allocated before this call.
@@ -94,12 +99,33 @@ write_pipeline<Clock>::write_and_debounce(
         units = co_await ss::get_units(
           _mem_budget, sz, this->get_root_rtc().root_abort_source());
     }
-    _current_size += sz;
+    co_return prepared_data(std::move(data_chunk), std::move(units.value()));
+}
+
+template<class Clock>
+ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
+write_pipeline<Clock>::execute_write(
+  model::ntp ntp,
+  cluster_epoch min_epoch,
+  prepared_data prepped,
+  Clock::time_point timeout) {
+    auto h = this->hold_gate();
+    // The write request is stored on the stack of the
+    // fiber until the 'response' promise is set. The
+    // promise can be set by any fiber that completed
+    // the request processing.
+    auto sz = prepped.data_chunk.payload.size_bytes();
+
+    _probe.register_request();
+    auto lat_measure = _probe.register_request_processing_time();
+    auto err_probe = ss::defer([this] { _probe.register_request_error(); });
     _bytes_total += sz;
-    auto d = ss::defer([this, sz] { _current_size -= sz; });
-    auto stage = this->first_stage();
     l0::write_request<Clock> request(
-      std::move(ntp), min_epoch, std::move(data_chunk), timeout, stage);
+      std::move(ntp), min_epoch, std::move(prepped.data_chunk), timeout);
+    auto stage_cleanup = ss::defer([this, &request] {
+        transfer_stage_bytes(
+          request.stage, unassigned_pipeline_stage, request.size_bytes());
+    });
     vlog(
       cd_log.trace,
       "write_pipeline.write_and_debounce, created write_request(size={}, "
@@ -109,18 +135,15 @@ write_pipeline<Clock>::write_and_debounce(
         timeout - Clock::now())
         .count());
     auto fut = request.response.get_future();
-    this->get_pending().push_back(request);
-
-    // Notify all active event_filter instances
-    this->signal(stage);
+    reenqueue(request, /*signal=*/true);
 
     auto res = co_await std::move(fut);
-    if (res.has_error()) {
+    if (!res.has_value()) {
         if (res.error() == errc::timeout) {
             err_probe.cancel();
             _probe.register_request_timeout();
         }
-        co_return res.error();
+        co_return std::unexpected(make_error_code(res.error()));
     }
     err_probe.cancel();
     _probe.register_request_completed();
@@ -142,7 +165,7 @@ void write_pipeline<Clock>::reenqueue(write_request<Clock>& r, bool signal) {
           r.stage);
         // Move all re-enqueued requests to the next stage automatically
         // and notify the corresponding event filter.
-        r.stage = this->next_stage(r.stage);
+        advance_request_stage(r);
         this->get_pending().push_back(r);
         if (signal) {
             this->signal(r.stage);
@@ -172,22 +195,32 @@ write_pipeline<Clock>::get_write_requests(
     size_t acc_size = 0;
     size_t acc_req = 0;
 
-    // The elements in the list are in the insertion order.
     auto it = pending.begin();
-    for (; it != pending.end(); it++) {
+    for (; it != pending.end();) {
         if (it->stage != stage) {
+            it++;
             continue;
         }
         auto sz = it->data_chunk.payload.size_bytes();
         acc_size += sz;
         acc_req++;
-        if (acc_size >= max_bytes || acc_req >= max_requests) {
-            // Include last element
-            it++;
+        // Always include the first request even if it exceeds limits
+        // to avoid stalling the pipeline with oversized requests
+        if (
+          (acc_size >= max_bytes || acc_req >= max_requests)
+          && !result.requests.empty()) {
             break;
         }
+        auto& el = *it;
+        it++;
+        el._hook.unlink();
+        if (el.stage != unassigned_pipeline_stage) {
+            auto idx = static_cast<size_t>(el.stage()->get_numeric_id());
+            _stage_bytes[idx] -= el.size_bytes();
+            el.stage = unassigned_pipeline_stage;
+        }
+        result.requests.push_back(el);
     }
-    result.requests.splice(result.requests.end(), pending, pending.begin(), it);
     result.complete = pending.empty();
     vlog(
       cd_log.trace,
@@ -207,7 +240,7 @@ write_pipeline<Clock>::register_write_pipeline_stage() noexcept {
 template<class Clock>
 void write_pipeline<Clock>::signal(pipeline_stage stage) {
     this->do_signal(
-      stage, event_type::new_write_request, _current_size, _bytes_total);
+      stage, event_type::new_write_request, stage_bytes(stage), _bytes_total);
 }
 
 template<class Clock>
@@ -215,7 +248,7 @@ event write_pipeline<Clock>::trigger_event(pipeline_stage stage) {
     return event{
       .stage = stage,
       .type = event_type::new_write_request,
-      .pending_write_bytes = _current_size,
+      .pending_write_bytes = stage_bytes(stage),
       .total_write_bytes = _bytes_total,
     };
 }
@@ -244,7 +277,7 @@ write_pipeline<Clock>::stage::pull_write_requests(
 }
 
 template<class Clock>
-ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
+ss::future<std::expected<event, errc>> write_pipeline<Clock>::stage::wait_until(
   size_t max_bytes,
   typename Clock::time_point deadline,
   ss::abort_source* maybe_as) noexcept {
@@ -259,14 +292,14 @@ ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
     if (event_fut.failed()) {
         auto err = event_fut.get_exception();
         if (ssx::is_shutdown_exception(err)) {
-            co_return errc::shutting_down;
+            co_return std::unexpected(errc::shutting_down);
         }
-        co_return errc::unexpected_failure;
+        co_return std::unexpected(errc::unexpected_failure);
     }
     auto event = event_fut.get();
     switch (event.type) {
     case l0::event_type::shutting_down:
-        co_return errc::shutting_down;
+        co_return std::unexpected(errc::shutting_down);
     case l0::event_type::new_write_request:
     case l0::event_type::err_timedout:
         break;
@@ -278,14 +311,14 @@ ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
 }
 
 template<class Clock>
-ss::future<checked<event, errc>>
+ss::future<std::expected<event, errc>>
 write_pipeline<Clock>::stage::wait_next(ss::abort_source* maybe_as) noexcept {
     l0::event_filter<Clock> filter(l0::event_type::new_write_request, _ps);
     auto [sub, as] = choose_abort_source(maybe_as);
     auto event = co_await _parent->subscribe(filter, *as);
     switch (event.type) {
     case l0::event_type::shutting_down:
-        co_return errc::shutting_down;
+        co_return std::unexpected(errc::shutting_down);
     case l0::event_type::err_timedout:
     case l0::event_type::new_read_request:
     case l0::event_type::none:
@@ -316,6 +349,41 @@ write_pipeline<Clock>::stage::choose_abort_source(ss::abort_source* maybe_as) {
         }
     }
     return std::make_pair(std::move(sub), as);
+}
+
+template<class Clock>
+void write_pipeline<Clock>::transfer_stage_bytes(
+  pipeline_stage from, pipeline_stage to, size_t bytes) {
+    if (from != unassigned_pipeline_stage) {
+        _stage_bytes[static_cast<size_t>(from()->get_numeric_id())] -= bytes;
+    }
+    if (to != unassigned_pipeline_stage) {
+        _stage_bytes[static_cast<size_t>(to()->get_numeric_id())] += bytes;
+    }
+}
+
+template<class Clock>
+void write_pipeline<Clock>::advance_request_stage(write_request<Clock>& req) {
+    auto next = this->next_stage(req.stage);
+    transfer_stage_bytes(req.stage, next, req.size_bytes());
+    req.stage = next;
+}
+
+template<class Clock>
+size_t write_pipeline<Clock>::stage_bytes(pipeline_stage s) const {
+    if (s == unassigned_pipeline_stage) {
+        return 0;
+    }
+    return _stage_bytes[static_cast<size_t>(s()->get_numeric_id())];
+}
+
+template<class Clock>
+size_t write_pipeline<Clock>::current_size() const {
+    size_t total = 0;
+    for (auto bytes : _stage_bytes) {
+        total += bytes;
+    }
+    return total;
 }
 
 template class write_pipeline<ss::lowres_clock>;

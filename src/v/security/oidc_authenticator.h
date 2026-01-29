@@ -23,11 +23,13 @@ struct authentication_data {
     acl_principal principal;
     ss::sstring sub;
     ss::lowres_system_clock::time_point expiry;
+    chunked_vector<acl_principal> groups;
 };
 result<authentication_data> authenticate(
   const jws& jws,
   const verifier& verifier,
   const principal_mapping_rule& mapping,
+  const group_claim_policy& group_policy,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -36,6 +38,7 @@ result<authentication_data> authenticate(
 result<authentication_data> authenticate(
   const jwt& jwt,
   const principal_mapping_rule& mapping,
+  const group_claim_policy& group_policy,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -86,6 +89,10 @@ public:
     const audit::user& audit_user() const override { return _audit_user; };
 
     const char* mechanism_name() const override { return name; }
+
+    const chunked_vector<acl_principal>& groups() const override {
+        return _auth_data.groups;
+    }
 
 private:
     friend std::ostream&

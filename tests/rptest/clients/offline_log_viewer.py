@@ -36,7 +36,9 @@ class OfflineLogViewer:
 
     def _json_cmd(self, node: ClusterNode, suffix: str) -> Any:
         cmd = self._cmd(suffix=suffix)
-        json_out = node.account.ssh_output(cmd, combine_stderr=False)
+        # TODO: avoid ssh_{output/capture}() for log analysis
+        # https://redpandadata.atlassian.net/browse/CORE-14822
+        json_out = "".join(node.account.ssh_capture(cmd, combine_stderr=False))
         try:
             return json.loads(json_out)
         except json.decoder.JSONDecodeError:

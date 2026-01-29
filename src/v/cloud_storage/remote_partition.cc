@@ -375,11 +375,13 @@ public:
                   "empty");
                 co_return storage_t{};
             }
-            if (_seg_reader->config().over_budget) {
+            auto now = model::timeout_clock::now();
+            if (_seg_reader->config().over_budget || now > deadline) {
                 vlog(
                   _ctxlog.debug,
-                  "We're over-budget, stopping, config: {}",
-                  _seg_reader->config());
+                  "We're over-budget, stopping, config: {}{}",
+                  _seg_reader->config(),
+                  now > deadline ? ", deadline exceeded." : ".");
                 // We need to stop in such way that will keep the
                 // reader in the reusable state, so we could reuse
                 // it on next iteration
@@ -1217,10 +1219,8 @@ size_t remote_partition::reader_mem_use_estimate() noexcept {
            + sizeof(partition_record_batch_reader_impl);
 }
 
-ss::future<storage::translating_reader> remote_partition::make_reader(
-  cloud_storage::cloud_log_reader_config config,
-  std::optional<model::timeout_clock::time_point> deadline) {
-    std::ignore = deadline;
+ss::future<storage::translating_reader>
+remote_partition::make_reader(cloud_storage::cloud_log_reader_config config) {
     vlog(
       _ctxlog.debug,
       "remote partition make_reader invoked (waiting for units), config: {}, "

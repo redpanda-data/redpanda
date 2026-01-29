@@ -29,7 +29,7 @@ from rptest.services.redpanda_types import (
     KafkaClientSecurity,
     check_username_password,
 )
-from rptest.util import wait_until_result
+from rptest.util import wait_until, wait_until_result
 
 DEFAULT_TIMEOUT = 30
 
@@ -485,6 +485,7 @@ class RpkTool:
         perm = f"--allow-{ptype}" if not deny else f"--deny-{ptype}"
 
         cmd = [
+            "security",
             "acl",
             "create",
             perm,
@@ -682,8 +683,12 @@ class RpkTool:
     @overload
     def list_topics(self, detailed: Literal[True]) -> list[list[str]]: ...
 
-    def list_topics(self, detailed: bool = False) -> list[str | list[str]]:
+    def list_topics(
+        self, detailed: bool = False, internal: bool = False
+    ) -> list[str | list[str]]:
         cmd = ["list"]
+        if internal:
+            cmd.append("-i")
 
         output = self._run_topic(cmd)
         if "No topics found." in output:
@@ -1024,14 +1029,14 @@ class RpkTool:
             assert m is not None, f"Field string '{string}' does not match the pattern"
             return m["value"]
 
-        def try_describe_group(group):
+        def describe_group(group):
             if summary:
                 cmd = ["describe", "-s", group]
             else:
                 cmd = ["describe", group]
 
             try:
-                out = self._run_group(cmd)
+                return self._run_group(cmd)
             except RpkException as e:
                 if "COORDINATOR_NOT_AVAILABLE" in e.msg + e.stderr:
                     # Transient, return None to retry
@@ -1050,6 +1055,40 @@ class RpkTool:
                 else:
                     raise
 
+        def try_describe_group(group):
+            try:
+                out = describe_group(group)
+                if out is not None:
+                    return parse_describe_group(out)
+                return None
+            except Exception:
+                # rpk will not print out the COORDINATOR-PARTITION field for
+                # parsing when __consumer_offsets topic hasn't been created yet.
+                # instead of trying to be fancy and adapt to such output, we
+                # wait for it to be created and try again. NOTE: in the context
+                # in which this wait has been added we see that the topic is
+                # created as a side effect of rpk running find_coordinator. this
+                # behavior might be specific to the test prompting this change.
+                # if you see a similar parsing problem (see git blame for
+                # details) in the future, another option would be to explicitly
+                # poke redpanda in a way so as to create the consumer offsets
+                # topic by running a command where the consumer offsets topic is
+                # created as a side effect.
+                self._redpanda.logger.debug(
+                    "Waiting for __consumer_offsets topic to exist"
+                )
+                wait_until(
+                    lambda: "__consumer_offsets" in self.list_topics(internal=True),
+                    timeout_sec=10,
+                    backoff_sec=1,
+                    err_msg="__consumer_offsets topic not created",
+                )
+                out = describe_group(group)
+                if out is not None:
+                    return parse_describe_group(out)
+                return None
+
+        def parse_describe_group(out):
             lines = out.splitlines()
             group_name = parse_field("GROUP", lines[0])
             coordinator_node = parse_field("COORDINATOR-NODE", lines[1])
@@ -1343,7 +1382,7 @@ class RpkTool:
             ]
         )
 
-    def cluster_config_export(self, file, all):
+    def cluster_config_export(self, file: str, all: bool) -> str:
         cmd = [
             self._rpk_binary(),
             "--api-urls",

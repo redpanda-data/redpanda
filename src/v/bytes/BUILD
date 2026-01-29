@@ -122,3 +122,23 @@ redpanda_cc_library(
         ":iobuf",
     ],
 )
+
+redpanda_cc_library(
+    name = "ioarray",
+    srcs = [
+        "ioarray.cc",
+    ],
+    hdrs = [
+        "ioarray.h",
+    ],
+    implementation_deps = [
+        ":iobuf_parser",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":iobuf",
+        "//src/v/base",
+        "@abseil-cpp//absl/container:fixed_array",
+        "@seastar",
+    ],
+)

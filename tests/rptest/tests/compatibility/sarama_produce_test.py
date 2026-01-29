@@ -90,11 +90,11 @@ class SaramaLegacyProduceTest(RedpandaTest):
     expected_log_lines = defaultdict(dict)
     expected_log_lines[ValidationMode.RELAXED][False] = None
     expected_log_lines[ValidationMode.RELAXED][True] = (
-        "Produced batch has max_timestamp left unset ({-1}) by client. Decompressing batch and setting max_timestamp manually since 'kafka_produce_batch_validation' to set to 'relaxed'. It is strongly recommended that you update your client to set the max_timestamp when producing"
+        "Produced batch for partition {kafka/topic/0} has max_timestamp left unset ({-1}) by client (client_id: {sarama}). Decompressing batch and setting max_timestamp manually since 'kafka_produce_batch_validation' is set to 'relaxed'. It is strongly recommended that you update your client to set the max_timestamp when producing"
     )
     expected_log_lines[ValidationMode.LEGACY][False] = None
     expected_log_lines[ValidationMode.LEGACY][True] = (
-        "Produced batch has max_timestamp left unset ({-1}) by client. Accepting batch since 'kafka_produce_batch_validation' is set to 'legacy'. It is strongly recommended that you update your client to set the max_timestamp when producing"
+        "Produced batch for partition {kafka/topic/0} has max_timestamp left unset ({-1}) by client (client_id: {sarama}). Accepting batch since 'kafka_produce_batch_validation' is set to 'legacy'. It is strongly recommended that you update your client to set the max_timestamp when producing"
     )
     expected_log_lines[ValidationMode.STRICT][False] = None
     expected_log_lines[ValidationMode.STRICT][True] = None
@@ -151,7 +151,7 @@ class SaramaLegacyProduceTest(RedpandaTest):
 
         if expected_log_line is None:
             # We shouldn't see any warning for an unset max_timestamp if it is not expected.
-            pattern = "Produced batch has max_timestamp left unset ({-1}) by client"
+            pattern = "Produced batch for partition {kafka/topic/0} has max_timestamp left unset ({-1}) by client"
             assert not self.redpanda.search_log_all(pattern), (
                 f"Saw unexpected log line in redpanda logs for {validation_mode=}, {compression_type=} when maximum timestamp is unset in a produced batch."
             )

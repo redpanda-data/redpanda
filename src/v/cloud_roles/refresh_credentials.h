@@ -70,6 +70,8 @@ public:
 
         void reset_retries();
 
+        void refresh();
+
     protected:
         /// Returns an http client with the API host and port applied
         ss::future<http::client> make_api_client(
@@ -122,6 +124,7 @@ public:
         ss::abort_source& _as;
         retry_params _retry_params;
         ss::shared_ptr<ss::tls::certificate_credentials> _tls_certs = nullptr;
+        mutable std::optional<ss::abort_source> _per_sleep_as;
     };
 
     refresh_credentials(
@@ -140,6 +143,13 @@ public:
     }
 
     ss::future<> stop();
+
+    // Refresh credential as soon as possible.
+    //
+    // This is needed in a situation when the endpoint returned 403 or
+    // service specific REST API error (ExpiredToken). In this case we
+    // need to refresh credentials without waiting.
+    void refresh();
 
 private:
     ss::future<> do_start();

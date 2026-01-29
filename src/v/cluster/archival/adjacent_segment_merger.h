@@ -69,4 +69,21 @@ private:
     ss::gate::holder _holder;
 };
 
+/// Scans for adjacent segments to merge.
+class adjacent_segment_scanner {
+public:
+    adjacent_segment_scanner() = delete;
+
+public:
+    static std::optional<adjacent_segment_run> scan_manifest(
+      retry_chain_logger& ctxlog,
+      ntp_archiver& archiver,
+      model::offset local_start_offset,
+      const cloud_storage::partition_manifest& manifest,
+      model::offset from_offset,
+      size_t min_segment_size,
+      size_t max_segment_size,
+      bool is_local);
+};
+
 } // namespace archival

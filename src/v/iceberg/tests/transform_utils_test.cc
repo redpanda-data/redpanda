@@ -368,7 +368,7 @@ TEST(TestTransformApplication, NumericTruncateTransform) {
           value input_wrapped{
             std::in_place_type<primitive_value>, std::move(input)};
           auto transformed = apply_transform(
-                               std::move(input_wrapped),
+                               input_wrapped,
                                truncate_transform{.length = length})
                                .value();
           ASSERT_TRUE(std::holds_alternative<primitive_value>(transformed));

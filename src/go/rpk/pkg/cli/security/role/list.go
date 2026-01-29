@@ -12,9 +12,12 @@ package role
 import (
 	"sort"
 
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -47,20 +50,37 @@ List all roles with the prefix "agent-":
 			if h, ok := f.Help(listResponse{}); ok {
 				out.Exit(h)
 			}
-			p, err := p.LoadVirtualProfile(fs)
+			prof, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(p)
-
-			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
-			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
-
-			principalType, principal := parsePrincipal(principalFlag)
-			res, err := cl.Roles(cmd.Context(), prefix, principal, principalType)
-			out.MaybeDie(err, "unable to list roles: %v", err)
+			config.CheckExitServerlessAdmin(prof)
 
 			roles := []string{}
-			for _, r := range res.Roles {
-				roles = append(roles, r.Name)
+			if prof.CheckFromCloud() {
+				cl, err := publicapi.DataplaneClientFromRpkProfile(prof)
+				out.MaybeDie(err, "unable to initialize cloud API client: %v", err)
+
+				res, err := cl.Security.ListRoles(cmd.Context(), connect.NewRequest(&dataplanev1.ListRolesRequest{
+					Filter: &dataplanev1.ListRolesRequest_Filter{
+						NamePrefix: prefix,
+						Principal:  principalFlag, // We don't need to parse the flag as the dataplane receives a full typed principal.
+					},
+				}))
+				out.MaybeDie(err, "unable to list roles: %v", err)
+
+				for _, r := range res.Msg.Roles {
+					roles = append(roles, r.Name)
+				}
+			} else {
+				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
+				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+				principalType, principal := parsePrincipal(principalFlag)
+				res, err := cl.Roles(cmd.Context(), prefix, principal, principalType)
+				out.MaybeDie(err, "unable to list roles: %v", err)
+
+				for _, r := range res.Roles {
+					roles = append(roles, r.Name)
+				}
 			}
 			sort.Slice(roles, func(i, j int) bool { return roles[i] > roles[j] })
 

@@ -105,6 +105,25 @@ public:
     void flush() { _flushed_pos = _pos; }
     char* get_current() { return _buf.get() + _pos; }
     void set_position(size_t p) { _flushed_pos = _pos = p; }
+    /**
+     * Copy a remainder from another chunk.
+     *
+     * Remainder is the part of the chunk that is above the
+     * pending_aligned_begin() i.e. it is the part that overflows last full page
+     * boundary.
+     *
+     * This method preserves the position and flushed position relative to the
+     * pending_aligned_begin()
+     * IMPORTANT: this method will reset the chunk content before copying the
+     * remainder.
+     */
+    void copy_remainder_from(const segment_appender_chunk& other) {
+        reset();
+        const auto remainder_sz = other.size() - other.pending_aligned_begin();
+        std::copy_n(other.dma_ptr(), remainder_sz, get_current());
+        _pos = other._pos - other.pending_aligned_begin();
+        _flushed_pos = other._flushed_pos - other.pending_aligned_begin();
+    }
 
     intrusive_list_hook hook;
 

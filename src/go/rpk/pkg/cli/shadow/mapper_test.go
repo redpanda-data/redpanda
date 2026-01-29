@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	corecommonv1 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/common/v1"
 	"github.com/stretchr/testify/require"
@@ -1270,6 +1271,312 @@ func TestRoundTrip(t *testing.T) {
 
 	// Step 3: Verify the round-trip config matches the original
 	require.Equal(t, originalConfig, roundTripConfig, "round-trip config should exactly match original config")
+}
+
+// Cloud mapping tests
+
+func TestCloudShadowLinkToConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		sl   *controlplanev1.ShadowLink
+		want *ShadowLinkConfig
+	}{
+		{
+			name: "nil shadow link returns nil",
+			sl:   nil,
+			want: nil,
+		},
+		{
+			name: "minimal shadow link",
+			sl: &controlplanev1.ShadowLink{
+				Name:             "test-link",
+				ShadowRedpandaId: "rp-456",
+			},
+			want: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "rp-456",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cloudShadowLinkToConfig(tt.sl)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCloudClientOptsToCfg(t *testing.T) {
+	tests := []struct {
+		name string
+		opts *controlplanev1.ShadowLinkClientOptions
+		want *ShadowLinkClientOptions
+	}{
+		{
+			name: "nil options returns nil",
+			opts: nil,
+			want: nil,
+		},
+		{
+			name: "basic options without TLS or auth",
+			opts: &controlplanev1.ShadowLinkClientOptions{
+				BootstrapServers:       []string{"cloud-broker:9092"},
+				SourceClusterId:        "source-cluster",
+				MetadataMaxAgeMs:       5000,
+				ConnectionTimeoutMs:    2000,
+				RetryBackoffMs:         200,
+				FetchWaitMaxMs:         1000,
+				FetchMinBytes:          10,
+				FetchMaxBytes:          2097152,
+				FetchPartitionMaxBytes: 1048576,
+			},
+			want: &ShadowLinkClientOptions{
+				BootstrapServers:       []string{"cloud-broker:9092"},
+				SourceClusterID:        "source-cluster",
+				MetadataMaxAgeMs:       5000,
+				ConnectionTimeoutMs:    2000,
+				RetryBackoffMs:         200,
+				FetchWaitMaxMs:         1000,
+				FetchMinBytes:          10,
+				FetchMaxBytes:          2097152,
+				FetchPartitionMaxBytes: 1048576,
+			},
+		},
+		{
+			name: "with PEM-based TLS",
+			opts: &controlplanev1.ShadowLinkClientOptions{
+				BootstrapServers: []string{"cloud-broker:9092"},
+				TlsSettings: &controlplanev1.TLSSettings{
+					Enabled:             true,
+					DoNotSetSniHostname: true,
+					Ca:                  "ca-pem-content",
+					Key:                 "key-pem-content",
+					Cert:                "cert-pem-content",
+				},
+			},
+			want: &ShadowLinkClientOptions{
+				BootstrapServers: []string{"cloud-broker:9092"},
+				TLSSettings: &TLSSettings{
+					Enabled:             true,
+					DoNotSetSniHostname: true,
+					TLSPEMSettings: &TLSPEMSettings{
+						CA:   "ca-pem-content",
+						Key:  "key-pem-content",
+						Cert: "cert-pem-content",
+					},
+				},
+			},
+		},
+		{
+			name: "with SCRAM authentication",
+			opts: &controlplanev1.ShadowLinkClientOptions{
+				BootstrapServers: []string{"cloud-broker:9092"},
+				AuthenticationConfiguration: &adminv2.AuthenticationConfiguration{
+					Authentication: &adminv2.AuthenticationConfiguration_ScramConfiguration{
+						ScramConfiguration: &adminv2.ScramConfig{
+							Username:       "cloud-user",
+							Password:       "${secrets.MY_PASSWORD}",
+							ScramMechanism: adminv2.ScramMechanism_SCRAM_MECHANISM_SCRAM_SHA_256,
+						},
+					},
+				},
+			},
+			want: &ShadowLinkClientOptions{
+				BootstrapServers: []string{"cloud-broker:9092"},
+				AuthenticationConfiguration: &AuthenticationConfiguration{
+					ScramConfiguration: &ScramConfiguration{
+						Username:       "cloud-user",
+						Password:       "${secrets.MY_PASSWORD}",
+						ScramMechanism: ScramMechanismScramSha256,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cloudClientOptsToCfg(tt.opts)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCloudTLSToCfg(t *testing.T) {
+	tests := []struct {
+		name string
+		tls  *controlplanev1.TLSSettings
+		want *TLSSettings
+	}{
+		{
+			name: "nil TLS returns nil",
+			tls:  nil,
+			want: nil,
+		},
+		{
+			name: "enabled TLS with PEM content",
+			tls: &controlplanev1.TLSSettings{
+				Enabled:             true,
+				DoNotSetSniHostname: false,
+				Ca:                  "-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----",
+				Key:                 "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----",
+				Cert:                "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----",
+			},
+			want: &TLSSettings{
+				Enabled:             true,
+				DoNotSetSniHostname: false,
+				TLSPEMSettings: &TLSPEMSettings{
+					CA:   "-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----",
+					Key:  "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----",
+					Cert: "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----",
+				},
+			},
+		},
+		{
+			name: "TLS enabled without PEM content",
+			tls: &controlplanev1.TLSSettings{
+				Enabled: true,
+			},
+			want: &TLSSettings{
+				Enabled: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cloudTLSToCfg(tt.tls)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestCloudRoundTrip validates the complete cloud mapping chain:
+// ShadowLinkConfig -> Cloud protos -> back to ShadowLinkConfig.
+// This test ensures cloud-specific fields are properly preserved.
+func TestCloudRoundTrip(t *testing.T) {
+	originalConfig := &ShadowLinkConfig{
+		Name: "cloud-round-trip-link",
+		CloudOptions: &CloudShadowLinkOptions{
+			ShadowRedpandaID: "shadow-rp-xyz",
+			SourceRedpandaID: "source-rp-123",
+		},
+		ClientOptions: &ShadowLinkClientOptions{
+			BootstrapServers:       []string{"broker1.cloud:9092", "broker2.cloud:9092"},
+			SourceClusterID:        "prod-source-cluster",
+			MetadataMaxAgeMs:       15000,
+			ConnectionTimeoutMs:    3000,
+			RetryBackoffMs:         250,
+			FetchWaitMaxMs:         750,
+			FetchMinBytes:          2048,
+			FetchMaxBytes:          20971520,
+			FetchPartitionMaxBytes: 1048576,
+			TLSSettings: &TLSSettings{
+				Enabled:             true,
+				DoNotSetSniHostname: true,
+				TLSPEMSettings: &TLSPEMSettings{
+					CA:   "-----BEGIN CERTIFICATE-----\nCA-CONTENT\n-----END CERTIFICATE-----",
+					Key:  "-----BEGIN PRIVATE KEY-----\nKEY-CONTENT\n-----END PRIVATE KEY-----",
+					Cert: "-----BEGIN CERTIFICATE-----\nCERT-CONTENT\n-----END CERTIFICATE-----",
+				},
+			},
+			AuthenticationConfiguration: &AuthenticationConfiguration{
+				ScramConfiguration: &ScramConfiguration{
+					Username:       "cloud-replication-user",
+					Password:       "${secrets.CLOUD_PASSWORD}",
+					ScramMechanism: ScramMechanismScramSha512,
+				},
+			},
+		},
+		TopicMetadataSyncOptions: &TopicMetadataSyncOptions{
+			Interval: 45 * time.Second,
+			Paused:   false,
+			AutoCreateShadowTopicFilters: []*NameFilter{
+				{
+					PatternType: PatternTypeLiteral,
+					FilterType:  FilterTypeInclude,
+					Name:        "orders",
+				},
+				{
+					PatternType: PatternTypePrefix,
+					FilterType:  FilterTypeExclude,
+					Name:        "_internal-",
+				},
+			},
+			SyncedShadowTopicProperties: []string{
+				"retention.ms",
+				"compression.type",
+			},
+			ExcludeDefault:  true,
+			StartAtEarliest: &StartAtEarliest{},
+		},
+		ConsumerOffsetSyncOptions: &ConsumerOffsetSyncOptions{
+			Paused:   false,
+			Interval: 60 * time.Second,
+			GroupFilters: []*NameFilter{
+				{
+					PatternType: PatternTypePrefix,
+					FilterType:  FilterTypeInclude,
+					Name:        "prod-",
+				},
+			},
+		},
+		SecuritySyncOptions: &SecuritySettingsSyncOptions{
+			Paused:   true,
+			Interval: 120 * time.Second,
+			ACLFilters: []*ACLFilter{
+				{
+					ResourceFilter: &ACLResourceFilter{
+						ResourceType: ACLResourceTopic,
+						PatternType:  ACLPatternLiteral,
+						Name:         "sensitive-topic",
+					},
+					AccessFilter: &ACLAccessFilter{
+						Principal:      "User:admin",
+						Operation:      ACLOperationRead,
+						PermissionType: ACLPermissionTypeAllow,
+						Host:           "*",
+					},
+				},
+			},
+		},
+		SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+			ShadowSchemaRegistryTopic: &ShadowSchemaRegistryTopic{},
+		},
+	}
+
+	// Step 1: Convert config to cloud ShadowLink proto (simulating what the API returns)
+	// We build this manually since shadowLinkConfigToCloudCreate creates ShadowLinkCreate,
+	// and the API returns ShadowLink (which has additional fields like Id).
+	cloudSL := &controlplanev1.ShadowLink{
+		Id:                        "sl-generated-id",
+		ShadowRedpandaId:          originalConfig.CloudOptions.ShadowRedpandaID,
+		Name:                      originalConfig.Name,
+		ClientOptions:             mapCloudClientOptions(originalConfig.ClientOptions),
+		TopicMetadataSyncOptions:  mapTopicMetadataSyncOptions(originalConfig.TopicMetadataSyncOptions),
+		ConsumerOffsetSyncOptions: mapConsumerOffsetSyncOptions(originalConfig.ConsumerOffsetSyncOptions),
+		SecuritySyncOptions:       mapSecuritySyncOptions(originalConfig.SecuritySyncOptions),
+		SchemaRegistrySyncOptions: mapSchemaRegistrySyncOptions(originalConfig.SchemaRegistrySyncOptions),
+	}
+	require.NotNil(t, cloudSL)
+
+	// Step 2: Convert cloud ShadowLink proto back to config
+	roundTripConfig := cloudShadowLinkToConfig(cloudSL)
+	require.NotNil(t, roundTripConfig)
+
+	// Step 3: Verify the round-trip config matches the original
+	// Note: CloudOptions.SourceRedpandaID is not in ShadowLink response (only in create request)
+	// so we need to adjust our expectation
+	expectedConfig := *originalConfig
+	expectedConfig.CloudOptions = &CloudShadowLinkOptions{
+		ShadowRedpandaID: originalConfig.CloudOptions.ShadowRedpandaID,
+		// SourceRedpandaID is not returned by the API
+	}
+
+	require.Equal(t, &expectedConfig, roundTripConfig, "round-trip config should match expected config")
 }
 
 // Test reverse enum mapping functions return empty string for

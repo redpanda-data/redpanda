@@ -44,7 +44,7 @@ private:
 
 public:
     struct part
-      : serde::envelope<part, serde::version<0>, serde::compat_version<0>> {
+      : serde::envelope<part, serde::version<1>, serde::compat_version<0>> {
         friend bool operator==(const part&, const part&) = default;
         friend std::ostream& operator<<(std::ostream&, const part&);
 
@@ -54,7 +54,7 @@ public:
         }
 
         /// client_id_default_match is the quota entity type corresponding to
-        /// /config/clients/<default>
+        /// /clients/<default> part of the key
         struct client_id_default_match
           : serde::envelope<
               client_id_default_match,
@@ -76,8 +76,31 @@ public:
             }
         };
 
+        /// user_default_match is the quota entity type corresponding to
+        /// /users/<default> part of the key
+        struct user_default_match
+          : serde::envelope<
+              user_default_match,
+              serde::version<0>,
+              serde::compat_version<0>> {
+            friend bool
+            operator==(const user_default_match&, const user_default_match&)
+              = default;
+
+            auto serde_fields() { return std::tie(); }
+
+            friend std::ostream&
+            operator<<(std::ostream&, const user_default_match&);
+
+            template<typename H>
+            friend H AbslHashValue(H h, const user_default_match&) {
+                return H::combine(
+                  std::move(h), typeid(user_default_match).hash_code());
+            }
+        };
+
         /// client_id_match is the quota entity type corresponding to
-        /// /config/clients/<client-id>
+        /// /clients/<client-id> part of the key
         struct client_id_match
           : serde::envelope<
               client_id_match,
@@ -94,6 +117,29 @@ public:
             friend H AbslHashValue(H h, const client_id_match& c) {
                 return H::combine(
                   std::move(h), typeid(client_id_match).hash_code(), c.value);
+            }
+
+            ss::sstring value;
+
+            auto serde_fields() { return std::tie(value); }
+        };
+
+        /// user_match is the quota entity type corresponding to
+        /// /users/<user> part of the key
+        struct user_match
+          : serde::envelope<
+              user_match,
+              serde::version<0>,
+              serde::compat_version<0>> {
+            friend bool operator==(const user_match&, const user_match&)
+              = default;
+
+            friend std::ostream& operator<<(std::ostream&, const user_match&);
+
+            template<typename H>
+            friend H AbslHashValue(H h, const user_match& u) {
+                return H::combine(
+                  std::move(h), typeid(user_match).hash_code(), u.value);
             }
 
             ss::sstring value;
@@ -128,22 +174,72 @@ public:
             auto serde_fields() { return std::tie(value); }
         };
 
-        auto serde_fields() { return std::tie(part); }
+        bool is_v0_compat() const;
+        void serde_read(iobuf_parser& in, const serde::header& h);
+        void serde_write(iobuf& out) const;
 
-        serde::variant<
+        using variant = serde::variant<
           client_id_default_match,
           client_id_match,
-          client_id_prefix_match>
-          part;
+          client_id_prefix_match,
+          user_default_match,
+          user_match>;
+        variant part;
     };
 
     using client_id_default_match = constructor<part::client_id_default_match>;
     using client_id_match = constructor<part::client_id_match>;
     using client_id_prefix_match = constructor<part::client_id_prefix_match>;
+    using user_default_match = constructor<part::user_default_match>;
+    using user_match = constructor<part::user_match>;
+
+    struct part_v0
+      : serde::envelope<part_v0, serde::version<0>, serde::compat_version<0>> {
+        friend bool operator==(const part_v0&, const part_v0&) = default;
+        friend std::ostream& operator<<(std::ostream&, const part_v0&);
+
+        template<typename H>
+        friend H AbslHashValue(H h, const part_v0& e) {
+            return H::combine(std::move(h), e.part);
+        }
+
+        template<typename V0Fn, typename Fn>
+        struct visitor {
+            [[no_unique_address]] V0Fn v0_fn;
+            [[no_unique_address]] Fn fn;
+
+            // Legacy types
+            decltype(auto)
+            operator()(const entity_key::part::client_id_match& v) const {
+                return v0_fn(v);
+            }
+            decltype(auto) operator()(
+              const entity_key::part::client_id_prefix_match& v) const {
+                return v0_fn(v);
+            }
+            decltype(auto) operator()(
+              const entity_key::part::client_id_default_match& v) const {
+                return v0_fn(v);
+            }
+
+            // Every other type
+            template<typename T>
+            decltype(auto) operator()(const T& v) const {
+                return fn(v);
+            }
+        };
+        auto serde_fields() { return std::tie(part); }
+
+        using variant = serde::variant<
+          part::client_id_default_match,
+          part::client_id_match,
+          part::client_id_prefix_match>;
+        variant part;
+    };
 
     template<typename... T>
     explicit entity_key(T&&... t)
-      : parts{{.part{std::forward<T>(t)}}...} {}
+      : parts{part_t{std::forward<T>(t)}...} {}
 
     auto serde_fields() { return std::tie(parts); }
 
@@ -155,8 +251,36 @@ public:
         return AbslHashValue(std::move(h), e.parts);
     }
 
-    absl::flat_hash_set<part> parts;
+    struct part_t : public part {
+        using part::part;
+
+        using base = struct part;
+
+        explicit part_t(const struct part& p)
+          : base{p} {}
+        explicit part_t(struct part&& p)
+          : base{std::move(p)} {}
+
+        template<typename T>
+        explicit part_t(T&& t)
+        requires std::constructible_from<part::variant, T>
+          : base{.part = std::forward<T>(t)} {}
+
+        friend bool operator==(const part_t&, const part_t&) = default;
+        friend std::ostream& operator<<(std::ostream&, const part_t&);
+    };
+
+    absl::flat_hash_set<part_t> parts;
 };
+
+void tag_invoke(
+  serde::tag_t<serde::read_tag>,
+  iobuf_parser& in,
+  entity_key::part_t& t,
+  const std::size_t bytes_left_limit);
+
+void tag_invoke(
+  serde::tag_t<serde::write_tag>, iobuf& out, const entity_key::part_t& t);
 
 /// entity_value describes the quotas applicable to an entity_key
 struct entity_value

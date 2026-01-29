@@ -30,6 +30,8 @@ enum class s3_error_code {
     account_problem,
     all_access_disabled,
     ambiguous_grant_by_email_address,
+    // authentication_required is GCP specific error code for expired tokens.
+    authentication_required,
     authorization_header_malformed,
     bad_digest,
     bucket_already_exists,

@@ -1173,51 +1173,6 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
     co_return co_await _partition_manager.invoke_on(*shard, std::move(func));
 }
 
-/**
- * Deprecated: this method may be removed when we no longer require
- * compatibility with Redpanda <= 22.3
- */
-ss::future<bool>
-leader_balancer::do_transfer_remote_legacy(reassignment transfer) {
-    raft::transfer_leadership_request req{
-      .group = transfer.group,
-      .target = transfer.to.node_id,
-      .timeout = transfer_leadership_recovery_timeout};
-
-    vlog(
-      clusterlog.debug,
-      "Leadership transfer of group {} using legacy RPC",
-      transfer.group);
-
-    auto raft_client = raft::make_rpc_client_protocol(
-      _raft0->self().id(), _connections);
-    auto res = co_await raft_client.transfer_leadership(
-      transfer.from.node_id,
-      std::move(req), // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-      rpc::client_opts(leader_transfer_rpc_timeout));
-
-    if (!res) {
-        vlog(
-          clusterlog.info,
-          "Leadership transfer of group {} failed with error: {}",
-          transfer.group,
-          res.error().message());
-        co_return false;
-    }
-
-    if (res.value().success) {
-        co_return true;
-    }
-
-    vlog(
-      clusterlog.info,
-      "Leadership transfer of group {} failed with error: {}",
-      transfer.group,
-      raft::make_error_code(res.value().result).message());
-
-    co_return false;
-}
-
 ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
     transfer_leadership_request req{
       .group = transfer.group,
@@ -1236,11 +1191,7 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
                          rpc::client_opts(leader_transfer_rpc_timeout));
                    });
 
-    if (res.has_error() && res.error() == rpc::errc::method_not_found) {
-        // Cluster leadership transfer unavailable: use legacy raw raft leader
-        // transfer API
-        co_return co_await do_transfer_remote_legacy(std::move(transfer));
-    } else if (res.has_error()) {
+    if (res.has_error()) {
         vlog(
           clusterlog.info,
           "Leadership transfer of group {} failed with error: {}",

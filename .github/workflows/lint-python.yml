@@ -21,7 +21,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - name: Ruff format --check
+        uses: astral-sh/ruff-action@v3
         with:
           args: "format --check --diff"
+          version: "0.12.10"
+      - name: Ruff check (/tests only)
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --output-format=github"
+          src: "./tests"
           version: "0.12.10"

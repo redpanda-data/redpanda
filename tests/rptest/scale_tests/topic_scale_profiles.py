@@ -33,68 +33,6 @@ class TopicScaleTestProfile:
 
 
 class ProfileDefinitions:
-    # Minimal load
-    # 2 vcpus, 1 msg/sec, min batch sizing
-    default = {
-        "topic_count": 6000,
-        "batch_size": 512,
-        "topic_name_length": 128,
-        "num_partitions": 1,
-        "num_replicas": 3,
-        "use_kafka_batching": True,
-        "profile_name": "topic-scale-default",
-        "message_count": 100,
-        "message_period": "1s",
-        "topics_per_client": 1,
-    }
-    topic_profile_t10k_p1 = {
-        "topic_count": 10000,
-        "batch_size": 2048,
-        "topic_name_length": 200,
-        "num_partitions": 1,
-        "num_replicas": 3,
-        "use_kafka_batching": True,
-        "profile_name": "topic-scale-t10k_p1",
-        "message_count": 1000,
-        "message_period": "1s",
-        "topics_per_client": 1,
-    }
-    topic_profile_t20k_p1 = {
-        "topic_count": 19_998,
-        "batch_size": 2048,
-        "topic_name_length": 200,
-        "num_partitions": 1,
-        "num_replicas": 3,
-        "use_kafka_batching": True,
-        "profile_name": "topic-scale-t20k_p1",
-        "message_period": "6s",
-        "message_count": 2 * (60 // 6),  # 2 mins
-        "topics_per_client": 1,
-    }
-    topic_profile_t10k_p4 = {
-        "topic_count": 10000,
-        "batch_size": 2048,
-        "topic_name_length": 200,
-        "num_partitions": 4,
-        "num_replicas": 3,
-        "use_kafka_batching": True,
-        "profile_name": "topic-scale-t10k-p4",
-        "message_count": 1000,
-        "message_period": "1s",
-        "topics_per_client": 1,
-    }
-    topic_profile_t1_p40k = {
-        "topic_count": 1,
-        "batch_size": 2048,
-        "topic_name_length": 200,
-        "num_partitions": 40000,
-        "num_replicas": 3,
-        "use_kafka_batching": True,
-        "profile_name": "topic-scale-t1-p40k",
-        "message_count": 1000,
-        "message_period": "1s",
-        "topics_per_client": 1,
-    }
     topic_profile_t40k_p1 = {
         "topic_count": 39_996,
         "batch_size": 4096,

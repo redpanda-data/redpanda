@@ -13,6 +13,7 @@
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "http/tests/utils.h"
+#include "http/utils.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/iostream.hh>
@@ -247,11 +248,13 @@ struct s3_imposter_fixture::content_handler {
             if (
               fixture._search_on_get_list
               && request.get_query_param("list-type") == "2") {
-                auto prefix = request.get_query_param("prefix");
-                auto delimiter = request.get_query_param("delimiter");
+                ss::sstring prefix = http::uri_decode(
+                  request.get_query_param("prefix"));
+                ss::sstring delimiter = http::uri_decode(
+                  request.get_query_param("delimiter"));
                 auto max_keys_str = request.get_query_param("max-keys");
-                auto continuation_token_str = request.get_query_param(
-                  "continuation-token");
+                ss::sstring continuation_token_str = http::uri_decode(
+                  request.get_query_param("continuation-token"));
                 std::optional<size_t> max_keys = (max_keys_str.empty())
                                                    ? std::optional<size_t>{}
                                                    : std::stoi(max_keys_str);
@@ -333,8 +336,7 @@ struct s3_imposter_fixture::content_handler {
               fixt_log.trace, "S3 imposter response: {}", repl.response_line());
             return "";
         } else if (
-          request._method == "POST"
-          && request.query_parameters.contains("delete")) {
+          request._method == "POST" && request.has_query_param("delete")) {
             vlog(fixt_log.trace, "Received DELETE request to {}", request._url);
             if (
               expect_iter != expectations.end()
@@ -367,6 +369,70 @@ struct s3_imposter_fixture::content_handler {
             }
 
             return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
+        } else if (
+          request._method == "POST"
+          && request._url.contains("/batch/storage/v1")) {
+            vlog(fixt_log.trace, "Received batch request to {}", request._url);
+            if (
+              expect_iter != expectations.end()
+              && expect_iter->second.body.has_value()) {
+                return expect_iter->second.body.value();
+            }
+            auto keys_to_delete = keys_from_batch_delete_request(ri);
+            vlog(
+              fixt_log.trace,
+              "Parsed batched DELETE request with {} keys",
+              keys_to_delete.size());
+
+            constexpr std::string_view boundary = "response_boundary";
+
+            ss::sstring response;
+            for (size_t i = 0; i < keys_to_delete.size(); ++i) {
+                const auto& [path, key] = keys_to_delete[i];
+                // ss::sstring to_delete = fmt::format("/{}", key().string());
+                auto expect_iter = expectations.find(path);
+                bool obj_present = expect_iter != expectations.end()
+                                   && expect_iter->second.body.has_value();
+
+                if (!obj_present) {
+                    // Missing objects are assumed to be not an error (e.g.
+                    // caused by a delete retry).
+                    vlog(
+                      fixt_log.debug,
+                      "Requested DELETE request of {}, not found",
+                      path);
+                } else {
+                    vlog(fixt_log.trace, "Batched DELETE request of {}", path);
+                    expect_iter->second.body = std::nullopt;
+                }
+
+                std::string_view code = [&key, obj_present]() {
+                    if (key == "failme") {
+                        return "500 Internal Server Error";
+                    }
+                    return obj_present ? "204 No Content" : "404 Not Found";
+                }();
+
+                response += fmt::format(
+                  "--{}\r\n"
+                  "Content-Type: application/http\r\n"
+                  "Content-ID: response-{}\r\n\r\n"
+                  "HTTP/1.1 {}\r\n"
+                  "Content-Length: 0\r\n"
+                  "\r\n\r\n",
+                  boundary,
+                  i,
+                  code,
+                  i);
+            }
+
+            response += fmt::format("--{}--\r\n", boundary);
+
+            repl.set_status(reply::status_type::ok);
+            repl.set_content_type(
+              fmt::format("multipart/mixed; boundary={}", boundary));
+
+            return response;
         } else {
             vunreachable("Unhandled request method {}", request._method);
         }
@@ -389,11 +455,6 @@ s3_imposter_fixture::get_configuration() {
     conf.service = cloud_roles::aws_service_name("s3");
     conf.url_style = url_style;
     conf.server_addr = server_addr;
-    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{"us-east-1"},
-      cloud_storage_clients::endpoint_url{httpd_host_name});
     return conf;
 }
 
@@ -437,18 +498,25 @@ s3_imposter_fixture::get_targets() const {
 
 void s3_imposter_fixture::set_expectations_and_listen(
   std::vector<s3_imposter_fixture::expectation> expectations,
-  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
+  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store,
+  std::set<ss::sstring> content_type_overrides) {
     const ss::sstring url_prefix = "/" + url_base();
     for (auto& expectation : expectations) {
         expectation.url.insert(
           expectation.url.begin(), url_prefix.begin(), url_prefix.end());
     }
     _server
-      ->set_routes(
-        [this, &expectations, headers_to_store = std::move(headers_to_store)](
-          ss::httpd::routes& r) mutable {
-            set_routes(r, expectations, std::move(headers_to_store));
-        })
+      ->set_routes([this,
+                    &expectations,
+                    headers_to_store = std::move(headers_to_store),
+                    ct_overrides = std::move(content_type_overrides)](
+                     ss::httpd::routes& r) mutable {
+          set_routes(
+            r,
+            expectations,
+            std::move(headers_to_store),
+            std::move(ct_overrides));
+      })
       .get();
     _server->listen(_server_addr).get();
 }
@@ -494,7 +562,8 @@ ss::sstring s3_imposter_fixture::url_base() const {
 void s3_imposter_fixture::set_routes(
   ss::httpd::routes& r,
   const std::vector<s3_imposter_fixture::expectation>& expectations,
-  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
+  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store,
+  std::set<ss::sstring> content_type_overrides) {
     using namespace ss::httpd;
     using reply = ss::http::reply;
     _content_handler = ss::make_shared<content_handler>(
@@ -503,7 +572,8 @@ void s3_imposter_fixture::set_routes(
       [this](const_req req, reply& repl, [[maybe_unused]] ss::sstring& type) {
           return _content_handler->handle(req, repl);
       },
-      "xml");
+      "xml",
+      std::move(content_type_overrides));
     r.add_default_handler(_handler.get());
 }
 
@@ -570,5 +640,44 @@ keys_from_delete_objects_request(const http_test_utils::request_info& req) {
         }
     }
 
+    return keys;
+}
+
+std::vector<std::pair<ss::sstring, cloud_storage_clients::object_key>>
+keys_from_batch_delete_request(const http_test_utils::request_info& req) {
+    std::vector<std::pair<ss::sstring, cloud_storage_clients::object_key>> keys;
+    auto buffer_stream = std::istringstream{std::string{req.content}};
+
+    // crudely iterate over request lines, stripping out object keys
+    constexpr std::string_view method{"DELETE "};
+
+    std::string line;
+    while (std::getline(buffer_stream, line)) {
+        auto pos = line.find(method);
+        if (pos != 0) {
+            continue;
+        }
+
+        pos += method.size();
+
+        auto ver_pos = line.find(" HTTP/");
+        if (ver_pos == line.npos) {
+            continue;
+        }
+
+        auto path = std::string_view{line}.substr(pos, ver_pos - pos);
+        auto last_slash_pos = path.find_last_of('/');
+        if (last_slash_pos == path.npos) {
+            continue;
+        }
+
+        auto key_pos = last_slash_pos + 1;
+        if (key_pos >= path.size()) {
+            continue;
+        }
+
+        auto key = path.substr(key_pos);
+        keys.emplace_back(path, cloud_storage_clients::object_key{key});
+    }
     return keys;
 }

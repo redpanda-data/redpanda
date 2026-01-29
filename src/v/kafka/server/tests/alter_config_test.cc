@@ -1639,3 +1639,83 @@ FIXTURE_TEST(
   test_unlicensed_alter_configs_no_cluster_config, alter_config_test_fixture) {
     alter_config_no_license_test(false);
 }
+
+FIXTURE_TEST(test_tristate_handling_alter_config, alter_config_test_fixture) {
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    using map_t = absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>;
+
+    // 0 is a valid value for a tristate.
+    {
+        map_t properties;
+        properties.emplace(
+          "min.cleanable.dirty.ratio",
+          std::make_pair("0", kafka::config_resource_operation::set));
+
+        auto resp = incremental_alter_configs(
+          make_incremental_alter_topic_config_resource_cv(test_tp, properties));
+
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::none);
+        auto describe_resp = describe_configs(test_tp);
+        assert_property_value(
+          test_tp, "min.cleanable.dirty.ratio", "0", describe_resp);
+    }
+
+    // -1 disables a tristate.
+    {
+        map_t properties;
+        properties.emplace(
+          "min.cleanable.dirty.ratio",
+          std::make_pair("-1", kafka::config_resource_operation::set));
+
+        auto resp = incremental_alter_configs(
+          make_incremental_alter_topic_config_resource_cv(test_tp, properties));
+
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::none);
+        auto describe_resp = describe_configs(test_tp);
+        assert_property_value(
+          test_tp, "min.cleanable.dirty.ratio", "-1", describe_resp);
+    }
+
+    // Valid values are valid.
+    {
+        map_t properties;
+        properties.emplace(
+          "min.cleanable.dirty.ratio",
+          std::make_pair("0.8", kafka::config_resource_operation::set));
+
+        auto resp = incremental_alter_configs(
+          make_incremental_alter_topic_config_resource_cv(test_tp, properties));
+
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::none);
+        auto describe_resp = describe_configs(test_tp);
+        assert_property_value(
+          test_tp, "min.cleanable.dirty.ratio", "0.8", describe_resp);
+    }
+
+    // Anything < 0 disables a tristate.
+    {
+        map_t properties;
+        properties.emplace(
+          "min.cleanable.dirty.ratio",
+          std::make_pair("-999", kafka::config_resource_operation::set));
+
+        auto resp = incremental_alter_configs(
+          make_incremental_alter_topic_config_resource_cv(test_tp, properties));
+
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.responses[0].error_code, kafka::error_code::none);
+        auto describe_resp = describe_configs(test_tp);
+        assert_property_value(
+          test_tp, "min.cleanable.dirty.ratio", "-1", describe_resp);
+    }
+}

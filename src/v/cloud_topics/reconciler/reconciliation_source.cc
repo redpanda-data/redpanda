@@ -119,10 +119,7 @@ public:
         if (cfg.max_offset < cfg.start_offset) {
             co_return model::make_empty_record_batch_reader();
         }
-        auto reader = co_await _fe->make_reader(
-          cfg,
-          /*debounce_deadline=*/
-          std::nullopt);
+        auto reader = co_await _fe->make_reader(cfg);
 
         // It's important the `aborted_transaction_tracker_impl` takes a shared
         // so we don't have to worry about the lifetimes of the reader and

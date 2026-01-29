@@ -9,6 +9,9 @@
  */
 #include "datalake/tests/record_generator.h"
 
+#include "iceberg/conversion/json_schema/frontend.h"
+#include "iceberg/conversion/json_schema/ir.h"
+#include "json/document.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "schema/registry.h"
@@ -17,6 +20,7 @@
 
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/util/log.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <avro/Encoder.hh>
@@ -27,11 +31,13 @@
 #include <google/protobuf/descriptor_database.h>
 #include <google/protobuf/dynamic_message.h>
 #include <google/protobuf/text_format.h>
+#include <rapidjson/error/en.h>
 
 namespace datalake::tests {
 
-ss::future<
-  checked<pandaproxy::schema_registry::schema_id, record_generator::error>>
+ss::future<checked<
+  pandaproxy::schema_registry::context_schema_id,
+  record_generator::error>>
 record_generator::register_avro_schema(
   std::string_view name, std::string_view schema) {
     using namespace pandaproxy::schema_registry;
@@ -99,11 +105,11 @@ record_generator::add_random_protobuf_record(
     if (it == _id_by_name.end()) {
         co_return error{fmt::format("Schema {} is missing", name)};
     }
-    auto schema_id = it->second;
-    auto schema_def = co_await _sr->get_valid_schema(schema_id);
+    auto ctx_schema_id = it->second;
+    auto schema_def = co_await _sr->get_valid_schema(ctx_schema_id);
     if (!schema_def) {
-        co_return error{
-          fmt::format("Unable to find schema def for id: {}", schema_id)};
+        co_return error{fmt::format(
+          "Unable to find schema def for id: {}", ctx_schema_id.id)};
     }
     if (schema_def->type() != schema_type::protobuf) {
         co_return error{fmt::format(
@@ -131,12 +137,12 @@ record_generator::add_random_protobuf_record(
     if (md_res.has_error()) {
         co_return error{fmt::format(
           "Wasn't able to get descriptor for protobuf def with id: {}",
-          schema_id)};
+          ctx_schema_id.id)};
     }
 
     iobuf val;
     val.append("\0", 1);
-    int32_t encoded_id = ss::cpu_to_be(schema_id());
+    int32_t encoded_id = ss::cpu_to_be(ctx_schema_id.id());
     val.append((const uint8_t*)(&encoded_id), 4);
 
     testing::protobuf_generator pb_gen(config);
@@ -160,10 +166,11 @@ record_generator::add_random_avro_record(
     if (it == _id_by_name.end()) {
         co_return error{fmt::format("Schema {} is missing", name)};
     }
-    auto schema_id = it->second;
-    auto schema_def_res = co_await _sr->get_valid_schema(schema_id);
+    auto ctx_schema_id = it->second;
+    auto schema_def_res = co_await _sr->get_valid_schema(ctx_schema_id);
     if (!schema_def_res.has_value()) {
-        co_return error{fmt::format("Schema {} not in store", schema_id)};
+        co_return error{
+          fmt::format("Schema {} not in store", ctx_schema_id.id)};
     }
     auto& schema_def = schema_def_res.value();
     if (schema_def.type() != schema_type::avro) {
@@ -172,7 +179,7 @@ record_generator::add_random_avro_record(
     }
     iobuf val;
     val.append("\0", 1);
-    int32_t encoded_id = ss::cpu_to_be(schema_id());
+    int32_t encoded_id = ss::cpu_to_be(ctx_schema_id.id());
     val.append((const uint8_t*)(&encoded_id), 4);
 
     avro::NodePtr node_ptr;
@@ -203,6 +210,100 @@ record_generator::add_random_avro_record(
     iobuf data_buf;
     data_buf.append(snap->data(), snap->size());
     val.append(std::move(data_buf));
+
+    b.add_raw_kv(std::move(key), std::move(val));
+    co_return std::nullopt;
+}
+
+ss::future<checked<std::nullopt_t, record_generator::error>>
+record_generator::register_json_schema(
+  std::string_view name, std::string_view schema) {
+    using namespace pandaproxy::schema_registry;
+    auto id = co_await ss::coroutine::as_future(_sr->create_schema(
+      subject_schema{
+        subject{"foo"}, schema_definition{schema, schema_type::json}}));
+    if (id.failed()) {
+        co_return error{fmt::format(
+          "Error creating schema {}: {}", name, id.get_exception())};
+    }
+    auto [_, added] = _id_by_name.emplace(name, id.get());
+    if (!added) {
+        co_return error{fmt::format("Failed to add schema {} to map", name)};
+    }
+    co_return std::nullopt;
+}
+
+ss::future<checked<std::nullopt_t, record_generator::error>>
+record_generator::add_random_json_record(
+  storage::record_batch_builder& b,
+  std::string_view name,
+  std::optional<iobuf> key,
+  iceberg::conversion::json_schema::testing::generator_config config) {
+    using namespace pandaproxy::schema_registry;
+    auto it = _id_by_name.find(name);
+    if (it == _id_by_name.end()) {
+        co_return error{fmt::format("Schema {} is missing", name)};
+    }
+    auto ctx_schema_id = it->second;
+    auto schema_def_res = co_await _sr->get_valid_schema(ctx_schema_id);
+    if (!schema_def_res.has_value()) {
+        co_return error{
+          fmt::format("Schema {} not in store", ctx_schema_id.id)};
+    }
+    auto& schema_def = schema_def_res.value();
+    if (schema_def.type() != schema_type::json) {
+        co_return error{
+          fmt::format("Schema {} has wrong type: {}", name, schema_def.type())};
+    }
+
+    ss::sstring raw_schema_str;
+    struct visitor {
+        ss::sstring& raw;
+        void operator()(const avro_schema_definition&) {}
+        void operator()(const protobuf_schema_definition&) {}
+        void operator()(const json_schema_definition& d) {
+            auto buf = d.raw()();
+            raw = ss::sstring(
+              iobuf_const_parser(buf).read_string(buf.size_bytes()));
+        }
+    };
+    schema_def.visit(visitor{raw_schema_str});
+    if (raw_schema_str.empty()) {
+        co_return error{
+          fmt::format("Schema {} didn't resolve to JSON schema", name)};
+    }
+
+    json::Document doc;
+    doc.Parse(raw_schema_str.c_str(), raw_schema_str.size());
+    if (doc.HasParseError()) {
+        co_return error{fmt::format(
+          "Failed to parse JSON schema: {}",
+          rapidjson::GetParseError_En(doc.GetParseError()))};
+    }
+
+    std::optional<iceberg::conversion::json_schema::schema> compiled;
+    try {
+        compiled.emplace(
+          iceberg::conversion::json_schema::frontend().compile(
+            doc, "https://example.com/schema.json", std::nullopt));
+    } catch (
+      const iceberg::conversion::json_schema::unsupported_feature_error& e) {
+        co_return error{
+          fmt::format("Failed to compile JSON schema: {}", e.what())};
+    } catch (const std::exception& e) {
+        co_return error{
+          fmt::format("Failed to compile JSON schema: {}", e.what())};
+    }
+
+    auto json_data = iceberg::conversion::json_schema::testing::generator(
+                       config)
+                       .generate_json(compiled->root());
+
+    iobuf val;
+    val.append("\0", 1);
+    int32_t encoded_id = ss::cpu_to_be(ctx_schema_id.id());
+    val.append((const uint8_t*)(&encoded_id), 4);
+    val.append(iobuf::from(json_data));
 
     b.add_raw_kv(std::move(key), std::move(val));
     co_return std::nullopt;

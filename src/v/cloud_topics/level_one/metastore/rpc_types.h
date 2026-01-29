@@ -189,10 +189,22 @@ struct get_offsets_request
     model::topic_id_partition tp;
 };
 
+struct extent_metadata
+  : serde::
+      envelope<extent_metadata, serde::version<0>, serde::compat_version<0>> {
+    auto serde_fields() {
+        return std::tie(base_offset, last_offset, max_timestamp);
+    }
+
+    kafka::offset base_offset;
+    kafka::offset last_offset;
+    model::timestamp max_timestamp;
+};
+
 struct get_compaction_info_reply
   : serde::envelope<
       get_compaction_info_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     auto serde_fields() {
         return std::tie(
@@ -200,7 +212,9 @@ struct get_compaction_info_reply
           dirty_ranges,
           removable_tombstone_ranges,
           dirty_ratio,
-          earliest_dirty_ts);
+          earliest_dirty_ts,
+          compaction_epoch,
+          start_offset);
     }
 
     errc ec;
@@ -208,6 +222,8 @@ struct get_compaction_info_reply
     offset_interval_set removable_tombstone_ranges;
     double dirty_ratio;
     std::optional<model::timestamp> earliest_dirty_ts;
+    partition_state::compaction_epoch_t compaction_epoch;
+    kafka::offset start_offset;
 };
 struct get_compaction_info_request
   : serde::envelope<
@@ -312,6 +328,60 @@ struct remove_topics_request
 
     model::partition_id metastore_partition;
     chunked_vector<model::topic_id> topics;
+};
+
+struct get_compaction_infos_reply
+  : serde::envelope<
+      get_compaction_infos_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(ec, responses); }
+
+    errc ec;
+
+    chunked_hash_map<model::topic_id_partition, get_compaction_info_reply>
+      responses;
+};
+struct get_compaction_infos_request
+  : serde::envelope<
+      get_compaction_infos_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = get_compaction_infos_reply;
+    auto serde_fields() { return std::tie(metastore_partition, logs); }
+
+    model::partition_id metastore_partition;
+    chunked_vector<get_compaction_info_request> logs;
+};
+
+struct get_extent_metadata_reply
+  : serde::envelope<
+      get_extent_metadata_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(ec, extents); }
+
+    errc ec;
+    chunked_vector<extent_metadata> extents;
+};
+struct get_extent_metadata_request
+  : serde::envelope<
+      get_extent_metadata_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = get_extent_metadata_reply;
+
+    enum class order { forwards, backwards };
+
+    auto serde_fields() {
+        return std::tie(tp, min_offset, max_offset, o, max_num_extents);
+    }
+
+    model::topic_id_partition tp;
+    kafka::offset min_offset;
+    kafka::offset max_offset;
+    order o;
+    size_t max_num_extents;
 };
 
 } //  namespace cloud_topics::l1::rpc

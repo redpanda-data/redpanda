@@ -73,15 +73,13 @@ std::optional<std::filesystem::path> uri_converter::from_uri(
             || protocol.back() != ':') {
               return std::nullopt;
           }
-          auto dotpos = uri.get_host().find('.');
-          if (dotpos == std::string::npos) {
-              // Host is the bucket name.
-              if (uri.get_host() != bucket()) {
-                  return std::nullopt;
-              }
-          } else {
+          if (uri.get_host() != bucket()) {
               // We are not generating yet virtual host style URIs so don't
               // parse them yet.
+              //
+              // We also exclude the possibility of URI looking like
+              // s3://bucket.s3.amazonaws.com/path/to/object. I haven't seen
+              // such examples so assume they do no exist.
               return std::nullopt;
           }
           // Ensure that minimum path length is at least enough to cover the

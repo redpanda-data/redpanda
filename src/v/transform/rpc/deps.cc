@@ -82,6 +82,18 @@ public:
           shard_id, ktp, std::move(fn), require_leader);
     }
 
+    ss::future<result<chunked_vector<model::record_batch>, cluster::errc>>
+    consume_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<
+        ss::future<result<chunked_vector<model::record_batch>, cluster::errc>>(
+          kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader require_leader) final {
+        return _proxy->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), require_leader);
+    }
+
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ntp& ntp,

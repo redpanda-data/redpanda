@@ -48,7 +48,7 @@ public:
       manager* manager,
       ss::lowres_clock::duration task_reconciler_interval,
       link_test* link_test,
-      model::metadata metadata,
+      model::metadata_ptr metadata,
       std::unique_ptr<kafka::client::cluster> cluster_connection);
 
     ss::future<> start() override;
@@ -69,7 +69,7 @@ public:
       ::model::node_id self,
       model::id_t link_id,
       manager* manager,
-      model::metadata metadata,
+      model::metadata_ptr metadata,
       std::unique_ptr<kafka::client::cluster> cluster_connection) override {
         return std::make_unique<test_link>(
           self,
@@ -240,7 +240,7 @@ test_link::test_link(
   manager* manager,
   ss::lowres_clock::duration task_reconciler_interval,
   link_test* link_test,
-  model::metadata metadata,
+  model::metadata_ptr metadata,
   std::unique_ptr<kafka::client::cluster> cluster_connection)
   : link(
       self,
@@ -256,11 +256,11 @@ test_link::test_link(
 
 ss::future<> test_link::start() {
     co_await link::start();
-    _link_test->add_link_to_list(config().uuid, this);
+    _link_test->add_link_to_list(get_config()->uuid, this);
 }
 
 ss::future<> test_link::stop() noexcept {
-    _link_test->remove_link_from_list(config().uuid);
+    _link_test->remove_link_from_list(get_config()->uuid);
     co_await link::stop();
 }
 } // namespace
@@ -278,14 +278,14 @@ TEST_F_CORO(link_test, start_with_table_entries) {
     auto remove_callback = ss::defer(
       [this, callback_id] { unregister_callback(callback_id); });
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, co_await link.copy());
     co_await _manager->start();
     ASSERT_NO_THROW_CORO(co_await cv.wait(5s))
       << "Timed out waiting for link creation";
     auto it = _links.find(link_uuid);
     ASSERT_NE_CORO(it, _links.end())
       << "Unable to find link with UUID: " << link_uuid;
-    EXPECT_EQ(it->second->config(), link);
+    EXPECT_EQ(*(it->second->get_config()), link);
     co_await _manager->stop();
 }
 
@@ -302,31 +302,31 @@ TEST_F_CORO(link_test_manager_started, test_create_link_and_update) {
     auto remove_callback = ss::defer(
       [this, callback_id] { unregister_callback(callback_id); });
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, co_await link.copy());
     ASSERT_NO_THROW_CORO(co_await cv.wait(5s))
       << "Timed out waiting for link creation";
     auto it = _links.find(link_uuid);
     ASSERT_NE_CORO(it, _links.end())
       << "Unable to find link with UUID: " << link_uuid;
-    EXPECT_EQ(it->second->config(), link);
+    EXPECT_EQ(*(it->second->get_config()), link);
 
     model::metadata updated_link{
       .name = model::name_t("link1"),
       .uuid = link_uuid,
       .connection = model::connection_config{
         .bootstrap_servers{net::unresolved_address{"localhost", 9092}}}};
-    co_await upsert_link(link_id, updated_link.copy());
+    co_await upsert_link(link_id, co_await updated_link.copy());
 
     it = _links.find(link_uuid);
     ASSERT_NE_CORO(it, _links.end())
       << "Unable to find link with UUID: " << link_uuid;
     for (auto i = 0; i < 5; ++i) {
-        if (it->second->config() == updated_link) {
+        if (*(it->second->get_config()) == updated_link) {
             break;
         }
         co_await ss::sleep(100ms);
     }
-    ASSERT_EQ_CORO(it->second->config(), updated_link)
+    ASSERT_EQ_CORO(*(it->second->get_config()), updated_link)
       << "Link configuration did not update after 5 attempts";
 }
 
@@ -343,7 +343,7 @@ TEST_F_CORO(link_test_manager_started, test_remove_link) {
     auto remove_callback = ss::defer(
       [this, callback_id] { unregister_callback(callback_id); });
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, std::move(link));
     ASSERT_NO_THROW_CORO(co_await cv.wait(5s))
       << "Timed out waiting for link creation";
     auto it = _links.find(link_uuid);
@@ -393,7 +393,7 @@ public:
       ::model::node_id self,
       model::id_t link_id,
       manager* manager,
-      model::metadata metadata,
+      model::metadata_ptr metadata,
       std::unique_ptr<kafka::client::cluster> cluster_connection) override {
         return std::make_unique<evil_link>(
           self,
@@ -468,7 +468,7 @@ TEST_F_CORO(evil_link_test, test_evil_link_start_stop) {
       .connection = model::connection_config{}};
     model::id_t link_id(1);
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, std::move(link));
 
     // Enough time for the upsert callback to fire but no link should be present
     co_await ss::sleep(500ms);

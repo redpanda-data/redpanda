@@ -41,6 +41,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<partition_balancer_backend>&,
       ss::sharded<partition_manager>&,
+      ss::sharded<partition_leaders_table>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<result<chunked_vector<ntp_reconciliation_state>>>
@@ -65,12 +66,16 @@ public:
     ss::future<result<ntp_reconciliation_state>> get_reconciliation_state(
       model::node_id, model::ntp, model::timeout_clock::time_point);
 
+    ss::future<result<ntp_reconciliation_state>>
+      get_partition_leader_reconciliation_state(
+        model::ntp, model::timeout_clock::time_point);
+
     // high level APIs
     ss::future<std::error_code> wait_for_topic(
       model::topic_namespace_view, model::timeout_clock::time_point);
 
     ss::future<result<chunked_vector<partition_reconfiguration_state>>>
-    get_partitions_reconfiguration_state(
+    get_partitions_leader_reconfiguration_state(
       const chunked_vector<model::ntp>&, model::timeout_clock::time_point);
     /**
      * Returns state of controller backend from each node in the cluster for
@@ -88,9 +93,6 @@ public:
     std::optional<ss::shard_id> shard_for(const raft::group_id& group) const;
     std::optional<ss::shard_id> shard_for(const model::ntp& ntp) const;
 
-    // Remakes the partition for the provided raft group.
-    ss::future<std::error_code> remake_partition(raft::group_id g);
-
 private:
     ss::future<std::optional<backend_operation>>
       get_current_op(model::ntp, ss::shard_id);
@@ -107,6 +109,7 @@ private:
     ss::sharded<members_table>& _members;
     ss::sharded<partition_balancer_backend>& _partition_balancer;
     ss::sharded<partition_manager>& _partition_manager;
+    ss::sharded<partition_leaders_table>& _partition_leaders;
     ss::sharded<ss::abort_source>& _as;
 };
 } // namespace cluster

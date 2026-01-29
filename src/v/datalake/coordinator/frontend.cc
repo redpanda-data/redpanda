@@ -297,7 +297,7 @@ ss::future<bool> frontend::ensure_topic_exists() {
     try {
         auto res = co_await _topics_frontend->local().autocreate_topics(
           {std::move(topic)},
-          config::shard_local_cfg().create_topic_timeout_ms());
+          config::shard_local_cfg().internal_rpc_request_timeout_ms());
         vassert(
           res.size() == 1,
           "Incorrect result when creating {}, expected 1 response, got: {}",

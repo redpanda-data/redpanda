@@ -116,7 +116,7 @@ private:
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
-    mutex _lock{"members_backend::lock"};
+    ssx::mutex _lock{"members_backend::lock"};
     model::term_id _last_term;
 
     // replicas reallocations in progress

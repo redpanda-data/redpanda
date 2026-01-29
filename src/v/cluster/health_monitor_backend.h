@@ -14,13 +14,15 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/node_status_table.h"
 #include "cluster/notification.h"
 #include "features/feature_table.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
 #include "storage/disk.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
@@ -71,7 +73,8 @@ public:
       ss::sharded<drain_manager>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<partition_leaders_table>&,
-      ss::sharded<topic_table>&);
+      ss::sharded<topic_table>&,
+      ss::sharded<node_status_table>&);
 
     ss::future<> stop();
 
@@ -165,6 +168,9 @@ private:
 
     ss::future<chunked_vector<topic_status>> collect_topic_status();
 
+    // get the status info of all nodes which are past auto decommission timeout
+    node_liveness_report collect_node_liveness_report();
+
     result<node_health_report>
       process_node_reply(model::node_id, result<get_node_health_reply>);
 
@@ -199,7 +205,7 @@ private:
          * The size of either list is capped at max_partitions_report, and
          * other elements are dropped.
          */
-        absl::node_hash_set<model::ntp> leaderless, under_replicated;
+        chunked_hash_set<model::ntp> leaderless, under_replicated;
 
         /**
          * The true count of leaderless and under-replicated partitions, not
@@ -232,6 +238,7 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<partition_leaders_table>& _partition_leaders_table;
     ss::sharded<topic_table>& _topic_table;
+    ss::sharded<node_status_table>& _node_status_table;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
@@ -246,7 +253,7 @@ private:
     std::optional<size_t> _bytes_in_cloud_storage;
 
     ss::gate _gate;
-    mutex _refresh_mutex{"health_monitor_backend::refresh"};
+    ssx::mutex _refresh_mutex{"health_monitor_backend::refresh"};
     ss::sharded<node::local_monitor>& _local_monitor;
     model::node_id _self;
 
@@ -254,7 +261,7 @@ private:
       _node_callbacks;
     cluster::notification_id_type _next_callback_id{0};
 
-    mutex _report_collection_mutex{"health_report_collection"};
+    ssx::mutex _report_collection_mutex{"health_report_collection"};
 
     friend struct health_report_accessor;
 };

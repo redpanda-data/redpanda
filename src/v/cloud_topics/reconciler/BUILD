@@ -3,6 +3,21 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = [":__subpackages__"])
 
 redpanda_cc_library(
+    name = "adaptive_interval",
+    srcs = [
+        "adaptive_interval.cc",
+    ],
+    hdrs = [
+        "adaptive_interval.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/config",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "reconciliation_consumer",
     srcs = [
         "reconciliation_consumer.cc",
@@ -50,11 +65,13 @@ redpanda_cc_library(
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/frontend",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
+        "//src/v/config",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/utils:retry_chain_node",
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":adaptive_interval",
         ":reconciler_probe",
         ":reconciliation_consumer",
         "//src/v/base",

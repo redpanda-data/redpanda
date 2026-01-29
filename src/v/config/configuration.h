@@ -28,6 +28,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
+#include "security/config.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/sstring.hh>
@@ -211,23 +212,24 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> metadata_dissemination_interval_ms;
     property<std::chrono::milliseconds> metadata_dissemination_retry_delay_ms;
     property<int16_t> metadata_dissemination_retries;
-    property<std::chrono::milliseconds> tm_sync_timeout_ms;
+    deprecated_property tm_sync_timeout_ms;
     deprecated_property tx_registry_sync_timeout_ms;
     deprecated_property tm_violation_recovery_policy;
-    property<std::chrono::milliseconds> rm_sync_timeout_ms;
+    deprecated_property rm_sync_timeout_ms;
     deprecated_property find_coordinator_timeout_ms;
     deprecated_property seq_table_min_size;
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
     deprecated_property rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     enum_property<model::fetch_read_strategy> fetch_read_strategy;
+    bounded_property<size_t> fetch_max_read_concurrency;
     bounded_property<double, numeric_bounds> fetch_pid_p_coeff;
     bounded_property<double, numeric_bounds> fetch_pid_i_coeff;
     bounded_property<double, numeric_bounds> fetch_pid_d_coeff;
     bounded_property<double, numeric_bounds>
       fetch_pid_target_utilization_fraction;
     property<std::chrono::milliseconds> fetch_pid_max_debounce_ms;
-    property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
+    deprecated_property alter_topic_cfg_timeout_ms;
     property<model::cleanup_policy_bitflags> log_cleanup_policy;
     enum_property<model::timestamp_type> log_message_timestamp_type;
     deprecated_property log_message_timestamp_alert_before_ms;
@@ -243,7 +245,7 @@ struct configuration final : public config_store {
     property<bool> use_fetch_scheduler_group;
     property<bool> use_produce_scheduler_group;
     property<bool> use_kafka_handler_scheduler_group;
-    property<std::chrono::milliseconds> metadata_status_wait_timeout_ms;
+    deprecated_property metadata_status_wait_timeout_ms;
     property<std::chrono::seconds> kafka_tcp_keepalive_idle_timeout_seconds;
     property<std::chrono::seconds> kafka_tcp_keepalive_probe_interval_seconds;
     property<uint32_t> kafka_tcp_keepalive_probes;
@@ -272,7 +274,8 @@ struct configuration final : public config_store {
     property<std::optional<uint32_t>>
       log_compaction_merge_max_segments_per_range;
     property<std::optional<uint32_t>> log_compaction_merge_max_ranges;
-    property<bool> log_compaction_disable_tx_batch_removal;
+    deprecated_property log_compaction_disable_tx_batch_removal;
+    property<bool> log_compaction_tx_batch_removal_enabled;
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;
@@ -291,14 +294,14 @@ struct configuration final : public config_store {
     // same as transaction.max.timeout.ms in Apache Kafka.
     property<std::chrono::milliseconds> transaction_max_timeout_ms;
     property<std::chrono::seconds> tx_log_stats_interval_s;
-    property<std::chrono::milliseconds> create_topic_timeout_ms;
-    property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
+    deprecated_property create_topic_timeout_ms;
+    deprecated_property wait_for_leader_timeout_ms;
     property<int32_t> default_topic_partitions;
     property<bool> disable_batch_cache;
     property<std::chrono::milliseconds> raft_election_timeout_ms;
     property<std::chrono::milliseconds> kafka_group_recovery_timeout_ms;
     property<std::chrono::milliseconds> replicate_append_timeout_ms;
-    property<std::chrono::milliseconds> recovery_append_timeout_ms;
+    deprecated_property recovery_append_timeout_ms;
     property<size_t> raft_replicate_batch_window_size;
     property<size_t> raft_learner_recovery_rate;
     property<bool> raft_recovery_throttle_disable_dynamic_mode;
@@ -362,7 +365,7 @@ struct configuration final : public config_store {
     property<bool> kafka_enable_partition_reassignment;
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
-    property<std::chrono::milliseconds> node_management_operation_timeout_ms;
+    deprecated_property node_management_operation_timeout_ms;
     property<uint32_t> kafka_request_max_bytes;
     property<uint32_t> kafka_batch_max_bytes;
     property<std::vector<ss::sstring>> kafka_nodelete_topics;
@@ -603,6 +606,10 @@ struct configuration final : public config_store {
       partition_autobalancing_mode;
     property<std::chrono::seconds>
       partition_autobalancing_node_availability_timeout_sec;
+
+    property<std::optional<std::chrono::seconds>>
+      partition_autobalancing_node_autodecommission_timeout_sec;
+
     bounded_property<unsigned> partition_autobalancing_max_disk_usage_percent;
     property<std::chrono::milliseconds>
       partition_autobalancing_tick_interval_ms;
@@ -700,6 +707,7 @@ struct configuration final : public config_store {
 
     enterprise<property<bool>> schema_registry_enable_authorization;
     property<bool> schema_registry_always_normalize;
+    property<bool> schema_registry_enable_qualified_subjects;
     deprecated_property schema_registry_protobuf_renderer_v2;
     property<std::optional<uint32_t>> pp_sr_smp_max_non_local_requests;
     bounded_property<size_t> max_in_flight_schema_registry_requests_per_shard;
@@ -721,6 +729,9 @@ struct configuration final : public config_store {
     property<std::chrono::seconds> oidc_clock_skew_tolerance;
     property<ss::sstring> oidc_principal_mapping;
     property<std::chrono::seconds> oidc_keys_refresh_interval;
+    property<ss::sstring> oidc_group_claim_path;
+
+    enum_property<security::oidc::nested_group_behavior> nested_group_behavior;
 
     // HTTP Authentication
     enterprise<property<std::vector<ss::sstring>>> http_authentication;
@@ -785,6 +796,7 @@ struct configuration final : public config_store {
     property<bool> iceberg_disable_automatic_snapshot_expiry;
     property<std::optional<ss::sstring>> iceberg_topic_name_dot_replacement;
     property<ss::sstring> iceberg_dlq_table_suffix;
+    property<std::vector<ss::sstring>> iceberg_default_catalog_namespace;
 
     property<bool> enable_host_metrics;
 
@@ -803,6 +815,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> datalake_scheduler_disk_reservation_block_size;
     property<bool> consumer_offsets_topic_batch_cache_enabled;
     enterprise<property<bool>> enable_shadow_linking;
+    property<std::chrono::milliseconds> internal_rpc_request_timeout_ms;
 
     configuration();
 
@@ -814,9 +827,33 @@ public:
     property<std::chrono::milliseconds> cloud_topics_produce_upload_interval;
     property<size_t> cloud_topics_produce_cardinality_threshold;
     property<bool> cloud_topics_disable_reconciliation_loop;
-    property<std::chrono::milliseconds> cloud_topics_reconciliation_interval;
+    property<std::chrono::milliseconds>
+      cloud_topics_reconciliation_min_interval;
+    property<std::chrono::milliseconds>
+      cloud_topics_reconciliation_max_interval;
+    property<double> cloud_topics_reconciliation_target_fill_ratio;
+    property<double> cloud_topics_reconciliation_speedup_blend;
+    property<double> cloud_topics_reconciliation_slowdown_blend;
+    property<size_t> cloud_topics_reconciliation_max_object_size;
+    property<size_t> cloud_topics_compaction_max_object_size;
+    property<std::chrono::milliseconds> cloud_topics_compaction_interval_ms;
+    bounded_property<uint64_t> cloud_topics_compaction_key_map_memory;
     property<std::chrono::milliseconds>
       cloud_topics_long_term_garbage_collection_interval;
+    property<std::chrono::milliseconds>
+      cloud_topics_epoch_service_epoch_increment_interval;
+    property<std::chrono::milliseconds>
+      cloud_topics_epoch_service_local_epoch_cache_duration;
+
+    property<std::chrono::milliseconds>
+      cloud_topics_short_term_gc_minimum_object_age;
+    property<std::chrono::milliseconds> cloud_topics_short_term_gc_interval;
+    property<std::chrono::milliseconds>
+      cloud_topics_short_term_gc_backoff_interval;
+
+    property<bool> cloud_topics_parallel_fetch_enabled;
+
+    property<bool> cloud_topics_fetch_debounce_enabled;
 
     development_feature_property<int> development_feature_property_testing_only;
 
@@ -846,6 +883,8 @@ private:
         return !enable_developmental_unrecoverable_data_corrupting_features()
                   .empty();
     }
+
+    ss::sstring store_name() const override { return "cluster"; }
 };
 
 template<typename T>

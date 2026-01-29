@@ -253,6 +253,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
       1,
       log->stm_manager()->max_removable_local_log_offset(),
       log->stm_manager()->max_removable_local_log_offset(),
+      log->stm_manager()->max_removable_local_log_offset(),
       std::nullopt,
       std::nullopt,
       std::chrono::milliseconds{0},
@@ -700,6 +701,7 @@ TEST_P(CloudStorageEndToEndManualTest, TestTimequeryAfterArchivalGC) {
       1, // max_bytes_in_log
       log->stm_manager()->max_removable_local_log_offset(),
       log->stm_manager()->max_removable_local_log_offset(),
+      log->stm_manager()->max_removable_local_log_offset(),
       std::nullopt,
       std::nullopt,
       std::chrono::milliseconds{0},
@@ -769,6 +771,116 @@ TEST_P(CloudStorageEndToEndManualTest, TestTimequeryAfterArchivalGC) {
     ASSERT_EQ(
       model::offset_cast(offset),
       kafka::next_offset(first_seg.last_kafka_offset()));
+}
+
+TEST_P(
+  CloudStorageEndToEndManualTest, TestTimequeryWithShortRetentionAndCloudData) {
+    // Regression test for a bug where timequery on a topic using tiered storage
+    // incorrectly returns no result when:
+    // 1. The timequery's max offset is before the start offset of the local
+    // log.
+    // 2. The timestamp is after the start timestamp of the local log.
+    // This can happen, for example, if retention is short and the entire local
+    // log is truncated. The local log will retain the active segment, so the
+    // start offset of the local log will be the high watermark and the start
+    // timestamp will be the base timestamp of the active segment.
+
+    // Enable time-based uploads with a short interval to force partial uploads
+    test_local_cfg.get("cloud_storage_segment_max_upload_interval_sec")
+      .set_value(std::make_optional<std::chrono::seconds>(1s));
+
+    ASSERT_TRUE(archiver->sync_for_tests().get());
+
+    // Write some data.
+    const auto batches_per_segment = 200;
+    const auto num_segs = 3;
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(batches_per_segment)
+                           .base_timestamp(model::timestamp{0})
+                           .batch_time_delta_ms(1)
+                           .produce()
+                           .get();
+    ASSERT_EQ(total_records, batches_per_segment * num_segs);
+
+    // Append batches to the active segment without rolling. This ensures
+    // the active segment has a base timestamp from user data.
+    auto ts = model::timestamp{600};
+    std::vector<kv_t> records0 = kv_t::sequence(total_records, 100);
+    gen.producer()
+      .produce_to_partition(
+        partition->ntp().tp.topic,
+        partition->ntp().tp.partition,
+        std::move(records0),
+        ts)
+      .get();
+
+    // Our goal is to advance the log's raft start offset to the HWM
+    // after the writes.
+    auto hwm = partition->high_watermark();
+    auto target_offset = model::prev_offset(hwm);
+
+    // Flush to ensure data is on disk, otherwise it can't be uploaded.
+    partition->log()->flush().get();
+
+    // Request archiver to flush uploads up to high watermark
+    // This uses the time-based upload mechanism since
+    // cloud_storage_segment_max_upload_interval_sec is set
+    auto flush_res = archiver->flush();
+    ASSERT_EQ(flush_res.response, archival::flush_response::accepted);
+
+    // Wait for upload interval to expire, then trigger upload.
+    // This will force the active segment's data to be uploaded.
+    ss::sleep(1100ms).get();
+
+    ASSERT_TRUE(archiver->sync_for_tests().get());
+    archiver
+      ->upload_next_candidates(
+        archival::archival_stm_fence{.emit_rw_fence_cmd = false})
+      .get();
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&]() {
+        auto manifest_last = archiver->manifest().get_last_offset();
+        return manifest_last >= target_offset;
+    });
+
+    auto manifest_res = archiver->upload_manifest("test").get();
+    ASSERT_EQ(manifest_res, cloud_storage::upload_result::success);
+    archiver->flush_manifest_clean_offset().get();
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&]() {
+        auto manifest_last = archiver->manifest().get_last_offset();
+        auto last_clean = partition->archival_meta_stm()->get_last_clean_at();
+        return std::min(manifest_last, last_clean) >= target_offset;
+    });
+
+    // The archival_meta_stm should have written a snapshot that advances the
+    // raft start offset past the uploaded data. Let's verify and potentially
+    // trigger another snapshot to ensure the raft start offset advances.
+    auto target_snapshot_offset
+      = partition->archival_meta_stm()->cloud_recoverable_offset();
+    if (partition->raft()->start_offset() < target_snapshot_offset) {
+        auto snapshot_data = partition->archival_meta_stm()
+                               ->take_raft_snapshot(target_snapshot_offset)
+                               .get();
+        partition->raft()
+          ->write_snapshot(
+            raft::write_snapshot_cfg(
+              target_snapshot_offset, std::move(snapshot_data)))
+          .get();
+    }
+
+    // Now we have the scenario where raft start offset is past data in the
+    // active segment.
+    tests::kafka_list_offsets_transport lister(make_kafka_client().get());
+    lister.start().get();
+    auto deferred_l_close = ss::defer([&lister] { lister.stop().get(); });
+
+    auto offset
+      = lister.list_offset_for_partition(topic_name, model::partition_id(0), ts)
+          .get();
+    ASSERT_EQ(offset, model::offset{600});
 }
 
 class CloudStorageManualMultiNodeTestBase
@@ -1011,6 +1123,7 @@ TEST_P(EndToEndFixture, TestCloudStorageTimequery) {
     storage::housekeeping_config housekeeping_conf(
       model::timestamp::max(),
       0,
+      log->stm_manager()->max_removable_local_log_offset(),
       log->stm_manager()->max_removable_local_log_offset(),
       log->stm_manager()->max_removable_local_log_offset(),
       std::nullopt,
@@ -1432,7 +1545,92 @@ TEST_F(ManualFixture, TestSpilloverWithTruncationRetainsStartOffset) {
       archiver.manifest().get_start_kafka_offset_override(), kafka::offset{48});
 }
 
-INSTANTIATE_TEST_SUITE_P(WithOverride, EndToEndFixture, ::testing::Bool());
+// Test a scenario where after a topic recreation the spillover manifests from
+// the previous incarnation could be applied to the new topic, causing errors or
+// reading wrong data.
+TEST_F(ManualFixture, TestSpilloverCacheCollision) {
+    test_local_cfg.get("log_compaction_interval_ms")
+      .set_value(std::chrono::duration_cast<std::chrono::milliseconds>(1s));
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+    test_local_cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::make_optional<size_t>(2));
+    test_local_cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{});
 
+    const model::topic topic_name("spillover_truncate_test");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
+    props.retention_bytes = tristate<size_t>(disable_tristate_t{});
+    props.retention_duration = tristate<std::chrono::milliseconds>(
+      disable_tristate_t{});
+
+    // Run two iterations of topic creation, data production, spillover, and
+    // deletion. The second iteration will reuse the topic name, and we want to
+    // verify that the first incarnation does not affect the
+    // second incarnation.
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        vlog(e2e_test_log.info, "Running iteration {}", iteration);
+
+        add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+        wait_for_leader(ntp).get();
+
+        auto partition = app.partition_manager.local().get(ntp);
+        auto* archiver = &partition->archiver().value().get();
+        archiver->initialize_probe();
+
+        vlog(e2e_test_log.info, "Seeding partition data");
+
+        tests::remote_segment_generator gen(
+          make_kafka_client().get(), *partition);
+        auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
+
+        auto total_records = gen.num_segments(6)
+                               .batches_per_segment(5)
+                               .records_per_batch(1)
+                               .start_ix(iteration)
+                               .produce()
+                               .get();
+        ASSERT_GE(total_records, 30);
+
+        ASSERT_TRUE(archiver->sync_for_tests().get());
+
+        // Evict local log to force reads from tiered storage.
+        vlog(e2e_test_log.info, "Setting cloud_gc to evict local log");
+        partition->log()->set_cloud_gc_offset(
+          archiver->manifest().get_last_offset());
+
+        RPTEST_REQUIRE_EVENTUALLY(10s, [log = partition->log()] {
+            return log->segments().size() == 1;
+        });
+
+        vlog(e2e_test_log.info, "Applying spillover");
+        archiver->apply_spillover().get();
+
+        // Verify that spillover happened as we expect.
+        ASSERT_EQ(archiver->manifest().get_spillover_map().size(), 2);
+
+        // Consume all data.
+        tests::kafka_consume_transport consumer(make_kafka_client().get());
+        auto deferred_c_close = ss::defer(
+          [&consumer] { consumer.stop().get(); });
+        consumer.start().get();
+        auto consumed = consumer
+                          .consume_from_partition(
+                            topic_name, ntp.tp.partition, model::offset{0})
+                          .get();
+        ASSERT_EQ(consumed.size(), 30);
+        ASSERT_EQ(consumed.front().key, fmt::format("key{}", iteration));
+
+        // Delete topic.
+        vlog(e2e_test_log.info, "Deleting topic");
+        delete_topic({model::kafka_namespace, topic_name}).get();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(WithOverride, EndToEndFixture, ::testing::Bool());
 INSTANTIATE_TEST_SUITE_P(
-  ManualWithOverride, CloudStorageEndToEndManualTest, ::testing::Bool());
+  WithOverride, CloudStorageEndToEndManualTest, ::testing::Bool());

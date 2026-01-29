@@ -23,6 +23,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/mutex.h"
 #include "storage/batch_cache.h"
 #include "storage/disk.h"
 #include "storage/file_sanitizer_types.h"
@@ -32,7 +33,6 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>

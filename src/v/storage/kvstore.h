@@ -16,13 +16,13 @@
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "metrics/metrics.h"
+#include "ssx/mutex.h"
 #include "storage/fwd.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "storage/segment_set.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -175,7 +175,7 @@ private:
     ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
     // Protect _db and _next_offset across asynchronous mutations.
-    mutex _db_mut{"kvstore::db_mut"};
+    ssx::mutex _db_mut{"kvstore::db_mut"};
     model::offset _next_offset;
     map_t _db;
     std::optional<ntp_sanitizer_config> _ntp_sanitizer_config;

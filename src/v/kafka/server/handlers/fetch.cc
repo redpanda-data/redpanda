@@ -220,6 +220,11 @@ static ss::future<read_result> do_read_from_ntp(
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
   fetch_memory_units_manager& units_mgr) {
+    // If it's the obligatory batch read then we need to allow for the
+    // configured max bytes to exceeded if the next batch in the partition
+    // is larger. This is needed to conform with KIP-74.
+    ntp_config.cfg.strict_max_bytes = !obligatory_batch_read;
+
     // control available memory
     auto memory_units = units_mgr.zero_units();
     if (!ntp_config.cfg.skip_read) {
@@ -486,47 +491,57 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
     const size_t max_bytes_per_fetch = std::min<size_t>(
       config::shard_local_cfg().kafka_max_bytes_per_fetch(), bytes_left);
 
+    const auto config_indexes = std::views::iota(
+      (size_t)0, ntp_fetch_configs.size());
+
     chunked_vector<read_result> results;
     results.reserve(ntp_fetch_configs.size());
-
-    for (auto& ntp_cfg : ntp_fetch_configs) {
-        // Strict checking/enforcing of max bytes per fetch occurs in
-        // `fill_fetch_responses`. This check only exists to avoid unneeded
-        // partition reads.
-        if (total_read_size >= max_bytes_per_fetch) {
-            ntp_cfg.cfg.skip_read = true;
-        }
-
-        // In Kafka first non-empty partition in a request or session
-        // is considered the `obligatory` batch read.
-        const bool obligatory_batch_read = total_read_size == 0;
-
-        // If it's the obligatory batch read then we need to allow for the
-        // configured max bytes to exceeded if the next batch in the partition
-        // is larger. This is needed to conform with KIP-74.
-        ntp_cfg.cfg.strict_max_bytes = !obligatory_batch_read;
-
-        auto&& res = co_await do_read_from_ntp(
-          cluster_pm,
-          md_cache,
-          replica_selector,
-          ntp_cfg,
-          deadline,
-          obligatory_batch_read,
-          units_mgr);
-
-        res.partition = ntp_cfg.ktp().get_partition();
-
-        auto read_size = res.data_size_bytes();
-        total_read_size += read_size;
-
-        if (res.delta_from_tip_ms.has_value()) {
-            read_probe.add_read_event_delta_from_tip(
-              res.delta_from_tip_ms.value());
-        }
-
-        results.push_back(std::move(res));
+    for (const auto& _ : config_indexes) {
+        results.emplace_back(error_code::none);
     }
+
+    co_await ss::max_concurrent_for_each(
+      config_indexes,
+      config::shard_local_cfg().fetch_max_read_concurrency(),
+      [&](auto cfg_idx) {
+          auto& ntp_cfg = ntp_fetch_configs[cfg_idx];
+
+          // Strict checking/enforcing of max bytes per fetch occurs in
+          // `fill_fetch_responses`. This check only exists to avoid unneeded
+          // partition reads.
+          if (total_read_size >= max_bytes_per_fetch) {
+              ntp_cfg.cfg.skip_read = true;
+          }
+
+          // In Kafka first non-empty partition in a request or session
+          // is considered the `obligatory` batch read. The logic below
+          // is designed to approximate this behavior. Up to
+          // `fetch_max_read_concurrency` partition reads will be considered
+          // obligatory until a batch is read.
+          const bool obligatory_batch_read = total_read_size == 0;
+
+          return do_read_from_ntp(
+                   cluster_pm,
+                   md_cache,
+                   replica_selector,
+                   ntp_cfg,
+                   deadline,
+                   obligatory_batch_read,
+                   units_mgr)
+            .then([&, cfg_idx](read_result&& res) {
+                res.partition = ntp_cfg.ktp().get_partition();
+
+                auto read_size = res.data_size_bytes();
+                total_read_size += read_size;
+
+                if (res.delta_from_tip_ms.has_value()) {
+                    read_probe.add_read_event_delta_from_tip(
+                      res.delta_from_tip_ms.value());
+                }
+
+                results[cfg_idx] = std::move(res);
+            });
+      });
 
     vlog(
       klog.trace,
@@ -1554,45 +1569,52 @@ void op_context::create_response_placeholders() {
     }
 }
 
-bool update_fetch_partition(
+// Determines if a partition should be included in an incremental fetch
+// response per KIP-227.
+bool partition_has_changes(
   const fetch_response::partition_response& resp,
-  fetch_session_partition& partition) {
-    bool include = false;
+  const fetch_session_partition& session_partition) {
     if (resp.records && resp.records->size_bytes() > 0) {
-        // Partitions with new data are always included in the response.
-        include = true;
+        return true;
     }
-    if (partition.high_watermark != resp.high_watermark) {
-        include = true;
-        partition.high_watermark = model::offset(resp.high_watermark);
+    if (session_partition.high_watermark != resp.high_watermark) {
+        return true;
     }
-    if (partition.last_stable_offset != resp.last_stable_offset) {
-        include = true;
-        partition.last_stable_offset = model::offset(resp.last_stable_offset);
+    if (session_partition.last_stable_offset != resp.last_stable_offset) {
+        return true;
     }
-    if (partition.start_offset != resp.log_start_offset) {
-        include = true;
-        partition.start_offset = model::offset(resp.log_start_offset);
+    if (session_partition.start_offset != resp.log_start_offset) {
+        return true;
     }
     /**
      * Always include partition in a response if it contains information about
      * the preferred replica
      */
     if (resp.preferred_read_replica != -1) {
-        include = true;
-    }
-    if (include) {
-        return include;
+        return true;
     }
     if (resp.error_code != error_code::none) {
         // Partitions with errors are always included in the response.
-        // We also set the cached highWatermark to an invalid offset, -1.
-        // This ensures that when the error goes away, we re-send the
-        // partition.
-        partition.high_watermark = model::offset{-1};
-        include = true;
+        return true;
     }
-    return include;
+    return false;
+}
+
+// Updates the fetch session's partition with the response. Called in
+// send_response() when committing the response, not during fetch iteration (to
+// avoid premature updates on retries).
+void update_session_partition(
+  const fetch_response::partition_response& resp,
+  fetch_session_partition& session_partition) {
+    session_partition.high_watermark = model::offset(resp.high_watermark);
+    session_partition.last_stable_offset = model::offset(
+      resp.last_stable_offset);
+    session_partition.start_offset = model::offset(resp.log_start_offset);
+    if (resp.error_code != error_code::none) {
+        // Set high_watermark to -1 so we re-send this partition once the error
+        // clears.
+        session_partition.high_watermark = model::offset{-1};
+    }
 }
 
 ss::future<response_ptr> op_context::send_response() && {
@@ -1626,7 +1648,24 @@ ss::future<response_ptr> op_context::send_response() && {
     }
     // bellow we handle incremental fetches, set response session id
     response.data.session_id = session_ctx.session()->id();
+
+    auto& session_partitions = session_ctx.session()->partitions();
+    auto update_session = [&session_partitions](const auto& resp_it) {
+        auto key = model::kitp_view(
+          resp_it->partition->topic_id,
+          resp_it->partition->topic,
+          resp_it->partition_response->partition_index);
+        if (auto sp_it = session_partitions.find(key);
+            sp_it != session_partitions.end()) {
+            update_session_partition(
+              *resp_it->partition_response, sp_it->second->partition);
+        }
+    };
+
     if (session_ctx.is_full_fetch()) {
+        for (auto it = response.begin(false); it != response.end(); ++it) {
+            update_session(it);
+        }
         return rctx.respond(std::move(response));
     }
 
@@ -1636,6 +1675,8 @@ ss::future<response_ptr> op_context::send_response() && {
     final_response.internal_topic_bytes = response.internal_topic_bytes;
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
+        update_session(it);
+
         if (it->is_new_topic) {
             final_response.data.responses.emplace_back(
               fetchable_topic_response{
@@ -1747,7 +1788,7 @@ void op_context::response_placeholder::set(
 
         if (auto it = session_partitions.find(key);
             it != session_partitions.end()) {
-            auto has_to_be_included = update_fetch_partition(
+            auto has_to_be_included = partition_has_changes(
               *_it->partition_response, it->second->partition);
             /**
              * From KIP-227

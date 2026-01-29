@@ -10,10 +10,8 @@
 
 #pragma once
 
-#include "cloud_io/auth_refresh_bg_op.h"
 #include "cloud_io/io_resources.h"
 #include "cloud_io/remote.h"
-#include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/configuration.h"
 #include "cloud_storage/fwd.h"
@@ -450,12 +448,14 @@ public:
             if (_promise.has_value()) {
                 _hook.unlink();
                 _promise.reset();
+                _gate_holder.release();
             }
         }
 
     private:
         absl::node_hash_set<const retry_chain_node*> _sources_to_ignore;
         std::unordered_set<api_activity_type> _events_to_ignore;
+        ss::gate::holder _gate_holder;
         std::optional<ss::promise<api_activity_notification>> _promise;
         intrusive_list_hook _hook;
     };

@@ -22,6 +22,7 @@ import (
 // ControlPlaneProdURL is the host of the Cloud Redpanda API.
 const (
 	ControlPlaneProdURL = "https://api.redpanda.com"
+	maxPages            = 500 // maximum number of pages to fetch in paginated requests.
 )
 
 func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {

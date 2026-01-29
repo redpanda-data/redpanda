@@ -60,7 +60,7 @@ with my-new-topic as the new topic name
 			an, at := nsTopic(to)
 			alias := t
 			var id int
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				if ns != "" && strings.ToLower(ns) != "kafka" {
 					out.Die("Namespace %q not allowed. Only kafka topics can be mounted in Redpanda Cloud clusters", ns)
 				}

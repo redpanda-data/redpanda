@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 #include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
@@ -74,6 +75,7 @@ public:
     ss::sharded<l1::domain_supervisor>* get_sharded_l1_domain_supervisor();
     ss::sharded<reconciler::reconciler>* get_reconciler();
     ss::sharded<l1::replicated_metastore>* get_sharded_replicated_metastore();
+    l1::compaction_scheduler* get_compaction_scheduler();
 
     // TODO: add 'get_control_plane_api' etc
 
@@ -92,6 +94,7 @@ private:
     ss::sharded<cloud_topics_manager> manager;
     ss::sharded<level_zero_gc> l0_gc;
     ss::sharded<housekeeper_manager> housekeeper_manager;
+    std::unique_ptr<l1::compaction_scheduler> compaction_scheduler;
 };
 
 } // namespace cloud_topics

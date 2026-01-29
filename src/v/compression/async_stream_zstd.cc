@@ -15,11 +15,13 @@
 #include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "bytes/details/io_allocation_size.h"
+#include "bytes/ioarray.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <fmt/format.h>
+#include <sys/uio.h>
 
 #include <array>
 #include <zstd.h>
@@ -256,6 +258,71 @@ ss::future<iobuf> async_stream_zstd::uncompress(iobuf i_buf) {
     }
 
     co_return ret_buf;
+}
+
+ss::future<ioarray> async_stream_zstd::uncompress(ioarray i_arr) {
+    if (unlikely(i_arr.empty())) {
+        throw std::runtime_error(
+          "Asked to stream_zstd::uncompress empty array");
+    }
+
+    ss::abort_source as;
+    auto ctx_scope = co_await _decompression_ctx_pool.allocate_scoped_object(
+      as);
+    auto& ctx = *ctx_scope;
+
+    ZSTD_DCtx_reset(ctx._decompress_ctx, ZSTD_reset_session_only);
+
+    size_t last_zstd_ret = 0;
+
+    std::vector<ss::temporary_buffer<char>> obufs;
+    size_t osize = 0;
+    auto append = [&obufs, &osize](std::span<const char> decompressed) {
+        constexpr size_t max_chunk_size = ioarray::max_chunk_size;
+        while (!decompressed.empty()) {
+            auto written_in_buffer = osize % max_chunk_size;
+            if (written_in_buffer == 0) {
+                obufs.emplace_back(max_chunk_size);
+            }
+            auto remaining = max_chunk_size - written_in_buffer;
+            auto n = std::min(decompressed.size(), remaining);
+            auto& buf = obufs.back();
+            // NOLINTNEXTLINE(*pointer-arithmetic*)
+            char* write = buf.get_write() + written_in_buffer;
+            std::memcpy(write, decompressed.data(), n);
+            decompressed = decompressed.subspan(n);
+            osize += n;
+        }
+    };
+
+    for (auto& ibuf : i_arr.as_iovec()) {
+        ZSTD_inBuffer in = {
+          .src = ibuf.iov_base, .size = ibuf.iov_len, .pos = 0};
+
+        while (in.pos < in.size) {
+            ZSTD_outBuffer out = {
+              .dst = ctx._d_buffer.get_write(),
+              .size = ctx._d_buffer.size(),
+              .pos = 0};
+
+            const auto zstd_ret = ZSTD_decompressStream(
+              ctx._decompress_ctx, &out, &in);
+            throw_if_error(zstd_ret);
+
+            append({ctx._d_buffer.get(), out.pos});
+            last_zstd_ret = zstd_ret;
+
+            co_await ss::coroutine::maybe_yield();
+        }
+    }
+
+    if (last_zstd_ret != 0) {
+        throw std::runtime_error("Input truncated before reading epilog");
+    }
+
+    auto out = ioarray::from_sized_buffers(obufs);
+    out.trim_back(out.size() - osize);
+    co_return out;
 }
 
 } // namespace compression

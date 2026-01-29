@@ -24,6 +24,7 @@ import (
 	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	iamv1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/iam/v1"
 	"connectrpc.com/connect"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/authtoken"
 )
 
 // CloudClientSet holds the respective service clients to interact with
@@ -39,6 +40,7 @@ type CloudClientSet struct {
 	Operations       controlplanev1connect.OperationServiceClient
 	ServerlessRegion controlplanev1connect.ServerlessRegionServiceClient
 	BYOCPlugin       byocpluginv1alpha1connect.BYOCPluginServiceClient
+	ShadowLink       controlplanev1connect.ShadowLinkServiceClient
 
 	m         sync.RWMutex
 	authToken string
@@ -77,7 +79,19 @@ func NewCloudClientSet(host, authToken string, opts ...connect.ClientOption) *Cl
 	ccs.Operations = controlplanev1connect.NewOperationServiceClient(httpCl, host, opts...)
 	ccs.ServerlessRegion = controlplanev1connect.NewServerlessRegionServiceClient(httpCl, host, opts...)
 	ccs.BYOCPlugin = byocpluginv1alpha1connect.NewBYOCPluginServiceClient(httpCl, host, opts...)
+	ccs.ShadowLink = controlplanev1connect.NewShadowLinkServiceClient(httpCl, host, opts...)
 	return ccs
+}
+
+// NewValidatedCloudClientSet creates a Public API client set after validating
+// the provided auth token against the given audience and client IDs.
+func NewValidatedCloudClientSet(host, authToken, audience string, clientIDs []string, opts ...connect.ClientOption) (*CloudClientSet, error) {
+	err := authtoken.ValidateTokenOrExpire(authToken, audience, clientIDs...)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Redpanda Cloud token: %v", err)
+	}
+
+	return NewCloudClientSet(host, authToken, opts...), nil
 }
 
 func (cpCl *CloudClientSet) UpdateAuthToken(authToken string) {
@@ -106,7 +120,6 @@ func (cpCl *CloudClientSet) ResourceGroupForID(ctx context.Context, ID string) (
 // ResourceGroups returns all the ResourceGroups using the pagination feature
 // to traverse all pages of the list.
 func (cpCl *CloudClientSet) ResourceGroups(ctx context.Context) ([]*controlplanev1.ResourceGroup, error) {
-	maxPages := 200
 	fetchPage := func(ctx context.Context, pageToken string) ([]*controlplanev1.ResourceGroup, string, error) {
 		req := connect.NewRequest(&controlplanev1.ListResourceGroupsRequest{PageToken: pageToken, PageSize: 100})
 		resp, err := cpCl.ResourceGroup.ListResourceGroups(ctx, req)
@@ -121,7 +134,6 @@ func (cpCl *CloudClientSet) ResourceGroups(ctx context.Context) ([]*controlplane
 // ServerlessClusters returns all the ServerlessClusters using the pagination
 // feature to traverse all pages of the list.
 func (cpCl *CloudClientSet) ServerlessClusters(ctx context.Context) ([]*controlplanev1.ServerlessCluster, error) {
-	maxPages := 500
 	fetchPage := func(ctx context.Context, pageToken string) ([]*controlplanev1.ServerlessCluster, string, error) {
 		req := connect.NewRequest(&controlplanev1.ListServerlessClustersRequest{PageToken: pageToken, PageSize: 100})
 		resp, err := cpCl.Serverless.ListServerlessClusters(ctx, req)
@@ -149,7 +161,6 @@ func (cpCl *CloudClientSet) ServerlessClusterForID(ctx context.Context, ID strin
 // Clusters returns all the Clusters using the pagination feature to traverse
 // all pages of the list.
 func (cpCl *CloudClientSet) Clusters(ctx context.Context) ([]*controlplanev1.Cluster, error) {
-	maxPages := 500
 	fetchPage := func(ctx context.Context, pageToken string) ([]*controlplanev1.Cluster, string, error) {
 		req := connect.NewRequest(&controlplanev1.ListClustersRequest{PageToken: pageToken, PageSize: 100})
 		resp, err := cpCl.Cluster.ListClusters(ctx, req)
@@ -174,6 +185,50 @@ func (cpCl *CloudClientSet) ClusterForID(ctx context.Context, ID string) (*contr
 		return nil, fmt.Errorf("unable to find cluster %q; please report this bug to Redpanda Support", ID)
 	}
 	return c.Msg.Cluster, nil
+}
+
+// ShadowLinkListItems returns all the ShadowLinkListItems using the pagination
+// feature to traverse all pages of the list.
+func (cpCl *CloudClientSet) ShadowLinkListItems(ctx context.Context, filter *controlplanev1.ListShadowLinksRequest_Filter) ([]*controlplanev1.ShadowLinkListItem, error) {
+	fetchPage := func(ctx context.Context, pageToken string) ([]*controlplanev1.ShadowLinkListItem, string, error) {
+		req := connect.NewRequest(&controlplanev1.ListShadowLinksRequest{
+			Filter:    filter,
+			PageToken: pageToken,
+			PageSize:  100,
+		})
+		resp, err := cpCl.ShadowLink.ListShadowLinks(ctx, req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.ShadowLinks, resp.Msg.NextPageToken, nil
+	}
+	return Paginate(ctx, maxPages, fetchPage)
+}
+
+func (cpCl *CloudClientSet) ShadowLinkByNameAndRPID(ctx context.Context, name, redpandaID string) (*controlplanev1.ShadowLink, error) {
+	list, err := cpCl.ShadowLinkListItems(ctx, &controlplanev1.ListShadowLinksRequest_Filter{
+		ShadowRedpandaId: redpandaID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to list Shadow Links for cluster with ID %q: %w", redpandaID, err)
+	}
+	var foundSLID string
+	for _, l := range list {
+		if l.GetName() == name {
+			foundSLID = l.GetId()
+			break
+		}
+	}
+	if foundSLID == "" {
+		return nil, fmt.Errorf("unable to find Shadow Link %q in the cluster with ID %q", name, redpandaID)
+	}
+	link, err := cpCl.ShadowLink.GetShadowLink(ctx, connect.NewRequest(&controlplanev1.GetShadowLinkRequest{
+		Id: foundSLID,
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("unable to get Shadow Link %q for cluster with ID %q: %w", name, redpandaID, err)
+	}
+	return link.Msg.ShadowLink, nil
 }
 
 // OrgResourceGroupsClusters is a helper function to concurrently query many

@@ -74,7 +74,7 @@ public:
 
     partition_offsets_report get_partition_offsets_report() const;
 
-    void maybe_synchronize_start_offset();
+    ss::future<> maybe_synchronize_start_offset();
 
     void set_data_probe(link_data_probe_ptr);
     void unset_data_probe();
@@ -119,7 +119,6 @@ private:
     ssx::semaphore _max_requests{
       max_in_flight_requests, "partition_replicator"};
     backoff_policy _backoff_policy;
-    std::optional<kafka::offset> _in_progress_truncate_offset{std::nullopt};
     std::optional<replication_probe> _probe;
     link_data_probe_ptr _link_data_probe;
 };

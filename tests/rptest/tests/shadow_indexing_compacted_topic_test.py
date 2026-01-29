@@ -73,7 +73,7 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
         def capture_description_is_ok():
             nonlocal description
             description = list(self._rpk_client.describe_topic(topic))
-            return description is not None and len(description) > 0
+            return len(description) > 0
 
         wait_until(
             capture_description_is_ok,
@@ -82,7 +82,8 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
             err_msg=f"failed to get describe_topic {topic}",
         )
         assert description is not None, "description is None"
-        return description
+        # pyright can't see the nonlocal write
+        return description  # pyright: ignore[reportUnreachable]
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -116,9 +117,9 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
             timeout_sec=300,
         )
 
-        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0
-        )
+        original_snapshot = self.redpanda.storage(
+            nodes=self.redpanda.nodes
+        ).segments_by_node("kafka", self.topic, 0)
 
         for node, node_segments in original_snapshot.items():
             assert len(node_segments) >= expected_segment_count, (
@@ -247,7 +248,7 @@ class TSWithAlreadyCompactedTopic(EndToEndTest):
         def capture_description_is_ok():
             nonlocal description
             description = list(self._rpk_client.describe_topic(topic))
-            return description is not None and len(description) > 0
+            return len(description) > 0
 
         wait_until(
             capture_description_is_ok,
@@ -256,7 +257,7 @@ class TSWithAlreadyCompactedTopic(EndToEndTest):
             err_msg=f"failed to get describe_topic {topic}",
         )
         assert description is not None, "description is None"
-        return description
+        return description  # pyright: ignore[reportUnreachable]
 
     @cluster(num_nodes=4)
     def test_initial_upload(self):

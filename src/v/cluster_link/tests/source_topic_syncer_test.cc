@@ -130,9 +130,9 @@ TEST_F_CORO(source_topic_syncer_test, select_all_filter) {
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    ASSERT_TRUE_CORO(link_metadata.has_value());
+    ASSERT_TRUE_CORO(link_metadata);
 
-    EXPECT_TRUE(link_metadata->get().state.mirror_topics.empty());
+    EXPECT_TRUE(link_metadata->state.mirror_topics.empty());
 
     fixture()->get_cluster_mock().add_topic(
       ::model::topic("test_topic"),
@@ -144,13 +144,13 @@ TEST_F_CORO(source_topic_syncer_test, select_all_filter) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(::model::topic("test_topic"));
         return mirror_topic_it != mirror_topics.end();
     });
 
     link_metadata = fixture()->find_link_by_name(model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(::model::topic("test_topic"));
     EXPECT_EQ(
       mirror_topic_it->second.source_topic_name, ::model::topic("test_topic"));
@@ -188,14 +188,14 @@ TEST_F_CORO(source_topic_syncer_test, select_all_with_exclude) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(::model::topic("test_topic"));
         return mirror_topic_it != mirror_topics.end();
     });
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(::model::topic("excluded-topic"));
     EXPECT_EQ(mirror_topic_it, mirror_topics.end())
       << "Excluded topic should not be mirrored";
@@ -216,7 +216,7 @@ TEST_F_CORO(source_topic_syncer_test, schema_registry_test) {
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(
       ::model::schema_registry_internal_tp.topic);
     ASSERT_EQ_CORO(mirror_topic_it, mirror_topics.end())
@@ -224,7 +224,7 @@ TEST_F_CORO(source_topic_syncer_test, schema_registry_test) {
       << ::model::schema_registry_internal_tp.topic;
 
     // Now enable schema registry topic mirroring and ensure that it shows up
-    auto update = link_metadata->get().copy();
+    auto update = co_await link_metadata->copy();
     update.configuration.schema_registry_sync_cfg
       .sync_schema_registry_topic_mode
       = model::schema_registry_sync_config::shadow_entire_schema_registry{};
@@ -235,7 +235,7 @@ TEST_F_CORO(source_topic_syncer_test, schema_registry_test) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(
           ::model::schema_registry_internal_tp.topic);
         return mirror_topic_it != mirror_topics.end();
@@ -265,7 +265,7 @@ TEST_F_CORO(source_topic_syncer_test, schema_registry_exists_but_empty) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(
           ::model::schema_registry_internal_tp.topic);
         return mirror_topic_it != mirror_topics.end();
@@ -302,7 +302,7 @@ TEST_F_CORO(source_topic_syncer_test, schema_registry_exists_not_empty) {
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(
       ::model::schema_registry_internal_tp.topic);
     ASSERT_EQ_CORO(mirror_topic_it, mirror_topics.end())
@@ -329,7 +329,7 @@ TEST_F_CORO(source_topic_syncer_test, invalid_authorization) {
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     EXPECT_TRUE(mirror_topics.empty());
 }
 
@@ -408,7 +408,7 @@ TEST_F_CORO(source_topic_syncer_test, topic_exists) {
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     EXPECT_TRUE(mirror_topics.empty());
 }
 
@@ -426,7 +426,7 @@ TEST_F_CORO(source_topic_syncer_test, topic_with_no_partitions) {
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     EXPECT_TRUE(mirror_topics.empty());
 }
 
@@ -440,10 +440,10 @@ TEST_F_CORO(source_topic_syncer_test, topic_id_changes) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, topic_name] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        if (!link_metadata.has_value()) {
+        if (!link_metadata) {
             return false;
         }
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         return mirror_topics.contains(topic_name);
     });
 
@@ -455,10 +455,10 @@ TEST_F_CORO(source_topic_syncer_test, topic_id_changes) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, topic_name] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        if (!link_metadata.has_value()) {
+        if (!link_metadata) {
             return false;
         }
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         auto it = mirror_topics.find(topic_name);
         if (it == mirror_topics.end()) {
             return false;
@@ -481,7 +481,7 @@ TEST_F_CORO(source_topic_syncer_test, topic_with_no_replicas) {
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     EXPECT_TRUE(mirror_topics.empty());
 }
 
@@ -498,13 +498,13 @@ TEST_F_CORO(source_topic_syncer_test, topic_with_high_rf) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        return link_metadata->get().state.mirror_topics.contains(
+        return link_metadata->state.mirror_topics.contains(
           ::model::topic("test_topic"));
     });
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(::model::topic("test_topic"));
     ASSERT_NE_CORO(mirror_topic_it, mirror_topics.end());
     EXPECT_EQ(mirror_topic_it->second.replication_factor, 1);
@@ -513,7 +513,7 @@ TEST_F_CORO(source_topic_syncer_test, topic_with_high_rf) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(::model::topic("test_topic"));
         if (mirror_topic_it == mirror_topics.end()) {
             return false;
@@ -590,14 +590,14 @@ TEST_F_CORO(invalid_describe_configs_test, bad_describe_config_response) {
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        auto& mirror_topics = link_metadata->get().state.mirror_topics;
+        auto& mirror_topics = link_metadata->state.mirror_topics;
         auto mirror_topic_it = mirror_topics.find(::model::topic("test_topic"));
         return mirror_topic_it != mirror_topics.end();
     });
 
     auto link_metadata = fixture()->find_link_by_name(
       model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->get().state.mirror_topics;
+    auto& mirror_topics = link_metadata->state.mirror_topics;
     auto mirror_topic_it = mirror_topics.find(
       ::model::topic("not_requested_topic"));
     EXPECT_EQ(mirror_topic_it, mirror_topics.end())

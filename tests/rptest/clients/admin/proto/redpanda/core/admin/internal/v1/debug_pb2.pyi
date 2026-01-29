@@ -19,9 +19,38 @@ import builtins
 import collections.abc
 import google.protobuf.descriptor
 import google.protobuf.internal.containers
+import google.protobuf.internal.enum_type_wrapper
 import google.protobuf.message
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+
+class _LogLevel:
+    ValueType = typing.NewType('ValueType', builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _LogLevelEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_LogLevel.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    LOG_LEVEL_UNSPECIFIED: _LogLevel.ValueType
+    LOG_LEVEL_TRACE: _LogLevel.ValueType
+    LOG_LEVEL_DEBUG: _LogLevel.ValueType
+    LOG_LEVEL_INFO: _LogLevel.ValueType
+    LOG_LEVEL_WARN: _LogLevel.ValueType
+    LOG_LEVEL_ERROR: _LogLevel.ValueType
+
+class LogLevel(_LogLevel, metaclass=_LogLevelEnumTypeWrapper):
+    ...
+LOG_LEVEL_UNSPECIFIED: LogLevel.ValueType
+LOG_LEVEL_TRACE: LogLevel.ValueType
+LOG_LEVEL_DEBUG: LogLevel.ValueType
+LOG_LEVEL_INFO: LogLevel.ValueType
+LOG_LEVEL_WARN: LogLevel.ValueType
+LOG_LEVEL_ERROR: LogLevel.ValueType
+Global___LogLevel: typing_extensions.TypeAlias = LogLevel
 
 @typing.final
 class StartStressFiberRequest(google.protobuf.message.Message):
@@ -44,7 +73,7 @@ class StartStressFiberRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['fiber_count', b'fiber_count', 'max_ms_per_scheduling_point', b'max_ms_per_scheduling_point', 'max_spins_per_scheduling_point', b'max_spins_per_scheduling_point', 'min_ms_per_scheduling_point', b'min_ms_per_scheduling_point', 'min_spins_per_scheduling_point', b'min_spins_per_scheduling_point', 'stack_depth', b'stack_depth']) -> None:
         ...
-global___StartStressFiberRequest = StartStressFiberRequest
+Global___StartStressFiberRequest: typing_extensions.TypeAlias = StartStressFiberRequest
 
 @typing.final
 class StartStressFiberResponse(google.protobuf.message.Message):
@@ -52,7 +81,7 @@ class StartStressFiberResponse(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___StartStressFiberResponse = StartStressFiberResponse
+Global___StartStressFiberResponse: typing_extensions.TypeAlias = StartStressFiberResponse
 
 @typing.final
 class StopStressFiberRequest(google.protobuf.message.Message):
@@ -60,7 +89,7 @@ class StopStressFiberRequest(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___StopStressFiberRequest = StopStressFiberRequest
+Global___StopStressFiberRequest: typing_extensions.TypeAlias = StopStressFiberRequest
 
 @typing.final
 class StopStressFiberResponse(google.protobuf.message.Message):
@@ -68,7 +97,7 @@ class StopStressFiberResponse(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___StopStressFiberResponse = StopStressFiberResponse
+Global___StopStressFiberResponse: typing_extensions.TypeAlias = StopStressFiberResponse
 
 @typing.final
 class ThrowStructuredExceptionRequest(google.protobuf.message.Message):
@@ -102,7 +131,7 @@ class ThrowStructuredExceptionRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['metadata', b'metadata', 'node_id', b'node_id', 'reason', b'reason']) -> None:
         ...
-global___ThrowStructuredExceptionRequest = ThrowStructuredExceptionRequest
+Global___ThrowStructuredExceptionRequest: typing_extensions.TypeAlias = ThrowStructuredExceptionRequest
 
 @typing.final
 class ThrowStructuredExceptionResponse(google.protobuf.message.Message):
@@ -110,4 +139,27 @@ class ThrowStructuredExceptionResponse(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___ThrowStructuredExceptionResponse = ThrowStructuredExceptionResponse
+Global___ThrowStructuredExceptionResponse: typing_extensions.TypeAlias = ThrowStructuredExceptionResponse
+
+@typing.final
+class LogMessageRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    MESSAGE_FIELD_NUMBER: builtins.int
+    LEVEL_FIELD_NUMBER: builtins.int
+    message: builtins.str
+    level: Global___LogLevel.ValueType
+
+    def __init__(self, *, message: builtins.str=..., level: Global___LogLevel.ValueType=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['level', b'level', 'message', b'message']) -> None:
+        ...
+Global___LogMessageRequest: typing_extensions.TypeAlias = LogMessageRequest
+
+@typing.final
+class LogMessageResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    def __init__(self) -> None:
+        ...
+Global___LogMessageResponse: typing_extensions.TypeAlias = LogMessageResponse

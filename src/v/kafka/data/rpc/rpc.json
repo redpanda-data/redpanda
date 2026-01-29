@@ -14,6 +14,11 @@
             "name": "get_offsets",
             "input_type": "get_offsets_request",
             "output_type": "get_offsets_reply"
+        },
+        {
+            "name": "consume",
+            "input_type": "consume_request",
+            "output_type": "consume_reply"
         }
     ]
 }

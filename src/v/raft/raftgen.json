@@ -17,11 +17,6 @@
             "output_type": "append_entries_reply"
         },
         {
-            "name": "heartbeat",
-            "input_type": "heartbeat_request",
-            "output_type": "heartbeat_reply"
-        },
-        {
             "name": "heartbeat_v2",
             "input_type": "heartbeat_request_v2",
             "output_type": "heartbeat_reply_v2"
@@ -37,19 +32,9 @@
             "output_type": "timeout_now_reply"
         },
         {
-            "name": "transfer_leadership",
-            "input_type": "transfer_leadership_request",
-            "output_type": "transfer_leadership_reply"
-        },
-        {
             "name": "append_entries_full_serde",
             "input_type": "append_entries_request_serde_wrapper",
             "output_type": "append_entries_reply"
-        },
-        {
-            "name": "remake_learner_state",
-            "input_type": "remake_learner_state_request",
-            "output_type": "remake_learner_state_reply"
         },
         {
             "name": "get_compaction_mcco",

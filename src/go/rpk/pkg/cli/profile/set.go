@@ -32,7 +32,7 @@ The key can either be the name of a -X flag or the path to the field in the
 profile's yaml format. For example, using --set tls.enabled=true OR --set
 kafka_api.tls.enabled=true is equivalent. The former corresponds to the -X flag
 tls.enabled, while the latter corresponds to the path kafka_api.tls.enabled in
-the profile's yaml.
+the profile's yaml. To see all available -X fields, run 'rpk -X help'.
 
 This command supports autocompletion of valid keys, suggesting the -X key
 format. If you begin writing a YAML path, this command will suggest the rest of

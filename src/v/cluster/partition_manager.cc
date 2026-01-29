@@ -289,7 +289,7 @@ ss::future<consensus_ptr> partition_manager::manage(
     ss::lw_shared_ptr<raft::consensus> c
       = co_await _raft_manager.local().create_group(
         group,
-        std::move(initial_nodes),
+        initial_nodes,
         log,
         enable_learner_recovery_throttle,
         keep_snapshotted_log);
@@ -467,8 +467,7 @@ partition_manager::shutdown(const model::ntp& ntp) {
           std::invalid_argument(
             fmt::format(
               "Can not shutdown partition. NTP {} is not present in "
-              "partition "
-              "manager",
+              "partition manager",
               ntp)));
     }
     // remove partition from ntp & raft tables

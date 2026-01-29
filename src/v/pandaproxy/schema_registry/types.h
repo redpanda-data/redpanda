@@ -11,12 +11,13 @@
 
 #pragma once
 
+#include "absl/container/btree_map.h"
 #include "base/outcome.h"
 #include "base/seastarx.h"
+#include "config/startup_config.h"
 #include "container/chunked_vector.h"
-#include "json/iobuf_writer.h"
 #include "kafka/protocol/errors.h"
-#include "model/metadata.h"
+#include "model/fundamental.h"
 #include "strings/string_switch.h"
 #include "utils/named_type.h"
 
@@ -129,14 +130,91 @@ using registry_resource = named_type<ss::sstring, struct registry_resource_tag>;
 ///
 /// Typically it will be "<topic>-key" or "<topic>-value".
 using subject = named_type<ss::sstring, struct subject_tag>;
-static const subject invalid_subject{};
+
+/// \brief A schema context, used for namespacing schemas and schema ids. Can be
+/// used to implement multi-tenancy, environment (e.g., dev, staging, prod)
+/// separation, and so on. By default, schemas are stored under the "." context.
+using context = named_type<ss::sstring, struct context_tag>;
+inline const context default_context{"."};
+
+/// Whether qualified subject parsing is enabled. Captured at SR startup.
+using enable_qualified_subjects
+  = config::startup_config<bool, struct enable_qualified_subjects_tag>;
+
+// A subject bound to a context
+struct context_subject {
+    constexpr context_subject() = default;
+
+    context_subject(context c, subject s)
+      : ctx{std::move(c)}
+      , sub{std::move(s)} {}
+
+    // TODO: remove this, it is only for gradual commit-by-commit source code
+    // migration
+    context_subject(subject sub)
+      : ctx{default_context}
+      , sub{std::move(sub)} {}
+
+    // TODO: remove this, it is only for gradual commit-by-commit source code
+    // migration
+    context_subject(ss::sstring sub)
+      : ctx{default_context}
+      , sub{std::move(sub)} {}
+
+    friend auto
+    operator<=>(const context_subject& lhs, const context_subject& rhs)
+      = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const context_subject& ctx_sub) {
+        return H::combine(std::move(h), ctx_sub.ctx, ctx_sub.sub);
+    }
+
+    /// Parse from qualified subject ":.context:subject" or unqualified
+    /// "subject" (which uses the default context)
+    static context_subject from_string(std::string_view input);
+
+    /// Format as qualified subject ":.context:subject" or "subject" if in the
+    /// default context
+    ss::sstring to_string() const { return ssx::sformat("{}", *this); }
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        if (ctx == pandaproxy::schema_registry::default_context) {
+            return fmt::format_to(it, "{}", sub);
+        }
+        return fmt::format_to(it, ":{}:{}", ctx, sub);
+    }
+
+    bool starts_with(const ss::sstring& prefix) const {
+        return to_string().starts_with(prefix);
+    }
+
+    /// Returns the qualified subject string for ACL authorization.
+    ss::sstring operator()() const { return to_string(); }
+
+    /// Returns true if this represents a context-only identifier (empty
+    /// subject). Used to distinguish context-level operations (like setting
+    /// context-wide mode/config) from subject-level operations.
+    bool is_context_only() const { return sub().empty(); }
+
+    /// Retrurns true if this represents the default context with an empty
+    /// subject.
+    bool is_default_context() const {
+        return is_context_only() && ctx == default_context;
+    }
+
+    context ctx;
+    subject sub;
+};
+
+inline const context_subject invalid_subject{default_context, subject{""}};
 
 ///\brief The version of the schema registered with a subject.
 ///
 /// A subject may evolve its schema over time. Each version is associated with a
 /// schema_id.
 using schema_version = named_type<int32_t, struct schema_version_tag>;
-static constexpr schema_version invalid_schema_version{-1};
+inline constexpr schema_version invalid_schema_version{-1};
 
 struct schema_reference {
     friend bool
@@ -150,8 +228,18 @@ struct schema_reference {
     operator<(const schema_reference& lhs, const schema_reference& rhs);
 
     ss::sstring name;
-    subject sub{invalid_subject};
+    context_subject sub{invalid_subject};
     schema_version version{invalid_schema_version};
+};
+
+struct schema_metadata {
+    std::optional<absl::btree_map<ss::sstring, ss::sstring>> properties;
+
+    friend bool
+    operator==(const schema_metadata& lhs, const schema_metadata& rhs)
+      = default;
+
+    fmt::iterator format_to(fmt::iterator it) const;
 };
 
 ///\brief Definition of a schema and its type.
@@ -180,13 +268,19 @@ public:
     schema_definition(T&& def, schema_type type)
       : _def{std::forward<T>(def)}
       , _type{type}
-      , _refs{} {}
+      , _refs{}
+      , _meta{} {}
 
     template<typename T>
-    schema_definition(T&& def, schema_type type, references refs)
+    schema_definition(
+      T&& def,
+      schema_type type,
+      references refs,
+      std::optional<schema_metadata> meta)
       : _def{std::forward<T>(def)}
       , _type{type}
-      , _refs{std::move(refs)} {}
+      , _refs{std::move(refs)}
+      , _meta{std::move(meta)} {}
 
     friend bool
     operator==(const schema_definition& lhs, const schema_definition& rhs)
@@ -196,42 +290,47 @@ public:
 
     schema_type type() const { return _type; }
 
-    const raw_string& raw() const& { return _def; }
-    raw_string raw() && { return std::move(_def); }
+    const raw_string& raw() const { return _def; }
     raw_string shared_raw() const {
         auto& buf = const_cast<iobuf&>(_def());
         return raw_string{buf.share(0, buf.size_bytes())};
     }
 
-    const references& refs() const& { return _refs; }
-    references refs() && { return std::move(_refs); }
+    const references& refs() const { return _refs; }
+
+    const std::optional<schema_metadata>& meta() const { return _meta; }
 
     schema_definition share() const {
-        return {shared_raw(), type(), refs().copy()};
+        return {shared_raw(), type(), refs().copy(), meta()};
     }
 
     schema_definition copy() const {
-        return {raw_string{_def().copy()}, type(), refs().copy()};
+        return {_def().copy(), type(), refs().copy(), meta()};
     }
 
     auto destructure() && {
-        return std::make_tuple(std::move(_def), _type, std::move(_refs));
+        return std::make_tuple(
+          std::move(_def), _type, std::move(_refs), std::move(_meta));
     }
 
 private:
     raw_string _def;
     schema_type _type{schema_type::avro};
     references _refs;
+    std::optional<schema_metadata> _meta;
 };
 
 ///\brief The definition of an avro schema.
 class avro_schema_definition {
 public:
     explicit avro_schema_definition(
-      avro::ValidSchema vs, schema_definition::references refs);
+      avro::ValidSchema vs,
+      schema_definition::references refs,
+      std::optional<schema_metadata> meta);
 
     schema_definition::raw_string raw() const;
     const schema_definition::references& refs() const { return _refs; };
+    const std::optional<schema_metadata>& meta() const { return _meta; };
 
     const avro::ValidSchema& operator()() const;
 
@@ -244,7 +343,7 @@ public:
     constexpr schema_type type() const { return schema_type::avro; }
 
     explicit operator schema_definition() const {
-        return {raw(), type(), refs().copy()};
+        return {raw(), type(), refs().copy(), meta()};
     }
 
     ss::sstring name() const;
@@ -252,6 +351,7 @@ public:
 private:
     avro::ValidSchema _impl;
     schema_definition::references _refs;
+    std::optional<schema_metadata> _meta;
 };
 
 class protobuf_schema_definition {
@@ -260,13 +360,17 @@ public:
     using pimpl = ss::shared_ptr<const impl>;
 
     explicit protobuf_schema_definition(
-      pimpl p, schema_definition::references refs)
+      pimpl p,
+      schema_definition::references refs,
+      std::optional<schema_metadata> meta)
       : _impl{std::move(p)}
-      , _refs(std::move(refs)) {}
+      , _refs(std::move(refs))
+      , _meta(std::move(meta)) {}
 
     schema_definition::raw_string
     raw(output_format format = output_format::none) const;
     const schema_definition::references& refs() const { return _refs; };
+    const std::optional<schema_metadata>& meta() const { return _meta; };
 
     const impl& operator()() const { return *_impl; }
 
@@ -280,7 +384,7 @@ public:
     constexpr schema_type type() const { return schema_type::protobuf; }
 
     protobuf_schema_definition copy() const {
-        return protobuf_schema_definition{_impl, _refs.copy()};
+        return protobuf_schema_definition{_impl, _refs.copy(), _meta};
     }
 
     ::result<ss::sstring, kafka::error_code>
@@ -289,6 +393,7 @@ public:
 private:
     pimpl _impl;
     schema_definition::references _refs;
+    std::optional<schema_metadata> _meta;
 };
 
 class json_schema_definition {
@@ -301,6 +406,7 @@ public:
 
     schema_definition::raw_string raw() const;
     const schema_definition::references& refs() const;
+    const std::optional<schema_metadata>& meta() const;
 
     const impl& operator()() const { return *_impl; }
 
@@ -313,10 +419,8 @@ public:
     constexpr schema_type type() const { return schema_type::json; }
 
     explicit operator schema_definition() const {
-        return {raw(), type(), refs().copy()};
+        return {raw(), type(), refs().copy(), meta()};
     }
-
-    ss::sstring name() const;
 
     // retrieve "title" property from the schema, used to form the record name
     std::optional<ss::sstring> title() const;
@@ -365,7 +469,7 @@ public:
         return visit([](const auto& def) { return def.type(); });
     }
 
-    schema_definition::raw_string raw() const& {
+    schema_definition::raw_string raw() const {
         return visit([](auto&& def) {
             return schema_definition::raw_string{def.raw()()};
         });
@@ -388,7 +492,32 @@ private:
 
 ///\brief Globally unique identifier for a schema.
 using schema_id = named_type<int32_t, struct schema_id_tag>;
-static constexpr schema_id invalid_schema_id{-1};
+inline constexpr schema_id invalid_schema_id{-1};
+
+// A schema id that is valid within a context.
+struct context_schema_id {
+    // TODO: remove this, it is only for gradual commit-by-commit source code
+    // migration
+    context_schema_id(schema_id id)
+      : ctx{default_context}
+      , id{id} {}
+
+    context_schema_id(context c, schema_id s)
+      : ctx{std::move(c)}
+      , id{s} {}
+
+    friend auto
+    operator<=>(const context_schema_id& lhs, const context_schema_id& rhs)
+      = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const context_schema_id& ctx_id) {
+        return H::combine(std::move(h), ctx_id.ctx, ctx_id.id);
+    }
+
+    context ctx;
+    schema_id id;
+};
 
 struct subject_version {
     subject_version(subject s, schema_version v)
@@ -445,7 +574,7 @@ class subject_schema {
 public:
     subject_schema() = default;
 
-    subject_schema(subject sub, schema_definition def)
+    subject_schema(context_subject sub, schema_definition def)
       : _sub{std::move(sub)}
       , _def{std::move(def)} {}
 
@@ -455,24 +584,20 @@ public:
     friend std::ostream&
     operator<<(std::ostream& os, const subject_schema& schema);
 
-    const subject& sub() const& { return _sub; }
-    subject sub() && { return std::move(_sub); }
-
+    const context_subject& sub() const { return _sub; }
     schema_type type() const { return _def.type(); }
-
-    const schema_definition& def() const& { return _def; }
-    schema_definition def() && { return std::move(_def); }
+    const schema_definition& def() const { return _def; }
 
     subject_schema share() const { return {sub(), def().share()}; }
     subject_schema copy() const { return {sub(), def().copy()}; }
 
     auto destructure() && {
-        return make_tuple(std::move(_sub), std::move(_def));
+        return std::make_tuple(std::move(_sub), std::move(_def));
     }
 
 private:
-    subject _sub{invalid_subject};
-    schema_definition _def{"", schema_type::avro};
+    context_subject _sub{invalid_subject};
+    schema_definition _def{"", schema_type::avro, {}, {}};
 };
 
 ///\brief Complete description of a subject and schema for a version, as stored
@@ -607,14 +732,3 @@ struct fmt::formatter<pandaproxy::schema_registry::schema_reference> {
     // e : format for error_reporting
     char presentation{'l'};
 };
-
-namespace json {
-
-template<typename Buffer>
-void rjson_serialize(
-  json::iobuf_writer<Buffer>& w,
-  const pandaproxy::schema_registry::schema_definition::raw_string& def) {
-    w.String(def());
-}
-
-} // namespace json

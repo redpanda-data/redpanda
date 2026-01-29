@@ -397,7 +397,7 @@ class NodeOpsExecutor:
         # remove from started nodes before actually stopping redpanda process
         # to prevent failures from being injected after this point
         with self.lock:
-            self.redpanda.remove_from_started_nodes(node)
+            self.redpanda.remove_from_started_nodes(node, "stop_node in node_ops")
             self.redpanda.stop_node(node)
         self.redpanda.clean_node(
             node, preserve_logs=True, preserve_current_install=True

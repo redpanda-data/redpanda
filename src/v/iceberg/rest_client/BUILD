@@ -28,6 +28,7 @@ redpanda_cc_library(
         "//src/v/http",
         "//src/v/metrics",
         "//src/v/net",
+        "//src/v/net:types",
     ],
 )
 

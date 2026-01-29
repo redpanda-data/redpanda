@@ -63,7 +63,7 @@ class DatalakeVerifier:
         # Consumed here refers to consumption by the app layer, meaning
         # there has to be a valid batch at the offset returned by the
         # kafka consume API.
-        self._max_consumed_offsets = {}
+        self.max_consumed_offsets = {}
         # Next position to be consumed from the partition. This may be
         # > max_consumed_offset + 1 if there are gaps from non consumable
         # batches like aborted data batches / control batches
@@ -211,12 +211,12 @@ class DatalakeVerifier:
                     if self._num_msgs_pending_verification >= self._query_batch_size:
                         with self._msgs_batched:
                             self._msgs_batched.notify()
-                    self._max_consumed_offsets[msg.partition()] = max(
-                        self._max_consumed_offsets.get(msg.partition(), -1),
+                    self.max_consumed_offsets[msg.partition()] = max(
+                        self.max_consumed_offsets.get(msg.partition(), -1),
                         rcast(int, msg.offset()),
                     )
                     self.logger.debug(
-                        f"Max consumed offsets: {self._max_consumed_offsets}"
+                        f"Max consumed offsets: {self.max_consumed_offsets}"
                     )
                     if len(self._errors) > 0:
                         return
@@ -391,10 +391,10 @@ class DatalakeVerifier:
                 f"Topic {self.topic} validation errors: {self._errors}"
             )
 
-            self.logger.debug(f"consumed offsets: {self._max_consumed_offsets}")
+            self.logger.debug(f"consumed offsets: {self.max_consumed_offsets}")
             self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
 
-            assert self._max_queried_offsets == self._max_consumed_offsets, (
+            assert self._max_queried_offsets == self.max_consumed_offsets, (
                 "Mismatch between maximum offsets in topic vs iceberg table"
             )
 

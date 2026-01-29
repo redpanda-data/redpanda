@@ -43,6 +43,22 @@ message ThrowStructuredExceptionRequest {
 }
 message ThrowStructuredExceptionResponse {}
 
+enum LogLevel {
+    LOG_LEVEL_UNSPECIFIED = 0;
+    LOG_LEVEL_TRACE = 1;
+    LOG_LEVEL_DEBUG = 2;
+    LOG_LEVEL_INFO = 3;
+    LOG_LEVEL_WARN = 4;
+    LOG_LEVEL_ERROR = 5;
+}
+
+message LogMessageRequest {
+    string message = 1;
+    LogLevel level = 2;
+}
+
+message LogMessageResponse {}
+
 // The DebugService provides access to internal debugging information and debug
 // operations for the cluster or node.
 //
@@ -67,6 +83,11 @@ service DebugService {
     }
     rpc StopStressFiber(StopStressFiberRequest)
         returns (StopStressFiberResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER,
+        };
+    }
+    rpc LogMessage(LogMessageRequest) returns (LogMessageResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER,
         };

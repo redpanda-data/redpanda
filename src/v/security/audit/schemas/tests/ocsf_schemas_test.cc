@@ -562,7 +562,8 @@ BOOST_AUTO_TEST_CASE(make_api_activity_event_authorized) {
       security::credential_user{username},
       security::credential_password{"password"},
       "sasl",
-      request_auth_result::superuser::no};
+      request_auth_result::superuser::no,
+      {}};
 
     auto api_activity = sa::api_activity::construct(
       req, auth_result, "http", true, std::nullopt);
@@ -681,7 +682,8 @@ BOOST_AUTO_TEST_CASE(make_authentication_event_success) {
       security::credential_user{username},
       security::credential_password{"password"},
       "sasl",
-      request_auth_result::superuser::no};
+      request_auth_result::superuser::no,
+      {}};
 
     auto authn = sa::authentication::construct(sa::authentication_event_options {
       .auth_protocol = "sasl",

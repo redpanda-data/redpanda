@@ -18,7 +18,7 @@
 #include "features/enterprise_features.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/event.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 namespace cluster {
 
@@ -64,19 +64,19 @@ public:
 
 private:
     ss::future<> init_shard_placement(
-      mutex::units& lock,
+      ssx::mutex::units& lock,
       const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp,
       const chunked_hash_map<model::ntp, model::revision_id>&
         local_ntp2log_revision,
       const std::vector<std::unique_ptr<storage::kvstore>>& extra_kvstores);
 
     ss::future<> assign_fiber();
-    ss::future<> do_assign_ntps(mutex::units& lock);
+    ss::future<> do_assign_ntps(ssx::mutex::units& lock);
 
     ss::future<> balance_on_core_count_change(
-      mutex::units& lock, size_t kvstore_shard_count);
+      ssx::mutex::units& lock, size_t kvstore_shard_count);
     void balance_timer_callback();
-    ss::future<> do_balance(mutex::units& lock);
+    ss::future<> do_balance(ssx::mutex::units& lock);
 
     void maybe_assign(
       const model::ntp&,
@@ -86,7 +86,7 @@ private:
     ss::future<> set_target(
       const model::ntp&,
       const std::optional<shard_placement_target>&,
-      mutex::units& lock);
+      ssx::mutex::units& lock);
 
     using shard2count_t = std::vector<int32_t>;
     struct topic_data_t {
@@ -126,7 +126,7 @@ private:
     cluster::notification_id_type _topic_table_notify_handle;
     ss::timer<ss::lowres_clock> _balance_timer;
     ssx::event _wakeup_event{"shard_balancer"};
-    mutex _mtx{"shard_balancer"};
+    ssx::mutex _mtx{"shard_balancer"};
     ss::gate _gate;
 
     chunked_hash_set<model::ntp> _to_assign;

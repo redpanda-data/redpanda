@@ -29,6 +29,9 @@ lint:
     # it to be easy to write.
     ENUM_VALUE_PREFIX:
       - proto/redpanda/core/pbgen
+    ENUM_NO_ALLOW_ALIAS:
+      - proto/redpanda/core/admin/v2/shadow_link.proto
+      - proto/redpanda/core/common/v1/acl.proto
 breaking:
   use:
     - FILE

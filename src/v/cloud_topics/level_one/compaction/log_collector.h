@@ -27,6 +27,8 @@ struct compaction_cluster_state {
     ss::sharded<cluster::partition_leaders_table>* leaders_table;
     ss::sharded<cluster::topic_table>* topic_table;
     ss::sharded<cluster::metadata_cache>* metadata_cache;
+    ss::sharded<cluster::shard_table>* shard_table;
+    ss::sharded<cluster::partition_manager>* partition_manager;
 };
 
 // Responsible for pushing CTPs/logs that require compaction to the
@@ -72,7 +74,7 @@ public:
     using manage_cb_t = ss::noncopyable_function<void(
       const model::ntp&, const model::topic_id_partition&, std::string_view)>;
     using unmanage_cb_t
-      = ss::noncopyable_function<void(const model::ntp&, std::string_view)>;
+      = ss::noncopyable_function<void(model::ntp, std::string_view)>;
     using is_managed_cb_t = ss::noncopyable_function<bool(const model::ntp&)>;
 
     partition_leader_log_collector(
@@ -102,7 +104,7 @@ private:
     // Register operations can be performed synchronously while unregister
     // operations are performed in a backgrounded fiber (see
     // `compaction_scheduler::unmanage_partition()`).
-    void on_ntp_change(cluster::topic_table::ntp_delta);
+    void on_ntp_change(const cluster::topic_table::ntp_delta&);
 
     // Registers/unregisters `ntp`s with the `compaction_scheduler` using
     // leadership notifications from the `partition_leaders_table`. The
@@ -115,7 +117,7 @@ private:
     // Register operations can be performed synchronously while unregister
     // operations are performed in a backgrounded fiber (see
     // `compaction_scheduler::unmanage_partition()`).
-    void on_leadership_change(model::ntp, model::node_id);
+    void on_leadership_change(const model::ntp&, model::node_id);
 
     // Callback to register a partition with the `compaction_scheduler`.
     manage_cb_t _manage_cb;

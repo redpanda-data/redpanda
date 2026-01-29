@@ -604,10 +604,13 @@ class RawKCL(KCL):
             input=json.dumps(alter_configs_request),
         )
 
-    def raw_alter_quotas(self, body: dict[str, Any]) -> dict[str, Any]:
+    def raw_alter_quotas(
+        self, body: dict[str, Any], node: Any | None = None
+    ) -> dict[str, Any]:
         res = self._cmd(
             ["misc", "raw-req", "-b", str(self._controller_id()), "-k", "49"],
             input=json.dumps(body),
+            node=node,
         )
         return json.loads(res)
 

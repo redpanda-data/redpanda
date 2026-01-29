@@ -41,11 +41,11 @@
 #include "raft/types.h"
 #include "raft/voter_priority_tracker.h"
 #include "ssx/condition_variable.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
 #include "storage/log.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -95,8 +95,6 @@ public:
     };
     enum class vote_state { follower, candidate, leader };
     using leader_cb_t = ss::noncopyable_function<void(leadership_status)>;
-    using remake_cb_t
-      = ss::noncopyable_function<ss::future<std::error_code>(group_id)>;
 
     consensus(
       model::node_id,
@@ -108,7 +106,6 @@ public:
       config::binding<std::chrono::milliseconds> disk_timeout,
       config::binding<bool> enable_longest_log_detection,
       consensus_client_protocol,
-      remake_cb_t,
       leader_cb_t,
       storage::api&,
       std::optional<std::reference_wrapper<coordinated_recovery_throttle>>,
@@ -186,10 +183,6 @@ public:
     // previous term are behind committed index
     bool is_leader() const {
         return is_elected_leader() && _term == _confirmed_term;
-    }
-    // If this node is not yet a voter, it is a learner.
-    bool is_learner() const {
-        return !_configuration_manager.get_latest().is_voter(_self);
     }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
@@ -303,9 +296,8 @@ public:
 
     std::optional<state_machine_manager>& stm_manager() { return _stm_manager; }
 
-    ss::future<model::record_batch_reader> make_reader(
-      storage::local_log_reader_config,
-      std::optional<clock_type::time_point> = std::nullopt);
+    ss::future<model::record_batch_reader>
+      make_reader(storage::local_log_reader_config);
 
     model::offset get_latest_configuration_offset() const;
     model::offset committed_offset() const { return _commit_index; }
@@ -377,6 +369,24 @@ public:
             }
         });
     }
+    ss::future<> step_down_in_term(model::term_id term, std::string_view ctx) {
+        return _op_lock.with([this, term, ctx] {
+            if (_term != term) {
+                vlog(
+                  _ctxlog.trace,
+                  "[{}] Skipping leader step down in term {}, current term: {}",
+                  ctx,
+                  term,
+                  _term);
+                return;
+            }
+            do_step_down(fmt::format("external_stepdown - {}", ctx));
+            if (_leader_id) {
+                _leader_id = std::nullopt;
+                trigger_leadership_notification();
+            }
+        });
+    }
 
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
@@ -430,8 +440,6 @@ public:
     ss::future<> write_last_applied(model::offset);
 
     model::offset read_last_applied() const;
-
-    ss::future<> truncate_state(model::offset);
 
     probe& get_probe() { return *_probe; };
 
@@ -571,17 +579,6 @@ public:
         _inject_error_in_append_entries = inject_error;
     }
 
-    // Function invoked on leader side to clear state on learner node.
-    ss::future<remake_learner_state_reply> remake_learner_state(vnode target);
-
-    // Function invoked on learner side to clear local state.
-    ss::future<remake_learner_state_reply>
-      do_remake_learner_state(remake_learner_state_request);
-
-    const configuration_manager& config_manager() const {
-        return _configuration_manager;
-    }
-
 private:
     friend replication_monitor;
     friend replicate_entries_stm;
@@ -651,7 +648,7 @@ private:
       model::offset);
 
     void successfull_append_entries_reply(
-      follower_index_metadata&, append_entries_reply);
+      follower_index_metadata&, const append_entries_reply&);
 
     size_t estimate_recovering_followers() const;
     bool needs_recovery(const follower_index_metadata&, model::offset);
@@ -847,7 +844,6 @@ private:
     config::binding<std::chrono::milliseconds> _disk_timeout;
     config::binding<bool> _enable_longest_log_detection;
     consensus_client_protocol _client_protocol;
-    remake_cb_t _remake_notification;
     leader_cb_t _leader_notification;
 
     // consensus state
@@ -913,19 +909,20 @@ private:
      * reverse order.
      */
     /// guards from concurrent election where this instance is a candidate
-    mutex _election_lock{"consensus::election_lock"};
+    ssx::mutex _election_lock{"consensus::election_lock"};
     /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
-    mutex _op_lock{"consensus::op_lock"};
+    ssx::mutex _op_lock{"consensus::op_lock"};
     /// since snapshot state is orthogonal to raft state when writing snapshot
     /// it is enough to grab the snapshot mutex, there is no need to keep
     /// oplock
-    mutex _snapshot_lock{"consensus::snapshot_lock"};
+    ssx::mutex _snapshot_lock{"consensus::snapshot_lock"};
 
     /// used for notifying when commits happened to log
     event_manager _event_manager;
     std::unique_ptr<probe> _probe;
     ssx::condition_variable _commit_index_updated;
+    ssx::condition_variable _leadership_changed;
 
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;

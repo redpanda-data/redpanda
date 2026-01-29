@@ -80,7 +80,11 @@ public:
             }();
 
             if (prop == nullptr) {
-                vlog(configlog.warn, "Unknown property {}", name);
+                vlog(
+                  configlog.warn,
+                  "Unknown property {} for {} config store",
+                  name,
+                  store_name());
                 continue;
             }
             bool ok = false;
@@ -232,6 +236,8 @@ public:
     }
 
     virtual ~config_store() noexcept = default;
+
+    virtual ss::sstring store_name() const { return "config_store"; }
 
 private:
     friend class base_property;

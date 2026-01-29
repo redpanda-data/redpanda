@@ -27,6 +27,7 @@ std::istream& operator>>(std::istream& i, abs_error_code& code) {
 
     code
       = string_switch<abs_error_code>(c)
+          .match("AuthenticationFailed", abs_error_code::authentication_failed)
           .match("BlobNotFound", abs_error_code::blob_not_found)
           .match("ServerBusy", abs_error_code::server_busy)
           .match("InternalError", abs_error_code::internal_error)

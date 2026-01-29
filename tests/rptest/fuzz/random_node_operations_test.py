@@ -1,6 +1,6 @@
 from typing import Any
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import get_cloud_storage_type
+from rptest.services.redpanda import LoggingConfig, get_cloud_storage_type
 from rptest.tests.random_node_operations_smoke_test import (
     RNOT_ALLOW_LIST,
     CompactionMode,
@@ -29,6 +29,30 @@ class RandomNodeOperationsTest(RandomNodeOperationsBase):
     """
     Main test for RNOT test with all the parameterization.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(
+            *args,
+            **kwargs,
+            is_smoke_test=False,
+            log_config=LoggingConfig(
+                "info",
+                {
+                    "storage-resources": "warn",
+                    "storage-gc": "debug",
+                    "storage": "trace",
+                    "raft": "trace",
+                    "offset_translator": "trace",
+                    "cluster": "debug",
+                    "datalake": "trace",
+                    "cloud_storage": "debug",
+                    "cloud_io": "debug",
+                    "kafka": "debug",
+                    "reconciler": "debug",
+                    "cloud_topics": "debug",
+                },
+            ),
+        )
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode

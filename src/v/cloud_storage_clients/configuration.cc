@@ -15,18 +15,14 @@
 #include "config/tls_config.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
-#include "utils/functional.h"
 
 #include <seastar/net/tls.hh>
 
 namespace {
 
-ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
-build_tls_credentials(
-  ss::sstring name,
-  std::optional<cloud_storage_clients::ca_trust_file> trust_file,
-  ss::logger&) {
-    auto cred_builder = co_await net::get_credentials_builder({
+ss::future<ss::tls::credentials_builder> make_tls_credentials_builder(
+  std::optional<cloud_storage_clients::ca_trust_file> trust_file) {
+    return net::get_credentials_builder({
       .truststore = trust_file.transform(
         [](auto& f) { return net::certificate(std::filesystem::path(f)); }),
       .k_store = std::nullopt,
@@ -37,10 +33,6 @@ build_tls_credentials(
       .enable_renegotiation = false,
       .require_client_auth = false,
     });
-
-    co_return co_await net::build_reloadable_credentials_with_probe<
-      ss::tls::certificate_credentials>(
-      std::move(cred_builder), "cloud_storage_client", std::move(name));
 };
 
 } // namespace
@@ -56,6 +48,7 @@ static constexpr ss::lowres_clock::duration default_max_idle_time
 static constexpr uint16_t default_port = 443;
 
 ss::future<s3_configuration> s3_configuration::make_configuration(
+  model::cloud_credentials_source cloud_credentials_source,
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
@@ -66,6 +59,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {
     s3_configuration client_cfg;
+    client_cfg.cloud_credentials_source = cloud_credentials_source;
 
     if (url_style.has_value()) {
         vassert(
@@ -118,8 +112,8 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.uri = access_point_uri(base_endpoint_uri);
 
     if (overrides.disable_tls == false) {
-        client_cfg.credentials = co_await build_tls_credentials(
-          "s3", overrides.trust_file, s3_log);
+        client_cfg.tls_credentials_builder
+          = co_await make_tls_credentials_builder(overrides.trust_file);
     }
 
     // When using virtual host addressing, the client must connect to
@@ -132,15 +126,23 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
-    client_cfg._probe = ss::make_shared<client_probe>(
-      disable_metrics,
-      disable_public_metrics,
-      region,
-      endpoint_url{complete_endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;
+
+    client_cfg.is_gcs = cloud_storage_clients::infer_backend_from_configuration(
+                          client_cfg, client_cfg.cloud_credentials_source)
+                        == model::cloud_storage_backend::google_s3_compat;
+
     co_return client_cfg;
+}
+
+ss::shared_ptr<client_probe> s3_configuration::make_probe() const {
+    return ss::make_shared<client_probe>(
+      disable_metrics,
+      disable_public_metrics,
+      region,
+      endpoint_url{server_addr.host()});
 }
 
 std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
@@ -157,12 +159,14 @@ std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
 }
 
 ss::future<abs_configuration> abs_configuration::make_configuration(
+  model::cloud_credentials_source cloud_credentials_source,
   const std::optional<cloud_roles::private_key_str>& shared_key,
   const cloud_roles::storage_account& storage_account_name,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {
     abs_configuration client_cfg;
+    client_cfg.cloud_credentials_source = cloud_credentials_source;
 
     client_cfg.requires_self_configuration = true;
 
@@ -183,8 +187,8 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
     client_cfg.shared_key = shared_key;
     client_cfg.uri = access_point_uri{endpoint_uri};
     if (overrides.disable_tls == false) {
-        client_cfg.credentials = co_await build_tls_credentials(
-          "abs", overrides.trust_file, abs_log);
+        client_cfg.tls_credentials_builder
+          = co_await make_tls_credentials_builder(overrides.trust_file);
     }
 
     client_cfg.server_addr = net::unresolved_address(
@@ -193,72 +197,45 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
-    client_cfg._probe = ss::make_shared<client_probe>(
-      disable_metrics,
-      disable_public_metrics,
-      storage_account_name,
-      endpoint_url{endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;
     co_return client_cfg;
 }
 
-abs_configuration abs_configuration::make_adls_configuration() const {
-    abs_configuration adls_config{*this};
-
-    const auto endpoint_uri = [&]() -> ss::sstring {
-        auto adls_endpoint_override
-          = config::shard_local_cfg().cloud_storage_azure_adls_endpoint.value();
-        if (adls_endpoint_override.has_value()) {
-            return adls_endpoint_override.value();
-        }
-        return ssx::sformat("{}.dfs.core.windows.net", storage_account_name());
-    }();
-
-    adls_config.tls_sni_hostname = endpoint_uri;
-    adls_config.uri = access_point_uri{endpoint_uri};
-
-    auto adls_port_override
-      = config::shard_local_cfg().cloud_storage_azure_adls_port();
-    adls_config.server_addr = net::unresolved_address{
-      endpoint_uri,
-      adls_port_override.has_value() ? *adls_port_override : default_port};
-
-    return adls_config;
+ss::shared_ptr<client_probe> abs_configuration::make_probe() const {
+    return ss::make_shared<client_probe>(
+      disable_metrics,
+      disable_public_metrics,
+      storage_account_name,
+      endpoint_url{server_addr.host()});
 }
 
 void apply_self_configuration_result(
   client_configuration& cfg, const client_self_configuration_output& res) {
-    std::visit(
-      [&res](auto& cfg) -> void {
-          using cfg_type = std::decay_t<decltype(cfg)>;
-          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
-              vassert(
-                std::holds_alternative<s3_self_configuration_result>(res),
-                "Incompatible client configuration {} and self configuration "
-                "result {}",
-                cfg,
-                res);
+    ss::visit(
+      cfg,
+      [&res](s3_configuration& cfg) {
+          vassert(
+            std::holds_alternative<s3_self_configuration_result>(res),
+            "Incompatible client configuration {} and self configuration "
+            "result {}",
+            cfg,
+            res);
 
-              cfg.url_style
-                = std::get<s3_self_configuration_result>(res).url_style;
-
-          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
-              vassert(
-                std::holds_alternative<abs_self_configuration_result>(res),
-                "Incompatible client configuration {} and self configuration "
-                "result {}",
-                cfg,
-                res);
-
-              cfg.is_hns_enabled
-                = std::get<abs_self_configuration_result>(res).is_hns_enabled;
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
+          cfg.url_style = std::get<s3_self_configuration_result>(res).url_style;
       },
-      cfg);
+      [&res](abs_configuration& cfg) {
+          vassert(
+            std::holds_alternative<abs_self_configuration_result>(res),
+            "Incompatible client configuration {} and self configuration "
+            "result {}",
+            cfg,
+            res);
+
+          cfg.is_hns_enabled
+            = std::get<abs_self_configuration_result>(res).is_hns_enabled;
+      });
 }
 
 std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
@@ -286,21 +263,16 @@ operator<<(std::ostream& o, const s3_self_configuration_result& r) {
 
 std::ostream&
 operator<<(std::ostream& o, const client_self_configuration_output& r) {
-    return std::visit(
-      [&o](const auto& self_cfg) -> std::ostream& {
-          using cfg_type = std::decay_t<decltype(self_cfg)>;
-          if constexpr (std::
-                          is_same_v<s3_self_configuration_result, cfg_type>) {
-              return o << "{s3_self_configuration_result: " << self_cfg << "}";
-          } else if constexpr (std::is_same_v<
-                                 abs_self_configuration_result,
-                                 cfg_type>) {
-              return o << "{abs_self_configuration_result: " << self_cfg << "}";
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
+    ss::visit(
+      r,
+      [&o](const s3_self_configuration_result& self_cfg) {
+          o << "{s3_self_configuration_result: " << self_cfg << "}";
       },
-      r);
+      [&o](const abs_self_configuration_result& self_cfg) {
+          o << "{abs_self_configuration_result: " << self_cfg << "}";
+      });
+
+    return o;
 }
 
 model::cloud_storage_backend
@@ -380,18 +352,100 @@ model::cloud_storage_backend infer_backend_from_configuration(
 }
 
 std::ostream& operator<<(std::ostream& o, const client_configuration& c) {
-    return std::visit(
-      [&o](const auto& cfg) -> std::ostream& {
-          using cfg_type = std::decay_t<decltype(cfg)>;
-          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
-              return o << "{s3_configuration: " << cfg << "}";
-          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
-              return o << "{abs_configuration: " << cfg << "}";
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
+    ss::visit(
+      c,
+      [&o](const s3_configuration& cfg) {
+          o << "{s3_configuration: " << cfg << "}";
       },
-      c);
+      [&o](const abs_configuration& cfg) {
+          o << "{abs_configuration: " << cfg << "}";
+      });
+
+    return o;
+}
+
+cloud_roles::auth_refresh_bg_op::credentials_source_config
+build_refresh_credentials_source(
+  const client_configuration& config,
+  model::cloud_credentials_source cloud_credentials_source) {
+    if (
+      cloud_credentials_source
+      == model::cloud_credentials_source::config_file) {
+        return ss::visit(
+          config,
+          [](const cloud_storage_clients::s3_configuration& s3_cfg)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::aws_credentials{
+                .access_key_id = s3_cfg.access_key.value(),
+                .secret_access_key = s3_cfg.secret_key.value(),
+                .session_token = std::nullopt,
+                .region = s3_cfg.region,
+                .service = s3_cfg.service};
+          },
+          [](const cloud_storage_clients::abs_configuration& abs_cfg)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::abs_credentials{
+                .storage_account = abs_cfg.storage_account_name,
+                .shared_key = abs_cfg.shared_key.value()};
+          });
+    } else {
+        return ss::visit(
+          config,
+          [](const cloud_storage_clients::s3_configuration& s3_cfg)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::auth_refresh_bg_op::s3_compat_config{
+                .service = s3_cfg.service, .region = s3_cfg.region};
+          },
+          [](const cloud_storage_clients::abs_configuration&)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::auth_refresh_bg_op::abs_config{};
+          });
+    }
+}
+
+namespace {
+ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
+build_tls_credentials(
+  ss::sstring name, const ss::tls::credentials_builder& cred_builder) {
+    co_return co_await net::build_reloadable_credentials_with_probe<
+      ss::tls::certificate_credentials>(
+      cred_builder, "cloud_storage_client", std::move(name));
+}
+} // namespace
+
+ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
+build_tls_credentials(const client_configuration& config) {
+    using val_t = ss::shared_ptr<ss::tls::certificate_credentials>;
+
+    return ss::visit(
+      config,
+      [](const s3_configuration& s3_cfg) {
+          if (s3_cfg.tls_credentials_builder) {
+              return build_tls_credentials(
+                "s3", *s3_cfg.tls_credentials_builder);
+          }
+          return ss::make_ready_future<val_t>(nullptr);
+      },
+      [](const abs_configuration& abs_cfg) {
+          if (abs_cfg.tls_credentials_builder) {
+              return build_tls_credentials(
+                "abs", *abs_cfg.tls_credentials_builder);
+          }
+          return ss::make_ready_future<val_t>(nullptr);
+      });
+}
+
+net::base_transport::configuration build_transport_configuration(
+  const client_configuration& config,
+  ss::shared_ptr<ss::tls::certificate_credentials> tls_credentials) {
+    return ss::visit(config, [&tls_credentials](const auto& cfg) {
+        return net::base_transport::configuration{
+          .server_addr = cfg.server_addr,
+          .credentials = tls_credentials,
+          .tls_sni_hostname = cfg.tls_sni_hostname,
+          .wait_for_tls_server_eof = cfg.wait_for_tls_server_eof,
+        };
+    });
 }
 
 } // namespace cloud_storage_clients

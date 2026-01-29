@@ -12,7 +12,7 @@ setup(
     package_data={"": ["*.md"]},
     include_package_data=True,
     install_requires=[
-        "ducktape@git+https://github.com/redpanda-data/ducktape.git@b1a8012b066a823953e70b73f3659d572dd206b6",
+        "ducktape@git+https://github.com/redpanda-data/ducktape.git@c3266e0740781cb26b56e74715c0da48ad59c6c7",
         "prometheus-client==0.9.0",
         "kafka-python==2.0.6",
         "crc32c==2.2",
@@ -40,7 +40,7 @@ setup(
         "google-cloud-storage==3.1.0",
         "proto-plus==1.26.1",
         "rsa==4.9",
-        "python-keycloak==3.12.0",
+        "python-keycloak==5.8.1",
         "z3-solver==4.12.2",
         "hypothesis==6.82",
         "jsonschema==4.10.0",
@@ -53,6 +53,7 @@ setup(
         "adlfs==2024.7.0",
         "pyarrow",
         "pandas",
+        "pandas-stubs==1.2.0.58",
         "pyparsing>=3.1.0",
         "thrift==0.20.0",
         "thrift-sasl==0.4.3",
@@ -64,6 +65,7 @@ setup(
         "duckdb==1.3.1",
         "connect-python==0.4.2",
         "avro==1.12.0",
+        "typing-extensions==4.15",
     ],
     scripts=[],
 )

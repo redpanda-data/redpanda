@@ -60,7 +60,6 @@ public:
     void heartbeat_request_error() { ++_heartbeat_request_error; };
     void replicate_request_error() { ++_replicate_request_error; };
     void recovery_request_error() { ++_recovery_request_error; };
-    void recovery_reset() { ++_recovery_resets; };
 
     void full_heartbeat() { ++_full_heartbeat_requests; }
     void lw_heartbeat() { ++_lw_heartbeat_requests; }
@@ -72,9 +71,6 @@ public:
         _metrics.clear();
         _public_metrics.clear();
     }
-
-    uint32_t get_recovery_resets() const { return _recovery_resets; }
-    uint32_t get_log_truncations() { return _log_truncations; }
 
 private:
     uint64_t _vote_requests = 0;
@@ -98,7 +94,6 @@ private:
     uint64_t _lw_heartbeat_requests = 0;
     uint64_t _offset_translator_inconsistency_error = 0;
     uint64_t _append_entries_buffer_flush = 0;
-    uint32_t _recovery_resets = 0;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };

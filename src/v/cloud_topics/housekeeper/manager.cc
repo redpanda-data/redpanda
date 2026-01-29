@@ -49,6 +49,21 @@ public:
           offset, model::timeout_clock::now() + stm_timeout, *as);
     }
 
+    kafka::offset get_max_allowed_start_offset(
+      const model::topic_id_partition& tidp) override {
+        // If the partition has a pinned offset (e.g. it has not translated data
+        // to Iceberg), that bounds our potential start offset.
+        auto& state = _state->at(tidp);
+        auto lowest_pinned = state.partition->raft()
+                               ->log()
+                               ->stm_manager()
+                               ->lowest_pinned_data_offset();
+        if (!lowest_pinned.has_value()) {
+            return kafka::offset::max();
+        }
+        return lowest_pinned.value();
+    }
+
 private:
     ctp_stm_api get_api(const model::topic_id_partition& tidp) {
         auto& state = _state->at(tidp);

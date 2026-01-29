@@ -132,7 +132,7 @@ std::error_code do_apply(update_role_cmd cmd, security::role_store& store) {
     if (!removed) {
         return errc::role_does_not_exist;
     }
-    store.put(std::move(data.name), std::move(data.role));
+    store.put(std::move(data.name), data.role);
     return errc::success;
 }
 
@@ -153,7 +153,7 @@ std::error_code do_apply(create_role_cmd cmd, security::role_store& store) {
     if (store.contains(data.name)) {
         return errc::role_exists;
     }
-    store.put(std::move(data.name), std::move(data.role));
+    store.put(std::move(data.name), data.role);
     return errc::success;
 }
 

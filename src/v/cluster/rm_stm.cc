@@ -85,7 +85,8 @@ rm_stm::rm_stm(
   ss::sharded<tx::producer_state_manager>& producer_state_manager,
   std::optional<model::vcluster_id> vcluster_id)
   : raft::persisted_stm<>(rm_stm_snapshot, logger, c)
-  , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.bind())
+  , _sync_timeout(
+      config::shard_local_cfg().internal_rpc_request_timeout_ms.bind())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
   , _abort_interval_ms(
       config::shard_local_cfg()
@@ -256,6 +257,7 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::begin_tx(
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms,
   model::partition_id tm) {
+    auto holder = _gate.hold();
     auto state_lock = co_await _state_lock.hold_read_lock();
     auto lso_lock_holder = co_await _lso_lock.hold_write_lock();
     if (!co_await sync(_sync_timeout())) {
@@ -506,6 +508,7 @@ ss::future<tx::errc> rm_stm::commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    auto holder = _gate.hold();
     auto state_lock_holder = co_await _state_lock.hold_read_lock();
     if (!co_await sync(timeout)) {
         co_return tx::errc::stale;
@@ -660,6 +663,7 @@ ss::future<tx::errc> rm_stm::abort_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    auto holder = _gate.hold();
     auto state_lock_holder = co_await _state_lock.hold_read_lock();
     if (!co_await sync(timeout)) {
         vlog(
@@ -879,8 +883,6 @@ ss::future<> rm_stm::stop() {
     co_await raft::persisted_stm<>::stop();
 }
 
-ss::future<> rm_stm::start() { return raft::persisted_stm<>::start(); }
-
 std::optional<int32_t>
 rm_stm::get_seq_number(model::producer_identity pid) const {
     auto it = _producers.find(pid.get_id());
@@ -891,6 +893,7 @@ rm_stm::get_seq_number(model::producer_identity pid) const {
 }
 
 ss::future<result<partition_transactions>> rm_stm::get_transactions() {
+    auto holder = _gate.hold();
     if (!co_await sync(_sync_timeout())) {
         co_return cluster::errc::not_leader;
     }
@@ -915,6 +918,7 @@ ss::future<result<partition_transactions>> rm_stm::get_transactions() {
 }
 
 ss::future<tx::errc> rm_stm::mark_expired(model::producer_identity pid) {
+    auto gh = _gate.hold();
     if (!co_await sync(_sync_timeout())) {
         co_return tx::errc::leader_not_found;
     }
@@ -939,6 +943,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
   producer_ptr producer,
   model::batch_identity bid,
   model::record_batch batch) {
+    auto holder = _gate.hold();
     auto result = co_await do_transactional_replicate(
       expected_term, producer, bid, std::move(batch));
     if (!result) {
@@ -1050,6 +1055,7 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
     if (!check_tx_permitted()) {
         co_return cluster::errc::generic_tx_error;
     }
+    auto holder = _gate.hold();
     if (!co_await sync(_sync_timeout())) {
         vlog(
           _ctx_log.trace,
@@ -1333,7 +1339,7 @@ model::offset rm_stm::last_stable_offset() {
     }
 
     auto synced_leader = _raft->is_leader() && _raft->term() == _insync_term;
-    model::offset lso{-1};
+    model::offset lso{model::invalid_lso};
     auto last_visible_index = _raft->last_visible_index();
     auto next_to_apply = model::next_offset(last_applied);
     if (first_tx_start <= last_visible_index) {
@@ -1405,11 +1411,9 @@ static void filter_intersecting(
 
 ss::future<chunked_vector<tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
-    return _state_lock.hold_read_lock().then(
-      [from, to, this](ss::basic_rwlock<>::holder unit) mutable {
-          return do_aborted_transactions(from, to).finally(
-            [u = std::move(unit)] {});
-      });
+    auto gate_holder = _gate.hold();
+    auto lock_holder = co_await _state_lock.hold_read_lock();
+    co_return co_await do_aborted_transactions(from, to);
 }
 
 model::producer_id rm_stm::highest_producer_id() const {
@@ -1460,7 +1464,7 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     auto ready = co_await raft::persisted_stm<>::sync(timeout);
     if (ready) {
         if (current_insync_term != _insync_term) {
-            _last_known_lso = model::offset{-1};
+            _last_known_lso = model::invalid_lso;
             vlog(
               _ctx_log.trace,
               "garbage collecting requests from terms < {}",
@@ -1710,6 +1714,7 @@ void rm_stm::maybe_rearm_autoabort_timer(time_point_type deadline) {
 }
 
 ss::future<tx::errc> rm_stm::abort_all_txes() {
+    auto holder = _gate.hold();
     static constexpr uint max_concurrency = 5u;
     if (!co_await sync(_sync_timeout())) {
         co_return tx::errc::stale;
@@ -1788,7 +1793,8 @@ ss::future<> rm_stm::do_apply(const model::record_batch& b) {
           b.header().producer_id);
     } else if (
       hdr.type == model::record_batch_type::raft_data
-      || hdr.type == model::record_batch_type::ctp_placeholder) {
+      || hdr.type == model::record_batch_type::ctp_placeholder
+      || hdr.type == model::record_batch_type::compaction_placeholder) {
         if (hdr.attrs.is_control()) {
             apply_control(bid.pid, parse_control_batch(b));
         } else {
@@ -2290,6 +2296,31 @@ ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
     co_await reset_producers();
     set_next(_raft->start_offset());
     co_return;
+}
+
+bool rm_stm::is_last_batch_for_idempotent_producer(
+  const model::record_batch_header& hdr) const {
+    const auto bid = model::batch_identity::from(hdr);
+    if (!bid.is_idempotent()) {
+        return false;
+    }
+
+    const auto& pid = bid.pid;
+
+    auto it = _producers.find(pid.get_id());
+    if (it == _producers.end()) {
+        // We cannot know for sure if this is the last batch for the
+        // producer or not. But we cannot retain placeholder batches forever
+        // either.
+        return false;
+    }
+
+    const tx::producer_ptr& producer = it->second;
+
+    const auto last_seq = producer->last_sequence_number();
+    const auto producer_epoch = producer->id().get_epoch();
+
+    return last_seq == bid.last_seq && producer_epoch == pid.get_epoch();
 }
 
 void rm_stm::setup_metrics() {

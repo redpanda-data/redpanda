@@ -63,7 +63,7 @@ Status for a mount/unmount operation
 				}
 			}
 
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(p)
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 

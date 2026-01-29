@@ -62,6 +62,7 @@ TEST_F(MapBuildingReducerFixtureTest, TestMapIndexing) {
     compaction::compaction_config compact_cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       as);

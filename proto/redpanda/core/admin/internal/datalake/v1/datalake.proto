@@ -87,4 +87,5 @@ message TopicState {
     map<int32, PartitionState> partition_states = 2;
     LifecycleState lifecycle_state = 3;
     uint64 total_kafka_processed_bytes = 4;
+    uint64 last_committed_snapshot_id = 5;
 }

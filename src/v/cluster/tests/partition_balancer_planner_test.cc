@@ -1002,7 +1002,7 @@ FIXTURE_TEST(
         }
     });
     cluster::data_migrations::migrated_resources migrated_resources;
-    cluster::topic_table other_tt(migrated_resources);
+    cluster::topic_table other_tt(migrated_resources, model::node_id{0});
     model::offset controller_offset{0};
     std::set<ss::sstring> cur_topics;
     bool node_isolated = false;

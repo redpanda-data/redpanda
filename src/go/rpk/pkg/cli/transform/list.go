@@ -84,7 +84,7 @@ The --detailed flag (-d) opts in to printing extra per-processor information.
 			config.CheckExitServerlessAdmin(p)
 
 			var l []rpadmin.TransformMetadata
-			if p.FromCloud && !p.CloudCluster.IsServerless() {
+			if p.CheckFromCloud() && !p.CloudCluster.IsServerless() {
 				url, err := p.CloudCluster.CheckClusterURL()
 				out.MaybeDie(err, "unable to get cluster information: %v", err)
 

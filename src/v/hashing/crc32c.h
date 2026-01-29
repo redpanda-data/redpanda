@@ -20,8 +20,12 @@ namespace crc {
 
 class crc32c {
 public:
-    template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
-    void extend(T num) noexcept {
+    using value_type = uint32_t;
+
+    template<typename T>
+    void extend(T num) noexcept
+    requires(std::is_integral_v<T>)
+    {
         // NOLINTNEXTLINE
         extend(reinterpret_cast<const uint8_t*>(&num), sizeof(T));
     }
@@ -35,10 +39,10 @@ public:
           size);
     }
 
-    uint32_t value() const { return _crc; }
+    value_type value() const { return _crc; }
 
 private:
-    uint32_t _crc = 0;
+    value_type _crc = 0;
 };
 
 } // namespace crc

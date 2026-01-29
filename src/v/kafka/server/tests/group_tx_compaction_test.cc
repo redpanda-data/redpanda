@@ -346,18 +346,19 @@ ss::future<> run_workload(
             return ss::make_ready_future<>();
         }
         return log->apply_segment_ms().then([&] {
-            return log
-              ->housekeeping(
-                storage::housekeeping_config{
-                  model::timestamp::max(),
-                  std::nullopt,
-                  log->stm_manager()->max_removable_local_log_offset(),
-                  log->stm_manager()->max_removable_local_log_offset(),
-                  std::nullopt,
-                  std::chrono::milliseconds{0},
-                  std::chrono::milliseconds{0},
-                  dummy_as,
-                })
+            auto collect_offset
+              = log->stm_manager()->max_removable_local_log_offset();
+            auto cfg = storage::housekeeping_config::make_config(
+              model::timestamp::max(),
+              std::nullopt,
+              collect_offset,
+              collect_offset,
+              collect_offset,
+              std::nullopt,
+              std::chrono::milliseconds{0},
+              std::chrono::milliseconds{0},
+              dummy_as);
+            return log->housekeeping(std::move(cfg))
               .handle_exception_type(
                 [](const storage::segment_closed_exception&) {});
         });

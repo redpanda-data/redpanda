@@ -16,7 +16,7 @@
 #include "cluster/types.h"
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -314,7 +314,7 @@ private:
     // run_with_lock()). The lock scope is different for idempotent and
     // transaction requests, see rm_stm class for details. This producer cannot
     // be evicted when the lock is held.
-    mutex _op_lock{"producer_state::_op_lock"};
+    ssx::mutex _op_lock{"producer_state::_op_lock"};
     bool _evicted = false;
 
     // note: this eviction hook was originally used as a stop gap when the

@@ -4,7 +4,8 @@
 # tests, but not for building the early layers of the image themselves. They
 # are installed relatively late in the Dockerfile, after most of the heavy
 # "non mainline" layers have forked off.
-set -e
+set -euo pipefail
+
 apt-get update
 apt-get install -qq \
   bind9-dnsutils \
@@ -57,3 +58,22 @@ unset LD_LIBRARY_PATH
 exec /usr/bin/llvm-symbolizer-$LLVM_VERSION "\$@"
 EOF
 chmod +x /usr/local/bin/llvm-symbolizer
+
+###########
+# ripgrep #
+###########
+
+RG_VERSION=15.1.0
+RG_BASE_URL="https://github.com/BurntSushi/ripgrep/releases/download"
+if [ $(uname -m) = "aarch64" ]; then
+  #           ripgrep-  15.1.0     -aarch64-unknown-linux-gnu.tar.gz
+  RG_TARBALL="ripgrep-${RG_VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+else
+  #           ripgrep-  15.1.0     -x86_64-unknown-linux-musl.tar.gz
+  RG_TARBALL="ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+fi
+mkdir -p /opt/ripgrep
+RG_URL="${RG_BASE_URL}/${RG_VERSION}/${RG_TARBALL}"
+echo "Downloading ripgrep from ${RG_URL}"
+curl -sSL "$RG_URL" | tar -xz -C /opt/ripgrep --strip-components=1
+ln -sf /opt/ripgrep/rg /usr/local/bin/rg

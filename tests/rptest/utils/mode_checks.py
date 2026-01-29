@@ -6,6 +6,7 @@ from ducktape.mark import ignore
 from ducktape.tests.test import TestContext
 
 from rptest.utils.type_utils import rcast
+from rptest.util import FIPSMode, get_fips_mode
 
 
 def allocate_and_free(cluster, logger):
@@ -121,17 +122,7 @@ def ignore_if_not_asan(*args, **kwargs):
 
 
 def in_fips_environment() -> bool:
-    """
-    Returns True if the file /proc/sys/crypto/fips_enabled is present and
-    contains '1', otherwise returns False.
-    """
-    fips_file = "/proc/sys/crypto/fips_enabled"
-    if os.path.exists(fips_file) and os.path.isfile(fips_file):
-        with open(fips_file, "r") as f:
-            contents = f.read().strip()
-            return contents == "1"
-
-    return False
+    return get_fips_mode() != FIPSMode.disabled
 
 
 def skip_fips_mode(*args: Any, **kwargs: Any):

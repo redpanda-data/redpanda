@@ -89,6 +89,13 @@ public:
       size_t read_buffer_size = cloud_io::default_read_buffer_size,
       unsigned int read_ahead = cloud_io::default_read_ahead) override;
 
+    ss::future<std::optional<cloud_io::cache_item_stream>> get_stream_range(
+      std::filesystem::path key,
+      uint64_t offset,
+      uint64_t length,
+      size_t read_buffer_size = cloud_io::default_read_buffer_size,
+      unsigned int read_ahead = cloud_io::default_read_ahead) override;
+
     /// Add new value to the cache, overwrite if it's already exist
     ///
     /// \param key is a cache key

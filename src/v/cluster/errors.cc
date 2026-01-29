@@ -184,6 +184,8 @@ std::ostream& operator<<(std::ostream& o, cluster::errc err) {
         return o << "cluster::errc::invalid_target_node_id";
     case errc::topic_id_already_exists:
         return o << "cluster::errc::topic_id_already_exists";
+    case errc::feature_sanctioned:
+        return o << "cluster::errc::feature_sanctioned";
     }
 }
 } // namespace cluster

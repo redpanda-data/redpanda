@@ -55,6 +55,9 @@ type ValidatorStatus struct {
 	// For emitting checkpoints on time intervals
 	lastCheckpoint time.Time
 
+	// User bytes read since last checkpoint (payload without protocol overhead)
+	userBytesSinceLastCheckpoint int64
+
 	// Last consumed offset per partition. Used to assert monotonicity and check for gaps.
 	lastOffsetConsumed map[int32]int64
 
@@ -77,6 +80,9 @@ func (cs *ValidatorStatus) ValidateRecord(r *kgo.Record, validRanges *TopicOffse
 	if r.Value == nil {
 		cs.TombstonesConsumed += 1
 	}
+
+	// Rough estimate of bytes read
+	cs.userBytesSinceLastCheckpoint += int64(recordUserSize(r))
 
 	if r.LeaderEpoch < cs.lastLeaderEpoch[r.Partition] {
 		log.Panicf("Out of order leader epoch on p=%d at o=%d leaderEpoch=%d. Previous leaderEpoch=%d",
@@ -183,10 +189,31 @@ func (cs *ValidatorStatus) SetMonotonicityTestStateForPartition(partition int32,
 
 func (cs *ValidatorStatus) Checkpoint() {
 	log.Infof("Validator status: %s", cs.String())
+
+	elapsed := time.Since(cs.lastCheckpoint)
+	if elapsed <= 0 {
+		return
+	}
+
+	// Calculate throughput in MB/s
+	mbRead := float64(cs.userBytesSinceLastCheckpoint) / (1024.0 * 1024.0)
+	throughput := mbRead / elapsed.Seconds()
+	log.Infof("Validator throughput (user payload): %.2f MB/s", throughput)
+
+	// Reset byte counter
+	cs.userBytesSinceLastCheckpoint = 0
 }
 
 func (cs *ValidatorStatus) String() string {
 	data, err := json.Marshal(cs)
 	util.Chk(err, "Status serialization error")
 	return string(data)
+}
+
+func recordUserSize(r *kgo.Record) int {
+	sz := len(r.Key) + len(r.Value)
+	for _, h := range r.Headers {
+		sz += len(h.Key) + len(h.Value)
+	}
+	return sz
 }

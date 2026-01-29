@@ -298,25 +298,25 @@ remote_segment::offset_data_stream(
     options.read_ahead
       = config::shard_local_cfg().storage_read_readahead_count();
 
-    ss::input_stream<char> data_stream;
-    if (is_legacy_mode_engaged()) {
-        data_stream = ss::make_file_input_stream(
-          _data_file, pos.file_pos, std::move(options));
-    } else {
-        auto chunk_ds = std::make_unique<chunk_data_source_impl>(
-          _chunks_api.value(),
-          *this,
-          pos.kaf_offset,
-          end,
-          pos.file_pos,
-          std::move(options),
-          prefetch_override);
-        data_stream = ss::input_stream<char>{
-          ss::data_source{std::move(chunk_ds)}};
-    }
+    auto make_stream = [&]() -> ss::input_stream<char> {
+        if (is_legacy_mode_engaged()) {
+            return ss::make_file_input_stream(
+              _data_file, pos.file_pos, std::move(options));
+        } else {
+            auto chunk_ds = std::make_unique<chunk_data_source_impl>(
+              _chunks_api.value(),
+              *this,
+              pos.kaf_offset,
+              end,
+              pos.file_pos,
+              std::move(options),
+              prefetch_override);
+            return ss::input_stream<char>{ss::data_source{std::move(chunk_ds)}};
+        }
+    };
 
     co_return input_stream_with_offsets{
-      .stream = std::move(data_stream),
+      .stream = make_stream(),
       .rp_offset = pos.rp_offset,
       .kafka_offset = pos.kaf_offset,
     };
@@ -1237,13 +1237,15 @@ public:
       remote_segment_batch_reader& parent,
       model::term_id term,
       const model::ntp& ntp,
-      retry_chain_node& rtc)
+      retry_chain_node& rtc,
+      model::timeout_clock::time_point deadline)
       : _config(conf)
       , _seg_reader(parent)
       , _term(term)
       , _rtc(&rtc)
       , _ctxlog(cst_log, _rtc, ntp.path())
-      , _filtered_types(raft::offset_translator_batch_types(ntp)) {}
+      , _filtered_types(raft::offset_translator_batch_types(ntp))
+      , _deadline(deadline) {}
 
     /// Translate redpanda offset to kafka offset
     ///
@@ -1422,7 +1424,8 @@ public:
 
         size_t sz = _seg_reader.produce(std::move(batch));
 
-        if (_config.over_budget) {
+        auto now = model::timeout_clock::now();
+        if (_config.over_budget || now > _deadline) {
             co_return stop_parser::yes;
         }
 
@@ -1446,6 +1449,7 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     std::vector<model::record_batch_type> _filtered_types;
+    model::timeout_clock::time_point _deadline;
 };
 
 remote_segment_batch_reader::remote_segment_batch_reader(
@@ -1479,12 +1483,12 @@ remote_segment_batch_reader::read_some(
 
 ss::future<result<chunked_circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::do_read_some(
-  model::timeout_clock::time_point,
+  model::timeout_clock::time_point deadline,
   storage::offset_translator_state& ot_state) {
     if (_ringbuf.empty()) {
         if (!_parser) {
             // remote_segment_batch_reader shouldn't be used concurrently
-            _parser = co_await init_parser();
+            _parser = co_await init_parser(deadline);
         }
 
         if (ot_state.add_absolute_delta(_cur_rp_offset, _cur_delta)) {
@@ -1530,7 +1534,8 @@ remote_segment_batch_reader::do_read_some(
 }
 
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>
-remote_segment_batch_reader::init_parser() {
+remote_segment_batch_reader::init_parser(
+  model::timeout_clock::time_point deadline) {
     ss::gate::holder h(_gate);
     vlog(
       _ctxlog.debug,
@@ -1554,7 +1559,7 @@ remote_segment_batch_reader::init_parser() {
 
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
-        _config, *this, _seg->get_term(), _seg->get_ntp(), _rtc),
+        _config, *this, _seg->get_term(), _seg->get_ntp(), _rtc, deadline),
       storage::segment_reader_handle(std::move(stream_off.stream)));
     _cur_rp_offset = stream_off.rp_offset;
     _cur_delta = stream_off.rp_offset - stream_off.kafka_offset;

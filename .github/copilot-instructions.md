@@ -19,6 +19,7 @@ It uses extensively the thread-per-core model and asynchronous (coroutines, futu
   - `tools/`: Development and helper scripts
   - `tests/`: Test suites
   - `conf/`: Configuration files
+  - `proto/`: Protobuf definitions for Redpanda services and APIs
   - `.github/`, `.buildkite/`: CI/workflow automation
 - **Documentation:** [Docs site](https://redpanda.com/documentation) and `docs/`.
 
@@ -96,6 +97,19 @@ It uses extensively the thread-per-core model and asynchronous (coroutines, futu
 
 ---
 
+## Protobuf-Specific Instructions
+
+### Protobuf Coding Guidelines
+
+Follow the guidelines provided in `proto/redpanda/README.md` for basic Protobuf standards.
+
+### Protobuf Build & Environment
+- **Primary Protobuf code lives in `proto/`.**
+- **Formatting:** `.clang-format` in the root directory is enforced. Always run `clang-format` before committing changes or submitting a PR:
+  ```bash
+  bazel run //tools:clang_format
+  ```
+
 ## C++-Specific Instructions
 
 ### C++ Build & Environment
@@ -105,7 +119,7 @@ It uses extensively the thread-per-core model and asynchronous (coroutines, futu
 - **Compiler Standard:** C++23 is required. Some SDK components (e.g., `src/transform-sdk/cpp/`) use C++23 and specific flags like `-Wall`, `-fno-exceptions`, and for some targets, `-stdlib=libc++`.
 - **Sanitizers:** Some components and test builds use sanitizers (address, leak, undefined) via `-fsanitize=address,leak,undefined` for both compile and link.
 - **Suppression Files:** Leak, undefined, and other sanitizer suppressions can be found in the root as `lsan_suppressions.txt`, `ubsan_suppressions.txt`.
-- **C++ Linting:** `.clang-format` and `.clang-tidy` in the root directory are enforced. Always run formatting tools before submitting a PR:
+- **C++ Linting:** `.clang-format` and `.clang-tidy` in the root directory are enforced. Always run `clang-format` before committing changes or submitting a PR:
   ```bash
   bazel run //tools:clang_format
   ```
@@ -150,6 +164,19 @@ src/v/base/format_to.h.
   assertion statement (e.g. `vlog(..., fut.get_exception(), ...)`). Instead,
   assign the return value of `get_exception` in a variable and pass the variable.
 
+#### Lambda coroutines, coroutine argument capture, and deducing this
+
+When a lambda coroutine is passed to APIs like `seastar::future::then()`,
+the lambda object is stored in managed memory that gets freed once the
+continuation returns—but the coroutine may still be suspended and later
+access its captures, causing use-after-free. This happens because the
+coroutine frame holds a reference to the lambda's capture storage, which
+becomes dangling. The C++23 "deducing this" syntax
+`([captures...](this auto, args...))` solves this by moving the captures
+directly into the coroutine frame rather than referencing them through the
+lambda object, decoupling capture lifetime from the lambda's lifetime.
+This is distinct from the recursive-lambda use case—here this auto is required
+for memory safety in coroutines, not self-reference.
 
 ### C++ coding style
 

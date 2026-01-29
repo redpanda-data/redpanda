@@ -54,6 +54,8 @@ partition_balancer_backend::partition_balancer_backend(
   ss::sharded<topics_frontend>& topics_frontend,
   ss::sharded<members_frontend>& members_frontend,
   config::binding<std::chrono::seconds>&& availability_timeout,
+  config::binding<std::optional<std::chrono::seconds>>&&
+    autodecommission_timeout,
   config::binding<unsigned> max_disk_usage_percent,
   config::binding<std::chrono::milliseconds>&& tick_interval,
   config::binding<size_t>&& max_concurrent_actions,
@@ -76,6 +78,7 @@ partition_balancer_backend::partition_balancer_backend(
         features::license_required_feature::
           partition_auto_balancing_continuous>())
   , _availability_timeout(std::move(availability_timeout))
+  , _autodecommission_timeout(std::move(autodecommission_timeout))
   , _max_disk_usage_percent(std::move(max_disk_usage_percent))
   , _tick_interval(std::move(tick_interval))
   , _max_concurrent_actions(std::move(max_concurrent_actions))
@@ -239,6 +242,16 @@ void partition_balancer_backend::on_topic_table_update() {
           current_in_progress_updates,
           last_in_progress_updates);
 
+        // without this, numerous balancing ticks can run without feedback on
+        // the new cluster balance. This lead to underdamped / oscillating
+        // behavior where the balancer would repeatedly use an old health report
+        // to move partitions, overfilling or underfilling a single node. This
+        // feedback should dampen the balancing process enough to prevent most
+        // oscillating behavior. Given that this pathway is an opportunistic
+        // optimization to sneak in additional balancer rounds in the case of
+        // large imbalances, we can afford the additional time to gather new
+        // health reports.
+        _cur_term->_force_health_report_refresh = true;
         maybe_rearm_timer(/*now=*/true);
     }
 }
@@ -410,8 +423,8 @@ ss::future<> partition_balancer_backend::do_tick() {
         .min_partition_size_threshold = get_min_partition_size_threshold(),
         .node_responsiveness_timeout = node_responsiveness_timeout,
         .topic_aware = _topic_aware(),
-        .space_management_enabled = space_management_enabled,
-      },
+        .node_autodecommission_timeout = _autodecommission_timeout(),
+        .space_management_enabled = space_management_enabled},
       _state,
       _partition_allocator);
 
@@ -448,7 +461,8 @@ ss::future<> partition_balancer_backend::do_tick() {
           "violations: unavailable nodes: {}, full nodes: {}; "
           "nodes to rebalance count: {}; on demand rebalance requested: {}; "
           "updates in progress: {}; "
-          "action counts: reassignments: {}, cancellations: {}, failed: {}; "
+          "action counts: reassignments: {}, cancellations: {}, node to "
+          "auto decommission: {}, failed: {}; "
           "counts rebalancing finished: {}, force refresh health report: {}",
           _cur_term->last_status,
           _cur_term->last_violations.unavailable_nodes.size(),
@@ -458,6 +472,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
+          plan_data.maybe_node_to_autodecommission,
           plan_data.failed_actions_count,
           plan_data.counts_rebalancing_finished,
           _cur_term->_force_health_report_refresh);
@@ -549,6 +564,25 @@ ss::future<> partition_balancer_backend::do_tick() {
     _cur_term->last_tick_in_progress_updates = moves_before
                                                + plan_data.cancellations.size()
                                                + plan_data.reassignments.size();
+
+    if (plan_data.maybe_node_to_autodecommission.has_value()) {
+        const auto& node_to_decom = *plan_data.maybe_node_to_autodecommission;
+        vlog(
+          clusterlog.info,
+          "submitting decommission on unresponsive node: {}",
+          node_to_decom);
+
+        auto decom_error = co_await _members_frontend.decommission_node(
+          node_to_decom);
+
+        if (decom_error) {
+            vlog(
+              clusterlog.warn,
+              "node: {}, failed to decommission with error: {}",
+              node_to_decom,
+              decom_error);
+        }
+    }
 }
 
 partition_balancer_overview_reply partition_balancer_backend::overview() const {

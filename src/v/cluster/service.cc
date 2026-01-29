@@ -649,7 +649,7 @@ ss::future<transfer_leadership_reply> service::transfer_leadership(
         auto errc = co_await _partition_manager.invoke_on(
           shard_id.value(),
           [r = std::move(r)](
-            partition_manager& pm) -> ss::future<std::error_code> {
+            partition_manager& pm) mutable -> ss::future<std::error_code> {
               auto partition_ptr = pm.partition_for(r.group);
               if (!partition_ptr) {
                   return ss::make_ready_future<std::error_code>(

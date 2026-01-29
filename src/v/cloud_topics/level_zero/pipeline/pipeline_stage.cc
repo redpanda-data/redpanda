@@ -34,7 +34,7 @@ pipeline_stage pipeline_stage_container::next_stage(pipeline_stage old) const {
     auto next_ix = old_ix + 1;
     // Check that we have next stage
     vassert(
-      static_cast<size_t>(next_ix) < _stages.size(),
+      static_cast<size_t>(next_ix) < _registered,
       "Pipeline stage {} is not registered",
       next_ix);
     return pipeline_stage(&_stages.at(next_ix));

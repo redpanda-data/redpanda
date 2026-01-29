@@ -15,8 +15,8 @@
 #include "container/chunked_hash_map.h"
 #include "kafka/server/atomic_token_bucket.h"
 #include "kafka/server/client_quota_translator.h"
+#include "ssx/mutex.h"
 #include "ssx/sharded_value.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -98,24 +98,29 @@ public:
 
     // record a new observation
     ss::future<clock::duration> record_produce_tp_and_throttle(
+      std::optional<std::string_view> user,
       std::optional<std::string_view> client_id,
       uint64_t bytes,
       clock::time_point now);
 
     // record a new observation
     ss::future<> record_fetch_tp(
+      std::optional<std::string_view> user,
       std::optional<std::string_view> client_id,
       uint64_t bytes,
       clock::time_point now);
 
     ss::future<clock::duration> throttle_fetch_tp(
-      std::optional<std::string_view> client_id, clock::time_point now);
+      std::optional<std::string_view> user,
+      std::optional<std::string_view> client_id,
+      clock::time_point now);
 
     // Used to record new number of partitions mutations
     // Only for use with the quotas introduced by KIP-599, namely to track
     // partition creation and deletion events (create topics, delete topics &
     // create partitions)
     ss::future<std::chrono::milliseconds> record_partition_mutations(
+      std::optional<std::string_view> user,
       std::optional<std::string_view> client_id,
       uint32_t mutations,
       clock::time_point now);
@@ -158,7 +163,7 @@ private:
     config::binding<std::chrono::milliseconds> _gc_freq;
     config::binding<std::chrono::milliseconds> _max_delay;
     ss::gate _gate;
-    std::optional<mutex> _global_map_mutex; // Only on shard 0
+    std::optional<ssx::mutex> _global_map_mutex; // Only on shard 0
 };
 
 } // namespace kafka

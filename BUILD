@@ -35,7 +35,7 @@ alias(
 
 alias(
     name = "rpk",
-    actual = "//src/go/rpk/cmd/rpk:rpk",
+    actual = "//src/go/rpk/cmd/rpk:rpk_wrapper",
     visibility = ["//visibility:public"],
 )
 
@@ -61,5 +61,13 @@ filegroup(
     name = "ubsan_suppressions",
     testonly = True,
     srcs = ["ubsan_suppressions.txt"],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(
+    [
+        "MODULE.bazel",
+        "buf.gen.yaml",
+    ],
     visibility = ["//visibility:public"],
 )

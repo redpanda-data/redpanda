@@ -249,6 +249,7 @@ public:
         compaction::compaction_config cfg(
           max_collect_offset,
           max_collect_offset,
+          max_collect_offset,
           delete_ret_ms,
           delete_ret_ms,
           never_abort,
@@ -270,6 +271,7 @@ public:
       std::optional<size_t> max_keys = std::nullopt) {
         ss::abort_source never_abort;
         compaction::compaction_config cfg(
+          max_collect_offset,
           max_collect_offset,
           max_collect_offset,
           tombstone_ret_ms,
@@ -315,6 +317,7 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
     ss::abort_source never_abort;
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     compaction::compaction_config cfg(
+      disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
@@ -388,6 +391,7 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     ss::abort_source never_abort;
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     compaction::compaction_config cfg(
+      disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
@@ -589,6 +593,7 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
     compaction::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
+      disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
       std::nullopt,
       never_abort,
@@ -693,6 +698,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     compaction::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
+      disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
       std::nullopt,
       never_abort,
@@ -712,6 +718,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     // But once we add more data, we become eligible for compaction again.
     generate_data(1, cardinality, records_per_segment).get();
     compaction::compaction_config new_cfg(
+      disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
@@ -757,6 +764,7 @@ TEST_F(CompactionFixtureTest, TestCompactWithNonDataBatches) {
     auto before_compaction_count
       = disk_log.get_probe().get_segments_compacted();
     compaction::compaction_config new_cfg(
+      disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
@@ -844,6 +852,7 @@ TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
     compaction::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
+      disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
       std::nullopt,
       never_abort,
@@ -898,6 +907,7 @@ TEST_F(CompactionFixtureTest, TestReadFilledGapsWithTerms) {
     }
 
     compaction::compaction_config cfg(
+      disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
@@ -1662,6 +1672,7 @@ TEST_F(CompactionFixtureTest, TestSlidingWindowNoUnecessaryRewrites) {
     compaction::compaction_config cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       never_abort);
@@ -1772,6 +1783,7 @@ TEST_F(CompactionFixtureParamTest, TestSegmentConcatenation) {
     compaction::compaction_config cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       never_abort,
@@ -1812,6 +1824,7 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompaction) {
     ss::abort_source never_abort;
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     compaction::compaction_config cfg(
+      model::offset::max(),
       model::offset::max(),
       model::offset::max(),
       std::nullopt,
@@ -1904,6 +1917,7 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompactionMultipleRanges) {
     compaction::compaction_config cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       never_abort,
@@ -1971,6 +1985,7 @@ TEST_F(
     auto do_adjacent_compact = [](const auto& l) {
         ss::abort_source never_abort;
         compaction::compaction_config cfg(
+          model::offset::max(),
           model::offset::max(),
           model::offset::max(),
           std::nullopt,
@@ -2197,6 +2212,7 @@ TEST_F(CompactionFixtureTest, TestBatchCacheResetAfterAdjacentMerge) {
     compaction::compaction_config cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       never_abort);
@@ -2276,6 +2292,7 @@ TEST_F(CompactionFixtureTest, SuperfluousPlaceholderRemoval) {
     compaction::compaction_config cfg(
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       never_abort);
@@ -2327,6 +2344,8 @@ TEST_F(CompactionFixtureTest, SuperfluousPlaceholderRemoval) {
 }
 
 TEST_F(CompactionFixtureTest, AbortTransactions) {
+    test_local_cfg.get("log_compaction_tx_batch_removal_enabled")
+      .set_value(true);
     using cluster::tx_executor;
     tx_executor exec;
     auto term = partition->raft()->term();
@@ -2400,6 +2419,8 @@ TEST_F(CompactionFixtureTest, AbortTransactions) {
 }
 
 TEST_F(CompactionFixtureTest, CommitTransactions) {
+    test_local_cfg.get("log_compaction_tx_batch_removal_enabled")
+      .set_value(true);
     using cluster::tx_executor;
     tx_executor exec;
     auto term = partition->raft()->term();

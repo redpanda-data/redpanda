@@ -55,8 +55,6 @@ class archiver_cluster_fixture
   , public http_imposter_fixture {
     static constexpr int kafka_port_base = 9092;
     static constexpr int rpc_port_base = 11000;
-    static constexpr int proxy_port_base = 8082;
-    static constexpr int schema_reg_port_base = 8081;
 
 public:
     model::node_id add_node() {
@@ -68,8 +66,8 @@ public:
           id,
           kafka_port_base,
           rpc_port_base,
-          proxy_port_base,
-          schema_reg_port_base,
+          std::nullopt,
+          std::nullopt,
           configure_node_id::yes,
           empty_seed_starts_cluster::yes,
           s3_conf,

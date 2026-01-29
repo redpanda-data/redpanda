@@ -121,7 +121,7 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           "high_watermark",
           [this] { return _partition.high_watermark(); },
           sm::description(
-            "Partion high watermark i.e. highest consumable offset"),
+            "Partition high watermark i.e. highest consumable offset"),
           labels),
         sm::make_counter(
           "records_produced",

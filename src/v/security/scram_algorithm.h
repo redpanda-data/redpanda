@@ -13,6 +13,7 @@
 #include "bytes/bytes.h"
 #include "bytes/random.h"
 #include "hashing/secure.h"
+#include "model/timestamp.h"
 #include "net/types.h"
 #include "security/scram_credential.h"
 #include "ssx/sformat.h"
@@ -231,49 +232,63 @@ public:
      * helper for building credentials either for building test cases or
      * computing credentials to be stored based on client requests.
      */
-    static scram_credential
-    make_credentials(const ss::sstring& password, int iterations) {
+    static scram_credential make_credentials(
+      const ss::sstring& password,
+      int iterations,
+      model::timestamp password_set_at = model::timestamp::now()) {
         bytes salt = random_generators::get_crypto_bytes(SaltSize);
         bytes salted_password = salt_password(password, salt, iterations);
         return make_credentials(
-          std::nullopt, salted_password, salt, iterations);
+          std::nullopt, salted_password, salt, iterations, password_set_at);
     }
     static scram_credential make_credentials(
-      acl_principal principal, const ss::sstring& password, int iterations) {
+      acl_principal principal,
+      const ss::sstring& password,
+      int iterations,
+      model::timestamp password_set_at = model::timestamp::now()) {
         bytes salt = random_generators::get_crypto_bytes(SaltSize);
         bytes salted_password = salt_password(password, salt, iterations);
         auto clientkey = client_key(salted_password);
         auto storedkey = stored_key(clientkey);
         auto serverkey = server_key(salted_password);
         return make_credentials(
-          std::move(principal), salted_password, salt, iterations);
+          std::move(principal),
+          salted_password,
+          salt,
+          iterations,
+          password_set_at);
     }
 
     static scram_credential make_credentials(
       std::optional<acl_principal> principal,
       bytes_view salted_password,
       bytes_view salt,
-      int iterations) {
+      int iterations,
+      model::timestamp password_set_at = model::timestamp::now()) {
         auto clientkey = client_key(salted_password);
         auto storedkey = stored_key(clientkey);
         auto serverkey = server_key(salted_password);
-        return scram_credential(
+        return {
           bytes{salt},
           std::move(serverkey),
           std::move(storedkey),
           iterations,
-          std::move(principal));
+          std::move(principal),
+          password_set_at};
     }
 
     /// Test method used to generate credentials and it returns the salted
     /// password
     static std::pair<scram_credential, bytes>
     make_credentials_and_return_password(
-      const ss::sstring& password, int iterations) {
+      const ss::sstring& password,
+      int iterations,
+      model::timestamp password_set_at = model::timestamp::now()) {
         bytes salt = random_generators::get_crypto_bytes(SaltSize);
         bytes salted_password = salt_password(password, salt, iterations);
         return {
-          make_credentials(std::nullopt, salted_password, salt, iterations),
+          make_credentials(
+            std::nullopt, salted_password, salt, iterations, password_set_at),
           std::move(salted_password)};
     }
 

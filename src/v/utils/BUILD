@@ -121,17 +121,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "mutex",
-    hdrs = [
-        "mutex.h",
-    ],
-    deps = [
-        "//src/v/base",
-        "//src/v/ssx:semaphore",
-    ],
-)
-
-redpanda_cc_library(
     name = "static_deleter_fn",
     hdrs = [
         "static_deleter_fn.h",
@@ -165,7 +154,9 @@ redpanda_cc_library(
     hdrs = ["to_string.h"],
     deps = [
         "//src/v/base",
+        "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/container:node_hash_map",
         "@fmt",
         "@seastar",
@@ -590,7 +581,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
-        "//src/v/utils:mutex",
+        "//src/v/ssx:mutex",
         "@seastar",
     ],
 )
@@ -681,6 +672,18 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "detailed_error",
+    hdrs = [
+        "detailed_error.h",
+    ],
+    deps = [
+        "//src/v/base",
+        "@fmt",
         "@seastar",
     ],
 )

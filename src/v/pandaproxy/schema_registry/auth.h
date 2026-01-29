@@ -36,7 +36,6 @@ public:
     };
 
     using global = registry_resource;
-    using subject = subject;
     using cluster = security::acl_cluster_name;
     // AuthZ not required
     using none = named_type<std::monostate, class none_tag>;
@@ -45,7 +44,8 @@ public:
     using deferred = named_type<std::monostate, class deferred_tag>;
 
     using op = security::acl_operation;
-    using resource = std::variant<none, deferred, global, subject, cluster>;
+    using resource
+      = std::variant<none, deferred, global, context_subject, cluster>;
 
     using regular_function_handler = ss::noncopyable_function<
       ss::future<server::reply_t>(server::request_t, server::reply_t)>;

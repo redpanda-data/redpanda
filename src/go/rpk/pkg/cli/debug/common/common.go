@@ -25,6 +25,7 @@ type DebugBundleSharedOptions struct {
 	LabelSelector           []string
 	LogsSizeLimit           string
 	ControllerLogsSizeLimit string
+	KafkaConnectionLimit    int
 }
 
 // InstallFlags installs the debug bundle flags that fills the debug bundle
@@ -40,6 +41,7 @@ func (o *DebugBundleSharedOptions) InstallFlags(f *pflag.FlagSet) {
 	f.StringArrayVarP(&o.PartitionFlag, "partition", "p", nil, "Comma-separated partition IDs. When provided, rpk saves extra Admin API requests for those partitions. See the help for extended usage")
 	f.StringVarP(&o.Namespace, "namespace", "n", "", "The namespace to use to collect the resources from (K8s only)")
 	f.StringArrayVarP(&o.LabelSelector, "label-selector", "l", []string{"app.kubernetes.io/name=redpanda"}, "Comma-separated label selectors to filter your resources. For example: <label>=<value>,<label>=<value> (K8s only)")
+	f.IntVar(&o.KafkaConnectionLimit, "kafka-connections-limit", 256, "The maximum number of kafka connections to store in the bundle.")
 }
 
 // SanitizeName replace any of the following characters with "-": "<", ">", ":",

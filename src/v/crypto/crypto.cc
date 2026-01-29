@@ -15,8 +15,9 @@
 #include "absl/container/node_hash_map.h"
 #include "crypto/types.h"
 #include "internal.h"
-#include "thirdparty/openssl/evp.h"
-#include "thirdparty/openssl/provider.h"
+
+#include <openssl/evp.h>
+#include <openssl/provider.h>
 
 #include <sstream>
 

@@ -78,6 +78,10 @@ public:
         return _total_memory - _available_memory.available_units();
     }
 
+    size_t reservation_block_size() const override {
+        return _reservation_block_size;
+    }
+
     /*
      * disk reservation overages are handled by requesting units from the global
      * disk manager, and then waiting for sufficient disk resources to become

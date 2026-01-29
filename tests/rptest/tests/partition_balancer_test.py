@@ -450,7 +450,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.check_no_replicas_on_node(empty_node)
 
             # throttle recovery to prevent partition move from finishing
-            self._throttle_recovery(10)
+            self._throttle_recovery(0)
 
             for n in range(3):
                 node = self.redpanda.nodes[n % 3]
@@ -842,7 +842,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.await_startup()
 
         # throttle recovery to simulate long-running partition moves
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
 
         # choose a node
         node = random.choice(self.redpanda.nodes)
@@ -936,7 +936,7 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         # throttle recovery to prevent partition moves from finishing
         self.logger.info("throttling recovery")
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
 
         admin = Admin(self.redpanda)
 
@@ -1042,7 +1042,7 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         # throttle recovery to prevent partition moves from finishing
         self.logger.info("throttling recovery")
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
 
         with self.NodeStopper(self) as ns:
             to_kill = random.choice(self.redpanda.nodes)

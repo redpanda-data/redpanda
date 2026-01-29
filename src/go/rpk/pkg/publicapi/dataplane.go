@@ -10,6 +10,7 @@
 package publicapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 
 	"buf.build/gen/go/redpandadata/dataplane/connectrpc/go/redpanda/api/dataplane/v1/dataplanev1connect"
 	"buf.build/gen/go/redpandadata/dataplane/connectrpc/go/redpanda/api/dataplane/v1alpha3/dataplanev1alpha3connect"
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
@@ -25,20 +27,20 @@ import (
 // DataPlaneClientSet holds the respective service clients to interact with
 // the data plane endpoints of the Public API.
 type DataPlaneClientSet struct {
-	Transform     *transformServiceClient
-	CloudStorage  dataplanev1connect.CloudStorageServiceClient
-	User          dataplanev1connect.UserServiceClient
-	Secrets       dataplanev1connect.SecretServiceClient
-	MCPServer     dataplanev1alpha3connect.MCPServerServiceClient
-	Topic         dataplanev1connect.TopicServiceClient
-	Pipeline      dataplanev1connect.PipelineServiceClient
 	ACL           dataplanev1connect.ACLServiceClient
+	CloudStorage  dataplanev1connect.CloudStorageServiceClient
 	KafkaConnect  dataplanev1connect.KafkaConnectServiceClient
+	KnowledgeBase dataplanev1alpha3connect.KnowledgeBaseServiceClient
+	MCPServer     dataplanev1alpha3connect.MCPServerServiceClient
+	Monitoring    dataplanev1connect.MonitoringServiceClient
+	Pipeline      dataplanev1connect.PipelineServiceClient
 	Quota         dataplanev1connect.QuotaServiceClient
 	Secret        dataplanev1connect.SecretServiceClient
 	Security      dataplanev1connect.SecurityServiceClient
-	Monitoring    dataplanev1connect.MonitoringServiceClient
-	KnowledgeBase dataplanev1alpha3connect.KnowledgeBaseServiceClient
+	ShadowLink    dataplanev1connect.ShadowLinkServiceClient
+	Topic         dataplanev1connect.TopicServiceClient
+	Transform     *transformServiceClient
+	User          dataplanev1connect.UserServiceClient
 
 	m         sync.RWMutex
 	authToken string
@@ -109,17 +111,17 @@ func NewDataPlaneClientSet(host, authToken string, opts ...connect.ClientOption)
 	dpCl.Transform = newTransformServiceClient(httpCl, host, authToken, opts...)
 	dpCl.CloudStorage = dataplanev1connect.NewCloudStorageServiceClient(httpCl, host, opts...)
 	dpCl.User = dataplanev1connect.NewUserServiceClient(httpCl, host, opts...)
-	dpCl.Secrets = dataplanev1connect.NewSecretServiceClient(httpCl, host, opts...)
+	dpCl.Secret = dataplanev1connect.NewSecretServiceClient(httpCl, host, opts...)
 	dpCl.MCPServer = dataplanev1alpha3connect.NewMCPServerServiceClient(httpCl, host, opts...)
 	dpCl.Topic = dataplanev1connect.NewTopicServiceClient(httpCl, host, opts...)
 	dpCl.Pipeline = dataplanev1connect.NewPipelineServiceClient(httpCl, host, opts...)
 	dpCl.ACL = dataplanev1connect.NewACLServiceClient(httpCl, host, opts...)
 	dpCl.KafkaConnect = dataplanev1connect.NewKafkaConnectServiceClient(httpCl, host, opts...)
 	dpCl.Quota = dataplanev1connect.NewQuotaServiceClient(httpCl, host, opts...)
-	dpCl.Secret = dataplanev1connect.NewSecretServiceClient(httpCl, host, opts...)
 	dpCl.Security = dataplanev1connect.NewSecurityServiceClient(httpCl, host, opts...)
 	dpCl.Monitoring = dataplanev1connect.NewMonitoringServiceClient(httpCl, host, opts...)
 	dpCl.KnowledgeBase = dataplanev1alpha3connect.NewKnowledgeBaseServiceClient(httpCl, host, opts...)
+	dpCl.ShadowLink = dataplanev1connect.NewShadowLinkServiceClient(httpCl, host, opts...)
 
 	return dpCl, nil
 }
@@ -133,4 +135,22 @@ func DataplaneClientFromRpkProfile(p *config.RpkProfile, opts ...connect.ClientO
 		return nil, fmt.Errorf("unable to get cluster information from your profile: %v", err)
 	}
 	return NewDataPlaneClientSet(url, p.CurrentAuth().AuthToken, opts...)
+}
+
+// ListAllShadowLinkTopics returns all the ShadowTopics for a given shadow link
+// using the pagination feature to traverse all pages of the list.
+func (dpCl *DataPlaneClientSet) ListAllShadowLinkTopics(ctx context.Context, shadowLinkName string) ([]*dataplanev1.ShadowTopic, error) {
+	fetchPage := func(ctx context.Context, pageToken string) ([]*dataplanev1.ShadowTopic, string, error) {
+		req := connect.NewRequest(&dataplanev1.ListShadowLinkTopicsRequest{
+			ShadowLinkName: shadowLinkName,
+			PageToken:      pageToken,
+			PageSize:       100,
+		})
+		resp, err := dpCl.ShadowLink.ListShadowLinkTopics(ctx, req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetShadowTopics(), resp.Msg.GetNextPageToken(), nil
+	}
+	return Paginate(ctx, maxPages, fetchPage)
 }

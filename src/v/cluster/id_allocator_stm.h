@@ -19,7 +19,7 @@
 #include "raft/errc.h"
 #include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 namespace config {
 struct configuration;
@@ -119,7 +119,7 @@ private:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<bool> sync(model::timeout_clock::duration);
 
-    mutex _lock{"id_allocator"};
+    ssx::mutex _lock{"id_allocator"};
 
     // id_allocator_stm is a state machine generating unique increasing IDs.
     // When a node becomes a leader it allocates a range of IDs of size

@@ -289,6 +289,19 @@ message Test3 {
   google.protobuf.Timestamp timestamp = 1;
 }"""
 
+validate_proto_def = """
+syntax = "proto3";
+
+import "buf/validate/validate.proto";
+
+message TestValidate {
+  buf.validate.FieldRules field_rules = 1;
+  buf.validate.StringRules string_rules = 2;
+  buf.validate.Int32Rules int32_rules = 3;
+  buf.validate.MessageRules message_rules = 4;
+  buf.validate.TimestampRules timestamp_rules = 5;
+}"""
+
 json_number_schema_def = '{"type":"number"}'
 
 validation_schemas = dict(
@@ -579,7 +592,7 @@ schema_avro_dependee_def = """
     ]
 }"""
 
-soft_deleted_schemas = {
+base_schemas = {
     "proto": {
         "subject": "schema_proto",
         "schema": schema_proto_def,
@@ -1243,11 +1256,15 @@ class SchemaRegistryEndpoints(RedpandaTest):
         context: TestContext,
         schema_registry_config: SchemaRegistryConfig = SchemaRegistryConfig(),
         num_brokers: int = 3,
+        extra_rp_conf: Optional[dict[str, Any]] = None,
         **kwargs: Any,
     ):
+        merged_rp_conf = {"auto_create_topics_enabled": False}
+        if extra_rp_conf:
+            merged_rp_conf.update(extra_rp_conf)
         super(SchemaRegistryEndpoints, self).__init__(
             context,
-            extra_rp_conf={"auto_create_topics_enabled": False},
+            extra_rp_conf=merged_rp_conf,
             resource_settings=ResourceSettings(num_cpus=1),
             log_config=log_config,
             pandaproxy_config=PandaproxyConfig(),
@@ -1262,6 +1279,11 @@ class SchemaRegistryEndpoints(RedpandaTest):
 
     def assert_in(self, member, container, msg=None):
         assert member in container, msg or f"{member!r} not found in {container!r}"
+
+    def assert_not_in(self, member, container, msg=None):
+        assert member not in container, (
+            msg or f"{member!r} unexpectedly found in {container!r}"
+        )
 
     def _get_rpk_tools(self):
         return RpkTool(self.redpanda)
@@ -1702,7 +1724,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.json()["id"] == 1
 
     @cluster(num_nodes=3)
-    def test_post_subjects_subject_versions_metadata_ruleset(self):
+    def test_post_subjects_subject_versions_null_metadata_ruleset(self):
         """
         Verify posting a schema with metatada and ruleSet
         These are not supported, but if they're null, we let it pass.
@@ -1728,6 +1750,170 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+
+    @cluster(num_nodes=1)
+    @matrix(schema_type=[SchemaType.AVRO, SchemaType.PROTOBUF, SchemaType.JSON])
+    def test_post_subjects_subject_versions_metadata_properties(self, schema_type):
+        """
+        Verify posting a schema with metatada.properties.
+        """
+
+        def as_java_str(v: str | bool | int | float) -> str:
+            if isinstance(v, bool):
+                return str(v).lower()
+            return str(v)
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug("Dump the schema with metadata properties")
+        metadata_properties = {
+            "string": "string",
+            "zero": 0,
+            "one": 1,
+            "neg": -1,
+            "float": 3.14,
+            "bool": False,
+        }
+        expected_properties = {
+            k: as_java_str(v) for k, v in metadata_properties.items()
+        }
+
+        schema = {
+            SchemaType.AVRO: schema1_def,
+            SchemaType.PROTOBUF: simple_proto_def,
+            SchemaType.JSON: r'{"type": "number"}',
+        }[schema_type]
+
+        schema_data = json.dumps(
+            {
+                "schema": schema,
+                "schemaType": schema_type.name,
+                "metadata": {"properties": metadata_properties},
+            }
+        )
+
+        schema_data_no_meta = json.dumps(
+            {
+                "schema": schema,
+                "schemaType": schema_type.name,
+            }
+        )
+
+        schema_data_null_meta = json.dumps(
+            {
+                "schema": schema,
+                "schemaType": schema_type.name,
+                "metadata": None,
+            }
+        )
+
+        self.logger.debug("Posting schema as a subject key")
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_data
+        )
+        self.logger.debug(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        schema_id = result_raw.json()["id"]
+        version = result_raw.json()["version"]
+
+        self.logger.debug("Reposting should return same id and properties")
+        for payload in [schema_data, schema_data_no_meta, schema_data_null_meta]:
+            result_raw = self.sr_client.post_subjects_subject_versions(
+                subject=f"{topic}-key", data=payload
+            )
+            self.logger.debug(result_raw.content)
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["id"] == schema_id
+            assert result_raw.json()["version"] == version, (
+                f"Expected version: {version}, got: {result_raw.json()['version']}"
+            )
+            assert result_raw.json()["metadata"]["properties"] == expected_properties, (
+                f"Expected: {expected_properties}, got: {result_raw.json()['metadata']['properties']}"
+            )
+
+        self.logger.debug(
+            "Retrieving schema by schema should return same id and properties"
+        )
+        for payload in [schema_data, schema_data_no_meta, schema_data_null_meta]:
+            result_raw = self.sr_client.post_subjects_subject(
+                subject=f"{topic}-key", data=payload
+            )
+            self.logger.debug(result_raw.content)
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["id"] == schema_id, (
+                f"Expected id: {schema_id}, got: {result_raw.json()['id']}"
+            )
+            assert result_raw.json()["version"] == version, (
+                f"Expected version: {version}, got: {result_raw.json()['version']}"
+            )
+            assert result_raw.json()["metadata"]["properties"] == expected_properties, (
+                f"Expected: {expected_properties}, got: {result_raw.json()['metadata']['properties']}"
+            )
+
+        self.logger.debug("Retrieving schema by subject,version")
+        result_raw = self.sr_client.get_subjects_subject_versions_version(
+            subject=f"{topic}-key", version=version
+        )
+        self.logger.debug(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == schema_id, (
+            f"Expected id: {schema_id}, got: {result_raw.json()['id']}"
+        )
+        assert result_raw.json()["version"] == version, (
+            f"Expected version: {version}, got: {result_raw.json()['version']}"
+        )
+
+        assert result_raw.json()["metadata"]["properties"] == expected_properties, (
+            f"Expected: {expected_properties}, got: {result_raw.json()['metadata']['properties']}"
+        )
+
+        self.logger.debug("Retrieving schema by id")
+        result_raw = self.sr_client.get_schemas_ids_id(id=schema_id)
+        self.logger.debug(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+
+        assert result_raw.json()["metadata"]["properties"] == expected_properties, (
+            f"Expected: {expected_properties}, got: {result_raw.json()['metadata']['properties']}"
+        )
+
+        metadata_properties.update({"new_prop": "new_val"})
+        expected_properties.update({"new_prop": "new_val"})
+
+        schema_data_v2 = json.dumps(
+            {
+                "schema": schema,
+                "schemaType": schema_type.name,
+                "metadata": {"properties": metadata_properties},
+            }
+        )
+
+        self.logger.debug("Posting schema with different properties is compatible")
+        result_raw = self.sr_client.post_compatibility_subject_version(
+            subject=f"{topic}-key", version=version, data=schema_data_v2
+        )
+        self.logger.debug(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["is_compatible"] is True, (
+            f"Expected is_compatible: True, got: {result_raw.content}"
+        )
+
+        self.logger.debug(
+            "Posting schema with different properties creates a new version"
+        )
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_data_v2
+        )
+        self.logger.debug(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == schema_id + 1, (
+            f"Expected id: {schema_id + 1}, got: {result_raw.json()['id']}"
+        )
+        assert result_raw.json()["version"] == version + 1, (
+            f"Expected version: {version + 1}, got: {result_raw.json()['version']}"
+        )
+        assert result_raw.json()["metadata"]["properties"] == expected_properties, (
+            f"Expected: {expected_properties}, got: {result_raw.json()['metadata']['properties']}"
+        )
 
     @cluster(num_nodes=3)
     def test_post_subjects_subject(self):
@@ -2493,13 +2679,13 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             subject=subject, data=schema_1_data
         )
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json() == {"id": 1}
+        assert result_raw.json()["id"] == 1
 
         result_raw = self.sr_client.post_subjects_subject_versions(
             subject=subject, data=schema_2_data
         )
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json() == {"id": 2}
+        assert result_raw.json()["id"] == 2
 
         # A 'latest' hard deletion will always fail because it tries
         # to delete the latest non-soft-deleted version
@@ -2851,10 +3037,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             f"{topic}-value", "latest"
         )
         self.logger.info(schema.json())
-        if protocol == SchemaType.AVRO:
-            assert schema.json().get("schemaType") is None
-        else:
-            assert schema.json()["schemaType"] == protocol.name
+        assert schema.json()["schemaType"] == protocol.name
+        assert schema.json()["deleted"] is False
 
     @cluster(num_nodes=4)
     @matrix(
@@ -3350,7 +3534,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         # Test setup. Insert and soft-delete schemas to be referencedby
 
         for name in ["proto", "json", "avro"]:
-            schema = soft_deleted_schemas[name]
+            schema = base_schemas[name]
             result_raw = self.sr_client.post_subjects_subject_versions(
                 subject=schema["subject"],
                 data=json.dumps(
@@ -3586,6 +3770,37 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         test_runner(test_subjects_subject_versions_version_schema)
 
+    @cluster(num_nodes=1)
+    def test_qualified_subjects_flag_off(self):
+        """
+        With enable_qualified_subjects off (default), the qualified syntax is not parsed, and all
+        subjects are treated as if they are in the default context.
+        """
+
+        # Register a schema in the default context first
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="normal-subject", data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
+        # Register a DIFFERENT schema with qualified-looking subject name
+        # Flag OFF: Same context as above, so gets id=2 (shared counter)
+        # Flag ON: Would be in .ctx context with independent counter, gets id=1
+        # TODO: once implemented, we could make this test simpler by just using the `GET /contexts`
+        # API instead of using schema ID allocation behaviour to verify that these subjects land in
+        # different contexts.
+        qualified_subject = ":.ctx:my-subject"
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=qualified_subject, data=json.dumps({"schema": schema2_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(
+            result.json()["id"],
+            2,
+            "Expected id=2 proving shared counter with default context",
+        )
+
 
 class SchemaRegistryModeNotMutableTest(SchemaRegistryEndpoints):
     """
@@ -3801,7 +4016,10 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         result_raw = self.sr_client.set_config(data=compat_back)
         assert result_raw.status_code == 422
         assert result_raw.json()["error_code"] == 42205
-        assert result_raw.json()["message"] == "Subject null is in read-only mode"
+        assert (
+            result_raw.json()["message"]
+            == "Subject null in context . is in read-only mode"
+        )
 
         result_raw = self.sr_client.set_config_subject(
             subject=ro_subject, data=compat_back
@@ -3809,7 +4027,8 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         assert result_raw.status_code == 422
         assert result_raw.json()["error_code"] == 42205
         assert (
-            result_raw.json()["message"] == f"Subject {ro_subject} is in read-only mode"
+            result_raw.json()["message"]
+            == f"Subject {ro_subject} in context . is in read-only mode"
         )
 
         result_raw = self.sr_client.set_config_subject(
@@ -3822,7 +4041,8 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         assert result_raw.status_code == 422
         assert result_raw.json()["error_code"] == 42205
         assert (
-            result_raw.json()["message"] == f"Subject {ro_subject} is in read-only mode"
+            result_raw.json()["message"]
+            == f"Subject {ro_subject} in context . is in read-only mode"
         )
 
         result_raw = self.sr_client.delete_config_subject(subject=rw_subject)
@@ -3874,7 +4094,8 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         assert result_raw.status_code == 422
         assert result_raw.json()["error_code"] == 42205
         assert (
-            result_raw.json()["message"] == f"Subject {ro_subject} is in read-only mode"
+            result_raw.json()["message"]
+            == f"Subject {ro_subject} in context . is in read-only mode"
         )
 
         self.logger.info("Posting schema 2 as rw_subject key")
@@ -4134,6 +4355,59 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         resp = rpk.list_schemas([sub1])
         got_ver_to_id = {int(elem["version"]): elem["id"] for elem in resp}
         self.assert_equal(expected_ver_to_id, got_ver_to_id)
+
+    @cluster(num_nodes=1)
+    def test_import_with_metadata_properties(self):
+        """
+        Verify importing a schema with metatada.properties.
+        """
+
+        subject = f"{create_topic_names(1)[0]}-key"
+        result_raw = self.sr_client.set_mode_subject(
+            subject=subject, data=json.dumps({"mode": "IMPORT"})
+        )
+        self.assert_equal(result_raw.status_code, 200)
+
+        metadata_properties = {
+            "string": "string",
+        }
+
+        schemas = [
+            {
+                "schema": schema1_def,
+                "schemaType": str(SchemaType.AVRO),
+                "metadata": {"properties": metadata_properties},
+                "id": 1,
+                "version": 1,
+            },
+            {
+                "schema": schema1_def,
+                "schemaType": str(SchemaType.AVRO),
+                "id": 2,
+                "version": 2,
+            },
+        ]
+
+        self.logger.debug("Importing schemas")
+        for schema in schemas:
+            result_raw = self.sr_client.post_subjects_subject_versions(
+                subject=subject, data=json.dumps(schema)
+            )
+            self.logger.debug(result_raw.content)
+            assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Retrieving schemas")
+        for schema in schemas:
+            v = schema["version"]
+            result_raw = self.sr_client.get_subjects_subject_versions_version(
+                subject=subject, version=v
+            )
+            self.logger.debug(result_raw.content)
+            assert result_raw.status_code == requests.codes.ok
+            for f in ["schema", "schemaType", "id", "version", "metadata"]:
+                assert result_raw.json().get(f) == schema.get(f), (
+                    f"Expected: {schema.get(f)}, got: {result_raw.json().get(f)}"
+                )
 
     @cluster(num_nodes=3)
     def test_schema_id_smaller_than_one(self):
@@ -4747,6 +5021,420 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         self.assert_equal(result_raw.json()["id"], 2)
 
 
+class SchemaRegistryContextTest(SchemaRegistryEndpoints):
+    """
+    Tests for context-qualified subject functionality.
+
+    These tests verify that Schema Registry correctly handles context-qualified
+    subjects (e.g., ":.ctx:subject") for isolation, references, config, and mode.
+    """
+
+    def __init__(self, context: TestContext, **kwargs: Any):
+        schema_registry_config = SchemaRegistryConfig()
+        schema_registry_config.mode_mutability = True
+        super().__init__(
+            context,
+            schema_registry_config=schema_registry_config,
+            extra_rp_conf={"schema_registry_enable_qualified_subjects": True},
+            **kwargs,
+        )
+
+    @cluster(num_nodes=1)
+    def test_contexts(self):
+        """Verify context-aware endpoints work with qualified subjects."""
+
+        schema_data = json.dumps({"schema": schema1_def})
+        compat_schema_data = json.dumps({"schema": schema2_def})
+        ctx_subject = ":.ctx1:sub1"
+
+        # Register in context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=ctx_subject, data=schema_data
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Lookup in context
+        result = self.sr_client.post_subjects_subject(
+            subject=ctx_subject, data=schema_data
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Compatibility check in context
+        result = self.sr_client.post_compatibility_subject_version(
+            subject=ctx_subject, version="latest", data=compat_schema_data
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["is_compatible"], True)
+
+        # List versions in context
+        result = self.sr_client.get_subjects_subject_versions(subject=ctx_subject)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json(), [1])
+
+        # Get specific version in context
+        result = self.sr_client.get_subjects_subject_versions_version(
+            subject=ctx_subject, version=1
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["version"], 1)
+
+        # Get schema only for specific version in context
+        result = self.sr_client.get_subjects_subject_versions_version_schema(
+            subject=ctx_subject, version=1
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Get referenced-by in context (empty list, no references)
+        result = self.sr_client.get_subjects_subject_versions_version_referenced_by(
+            subject=ctx_subject, version=1
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json(), [])
+
+        # Delete specific version in context
+        result = self.sr_client.delete_subject_version(subject=ctx_subject, version=1)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json(), 1)
+
+        # Delete subject in context (cleanup)
+        result = self.sr_client.delete_subject(subject=ctx_subject, permanent=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+    @cluster(num_nodes=1)
+    def test_context_isolation(self):
+        """Verify contexts are isolated: independent IDs, no cross-context lookups."""
+
+        # Register in default context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="sub1", data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
+        # Register same schema in .ctx1 - should get id=1 (independent counter)
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=":.ctx1:sub1", data=json.dumps({"schema": schema2_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
+        # Lookup schema in different context - should fail
+        result = self.sr_client.post_subjects_subject(
+            subject=":.ctx2:sub1", data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.not_found)
+
+    @cluster(num_nodes=1)
+    def test_context_references(self):
+        """Test schema references work with context-qualified subjects."""
+        # Test all schema types using existing test data
+        for schema_type in ["proto", "avro", "json"]:
+            base = base_schemas[schema_type]
+            dependent = dependent_schemas[schema_type]
+            ref_name = dependent["references"][0]["name"]
+
+            ctx = f"ctx-{schema_type}"
+            ctx_ref_subject = f":.{ctx}:base"
+            ctx_main_subject = f":.{ctx}:dependent"
+
+            # Register base schema in context
+            ref_data = json.dumps(
+                {"schema": base["schema"], "schemaType": base["type"]}
+            )
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=ctx_ref_subject, data=ref_data
+            )
+            self.assert_equal(result.status_code, requests.codes.ok)
+
+            # Register dependent schema with in-context reference
+            main_data = json.dumps(
+                {
+                    "schema": dependent["schema"],
+                    "schemaType": dependent["type"],
+                    "references": [
+                        {"name": ref_name, "subject": ctx_ref_subject, "version": 1}
+                    ],
+                }
+            )
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=ctx_main_subject, data=main_data
+            )
+            self.assert_equal(result.status_code, requests.codes.ok)
+
+            # Verify referenced-by works with context subjects
+            result = self.sr_client.get_subjects_subject_versions_version_referenced_by(
+                subject=ctx_ref_subject, version=1
+            )
+            self.assert_equal(result.status_code, requests.codes.ok)
+            self.assert_equal(len(result.json()), 1)
+
+        # Test cross-context references
+        base = base_schemas["proto"]
+        dependent = dependent_schemas["proto"]
+        cross_ref_subject = ":.ctx-cross-ref:base"
+        cross_main_subject = ":.ctx-cross-main:dependent"
+
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=cross_ref_subject,
+            data=json.dumps({"schema": base["schema"], "schemaType": base["type"]}),
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=cross_main_subject,
+            data=json.dumps(
+                {
+                    "schema": dependent["schema"],
+                    "schemaType": dependent["type"],
+                    "references": [
+                        {
+                            "name": dependent["references"][0]["name"],
+                            "subject": cross_ref_subject,
+                            "version": 1,
+                        }
+                    ],
+                }
+            ),
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+    @cluster(num_nodes=1)
+    def test_context_config(self):
+        """Test context-level config operations."""
+
+        ctx = "test-ctx"
+        ctx_prefix = f":.{ctx}:"
+        ctx_subject = f"{ctx_prefix}test-sub"
+
+        # Register a schema in the context first
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=ctx_subject, data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Set context-level config (empty subject = context-level)
+        result = self.sr_client.set_config_subject(
+            subject=ctx_prefix,
+            data=json.dumps({"compatibility": "NONE"}),
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Get context-level config
+        result = self.sr_client.get_config_subject(subject=ctx_prefix)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "NONE")
+
+        # Subject-level config should fall back to context-level
+        result = self.sr_client.get_config_subject(subject=ctx_subject, fallback=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "NONE")
+
+        # Default context should not be affected by context-level config
+        result = self.sr_client.get_config()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "BACKWARD")
+
+        # Set subject-level config (different from context-level)
+        result = self.sr_client.set_config_subject(
+            subject=ctx_subject,
+            data=json.dumps({"compatibility": "FULL"}),
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Subject should now have FULL (not context's NONE)
+        result = self.sr_client.get_config_subject(subject=ctx_subject, fallback=False)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "FULL")
+
+        # Delete subject-level config
+        result = self.sr_client.delete_config_subject(subject=ctx_subject)
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Subject should fall back to context-level NONE
+        result = self.sr_client.get_config_subject(subject=ctx_subject, fallback=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "NONE")
+
+        # Delete the context-level config
+        result = self.sr_client.delete_config_subject(subject=ctx_prefix)
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Subject should fall back to default BACKWARD
+        result = self.sr_client.get_config_subject(subject=ctx_subject, fallback=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "BACKWARD")
+
+    @cluster(num_nodes=1)
+    def test_default_context(self):
+        """Test that qualified subject syntax works for the default context."""
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # Register in default context with unqualified subject
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="default-ctx-subject", data=schema_data
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
+        # Look up in default context with qualified subject
+        result = self.sr_client.post_subjects_subject(
+            subject=":.:default-ctx-subject", data=schema_data
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
+        # Set the compatibility level with qualified subject
+        result = self.sr_client.set_config_subject(
+            subject=":.:", data=json.dumps({"compatibility": "FULL"})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibility"], "FULL")
+
+        # Look up the compatibility level of default context
+        result = self.sr_client.get_config()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "FULL")
+
+        # Delete the compatibility level with qualified subject
+        result = self.sr_client.delete_config_subject(subject=":.:")
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "FULL")
+
+        # Look up the compatibility level of default context
+        result = self.sr_client.get_config()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["compatibilityLevel"], "BACKWARD")
+
+        # Set the mode with qualified subject
+        result = self.sr_client.set_mode_subject(
+            subject=":.:", data=json.dumps({"mode": "READONLY"}), force=True
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READONLY")
+
+        # Look up the mode of default context
+        result = self.sr_client.get_mode()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READONLY")
+
+        # Delete the mode with qualified subject
+        result = self.sr_client.delete_mode_subject(subject=":.:")
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READONLY")
+
+        # Look up the mode of default context
+        result = self.sr_client.get_mode()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READWRITE")
+
+    @cluster(num_nodes=1)
+    def test_context_mode(self):
+        """Test context-level mode operations."""
+
+        ctx = "test-ctx"
+        ctx_prefix = f":.{ctx}:"
+        ctx_subject = f"{ctx_prefix}test-sub"
+
+        # Register a schema in the context first
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=ctx_subject, data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Set context-level mode (empty subject = context-level)
+        result = self.sr_client.set_mode_subject(
+            subject=ctx_prefix,
+            data=json.dumps({"mode": "READONLY"}),
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Get context-level mode
+        result = self.sr_client.get_mode_subject(subject=ctx_prefix)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READONLY")
+
+        # Subject-level mode should fall back to context-level
+        result = self.sr_client.get_mode_subject(subject=ctx_subject, fallback=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READONLY")
+
+        # Default context should not be affected by context-level mode
+        result = self.sr_client.get_mode()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READWRITE")
+
+        # Set subject-level mode (different from context-level)
+        result = self.sr_client.set_mode_subject(
+            subject=ctx_subject,
+            data=json.dumps({"mode": "READWRITE"}),
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Subject should now have READWRITE (not context's READONLY)
+        result = self.sr_client.get_mode_subject(subject=ctx_subject, fallback=False)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READWRITE")
+
+        # Delete subject-level mode
+        result = self.sr_client.delete_mode_subject(subject=ctx_subject)
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Subject should fall back to context-level READONLY
+        result = self.sr_client.get_mode_subject(subject=ctx_subject, fallback=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READONLY")
+
+        # Delete the context-level mode
+        result = self.sr_client.delete_mode_subject(subject=ctx_prefix)
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Subject should fall back to default READWRITE
+        result = self.sr_client.get_mode_subject(subject=ctx_subject, fallback=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["mode"], "READWRITE")
+
+    @cluster(num_nodes=1)
+    def test_context_record_persistence(self):
+        # First, register a schema in the default context (no CONTEXT record)
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="default-ctx-sub", data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Verify no CONTEXT record was written for default context
+        time.sleep(1)  # Give some time for logs to be flushed
+        assert not self.redpanda.search_log_any("Writing CONTEXT record for ctx=\\."), (
+            "CONTEXT record should not be written for default context"
+        )
+
+        # Now register a schema in a non-default context
+        ctx = ".test-context"
+        ctx_subject = f":{ctx}:test-sub"
+
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=ctx_subject, data=json.dumps({"schema": schema2_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Verify CONTEXT record was written
+        # TODO: This test can be simplified with GET /contexts support later
+        # instead of relying on log lines.
+        write_pattern = f"Writing CONTEXT record for ctx={ctx}"
+        wait_until(
+            lambda: self.redpanda.search_log_any(write_pattern),
+            timeout_sec=10,
+            err_msg=f"Failed to find write log: {write_pattern}",
+        )
+
+        # Verify CONTEXT record was replayed (key contains "keytype: CONTEXT")
+        replay_pattern = f"keytype: CONTEXT.*context: {ctx}"
+        wait_until(
+            lambda: self.redpanda.search_log_any(replay_pattern),
+            timeout_sec=10,
+            err_msg=f"Failed to find replay log: {replay_pattern}",
+        )
+
+
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
     Test schema registry against a redpanda cluster with HTTP Basic Auth enabled.
@@ -4766,8 +5454,8 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         )
 
         superuser = self.redpanda.SUPERUSER_CREDENTIALS
-        self.user = SaslCredentials("user", "panda", superuser.mechanism)
-        public_user = SaslCredentials("red", "panda", superuser.mechanism)
+        self.user = SaslCredentials("user", "panda012345678", superuser.mechanism)
+        public_user = SaslCredentials("red", "panda012345678", superuser.mechanism)
 
         self.super_auth = (superuser.username, superuser.password)
         self.user_auth = (self.user.username, self.user.password)
@@ -5392,7 +6080,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         )
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json() == {"id": 1}, f"Json: {result_raw.json()}"
+        assert result_raw.json()["id"] == 1, f"Json: {result_raw.json()}"
 
         self.logger.debug("Get subject versions")
         result_raw = self.sr_client.get_subjects_subject_versions(
@@ -5409,7 +6097,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         )
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json() == {"id": 2}, f"Json: {result_raw.json()}"
+        assert result_raw.json()["id"] == 2, f"Json: {result_raw.json()}"
 
         self.logger.debug("Get subject versions")
         result_raw = self.sr_client.get_subjects_subject_versions(
@@ -5501,7 +6189,7 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.ok, (
             f"Code: {result_raw.status_code}"
         )
-        assert result_raw.json() == {"id": 1}, f"Json: {result_raw.json()}"
+        assert result_raw.json()["id"] == 1, f"Json: {result_raw.json()}"
 
         self.logger.debug("Soft delete subject")
         result_raw = self.sr_client.delete_subject(
@@ -6199,6 +6887,12 @@ class SchemaRegistryConfluentClient(SchemaRegistryEndpoints):
         result = self.sr_client.register_schema(well_known_subject, well_known_schema)
         assert result == 3, f"Result: {result}"
 
+        validate_subject = "topic_4-key"
+        validate_schema = Schema(validate_proto_def, "PROTOBUF")
+
+        result = self.sr_client.register_schema(validate_subject, validate_schema)
+        assert result == 4, f"Result: {result}"
+
         result = self.sr_client.get_schema(1)
         assert result == simple_schema, f"Result: {result}"
 
@@ -6207,6 +6901,9 @@ class SchemaRegistryConfluentClient(SchemaRegistryEndpoints):
 
         result = self.sr_client.get_schema(3)
         assert result == well_known_schema, f"Result: {result}"
+
+        result = self.sr_client.get_schema(4)
+        assert result == validate_schema, f"Result: {result}"
 
 
 # dataset for SchemaRegistryCompatibilityModes: schemas is a list of 3 schemas compatible for `mode`, `antimode` is a suitable mode that will make the compat check for schemas fail
@@ -7511,7 +8208,7 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         )
 
         superuser = self.redpanda.SUPERUSER_CREDENTIALS
-        self.user = SaslCredentials("user", "panda", superuser.mechanism)
+        self.user = SaslCredentials("user", "panda012345678", superuser.mechanism)
 
         self.super_auth = (superuser.username, superuser.password)
         self.user_auth = (self.user.username, self.user.password)
@@ -7895,6 +8592,77 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         result = self.sr_client.get_subjects(auth=self.user_auth)
         self.assert_equal(result.status_code, 200)
         self.assert_equal(result.json(), [])
+
+    @cluster(num_nodes=1)
+    def test_context_acl_prefix_authorization(self):
+        """
+        Test that prefix-based ACLs can authorize access to all subjects
+        within a context. Verifies that ACL on ':.staging:' (prefix) grants
+        access to all subjects in the .staging context.
+        """
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # Create subjects in different contexts
+        staging_subject_1 = ":.staging:topic-1"
+        staging_subject_2 = ":.staging:topic-2"
+        prod_subject = ":.prod:topic-1"
+        default_subject = "topic-1"
+
+        # Register schemas in contexts (using superuser)
+        for subject in [
+            staging_subject_1,
+            staging_subject_2,
+            prod_subject,
+            default_subject,
+        ]:
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=subject, data=schema_data, auth=self.super_auth
+            )
+            self.assert_equal(result.status_code, 200)
+
+        # No ACLs - should deny access to all subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=staging_subject_1, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # Grant prefix ACL on .staging context - should allow all .staging subjects
+        self._post_acl(self._create_acl(":.staging:", "SUBJECT", "PREFIXED", "READ"))
+
+        # Should allow access to .staging subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=staging_subject_1, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json(), [1])
+
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=staging_subject_2, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json(), [1])
+
+        # Should deny access to .prod subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=prod_subject, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # Should deny access to default context subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=default_subject, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # GET /subjects should filter correctly by context ACL
+        result = self.sr_client.get_subjects(auth=self.user_auth)
+        self.assert_equal(result.status_code, 200)
+        # Should return qualified subjects for .staging context
+        result_subjects = set(result.json())
+        self.assert_in(":.staging:topic-1", result_subjects)
+        self.assert_in(":.staging:topic-2", result_subjects)
+        self.assert_not_in(":.prod:topic-1", result_subjects)
+        self.assert_not_in("topic-1", result_subjects)
 
     @cluster(num_nodes=3)
     def test_enterprise_sanctions(self):

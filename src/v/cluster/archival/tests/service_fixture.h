@@ -13,6 +13,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/upstream_registry.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/archival/probe.h"
 #include "http/tests/http_imposter.h"
@@ -207,6 +208,14 @@ public:
           to, [&] { return get_requests().size() == expected; });
     }
 
+    void auth_token_refresh_eventually(
+      size_t expected, ss::lowres_clock::duration to = 3s) {
+        RPTEST_REQUIRE_EVENTUALLY(to, [this, expected] {
+            return pool.local().token_refresh_count() == expected;
+        });
+    }
+
+    ss::sharded<cloud_storage_clients::upstream_registry> upstreams;
     ss::sharded<cloud_storage_clients::client_pool> pool;
     ss::sharded<cloud_io::remote> io;
     ss::sharded<cloud_storage::remote> remote;

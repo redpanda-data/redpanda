@@ -35,7 +35,7 @@ compaction_coordinator::compaction_coordinator(
   ss::gate& bg)
   : _log(std::move(log))
   , _logger(logger)
-  , _timer{[this] { collect_mcco_from_all_members(); }}
+  , _timer{[this] { collect_all_replica_offsets(); }}
   , _jitter{base_interval()}
   , _retry_interval{retry_interval(base_interval())}
   , _fstates(fstates)
@@ -50,12 +50,12 @@ compaction_coordinator::compaction_coordinator(
         return features
           .await_feature(features::feature::coordinated_compaction, as)
           .then([this, &as] {
+              _started = true;
               arm_timer_if_needed(true);
               _as_sub = ssx::subscribe_or_trigger(
                 as, [this] noexcept { cancel_timer(); });
               _tombstone_retention_ms_binding.watch(
                 [this] { on_ntp_config_change(); });
-              _started = true;
               vlog(_logger.info, "compaction coordinator started");
           });
     });
@@ -76,11 +76,11 @@ void compaction_coordinator::on_leadership_change(
 
 void compaction_coordinator::on_group_configuration_change() {
     if (_started && _is_leader) {
-        recalculate_mtro();
+        recalculate_group_offsets();
     }
 }
 
-get_compaction_mcco_reply compaction_coordinator::do_get_compaction_mcco(
+get_compaction_mcco_reply compaction_coordinator::do_get_local_replica_offsets(
   get_compaction_mcco_request req) {
     if (!_started) {
         return get_compaction_mcco_reply{};
@@ -95,13 +95,14 @@ get_compaction_mcco_reply compaction_coordinator::do_get_compaction_mcco(
           req.source_node());
         return get_compaction_mcco_reply{};
     }
-    update_local_mcco();
+    update_local_replica_offsets();
     return get_compaction_mcco_reply{
-      .mcco = get_local_max_cleanly_compacted_offset()};
+      .mcco = get_local_max_cleanly_compacted_offset(),
+      .mxfo = get_local_max_transaction_free_offset()};
 }
 
 distribute_compaction_mtro_reply
-compaction_coordinator::do_distribute_compaction_mtro(
+compaction_coordinator::do_distribute_group_offsets(
   distribute_compaction_mtro_request req) {
     if (!_started) {
         return distribute_compaction_mtro_reply{
@@ -119,11 +120,11 @@ compaction_coordinator::do_distribute_compaction_mtro(
           .success = distribute_compaction_mtro_reply::is_success::no};
     }
 
-    update_mtro(req.mtro);
-    // we may be a follower lagging behind, so our MCCO or even max offset
-    // may be below MTRO; fix that: any log below MTRO, even not replicated
-    // yet, is cleanly compacted
-    on_local_mcco_update(req.mtro);
+    update_group_offsets(req.mtro, req.mxro);
+    // We may be a follower lagging behind, so our MCCO or even max offset
+    // may be below MTRO. Fix that: any log below MTRO, even not replicated
+    // yet, is cleanly compacted. Same for MXFO/MXRO.
+    on_local_replica_offsets_update(req.mtro, req.mxro);
 
     return distribute_compaction_mtro_reply{
       .success = distribute_compaction_mtro_reply::is_success::yes};
@@ -134,19 +135,28 @@ model::offset compaction_coordinator::get_max_tombstone_remove_offset() const {
 }
 
 model::offset
+compaction_coordinator::get_max_transaction_remove_offset() const {
+    return _mxro;
+}
+
+model::offset
 compaction_coordinator::get_local_max_cleanly_compacted_offset() const {
     return _local_mcco;
 }
 
+model::offset
+compaction_coordinator::get_local_max_transaction_free_offset() const {
+    return _local_mxfo;
+}
+
 compaction_coordinator::clock_t::duration
 compaction_coordinator::base_interval() const {
-    auto retention = _log->config().tombstone_retention_ms();
+    auto retention = _log->config().delete_retention_ms();
     // Typically retention is 24h, set update interval to 1h
     // (up to 1.5h due to jitter).
     // Using half-max for disabled to avoid overflow in jitter.
-    clock_t::duration base_interval = retention
-                                        ? clock_t::duration(*retention / 24)
-                                        : clock_t::duration::max() / 2;
+    auto base_interval = retention ? clock_t::duration(*retention / 24)
+                                   : clock_t::duration::max() / 2;
     vlog(_logger.debug, "calculated base_interval as {}", base_interval);
     return base_interval;
 }
@@ -169,39 +179,93 @@ void compaction_coordinator::on_ntp_config_change() {
     }
 }
 
-void compaction_coordinator::update_local_mcco() {
-    on_local_mcco_update(_log->cleanly_compacted_prefix_offset());
+void compaction_coordinator::update_local_replica_offsets() {
+    on_local_replica_offsets_update(
+      _log->cleanly_compacted_prefix_offset(),
+      _log->transaction_free_prefix_offset());
 }
 
-void compaction_coordinator::collect_mcco_from_all_members() {
+void compaction_coordinator::collect_all_replica_offsets() {
     if (!_is_leader || _raft_as.abort_requested() || _raft_bg.is_closed()) {
         return;
     }
-    update_local_mcco();
+    update_local_replica_offsets();
     for (auto& [node_id, fstate] : _fstates) {
-        ssx::background = fstate.mcco_getter->submit(
+        ssx::background = fstate.coordinated_compaction_offsets_getter->submit(
           [this, holder = _raft_bg.hold(), node_id](
             ss::abort_source& op_as) mutable {
-              return get_and_process_compaction_mcco(node_id, op_as)
+              return get_and_process_replica_offsets(node_id, op_as)
                 .finally([holder = std::move(holder)] {});
           });
     }
     arm_timer_if_needed(false);
 }
 
-ss::future<> compaction_coordinator::get_and_process_compaction_mcco(
+bool compaction_coordinator::bump_offset_value(
+  model::offset compaction_coordinator::* member,
+  model::offset new_value,
+  std::string_view var_name) {
+    vlog(
+      _logger.debug,
+      "updating {} from {} to {}",
+      var_name,
+      this->*member,
+      new_value);
+    if (new_value == this->*member) {
+        return false;
+    }
+    if (new_value < this->*member) {
+        // We ignore attempts to move offsets backwards for the following
+        // reasons:
+        //
+        // A. MCCO/MXFO.
+        //   For MCCO this may happen when a cleanly compacted segment is merged
+        // with the following one which is not cleanly compacted. Log only
+        // tracks clean compaction per segment, but compaction coordinator will
+        // retain earlier info about it gathered when segment were more
+        // granular.
+        //   It also may be a late RPC from leader imposing the group's MTRO as
+        // local MCCO. Same for MXFO/MXRO.
+        //
+        // B. For MTRO/MXRO.
+        //   A follower with an empty log may have MCCO=0. Similarly, a follower
+        // with a log much shorter than the leader may have MCCO less than the
+        // group's MTRO. Low MCCO reported by such followers earlier may
+        // contribute to lowering the group's MTRO below existing value.
+        //   It is intentionally ignored, as semantically MTRO remains the same:
+        // when such a follower catches up, its log will be filled with already
+        // cleanly compacted data, as, by definition of MTRO, all replicas have
+        // their logs cleanly compacted up to it.
+        //   Later, when the follower receives MTRO from the leader, the
+        // follower will update its MCCO to at least match the group's MTRO.
+        //   Same for MXFO/MXRO.
+        vlog(
+          _logger.debug,
+          "attempted to move local {} backwards from "
+          "{} to {}",
+          var_name,
+          this->*member,
+          new_value);
+        return false;
+    }
+    this->*member = new_value;
+    return true;
+}
+
+ss::future<> compaction_coordinator::get_and_process_replica_offsets(
   vnode node_id, ss::abort_source& op_as) {
-    auto maybe_mcco = co_await repeat(
-      [this, node_id]() mutable { return get_compaction_mcco(node_id); },
+    auto maybe_remote_replica_offsets = co_await repeat(
+      [this, node_id]() mutable { return get_remote_replica_offsets(node_id); },
       op_as);
-    if (!maybe_mcco) {
+    if (!maybe_remote_replica_offsets) {
         co_return;
     }
     vlog(
       _logger.debug,
-      "received max cleanly compacted offset from node {}: {}",
+      "received remote replica offsets from node {}: mcco={}, mxfo={}",
       node_id,
-      *maybe_mcco);
+      *maybe_remote_replica_offsets->mcco,
+      *maybe_remote_replica_offsets->mxfo);
     if (op_as.abort_requested()) {
         co_return;
     }
@@ -209,20 +273,21 @@ ss::future<> compaction_coordinator::get_and_process_compaction_mcco(
     if (fs_it == _fstates.end()) {
         vlog(
           _logger.warn,
-          "received max cleanly compacted offset from unknown node {}: {}, "
-          "ignoring",
-          node_id,
-          *maybe_mcco);
+          "received remote replica offsets from unknown node {}, ignoring",
+          node_id);
         co_return;
     }
-    fs_it->second.max_cleanly_compacted_offset = *maybe_mcco;
+    fs_it->second.max_cleanly_compacted_offset
+      = *maybe_remote_replica_offsets->mcco;
+    fs_it->second.max_transaction_free_offset
+      = *maybe_remote_replica_offsets->mxfo;
     if (_is_leader) [[likely]] {
-        recalculate_mtro();
+        recalculate_group_offsets();
     }
 }
 
-ss::future<std::optional<model::offset>>
-compaction_coordinator::get_compaction_mcco(vnode node_id) {
+ss::future<std::optional<get_compaction_mcco_reply>>
+compaction_coordinator::get_remote_replica_offsets(vnode node_id) {
     auto rpc_future = co_await ss::coroutine::as_future(
       _client_protocol.get_compaction_mcco(
         node_id.id(),
@@ -246,58 +311,41 @@ compaction_coordinator::get_compaction_mcco(vnode node_id) {
           reply);
         co_return std::nullopt;
     }
-    co_return reply.value().mcco;
+    co_return reply.value();
 }
 
-void compaction_coordinator::on_local_mcco_update(model::offset new_mcco) {
-    vlog(
-      _logger.debug,
-      "updating local max cleanly compacted offset from {} to {}",
-      _local_mcco,
-      new_mcco);
-    if (new_mcco == _local_mcco) {
-        if (_need_force_update) {
-            _need_force_update = false;
-        } else {
-            return;
-        }
-    }
-    if (new_mcco < _local_mcco) {
-        // This may happen when a cleanly compacted segment is merged with the
-        // following one which is not cleanly compacted. Log only tracks clean
-        // compaction per segment, but compaction coordinator will retain
-        // earlier info about it gathered when segment were more granular.
-        vlog(
-          _logger.debug,
-          "attempted to move local max cleanly compacted offset backwards from "
-          "{} to {}",
-          _local_mcco,
-          new_mcco);
-        return;
-    }
-    _local_mcco = new_mcco;
-
-    if (_is_leader) {
-        recalculate_mtro();
+void compaction_coordinator::on_local_replica_offsets_update(
+  model::offset new_mcco, model::offset new_mxfo) {
+    bool mcco_updated = bump_offset_value(
+      &compaction_coordinator::_local_mcco,
+      new_mcco,
+      "local max cleanly compacted offset");
+    bool mxfo_updated = bump_offset_value(
+      &compaction_coordinator::_local_mxfo,
+      new_mxfo,
+      "local max transaction free offset");
+    if (_is_leader && (mcco_updated || mxfo_updated)) {
+        recalculate_group_offsets();
     }
 }
 
-void compaction_coordinator::send_mtro_to_followers() {
+void compaction_coordinator::send_group_offsets_to_followers() {
     for (const auto& [node_id, fstate] : _fstates) {
-        ssx::background = fstate.mtro_sender->submit(
+        ssx::background = fstate.coordinated_compaction_offsets_sender->submit(
           [this, holder = _raft_bg.hold(), node_id](
             ss::abort_source& op_as) mutable -> ss::future<> {
-              // MTRO may get recalculated a few times triggered by MCCO
-              // arriving from multiple nodes. However, we cannot wait for all
-              // MCCOs to arrive as some of them may come very late e.g. due to
-              // a node outage. Sleep to avoid flooding the follower with RPCs.
-              // Earlier runs will be superseded by the later ones during by
-              // executor, so typically only the last RPC will be sent.
-              return ss::sleep_abortable(mtro_send_delay, op_as)
+              // Group offsets may get recalculated a few times triggered by
+              // replica offsets arriving from multiple nodes. However, we
+              // cannot wait for all replica offsets to arrive, as some of them
+              // may come very late e.g. due to a node outage. Sleep to avoid
+              // flooding the follower with RPCs. Earlier runs will be
+              // superseded by the later ones during by executor, so typically
+              // only the last RPC will be sent.
+              return ss::sleep_abortable(group_offsets_send_delay, op_as)
                 .then([this, node_id, &op_as]() {
                     return repeat(
                       [this, node_id]() {
-                          return send_mtro_to_follower(node_id);
+                          return send_group_offsets_to_follower(node_id);
                       },
                       op_as);
                 })
@@ -308,12 +356,13 @@ void compaction_coordinator::send_mtro_to_followers() {
 }
 
 ss::future<ss::stop_iteration>
-compaction_coordinator::send_mtro_to_follower(vnode node_id) {
+compaction_coordinator::send_group_offsets_to_follower(vnode node_id) {
     vlog(
       _logger.trace,
-      "sending max tombstone remove offset to node {}: {}",
+      "sending group offsets to node {}: mtro={}, mxro={}",
       node_id,
-      _mtro);
+      _mtro,
+      _mxro);
     auto rpc_future = co_await ss::coroutine::as_future(
       _client_protocol.distribute_compaction_mtro(
         node_id.id(),
@@ -321,12 +370,13 @@ compaction_coordinator::send_mtro_to_follower(vnode node_id) {
           .node_id = _self,
           .target_node_id = node_id,
           .group = _group,
-          .mtro = _mtro},
+          .mtro = _mtro,
+          .mxro = _mxro},
         rpc::client_opts{timeout}));
     if (rpc_future.failed()) {
         vlog(
           _logger.debug,
-          "failed to send max tombstone remove offset to node {}: {}",
+          "failed to send group offsets to node {}: {}",
           node_id,
           rpc_future.get_exception());
         co_return ss::stop_iteration::no;
@@ -335,23 +385,24 @@ compaction_coordinator::send_mtro_to_follower(vnode node_id) {
     if (!reply || !reply.value().success) {
         vlog(
           _logger.debug,
-          "failed to send max tombstone remove offset to node {}: {}",
+          "failed to send group offsets to node {}: {}",
           node_id,
           reply);
         co_return ss::stop_iteration::no;
     }
     vlog(
       _logger.trace,
-      "successfully sent max tombstone remove offset to node {}: {}",
+      "successfully sent group offsets to node {}: {}",
       node_id,
       reply);
     co_return ss::stop_iteration::yes;
 }
 
-void compaction_coordinator::recalculate_mtro() {
+void compaction_coordinator::recalculate_group_offsets() {
     vassert(
       _is_leader, "only leader can recalculate max tombstone remove offset");
     model::offset new_mtro = _local_mcco;
+    model::offset new_mxro = _local_mxfo;
     for (const auto& [node_id, fstate] : _fstates) {
         if (fstate.max_cleanly_compacted_offset == model::offset{}) {
             vlog(
@@ -362,67 +413,42 @@ void compaction_coordinator::recalculate_mtro() {
             return;
         }
         new_mtro = std::min(new_mtro, fstate.max_cleanly_compacted_offset);
+        new_mxro = std::min(new_mxro, fstate.max_transaction_free_offset);
         vlog(
           _logger.trace,
-          "on vnode: {} max cleanly compacted offset: {}, new max tombstone "
-          "remove offset: {}",
+          "on vnode: {} max cleanly compacted offset: {}, new max "
+          "transaction-free offset: {}, new max tombstone "
+          "remove offset: {}, new max transaction remove offset: {}",
           node_id,
           fstate.max_cleanly_compacted_offset,
-          new_mtro);
+          fstate.max_transaction_free_offset,
+          new_mtro,
+          new_mxro);
     }
-    update_mtro(new_mtro);
+    update_group_offsets(new_mtro, new_mxro);
 }
 
-void compaction_coordinator::update_mtro(model::offset new_mtro) {
-    vlog(
-      _logger.debug,
-      "updating max tombstone remove offset from {} to {}",
-      _mtro,
-      new_mtro);
-    if (new_mtro == _mtro) {
-        if (_need_force_update) {
-            _need_force_update = false;
-        } else {
-            return;
-        }
-    }
-    if (new_mtro == model::offset{}) {
-        // uncalculated MTRO, keep previous value as it can never go
-        // down
-        return;
-    }
-    if (new_mtro < _mtro) [[unlikely]] {
-        // A follower with an empty log has MCCO of 0. Similarly, a follower
-        // with a log much shorter than the leader may have MCCO less than the
-        // group's MTRO. Low MCCO reported by such followers earlier may
-        // contribute to lowering the group's MTRO below existing value.
-        //
-        // It is intentionally ignored, as semantically MTRO remains the same:
-        // when such a follower catches up, its log will be filled with already
-        // cleanly compacted data, as, by definition of MTRO, all replicas have
-        // their logs cleanly compacted up to it.
-        //
-        // Later, when the follower receives MTRO from the leader, the follower
-        // will update its MCCO to at least match the group's MTRO.
-        vlog(
-          _logger.debug,
-          "attempted to move max tombstone remove offset backwards from {} to "
-          "{}",
-          _mtro,
-          new_mtro);
-    }
-    if (new_mtro > _mtro) {
-        _mtro = new_mtro;
-        on_mtro_update();
+void compaction_coordinator::update_group_offsets(
+  model::offset new_mtro, model::offset new_mxro) {
+    bool mtro_updated = bump_offset_value(
+      &compaction_coordinator::_mtro, new_mtro, "max tombstone remove offset");
+    bool mxro_updated = bump_offset_value(
+      &compaction_coordinator::_mxro,
+      new_mxro,
+      "max transaction remove offset");
+    if (mtro_updated || mxro_updated) {
+        on_group_offsets_update();
     }
 }
 
-void compaction_coordinator::on_mtro_update() {
+void compaction_coordinator::on_group_offsets_update() {
     if (_is_leader) {
-        send_mtro_to_followers();
+        send_group_offsets_to_followers();
     }
     _log->stm_manager()->set_max_tombstone_remove_offset(
       model::prev_offset(_mtro));
+    _log->stm_manager()->set_max_tx_end_remove_offset(
+      model::prev_offset(_mxro));
 }
 
 void compaction_coordinator::cancel_timer() { _timer.cancel(); }
@@ -440,14 +466,14 @@ void compaction_coordinator::arm_timer_if_needed(bool jitter_only) {
 }
 
 compaction_coordinator::clock_t::duration
-compaction_coordinator::test_accessor::mcco_getting_delay(
+compaction_coordinator::test_accessor::local_offsets_getting_delay(
   const compaction_coordinator& coco) {
     return coco._jitter.base_duration() + coco._jitter.jitter_duration();
 }
 
 compaction_coordinator::clock_t::duration
-compaction_coordinator::test_accessor::mtro_distribution_delay() {
-    return compaction_coordinator::mtro_send_delay;
+compaction_coordinator::test_accessor::group_offsets_distribution_delay() {
+    return compaction_coordinator::group_offsets_send_delay;
 }
 
 } // namespace raft

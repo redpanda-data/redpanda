@@ -46,8 +46,8 @@ and describes groups that match any of the expressions.
 Describe groups foo and bar:
   rpk group describe foo bar
 
-Describe any group starting with f and ending in r:
-  rpk group describe -r '^f.*' '.*r$'
+Describe any group starting with f or ending in r:
+  rpk group describe '^f.*' '.*r$' --regex
 
 Describe all groups:
   rpk group describe -r '*'

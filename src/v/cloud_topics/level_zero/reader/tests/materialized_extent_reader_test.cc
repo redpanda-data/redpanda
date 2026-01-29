@@ -49,7 +49,7 @@ TEST_F_CORO(materialized_extent_fixture, full_scan_test) {
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 100ms);
     retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
-    auto actual = co_await cloud_topics::l0::materialize_placeholders(
+    auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
       cloud_storage_clients::bucket_name("test-bucket-name"),
       std::move(underlying),
       remote,
@@ -98,7 +98,7 @@ ss::future<> test_aggregated_log_partial_scan(
     retry_chain_node rtc(as, 1s, 100ms);
     retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
 
-    auto actual = co_await cloud_topics::l0::materialize_placeholders(
+    auto [actual, _] = co_await cloud_topics::l0::materialize_placeholders(
       cloud_storage_clients::bucket_name("test-bucket-name"),
       std::move(underlying),
       fx->remote,
@@ -129,7 +129,7 @@ TEST_F_CORO(materialized_extent_fixture, timeout_test) {
     retry_chain_node rtc(as, 1s, 100ms);
     retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
 
-    auto actual = co_await cloud_topics::l0::materialize_placeholders(
+    auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
       cloud_storage_clients::bucket_name("test-bucket-name"),
       std::move(underlying),
       remote,
@@ -137,6 +137,6 @@ TEST_F_CORO(materialized_extent_fixture, timeout_test) {
       rtc,
       logger);
 
-    ASSERT_TRUE_CORO(actual.has_error());
+    ASSERT_TRUE_CORO(!actual.has_value());
     ASSERT_TRUE_CORO(actual.error() == cloud_topics::errc::timeout);
 }

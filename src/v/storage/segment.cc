@@ -60,6 +60,7 @@ segment::segment(
   , _reader(std::move(r))
   , _idx(std::move(i))
   , _appender(std::move(a))
+  , _appender_stats(_appender ? _appender->get_stats() : nullptr)
   , _compaction_index(std::move(ci))
   , _cache(std::move(c))
   , _first_write(std::nullopt) {
@@ -842,7 +843,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
-  size_t segment_size_hint) {
+  size_t segment_size_hint,
+  segment_appender::stats_ptr shared_stats) {
     auto path = segment_full_path(ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
@@ -853,17 +855,24 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              resources,
              feature_table,
              ntp_sanitizer_config)
-      .then([path, segment_size_hint, &resources, ntp_sanitizer_config](
-              ss::lw_shared_ptr<segment> seg) mutable {
+      .then([path,
+             segment_size_hint,
+             &resources,
+             ntp_sanitizer_config,
+             shared_stats](ss::lw_shared_ptr<segment> seg) mutable {
           return with_segment(
             std::move(seg),
-            [path, segment_size_hint, &resources, ntp_sanitizer_config](
-              const ss::lw_shared_ptr<segment>& seg) mutable {
+            [path,
+             segment_size_hint,
+             &resources,
+             ntp_sanitizer_config,
+             shared_stats](const ss::lw_shared_ptr<segment>& seg) mutable {
                 return internal::make_segment_appender(
                          path,
                          segment_size_hint,
                          resources,
-                         std::move(ntp_sanitizer_config))
+                         std::move(ntp_sanitizer_config),
+                         shared_stats)
                   .then([seg, &resources](segment_appender_ptr a) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(

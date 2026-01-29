@@ -24,6 +24,9 @@ namespace kafka {
 
 using k_client_id = named_type<ss::sstring, struct k_client_id_tag>;
 using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
+using k_user = named_type<ss::sstring, struct k_user_tag>;
+using k_not_applicable
+  = named_type<std::monostate, struct k_not_applicable_tag>;
 
 /// tracker_key is the we use to key into the client quotas map
 ///
@@ -40,7 +43,13 @@ using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
 /// the default client quota. In this case, we may have multiple independent
 /// rate trackers for each unique client with all of these rate tracking having
 /// the same shared quota limit
-using tracker_key = std::variant<k_client_id, k_group_name>;
+using tracker_key = std::variant<
+  std::pair<k_user, k_client_id>,
+  std::pair<k_user, k_group_name>,
+  k_user,
+  k_client_id,
+  k_group_name,
+  k_not_applicable>;
 
 std::ostream& operator<<(std::ostream&, const tracker_key&);
 
@@ -72,6 +81,7 @@ std::ostream& operator<<(std::ostream&, client_quota_type);
 
 struct client_quota_request_ctx {
     client_quota_type q_type;
+    std::optional<std::string_view> user;
     std::optional<std::string_view> client_id;
 };
 
@@ -83,14 +93,30 @@ enum class client_quota_rule {
     not_applicable,
     kafka_client_default,
     kafka_client_prefix,
-    kafka_client_id
+    kafka_client_id,
+    kafka_user_default,
+    kafka_user_default_client_default,
+    kafka_user_default_client_prefix,
+    kafka_user_default_client_id,
+    kafka_user,
+    kafka_user_client_default,
+    kafka_user_client_prefix,
+    kafka_user_client_id
 };
 
 inline constexpr std::array all_client_quota_rules = {
   client_quota_rule::not_applicable,
   client_quota_rule::kafka_client_default,
   client_quota_rule::kafka_client_prefix,
-  client_quota_rule::kafka_client_id};
+  client_quota_rule::kafka_client_id,
+  client_quota_rule::kafka_user_default,
+  client_quota_rule::kafka_user_default_client_default,
+  client_quota_rule::kafka_user_default_client_prefix,
+  client_quota_rule::kafka_user_default_client_id,
+  client_quota_rule::kafka_user,
+  client_quota_rule::kafka_user_client_default,
+  client_quota_rule::kafka_user_client_prefix,
+  client_quota_rule::kafka_user_client_id};
 
 std::ostream& operator<<(std::ostream&, client_quota_rule);
 

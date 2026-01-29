@@ -217,6 +217,153 @@ func TestValidateParsedShadowLinkConfig(t *testing.T) {
 				},
 			},
 		},
+		// Cloud-specific validation tests
+		{
+			name: "cloud config - missing shadow_redpanda_id",
+			config: &ShadowLinkConfig{
+				Name:         "test-link",
+				CloudOptions: &CloudShadowLinkOptions{}, // Missing ShadowRedpandaID
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"broker1:9092"},
+				},
+			},
+			expectedErr: "shadow_redpanda_id is required in cloud options",
+		},
+		{
+			name: "cloud config - same source and shadow redpanda IDs",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "same-cluster-id",
+					SourceRedpandaID: "same-cluster-id",
+				},
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"broker1:9092"},
+				},
+			},
+			expectedErr: "shadow_redpanda_id and source_redpanda_id cannot be the same",
+		},
+		{
+			name: "cloud config - TLS file settings not allowed",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "shadow-cluster",
+				},
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"broker1:9092"},
+					TLSSettings: &TLSSettings{
+						Enabled: true,
+						TLSFileSettings: &TLSFileSettings{
+							CAPath: "/path/to/ca.crt",
+						},
+					},
+				},
+			},
+			expectedErr: "TLS file settings are not supported when using cloud options",
+		},
+		{
+			name: "cloud config - plain password not allowed",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "shadow-cluster",
+				},
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"broker1:9092"},
+					AuthenticationConfiguration: &AuthenticationConfiguration{
+						ScramConfiguration: &ScramConfiguration{
+							Username:       "user",
+							Password:       "plain-password-not-allowed",
+							ScramMechanism: ScramMechanismScramSha256,
+						},
+					},
+				},
+			},
+			expectedErr: "cloud shadow links don't support plain passwords",
+		},
+		{
+			name: "cloud config - plain tls key not allowed",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "shadow-cluster",
+				},
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"broker1:9092"},
+					TLSSettings: &TLSSettings{
+						Enabled: true,
+						TLSPEMSettings: &TLSPEMSettings{
+							Key: "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+						},
+					},
+				},
+			},
+			expectedErr: "cloud shadow links don't support plain TLS keys",
+		},
+		{
+			name: "valid cloud config - with secrets store password",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "shadow-cluster",
+					SourceRedpandaID: "source-cluster",
+				},
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"broker1:9092"},
+					AuthenticationConfiguration: &AuthenticationConfiguration{
+						ScramConfiguration: &ScramConfiguration{
+							Username:       "user",
+							Password:       "${secrets.MY_SECRET_PASSWORD}",
+							ScramMechanism: ScramMechanismScramSha256,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "valid cloud config - with TLS PEM settings",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "shadow-cluster",
+				},
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"broker1:9092"},
+					TLSSettings: &TLSSettings{
+						Enabled: true,
+						TLSPEMSettings: &TLSPEMSettings{
+							CA:   "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+							Key:  "${secrets.MY_TLS_KEY}",
+							Cert: "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "valid cloud config - no bootstrap servers required",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "shadow-cluster",
+					SourceRedpandaID: "source-cluster",
+				},
+				ClientOptions: &ShadowLinkClientOptions{
+					// No bootstrap servers - valid for cloud
+				},
+			},
+		},
+		{
+			name: "valid cloud config - minimal",
+			config: &ShadowLinkConfig{
+				Name: "test-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "shadow-cluster",
+				},
+				ClientOptions: &ShadowLinkClientOptions{},
+			},
+		},
 	}
 
 	for _, tt := range tests {

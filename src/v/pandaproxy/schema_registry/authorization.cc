@@ -55,8 +55,9 @@ extract_resource_from_request(const server::request_t& rq, const auth& auth) {
     auto resource = auth.get_resource();
     ss::visit(
       resource,
-      [&rq](subject& sub) {
-          sub = parse::request_param<subject>(*rq.req, "subject");
+      [&rq](context_subject& ctx_sub) {
+          ctx_sub = context_subject::from_string(
+            parse::request_param<ss::sstring>(*rq.req, "subject"));
       },
       [](const auto&) {});
     return resource;
@@ -132,7 +133,8 @@ void handle_authz(
             op,
             params.principal,
             params.host,
-            security::superuser_required::no);
+            security::superuser_required::no,
+            auth_result.get_groups());
       },
       [&](const detail::no_auth auto&) {
           return security::auth_result::authz_disabled(
@@ -151,7 +153,7 @@ void handle_authz(
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
   std::optional<request_auth_result>& auth_result,
-  const chunked_vector<subject>& subjects) {
+  const chunked_vector<context_subject>& subjects) {
     const auto& operation_name
       = ss::httpd::schema_registry_json::get_schemas_ids_id.operations.nickname;
     constexpr auto op = security::acl_operation::read;
@@ -181,19 +183,21 @@ void handle_get_schemas_ids_id_authz(
 
     auto authorizing_result = std::optional<security::auth_result>{};
     auto all_results = audit_resources{};
-    for (const auto& sub : subjects) {
+    for (const auto& ctx_sub : subjects) {
         auto res = rq.service().authorizor().authorized(
-          sub,
+          ctx_sub,
           op,
           params.principal,
           params.host,
-          security::superuser_required::no);
+          security::superuser_required::no,
+          auth_result.value().get_groups());
 
         if (res.is_authorized()) {
             authorizing_result = std::move(res);
             break;
         } else {
-            all_results.emplace_back(sub(), subject_resource_type);
+            all_results.emplace_back(
+              ctx_sub.to_string(), subject_resource_type);
         }
     }
 
@@ -214,7 +218,7 @@ void handle_get_schemas_ids_id_authz(
 void handle_get_subjects_authz(
   const server::request_t& rq,
   std::optional<request_auth_result>& auth_result,
-  chunked_vector<subject>& subjects) {
+  chunked_vector<context_subject>& subjects) {
     const auto& operation_name
       = ss::httpd::schema_registry_json::get_subjects.operations.nickname;
     constexpr auto op = security::acl_operation::describe;
@@ -231,18 +235,21 @@ void handle_get_subjects_authz(
     auto passing_results = audit_resources{};
     auto failing_results = audit_resources{};
 
-    auto new_end = std::ranges::remove_if(subjects, [&](const auto& subject) {
+    auto new_end = std::ranges::remove_if(subjects, [&](const auto& ctx_sub) {
         auto res = rq.service().authorizor().authorized(
-          subject,
+          ctx_sub,
           op,
           params.principal,
           params.host,
-          security::superuser_required::no);
+          security::superuser_required::no,
+          auth_result.value().get_groups());
         if (res.is_authorized()) {
-            passing_results.emplace_back(subject(), subject_resource_type);
+            passing_results.emplace_back(
+              ctx_sub.to_string(), subject_resource_type);
             return false; // keep
         } else {
-            failing_results.emplace_back(subject(), subject_resource_type);
+            failing_results.emplace_back(
+              ctx_sub.to_string(), subject_resource_type);
             return true; // remove
         }
     });
@@ -269,6 +276,48 @@ void handle_get_subjects_authz(
           false,
           op,
           std::move(failing_results));
+    }
+}
+
+void handle_config_mode_authz(
+  const server::request_t& rq,
+  std::string_view operation_name,
+  std::optional<request_auth_result>& auth_result,
+  const context_subject& ctx_sub,
+  security::acl_operation op) {
+    if (!auth_result.has_value()) {
+        // ACLs or authentication is disabled
+        return;
+    }
+
+    check_authenticated(rq, operation_name, op, *auth_result);
+
+    auto params = detail::auth_params{rq};
+
+    // Context-level operations require sr_registry access
+    // Subject-level operations require sr_subject access
+    auto authz_result = ctx_sub.is_context_only()
+                          ? rq.service().authorizor().authorized(
+                              registry_resource{},
+                              op,
+                              params.principal,
+                              params.host,
+                              security::superuser_required::no,
+                              auth_result.value().get_groups())
+                          : rq.service().authorizor().authorized(
+                              ctx_sub,
+                              op,
+                              params.principal,
+                              params.host,
+                              security::superuser_required::no,
+                              auth_result.value().get_groups());
+
+    const bool is_authorized = authz_result.is_authorized();
+
+    audit_authz(rq, operation_name, std::move(authz_result));
+
+    if (!is_authorized) {
+        throw_unauthorized();
     }
 }
 

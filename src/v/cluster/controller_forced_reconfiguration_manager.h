@@ -14,7 +14,7 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "raft/fundamental.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -102,7 +102,7 @@ public:
 private:
     struct holder_bundle {
         ss::gate::holder gate_holder;
-        mutex::units lock_holder;
+        ssx::mutex::units lock_holder;
     };
 
     // either an invocation of CFR gets all locks, gates, tokens, etc it needs
@@ -113,7 +113,7 @@ private:
     ss::gate _gate{};
     ss::abort_source _abort_source{};
     ss::optimized_optional<ss::abort_source::subscription> _as_sub{};
-    mutex _execution_lock{"controller_forced_reconfiguration_manager"};
+    ssx::mutex _execution_lock{"controller_forced_reconfiguration_manager"};
 };
 
 } // namespace cluster

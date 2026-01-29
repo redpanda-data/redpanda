@@ -154,4 +154,7 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, const model::kafka_batch_validation_mode&);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, security::oidc::nested_group_behavior);
+
 } // namespace json

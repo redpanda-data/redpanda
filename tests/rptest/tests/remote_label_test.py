@@ -222,22 +222,21 @@ class RemoteLabelsTest(RedpandaTest):
         num_msgs_per_round = 100
         msg_len = 1024
 
-        def local_storage_trimmed(cluster: RedpandaService):
-            admin = Admin(cluster)
-            status = admin.get_partition_cloud_storage_status(topic_name, 0)
-            return status["local_log_start_offset"] > 0
+        def _local_trimmed():
+            def _cluster_local_trimmed(cluster: RedpandaService):
+                admin = Admin(cluster)
+                status = admin.get_partition_cloud_storage_status(topic_name, 0)
+                return status["local_log_start_offset"] > 0
 
-        def local_trimmed_or_produce():
             # Once we trim local storage from both clusters, we're done.
-            if local_storage_trimmed(c1) and local_storage_trimmed(c2):
-                return True
-            for _ in range(num_msgs_per_round):
-                rpk_c1.produce(topic_name, key="1", msg="1" * msg_len)
-                rpk_c2.produce(topic_name, key="2", msg="2" * msg_len)
-            return False
+            return _cluster_local_trimmed(c1) and _cluster_local_trimmed(c2)
+
+        for _ in range(num_msgs_per_round):
+            rpk_c1.produce(topic_name, key="1", msg="1" * msg_len)
+            rpk_c2.produce(topic_name, key="2", msg="2" * msg_len)
 
         # Keep producing until space management kicks out the local data.
-        wait_until(local_trimmed_or_produce, timeout_sec=30, backoff_sec=1)
+        wait_until(_local_trimmed, timeout_sec=30, backoff_sec=1)
 
         def wipe_cloud_cache(cluster: RedpandaService):
             cache_dir = cluster.cache_dir

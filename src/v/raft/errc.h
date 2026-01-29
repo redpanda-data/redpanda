@@ -40,7 +40,6 @@ enum class errc : int16_t {
     group_not_exists,
     replicate_first_stage_exception,
     invalid_input_records,
-    not_learner,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -97,8 +96,6 @@ struct errc_category final : public std::error_category {
                    "first phase";
         case errc::invalid_input_records:
             return "attempt to replicate invalid input records";
-        case errc::not_learner:
-            return "raft::errc::not_learner";
         }
         return "cluster::errc::unknown";
     }

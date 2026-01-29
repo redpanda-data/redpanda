@@ -22,9 +22,11 @@ class role;
 class role_member;
 class role_member_view;
 class role_store;
+class scram_credential;
 
 namespace oidc {
 
+class group_claim_policy;
 class jws;
 class jwt;
 class service;

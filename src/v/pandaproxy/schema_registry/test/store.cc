@@ -452,17 +452,23 @@ BOOST_AUTO_TEST_CASE(test_store_global_compat) {
     // Setting the retrieving global compatibility should be allowed multiple
     // times
 
+    pps::seq_marker dummy_marker;
     pps::compatibility_level expected{pps::compatibility_level::backward};
     pps::store s;
-    BOOST_REQUIRE(s.get_compatibility().value() == expected);
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value() == expected);
 
     // duplicate should return false
-    BOOST_REQUIRE(s.set_compatibility(expected).value() == false);
-    BOOST_REQUIRE(s.get_compatibility().value() == expected);
+    BOOST_REQUIRE(s.clear_compatibility(pps::default_context).value() == false);
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value() == expected);
 
     expected = pps::compatibility_level::full_transitive;
-    BOOST_REQUIRE(s.set_compatibility(expected).value() == true);
-    BOOST_REQUIRE(s.get_compatibility().value() == expected);
+    BOOST_REQUIRE(
+      s.set_compatibility(dummy_marker, pps::default_context, expected).value()
+      == true);
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value() == expected);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
@@ -475,7 +481,8 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     pps::compatibility_level global_expected{
       pps::compatibility_level::backward};
     pps::store s;
-    BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value() == global_expected);
     s.insert({subject0, string_def0.share()});
 
     auto sub_expected = pps::compatibility_level::backward;
@@ -499,7 +506,8 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
       == true);
     BOOST_REQUIRE(
       s.get_compatibility(subject0, fallback).value() == sub_expected);
-    BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value() == global_expected);
 
     // Clearing compatibility should fallback to global
     BOOST_REQUIRE(
@@ -510,6 +518,7 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
 
 BOOST_AUTO_TEST_CASE(test_store_subject_compat_fallback) {
     // A Subject should fallback to the current global setting
+    pps::seq_marker dummy_marker;
     auto fallback = pps::default_to_global::yes;
 
     pps::compatibility_level expected{pps::compatibility_level::backward};
@@ -518,7 +527,9 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat_fallback) {
     BOOST_REQUIRE(s.get_compatibility(subject0, fallback).value() == expected);
 
     expected = pps::compatibility_level::forward;
-    BOOST_REQUIRE(s.set_compatibility(expected).value() == true);
+    BOOST_REQUIRE(
+      s.set_compatibility(dummy_marker, pps::default_context, expected).value()
+      == true);
     BOOST_REQUIRE(s.get_compatibility(subject0, fallback).value() == expected);
 }
 
@@ -544,10 +555,11 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     const std::vector<pps::schema_version> expected_vers{
       {pps::schema_version{1}, pps::schema_version{2}}};
 
-    pps::store s;
-    s.set_compatibility(pps::compatibility_level::none).value();
-
     pps::seq_marker dummy_marker;
+    pps::store s;
+    s.set_compatibility(
+       dummy_marker, pps::default_context, pps::compatibility_level::none)
+      .value();
 
     BOOST_REQUIRE_EQUAL(
       s.delete_subject(dummy_marker, subject0, pps::permanent_delete::no)
@@ -664,7 +676,9 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
 
     pps::seq_marker dummy_marker;
     pps::store s;
-    s.set_compatibility(pps::compatibility_level::none).value();
+    s.set_compatibility(
+       dummy_marker, pps::default_context, pps::compatibility_level::none)
+      .value();
 
     // Test unknown subject
     BOOST_REQUIRE_EQUAL(
@@ -740,7 +754,9 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
 BOOST_AUTO_TEST_CASE(test_store_subject_version_latest) {
     pps::seq_marker dummy_marker;
     pps::store s;
-    s.set_compatibility(pps::compatibility_level::none).value();
+    s.set_compatibility(
+       dummy_marker, pps::default_context, pps::compatibility_level::none)
+      .value();
 
     // First insert, expect id{1}, version{1}
     s.insert({subject0, string_def0.share()});
@@ -785,10 +801,11 @@ BOOST_AUTO_TEST_CASE(test_store_subject_version_latest) {
 BOOST_AUTO_TEST_CASE(test_store_delete_subject_after_delete_version) {
     std::vector<pps::schema_version> expected_vers{{pps::schema_version{2}}};
 
-    pps::store s;
-    s.set_compatibility(pps::compatibility_level::none).value();
-
     pps::seq_marker dummy_marker;
+    pps::store s;
+    s.set_compatibility(
+       dummy_marker, pps::default_context, pps::compatibility_level::none)
+      .value();
 
     // First insert, expect id{1}, version{1}
     s.insert({subject0, string_def0.share()});
@@ -820,4 +837,207 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_after_delete_version) {
       del_res.value().cend(),
       expected_vers.cbegin(),
       expected_vers.cend());
+}
+
+BOOST_AUTO_TEST_CASE(test_store_context_mode) {
+    // Test setting and getting mode at the context level
+    auto test_ctx = pps::context{".test"};
+    pps::seq_marker dummy_marker;
+    auto s = pps::store{pps::is_mutable::yes};
+
+    // Default mode is read_write
+    BOOST_REQUIRE(
+      s.get_mode(pps::default_context).value() == pps::mode::read_write);
+    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::read_write);
+
+    // Set mode on default context
+    BOOST_REQUIRE(s.set_mode(
+                     dummy_marker,
+                     pps::default_context,
+                     pps::mode::read_only,
+                     pps::force::no)
+                    .value());
+    BOOST_REQUIRE(
+      s.get_mode(pps::default_context).value() == pps::mode::read_only);
+    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::read_write);
+
+    // Set different mode on test context
+    BOOST_REQUIRE(
+      s.set_mode(dummy_marker, test_ctx, pps::mode::import, pps::force::no)
+        .value());
+    BOOST_REQUIRE(
+      s.get_mode(pps::default_context).value() == pps::mode::read_only);
+    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::import);
+
+    // Clear mode returns to default
+    BOOST_REQUIRE(s.clear_mode(test_ctx, pps::force::no).value());
+    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::read_write);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_context_mode_written_at) {
+    // Test that mode write markers are tracked correctly at context level
+    auto test_ctx = pps::context{".test"};
+    auto s = pps::store{pps::is_mutable::yes};
+
+    // Initially no write markers
+    auto markers = s.get_context_mode_written_at(test_ctx).value();
+    BOOST_REQUIRE(markers.empty());
+    markers = s.get_context_mode_written_at(pps::default_context).value();
+    BOOST_REQUIRE(markers.empty());
+
+    // Create distinct markers
+    auto marker1 = pps::seq_marker{
+      .seq = model::offset{1},
+      .node = model::node_id{0},
+      .version = pps::schema_version{0},
+      .key_type = pps::seq_marker_key_type::mode};
+    auto marker2 = pps::seq_marker{
+      .seq = model::offset{2},
+      .node = model::node_id{0},
+      .version = pps::schema_version{0},
+      .key_type = pps::seq_marker_key_type::mode};
+
+    // Set mode on test context, verify marker is tracked
+    BOOST_REQUIRE(
+      s.set_mode(marker1, test_ctx, pps::mode::read_only, pps::force::no)
+        .value());
+    markers = s.get_context_mode_written_at(test_ctx).value();
+    BOOST_REQUIRE_EQUAL(markers.size(), 1);
+    BOOST_REQUIRE_EQUAL(markers[0], marker1);
+
+    // Set mode again, second marker is added
+    BOOST_REQUIRE(
+      s.set_mode(marker2, test_ctx, pps::mode::import, pps::force::no).value());
+    markers = s.get_context_mode_written_at(test_ctx).value();
+    BOOST_REQUIRE_EQUAL(markers.size(), 2);
+    BOOST_REQUIRE_EQUAL(markers[0], marker1);
+    BOOST_REQUIRE_EQUAL(markers[1], marker2);
+
+    // Default context should still have no markers
+    markers = s.get_context_mode_written_at(pps::default_context).value();
+    BOOST_REQUIRE(markers.empty());
+
+    // Clear mode clears all markers
+    BOOST_REQUIRE(s.clear_mode(test_ctx, pps::force::no).value());
+    markers = s.get_context_mode_written_at(test_ctx).value();
+    BOOST_REQUIRE(markers.empty());
+}
+
+BOOST_AUTO_TEST_CASE(test_store_context_config) {
+    // Test setting and getting compatibility (config) at the context level
+    auto test_ctx = pps::context{".test"};
+    pps::seq_marker dummy_marker;
+    auto s = pps::store{pps::is_mutable::yes};
+
+    // Default config is backward compatibility
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value()
+      == pps::compatibility_level::backward);
+    BOOST_REQUIRE(
+      s.get_compatibility(test_ctx).value()
+      == pps::compatibility_level::backward);
+
+    // Set config on default context
+    BOOST_REQUIRE(
+      s.set_compatibility(
+         dummy_marker, pps::default_context, pps::compatibility_level::full)
+        .value());
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value()
+      == pps::compatibility_level::full);
+    BOOST_REQUIRE(
+      s.get_compatibility(test_ctx).value()
+      == pps::compatibility_level::backward);
+
+    // Set different config on test context
+    BOOST_REQUIRE(s.set_compatibility(
+                     dummy_marker, test_ctx, pps::compatibility_level::none)
+                    .value());
+    BOOST_REQUIRE(
+      s.get_compatibility(pps::default_context).value()
+      == pps::compatibility_level::full);
+    BOOST_REQUIRE(
+      s.get_compatibility(test_ctx).value() == pps::compatibility_level::none);
+
+    // Clear config returns to default
+    BOOST_REQUIRE(s.clear_compatibility(test_ctx).value());
+    BOOST_REQUIRE(
+      s.get_compatibility(test_ctx).value()
+      == pps::compatibility_level::backward);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_context_config_written_at) {
+    // Test that config (compatibility) write markers are tracked correctly
+    auto test_ctx = pps::context{".test"};
+    pps::store s;
+
+    // Initially no write markers
+    auto markers = s.get_context_config_written_at(test_ctx).value();
+    BOOST_REQUIRE(markers.empty());
+
+    // Create distinct markers
+    auto marker1 = pps::seq_marker{
+      .seq = model::offset{10},
+      .node = model::node_id{1},
+      .version = pps::schema_version{0},
+      .key_type = pps::seq_marker_key_type::config};
+    auto marker2 = pps::seq_marker{
+      .seq = model::offset{20},
+      .node = model::node_id{1},
+      .version = pps::schema_version{0},
+      .key_type = pps::seq_marker_key_type::config};
+
+    // Set compatibility on test context, verify marker is tracked
+    BOOST_REQUIRE(
+      s.set_compatibility(marker1, test_ctx, pps::compatibility_level::full)
+        .value());
+    markers = s.get_context_config_written_at(test_ctx).value();
+    BOOST_REQUIRE_EQUAL(markers.size(), 1);
+    BOOST_REQUIRE_EQUAL(markers[0], marker1);
+
+    // Set compatibility again, second marker is added
+    BOOST_REQUIRE(
+      s.set_compatibility(marker2, test_ctx, pps::compatibility_level::none)
+        .value());
+    markers = s.get_context_config_written_at(test_ctx).value();
+    BOOST_REQUIRE_EQUAL(markers.size(), 2);
+    BOOST_REQUIRE_EQUAL(markers[0], marker1);
+    BOOST_REQUIRE_EQUAL(markers[1], marker2);
+
+    // Default context should still have no markers
+    markers = s.get_context_config_written_at(pps::default_context).value();
+    BOOST_REQUIRE(markers.empty());
+
+    // Clear compatibility clears all markers
+    BOOST_REQUIRE(s.clear_compatibility(test_ctx).value());
+    markers = s.get_context_config_written_at(test_ctx).value();
+    BOOST_REQUIRE(markers.empty());
+}
+
+BOOST_AUTO_TEST_CASE(test_store_context_materialized) {
+    pps::store s;
+    auto test_ctx = pps::context{".test"};
+
+    // Empty state
+    BOOST_REQUIRE(s.is_context_materialized(pps::default_context));
+    BOOST_REQUIRE(!s.is_context_materialized(test_ctx));
+    auto contexts = s.get_materialized_contexts();
+    BOOST_REQUIRE_EQUAL(contexts.size(), 1);
+    BOOST_REQUIRE_EQUAL(contexts[0], pps::default_context);
+
+    // Set .test context as materialized
+    s.set_context_materialized(test_ctx, true);
+    BOOST_REQUIRE(s.is_context_materialized(test_ctx));
+    contexts = s.get_materialized_contexts();
+    BOOST_REQUIRE_EQUAL(contexts.size(), 2);
+    BOOST_REQUIRE(
+      std::ranges::find(contexts, pps::default_context) != contexts.end());
+    BOOST_REQUIRE(std::ranges::find(contexts, test_ctx) != contexts.end());
+
+    // Set .test context as not materialized (tombstone)
+    s.set_context_materialized(test_ctx, false);
+    BOOST_REQUIRE(!s.is_context_materialized(test_ctx));
+    contexts = s.get_materialized_contexts();
+    BOOST_REQUIRE_EQUAL(contexts.size(), 1);
+    BOOST_REQUIRE_EQUAL(contexts[0], pps::default_context);
 }

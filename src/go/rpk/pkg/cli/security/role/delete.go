@@ -12,10 +12,13 @@ package role
 import (
 	"fmt"
 
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -37,30 +40,54 @@ The flag '--no-confirm' can be used to avoid the confirmation prompt.
 			if h, ok := f.Help([]string{}); ok {
 				out.Exit(h)
 			}
-			p, err := p.LoadVirtualProfile(fs)
+			prof, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(p)
-
-			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
-			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
-
-			adm, err := kafka.NewAdmin(fs, p)
-			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer adm.Close()
+			config.CheckExitServerlessAdmin(prof)
 
 			roleName := args[0]
 
-			err = describeAndPrintRole(cmd.Context(), cl, adm, f, roleName, true, true)
-			out.MaybeDieErr(err)
-			if !noConfirm {
-				confirmed, err := out.Confirm("Confirm deletion of role %q?  This action will remove all associated ACLs and unassign role members", roleName)
-				out.MaybeDie(err, "unable to confirm deletion: %v", err)
-				if !confirmed {
-					out.Exit("Deletion canceled.")
+			if prof.CheckFromCloud() {
+				cl, err := publicapi.DataplaneClientFromRpkProfile(prof)
+				out.MaybeDie(err, "unable to initialize cloud API client: %v", err)
+
+				err = describeAndPrintRoleCloud(cmd.Context(), cl, f, roleName, true, true)
+				out.MaybeDieErr(err)
+
+				if !noConfirm {
+					confirmed, err := out.Confirm("Confirm deletion of role %q?  This action will remove all associated ACLs and unassign role members", roleName)
+					out.MaybeDie(err, "unable to confirm deletion: %v", err)
+					if !confirmed {
+						out.Exit("Deletion canceled.")
+					}
 				}
+
+				_, err = cl.Security.DeleteRole(cmd.Context(), connect.NewRequest(&dataplanev1.DeleteRoleRequest{
+					RoleName:   roleName,
+					DeleteAcls: true,
+				}))
+				out.MaybeDie(err, "unable to delete role %q: %v", roleName, err)
+			} else {
+				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
+				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+				adm, err := kafka.NewAdmin(fs, prof)
+				out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+				defer adm.Close()
+
+				err = describeAndPrintRole(cmd.Context(), cl, adm, f, roleName, true, true)
+				out.MaybeDieErr(err)
+
+				if !noConfirm {
+					confirmed, err := out.Confirm("Confirm deletion of role %q?  This action will remove all associated ACLs and unassign role members", roleName)
+					out.MaybeDie(err, "unable to confirm deletion: %v", err)
+					if !confirmed {
+						out.Exit("Deletion canceled.")
+					}
+				}
+
+				err = cl.DeleteRole(cmd.Context(), roleName, true)
+				out.MaybeDie(err, "unable to delete role %q: %v", roleName, err)
 			}
-			err = cl.DeleteRole(cmd.Context(), roleName, true)
-			out.MaybeDie(err, "unable to delete role %q: %v", roleName, err)
 
 			if f.Kind == "text" {
 				fmt.Printf("Successfully deleted role %q\n", roleName)

@@ -16,8 +16,6 @@
 #include "cluster/archival/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
-#include "storage/disk_log_impl.h"
-#include "utils/human.h"
 
 namespace archival {
 
@@ -74,86 +72,6 @@ retry_chain_node* adjacent_segment_merger::get_root_retry_chain_node() {
 
 ss::sstring adjacent_segment_merger::name() const {
     return ssx::sformat("adjacent_segment_merger:{}", _archiver.get_ntp());
-}
-
-std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
-  model::offset local_start_offset,
-  const cloud_storage::partition_manifest& manifest) {
-    auto [min_segment_size, max_segment_size] = get_low_high_segment_size(
-      _archiver.get_local_segment_size(),
-      _min_segment_size,
-      _target_segment_size);
-    model::offset so = _last;
-    if (so == model::offset{} && _is_local) {
-        // Local lookup, start from local start offset
-        so = std::max(
-          manifest.get_start_offset().value_or(local_start_offset),
-          local_start_offset);
-    } else if (!_is_local) {
-        // Remote lookup, start from start offset in the manifest (or 0)
-        so = _archiver.manifest().get_start_offset().value_or(model::offset{0});
-    }
-    vlog(
-      _ctxlog.debug,
-      "Searching for adjacent segment run, start: {}, is_local: {}, "
-      "local_start_offset: {}, low watermark: {}, high watermark: {}",
-      so,
-      _is_local,
-      local_start_offset,
-      min_segment_size,
-      max_segment_size);
-
-    adjacent_segment_run run(_archiver.get_ntp());
-
-    for (auto it = manifest.segment_containing(so), end_it = manifest.end();
-         it != end_it;
-         ++it) {
-        if (!_is_local && it->committed_offset >= local_start_offset) {
-            // We're looking for the remote segment
-            break;
-        }
-        if (run.maybe_add_segment(
-              manifest,
-              *it,
-              max_segment_size,
-              _archiver.remote_path_provider())) {
-            // We have found a run with the size close to max_segment_size
-            // and can proceed early.
-            break;
-        }
-    }
-    if (run.num_segments > 1 && run.meta.size_bytes > min_segment_size) {
-        // Normal reupload, the upload candidate is larger than
-        // min_segment_size and contains more than one segments.
-        vlog(_ctxlog.debug, "Found adjacent segment run {}", run);
-        return run;
-    }
-    if (
-      run.num_segments > 1
-      && run.meta.committed_offset != manifest.get_last_offset()) {
-        // Reupload if we have a run of small segments between large
-        // segments but this run is smaller than min_segment_size. In this
-        // case its stil makes sense to reupload it.
-        vlog(
-          _ctxlog.debug,
-          "Found adjacent segment run {} which is smaller than the "
-          "limit "
-          "{}",
-          run,
-          min_segment_size);
-        return run;
-    }
-    vlog(
-      _ctxlog.debug,
-      "Adjacent segment run not found, num {}, segments {}, size-bytes "
-      "{}, "
-      "offset range {} - {}",
-      run.num_segments,
-      run.segments.size(),
-      run.meta.size_bytes,
-      run.meta.base_offset,
-      run.meta.committed_offset);
-    return std::nullopt;
 }
 
 ss::future<housekeeping_job::run_result>
@@ -284,6 +202,109 @@ void adjacent_segment_merger::interrupt() { _as.request_abort(); }
 
 bool adjacent_segment_merger::interrupted() const {
     return _as.abort_requested();
+}
+
+std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
+  model::offset local_start_offset,
+  const cloud_storage::partition_manifest& manifest) {
+    auto [min_segment_size, max_segment_size] = get_low_high_segment_size(
+      _archiver.get_local_segment_size(),
+      _min_segment_size,
+      _target_segment_size);
+
+    model::offset from_offset = _last;
+    if (from_offset == model::offset{} && _is_local) {
+        // Local lookup, start from local start offset
+        from_offset = std::max(
+          manifest.get_start_offset().value_or(local_start_offset),
+          local_start_offset);
+    } else if (!_is_local) {
+        // Remote lookup, start from start offset in the manifest (or 0)
+        from_offset = _archiver.manifest().get_start_offset().value_or(
+          model::offset{0});
+    }
+    vlog(
+      _ctxlog.debug,
+      "Searching for adjacent segment run, start: {}, is_local: {}, "
+      "local_start_offset: {}, low watermark: {}, high watermark: {}",
+      from_offset,
+      _is_local,
+      local_start_offset,
+      min_segment_size,
+      max_segment_size);
+
+    return adjacent_segment_scanner::scan_manifest(
+      _ctxlog,
+      _archiver,
+      local_start_offset,
+      manifest,
+      from_offset,
+      min_segment_size,
+      max_segment_size,
+      _is_local);
+}
+
+std::optional<adjacent_segment_run> adjacent_segment_scanner::scan_manifest(
+  retry_chain_logger& ctxlog,
+  ntp_archiver& archiver,
+  model::offset local_start_offset,
+  const cloud_storage::partition_manifest& manifest,
+  model::offset from_offset,
+  size_t min_segment_size,
+  size_t max_segment_size,
+  bool is_local) {
+    adjacent_segment_run run(archiver.get_ntp());
+
+    for (auto it = manifest.segment_containing(from_offset),
+              end_it = manifest.end();
+         it != end_it;
+         ++it) {
+        if (!is_local && it->committed_offset >= local_start_offset) {
+            // We're looking for the remote segment
+            break;
+        }
+        if (run.maybe_add_segment(
+              manifest,
+              *it,
+              max_segment_size,
+              archiver.remote_path_provider())) {
+            // We have found a run with the size close to max_segment_size
+            // and can proceed early.
+            break;
+        }
+    }
+    if (run.num_segments > 1 && run.meta.size_bytes > min_segment_size) {
+        // Normal reupload, the upload candidate is larger than
+        // min_segment_size and contains more than one segments.
+        vlog(ctxlog.debug, "Found adjacent segment run {}", run);
+        return run;
+    }
+    if (
+      run.num_segments > 1
+      && run.meta.committed_offset != manifest.get_last_offset()) {
+        // Reupload if we have a run of small segments between large
+        // segments but this run is smaller than min_segment_size. In this
+        // case its stil makes sense to reupload it.
+        vlog(
+          ctxlog.debug,
+          "Found adjacent segment run {} which is smaller than the "
+          "limit "
+          "{}",
+          run,
+          min_segment_size);
+        return run;
+    }
+    vlog(
+      ctxlog.debug,
+      "Adjacent segment run not found, num {}, segments {}, size-bytes "
+      "{}, "
+      "offset range {} - {}",
+      run.num_segments,
+      run.segments.size(),
+      run.meta.size_bytes,
+      run.meta.base_offset,
+      run.meta.committed_offset);
+    return std::nullopt;
 }
 
 } // namespace archival

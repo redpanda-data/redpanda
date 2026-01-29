@@ -144,3 +144,23 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "auth_refresh_bg_op",
+    srcs = [
+        "auth_refresh_bg_op.cc",
+    ],
+    hdrs = [
+        "auth_refresh_bg_op.h",
+    ],
+    implementation_deps = [
+        "//src/v/ssx:future_util",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cloud_roles",
+        "//src/v/base",
+        "//src/v/model",
+        "@seastar",
+    ],
+)

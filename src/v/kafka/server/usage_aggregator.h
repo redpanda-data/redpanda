@@ -156,7 +156,7 @@ private:
     ss::timer<clock_type> _close_window_timer;
     ss::timer<clock_type> _persist_disk_timer;
 
-    mutex _m{"usage_aggregator"};
+    ssx::mutex _m{"usage_aggregator"};
     ss::gate _bg_write_gate;
     ss::gate _gate;
     size_t _current_window{0};

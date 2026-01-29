@@ -6,7 +6,7 @@ common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
 
-common:clang-19 --extra_toolchains=@previous_llvm_toolchain//:all
+common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
 # Use Bash instead of system python for finding the hermetic interpreter
 # within Bazel due to the `python3` binary not being present on CI
@@ -71,6 +71,66 @@ build --@seastar//:stack_guards=True
 # Debug mode by default. Disabled in release builds.
 build --@seastar//:debug=True
 
+# -base configs generally aren't meant to be used directly but are
+# helpers to DRY later user-facing configs
+
+# base for all sanitizer configs
+# seastar has to be run with system allocator when using ASAN
+build:san-base --@seastar//:system_allocator=True
+build:san-base --linkopt=-fsanitize-link-c++-runtime
+
+# base for dev configs
+build:dev-base --config=san-asan-only
+# Og is similar to O1 but gives slightly better debugging experience
+build:dev-base --copt=-Og
+
+####################################################
+# MIXIN CONFIGS
+#
+# These configurations are ones you can plausibly add to your build
+# command in addition to a single primary build mode in order to
+# opt-in to specific features.
+#
+# That's the idea anyway: in practice not all mixins will work
+# together, nor do all mixins work in all build modes. In those cases
+# we try to note the restrictions below.
+####################################################
+
+#########################
+## debug symbols mixins #
+#########################
+
+# line numbers only: backtrace decoding will work, not good for debugger
+build:dbgsym-lines --copt=-gline-tables-only --strip=never
+# full symbols, great for debugging
+build:dbgsym-all --copt=-g --strip=never
+
+#####################
+## sanitizer mixins #
+#####################
+
+# san-asan-only mixin: only enables address sanitizer
+build:san-asan-only --config=san-base
+build:san-asan-only --//bazel:sanitizer_mode=asan
+build:san-asan-only    --copt=-fsanitize=address
+build:san-asan-only --linkopt=-fsanitize=address
+
+# san-all mixin: enables all sanitizers
+build:san-all  --config=san-base
+build:san-all  --//bazel:sanitizer_mode=all
+build:san-all     --copt=-fsanitize=address,undefined,vptr,function,alignment
+build:san-all  --linkopt=-fsanitize=address,undefined,vptr,function,alignment
+
+################################################
+# PRIMARY BUILD MODES
+#
+# Primary build modes define the overall build configuration. It only makes sense
+# to select one of these in a given bazel invocation (or zero, which is the same
+# as selecting fastbuild).
+#
+# These map directly to BUILD_TYPE in task/cmake #
+##################################################
+
 # =================================
 # Fastbuild
 # =================================
@@ -79,25 +139,47 @@ build --@seastar//:debug=True
 build:fastbuild --build
 
 # =================================
-# Sanitizer
+# Dev
 # =================================
-build:sanitizer --compilation_mode=dbg
-build:sanitizer --copt -fsanitize=address,undefined,vptr,function,alignment
-build:sanitizer --linkopt -fsanitize=address,undefined,vptr,function,alignment
-build:sanitizer --linkopt -fsanitize-link-c++-runtime
-build:sanitizer --copt -O1
-build:sanitizer --//bazel:has_sanitizers=True
-# seastar has to be run with system allocator when using sanitizers
-build:sanitizer --@seastar//:system_allocator=True
-# krb5 is a foreign cc build and needs explicit list of sanitizers to build the shared library
-build:sanitizer --@krb5//:sanitizers=address,undefined,vptr,function,alignment
+# Development build mode, intended to be best for non-debugger development.
+# Good build speed, good runtime speed.
+build:dev --config=dev-base --config=dbgsym-lines
+
+# =================================
+# Debugger
+# =================================
+# A mode optimized for running in a debugger, i.e., with no optimization
+# and full symbols. This uses -O0, so Redpanda will run very slowly, which
+# may be unsuitable for some uses. In that case, you might prefer --config=debug.
+# Note that --config=debug is based on this config, so changes to this config
+# will flow through to --config=debug as well.
+build:debugger --compilation_mode=dbg
+build:debugger --config=san-all
+build:debugger --config=dbgsym-all
 
 # =================================
 # Debug
 # =================================
-# alias to match our legacy cmake debug BUILD_TYPE so we don't have to do any
-# mapping in taskfiles
-build:debug --config=sanitizer
+# Debug mode used in the "debug" CI builds and includes all sanitizers,
+# and full symbols. Runs with -O1 so is faster than --config=debugger,
+# but debugger use more difficult due to optimizations (i.e., many symbols
+# will be missing, etc).
+build:debug --config=debugger
+build:debug --copt=-O1
+
+# =================================
+# Fuzz
+# =================================
+# Fuzz configuration for running fuzz tests. It includes the coverage information
+# that libFuzzer needs to guide fuzzing. Fuzz tests still run without this, but
+# the state space will be poorly explored, you will see a message like:
+#
+# WARNING: no interesting inputs were found so far. Is the code instrumented for coverage?
+# This may also happen if the target rejected all inputs we tried so far
+#
+# https://llvm.org/docs/LibFuzzer.html
+build:fuzz --config=debug
+build:fuzz --copt=-fsanitize=fuzzer-no-link
 
 # =================================
 # ODR Finder
@@ -144,6 +226,9 @@ build:secure --config=relro
 # =================================
 # Release
 # =================================
+# Enables full optimization, and other release features. Simply using
+# --config=release doesn't create a _true_ release binary, that needs at
+# least --stamp=full and PGO-specific compile steps (outside of bazel).
 build:release --compilation_mode opt
 build:release --config=secure
 build:release --copt -mllvm --copt -inline-threshold=2500
@@ -166,6 +251,24 @@ build:release --host_cxxopt=-U_LIBCPP_HARDENING_MODE
 build:release --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE
 build:release --host_cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE
 
+# Separate PGO configs to be combined with release
+
+# Instrumentation/training step
+# Empty arg is intentional, we provide the path via env var at run time
+build:pgo-instrument --fdo_instrument=
+
+# Final/Optimization build step
+
+# We can't include this in here as bazel wants an absolute path (and we don't
+# really know that) as all the common dirs like /tmp are sandboxed so we can't
+# use them. We pass --fdo_optimize from task instead where the full path is known.
+# build:pgo-optimize --fdo_optimize=
+
+# bazel seems to pass -fprofile-correction unconditionally but that only exists
+# in gcc so need to make clang ignore it
+build:pgo-optimize --copt -Wno-ignored-optimization-argument
+
+
 build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
 build:stamp-full --stamp --workspace_status_command='./bazel/stamp_vars.sh full'
 
@@ -184,6 +287,9 @@ build:coverage --experimental_split_coverage_postprocessing
 build:coverage --experimental_fetch_all_coverage_outputs
 build:coverage --collect_code_coverage
 build:coverage --instrumentation_filter="^//src/v[/:]"
+
+# sanitizer is a deprecated alias for debug
+build:sanitizer --config=debug
 
 # =================================
 # Testing

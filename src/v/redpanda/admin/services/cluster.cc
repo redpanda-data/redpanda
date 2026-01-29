@@ -14,6 +14,7 @@
 #include "features/feature_table.h"
 #include "proto/redpanda/core/admin/v2/cluster.proto.h"
 #include "redpanda/admin/kafka_connections_service.h"
+#include "redpanda/admin/proxy/context.h"
 #include "redpanda/admin/services/utils.h"
 #include "serde/protobuf/rpc.h"
 
@@ -52,7 +53,7 @@ cluster_service_impl::list_kafka_connections(
     auto& kcs = _kafka_connections_service.local();
 
     auto rate_units = std::optional<kafka_connections_service::remote_units>{};
-    if (!ctx.is_proxied()) {
+    if (!proxy::is_proxied(ctx)) {
         // Only apply rate limiting on external requests to avoid deadlock on
         // concurrent requests arriving at the same time through two different
         // nodes.
@@ -79,7 +80,7 @@ cluster_service_impl::list_kafka_connections(
 
     auto mem_units = co_await kcs.memory_limit(capped_page_size);
 
-    auto resp = ctx.is_proxied()
+    auto resp = proxy::is_proxied(ctx)
                   ? co_await kcs.list_kafka_connections_local(std::move(req))
                   : co_await kcs.list_kafka_connections_cluster_wide(
                       _proxy_client, ctx, std::move(req));

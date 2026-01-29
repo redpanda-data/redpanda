@@ -209,6 +209,25 @@ private:
 bytes hmac(digest_type type, bytes_view key, bytes_view msg);
 bytes hmac(digest_type type, std::string_view key, std::string_view msg);
 
+// https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf
+// According to the above, hmac keys in fips needs to be at least 112 bits (14
+// bytes). In scram, the first operation is to compute HMAC with the password as
+// the key. So, in fips mode, scram passwords have the same requirement (>= 14
+// bytes).
+inline constexpr size_t hmac_key_fips_min_bytes = 14;
+/**
+ * Checks if given key is too short for hmac, in fips mode
+ *
+ * @param key The key to used with hmac
+ */
+bool is_hmac_key_too_short(const bytes_view key);
+/**
+ * Checks if given password is too short to be used as an hmac key, in fips mode
+ *
+ * @param password The scram password in plain text
+ */
+bool is_scram_password_too_short(const std::string_view password);
+
 ///////////////////////////////////////////////////////////////////////////////
 /// Asymmetric key operations
 ///////////////////////////////////////////////////////////////////////////////

@@ -34,7 +34,7 @@ struct perf_settings {
 
 struct endpoint {
     using signature = consumed_response (*)(
-      ::http::client&, const pps::subject&, const ss::sstring&);
+      ::http::client&, const pps::context_subject&, const ss::sstring&);
     signature fn;
     ss::sstring name;
 };
@@ -48,8 +48,8 @@ ss::sstring make_payload(
       absl::CEscape(schema));
 }
 
-pps::subject make_subject(int i_sub) {
-    return pps::subject{ss::format("TestSubject{}", i_sub)};
+pps::context_subject make_subject(int i_sub) {
+    return pps::context_subject{ss::format("TestSubject{}", i_sub)};
 }
 
 pps::schema_version middle_version(int n_versions) {
@@ -65,7 +65,7 @@ pps::schema_version last_version(int n_versions) {
 
 void setup_client(::http::client& client, perf_settings ps) {
     for (int i_sub = 0; i_sub < ps.n_subjects; ++i_sub) {
-        pps::subject sub = make_subject(i_sub);
+        auto sub = make_subject(i_sub);
         for (int i_ver = 1; i_ver <= ps.n_versions; ++i_ver) {
             auto schema = pps::test_utils::make_proto_schema(sub, i_ver);
             auto payload = make_payload(schema);

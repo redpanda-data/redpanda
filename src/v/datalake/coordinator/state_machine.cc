@@ -56,6 +56,7 @@ coordinator_stm::coordinator_stm(
 
 ss::future<checked<model::term_id, coordinator_stm::errc>>
 coordinator_stm::sync(model::timeout_clock::duration timeout) {
+    auto holder = _gate.hold();
     auto sync_res = co_await ss::coroutine::as_future(
       coordinator_stm_base::sync(timeout));
     if (sync_res.failed()) {
@@ -81,6 +82,7 @@ coordinator_stm::sync(model::timeout_clock::duration timeout) {
 ss::future<checked<std::nullopt_t, coordinator_stm::errc>>
 coordinator_stm::replicate_and_wait(
   model::term_id term, model::record_batch batch, ss::abort_source& as) {
+    auto holder = _gate.hold();
     auto opts = raft::replicate_options(
       raft::consistency_level::quorum_ack,
       /*expected_term=*/term,

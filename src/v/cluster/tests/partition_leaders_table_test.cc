@@ -39,18 +39,13 @@ namespace cluster {
 struct test_fixture : public seastar_test {
     test_fixture() = default;
 
-    static void SetUpTestSuite() {
-        ss::smp::invoke_on_all([] {
-            config::node().node_id.set_value(model::node_id{1});
-        }).get();
-    }
-
     ss::future<> SetUpAsync() {
         co_await as.start();
         co_await migrated_resources.start();
-        co_await topics.start(ss::sharded_parameter([this] {
-            return std::ref(migrated_resources.local());
-        }));
+        co_await topics.start(
+          ss::sharded_parameter(
+            [this] { return std::ref(migrated_resources.local()); }),
+          model::node_id{1});
         leaders = std::make_unique<partition_leaders_table>(topics, as);
     }
     ss::future<> TearDownAsync() {

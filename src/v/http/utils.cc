@@ -51,6 +51,65 @@ ss::sstring uri_encode(std::string_view input, uri_encode_slash encode_slash) {
     return result;
 }
 
+ss::sstring uri_decode(std::string_view input) {
+    size_t pos = 0;
+    ss::sstring buf(input.length(), 0);
+
+    for (auto safe = input.begin(); safe != input.end(); ++safe) {
+        switch (*safe) {
+        case '%': {
+            int hex = 0;
+            auto ch = *++safe;
+            if (ch >= '0' && ch <= '9') {
+                hex = (ch - '0') * 16;
+            } else if (ch >= 'A' && ch <= 'F') {
+                hex = (ch - 'A' + 10) * 16;
+            } else if (ch >= 'a' && ch <= 'f') {
+                hex = (ch - 'a' + 10) * 16;
+            } else {
+                buf[pos++] = '%';
+                if (ch == 0) {
+                    buf.resize(pos);
+                    return buf;
+                }
+                buf[pos++] = ch;
+                break;
+            }
+
+            ch = *++safe;
+            if (ch >= '0' && ch <= '9') {
+                hex += (ch - '0');
+            } else if (ch >= 'A' && ch <= 'F') {
+                hex += (ch - 'A' + 10);
+            } else if (ch >= 'a' && ch <= 'f') {
+                hex += (ch - 'a' + 10);
+            } else {
+                buf[pos++] = '%';
+                buf[pos++] = *(safe - 1);
+                if (ch == 0) {
+                    buf.resize(pos);
+                    return buf;
+                }
+                buf[pos++] = ch;
+                break;
+            }
+
+            buf[pos++] = char(hex);
+            break;
+        }
+        case '+':
+            buf[pos++] = ' ';
+            break;
+        default:
+            buf[pos++] = *safe;
+            break;
+        }
+    }
+
+    buf.resize(pos);
+    return buf;
+}
+
 iobuf form_encode_data(
   const absl::flat_hash_map<ss::sstring, ss::sstring>& data) {
     std::vector<ss::sstring> pairs;

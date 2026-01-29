@@ -26,7 +26,7 @@ oauth_token parse_oauth_token(const json::Document& doc) {
     }
     // token type is defined as enum with the following possible values:
     // "bearer", "mac", "N_A"
-    auto token_type = absl::AsciiStrToLower(
+    ss::sstring token_type = absl::AsciiStrToLower(
       parse_required_str(doc, "token_type"));
 
     if (!(token_type == "bearer" || token_type == "mac"

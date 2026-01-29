@@ -137,7 +137,7 @@ func newAppCmd(fs afero.Fs, p *config.Params) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&langFlag, "language", "l", "", "The language you want the code sample to be generated with")
+	cmd.Flags().StringVarP(&langFlag, "language", "l", "go", "The language you want the code sample to be generated with. Available language: 'go'")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "The path where the app will be written")
 	cmd.Flags().StringVar(&saslCred, "new-sasl-credentials", "", "If provided, rpk will generate and use these credentials (<user>:<password>)")
 	cmd.Flags().BoolVar(&noUser, "no-user", false, "Generates the sample app without SASL user")
@@ -362,7 +362,7 @@ By default, this will run interactively, prompting you to select a language and
 a user with which to create your application. To use this without interactivity,
 specify how you would like your application to be created using flags.
 
-The --language option allows you to specify the language. There is no default.
+The --language option allows you to specify the language. The default is 'go'. Available language: 'go'.
 
 The --new-sasl-credentials <user>:<password> allows you to generate a new SASL
 user with admin ACLs. If you don't want to use your current profile user nor

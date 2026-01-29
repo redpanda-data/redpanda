@@ -25,7 +25,6 @@ namespace cloud_topics::l1 {
 
 compaction_scheduler::compaction_scheduler(
   compaction_cluster_state state,
-  std::unique_ptr<scheduling_policy> policy,
   ss::sharded<file_io>* io,
   ss::sharded<l1::replicated_metastore>* metastore)
   : _io(io)
@@ -35,28 +34,37 @@ compaction_scheduler::compaction_scheduler(
         const model::ntp& ntp,
         const model::topic_id_partition& tidp,
         std::string_view ctx) { manage_partition(ntp, tidp, ctx); },
-      [this](model::ntp ntp, std::string_view ctx) {
-          return unmanage_partition(std::move(ntp), ctx);
+      [this](const model::ntp& ntp, std::string_view ctx) {
+          unmanage_partition(ntp, ctx);
       },
       [this](const model::ntp& ntp) { return is_managed(ntp); },
       state))
   , _log_info_collector(make_default_log_info_collector(
-      &_metastore->local(), &state.metadata_cache->local()))
-  , _scheduling_policy(std::move(policy))
-  , _worker_manager(_compaction_queue, io, metastore, &_committer)
+      &_metastore->local(),
+      &state.metadata_cache->local(),
+      state.shard_table,
+      state.partition_manager))
+  , _scheduling_policy(make_default_scheduling_policy())
+  , _worker_manager(
+      _compaction_queue,
+      io,
+      metastore,
+      &_committer,
+      state.metadata_cache,
+      _probe)
   , _compaction_interval(
-      config::shard_local_cfg().log_compaction_interval_ms.bind())
+      config::shard_local_cfg().cloud_topics_compaction_interval_ms.bind())
   , _compaction_queue(_scheduling_policy->get_comparator()) {
     _compaction_interval.watch([this]() { _sem.signal(); });
 }
 
-compaction_scheduler::compaction_scheduler(
-  log_info_collector info_collector, std::unique_ptr<scheduling_policy> policy)
+compaction_scheduler::compaction_scheduler(log_info_collector info_collector)
   : _log_info_collector(std::move(info_collector))
-  , _scheduling_policy(std::move(policy))
-  , _worker_manager(_compaction_queue, nullptr, nullptr, &_committer)
+  , _scheduling_policy(make_default_scheduling_policy())
+  , _worker_manager(
+      _compaction_queue, nullptr, nullptr, &_committer, nullptr, _probe)
   , _compaction_interval(
-      config::shard_local_cfg().log_compaction_interval_ms.bind())
+      config::shard_local_cfg().cloud_topics_compaction_interval_ms.bind())
   , _compaction_queue(_scheduling_policy->get_comparator()) {
     _compaction_interval.watch([this]() { _sem.signal(); });
 }
@@ -88,10 +96,11 @@ void compaction_scheduler::manage_partition(
     _ntp_to_tidp.emplace(ntp, tidp);
     vassert(
       success, "Could not manage compacted CTP {} (concurrency issue?)", ntp);
+    _probe.set_log_count(_logs.size());
 }
 
-ss::future<>
-compaction_scheduler::unmanage_partition(model::ntp ntp, std::string_view ctx) {
+void compaction_scheduler::unmanage_partition(
+  const model::ntp& ntp, std::string_view ctx) {
     auto tidp_entry = _ntp_to_tidp.extract(ntp);
     if (!tidp_entry.has_value()) {
         vassert(
@@ -126,7 +135,8 @@ compaction_scheduler::unmanage_partition(model::ntp ntp, std::string_view ctx) {
     // Request that compaction of this CTP be stopped, if in flight. `handle` is
     // a `lw_shared_ptr`- we can allow it to go out of scope here without fear
     // of UAF elsewhere.
-    co_await _worker_manager.request_stop_compaction(handle);
+    _worker_manager.request_stop_compaction(std::move(handle));
+    _probe.set_log_count(_logs.size());
 }
 
 void compaction_scheduler::start_bg_loop() {
@@ -161,6 +171,8 @@ ss::future<> compaction_scheduler::scheduling_loop() {
             continue;
         }
 
+        _probe.set_compaction_queue_length(_compaction_queue.size());
+
         co_await _log_info_collector.collect_info_for_logs(
           _logs, _logs_list, _compaction_queue);
 
@@ -169,6 +181,7 @@ ss::future<> compaction_scheduler::scheduling_loop() {
 }
 
 ss::future<> compaction_scheduler::start() {
+    _probe.setup_metrics();
     co_await _committer.start(
       ss::sharded_parameter([] { return make_default_committing_policy(); }),
       ss::sharded_parameter([this] { return &_io->local(); }),
@@ -202,14 +215,6 @@ ss::future<> compaction_scheduler::stop() {
     co_await _committer.stop();
 
     co_await std::move(close_fut);
-}
-
-std::unique_ptr<compaction_scheduler> make_default_compaction_scheduler(
-  compaction_cluster_state state,
-  ss::sharded<file_io>* io,
-  ss::sharded<replicated_metastore>* metastore) {
-    return std::make_unique<compaction_scheduler>(
-      state, make_default_scheduling_policy(), io, metastore);
 }
 
 } // namespace cloud_topics::l1

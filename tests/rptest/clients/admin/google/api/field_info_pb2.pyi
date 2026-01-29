@@ -69,23 +69,23 @@ class FieldInfo(google.protobuf.message.Message):
     'An IP address in either v4 or v6 format as described by the individual\n    values defined herein. See the comments on the IPV4 and IPV6 types for\n    allowed normalizations of each.\n    '
     FORMAT_FIELD_NUMBER: builtins.int
     REFERENCED_TYPES_FIELD_NUMBER: builtins.int
-    format: global___FieldInfo.Format.ValueType
+    format: Global___FieldInfo.Format.ValueType
     "The standard format of a field value. This does not explicitly configure\n    any API consumer, just documents the API's format for the field it is\n    applied to.\n    "
 
     @property
-    def referenced_types(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___TypeReference]:
+    def referenced_types(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___TypeReference]:
         """The type(s) that the annotated, generic field may represent.
 
         Currently, this must only be used on fields of type `google.protobuf.Any`.
         Supporting other generic types may be considered in the future.
         """
 
-    def __init__(self, *, format: global___FieldInfo.Format.ValueType=..., referenced_types: collections.abc.Iterable[global___TypeReference] | None=...) -> None:
+    def __init__(self, *, format: Global___FieldInfo.Format.ValueType=..., referenced_types: collections.abc.Iterable[Global___TypeReference] | None=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['format', b'format', 'referenced_types', b'referenced_types']) -> None:
         ...
-global___FieldInfo = FieldInfo
+Global___FieldInfo: typing_extensions.TypeAlias = FieldInfo
 
 @typing.final
 class TypeReference(google.protobuf.message.Message):
@@ -100,7 +100,7 @@ class TypeReference(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['type_name', b'type_name']) -> None:
         ...
-global___TypeReference = TypeReference
+Global___TypeReference: typing_extensions.TypeAlias = TypeReference
 FIELD_INFO_FIELD_NUMBER: builtins.int
-field_info: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.FieldOptions, global___FieldInfo]
+field_info: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.FieldOptions, Global___FieldInfo]
 'Rich semantic descriptor of an API field beyond the basic typing.\n\nExamples:\n\n    string request_id = 1 [(google.api.field_info).format = UUID4];\n    string old_ip_address = 2 [(google.api.field_info).format = IPV4];\n    string new_ip_address = 3 [(google.api.field_info).format = IPV6];\n    string actual_ip_address = 4 [\n      (google.api.field_info).format = IPV4_OR_IPV6\n    ];\n    google.protobuf.Any generic_field = 5 [\n      (google.api.field_info).referenced_types = {type_name: "ActualType"},\n      (google.api.field_info).referenced_types = {type_name: "OtherType"},\n    ];\n    google.protobuf.Any generic_user_input = 5 [\n      (google.api.field_info).referenced_types = {type_name: "*"},\n    ];\n'

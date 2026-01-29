@@ -38,7 +38,10 @@ public:
       ss::sharded<shard_table>&,
       ss::sharded<metadata_cache>&,
       ss::sharded<rpc::connection_cache>&,
-      ss::sharded<partition_leaders_table>&);
+      ss::sharded<partition_leaders_table>&,
+      ss::abort_source&);
+
+    ss::future<> stop();
 
     ss::future<get_group_offsets_reply>
     get_group_offsets(get_group_offsets_request&& req);
@@ -95,6 +98,8 @@ private:
       set_group_offsets_reply,
       set_group_offsets_handler>
       _set_group_offsets_router;
+
+    ss::optimized_optional<ss::abort_source::subscription> _as_sub;
 };
 
 } // namespace cluster::data_migrations

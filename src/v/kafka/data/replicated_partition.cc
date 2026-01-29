@@ -202,9 +202,8 @@ kafka::leader_epoch replicated_partition::leader_epoch() const {
 }
 
 // TODO: use previous translation speed up lookup
-ss::future<storage::translating_reader> replicated_partition::make_reader(
-  kafka::log_reader_config cfg,
-  std::optional<model::timeout_clock::time_point> debounce_deadline) {
+ss::future<storage::translating_reader>
+replicated_partition::make_reader(kafka::log_reader_config cfg) {
     if (
       _partition->is_read_replica_mode_enabled()
       && _partition->cloud_data_available()) {
@@ -221,16 +220,14 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
            >= model::offset_cast(_partition->start_cloud_offset())) {
         auto config = kafka_to_cloud_log_reader_config(cfg);
         config.type_filter = {model::record_batch_type::raft_data};
-        co_return co_await _partition->make_cloud_reader(
-          config, debounce_deadline);
+        co_return co_await _partition->make_cloud_reader(config);
     }
 
     auto config = kafka_to_local_log_reader_config(cfg, _translator);
     config.type_filter = {model::record_batch_type::raft_data};
     config.translate_offsets = model::translate_offsets::yes;
 
-    auto rdr = co_await _partition->make_local_reader(
-      std::move(config), debounce_deadline);
+    auto rdr = co_await _partition->make_local_reader(config);
     co_return storage::translating_reader(std::move(rdr), _translator);
 }
 
@@ -383,11 +380,6 @@ ss::future<result<model::offset>> replicated_partition::replicate(
           }
           return ret_t(model::offset(r.value().last_offset()));
       });
-}
-ss::future<result<model::offset>> replicated_partition::replicate(
-  model::record_batch batch, raft::replicate_options opts) {
-    return replicate(
-      chunked_vector<model::record_batch>::single(std::move(batch)), opts);
 }
 
 raft::replicate_stages replicated_partition::replicate(

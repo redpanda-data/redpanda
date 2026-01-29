@@ -13,7 +13,7 @@
 #include "iceberg/conversion/json_schema/ir.h"
 #include "json/document.h"
 
-#include <fmt/ranges.h>
+#include <fmt/format.h>
 #include <gtest/gtest.h>
 
 #include <optional>
@@ -42,11 +42,11 @@ json::Document parse_json(std::string_view json_str) {
 constexpr std::string_view schema_identification_example = R"({
     "$id": "https://example.com/root.json",
     "type": "string",
-    "$defs": {
+    "definitions": {
         "A": { "$anchor": "foo" },
         "B": {
             "$id": "other.json",
-            "$defs": {
+            "definitions": {
                 "X": { "$anchor": "bar" },
                 "Y": {
                     "$id": "t/inner.json",
@@ -113,19 +113,19 @@ TEST(frontend_test, compile_valid_schema) {
   base uri: https://example.com/root.json
   dialect: http://json-schema.org/draft-07/schema#
   types: [string]
-#/$defs/A
+#/definitions/A
   base uri: https://example.com/root.json
   dialect: http://json-schema.org/draft-07/schema#
-#/$defs/B
+#/definitions/B
   base uri: https://example.com/other.json
   dialect: http://json-schema.org/draft-07/schema#
-#/$defs/B/$defs/X
+#/definitions/B/definitions/X
   base uri: https://example.com/other.json
   dialect: http://json-schema.org/draft-07/schema#
-#/$defs/B/$defs/Y
+#/definitions/B/definitions/Y
   base uri: https://example.com/t/inner.json
   dialect: http://json-schema.org/draft-07/schema#
-#/$defs/C
+#/definitions/C
   base uri: urn:uuid:ee564b8a-7a87-4125-8c96-e9f123d6766f
   dialect: http://json-schema.org/draft-07/schema#
 )";
@@ -417,24 +417,441 @@ TEST(frontend_test, nested_arrays_and_objects) {
     ASSERT_EQ(expected, ir_tree_printer::to_string(schema));
 }
 
-TEST(frontend_test, ref) {
+TEST(frontend_test, ref_local_with_fragment) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "#/definitions/inner"
+          },
+          "definitions": {
+            "inner": {
+              "type": "string"
+            }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_schema = std::get<std::reference_wrapper<const subschema>>(
+      schema.root().items());
+    ASSERT_EQ(items_schema.get().ref_value(), "#/definitions/inner");
+    ASSERT_EQ(
+      items_schema.get().ref(),
+      &schema.root().subschemas().at("definitions/inner"));
+}
+
+TEST(frontend_test, ref_local_without_fragment) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "inner.json"
+          },
+          "definitions": {
+            "inner": {
+              "$id": "inner.json",
+              "type": "string"
+            }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_schema = std::get<std::reference_wrapper<const subschema>>(
+      schema.root().items());
+    ASSERT_EQ(items_schema.get().ref_value(), "inner.json");
+    ASSERT_EQ(
+      items_schema.get().ref()->base().id(), "https://example.com/inner.json");
+}
+
+TEST(frontend_test, ref_external_not_found) {
+    EXPECT_THAT(
+      []() {
+          frontend{}.compile(
+            parse_json(R"({
+              "$id": "https://example.com/schemas/root.json",
+              "items": { "$ref": "types.json#/$defs/MyType" }
+            })"),
+            "https://example.com/irrelevant-base.json",
+            dialect::draft7);
+      },
+      ThrowsMessage<std::runtime_error>(StrEq(
+        "Unresolvable $ref: types.json#/$defs/MyType. Schema resource "
+        "https://example.com/schemas/types.json not available")));
+}
+
+TEST(frontend_test, ref_relative_uri) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/schemas/root.json",
+          "properties": {
+            "fieldWithRsc": {
+              "$id": "types.json",
+              "type": "object",
+              "definitions": {
+                "MyType": { "type": "string" }
+              }
+            },
+            "myField": {
+              "$ref": "types.json#/definitions/MyType"
+            }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    const auto& my_field = schema.root().properties().at("myField");
+    ASSERT_EQ(my_field.ref_value(), "types.json#/definitions/MyType");
+    ASSERT_EQ(my_field.ref()->types(), std::vector{json_value_type::string});
+}
+
+TEST(frontend_test, ref_absolute_uri) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "type": "object",
+          "properties": {
+            "externalSchema": {
+              "$id": "https://other.example.com/schemas/types.json",
+              "definitions": {
+                  "ExternalType": { "type": "string" }
+              }
+            },
+            "myField": {
+              "$ref": "https://other.example.com/schemas/types.json#/definitions/ExternalType"
+            }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    const auto& my_field = schema.root().properties().at("myField");
+    ASSERT_EQ(
+      my_field.ref_value(),
+      "https://other.example.com/schemas/types.json#/definitions/ExternalType");
+    ASSERT_EQ(my_field.ref()->types(), std::vector{json_value_type::string});
+}
+
+TEST(frontend_test, ref_with_sibling_keywords) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "#/definitions/Base",
+            "type": "object",
+            "properties": {
+                "extraField": { "type": "integer" }
+            }
+          },
+          "definitions": {
+              "Base": { "type": "string" }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_schema = std::get<std::reference_wrapper<const subschema>>(
+      schema.root().items());
+    ASSERT_EQ(items_schema.get().ref_value(), "#/definitions/Base");
+    ASSERT_TRUE(items_schema.get().types().empty());
+    ASSERT_TRUE(items_schema.get().properties().empty());
+}
+
+TEST(frontend_test, ref_with_encoded_pointer) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "#/definitions/foo~1bar"
+          },
+          "definitions": {
+              "foo/bar": { "type": "string" }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_schema = std::get<std::reference_wrapper<const subschema>>(
+      schema.root().items());
+    ASSERT_EQ(items_schema.get().ref_value(), "#/definitions/foo~1bar");
+    ASSERT_EQ(
+      items_schema.get().ref(),
+      &schema.root().subschemas().at("definitions/foo/bar"));
+}
+
+TEST(frontend_test, ref_with_percent_encoded_chars) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "#/definitions/my%24type"
+          },
+          "definitions": {
+              "my$type": { "type": "string" }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_schema = std::get<std::reference_wrapper<const subschema>>(
+      schema.root().items());
+    ASSERT_EQ(items_schema.get().ref_value(), "#/definitions/my%24type");
+    ASSERT_EQ(
+      items_schema.get().ref(),
+      &schema.root().subschemas().at("definitions/my$type"));
+}
+
+TEST(frontend_test, ref_with_unencoded_special_chars) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "#/definitions/my$type"
+          },
+          "definitions": {
+              "my$type": { "type": "string" }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_schema = std::get<std::reference_wrapper<const subschema>>(
+      schema.root().items());
+    ASSERT_EQ(items_schema.get().ref_value(), "#/definitions/my$type");
+    ASSERT_EQ(
+      items_schema.get().ref(),
+      &schema.root().subschemas().at("definitions/my$type"));
+}
+
+TEST(frontend_test, ref_with_dot_dot_path) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/schemas/deep/root.json",
+          "properties": {
+            "types": {
+              "$id": "https://example.com/schemas/types.json",
+              "definitions": {
+                "MyType": { "type": "string" }
+              }
+            },
+            "myField": {
+              "$ref": "../foo/../types.json#/definitions/MyType"
+            }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    const auto& my_field = schema.root().properties().at("myField");
+    ASSERT_EQ(my_field.ref_value(), "../foo/../types.json#/definitions/MyType");
+    ASSERT_EQ(my_field.ref()->types(), std::vector{json_value_type::string});
+}
+
+TEST(frontend_test, ref_multibase) {
+    // Test that a schema reachable via multiple paths (due to nested $id)
+    // resolves correctly from both paths.
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "definitions": {
+              "Person": {
+                  "$id": "person.json",
+                  "type": "object",
+                  "properties": {
+                      "name": { "type": "string" }
+                  }
+              }
+          },
+          "properties": {
+              "viaRootPath": {
+                  "$ref": "#/definitions/Person/properties/name"
+              },
+              "viaNestedId": {
+                  "$ref": "person.json#/properties/name"
+              }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    const auto& via_root = schema.root().properties().at("viaRootPath");
+    const auto& via_nested = schema.root().properties().at("viaNestedId");
+
+    // Both refs should resolve to the exact same subschema
+    ASSERT_EQ(via_root.ref(), via_nested.ref());
+    ASSERT_NE(via_root.ref(), nullptr);
+}
+
+TEST(frontend_test, ref_infinite_recursion) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "#"
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_ref = [](const subschema& s) {
+        return std::get<std::reference_wrapper<const subschema>>(s.items())
+          .get()
+          .ref();
+    };
+
+    ASSERT_EQ(items_ref(schema.root()), &schema.root());
+    ASSERT_EQ(items_ref(*items_ref(schema.root())), &schema.root());
+}
+
+TEST(frontend_test, ref_mutual_recursion) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "definitions": {
+              "A": {
+                  "type": "object",
+                  "properties": {
+                      "toB": { "$ref": "#/definitions/B" }
+                  }
+              },
+              "B": {
+                  "type": "object",
+                  "properties": {
+                      "toA": { "$ref": "#/definitions/A" }
+                  }
+              }
+          },
+          "properties": {
+              "start": { "$ref": "#/definitions/A" }
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    const auto& def_a = schema.root().subschemas().at("definitions/A");
+    const auto& def_b = schema.root().subschemas().at("definitions/B");
+
+    const auto& a_to_b = def_a.properties().at("toB");
+    const auto& b_to_a = def_b.properties().at("toA");
+
+    ASSERT_EQ(a_to_b.ref(), &def_b);
+    ASSERT_EQ(b_to_a.ref(), &def_a);
+
+    // Verify the cycle: A -> B -> A
+    ASSERT_EQ(a_to_b.ref()->properties().at("toA").ref(), &def_a);
+}
+
+TEST(frontend_test, ref_invalid_type) {
     EXPECT_THAT(
       []() {
           frontend{}.compile(
             parse_json(R"({
           "$id": "https://example.com/root.json",
-          "$ref": "#/$defs/inner",
-          "$defs": {
-              "inner": {
-                  "type": "string"
-              }
+          "items": {
+              "$ref": 123
           }
-        })"),
+      })"),
             "https://example.com/irrelevant-base.json",
             dialect::draft7);
       },
       ThrowsMessage<std::runtime_error>(
-        StrEq("The $ref keyword is not allowed")));
+        StrEq("Invalid type for keyword $ref. Expected one of: [string].")));
+}
+
+TEST(frontend_test, ref_invalid_fragment) {
+    EXPECT_THAT(
+      []() {
+          frontend{}.compile(
+            parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+              "$ref": "#boo"
+          }
+      })"),
+            "https://example.com/irrelevant-base.json",
+            dialect::draft7);
+      },
+      ThrowsMessage<std::runtime_error>(
+        StrEq("$ref #boo is not a valid JSON Pointer")));
+}
+
+TEST(frontend_test, ref_to_nonexistent_node) {
+    EXPECT_THAT(
+      []() {
+          frontend{}.compile(
+            parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+              "$ref": "#/definitions/nonexistent"
+          },
+          "definitions": {
+              "inner": { "type": "string" }
+          }
+      })"),
+            "https://example.com/irrelevant-base.json",
+            dialect::draft7);
+      },
+      ThrowsMessage<std::runtime_error>(StrEq(
+        "$ref #/definitions/nonexistent points to non-existent location")));
+}
+
+TEST(frontend_test, ref_to_unknown_keyword) {
+    EXPECT_THAT(
+      []() {
+          frontend{}.compile(
+            parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+              "$ref": "#/foo/bar"
+          },
+          "foo": {
+              "bar": { "type": "string" }
+          }
+      })"),
+            "https://example.com/irrelevant-base.json",
+            dialect::draft7);
+      },
+      ThrowsMessage<std::runtime_error>(
+        StrEq("$ref #/foo/bar points to uncompiled keyword (not supported)")));
+}
+
+TEST(frontend_test, ref_within_unknown_keyword) {
+    EXPECT_THAT(
+      []() {
+          frontend{}.compile(
+            parse_json(R"({
+          "$id": "https://example.com/root.json",
+          "items": {
+            "$ref": "#/customKeyword"
+          },
+          "customKeyword": {
+              "$ref": "#/definitions/inner"
+          },
+          "definitions": {
+              "inner": { "type": "string" }
+          }
+      })"),
+            "https://example.com/irrelevant-base.json",
+            dialect::draft7);
+      },
+      ThrowsMessage<std::runtime_error>(StrEq(
+        "$ref #/customKeyword points to uncompiled keyword (not supported)")));
+}
+
+TEST(frontend_test, ref_root_schema) {
+    EXPECT_THAT(
+      []() {
+          frontend{}.compile(
+            parse_json(R"({
+              "$ref": "https://other.example.com/schemas/types.json"
+            })"),
+            "https://example.com/irrelevant-base.json",
+            dialect::draft7);
+      },
+      ThrowsMessage<std::runtime_error>(StrEq(
+        "$ref at the root of the schema in draft-07 is not allowed to avoid "
+        "undefined behavior")));
 }
 
 TEST(frontend_test, multiple_schema_resources) {
@@ -472,6 +889,23 @@ TEST(frontend_test, multiple_schema_resources) {
 )";
 
     ASSERT_EQ(expected, ir_tree_printer::to_string(schema));
+}
+
+TEST(frontend_test, id_with_dot_dot_path) {
+    auto schema = frontend{}.compile(
+      parse_json(R"({
+          "$id": "https://example.com/schemas/deep/root.json",
+          "items": {
+            "$id": "../types.json"
+          }
+      })"),
+      "https://example.com/irrelevant-base.json",
+      dialect::draft7);
+
+    auto items_schema = std::get<std::reference_wrapper<const subschema>>(
+      schema.root().items());
+    ASSERT_EQ(
+      items_schema.get().base().id(), "https://example.com/schemas/types.json");
 }
 
 TEST(frontend_test, non_object_or_boolean_subschema) {
@@ -534,7 +968,7 @@ TEST(frontend_test, duplicate_ids) {
           frontend{}.compile(
             parse_json(R"({
           "$id": "https://example.com/root.json",
-          "$defs": {
+          "definitions": {
               "inner": {
                   "$id": "/",
                   "type": "string"

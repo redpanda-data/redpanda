@@ -767,7 +767,8 @@ cluster::cluster_health_report random_cluster_health_report() {
           tests::random_named_int<model::node_id>(),
           random_local_state(),
           std::move(topics),
-          random_drain_status());
+          random_drain_status(),
+          cluster::node_liveness_report{});
 
         // Reduce to an ADL-encodable state
         report.local_state.cache_disk = std::nullopt;
@@ -1659,7 +1660,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           tests::random_named_int<model::node_id>(),
           random_local_state(),
           std::move(topics),
-          random_drain_status());
+          random_drain_status(),
+          cluster::node_liveness_report{});
 
         // Squash local_state to a form that ADL represents, since we will
         // test ADL roundtrip.
@@ -1676,7 +1678,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           tests::random_named_int<model::node_id>(),
           random_local_state(),
           std::move(topics),
-          random_drain_status());
+          random_drain_status(),
+          cluster::node_liveness_report{});
 
         // Squash to ADL-understood disk state
         report.local_state.cache_disk = report.local_state.data_disk;
@@ -1790,22 +1793,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(std::move(data));
     }
     {
-        raft::transfer_leadership_request data{
-          .group = tests::random_named_int<raft::group_id>(),
-        };
-        if (tests::random_bool()) {
-            data.target = tests::random_named_int<model::node_id>();
-        }
-        roundtrip_test(data);
-    }
-    {
-        raft::transfer_leadership_reply data{
-          .success = tests::random_bool(),
-          .result = raft::errc::append_entries_dispatch_error,
-        };
-        roundtrip_test(data);
-    }
-    {
         raft::vnode data{
           tests::random_named_int<model::node_id>(),
           tests::random_named_int<model::revision_id>()};
@@ -1900,98 +1887,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .granted = tests::random_bool(),
           .log_ok = tests::random_bool(),
         };
-        roundtrip_test(data);
-    }
-    {
-        raft::heartbeat_request data;
-
-        // heartbeat request uses the first node/target_node for all of the
-        // heartbeat meatdata entries. so here we arrange for that to be true in
-        // the input data so that equality works as expected.
-        const auto node_id = tests::random_named_int<model::node_id>();
-        const auto target_node_id = tests::random_named_int<model::node_id>();
-
-        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
-            raft::protocol_metadata meta{
-              .group = tests::random_named_int<raft::group_id>(),
-              .commit_index = tests::random_named_int<model::offset>(),
-              .term = tests::random_named_int<model::term_id>(),
-              .prev_log_index = tests::random_named_int<model::offset>(),
-              .prev_log_term = tests::random_named_int<model::term_id>(),
-              .last_visible_index = tests::random_named_int<model::offset>(),
-            };
-            meta.dirty_offset
-              = meta.prev_log_index; // always true for heartbeats
-            raft::heartbeat_metadata hm{
-              .meta = meta,
-              .node_id = raft::
-                vnode{node_id, tests::random_named_int<model::revision_id>()},
-              .target_node_id = raft::
-                vnode{target_node_id, tests::random_named_int<model::revision_id>()},
-            };
-            data.heartbeats.push_back(hm);
-        }
-
-        // encoder will sort automatically. so for equality to work as expected
-        // we use the same sorting for the input as the expected output.
-        struct sorter_fn {
-            constexpr bool operator()(
-              const raft::heartbeat_metadata& lhs,
-              const raft::heartbeat_metadata& rhs) const {
-                return lhs.meta.commit_index < rhs.meta.commit_index;
-            }
-        };
-
-        std::sort(data.heartbeats.begin(), data.heartbeats.end(), sorter_fn{});
-
-        // serde round trip test async version
-        {
-            auto serde_in = data;
-            iobuf serde_out;
-            serde::write_async(serde_out, std::move(serde_in)).get();
-            auto from_serde = serde::from_iobuf<raft::heartbeat_request>(
-              std::move(serde_out));
-            BOOST_REQUIRE(data == from_serde);
-        }
-    }
-    {
-        raft::heartbeat_reply data;
-
-        // heartbeat reply uses the first node/target_node for all of the
-        // reply meatdata entries. so here we arrange for that to be true in
-        // the input data so that equality works as expected.
-        const auto node_id = tests::random_named_int<model::node_id>();
-        const auto target_node_id = tests::random_named_int<model::node_id>();
-
-        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
-            raft::append_entries_reply reply{
-              .target_node_id = raft::
-                vnode{target_node_id, tests::random_named_int<model::revision_id>()},
-              .node_id = raft::
-                vnode{node_id, tests::random_named_int<model::revision_id>()},
-              .group = tests::random_named_int<raft::group_id>(),
-              .term = tests::random_named_int<model::term_id>(),
-              .last_flushed_log_index
-              = tests::random_named_int<model::offset>(),
-              .last_dirty_log_index = tests::random_named_int<model::offset>(),
-              .last_term_base_offset = tests::random_named_int<model::offset>(),
-              .result = raft::reply_result::group_unavailable,
-            };
-            data.meta.push_back(reply);
-        }
-
-        // encoder will sort automatically. so for equality to work as expected
-        // we use the same sorting for the input as the expected output.
-        struct sorter_fn {
-            constexpr bool operator()(
-              const raft::append_entries_reply& lhs,
-              const raft::append_entries_reply& rhs) const {
-                return lhs.last_flushed_log_index < rhs.last_flushed_log_index;
-            }
-        };
-
-        std::sort(data.meta.begin(), data.meta.end(), sorter_fn{});
-
         roundtrip_test(data);
     }
     {

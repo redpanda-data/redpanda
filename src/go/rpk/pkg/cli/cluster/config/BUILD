@@ -34,6 +34,7 @@ go_library(
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
         "@org_golang_google_protobuf//types/known/structpb",
+        "@org_golang_x_term//:term",
         "@org_uber_go_zap//:zap",
     ],
 )
@@ -50,9 +51,12 @@ go_test(
     ],
     embed = [":config"],
     deps = [
+        "//src/go/rpk/pkg/publicapi",
+        "@build_buf_gen_go_redpandadata_cloud_protocolbuffers_go//redpanda/api/controlplane/v1:controlplane",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/structpb",
     ],
 )

@@ -25,7 +25,7 @@ Original test set had the following structure:
 This is translated into the following ducktape test structure:
 * Workloads are ducktape services inheriting from WorkloadServiceBase.
 * Scenarios correspond to test classes. Each class inherits from the base
-  scenario class, but they differ in how the prepare the cluster and topics.
+  scenario class, but they differ in how they prepare the cluster and topics.
 * Suites correspond to test methods of the scenario classes.
 * Each test case corresponds to a case_id parameter passed to a test method.
 * The test method instantiates the workload and the fault (based on the

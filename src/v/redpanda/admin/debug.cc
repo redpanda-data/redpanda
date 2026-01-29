@@ -58,8 +58,8 @@ void fill_raft_state(
     auto& src = state.raft_state;
     raft_state.node_id = src.node();
     raft_state.term = src.term();
-    raft_state.offset_translator_state = std::move(src.offset_translator_state);
-    raft_state.group_configuration = std::move(src.group_configuration);
+    raft_state.offset_translator_state = src.offset_translator_state;
+    raft_state.group_configuration = src.group_configuration;
     raft_state.confirmed_term = src.confirmed_term();
     raft_state.flushed_offset = src.flushed_offset();
     raft_state.commit_index = src.commit_index();
@@ -108,15 +108,16 @@ void fill_raft_state(
         state.last_applied_offset = stm.last_applied_offset;
         state.max_removable_local_log_offset
           = stm.max_removable_local_log_offset;
+        state.last_local_snapshot_offset = stm.last_local_snapshot_offset;
         raft_state.stms.push(std::move(state));
     }
     if (src.recovery_state) {
         ss::httpd::debug_json::follower_recovery_state frs;
         frs.is_active = src.recovery_state->is_active;
         frs.pending_offset_count = src.recovery_state->pending_offset_count;
-        raft_state.follower_recovery_state = std::move(frs);
+        raft_state.follower_recovery_state = frs;
     }
-    replica.raft_state = std::move(raft_state);
+    replica.raft_state = raft_state;
 }
 
 // noinline because this is the characteristic frame we look for the backtrace
@@ -837,7 +838,7 @@ admin_server::sampled_memory_profile_handler(
             ss::httpd::debug_json::allocation_site allocation_site;
             allocation_site.size = allocation_sites.size;
             allocation_site.count = allocation_sites.count;
-            allocation_site.backtrace = std::move(allocation_sites.backtrace);
+            allocation_site.backtrace = allocation_sites.backtrace;
             resp[i].allocation_sites.push(allocation_site);
         }
     }
@@ -922,6 +923,13 @@ admin_server::get_partition_state_handler(
         replica.revision_id = state.revision_id;
         replica.log_size_bytes = state.log_size_bytes;
         replica.non_log_disk_size_bytes = state.non_log_disk_size_bytes;
+        replica.max_tombstone_removable_offset
+          = state.max_tombstone_removable_offset;
+        replica.max_transaction_removable_offset
+          = state.max_transaction_removable_offset;
+        replica.max_cleanly_compacted_offset
+          = state.max_cleanly_compacted_offset;
+        replica.max_transaction_free_offset = state.max_transaction_free_offset;
         replica.is_read_replica_mode_enabled
           = state.is_read_replica_mode_enabled;
         replica.read_replica_bucket = state.read_replica_bucket;
@@ -930,10 +938,10 @@ admin_server::get_partition_state_handler(
         replica.start_cloud_offset = state.start_cloud_offset;
         replica.next_cloud_offset = state.next_cloud_offset;
         replica.iceberg_mode = state.iceberg_mode;
-        fill_raft_state(replica, std::move(state));
+        fill_raft_state(replica, state);
         response.replicas.push(std::move(replica));
     }
-    co_return ss::json::json_return_type(std::move(response));
+    co_return ss::json::json_return_type(response);
 }
 
 ss::future<ss::json::json_return_type>
@@ -1018,7 +1026,7 @@ admin_server::get_producers_state_handler(
         producers.producers.push(std::move(producer_state));
         co_await ss::coroutine::maybe_yield();
     }
-    co_return ss::json::json_return_type(std::move(producers));
+    co_return ss::json::json_return_type(producers);
 }
 
 ss::future<ss::json::json_return_type> admin_server::get_node_uuid_handler() {
@@ -1030,7 +1038,7 @@ ss::future<ss::json::json_return_type> admin_server::get_node_uuid_handler() {
         uuid.node_id = config::node().node_id().value();
     }
 
-    co_return ss::json::json_return_type(std::move(uuid));
+    co_return ss::json::json_return_type(uuid);
 }
 
 static json::validator make_broker_id_override_validator() {

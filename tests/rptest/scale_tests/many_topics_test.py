@@ -98,7 +98,8 @@ class ManyTopicsTest(RedpandaTest):
             # Increase partition allocation percent to ensure that we can fit 40k
             # topics on a `m6id.xlarge` cluster.
             "topic_partitions_memory_allocation_percent": self.PARTITIONS_MEMORY_ALLOCATION_PERCENT,
-            "log_segment_size": 16777216,
+            "log_segment_size": 8000000,
+            "log_segment_size_min": 8000000,
         }
 
         # Reduce per-partition log spam
@@ -321,7 +322,7 @@ class ManyTopicsTest(RedpandaTest):
             return sum(numpy.diff(sorted(numbers_list)) == 1) >= n
 
         # Select random topic from the list
-        target_topic = topic_names[random.randint(0, len(topic_names))]
+        target_topic = random.choice(topic_names)
         # Consumer specific config
         consumer_extra_config = {
             "auto.offset.reset": "smallest",
@@ -589,7 +590,7 @@ class ManyTopicsTest(RedpandaTest):
         self.logger.debug(f"Adding node {node_to_decom.name} to the cluster")
         self.redpanda.clean_node(node_to_decom)
         self.redpanda.start_node(
-            node_to_decom, first_start=True, auto_assign_node_id=True
+            node_to_decom, auto_assign_node_id=True, omit_seeds_on_idx_one=False
         )
         self.node_ops_exec.decommission(
             self.redpanda.idx(node_to_decom), node_id=node_id
@@ -800,7 +801,7 @@ class ManyTopicsTest(RedpandaTest):
         self.redpanda.stop_node(maintenance_node, timeout=self.STOP_TIMEOUT)
 
         # Again, wait for healthy cluster
-        # This time underreplicated partion count should spike, ignore that
+        # This time underreplicated partition count should spike, ignore that
         # until restart
         self.logger.info("Making sure that cluster is healthy")
         self._wait_until_cluster_healthy(include_underreplicated=False)
@@ -1089,6 +1090,8 @@ class ManyTopicsTest(RedpandaTest):
         else:
             self.redpanda.start()
 
+        # run forever, stop explicitly in the test
+        profile_overrides |= {"message_count": 1000 * 60}
         profile = self._set_profile("topic_profile_t40k_p1", profile_overrides)
 
         ##
@@ -1138,17 +1141,13 @@ class ManyTopicsTest(RedpandaTest):
         # Validate results
         #
 
-        # Calculate how much time ideally needed for the producers to finish
-        # and account for delays from the various lifecycle tests.
-        running_time_sec = int(test_slowdown_factor * profile.total_running_time())
-
         # Run checks if swarm nodes finished
-        self.logger.info("Make sure that swarm node producers are finished")
+        self.logger.info("Stop client-swarm producers")
         for s in swarm_producers:
-            s.wait(running_time_sec)
-        self.logger.info("Make sure that swarm node consumers are finished")
+            s.stop()
+        self.logger.info("Stop client-swarm consumers")
         for s in swarm_consumers:
-            s.wait(running_time_sec)
+            s.stop()
 
         # Clean
         self._swarm_producers = []
@@ -1168,9 +1167,6 @@ class ManyTopicsTest(RedpandaTest):
             # It takes ~4mins to safely restart a node, hence, we limit the total
             # number of nodes to restart to avoid a ~40min test.
             lambda: self._rolling_restarts(max_nodes=3),
-            profile_overrides={
-                "message_count": 10 * 60,  # 10 mins
-            },
         )
 
     @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)

@@ -426,7 +426,7 @@ public:
         topic_id_mapping_t _by_id;
     };
 
-    using lifecycle_markers_t = absl::node_hash_map<
+    using lifecycle_markers_t = chunked_hash_map<
       nt_revision,
       nt_lifecycle_marker,
       nt_revision_hash,
@@ -498,7 +498,7 @@ public:
         const in_progress_update* update = nullptr;
     };
 
-    explicit topic_table(data_migrations::migrated_resources&);
+    explicit topic_table(data_migrations::migrated_resources&, model::node_id);
 
     cluster::notification_id_type
     register_topic_delta_notification(topic_delta_cb_t cb) {

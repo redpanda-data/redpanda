@@ -17,6 +17,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:data_plane_api",
         "//src/v/cloud_topics:log_reader_config",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:state_accessors",
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/stm:placeholder",
         "//src/v/cluster",

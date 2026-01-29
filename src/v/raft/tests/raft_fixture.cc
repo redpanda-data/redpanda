@@ -16,6 +16,7 @@ namespace raft {
 
 seastar::future<> raft_fixture::TearDownAsync() { return stop(); }
 seastar::future<> raft_fixture::SetUpAsync() { return start(); }
+
 ss::future<> raft_fixture::wait_for_committed_offset(
   model::offset offset, std::chrono::milliseconds timeout) {
     return tests::cooperative_spin_wait_with_timeout(timeout, [this, offset] {

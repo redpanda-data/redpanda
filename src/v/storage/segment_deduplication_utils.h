@@ -58,6 +58,7 @@ ss::future<index_state> deduplicate_segment(
   ss::lw_shared_ptr<storage::segment> seg,
   segment_appender& appender,
   compacted_index_writer& cmp_idx_writer,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   storage::probe& probe,
   offset_delta_time should_offset_delta_times,
   ss::sharded<features::feature_table>&,

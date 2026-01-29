@@ -55,6 +55,7 @@ redpanda_cc_btest(
         "credential_store_test.cc",
     ],
     deps = [
+        "//src/v/model",
         "//src/v/random:generators",
         "//src/v/security",
         "//src/v/test_utils:seastar_boost",
@@ -170,6 +171,20 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "role_test",
+    timeout = "short",
+    srcs = [
+        "role_test.cc",
+    ],
+    deps = [
+        "//src/v/security",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_btest(
     name = "role_store_test",
     timeout = "short",
     srcs = [
@@ -180,10 +195,8 @@ redpanda_cc_btest(
         "//src/v/security",
         "//src/v/test_utils:seastar_boost",
         "@abseil-cpp//absl/container:node_hash_set",
-        "@boost//:algorithm",
         "@boost//:range",
         "@boost//:test",
-        "@fmt",
     ],
 )
 
@@ -214,6 +227,23 @@ redpanda_cc_bench(
         "//src/v/random:generators",
         "//src/v/security",
         "@boost//:range",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "oidc_authenticator_bench_rpbench",
+    srcs = [
+        "oidc_authenticator_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_vector",
+        "//src/v/json",
+        "//src/v/security",
+        "//src/v/security:config",
+        "@boost//:algorithm",
         "@seastar",
         "@seastar//:benchmark",
     ],

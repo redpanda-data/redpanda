@@ -118,8 +118,6 @@ class DirectConsumerVerifierTest(RedpandaTest):
                 )
             case FailureMode.NONE:
                 return NoopThread()
-            case _:
-                return NoopThread()
 
     @cluster(num_nodes=5)
     @matrix(

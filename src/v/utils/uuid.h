@@ -46,6 +46,9 @@ public:
     friend bool operator==(const uuid_t& u, const uuid_t& v) = default;
     friend std::strong_ordering operator<=>(const uuid_t& u, const uuid_t& v);
 
+    bool is_nil() const noexcept;
+    explicit operator bool() const noexcept;
+
     operator ss::sstring() const; // NOLINT(*explicit*)
 
     template<typename H>

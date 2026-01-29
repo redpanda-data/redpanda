@@ -52,6 +52,10 @@ public:
 
     constexpr static timestamp missing() noexcept { return timestamp(-1); }
 
+    constexpr bool is_missing() const noexcept {
+        return _v == missing().value();
+    }
+
     bool operator<(const timestamp& other) const { return _v < other._v; }
 
     bool operator<=(const timestamp& other) const { return _v <= other._v; }

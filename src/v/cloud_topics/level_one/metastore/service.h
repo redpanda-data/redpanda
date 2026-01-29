@@ -59,6 +59,12 @@ public:
     ss::future<get_compaction_info_reply> get_compaction_info(
       get_compaction_info_request, ::rpc::streaming_context&) override;
 
+    ss::future<get_compaction_infos_reply> get_compaction_infos(
+      get_compaction_infos_request, ::rpc::streaming_context&) override;
+
+    ss::future<get_extent_metadata_reply> get_extent_metadata(
+      get_extent_metadata_request, ::rpc::streaming_context&) override;
+
 private:
     ss::sharded<leader_router>* _leader_router;
 };

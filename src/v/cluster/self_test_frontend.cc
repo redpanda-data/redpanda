@@ -197,10 +197,10 @@ ss::future<uuid_t> self_test_frontend::start_test(
           return handle->start_test(
             start_test_request{
               .id = test_id,
-              .dtos = std::move(req.dtos),
-              .ntos = std::move(new_ntos),
-              .unparsed_checks = std::move(req.unparsed_checks),
-              .ctos = std::move(req.ctos),
+              .dtos = req.dtos,
+              .ntos = new_ntos,
+              .unparsed_checks = req.unparsed_checks,
+              .ctos = req.ctos,
             });
       });
     co_return test_id;

@@ -36,9 +36,9 @@ namespace pandaproxy {
 namespace {
 void set_mime_type(ss::http::reply& rep, json::serialization_format fmt) {
     if (fmt != json::serialization_format::none) {
-        rep.set_mime_type(ss::sstring(name(fmt)));
+        rep.set_content_type(ss::sstring(name(fmt)));
     } else { // TODO(Ben Pope): Remove this branch when endpoints are migrated
-        rep.set_mime_type("application/vnd.kafka.binary.v2+json");
+        rep.set_content_type("application/vnd.kafka.binary.v2+json");
     }
 }
 
@@ -212,6 +212,12 @@ server::server(
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
     _server.set_content_streaming(true);
+    _server.set_keepalive_parameters(
+      ss::net::tcp_keepalive_params{
+        .idle = std::chrono::seconds{120},
+        .interval = std::chrono::seconds{60},
+        .count = 3,
+      });
 }
 
 /*

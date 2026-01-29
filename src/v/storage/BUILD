@@ -374,6 +374,7 @@ redpanda_cc_library(
         "//src/v/ssx:async_algorithm",
         "//src/v/ssx:async_clear",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:mutex",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/ssx:watchdog",
@@ -387,7 +388,6 @@ redpanda_cc_library(
         "//src/v/utils:functional",
         "//src/v/utils:human",
         "//src/v/utils:moving_average",
-        "//src/v/utils:mutex",
         "//src/v/utils:named_type",
         "//src/v/utils:notification_list",
         "//src/v/utils:null_output_stream",
@@ -460,6 +460,7 @@ redpanda_cc_library(
         "@seastar",
     ],
     deps = [
+        ":segment_appender",
         "//src/v/metrics",
     ],
 )

@@ -99,7 +99,10 @@ TEST_F_CORO(ClusterEpochService, TestCaching) {
     co_await tests::drain_task_queue();
     EXPECT_EQ(accesses, 1);
     // After the timeout we async re-fetch the value
-    ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
+    ss::manual_clock::advance(
+      config::shard_local_cfg()
+        .cloud_topics_epoch_service_local_epoch_cache_duration()
+      + 1us);
     auto barrier = co_await acquire_barrier();
     EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch - 1);
     barrier.unlock();
@@ -121,13 +124,19 @@ TEST_F_CORO(ClusterEpochService, IncrementMustHappenEventually) {
     auto must_refresh_deadline = ss::manual_clock::now()
                                  + epoch_service::max_same_epoch_cache_duration;
     // After the timeout we async re-fetch the value
-    ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
+    ss::manual_clock::advance(
+      config::shard_local_cfg()
+        .cloud_topics_epoch_service_local_epoch_cache_duration()
+      + 1us);
     while (ss::manual_clock::now() < must_refresh_deadline) {
         auto accesses_before = accesses.load();
         EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
         co_await tests::drain_task_queue();
         EXPECT_EQ(accesses, accesses_before + 1);
-        ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
+        ss::manual_clock::advance(
+          config::shard_local_cfg()
+            .cloud_topics_epoch_service_local_epoch_cache_duration()
+          + 1us);
     }
     // After the max duration we wait to fetch the value, and will fail if we
     // cannot
@@ -154,7 +163,10 @@ TEST_F_CORO(ClusterEpochService, FetchesLimitedToShard0) {
     // Bumping the epoch and awaiting for the cache to expire should only cause
     // one additional fetch
     ++cluster_epoch;
-    ss::manual_clock::advance(epoch_service::epoch_cache_timeout + 1us);
+    ss::manual_clock::advance(
+      config::shard_local_cfg()
+        .cloud_topics_epoch_service_local_epoch_cache_duration()
+      + 1us);
     auto barrier = co_await acquire_barrier();
     EXPECT_THAT(co_await all_epochs(), ElementsAre(0, 0));
     barrier.unlock();

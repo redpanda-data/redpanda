@@ -42,3 +42,16 @@ redpanda_proto_library(
     protos = [":tls_proto"],
     visibility = ["//visibility:public"],
 )
+
+proto_library(
+    name = "security_types_proto",
+    srcs = ["security_types.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["//proto/redpanda/core/pbgen:options_proto"],
+)
+
+redpanda_proto_library(
+    name = "security_types_redpanda_proto",
+    protos = [":security_types_proto"],
+    visibility = ["//visibility:public"],
+)

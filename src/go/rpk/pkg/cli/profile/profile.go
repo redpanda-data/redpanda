@@ -35,6 +35,10 @@ profiles for multiple clusters and swap between them with 'rpk profile use'.
 Multiple profiles may be useful if, for example, you use rpk to talk to
 a localhost cluster, a dev cluster, and a prod cluster, and you want to keep
 your configuration in one place.
+
+You can also use the RPK_PROFILE environment variable to temporarily override
+the current profile without modifying your configuration. The --profile flag
+takes precedence over the environment variable if both are set.
 `,
 	}
 
@@ -53,6 +57,7 @@ your configuration in one place.
 		newSetCommand(fs, p),
 		newSetGlobalsCommand(fs, p),
 		newUseCommand(fs, p),
+		newValidateCommand(fs, p),
 	)
 
 	return cmd

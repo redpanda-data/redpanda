@@ -97,12 +97,18 @@ struct sasl_configuration {
  * are present,they will be used to connect to the brokers.
  */
 struct connection_configuration {
+    using include_authorized_ops_t
+      = ss::bool_class<struct include_authorized_ops_tag>;
     std::vector<net::unresolved_address> initial_brokers;
     std::optional<tls_configuration> broker_tls;
     std::optional<sasl_configuration> sasl_cfg;
     std::optional<ss::sstring> client_id;
     std::chrono::milliseconds max_metadata_age{10000};
     std::chrono::milliseconds connection_timeout{1000};
+    // If set to true, will request from the brokers the bitmask of authorized
+    // operations the authenticated user is permitted to perform
+    include_authorized_ops_t include_authorized_operations{
+      include_authorized_ops_t::yes};
 
     ss::sstring get_client_id() const {
         return client_id.value_or("kafka-client");

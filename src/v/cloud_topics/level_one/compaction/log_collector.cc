@@ -51,7 +51,7 @@ ss::future<> partition_leader_log_collector::start_collecting_logs() {
     _leader_notify_handle
       = _leaders->local().register_leadership_change_notification(
         [this](const model::ntp& ntp, model::term_id, model::node_id leader) {
-            on_leadership_change(std::move(ntp), leader);
+            on_leadership_change(ntp, leader);
         });
     co_return;
 }
@@ -66,8 +66,8 @@ ss::future<> partition_leader_log_collector::stop_collecting_logs() {
 }
 
 void partition_leader_log_collector::on_ntp_change(
-  cluster::topic_table::ntp_delta delta) {
-    auto& ntp = delta.ntp;
+  const cluster::topic_table::ntp_delta& delta) {
+    const auto& ntp = delta.ntp;
     auto is_managed = _is_managed_cb(ntp);
 
     using delta_type = cluster::topic_table_ntp_delta_type;
@@ -75,7 +75,7 @@ void partition_leader_log_collector::on_ntp_change(
     case delta_type::removed: {
         // Partition/possibly topic was removed. Unmanage it if necessary.
         if (is_managed) {
-            _unmanage_cb(std::move(ntp), "Partition removed");
+            _unmanage_cb(ntp, "Partition removed");
         }
         return;
     }
@@ -90,9 +90,11 @@ void partition_leader_log_collector::on_ntp_change(
 
         auto is_compacted_cloud_topic = topic_cfg.is_compacted()
                                         && topic_cfg.is_cloud_topic();
-        if (is_compacted_cloud_topic && !is_managed) {
+        auto is_leader_for = _leaders->local().get_leader(ntp) == _self;
+        if (is_compacted_cloud_topic && is_leader_for && !is_managed) {
             // This is likely an existing cloud topic which is now `compact`
-            // enabled.
+            // enabled. We should manage it iff this broker already hosts
+            // the partition leader.
             auto tp_id = topic_cfg.tp_id;
             vassert(tp_id.has_value(), "Expected tp_id to have value.");
             auto tidp = model::topic_id_partition(
@@ -104,7 +106,7 @@ void partition_leader_log_collector::on_ntp_change(
         if (!is_compacted_cloud_topic && is_managed) {
             // This is likely an existing cloud topic which is no longer
             // `compact` enabled.
-            _unmanage_cb(std::move(ntp), "Disabled compaction");
+            _unmanage_cb(ntp, "Disabled compaction");
         }
         return;
     }
@@ -118,7 +120,7 @@ void partition_leader_log_collector::on_ntp_change(
 }
 
 void partition_leader_log_collector::on_leadership_change(
-  model::ntp ntp, model::node_id leader) {
+  const model::ntp& ntp, model::node_id leader) {
     auto topic_cfg_opt = _topic_table->local().get_topic_cfg(
       model::topic_namespace_view{ntp});
     if (!topic_cfg_opt.has_value()) {
@@ -146,7 +148,7 @@ void partition_leader_log_collector::on_leadership_change(
     }
 
     if (!is_leader && is_managed) {
-        _unmanage_cb(std::move(ntp), "Stepped down as leader");
+        _unmanage_cb(ntp, "Stepped down as leader");
     }
 }
 

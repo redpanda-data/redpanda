@@ -60,7 +60,7 @@ Use filter to list only migrations in a specific state
 			config.CheckExitServerlessAdmin(p)
 
 			var migrations []rpadmin.MigrationState
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(p)
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 

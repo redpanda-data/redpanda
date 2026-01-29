@@ -11,6 +11,7 @@ import operator
 from typing import Any, Literal, Optional
 
 from ducktape.utils.util import wait_until
+from pyiceberg.exceptions import NoSuchNamespaceError
 
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.context import databricks as databricks_ctx
@@ -25,9 +26,13 @@ from rptest.services.nessie_catalog import NessieCatalog
 from rptest.services.redpanda import RedpandaService
 from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.services.spark_service import SparkService
+from rptest.tests.datalake.iceberg import Identifier
 from rptest.services.trino_service import TrinoService
 from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
+from rptest.util import (
+    wait_until_with_progress_check,
+)
 
 
 class DatalakeServices:
@@ -57,7 +62,7 @@ class DatalakeServices:
         self.warehouse_name = warehouse_name
         self.included_query_engines = include_query_engines
 
-        self.query_engines = []
+        self.query_engines: list[QueryEngineBase] = []
 
         self._catalog_type = catalog_type
         self._cloud_storage_bucket = self.redpanda.si_settings.cloud_storage_bucket
@@ -181,12 +186,12 @@ class DatalakeServices:
 
     def trino(self) -> TrinoService:
         trino = self.service(QueryEngineType.TRINO)
-        assert trino, "Missing Trino service"
+        assert isinstance(trino, TrinoService), "Missing Trino service"
         return trino
 
     def spark(self) -> SparkService:
         spark = self.service(QueryEngineType.SPARK)
-        assert spark, "Missing Spark service"
+        assert isinstance(spark, SparkService), "Missing Spark service"
         return spark
 
     def start_counter_stream(
@@ -227,7 +232,7 @@ class DatalakeServices:
 
     def create_iceberg_enabled_topic(
         self,
-        name,
+        name: str,
         partitions=1,
         replicas=1,
         iceberg_mode: Literal["key_value"]
@@ -236,7 +241,7 @@ class DatalakeServices:
         | str = "key_value",
         target_lag_ms: Optional[int] = None,
         config: dict[str, Any] = dict(),
-    ):
+    ) -> None:
         config[TopicSpec.PROPERTY_ICEBERG_MODE] = iceberg_mode
         if target_lag_ms:
             config[TopicSpec.PROPERTY_ICEBERG_TARGET_LAG_MS] = target_lag_ms
@@ -252,15 +257,30 @@ class DatalakeServices:
     def catalog_client(self):
         return self.catalog_service.client(self.warehouse_name)
 
-    def table_exists(self, table, namespace="redpanda", client=None):
+    def table_exists(self, id: str | Identifier, client=None):
         if client is None:
             client = self.catalog_client()
 
-        namespaces = client.list_namespaces()
-        self.redpanda.logger.debug(f"namespaces: {namespaces}")
-        return (namespace,) in namespaces and (namespace, table) in client.list_tables(
-            namespace
-        )
+        if isinstance(id, str):
+            id = ("redpanda", id)
+
+        namespace = id[:-1]
+
+        self.redpanda.logger.debug(f"looking for table {id}")
+        try:
+            tables = client.list_tables(namespace)
+            self.redpanda.logger.debug(f"tables in {namespace}: {tables}")
+            return id in tables
+        except NoSuchNamespaceError:
+            # Namespace doesn't exist, log namespace tree
+            for i in range(len(namespace)):
+                parent = namespace[:i]
+                try:
+                    children = client.list_namespaces(parent)
+                    self.redpanda.logger.debug(f"namespaces under {parent}: {children}")
+                except NoSuchNamespaceError:
+                    break
+            return False
 
     def num_tables(self, namespace="redpanda", client=None):
         if client is None:
@@ -268,11 +288,16 @@ class DatalakeServices:
 
         return len(client.list_tables(namespace))
 
-    def wait_for_iceberg_table(self, namespace, table, timeout, backoff_sec):
+    def wait_for_iceberg_table(
+        self, namespace: str | Identifier, table, timeout, backoff_sec
+    ):
+        if isinstance(namespace, str):
+            namespace = (namespace,)
+
         client = self.catalog_client()
 
         def table_created():
-            return self.table_exists(table, namespace=namespace, client=client)
+            return self.table_exists(namespace + (table,), client=client)
 
         wait_until(
             table_created,
@@ -282,8 +307,8 @@ class DatalakeServices:
         )
 
     def wait_for_translation_until_offset(
-        self, topic, offset, partition=0, timeout=30, backoff_sec=5
-    ):
+        self, topic: str, offset: int, partition=0, timeout=30, backoff_sec=5
+    ) -> None:
         self.wait_for_iceberg_table("redpanda", topic, timeout, backoff_sec)
 
         def translation_done():
@@ -319,8 +344,10 @@ class DatalakeServices:
         self,
         topic,
         msg_count,
-        timeout=30,
+        timeout=90,
+        progress_sec=30,
         backoff_sec=5,
+        namespace: Identifier = ("redpanda",),
         table_override=None,
         op=operator.eq,
     ):
@@ -329,29 +356,40 @@ class DatalakeServices:
         if table_override:
             table_name = table_override
 
-        self.wait_for_iceberg_table("redpanda", table_name, timeout, backoff_sec)
+        self.wait_for_iceberg_table(namespace, table_name, timeout, backoff_sec)
 
-        def translation_done():
+        def get_counts():
             assert len(self.query_engines) > 0, (
                 "At least one query engine is required to check translation status"
             )
 
-            counts = dict(
+            return dict(
                 map(
-                    lambda e: (e.engine_name(), e.count_table("redpanda", table_name)),
+                    lambda e: (e.engine_name(), e.count_table(namespace, table_name)),
                     self.query_engines,
                 )
             )
+
+        # just want to know that something moved
+        def total_count():
+            counts = get_counts()
+            return sum(c for _, c in counts.items())
+
+        def translation_done():
+            counts = get_counts()
             self.redpanda.logger.debug(
                 f"Current counts for {table_name}: {counts}, want {op=} {msg_count}"
             )
             return all([op(c, msg_count) for _, c in counts.items()])
 
-        wait_until(
-            translation_done,
+        wait_until_with_progress_check(
+            check=total_count,
+            condition=translation_done,
             timeout_sec=timeout,
+            progress_sec=progress_sec,
             backoff_sec=backoff_sec,
             err_msg=f"Timed out waiting for events from {topic} to appear in datalake",
+            logger=self.redpanda.logger,
         )
 
     def produce_to_topic(self, topic, msg_size, msg_count, rate_limit_bps=None):

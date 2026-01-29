@@ -127,6 +127,11 @@ public:
 };
 
 using require_leader = ss::bool_class<struct on_leader_only_tag>;
+
+using consume_fn = ss::noncopyable_function<
+  ss::future<result<chunked_vector<model::record_batch>, cluster::errc>>(
+    kafka::partition_proxy*)>;
+
 /**
  * Handles routing for shard local partitions.
  */
@@ -190,6 +195,15 @@ public:
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<
         result<partition_offsets, cluster::errc>>(kafka::partition_proxy*)>,
+      require_leader req_leader = require_leader::yes)
+      = 0;
+
+    virtual ss::future<
+      result<chunked_vector<model::record_batch>, cluster::errc>>
+    consume_from_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      consume_fn,
       require_leader req_leader = require_leader::yes)
       = 0;
 };

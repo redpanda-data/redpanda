@@ -7,8 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import TYPE_CHECKING, Any
+
 import requests
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
+
+from rptest.util import not_none
+
+if TYPE_CHECKING:
+    from rptest.services.redpanda import RedpandaService
 
 
 class RollingRestarter:
@@ -16,19 +24,19 @@ class RollingRestarter:
     Encapsulates the logic needed to perform a rolling restart.
     """
 
-    def __init__(self, redpanda):
+    def __init__(self, redpanda: "RedpandaService") -> None:
         self.redpanda = redpanda
 
     def restart_nodes(
         self,
-        nodes,
-        override_cfg_params=None,
-        start_timeout=None,
-        stop_timeout=None,
-        use_maintenance_mode=True,
-        omit_seeds_on_idx_one=True,
-        auto_assign_node_id=True,
-    ):
+        nodes: list[ClusterNode],
+        override_cfg_params: dict[str, Any] | None = None,
+        start_timeout: int | None = None,
+        stop_timeout: int | None = None,
+        use_maintenance_mode: bool = True,
+        omit_seeds_on_idx_one: bool = True,
+        auto_assign_node_id: bool = True,
+    ) -> None:
         """
         Performs a rolling restart on the given nodes, optionally overriding
         the given configs.
@@ -39,7 +47,7 @@ class RollingRestarter:
         if stop_timeout is None:
             stop_timeout = self.redpanda.node_ready_timeout_s
 
-        def has_drained_leaders(node):
+        def has_drained_leaders(node: ClusterNode) -> bool:
             try:
                 node_id = self.redpanda.node_id(node)
                 broker_resp = admin.get_broker(node_id, node=node)
@@ -50,19 +58,21 @@ class RollingRestarter:
             except requests.exceptions.HTTPError:
                 return False
 
-        def wait_until_cluster_healthy(timeout_sec):
+        def wait_until_cluster_healthy(timeout_sec: int) -> ClusterNode:
             wait_until(
                 lambda: self.redpanda.healthy(), timeout_sec=stop_timeout, backoff_sec=1
             )
             # Wait for the cluster to agree on a controller leader.
-            return self.redpanda.get_node_by_id(
-                admin.await_stable_leader(
-                    topic="controller",
-                    partition=0,
-                    namespace="redpanda",
-                    hosts=[n.account.hostname for n in self.redpanda._started],
-                    timeout_s=timeout_sec,
-                    backoff_s=1,
+            return not_none(
+                self.redpanda.get_node_by_id(
+                    admin.await_stable_leader(
+                        topic="controller",
+                        partition=0,
+                        namespace="redpanda",
+                        hosts=[n.account.hostname for n in self.redpanda._started],
+                        timeout_s=timeout_sec,
+                        backoff_s=1,
+                    )
                 )
             )
 

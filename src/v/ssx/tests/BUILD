@@ -214,6 +214,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "actor_test",
+    timeout = "short",
+    srcs = [
+        "actor_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:actor",
+        "//src/v/test_utils:async",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "event_test",
     timeout = "short",
     srcs = [
@@ -328,6 +344,34 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/ssx:single_fiber_executor",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "time_test",
+    timeout = "short",
+    srcs = [
+        "time_test.cc",
+    ],
+    deps = [
+        "//src/v/ssx:time",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "clock_test",
+    timeout = "short",
+    srcs = [
+        "clock_test.cc",
+    ],
+    deps = [
+        "//src/v/ssx:clock",
+        "//src/v/ssx:time",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",

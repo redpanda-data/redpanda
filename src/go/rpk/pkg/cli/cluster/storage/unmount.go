@@ -60,7 +60,7 @@ Unmount topic 'my-topic' from the cluster in the 'my-namespace'
 			}
 
 			var id int
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				if ns != "" && strings.ToLower(ns) != "kafka" {
 					out.Die("Namespace %q not allowed. Only kafka topics can be unmounted in Redpanda Cloud clusters", ns)
 				}

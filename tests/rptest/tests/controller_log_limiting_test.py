@@ -311,7 +311,7 @@ class ControllerAclsAndUsersLimitTest(RedpandaTest):
             try:
                 rpk.sasl_create_user(
                     f"testuser_{i}",
-                    "password",
+                    "password012345",
                     self.redpanda.SUPERUSER_CREDENTIALS.algorithm,
                 )
             except RpkException as err:

@@ -445,7 +445,7 @@ transport::send_typed_versioned(
           }
           const auto version = sctx.value()->get_header().version;
           return internal::parse_result<Output>(
-                   _in, std::move(sctx.value()), req_ver)
+                   in(), std::move(sctx.value()), req_ver)
             .then([version](result<client_context<Output>> r) {
                 return ret_t(result_context<Output>{version, std::move(r)});
             });

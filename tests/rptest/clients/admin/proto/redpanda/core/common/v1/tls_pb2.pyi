@@ -18,7 +18,12 @@ limitations under the License.
 import builtins
 import google.protobuf.descriptor
 import google.protobuf.message
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
@@ -35,14 +40,14 @@ class TLSSettings(google.protobuf.message.Message):
     'If true, the SNI hostname will not be provided when TLS is used'
 
     @property
-    def tls_file_settings(self) -> global___TLSFileSettings:
+    def tls_file_settings(self) -> Global___TLSFileSettings:
         """Certificates and keys are provided as files"""
 
     @property
-    def tls_pem_settings(self) -> global___TLSPEMSettings:
+    def tls_pem_settings(self) -> Global___TLSPEMSettings:
         """Certificates and keys are provided in PEM format"""
 
-    def __init__(self, *, enabled: builtins.bool=..., tls_file_settings: global___TLSFileSettings | None=..., tls_pem_settings: global___TLSPEMSettings | None=..., do_not_set_sni_hostname: builtins.bool=...) -> None:
+    def __init__(self, *, enabled: builtins.bool=..., tls_file_settings: Global___TLSFileSettings | None=..., tls_pem_settings: Global___TLSPEMSettings | None=..., do_not_set_sni_hostname: builtins.bool=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['tls_file_settings', b'tls_file_settings', 'tls_pem_settings', b'tls_pem_settings', 'tls_settings', b'tls_settings']) -> builtins.bool:
@@ -53,7 +58,7 @@ class TLSSettings(google.protobuf.message.Message):
 
     def WhichOneof(self, oneof_group: typing.Literal['tls_settings', b'tls_settings']) -> typing.Literal['tls_file_settings', 'tls_pem_settings'] | None:
         ...
-global___TLSSettings = TLSSettings
+Global___TLSSettings: typing_extensions.TypeAlias = TLSSettings
 
 @typing.final
 class TLSFileSettings(google.protobuf.message.Message):
@@ -74,7 +79,7 @@ class TLSFileSettings(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['ca_path', b'ca_path', 'cert_path', b'cert_path', 'key_path', b'key_path']) -> None:
         ...
-global___TLSFileSettings = TLSFileSettings
+Global___TLSFileSettings: typing_extensions.TypeAlias = TLSFileSettings
 
 @typing.final
 class TLSPEMSettings(google.protobuf.message.Message):
@@ -98,4 +103,4 @@ class TLSPEMSettings(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['ca', b'ca', 'cert', b'cert', 'key', b'key', 'key_fingerprint', b'key_fingerprint']) -> None:
         ...
-global___TLSPEMSettings = TLSPEMSettings
+Global___TLSPEMSettings: typing_extensions.TypeAlias = TLSPEMSettings

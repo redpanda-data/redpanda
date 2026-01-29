@@ -26,6 +26,13 @@ test_config_provider::start_offset(const ::model::ntp&, ss::abort_source&) {
 
 ss::future<> accounting_sink::start() { return ss::now(); }
 
+ss::future<> accounting_sink::reset() {
+    _records_consumed = 0;
+    _last_offset = kafka::offset{0};
+    _start_offset = {};
+    return ss::now();
+}
+
 ss::future<> accounting_sink::stop() noexcept { return _gate.close(); };
 
 kafka::offset accounting_sink::last_replicated_offset() const {
@@ -57,6 +64,8 @@ raft::replicate_stages accounting_sink::replicate(
 void accounting_sink::notify_replicator_failure(model::term_id) {}
 
 kafka::offset accounting_sink::high_watermark() const { return _last_offset; }
+
+bool accounting_sink::can_prefix_truncate() const { return true; }
 
 ss::future<kafka::error_code> accounting_sink::prefix_truncate(
   kafka::offset truncation_offset, ss::lowres_clock::time_point) {

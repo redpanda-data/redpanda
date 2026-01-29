@@ -45,7 +45,7 @@ void direct_consumer_probe::setup_metrics(configuration config) {
     std::ranges::copy(
       client_metrics | std::views::as_rvalue, std::back_inserter(defs));
 
-    _public_metrics.add_group(config.group_name, std::move(defs));
+    _public_metrics.add_group(config.group_name, defs);
 }
 
 } // namespace client

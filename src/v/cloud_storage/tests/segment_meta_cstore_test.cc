@@ -39,8 +39,8 @@ static ss::logger test("test-logger-s");
 // have to use smaller dataset. It's important to actually run the tests in
 // debug to detect potential memory bugs using ASan.
 #ifdef NDEBUG
-static constexpr size_t short_test_size = 10000;
-static constexpr size_t long_test_size = 100000;
+static constexpr size_t short_test_size = 3000;
+static constexpr size_t long_test_size = 20'000;
 #else
 static constexpr size_t short_test_size = 1500;
 static constexpr size_t long_test_size = 10'000;

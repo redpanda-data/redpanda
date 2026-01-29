@@ -37,6 +37,8 @@ public:
     }
 };
 
+static constexpr size_t max_pipeline_stages = 10;
+
 /// Result of the processing of the single request
 enum class request_processing_result {
     /// Advance current request to the next pipeline stage and
@@ -87,8 +89,6 @@ struct requests_list {
 /// The base_pipeline contains code which is reused by both pipelines.
 template<class Request, class Derived, class Clock = ss::lowres_clock>
 class base_pipeline {
-    static constexpr size_t max_pipeline_stages = 10;
-
 public:
     base_pipeline()
       : _root_rtc(_as)
@@ -160,18 +160,19 @@ public:
     void shutdown() {
         _as.request_abort_ex(
           std::make_exception_ptr(pipeline_abort_requested()));
+        remove_requests_for_shutdown();
     }
 
     ss::future<> stop() {
         if (!_as.abort_requested()) {
             _as.request_abort_ex(
               std::make_exception_ptr(pipeline_abort_requested()));
+            remove_requests_for_shutdown();
         }
         auto fut = _gate.close();
         for (auto& f : _filters) {
             f.cancel();
         }
-        remove_requests_for_shutdown();
         co_await std::move(fut);
     }
 

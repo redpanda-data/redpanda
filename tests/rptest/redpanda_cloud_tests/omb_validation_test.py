@@ -179,8 +179,8 @@ class OMBValidationTest(RedpandaCloudTest):
             )
         config_profile = install_pack["config_profiles"][self.config_profile_name]
 
-        self.num_brokers: int = config_profile["nodes_count"]
-        self.tier_limits: ThroughputTierInfo = not_none(self.redpanda.get_tier())
+        self.num_brokers: int = len(self.redpanda.pods)
+        self.tier_limits: ThroughputTierInfo = not_none(self.redpanda.get_scaled_tier())
         self.tier_machine_info = get_machine_info(config_profile["machine_type"])
         self.rpk = RpkTool(self.redpanda)
 

@@ -18,6 +18,9 @@ redpanda_cc_library(
         "oidc_principal_mapping.h",
         "oidc_url_parser.h",
     ],
+    implementation_deps = [
+        "//src/v/strings:string_switch",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -128,6 +131,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/random:secure_random",
+        "//src/v/thirdparty/krb5",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -145,6 +149,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/net:types",
         "//src/v/pandaproxy/schema_registry:types",
         "//src/v/reflection:adl",
         "//src/v/security/audit:types",
@@ -160,7 +165,6 @@ redpanda_cc_library(
         "//src/v/ssx:thread_worker",
         "//src/v/strings:string_switch",
         "//src/v/strings:utf8",
-        "//src/v/thirdparty/krb5",
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:base64",
         "//src/v/utils:log_hist",

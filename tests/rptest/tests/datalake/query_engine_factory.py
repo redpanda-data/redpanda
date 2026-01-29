@@ -11,13 +11,20 @@ from rptest.services.datalake.query_engine.databricks_sql import DatabricksSQL
 from rptest.services.datalake.query_engine.duckdb_py import DuckDBPy
 from rptest.services.spark_service import SparkService
 from rptest.services.trino_service import TrinoService
-from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 
-SUPPORTED_QUERY_ENGINES = [SparkService, TrinoService, DatabricksSQL, DuckDBPy]
+SUPPORTED_QUERY_ENGINES: list[type[QueryEngineBase]] = [
+    SparkService,
+    TrinoService,
+    DatabricksSQL,
+    DuckDBPy,
+]
 
 
-def get_query_engine_by_type(type: QueryEngineType):
+def get_query_engine_by_type(
+    engine_type: QueryEngineType,
+) -> type[QueryEngineBase]:
     for svc in SUPPORTED_QUERY_ENGINES:
-        if svc.engine_name() == type:
+        if svc.engine_name() == engine_type:
             return svc
-    raise NotImplementedError(f"No query engine of type {type}")
+    raise NotImplementedError(f"No query engine of type {engine_type}")

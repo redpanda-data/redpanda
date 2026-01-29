@@ -89,10 +89,23 @@ class TombstoneRemovalTest(RedpandaTest):
             err_msg=f"timed out waiting for leadership transfer to node {node_id}",
         )
 
+    def read_kafka_records(self, node: ClusterNode, topic_name: str) -> Any:
+        viewer = OfflineLogViewer(self.redpanda)
+        while True:
+            try:
+                return viewer.read_kafka_records(node, self.topic_name)
+            except RemoteCommandError as e:
+                self.redpanda.logger.debug(
+                    f"failed to read kafka records on node {node.name}, retrying: {e}"
+                )
+                # OfflineLogViewer may fail if log segments are being deleted concurrently
+                assert "No such file or directory" in str(e), "unexpected error"
+                time.sleep(1)
+                continue
+
     def has_59_data_on_node(self, node: ClusterNode) -> bool:
         """Returns non-tombstone data records for keys 5-9 from given node"""
-        viewer = OfflineLogViewer(self.redpanda)
-        partitions = viewer.read_kafka_records(node, self.topic_name)
+        partitions = self.read_kafka_records(node, self.topic_name)
         assert len(partitions) == 1, "expected single partition"
 
         def is_59_data_record(record_or_batch: dict[str, Any]) -> bool:
@@ -107,19 +120,7 @@ class TombstoneRemovalTest(RedpandaTest):
 
     # make sure it removed all data batches on the leader
     def get_first_offset(self, node: ClusterNode) -> int:
-        viewer = OfflineLogViewer(self.redpanda)
-        while True:
-            try:
-                partitions = viewer.read_kafka_records(node, self.topic_name)
-                break
-            except RemoteCommandError as e:
-                self.redpanda.logger.debug(
-                    f"failed to read kafka records on node {node.name}, retrying: {e}"
-                )
-                # OfflineLogViewer may fail if log segments are being deleted concurrently
-                assert "No such file or directory" in str(e), "unexpected error"
-                time.sleep(1)
-                continue
+        partitions = self.read_kafka_records(node, self.topic_name)
         assert len(partitions) == 1, "expected single partition"
         current_offset = None
         for record_or_batch in partitions[0]:

@@ -55,6 +55,18 @@ ss::future<> housekeeper::do_housekeeping() {
         auto offset = co_await do_time_retention(*retention_duration);
         new_start_offset = std::max(new_start_offset, offset);
     }
+    auto max_allowed_start_offset = _l0_metastore->get_max_allowed_start_offset(
+      _tidp);
+    if (max_allowed_start_offset < new_start_offset) {
+        vlog(
+          cd_log.trace,
+          "{} - Pinning requested new start offset {} by max allowed start "
+          "offset {}",
+          _tidp,
+          new_start_offset,
+          max_allowed_start_offset);
+        new_start_offset = max_allowed_start_offset;
+    }
     if (new_start_offset != kafka::offset::min()) {
         co_await _l0_metastore->set_start_offset(_tidp, new_start_offset, &_as);
     }

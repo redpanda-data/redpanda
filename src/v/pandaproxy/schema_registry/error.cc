@@ -170,7 +170,9 @@ std::error_code make_error_code(error_code e) {
 }
 
 error_info no_reference_found_for(
-  const subject_schema& schema, const subject& sub, schema_version ver) {
+  const subject_schema& schema,
+  const context_subject& sub,
+  schema_version ver) {
     // fmt v8 doesn't support formatting for elements in a range
     auto fmt_refs = schema.def().refs()
                     | std::views::transform([](const auto& ref) {
@@ -184,13 +186,13 @@ error_info no_reference_found_for(
         "{{subject={},version=0,id=-1,schemaType={},references=[{}],metadata="
         "null,ruleSet=null,schema={}}} with refs [{}] of type {}, details: No "
         "schema reference found for subject \"{}\" and version {}",
-        schema.sub()(),
+        schema.sub(),
         to_string_view(schema.def().type()),
         fmt::join(fmt_refs, ", "),
         parser.read_string(parser.bytes_left()),
         fmt::join(fmt_refs, ", "),
         to_string_view(schema.type()),
-        sub(),
+        sub,
         ver())};
 }
 

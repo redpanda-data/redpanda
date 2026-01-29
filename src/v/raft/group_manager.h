@@ -99,25 +99,7 @@ public:
         return _recovery_scheduler.get_status();
     }
 
-    using remake_cb_t
-      = ss::noncopyable_function<ss::future<std::error_code>(raft::group_id)>;
-    // Remake callback is set in controller.cc to tie together `group_manager`
-    // to `controller_backend/api`.
-    void set_remake_cb(remake_cb_t cb) {
-        vassert(
-          _remake_cb == nullptr, "_remake_cb should only be registered once.");
-        _remake_cb = std::make_unique<remake_cb_t>(std::move(cb));
-    }
-
-    // Lifetime of `group_manager` & `controller_backend/api` is not tied. We
-    // need to clear this callback to avoid calls to stopped services.
-    ss::future<> clear_remake_cb() {
-        co_await _remake_cb_gate.close();
-        _remake_cb = nullptr;
-    }
-
 private:
-    ss::future<std::error_code> trigger_remake_notification(raft::group_id);
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
 
@@ -134,7 +116,6 @@ private:
     ss::shared_ptr<raft::buffered_protocol> _buffered_protocol;
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;
-    ss::gate _remake_cb_gate;
     std::vector<ss::lw_shared_ptr<raft::consensus>> _groups;
     notification_list<leader_cb_t, group_manager_notification_id>
       _notifications;
@@ -149,7 +130,6 @@ private:
     ss::timer<> _metrics_timer;
     size_t _learners_gap_bytes{0};
     bool _is_ready;
-    std::unique_ptr<remake_cb_t> _remake_cb;
 };
 
 } // namespace raft

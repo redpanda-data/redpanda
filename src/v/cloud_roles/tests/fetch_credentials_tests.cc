@@ -890,3 +890,40 @@ FIXTURE_TEST(test_abs_vm_credentials, fixture) {
     run_check_once();
     BOOST_CHECK(cred_requests >= 2);
 }
+
+FIXTURE_TEST(test_token_refresh_request, fixture) {
+    // Check that the credentials are refreshed when 'refresh'
+    // method is called.
+    when()
+      .request(cloud_role_tests::gcp_url)
+      .then_reply_with(cloud_role_tests::gcp_oauth_token);
+    listen();
+
+    ss::abort_source as;
+    std::optional<cloud_roles::credentials> c;
+
+    two_fetches s(c);
+
+    auto count = s.get_counter();
+
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::gcp_instance_metadata,
+      as,
+      s,
+      cloud_roles::aws_service_name{"s3"},
+      cloud_roles::aws_region_name{""},
+      address());
+
+    refresh.start();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    tests::cooperative_spin_wait_with_timeout(30s, [count] {
+        return *count == 1;
+    }).get();
+
+    refresh.refresh();
+
+    tests::cooperative_spin_wait_with_timeout(30s, [count] {
+        return *count == 2;
+    }).get();
+}

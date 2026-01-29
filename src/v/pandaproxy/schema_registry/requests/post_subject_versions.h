@@ -14,12 +14,13 @@
 #include "base/seastarx.h"
 #include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
-#include "pandaproxy/json/rjson_util.h"
-#include "pandaproxy/schema_registry/types.h"
-#include "pandaproxy/schema_registry/util.h"
+#include "pandaproxy/schema_registry/rjson.h"
+#include "ssx/sformat.h"
 #include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
+
+#include <utility>
 
 namespace pandaproxy::schema_registry {
 
@@ -37,6 +38,8 @@ class post_subject_versions_request_handler
         id,
         version,
         metadata,
+        metadata_properties,
+        metadata_property,
         ruleset,
         schema_type,
         references,
@@ -48,11 +51,13 @@ class post_subject_versions_request_handler
     state _state = state::empty;
 
     struct mutable_schema {
-        subject sub{invalid_subject};
+        context_subject sub{invalid_subject};
         schema_definition::raw_string def;
         schema_type type{schema_type::avro};
         schema_definition::references refs;
+        std::optional<schema_metadata> metadata;
     };
+    ss::sstring metadata_property_key;
     mutable_schema _schema;
 
 public:
@@ -64,7 +69,7 @@ public:
     };
     rjson_parse_result result;
 
-    explicit post_subject_versions_request_handler(subject sub)
+    explicit post_subject_versions_request_handler(context_subject sub)
       : json::base_handler<Encoding>{json::serialization_format::none}
       , _schema{std::move(sub)} {}
 
@@ -97,17 +102,31 @@ public:
             }
             return s.has_value();
         }
+        case state::metadata: {
+            std::optional<state> s{
+              string_switch<std::optional<state>>(sv)
+                .match("properties", state::metadata_properties)
+                .default_match(std::nullopt)};
+            if (s.has_value()) {
+                _state = *s;
+            }
+            return s.has_value();
+        }
+        case state::metadata_property: {
+            metadata_property_key = ss::sstring{sv};
+            return true;
+        }
         case state::empty:
         case state::schema:
         case state::id:
         case state::version:
-        case state::metadata:
         case state::ruleset:
         case state::schema_type:
         case state::references:
         case state::reference_name:
         case state::reference_subject:
         case state::reference_version:
+        case state::metadata_properties:
             return false;
         }
         return false;
@@ -118,6 +137,9 @@ public:
         case state::metadata:
         case state::ruleset:
             _state = state::record;
+            return true;
+        case state::metadata_properties:
+            _state = state::metadata;
             return true;
         case state::empty:
         case state::record:
@@ -130,7 +152,34 @@ public:
         case state::reference_name:
         case state::reference_subject:
         case state::reference_version:
-            break;
+        case state::metadata_property:
+            return false;
+        }
+        return false;
+    }
+
+    bool Bool(bool b) {
+        switch (_state) {
+        case state::metadata_property: {
+            _schema.metadata->properties->insert_or_assign(
+              std::move(metadata_property_key), ssx::sformat("{}", b));
+            return true;
+        }
+        case state::empty:
+        case state::record:
+        case state::schema:
+        case state::id:
+        case state::version:
+        case state::schema_type:
+        case state::references:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
+        case state::metadata:
+        case state::metadata_properties:
+        case state::ruleset:
+            return false;
         }
         return false;
     }
@@ -142,6 +191,32 @@ public:
             return false;
         }
         return set_integer_value(static_cast<int>(i));
+    }
+
+    bool Double(double d) {
+        switch (_state) {
+        case state::metadata_property: {
+            _schema.metadata->properties->insert_or_assign(
+              std::move(metadata_property_key), ssx::sformat("{}", d));
+            return true;
+        }
+        case state::empty:
+        case state::record:
+        case state::schema:
+        case state::id:
+        case state::version:
+        case state::schema_type:
+        case state::references:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
+        case state::metadata:
+        case state::ruleset:
+        case state::metadata_properties:
+            return false;
+        }
+        return false;
     }
 
     bool String(const Ch* str, ::json::SizeType len, bool) {
@@ -168,8 +243,13 @@ public:
             return true;
         }
         case state::reference_subject: {
-            _schema.refs.back().sub = subject{ss::sstring{sv}};
+            _schema.refs.back().sub = context_subject::from_string(sv);
             _state = state::reference;
+            return true;
+        }
+        case state::metadata_property: {
+            _schema.metadata->properties->insert_or_assign(
+              std::move(metadata_property_key), ss::sstring{sv});
             return true;
         }
         case state::empty:
@@ -181,6 +261,7 @@ public:
         case state::references:
         case state::reference:
         case state::reference_version:
+        case state::metadata_properties:
             return false;
         }
         return false;
@@ -197,17 +278,26 @@ public:
             _state = state::reference;
             return true;
         }
+        case state::metadata: {
+            _schema.metadata.emplace();
+            return true;
+        }
+        case state::metadata_properties: {
+            _schema.metadata->properties.emplace();
+            _state = state::metadata_property;
+            return true;
+        }
         case state::record:
         case state::schema:
         case state::id:
         case state::version:
-        case state::metadata:
         case state::ruleset:
         case state::schema_type:
         case state::reference:
         case state::reference_name:
         case state::reference_subject:
         case state::reference_version:
+        case state::metadata_property:
             return false;
         }
         return false;
@@ -219,7 +309,10 @@ public:
             _state = state::empty;
             result.def = {
               std::move(_schema.sub),
-              {std::move(_schema.def), _schema.type, std::move(_schema.refs)}};
+              {std::move(_schema.def),
+               _schema.type,
+               std::move(_schema.refs),
+               std::move(_schema.metadata)}};
             return true;
         }
         case state::reference: {
@@ -228,11 +321,19 @@ public:
             return !reference.name.empty() && reference.sub != invalid_subject
                    && reference.version != invalid_schema_version;
         }
+        case state::metadata: {
+            _state = state::record;
+            return true;
+        }
+        case state::metadata_properties:
+        case state::metadata_property: {
+            _state = state::metadata;
+            return true;
+        }
         case state::empty:
         case state::schema:
         case state::id:
         case state::version:
-        case state::metadata:
         case state::ruleset:
         case state::schema_type:
         case state::references:
@@ -251,7 +352,7 @@ public:
     }
 
 private:
-    bool set_integer_value(int i) {
+    bool set_integer_value(int32_t i) {
         switch (_state) {
         case state::id: {
             result.id = schema_id{i};
@@ -268,6 +369,11 @@ private:
             _state = state::reference;
             return true;
         }
+        case state::metadata_property: {
+            _schema.metadata->properties->insert_or_assign(
+              std::move(metadata_property_key), ssx::sformat("{}", i));
+            return true;
+        }
         case state::empty:
         case state::record:
         case state::schema:
@@ -278,23 +384,66 @@ private:
         case state::reference:
         case state::reference_name:
         case state::reference_subject:
+        case state::metadata_properties:
             return false;
         }
         return false;
     }
 };
 
-struct post_subject_versions_response {
+struct post_subject_response {
+    subject_schema schema;
     schema_id id;
+    schema_version version;
 };
 
 template<typename Buffer>
 void rjson_serialize(
-  ::json::Writer<Buffer>& w,
+  ::json::iobuf_writer<Buffer>& w,
+  const schema_registry::post_subject_response& res) {
+    w.StartObject();
+    w.Key("subject");
+    w.String(res.schema.sub().to_string());
+    w.Key("version");
+    ::json::rjson_serialize(w, res.version);
+    w.Key("id");
+    ::json::rjson_serialize(w, res.id);
+    w.Key("schemaType");
+    ::json::rjson_serialize(w, to_string_view(res.schema.type()));
+    if (!res.schema.def().refs().empty()) {
+        w.Key("references");
+        ::json::rjson_serialize(w, res.schema.def().refs());
+    }
+    ::json::rjson_serialize(w, res.schema.def().meta());
+    w.Key("schema");
+    ::json::rjson_serialize(w, res.schema.def().raw());
+    w.EndObject();
+}
+
+struct post_subject_versions_response {
+    schema_definition schema;
+    schema_id id;
+    schema_version version;
+};
+
+template<typename Buffer>
+void rjson_serialize(
+  ::json::iobuf_writer<Buffer>& w,
   const schema_registry::post_subject_versions_response& res) {
     w.StartObject();
     w.Key("id");
     ::json::rjson_serialize(w, res.id);
+    w.Key("version");
+    ::json::rjson_serialize(w, res.version);
+    w.Key("schemaType");
+    ::json::rjson_serialize(w, to_string_view(res.schema.type()));
+    if (!res.schema.refs().empty()) {
+        w.Key("references");
+        ::json::rjson_serialize(w, res.schema.refs());
+    }
+    ::json::rjson_serialize(w, res.schema.meta());
+    w.Key("schema");
+    ::json::rjson_serialize(w, res.schema.raw());
     w.EndObject();
 }
 

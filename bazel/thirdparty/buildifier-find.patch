@@ -1,0 +1,29 @@
+diff --git buildifier/factory.bzl buildifier/factory.bzl
+index 6a8098c..40978bc 100644
+--- buildifier/factory.bzl
++++ buildifier/factory.bzl
+@@ -133,8 +133,8 @@ def buildifier_impl_factory(ctx, *, test_rule):
+     if ctx.attr.exclude_patterns:
+         if test_rule and not ctx.attr.no_sandbox:
+             fail("Cannot use 'exclude_patterns' in a test rule without 'no_sandbox'")
+-        exclude_patterns = ["\\! -path %s" % shell.quote(pattern) for pattern in ctx.attr.exclude_patterns]
+-        exclude_patterns_str = " ".join(exclude_patterns)
++        exclude_patterns = ["-path %s" % shell.quote(pattern) for pattern in ctx.attr.exclude_patterns]
++        exclude_patterns_str = " -o ".join(exclude_patterns) + " -prune -o "
+ 
+     workspace = ""
+     if test_rule and ctx.attr.no_sandbox:
+diff --git runner.bash.template runner.bash.template
+index a23f11b..e181354 100644
+--- runner.bash.template
++++ runner.bash.template
+@@ -31,8 +31,8 @@ fi
+ 
+ # Run buildifier on all starlark files
+ find . \
+-  -type "${FIND_FILE_TYPE:-f}" \
+   @@EXCLUDE_PATTERNS@@ \
++  -type "${FIND_FILE_TYPE:-f}" \
+   \( -name '*.bzl' \
+     -o -name '*.sky' \
+     -o -name '*.bazel' \

@@ -129,7 +129,7 @@ TEST_P(RecordBatchCompressionTest, Compression) {
         EXPECT_TRUE(c.compressed());
         EXPECT_EQ(c.header().attrs.compression(), GetParam());
         auto u_copy = model::decompress_batch(c).get();
-        auto u = model::decompress_batch(std::move(c)).get();
+        auto u = model::decompress_batch(c).get();
         EXPECT_FALSE(u.compressed());
         EXPECT_EQ(u.header().attrs.compression(), model::compression::none);
         EXPECT_EQ(u_copy, u);

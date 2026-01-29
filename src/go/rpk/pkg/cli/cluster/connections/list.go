@@ -12,6 +12,7 @@ package connections
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -20,17 +21,22 @@ import (
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	"connectrpc.com/connect"
 	"github.com/docker/go-units"
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
 const defaultPageSize = 20
 
-var errInvalidStateFilter = errors.New("invalid state filter")
+var (
+	minVersion            = redpanda.Version{Major: 25, Feature: 3}
+	errInvalidStateFilter = errors.New("invalid state filter")
+)
 
 var stateOptionMap = map[string]adminv2.KafkaConnectionState{
 	"OPEN":   adminv2.KafkaConnectionState_KAFKA_CONNECTION_STATE_OPEN,
@@ -50,6 +56,26 @@ var tableHeaders = []string{
 	"PROD-TPUT/SEC",
 	"FETCH-TPUT/SEC",
 	"REQS/MIN",
+}
+
+func isFeatureSupported(ctx context.Context, client *rpadmin.AdminAPI) bool {
+	// Determine whether the broker version supports client connection monitoring
+	brokers, err := client.BrokerService().ListBrokers(ctx, &connect.Request[adminv2.ListBrokersRequest]{})
+	if err != nil || len(brokers.Msg.Brokers) == 0 {
+		return false
+	}
+
+	for _, broker := range brokers.Msg.Brokers {
+		if broker.BuildInfo == nil {
+			return false
+		}
+		version, err := redpanda.VersionFromString(broker.BuildInfo.Version)
+		if err != nil || !version.IsAtLeast(minVersion) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func getConnectionDuration(conn *adminv2.KafkaConnection) string {
@@ -185,10 +211,7 @@ List extended output for open connections in json format:
 
 			prof, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-
-			if prof.CloudCluster.IsServerless() {
-				out.Die("rpk cluster connections list is not supported on Redpanda serverless clusters")
-			}
+			config.CheckExitServerlessAdmin(prof)
 
 			// Build the filters based on the current flag set
 			filterClauses, err := filters.buildFilterClauses()
@@ -206,7 +229,7 @@ List extended output for open connections in json format:
 			}
 
 			var response *adminv2.ListKafkaConnectionsResponse
-			if prof.FromCloud {
+			if prof.CheckFromCloud() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(prof)
 				out.MaybeDie(err, "unable to initialize cloud API client: %v", err)
 
@@ -217,6 +240,11 @@ List extended output for open connections in json format:
 			} else {
 				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+				// Check that we're at least at the minimum version
+				if !isFeatureSupported(cmd.Context(), cl) {
+					out.Die("rpk cluster connections list requires Redpanda version %s or later", minVersion.String())
+				}
 
 				resp, err := cl.ClusterService().ListKafkaConnections(cmd.Context(), &connect.Request[adminv2.ListKafkaConnectionsRequest]{Msg: &req})
 				out.MaybeDie(err, "error listing connections: %v", err)

@@ -23,9 +23,9 @@ import (
 type OutputFormat string
 
 const (
-	Envfile OutputFormat = "envfile" // Legacy env file
-	Seastar OutputFormat = "seastar" // YAML properties file
-	Bin     string       = "iotune-redpanda"
+	Envfile    OutputFormat = "envfile" // Legacy env file
+	Seastar    OutputFormat = "seastar" // YAML properties file
+	DefaultBin string       = "iotune-redpanda"
 )
 
 type IoTuneArgs struct {
@@ -41,9 +41,10 @@ type IoTune interface {
 	Run(IoTuneArgs) ([]string, error)
 }
 
-func NewIoTune(proc os.Proc, timeout time.Duration) IoTune {
+func NewIoTune(proc os.Proc, iotunePath string, timeout time.Duration) IoTune {
 	return &ioTune{
 		proc:    proc,
+		path:    iotunePath,
 		timeout: timeout,
 	}
 }
@@ -51,6 +52,7 @@ func NewIoTune(proc os.Proc, timeout time.Duration) IoTune {
 type ioTune struct {
 	IoTune
 	proc    os.Proc
+	path    string
 	timeout time.Duration
 }
 
@@ -59,8 +61,8 @@ func (ioTune *ioTune) Run(args IoTuneArgs) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	zap.L().Sugar().Debugf("Running '%s' with '%#q'", Bin, cmdArgs)
-	return ioTune.proc.RunWithSystemLdPath(ioTune.timeout, Bin, cmdArgs...)
+	zap.L().Sugar().Debugf("Running '%s' with '%#q'", ioTune.path, cmdArgs)
+	return ioTune.proc.RunWithSystemLdPath(ioTune.timeout, ioTune.path, cmdArgs...)
 }
 
 func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {
@@ -68,8 +70,10 @@ func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {
 		return nil, errors.New("at least one directory is required for iotune")
 	}
 	var cmdArgs []string
-	cmdArgs = append(cmdArgs, "--evaluation-directory")
-	cmdArgs = append(cmdArgs, args.Dirs...)
+	for _, dir := range args.Dirs {
+		cmdArgs = append(cmdArgs, "--evaluation-directory")
+		cmdArgs = append(cmdArgs, dir)
+	}
 	if args.Format != "" {
 		cmdArgs = append(cmdArgs, "--format")
 		cmdArgs = append(cmdArgs, string(args.Format))

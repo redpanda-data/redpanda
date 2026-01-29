@@ -12,5 +12,32 @@
 
     "typeCheckingMode": "strict",
 
-    "reportPrivateUsage": "none"
+    // additionally enabled checks which aren't in strict
+
+    "reportPropertyTypeMismatch": "error",
+    "reportUnnecessaryTypeIgnoreComment": "warning",
+    "reportUnreachable": "warning",
+
+    // things we'd like to enable soon
+    // "deprecateTypingAliases": true,
+
+    // annoyingly, reports for classes without a superclass
+    // https://github.com/microsoft/pyright/issues/3968
+    //"reportMissingSuperCall": "error",
+
+    // still reports cycles gated by if TYPE_CHECKING meaning
+    // we can't use it effectively, see https://github.com/microsoft/pyright/issues/11121
+    // "reportImportCycles": "error",
+
+    // disabled checks
+
+    // widespread, allow for now
+    "reportPrivateUsage": "none",
+
+    "executionEnvironments": [
+        {
+            "root": "rptest/clients/admin/proto",
+            "reportUnusedImport": false
+        }
+    ]
 }

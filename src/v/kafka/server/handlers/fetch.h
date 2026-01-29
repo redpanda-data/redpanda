@@ -275,13 +275,13 @@ struct read_result {
     explicit read_result(error_code e)
       : start_offset(-1)
       , high_watermark(-1)
-      , last_stable_offset(-1)
+      , last_stable_offset(model::invalid_lso)
       , error(e) {}
 
     read_result(error_code e, leader_id_and_epoch leader)
       : start_offset(-1)
       , high_watermark(-1)
-      , last_stable_offset(-1)
+      , last_stable_offset(model::invalid_lso)
       , current_leader(std::move(leader))
       , error(e) {}
 

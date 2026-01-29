@@ -42,7 +42,7 @@ struct fetch_session_partition {
       , start_offset(p.log_start_offset)
       , fetch_offset(p.fetch_offset)
       , high_watermark(model::offset(-1))
-      , last_stable_offset(model::offset(-1))
+      , last_stable_offset(model::invalid_lso)
       , current_leader_epoch(p.current_leader_epoch) {}
 };
 /**

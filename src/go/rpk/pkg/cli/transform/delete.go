@@ -44,7 +44,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					out.Exit("Deletion canceled.")
 				}
 			}
-			if p.FromCloud && !p.CloudCluster.IsServerless() {
+			if p.CheckFromCloud() && !p.CloudCluster.IsServerless() {
 				url, err := p.CloudCluster.CheckClusterURL()
 				out.MaybeDie(err, "unable to get cluster information: %v", err)
 

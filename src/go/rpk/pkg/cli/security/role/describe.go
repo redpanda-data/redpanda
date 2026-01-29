@@ -13,12 +13,14 @@ import (
 	"context"
 	"fmt"
 
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/common-go/rpadmin"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -74,20 +76,28 @@ Print only the ACL associated to the role 'red'
 			if (!permissions && !members) || all {
 				permissions, members = true, true
 			}
-			p, err := p.LoadVirtualProfile(fs)
+			prof, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(p)
-
-			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
-			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
-
-			adm, err := kafka.NewAdmin(fs, p)
-			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer adm.Close()
+			config.CheckExitServerlessAdmin(prof)
 
 			roleName := args[0]
-			err = describeAndPrintRole(cmd.Context(), cl, adm, f, roleName, permissions, members)
-			out.MaybeDieErr(err)
+			if prof.CheckFromCloud() {
+				cl, err := publicapi.DataplaneClientFromRpkProfile(prof)
+				out.MaybeDie(err, "unable to initialize cloud API client: %v", err)
+
+				err = describeAndPrintRoleCloud(cmd.Context(), cl, f, roleName, permissions, members)
+				out.MaybeDieErr(err)
+			} else {
+				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
+				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+				adm, err := kafka.NewAdmin(fs, prof)
+				out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+				defer adm.Close()
+
+				err = describeAndPrintRole(cmd.Context(), cl, adm, f, roleName, permissions, members)
+				out.MaybeDieErr(err)
+			}
 		},
 	}
 
@@ -118,7 +128,7 @@ func describeAndPrintRole(ctx context.Context, admCl *rpadmin.AdminAPI, kafkaAdm
 	if err != nil {
 		return fmt.Errorf("unable to retrieve role members of role %q: %v", roleName, err)
 	}
-	// Do this to avoid printing `null` in --format json
+	// avoid printing "null" in JSON/YAML output
 	members := []rpadmin.RoleMember{}
 	if r.Members != nil {
 		members = r.Members
@@ -190,4 +200,94 @@ func describedToRoleACL(results kadm.DescribeACLsResults) []roleACL {
 		}
 	}
 	return ret
+}
+
+func describeAndPrintRoleCloud(ctx context.Context, cl *publicapi.DataPlaneClientSet, f config.OutFormatter, roleName string, permissions, principals bool) error {
+	roleResp, err := cl.Security.GetRole(ctx, connect.NewRequest(&dataplanev1.GetRoleRequest{
+		RoleName: roleName,
+	}))
+	if err != nil {
+		return fmt.Errorf("unable to retrieve role %q: %w", roleName, err)
+	}
+
+	// Get ACLs that belong to RedpandaRole:<roleName>
+	principal := rolePrefix + roleName
+	aclResp, err := cl.ACL.ListACLs(ctx, connect.NewRequest(&dataplanev1.ListACLsRequest{
+		Filter: &dataplanev1.ListACLsRequest_Filter{
+			Principal: &principal,
+		},
+	}))
+	if err != nil {
+		return fmt.Errorf("unable to list ACLs: %w", err)
+	}
+
+	members := membershipToRoleMember(roleResp.Msg.Members)
+	described := describeResponse{
+		Members:     members,
+		Permissions: aclResponseToRoleACL(aclResp.Msg.Resources),
+	}
+
+	if isText, _, s, err := f.Format(described); !isText {
+		if err != nil {
+			return fmt.Errorf("unable to print in the required format %q: %v", f.Kind, err)
+		}
+		fmt.Println(s)
+		return nil
+	}
+
+	var (
+		secPermissions = "permissions"
+		secPrincipals  = fmt.Sprintf("principals (%v)", len(members))
+	)
+	sections := out.NewMaybeHeaderSections(
+		out.ConditionalSectionHeaders(map[string]bool{
+			secPermissions: permissions,
+			secPrincipals:  principals,
+		})...,
+	)
+
+	sections.Add(secPermissions, func() {
+		tw := out.NewTable("Principal",
+			"Host",
+			"Resource-Type",
+			"Resource-Name",
+			"Resource-Pattern-Type",
+			"Operation",
+			"Permission",
+			"Error",
+		)
+		defer tw.Flush()
+		for _, p := range described.Permissions {
+			tw.PrintStructFields(p)
+		}
+	})
+
+	sections.Add(secPrincipals, func() {
+		tw := out.NewTable("NAME", "TYPE")
+		defer tw.Flush()
+		for _, m := range members {
+			tw.PrintStructFields(m)
+		}
+	})
+
+	return nil
+}
+
+// aclResponseToRoleACL converts ListACLsResponse resources to []roleACL.
+func aclResponseToRoleACL(resources []*dataplanev1.ListACLsResponse_Resource) []roleACL {
+	result := []roleACL{} // avoid printing "null" in JSON/YAML output
+	for _, resource := range resources {
+		for _, policy := range resource.Acls {
+			result = append(result, roleACL{
+				Principal:           policy.Principal,
+				Host:                policy.Host,
+				ResourceType:        resource.ResourceType.String(),
+				ResourceName:        resource.ResourceName,
+				ResourcePatternType: resource.ResourcePatternType.String(),
+				Operation:           policy.Operation.String(),
+				Permission:          policy.PermissionType.String(),
+			})
+		}
+	}
+	return result
 }

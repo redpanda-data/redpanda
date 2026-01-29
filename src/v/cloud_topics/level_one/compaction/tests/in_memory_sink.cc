@@ -57,6 +57,11 @@ ss::future<> in_memory_sink::maybe_roll() {
     co_return;
 }
 
+ss::future<bool>
+in_memory_sink::initialize(compaction::sliding_window_reducer::source&) {
+    co_return true;
+}
+
 ss::future<ss::stop_iteration>
 in_memory_sink::operator()(model::record_batch b, model::compression c) {
     co_await maybe_roll();

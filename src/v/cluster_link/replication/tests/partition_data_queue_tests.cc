@@ -60,6 +60,15 @@ TEST_F_CORO(PartitionDataQueueTest, testWaiterBehavior) {
         ASSERT_TRUE(_queue->empty());
     });
 
+    // enqueue empty batches
+    fetch_future = _queue->fetch(as);
+    ASSERT_FALSE_CORO(fetch_future.available());
+    _queue->enqueue(chunked_vector<model::record_batch>{});
+    co_await std::move(fetch_future).then([this](fetch_data data) {
+        ASSERT_TRUE(data.batches.empty());
+        ASSERT_TRUE(_queue->empty());
+    });
+
     // enqueue before waiter
     co_await enqueue_some_data();
     ASSERT_FALSE_CORO(_queue->empty());
@@ -102,8 +111,7 @@ TEST_F_CORO(PartitionDataQueueTest, testConcurrentFetchEnqueue) {
     static constexpr auto test_time = 5s;
     auto deadline = ss::lowres_clock::now() + test_time;
 
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-capturing-lambda-coroutines)
-    auto producer = [&]() -> ss::future<> {
+    auto producer = [&](this auto) -> ss::future<> {
         while (ss::lowres_clock::now() < deadline) {
             co_await enqueue_some_data();
             co_await ss::sleep(
@@ -112,8 +120,7 @@ TEST_F_CORO(PartitionDataQueueTest, testConcurrentFetchEnqueue) {
     };
 
     ss::abort_source as;
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-capturing-lambda-coroutines)
-    auto fetcher = [&]() -> ss::future<> {
+    auto fetcher = [&](this auto) -> ss::future<> {
         while (ss::lowres_clock::now() < deadline) {
             try {
                 auto data = co_await _queue->fetch(as);
@@ -124,8 +131,8 @@ TEST_F_CORO(PartitionDataQueueTest, testConcurrentFetchEnqueue) {
               std::chrono::milliseconds(random_generators::get_int(1, 5)));
         }
     };
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-capturing-lambda-coroutines)
-    auto resetter = [&]() -> ss::future<> {
+
+    auto resetter = [&](this auto) -> ss::future<> {
         while (ss::lowres_clock::now() < deadline) {
             _queue->reset(kafka::offset{});
             co_await ss::sleep(1s);

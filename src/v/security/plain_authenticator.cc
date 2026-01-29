@@ -11,6 +11,7 @@
 #include "security/plain_authenticator.h"
 
 #include "base/vlog.h"
+#include "crypto/crypto.h"
 #include "security/acl.h"
 #include "security/credential_store.h"
 #include "security/errc.h"
@@ -77,6 +78,14 @@ ss::future<result<bytes>> plain_authenticator::authenticate(bytes auth_bytes) {
 
     if (password().length() > max_length) {
         vlog(seclog.warn, "password too long");
+        co_return errc::invalid_credentials;
+    }
+
+    if (crypto::is_scram_password_too_short(password())) {
+        vlog(
+          seclog.warn,
+          "password length less than {} characters",
+          crypto::hmac_key_fips_min_bytes);
         co_return errc::invalid_credentials;
     }
 

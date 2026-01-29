@@ -463,7 +463,7 @@ class PartitionReassignmentsTest(RedpandaTest):
             },
             # Set a low throttle to slowdown partition move enough that there is
             # something to cancel
-            recovery_rate=10,
+            recovery_rate=0,
         )
 
         self.wait_producers(producers, num_messages=10000)
@@ -514,7 +514,7 @@ class PartitionReassignmentsTest(RedpandaTest):
             producer_config={"topics": all_topic_names, "throughput": 1024},
             # Slow down partition move enough that the reassignment is in-progress
             # when we execute add-partitions
-            recovery_rate=10,
+            recovery_rate=0,
         )
 
         self.wait_producers(producers, num_messages=100000)
@@ -627,7 +627,7 @@ class PartitionReassignmentsTest(RedpandaTest):
 
 class PartitionReassignmentsACLsTest(RedpandaTest):
     topics = [TopicSpec()]
-    password = "password"
+    password = "password012345"
     algorithm = "SCRAM-SHA-256"
 
     def __init__(self, test_context):

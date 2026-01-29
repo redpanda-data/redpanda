@@ -290,7 +290,7 @@ ss::future<> mux_remote_consumer::fetch_loop() {
 }
 
 void mux_remote_consumer::update_configuration(const configuration& cfg) {
-    vlog(cllog.info, "Updating mux consumer configuration: {}", cfg);
+    vlog(cllog.trace, "Updating mux consumer configuration: {}", cfg);
     _consumer->update_configuration(cfg.direct_consumer_configuration);
     _partition_max_buffered = cfg.partition_max_buffered;
     _fetch_max_wait = cfg.fetch_max_wait;

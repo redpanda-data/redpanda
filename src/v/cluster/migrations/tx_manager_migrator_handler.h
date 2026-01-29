@@ -12,6 +12,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/tx_manager_migrator_service.h"
+#include "ssx/abort_source.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
@@ -33,11 +34,16 @@ public:
       ss::sharded<cluster::metadata_cache>& metadata_cache,
       ss::sharded<rpc::connection_cache>& connection_cache,
       ss::sharded<partition_leaders_table>& leaders,
-      const model::node_id self)
+      const model::node_id self,
+      ss::abort_source& as)
       : tx_manager_migrator_service(sg, ssg)
       , _read_router(pm, st, metadata_cache, connection_cache, leaders, self)
       , _replicate_router(
-          pm, st, metadata_cache, connection_cache, leaders, self) {}
+          pm, st, metadata_cache, connection_cache, leaders, self)
+      , _as_sub(ssx::subscribe_or_trigger(as, [this] noexcept {
+          _read_router.request_stop();
+          _replicate_router.request_stop();
+      })) {}
 
     ss::future<tx_manager_replicate_reply> tx_manager_replicate(
       tx_manager_replicate_request request, ::rpc::streaming_context&) final {
@@ -56,6 +62,7 @@ public:
 private:
     tx_manager_read_router _read_router;
     tx_manager_replicate_router _replicate_router;
+    ss::optimized_optional<ss::abort_source::subscription> _as_sub;
 };
 
 }; // namespace cluster

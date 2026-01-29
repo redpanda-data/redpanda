@@ -80,7 +80,7 @@ ss::future<> translation_stm::do_apply(const model::record_batch& batch) {
 ss::future<> translation_stm::wait_translated(
   kafka::offset offset,
   model::timeout_clock::time_point timeout,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) const {
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
     vlog(_log.debug, "waiting for translated offset {}", offset);
     co_await _waiters_for_translated.wait(offset, timeout, as);
     vlog(_log.debug, "waited for translated offset {}", offset);
@@ -89,7 +89,8 @@ ss::future<> translation_stm::wait_translated(
 ss::future<> translation_stm::wait_translated(
   model::offset offset,
   model::timeout_clock::time_point timeout,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) const {
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto holder = _gate.hold();
     // `kafka_offset` is the last data entry at or before `offset`
     offset = model::next_offset(offset);
     auto kafka_offset = model::offset_cast(
@@ -112,6 +113,7 @@ ss::future<> translation_stm::wait_translated(
 ss::future<std::optional<kafka::offset>>
 translation_stm::highest_translated_offset(
   model::timeout_clock::duration timeout) {
+    auto holder = _gate.hold();
     if (!_raft->log_config().iceberg_enabled() || !co_await sync(timeout)) {
         co_return std::nullopt;
     }
@@ -121,6 +123,7 @@ translation_stm::highest_translated_offset(
 ss::future<std::optional<model::timestamp>>
 translation_stm::last_translated_timestamp(
   model::timeout_clock::duration timeout) {
+    auto holder = _gate.hold();
     if (!_raft->log_config().iceberg_enabled() || !co_await sync(timeout)) {
         co_return std::nullopt;
     }
@@ -133,6 +136,7 @@ ss::future<std::error_code> translation_stm::reset_highest_translated_offset(
   model::term_id term,
   model::timeout_clock::duration timeout,
   ss::abort_source& as) {
+    auto holder = _gate.hold();
     if (!co_await sync(timeout) || _insync_term != term) {
         co_return raft::errc::not_leader;
     }

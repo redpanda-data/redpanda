@@ -99,6 +99,7 @@ enum class errc : int16_t {
     resource_is_being_migrated,
     invalid_target_node_id,
     topic_id_already_exists,
+    feature_sanctioned,
 };
 
 std::ostream& operator<<(std::ostream& o, errc err);
@@ -291,6 +292,8 @@ struct errc_category final : public std::error_category {
             return "Request was intended for the node with different node id";
         case errc::topic_id_already_exists:
             return "A topic with the given id already exists";
+        case errc::feature_sanctioned:
+            return "Unable to use requested feature - license is invalid";
         }
         return "cluster::errc::unknown";
     }

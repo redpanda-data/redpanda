@@ -69,7 +69,7 @@ public:
             ntp_sanitizer_config{.sanitize_only = true})));
 
         auto appender = std::make_unique<segment_appender>(
-          fd, segment_appender::options(std::nullopt, resources));
+          fd, segment_appender::options(std::nullopt, resources, nullptr));
         auto indexer = segment_index(
           segment_full_path::mock(base_name + ".index"),
           std::move(fidx),

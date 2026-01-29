@@ -124,6 +124,17 @@ ss::future<reservation_error> translator_mem_tracker::reserve_bytes(
 ss::future<>
 translator_mem_tracker::free_bytes(size_t bytes, ss::abort_source&) {
     _current_usage -= std::min(_current_usage, bytes);
+    auto excess_reservation = total_reserved() - _current_usage;
+    // In cases where the underlying translator decided to flush its buffered
+    // memory to disk we want to avoid holding excess memory units.
+    //
+    // We do hold on one reservation block so that some meaningful progess can
+    // still be made by the translator in cases where memory units are highly
+    // contended.
+    if (excess_reservation > _reservations_tracker.reservation_block_size()) {
+        _reservations.return_units(
+          excess_reservation - _reservations_tracker.reservation_block_size());
+    }
     return ss::now();
 }
 

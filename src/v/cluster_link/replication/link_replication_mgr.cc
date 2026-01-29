@@ -43,14 +43,6 @@ ss::future<> link_replication_manager::start(link_data_probe_ptr ldp) {
             vlogl(cllog, level, "reconciliation loop failed: {}", e);
         });
     });
-    ssx::repeat_until_gate_closed(_gate, [this] {
-        return maybe_sync_start_offsets().handle_exception(
-          [](const std::exception_ptr& e) {
-              auto level = ssx::is_shutdown_exception(e) ? ss::log_level::trace
-                                                         : ss::log_level::warn;
-              vlogl(cllog, level, "Error in maybe_sync_start_offsets: {}", e);
-          });
-    });
 }
 
 ss::future<> link_replication_manager::stop() {
@@ -375,19 +367,4 @@ ss::future<> link_replication_manager::reconcile_ntp_once(
       target_state);
 }
 
-ss::future<> link_replication_manager::maybe_sync_start_offsets() {
-    auto h = _gate.hold();
-    ssx::async_counter cnt;
-    auto ntps = _replicators | std::views::keys
-                | std::ranges::to<chunked_vector<::model::ntp>>();
-    co_await ssx::async_for_each_counter(
-      cnt, std::move(ntps), [this](const ::model::ntp& ntp) {
-          auto it = _replicators.find(ntp);
-          if (it != _replicators.end()) {
-              it->second->maybe_synchronize_start_offset();
-          }
-      });
-
-    co_await ss::sleep_abortable(start_offset_synch_interval, _as);
-}
 } // namespace cluster_link::replication

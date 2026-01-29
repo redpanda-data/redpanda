@@ -69,7 +69,8 @@ class RpkTunerTest(RedpandaTest):
         rpk.config_set("rpk.tune_transparent_hugepages", "true")
         rpk.config_set("rpk.tune_coredump", "true")
 
-        expected = """TUNER                  ENABLED  SUPPORTED  UNSUPPORTED-REASON
+        expected = """
+TUNER                  ENABLED  SUPPORTED  UNSUPPORTED-REASON
 aio_events             true     true
 ballast_file           true     true
 clocksource            true     true
@@ -98,5 +99,12 @@ transparent_hugepages  true     true
         )
 
         output = rpk.tune("list", verbose=False)
+
+        def clean(input: str) -> str:
+            """strip leading/trailing whitespace and remove blank lines"""
+            strip = [l.strip() for l in input.splitlines(keepends=False) if l.strip()]
+            return "\n".join(strip)
+
+        output, expected = clean(output), clean(expected)
 
         assert output == expected, f"expected:\n{expected}\ngot:\n{output}"

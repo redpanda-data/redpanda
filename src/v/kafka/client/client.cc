@@ -64,7 +64,7 @@ client::client(
       _cluster->get_topics(),
       _cluster->get_brokers(),
       _logger,
-      [this](std::exception_ptr ex) { return mitigate_error(std::move(ex)); }) {
+      [this](std::exception_ptr ex) { return mitigate_error(ex); }) {
     _metadata_callback_id = _cluster->register_metadata_cb(
       [this](const metadata_update& res) { on_metadata_update(res); });
 }
@@ -311,7 +311,7 @@ ss::future<create_topics_response> client::create_topic(
           auto controller = _cluster->get_controller_id().value_or(
             unknown_node_id);
           chunked_vector<kafka::creatable_topic> cv;
-          cv.push_back(std::move(req));
+          cv.push_back(req);
           return _cluster->dispatch_to(
             controller,
             kafka::create_topics_request{
@@ -549,7 +549,7 @@ client::create_consumer(const group_id& group_id, member_id name) {
             _cluster->get_topics(),
             _cluster->get_brokers(),
             std::move(coordinator),
-            std::move(group_id),
+            group_id,
             std::move(name),
             std::move(on_stopped),
             [this](std::exception_ptr ex) { return mitigate_error(ex); },

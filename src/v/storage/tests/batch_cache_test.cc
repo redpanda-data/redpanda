@@ -67,7 +67,7 @@ TEST_F(batch_cache_test_fixture, evict) {
     storage::batch_cache_index index(cache);
 
     auto b = make_batch(100);
-    auto w = cache.put(index, std::move(b), is_dirty_entry::no);
+    auto w = cache.put(index, b, is_dirty_entry::no);
     EXPECT_FALSE(cache.empty());
     cache.evict(std::move(w.range()));
     EXPECT_TRUE(cache.empty());
@@ -79,7 +79,7 @@ TEST_F(batch_cache_test_fixture, reclaim_rounds_up) {
     auto b = make_batch(5);
     auto b_size = b.memory_usage();
     SCOPED_TRACE(fmt::format("batch size: {}", b_size));
-    cache.put(index, std::move(b), is_dirty_entry::no);
+    cache.put(index, b, is_dirty_entry::no);
     EXPECT_FALSE(cache.empty());
 
     auto size = cache.reclaim(1);

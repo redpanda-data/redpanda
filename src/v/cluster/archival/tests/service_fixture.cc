@@ -90,7 +90,15 @@ archiver_fixture::archiver_fixture()
       [cfg = remote_cfg] { return cfg; });
     auto sharded_creds_source = ss::sharded_parameter(
       [cfg = remote_cfg] { return cfg.cloud_credentials_source; });
-    pool.start(remote_cfg.connection_limit(), sharded_client_conf).get();
+    upstreams.start(remote_cfg.client_config).get();
+    pool
+      .start(
+        ss::sharded_parameter([this] { return std::ref(upstreams.local()); }),
+        remote_cfg.connection_limit(),
+        sharded_client_conf)
+      .get();
+    pool.invoke_on_all(&cloud_storage_clients::client_pool::start, std::nullopt)
+      .get();
     io.start(
         std::ref(pool),
         sharded_client_conf,
@@ -111,6 +119,7 @@ archiver_fixture::~archiver_fixture() {
     remote.stop().get();
     io.stop().get();
     pool.stop().get();
+    upstreams.stop().get();
 }
 
 static void write_batches(
@@ -203,11 +212,6 @@ archiver_fixture::get_configurations() {
     s3conf.region = cloud_roles::aws_region_name("us-east-1");
     s3conf.service = cloud_roles::aws_service_name("s3");
     s3conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
-    s3conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{},
-      cloud_storage_clients::endpoint_url{});
     s3conf.server_addr = server_addr;
 
     archival::configuration aconf{

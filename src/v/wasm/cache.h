@@ -13,7 +13,7 @@
 
 #include "absl/container/btree_map.h"
 #include "model/transform.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 #include "wasm/engine.h"
 
 #include <seastar/core/gate.hh>
@@ -86,7 +86,7 @@ private:
      * These mutexes are shortlived and should only live during the creation of
      * factories.
      */
-    absl::btree_map<model::offset, std::unique_ptr<mutex>>
+    absl::btree_map<model::offset, std::unique_ptr<ssx::mutex>>
       _factory_creation_mu_map;
     std::unique_ptr<runtime> _underlying;
     absl::btree_map<model::offset, ss::weak_ptr<cached_factory>> _factory_cache;

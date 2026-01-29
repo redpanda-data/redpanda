@@ -10,11 +10,13 @@
  */
 
 #include "crypto/crypto.h"
+#include "crypto/exceptions.h"
 #include "internal.h"
 #include "ssl_utils.h"
-#include "thirdparty/openssl/core_names.h"
-#include "thirdparty/openssl/evp.h"
-#include "thirdparty/openssl/params.h"
+
+#include <openssl/core_names.h>
+#include <openssl/evp.h>
+#include <openssl/params.h>
 
 namespace crypto {
 namespace {
@@ -50,6 +52,16 @@ public:
     impl(digest_type type, bytes_view key) {
         _mac_ctx = internal::EVP_MAC_CTX_ptr(
           EVP_MAC_CTX_new(internal::get_mac()));
+
+        // our fips-validated module (openssl 3.1.2) does not perform this
+        // check, but other validated modules do. When it's encountered it is
+        // hard to debug what the issue is, so an explicit check is added here
+        // to improve UX.
+        if (is_hmac_key_too_short(key)) {
+            throw exception{fmt::format(
+              "HMAC key needs to be {} bytes or longer in fips mode",
+              hmac_key_fips_min_bytes)};
+        }
         if (
           1
           != EVP_MAC_init(
@@ -187,5 +199,14 @@ bytes hmac(digest_type type, std::string_view key, std::string_view msg) {
     hmac_ctx ctx(type, key);
     ctx.update(msg);
     return std::move(ctx).final();
+}
+
+bool is_hmac_key_too_short(const bytes_view key) {
+    return internal::fips_enabled() && key.size() < hmac_key_fips_min_bytes;
+}
+
+bool is_scram_password_too_short(const std::string_view password) {
+    return internal::fips_enabled()
+           && password.size() < hmac_key_fips_min_bytes;
 }
 } // namespace crypto

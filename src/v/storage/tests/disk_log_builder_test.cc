@@ -257,6 +257,7 @@ TEST_F(log_builder_fixture, test_skipping_compaction_below_start_offset) {
       1,
       model::offset::max(),
       model::offset::max(),
+      model::offset::max(),
       std::nullopt,
       std::nullopt,
       std::chrono::milliseconds{0},

@@ -6,20 +6,22 @@ go 1.24.3
 replace github.com/hamba/avro/v2 => github.com/redpanda-data/go-avro/v2 v2.0.0-20240405204525-77b1144dc525
 
 require (
-	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.19.1-20251022210436-bbacedafcd60.2
-	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.10-20251022210436-bbacedafcd60.1
-	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.10-20250904135917-9feeb2588236.1
-	buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.10-20251107181116-874373458fcf.1
-	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20251110211805-d0a4bce1e86b.2
-	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-20251110211805-d0a4bce1e86b.1
+	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.19.1-20251208213618-d95eb1f5bf36.2
+	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.10-20251209175915-c155e3b17438.1
+	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.10-20251106193941-bb850a944663.1
+	buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20251218215858-19149a4a2435.1
+	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20251209134521-106822fddcf0.2
+	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.10-20251209134521-106822fddcf0.1
 	buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.19.1-20251022210437-a5dd600d04b6.2
 	buf.build/gen/go/redpandadata/gatekeeper/protocolbuffers/go v1.36.10-20251022210437-a5dd600d04b6.1
 	cloud.google.com/go/compute/metadata v0.9.0
 	connectrpc.com/connect v1.19.1
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/Ladicle/tabwriter v1.0.0
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/beevik/ntp v1.5.0
+	github.com/briandowns/spinner v1.23.2
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/cespare/xxhash v1.1.0
 	github.com/containerd/errdefs v1.0.0
@@ -47,7 +49,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.65.0
 	github.com/redpanda-data/common-go/proto v0.0.0-20250820120127-9b518fca5ecf
-	github.com/redpanda-data/common-go/rpadmin v0.2.0
+	github.com/redpanda-data/common-go/rpadmin v0.2.1
 	github.com/redpanda-data/common-go/rpsr v0.1.2
 	github.com/redpanda-data/protoc-gen-go-mcp v0.0.0-20250812151819-7e5d5fef8241
 	github.com/rs/xid v1.6.0
@@ -60,7 +62,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/sjson v1.2.5
 	github.com/tklauser/go-sysconf v0.3.15
-	github.com/twmb/franz-go v1.20.2
+	github.com/twmb/franz-go v1.20.4
 	github.com/twmb/franz-go/pkg/kadm v1.17.1
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251024215757-aea970d4d0d2
 	github.com/twmb/franz-go/pkg/kmsg v1.12.0
@@ -75,7 +77,7 @@ require (
 	golang.org/x/term v0.36.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20251103181224-f26f9409b101
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda
-	google.golang.org/protobuf v1.36.10
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.33.3
@@ -86,7 +88,7 @@ require (
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.10-20250912141014-52f32327d4b0.1 // indirect
 	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.36.10-20240617172850-a48fcebcf8f1.1 // indirect
-	buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251107181116-874373458fcf.2 // indirect
+	buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20251125205739-05aa34b3829a.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.4.14 // indirect

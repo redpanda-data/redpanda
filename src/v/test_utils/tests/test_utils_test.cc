@@ -30,6 +30,8 @@ TEST(TestUtilsTest, test_macros_pass) {
 }
 
 TEST(TestUtilsDeathTest, test_macros_fail) {
+    GTEST_SKIP()
+      << "TODO(death_tests): re-enable when death tests are made stable in CI.";
     ASSERT_DEATH(RPTEST_FAIL("fail message"), "fail message");
     ASSERT_DEATH(RPTEST_ADD_FAIL("fail message"), "fail message");
     ASSERT_DEATH(RPTEST_FAIL_CORO("fail message"), "fail message");

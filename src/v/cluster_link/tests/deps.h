@@ -41,9 +41,9 @@ public:
       ::model::node_id self,
       model::id_t link_id,
       manager* manager,
-      model::metadata metadata,
+      model::metadata_ptr metadata,
       std::unique_ptr<kafka::client::cluster> cluster_connection) override {
-        auto name = metadata.name;
+        auto name = metadata->name;
         auto created_link = std::make_unique<link>(
           self,
           link_id,
@@ -95,12 +95,11 @@ public:
         co_return ec.value();
     }
 
-    std::optional<std::reference_wrapper<const model::metadata>>
-    find_link_by_id(model::id_t id) const override {
+    model::metadata_ptr find_link_by_id(model::id_t id) const override {
         return _table->find_link_by_id(id);
     }
 
-    std::optional<std::reference_wrapper<const model::metadata>>
+    model::metadata_ptr
     find_link_by_name(const model::name_t& name) const override {
         return _table->find_link_by_name(name);
     }
@@ -176,8 +175,8 @@ public:
           ::model::topic,
           ::cluster_link::model::mirror_topic_metadata>
           mirror_topics;
-        mirror_topics.reserve(link->get().state.mirror_topics.size());
-        for (const auto& [topic, metadata] : link->get().state.mirror_topics) {
+        mirror_topics.reserve(link->state.mirror_topics.size());
+        for (const auto& [topic, metadata] : link->state.mirror_topics) {
             mirror_topics.emplace(topic, metadata.copy());
         }
         return mirror_topics;
@@ -206,13 +205,13 @@ public:
     }
 
     ss::future<::cluster::cluster_link::errc> failover_link_topics(
-      model::id_t id, ::model::timeout_clock::time_point timeout) override {
+      model::id_t id, ::model::timeout_clock::duration timeout) override {
         auto link = _table->find_link_by_id(id);
         if (!link) {
             co_return ::cluster::cluster_link::errc::does_not_exist;
         }
         chunked_vector<::model::topic> topics_to_failover;
-        for (const auto& [t, info] : link->get().state.mirror_topics) {
+        for (const auto& [t, info] : link->state.mirror_topics) {
             if (info.status == model::mirror_topic_status::active) {
                 // only active topics can be failed over.
                 topics_to_failover.push_back(t);
@@ -222,7 +221,7 @@ public:
             auto err = co_await update_mirror_topic_state(
               id,
               {.topic = t, .status = model::mirror_topic_status::failing_over},
-              timeout);
+              ::model::timeout_clock::now() + timeout);
             if (err != ::cluster::cluster_link::errc::success) {
                 co_return err;
             }
@@ -338,6 +337,16 @@ public:
       ss::noncopyable_function<ss::future<
         ::result<kafka::data::rpc::partition_offsets, cluster::errc>>(
         kafka::partition_proxy*)> fn,
+      kafka::data::rpc::require_leader require_leader) final {
+        return _impl->invoke_on_shard_impl(
+          shard_id, ktp, std::move(fn), require_leader);
+    }
+
+    ss::future<::result<chunked_vector<::model::record_batch>, cluster::errc>>
+    consume_from_shard(
+      ss::shard_id shard_id,
+      const ::model::ktp& ktp,
+      kafka::data::rpc::consume_fn fn,
       kafka::data::rpc::require_leader require_leader) final {
         return _impl->invoke_on_shard_impl(
           shard_id, ktp, std::move(fn), require_leader);
@@ -649,11 +658,9 @@ public:
 
     ss::future<> update_link(model::id_t id, model::metadata metadata);
 
-    std::optional<std::reference_wrapper<const model::metadata>>
-    find_link_by_id(model::id_t id);
+    model::metadata_ptr find_link_by_id(model::id_t id);
 
-    std::optional<std::reference_wrapper<const model::metadata>>
-    find_link_by_name(const model::name_t& name);
+    model::metadata_ptr find_link_by_name(const model::name_t& name);
 
     std::optional<model::id_t> find_link_id_by_name(const model::name_t& name);
 

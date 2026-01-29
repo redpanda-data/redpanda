@@ -67,6 +67,7 @@ private:
 class test_data_sink : public data_sink {
 public:
     ss::future<> start() override { return ss::make_ready_future<>(); }
+    ss::future<> reset() override { return ss::make_ready_future<>(); }
     ss::future<> stop() noexcept override { return _gate.close(); }
 
     kafka::offset last_replicated_offset() const final {
@@ -97,6 +98,8 @@ public:
     void notify_replicator_failure(model::term_id) final {}
 
     kafka::offset high_watermark() const final { return {}; }
+
+    bool can_prefix_truncate() const final { return true; }
 
     ss::future<kafka::error_code>
     prefix_truncate(kafka::offset, ss::lowres_clock::time_point) final {

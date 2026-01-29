@@ -36,7 +36,6 @@ redpanda_cc_library(
         "probe.h",
     ],
     deps = [
-        ":utils",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

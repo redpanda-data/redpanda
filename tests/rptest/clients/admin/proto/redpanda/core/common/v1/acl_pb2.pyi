@@ -51,7 +51,7 @@ class _ACLResourceEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._En
     'Wildcard to match any SR ACL resource'
 
 class ACLResource(_ACLResource, metaclass=_ACLResourceEnumTypeWrapper):
-    """/ The ACL resource types"""
+    """The ACL resource types"""
 ACL_RESOURCE_UNSPECIFIED: ACLResource.ValueType
 ACL_RESOURCE_ANY: ACLResource.ValueType
 'Wildcard for selecting any ACL resource'
@@ -69,7 +69,7 @@ ACL_RESOURCE_SR_REGISTRY: ACLResource.ValueType
 'Schema Registry wide resource'
 ACL_RESOURCE_SR_ANY: ACLResource.ValueType
 'Wildcard to match any SR ACL resource'
-global___ACLResource = ACLResource
+Global___ACLResource: typing_extensions.TypeAlias = ACLResource
 
 class _ACLPattern:
     ValueType = typing.NewType('ValueType', builtins.int)
@@ -84,11 +84,13 @@ class _ACLPatternEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._Enu
     'Match a literal string'
     ACL_PATTERN_PREFIXED: _ACLPattern.ValueType
     'Match a prefix'
+    ACL_PATTERN_PREFIX: _ACLPattern.ValueType
+    'Match a prefix'
     ACL_PATTERN_MATCH: _ACLPattern.ValueType
     'Match serves as a catch-all for all the names of a topic\n    the principal is authorized to access\n    '
 
 class ACLPattern(_ACLPattern, metaclass=_ACLPatternEnumTypeWrapper):
-    """/ The ACL pattern type"""
+    """The ACL pattern type"""
 ACL_PATTERN_UNSPECIFIED: ACLPattern.ValueType
 ACL_PATTERN_ANY: ACLPattern.ValueType
 'Wildcard to match any pattern'
@@ -96,9 +98,11 @@ ACL_PATTERN_LITERAL: ACLPattern.ValueType
 'Match a literal string'
 ACL_PATTERN_PREFIXED: ACLPattern.ValueType
 'Match a prefix'
+ACL_PATTERN_PREFIX: ACLPattern.ValueType
+'Match a prefix'
 ACL_PATTERN_MATCH: ACLPattern.ValueType
 'Match serves as a catch-all for all the names of a topic\nthe principal is authorized to access\n'
-global___ACLPattern = ACLPattern
+Global___ACLPattern: typing_extensions.TypeAlias = ACLPattern
 
 class _ACLOperation:
     ValueType = typing.NewType('ValueType', builtins.int)
@@ -120,7 +124,7 @@ class _ACLOperationEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._E
     ACL_OPERATION_IDEMPOTENT_WRITE: _ACLOperation.ValueType
 
 class ACLOperation(_ACLOperation, metaclass=_ACLOperationEnumTypeWrapper):
-    """/ The ACL operation to match"""
+    """The ACL operation to match"""
 ACL_OPERATION_UNSPECIFIED: ACLOperation.ValueType
 ACL_OPERATION_ANY: ACLOperation.ValueType
 ACL_OPERATION_READ: ACLOperation.ValueType
@@ -133,7 +137,7 @@ ACL_OPERATION_CLUSTER_ACTION: ACLOperation.ValueType
 ACL_OPERATION_DESCRIBE_CONFIGS: ACLOperation.ValueType
 ACL_OPERATION_ALTER_CONFIGS: ACLOperation.ValueType
 ACL_OPERATION_IDEMPOTENT_WRITE: ACLOperation.ValueType
-global___ACLOperation = ACLOperation
+Global___ACLOperation: typing_extensions.TypeAlias = ACLOperation
 
 class _ACLPermissionType:
     ValueType = typing.NewType('ValueType', builtins.int)
@@ -147,9 +151,9 @@ class _ACLPermissionTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapp
     ACL_PERMISSION_TYPE_DENY: _ACLPermissionType.ValueType
 
 class ACLPermissionType(_ACLPermissionType, metaclass=_ACLPermissionTypeEnumTypeWrapper):
-    """/ ACL permission types"""
+    """ACL permission types"""
 ACL_PERMISSION_TYPE_UNSPECIFIED: ACLPermissionType.ValueType
 ACL_PERMISSION_TYPE_ANY: ACLPermissionType.ValueType
 ACL_PERMISSION_TYPE_ALLOW: ACLPermissionType.ValueType
 ACL_PERMISSION_TYPE_DENY: ACLPermissionType.ValueType
-global___ACLPermissionType = ACLPermissionType
+Global___ACLPermissionType: typing_extensions.TypeAlias = ACLPermissionType

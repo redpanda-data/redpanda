@@ -155,7 +155,7 @@ class SchemaRegistryScaleTest(SchemaRegistryEndpoints):
                     "schema": json.dumps(schema_dict),
                     "references": [
                         {
-                            "name": "test-ref",
+                            "name": "testRef",
                             "subject": base_subject,
                             "version": base_version,
                         }

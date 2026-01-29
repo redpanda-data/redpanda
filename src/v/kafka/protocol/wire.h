@@ -261,6 +261,13 @@ public:
     tagged_fields read_tags() {
         tagged_fields::type tags;
         auto num_tags = read_unsigned_varint(); // consume total num of tags
+        if (unlikely(static_cast<size_t>(num_tags) > _parser.bytes_left())) {
+            throw std::out_of_range(
+              fmt::format(
+                "Number of tags {} exceeds remaining bytes {}",
+                num_tags,
+                _parser.bytes_left()));
+        }
         int64_t prev_tag_id = -1;
         while (num_tags-- > 0) {
             auto id = read_unsigned_varint(); // consume tag id
@@ -299,6 +306,15 @@ private:
         if (unlikely(n < 0)) {
             throw std::out_of_range("Asked to read a negative byte string");
         }
+
+        if (unlikely(static_cast<size_t>(n) > _parser.bytes_left())) {
+            throw std::out_of_range(
+              fmt::format(
+                "String length {} exceeds remaining bytes {}",
+                n,
+                _parser.bytes_left()));
+        }
+
         return _parser.read_string(n);
     }
 
@@ -306,6 +322,15 @@ private:
         if (unlikely(n == 0)) {
             throw std::out_of_range("Asked to read a 0 byte flex string");
         }
+
+        if (unlikely(static_cast<size_t>(n - 1) > _parser.bytes_left())) {
+            throw std::out_of_range(
+              fmt::format(
+                "Flex string length {} exceeds remaining bytes {}",
+                n,
+                _parser.bytes_left()));
+        }
+
         return _parser.read_string(n - 1);
     }
 
@@ -321,6 +346,15 @@ private:
         if (len < 0) {
             throw std::out_of_range("Attempt to parse array w/ negative len");
         }
+
+        if (unlikely(static_cast<size_t>(len) > _parser.bytes_left())) {
+            throw std::out_of_range(
+              fmt::format(
+                "Array length {} exceeds remaining bytes {}",
+                len,
+                _parser.bytes_left()));
+        }
+
         Container<T> res;
         if constexpr (detail::reserveable<Container<T>>) {
             res.reserve(len);

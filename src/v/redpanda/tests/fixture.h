@@ -70,11 +70,10 @@ public:
       model::node_id node_id,
       int32_t kafka_port,
       int32_t rpc_port,
-      int32_t proxy_port,
-      int32_t schema_reg_port,
+      std::optional<int32_t> proxy_port,
+      std::optional<int32_t> schema_reg_port,
       std::vector<config::seed_server> seed_servers,
       ss::sstring base_dir,
-      std::optional<scheduling_groups> sch_groups,
       bool remove_on_shutdown,
       std::optional<cloud_storage_clients::s3_configuration> s3_config
       = std::nullopt,
@@ -87,7 +86,8 @@ public:
       bool enable_legacy_upload_mode = true,
       bool iceberg_enabled = false,
       bool enable_cloud_topics = false,
-      bool development_cluster_linking_enabled = false);
+      bool development_cluster_linking_enabled = false,
+      bool use_lsm_metastore = false);
 
     // creates single node with default configuration
     redpanda_thread_fixture();
@@ -282,12 +282,13 @@ public:
       const ss::sstring& password);
 
     application app;
-    uint16_t proxy_port;
-    uint16_t schema_reg_port;
+    std::optional<uint16_t> proxy_port;
+    std::optional<uint16_t> schema_reg_port;
     uint16_t kafka_port;
     std::filesystem::path data_dir;
     ss::sharded<net::server_configuration> configs;
     ss::sharded<kafka::server> proto;
     bool remove_on_shutdown;
     std::unique_ptr<::stop_signal> app_signal;
+    bool use_lsm_metastore{true};
 };

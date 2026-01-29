@@ -2,6 +2,7 @@ package io.vectorized.tx_verifier;
 
 import java.lang.Math;
 import java.lang.Thread;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -61,7 +62,8 @@ public class TxConsumer {
 
     while (attempt < attempts) {
       attempt++;
-      ConsumerRecords<String, String> records = consumer.poll(timeout_ms);
+      ConsumerRecords<String, String> records
+          = consumer.poll(Duration.ofMillis(timeout_ms));
       var it = records.iterator();
       while (it.hasNext()) {
         var record = it.next();
@@ -97,7 +99,8 @@ public class TxConsumer {
 
     while (attempt < attempts) {
       attempt++;
-      ConsumerRecords<String, String> records = consumer.poll(timeout_ms);
+      ConsumerRecords<String, String> records
+          = consumer.poll(Duration.ofMillis(timeout_ms));
       var it = records.iterator();
       while (it.hasNext()) {
         read++;

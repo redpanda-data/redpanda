@@ -160,6 +160,7 @@ ss::future<ot_state> arrange_and_compact(
         auto compact_cfg = compaction::compaction_config(
           batches.back().last_offset(),
           batches.back().last_offset(),
+          batches.back().last_offset(),
           std::nullopt,
           std::nullopt,
           as);

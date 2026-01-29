@@ -16,6 +16,7 @@
 #include "security/oidc_principal_mapping.h"
 #include "security/oidc_url_parser.h"
 #include "ssx/sformat.h"
+#include "strings/string_switch.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -233,6 +234,49 @@ validate_principal_mapping_rule(const ss::sstring& rule) {
     auto rule_res = parse_principal_mapping_rule(rule);
     if (rule_res.has_error()) {
         return rule_res.assume_error().message();
+    }
+    return std::nullopt;
+}
+
+auto format_as(nested_group_behavior b) { return to_string_view(b); }
+
+std::ostream& operator<<(std::ostream& os, nested_group_behavior b) {
+    os << to_string_view(b);
+    return os;
+}
+
+std::istream& operator>>(std::istream& is, nested_group_behavior& b) {
+    ss::sstring s;
+    is >> s;
+    b = string_switch<nested_group_behavior>(s)
+          .match(
+            to_string_view(nested_group_behavior::none),
+            nested_group_behavior::none)
+          .match(
+            to_string_view(nested_group_behavior::suffix),
+            nested_group_behavior::suffix);
+    return is;
+}
+
+std::expected<group_claim_policy, std::error_code> parse_group_claim_path(
+  const ss::sstring& path, nested_group_behavior nested_behavior) {
+    if (!path.starts_with("$.")) {
+        return std::unexpected(errc::invalid_group_claim_pointer);
+    }
+    auto group_path = ss::sstring(path.substr(1));
+    std::ranges::replace(group_path, '.', '/');
+    auto pointer = json::Pointer{group_path};
+    if (!pointer.IsValid()) {
+        return std::unexpected(errc::invalid_group_claim_pointer);
+    }
+    return group_claim_policy{std::move(pointer), nested_behavior};
+}
+
+std::optional<ss::sstring> validate_group_claim_path(const ss::sstring& path) {
+    // This is validating the path, so the nested group behavior is irrelevant
+    auto res = parse_group_claim_path(path, nested_group_behavior::none);
+    if (!res) {
+        return res.error().message();
     }
     return std::nullopt;
 }

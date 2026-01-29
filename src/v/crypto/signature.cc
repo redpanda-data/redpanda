@@ -13,7 +13,8 @@
 #include "internal.h"
 #include "key.h"
 #include "ssl_utils.h"
-#include "thirdparty/openssl/evp.h"
+
+#include <openssl/evp.h>
 
 namespace crypto {
 class verify_ctx::impl {

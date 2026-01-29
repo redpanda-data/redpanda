@@ -170,6 +170,7 @@ redpanda_cc_library(
         "ir_json.h",
     ],
     implementation_deps = [
+        "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg/conversion/json_schema:frontend",
         "@fmt",

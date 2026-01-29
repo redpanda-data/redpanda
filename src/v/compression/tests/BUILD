@@ -9,8 +9,6 @@ redpanda_cc_gtest(
     # the death test doesn't seem to properly record or parse the expected
     # output when there are multiple reactor threads.
     cpu = 1,
-    # CORE-14523
-    flaky = True,
     deps = [
         "//src/v/base",
         "//src/v/compression",

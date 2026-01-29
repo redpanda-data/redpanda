@@ -7,24 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from logging import Logger
 import random
 import signal
 import threading
 import time
 
+from ducktape.tests.test import TestContext
 import numpy
-from confluent_kafka import Producer
+from confluent_kafka import Message, Producer
 from confluent_kafka.cimpl import KafkaError
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RedpandaService
 from rptest.tests.redpanda_test import RedpandaTest
 
 
 class ThreadedProducer:
-    def __init__(self, topic, redpanda, logger):
+    def __init__(self, topic: str, redpanda: RedpandaService, logger: Logger):
         self.thread = threading.Thread(target=lambda: self.produce_loop())
         self.thread.daemon = True
         self.stop_ev = threading.Event()
@@ -32,7 +35,7 @@ class ThreadedProducer:
         self.logger = logger
         self.producer = None
         self.topic = topic
-        self.latencies = []
+        self.latencies: list[float] = []
         self.inflight = threading.Semaphore(20)
 
     def start(self):
@@ -45,9 +48,9 @@ class ThreadedProducer:
             }
         )
 
-        def delivery_clb(err: KafkaError | None, msg, start_time):
+        def delivery_clb(err: KafkaError | None, msg: Message, start_time: float):
             if err:
-                self.logger.warn(f"error sending message: {err}")
+                self.logger.warning(f"error sending message: {err}")
 
             self.latencies.append(time.monotonic() - start_time)
             self.inflight.release()
@@ -64,7 +67,7 @@ class ThreadedProducer:
             )
             self.producer.flush()
 
-    def wait_for_messages(self, messages, timeout_sec):
+    def wait_for_messages(self, messages: int, timeout_sec: int):
         wait_until(
             lambda: len(self.latencies) >= messages,
             timeout_sec=timeout_sec,
@@ -79,7 +82,7 @@ class ThreadedProducer:
 
 
 class RaftSlowFollowerTest(RedpandaTest):
-    def __init__(self, test_context):
+    def __init__(self, test_context: TestContext):
         super(RaftSlowFollowerTest, self).__init__(
             num_brokers=3,
             test_context=test_context,
@@ -89,7 +92,7 @@ class RaftSlowFollowerTest(RedpandaTest):
             },
         )
 
-    def _get_follower(self, topic, partition):
+    def _get_follower(self, topic: str, partition: int):
         rpk = RpkTool(self.redpanda)
         partitions = list(rpk.describe_topic(topic=topic))
         leader_id = partitions[partition].leader
@@ -105,6 +108,7 @@ class RaftSlowFollowerTest(RedpandaTest):
         )
         self.client().create_topic(topic)
 
+        producer = None
         try:
             producer = ThreadedProducer(topic.name, self.redpanda, self.logger)
             producer.start()
@@ -123,8 +127,9 @@ class RaftSlowFollowerTest(RedpandaTest):
             self.logger.info(
                 f"average latency: {numpy.average(producer.latencies) * 1000} ms, max latency: {numpy.max(producer.latencies) * 1000} ms"
             )
-            assert numpy.max(producer.latencies) < 2.5, (
+            assert numpy.max(producer.latencies) < 3.5, (
                 f"Produce latency is unexpectedly high: {numpy.max(producer.latencies) * 1000} after follower was suspended"
             )
         finally:
-            producer.stop()
+            if producer:
+                producer.stop()

@@ -47,6 +47,11 @@ inline security::acl_binding binding_for_role(const ss::sstring& role_name) {
       security::acl_principal{security::principal_type::role, role_name});
 }
 
+inline security::acl_binding binding_for_group(const ss::sstring& group_name) {
+    return binding_for_principal(
+      security::acl_principal{security::principal_type::group, group_name});
+}
+
 inline topic_properties uploadable_topic_properties() {
     auto props = random_topic_properties();
     if (

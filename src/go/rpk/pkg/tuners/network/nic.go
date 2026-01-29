@@ -274,14 +274,14 @@ func gvnicIrqToQueueIdx(irq IrqInfo, numIRQs int) int {
 	// New pattern: gve-ntfy-blk30@pci:0000:00:08.0
 	newPattern := regexp.MustCompile(`gve-ntfy-blk(\d+)`)
 
-	virtioMatch := newPattern.FindStringSubmatch(irq.ProcLine)
-	if len(virtioMatch) == 0 {
+	gvnicMatch := newPattern.FindStringSubmatch(irq.ProcLine)
+	if len(gvnicMatch) == 0 {
 		// try the legacy pattern
 		legacyPattern := regexp.MustCompile(`ntfy-block\.(\d+)$`)
-		virtioMatch = legacyPattern.FindStringSubmatch(irq.ProcLine)
+		gvnicMatch = legacyPattern.FindStringSubmatch(irq.ProcLine)
 	}
-	if len(virtioMatch) == 2 {
-		idx, _ := strconv.Atoi(virtioMatch[1])
+	if len(gvnicMatch) == 2 {
+		idx, _ := strconv.Atoi(gvnicMatch[1])
 		// https://github.com/torvalds/linux/blob/v6.17/drivers/net/ethernet/google/gve/gve.h#L1082-L1094
 		// TX is the lower half, RX the upper half of the IRQs
 		return idx % (numIRQs / 2)

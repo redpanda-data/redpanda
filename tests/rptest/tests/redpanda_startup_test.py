@@ -10,16 +10,19 @@
 import os
 from time import sleep
 
+from typing_extensions import assert_never
+
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import MetricSamples, MetricsEndpoint, RedpandaService
+from rptest.services.redpanda import MetricSamples, MetricsEndpoint
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import in_fips_environment
+from rptest.util import FIPSMode
 
 
 class RedpandaStartupTest(RedpandaTest):
@@ -39,20 +42,20 @@ class RedpandaStartupTest(RedpandaTest):
 
 class RedpandaFIPSStartupTestBase(RedpandaTest):
     @staticmethod
-    def fips_mode_to_str(fips_mode: RedpandaService.FIPSMode) -> str:
-        if fips_mode == RedpandaService.FIPSMode.disabled:
+    def fips_mode_to_str(fips_mode: FIPSMode) -> str:
+        if fips_mode == FIPSMode.disabled:
             return "disabled"
-        elif fips_mode == RedpandaService.FIPSMode.enabled:
+        elif fips_mode == FIPSMode.enabled:
             return "enabled"
-        elif fips_mode == RedpandaService.FIPSMode.permissive:
+        elif fips_mode == FIPSMode.permissive:
             return "permissive"
         else:
-            assert False, f"Unknown FIPS Mode; {fips_mode}"
+            assert_never(fips_mode)  # pyright: ignore[reportUnreachable]
 
     def __init__(
         self,
         test_context,
-        fips_mode: RedpandaService.FIPSMode = RedpandaService.FIPSMode.permissive,
+        fips_mode: FIPSMode = FIPSMode.permissive,
     ):
         super(RedpandaFIPSStartupTestBase, self).__init__(test_context=test_context)
 
@@ -104,7 +107,7 @@ class RedpandaFIPSStartupTest(RedpandaFIPSStartupTestBase):
         def check_fips_mode_metric(
             metrics_name: str,
             metrics_endpoint: MetricsEndpoint,
-            expected_mode: RedpandaService.FIPSMode,
+            expected_mode: FIPSMode,
         ):
             metrics = self.redpanda.metrics_sample(
                 sample_pattern=metrics_name, metrics_endpoint=metrics_endpoint
@@ -115,7 +118,7 @@ class RedpandaFIPSStartupTest(RedpandaFIPSStartupTestBase):
             for n in self.redpanda.nodes:
                 samples = [sample for sample in metrics.samples if sample.node == n]
                 assert len(samples) == 1, f"Invalid number of samples: {len(samples)}"
-                fips_mode = RedpandaService.FIPSMode(int(samples[0].value))
+                fips_mode = FIPSMode(int(samples[0].value))
                 assert fips_mode == expected_mode, (
                     f"Mismatch in mode: {fips_mode} != {expected_mode}"
                 )
@@ -123,12 +126,12 @@ class RedpandaFIPSStartupTest(RedpandaFIPSStartupTestBase):
         check_fips_mode_metric(
             metrics_name="vectorized_application_fips_mode",
             metrics_endpoint=MetricsEndpoint.METRICS,
-            expected_mode=RedpandaService.FIPSMode.permissive,
+            expected_mode=FIPSMode.permissive,
         )
         check_fips_mode_metric(
             metrics_name="redpanda_application_fips_mode",
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
-            expected_mode=RedpandaService.FIPSMode.permissive,
+            expected_mode=FIPSMode.permissive,
         )
 
     @ignore  # https://redpandadata.atlassian.net/browse/CORE-4283
@@ -258,7 +261,7 @@ class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
 
     def __init__(self, test_context):
         super(RedpandaFIPSStartupLicenseTest, self).__init__(
-            test_context=test_context, fips_mode=RedpandaService.FIPSMode.disabled
+            test_context=test_context, fips_mode=FIPSMode.disabled
         )
 
         self.redpanda.set_environment(
@@ -281,11 +284,7 @@ class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
             "Should not have license nag yet, FIPS mode not enabled"
         )
 
-        fips_mode = (
-            RedpandaService.FIPSMode.enabled
-            if in_fips_environment()
-            else RedpandaService.FIPSMode.permissive
-        )
+        fips_mode = FIPSMode.enabled if in_fips_environment() else FIPSMode.permissive
 
         fips_config = dict(
             fips_mode=self.fips_mode_to_str(fips_mode),

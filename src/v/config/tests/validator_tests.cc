@@ -46,6 +46,18 @@ SEASTAR_THREAD_TEST_CASE(test_audit_event_types) {
     BOOST_TEST(validate_audit_event_types(one_bad_apple).has_value());
 }
 
+SEASTAR_THREAD_TEST_CASE(test_iceberg_default_catalog_namespace) {
+    using config::validate_iceberg_default_catalog_namespace;
+    BOOST_TEST(validate_iceberg_default_catalog_namespace({}).has_value());
+    BOOST_TEST(validate_iceberg_default_catalog_namespace({""}).has_value());
+    BOOST_TEST(
+      !validate_iceberg_default_catalog_namespace({"redpanda"}).has_value());
+    BOOST_TEST(
+      !validate_iceberg_default_catalog_namespace({"abc"}).has_value());
+    BOOST_TEST(
+      !validate_iceberg_default_catalog_namespace({"org", "db"}).has_value());
+}
+
 SEASTAR_THREAD_TEST_CASE(test_cloud_storage_cluster_name_validation) {
     using config::validate_cloud_storage_cluster_name;
 

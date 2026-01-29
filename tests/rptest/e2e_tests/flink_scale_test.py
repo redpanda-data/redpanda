@@ -115,7 +115,7 @@ class FlinkScaleTests(RedpandaTest):
     # Calculate per-node vectorized_internal_rpc_latency_sum/commit_tx
     def _get_commit_requests_counts(self, method, nodes) -> list[MetricSamples]:
         # Get metrics from redpanda nodes
-        metrics = self.redpanda.metrics_sample(  # type: ignore
+        metrics = self.redpanda.metrics_sample(
             "vectorized_internal_rpc_latency_sum",
             nodes=nodes,
             metrics_endpoint=MetricsEndpoint.METRICS,

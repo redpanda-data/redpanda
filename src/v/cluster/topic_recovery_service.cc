@@ -418,7 +418,7 @@ topic_recovery_service::create_topics(const recovery_request& request) {
 
     co_return co_await _topics_frontend.local().autocreate_topics(
       std::move(topic_configs),
-      config::shard_local_cfg().create_topic_timeout_ms());
+      config::shard_local_cfg().internal_rpc_request_timeout_ms());
 }
 
 void topic_recovery_service::start_download_bg_tracker() {

@@ -26,16 +26,22 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		wait            bool
 		pollingInterval time.Duration
+		uuidOverride    string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start the topic restoration process",
-		Long: `Start the topic restoration process.
+		Short: "Start the cluster restoration process",
+		Long: `Start the cluster restoration process.
 		
-This command starts the process of restoring topics from the archival bucket.
+This command starts the process of restoring data from a failed cluster with
+Tiered Storage enabled, including its metadata, onto a new cluster.
 If the wait flag (--wait/-w) is set, the command will poll the status of the
-recovery process until it's finished.`,
+recovery process until it's finished.
+
+Use --cluster-uuid-override if you want to specify an explicit cluster UUID
+to restore from. For more information, visit https://docs.redpanda.com/current/manage/disaster-recovery/whole-cluster-restore/.
+`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
@@ -47,7 +53,7 @@ recovery process until it's finished.`,
 
 			ctx := cmd.Context()
 
-			_, err = client.StartAutomatedRecovery(ctx)
+			_, err = client.StartAutomatedRecovery(ctx, uuidOverride)
 			var he *rpadmin.HTTPResponseError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
@@ -113,6 +119,7 @@ recovery process until it's finished.`,
 	cmd.Flags().MarkDeprecated("topic-name-pattern", "Not supported")
 	cmd.Flags().BoolVarP(&wait, "wait", "w", false, "Wait until auto-restore is complete")
 	cmd.Flags().DurationVar(&pollingInterval, "polling-interval", 5*time.Second, "The status check interval (e.g. '30s', '1.5m'); ignored if --wait is not used")
+	cmd.Flags().StringVar(&uuidOverride, "cluster-uuid-override", "", "Explicit cluster UUID to restore from; uses the latest if unset")
 
 	return cmd
 }

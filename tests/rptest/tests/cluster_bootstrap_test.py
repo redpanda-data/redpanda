@@ -169,8 +169,14 @@ class ClusterBootstrapFiveNodes(RedpandaTest):
                         node, {"empty_seed_starts_cluster": False}
                     )
 
+                # storage init check is skipped because this test runs
+                # operations against the cluster during bootup which means we
+                # can't know exactly what to expect the state of storage to be
+                # after a broker starts.
                 self.redpanda.start(
-                    auto_assign_node_id=True, omit_seeds_on_idx_one=False
+                    auto_assign_node_id=True,
+                    omit_seeds_on_idx_one=False,
+                    skip_storage_init_check=True,
                 )
             finally:
                 stop_ev.set()

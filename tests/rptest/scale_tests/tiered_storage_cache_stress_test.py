@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+from typing_extensions import assert_never
+
 from ducktape.mark import matrix
 
 from rptest.clients.rpk import RpkTool
@@ -148,7 +150,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
             assert node_storage.cache.objects <= max_objects
             assert hwm_objects <= max_objects
         else:
-            raise NotImplementedError(limit_mode)
+            assert_never(limit_mode)  # pyright: ignore[reportUnreachable]
 
         return any_cache_usage
 

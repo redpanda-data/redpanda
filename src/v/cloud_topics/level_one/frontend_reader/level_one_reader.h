@@ -135,6 +135,7 @@ private:
     l1::metastore* _metastore;
     l1::io* _io;
     prefix_logger _log;
+    size_t _bytes_consumed{0};
 };
 
 } // namespace cloud_topics

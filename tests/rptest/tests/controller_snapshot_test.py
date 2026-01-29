@@ -350,7 +350,7 @@ class ControllerSnapshotTest(RedpandaTest):
         rpk.create_topic("test_topic")
 
         admin.create_user(
-            username="test", password="p4ssw0rd", algorithm="SCRAM-SHA-256"
+            username="test", password="p4ssw0rd012345", algorithm="SCRAM-SHA-256"
         )
         rpk.acl_create_allow_cluster(username="test", op="describe")
 
@@ -471,7 +471,7 @@ class ControllerSnapshotTest(RedpandaTest):
         rpk.create_topic("test_topic")
 
         admin.create_user(
-            username="test", password="p4ssw0rd", algorithm="SCRAM-SHA-256"
+            username="test", password="p4ssw0rd012345", algorithm="SCRAM-SHA-256"
         )
         rpk.acl_create_allow_cluster(username="test", op="describe")
 

@@ -95,7 +95,8 @@ inline node_health_report random_node_health_report() {
       tests::random_named_int<model::node_id>(),
       node::random_local_state(),
       tests::random_chunked_vector(random_topic_status),
-      random_ds};
+      random_ds,
+      node_liveness_report{}};
 }
 
 inline cluster_health_report random_cluster_health_report() {
@@ -112,13 +113,13 @@ inline cluster_health_report random_cluster_health_report() {
 }
 
 inline partitions_filter random_partitions_filter() {
-    auto parition_set_gen = [] {
+    auto partition_set_gen = [] {
         return tests::random_node_hash_set<model::partition_id>(
           tests::random_named_int<model::partition_id>);
     };
     auto topic_kv_gen = [&] {
         return std::pair{
-          tests::random_named_string<model::topic>(), parition_set_gen()};
+          tests::random_named_string<model::topic>(), partition_set_gen()};
     };
     auto topic_map_gen = [&] {
         return tests::random_node_hash_map<

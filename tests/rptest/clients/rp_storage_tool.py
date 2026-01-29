@@ -10,6 +10,7 @@
 import json
 import subprocess
 import tempfile
+from typing import Any
 
 
 class RpStorageTool:
@@ -37,7 +38,7 @@ class RpStorageTool:
                     self.logger.error(f"Decoded json: {json_bytes}")
                     raise
 
-    def decode_partition_manifest(self, binary_data) -> dict:
+    def decode_partition_manifest(self, binary_data: bytes) -> dict[str, Any]:
         return self._decode(binary_data, "decode-partition-manifest")
 
     def decode_lifecycle_marker(self, binary_data) -> dict:

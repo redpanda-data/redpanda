@@ -18,13 +18,16 @@ bool eq(
     return ((std::get<I>(a) == std::get<I>(b)) && ...);
 }
 
+template<serde::is_envelope E>
+constexpr size_t arity
+  = std::tuple_size_v<decltype(envelope_to_tuple(std::declval<E>()))>;
+
 template<serde::is_envelope T1, serde::is_envelope T2>
 bool operator==(T1 const& a, T2 const& b) {
     return eq(
       envelope_to_tuple(a),
       envelope_to_tuple(b),
-      std::make_index_sequence<std::min(
-        reflection::arity<T1>() - 1, reflection::arity<T2>() - 1)>());
+      std::make_index_sequence<std::min(arity<T1>, arity<T2>)>());
 }
 
 struct data_gen {

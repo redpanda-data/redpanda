@@ -102,7 +102,7 @@ acl help text for more info.
 				out.Die("unsupported mechanism %q", mechanism)
 			}
 
-			if p.FromCloud && !p.CloudCluster.IsServerless() {
+			if p.CheckFromCloud() && !p.CloudCluster.IsServerless() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(p)
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 				req := connect.NewRequest(

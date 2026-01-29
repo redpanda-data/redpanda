@@ -14,6 +14,7 @@ from ducktape.utils.util import wait_until
 
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
+from rptest.utils.mode_checks import skip_fips_mode
 from rptest.services.redpanda import LoggingConfig, RedpandaService, ResourceSettings
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -30,6 +31,13 @@ SIGNAL_CRASH_LOG = [
     "Segmentation fault:",
     "Illegal instruction on",
     "Illegal instruction:",
+    # ASan stack trace lines (e.g. "#4 0x... in seastar::promise_base::assert_task_shard")
+    # and summary lines (e.g. "SUMMARY: AddressSanitizer: SEGV ... in ...::assert_task_shard")
+    # In debug mode, the ASan output may include function names with 'assert' in them depending
+    # on what is on the stack when the signal is received by the process. This 'assert' text
+    # would trigger the bad log lines check. To avoid that, we exclude ASan output lines here.
+    r"#\d+ 0x[0-9a-f]+ in ",
+    "SUMMARY: AddressSanitizer:",
 ]
 
 ASSERT_CRASH_LOG = ["assert - "]
@@ -39,6 +47,13 @@ ASSERT_CRASH_LOG = ["assert - "]
 HOSTNAME_ERRORS = [
     ".*Failure during startup: std::__1::system_error \(error C-Ares:4, unreachable_host.com: Not found\)",
     ".*Failure during startup: std::__1::system_error \(error C-Ares:11, unreachable_host.com: Connection refused\)",
+]
+
+CLOUD_STORAGE_CLIENT_CONFIG_ERRORS = [
+    ".*[Ss]elf.configuration.*",
+    ".*Cloud storage client self-configuration failed.*",
+    ".*InvalidAccessKeyId.*",
+    ".*Couldn't reach S3.*",
 ]
 
 
@@ -331,4 +346,37 @@ class CrashLoopChecksTest(RedpandaTest):
         assert 5 == report["type"], f"Unexpected crash type: {report['type']}"
         assert f"{msg} on shard {signal_shard}." == report["crash_message"], (
             f"Unexpected crash message: {report['crash_message']}"
+        )
+
+    @skip_fips_mode
+    @cluster(num_nodes=1, log_allow_list=CLOUD_STORAGE_CLIENT_CONFIG_ERRORS)
+    def test_cloud_storage_client_misconfiguration(self):
+        """
+        Test that cloud storage self-configuration failures are recorded
+        in the crash tracker.
+        """
+        broker = self.redpanda.nodes[0]
+
+        self.redpanda.stop_node(broker)
+        self.redpanda.clean_node(broker)
+
+        self.redpanda.add_extra_rp_conf(
+            {
+                "cloud_storage_enabled": True,
+                "cloud_storage_access_key": "FAKEACCESSKEYID",
+                "cloud_storage_secret_key": "fakesecretaccesskey0123456789ABCDEFGHIJK",
+                "cloud_storage_region": "us-east-1",
+                "cloud_storage_bucket": "test-bucket",
+                "cloud_storage_api_endpoint": "s3.us-east-1.amazonaws.com",
+            }
+        )
+        self.redpanda.write_bootstrap_cluster_config()
+
+        self.redpanda.start_node(broker, first_start=True, skip_readiness_check=True)
+        self.wait_for_redpanda_stop(broker, timeout=60)
+
+        self.expect_crash_count(1)
+        report = self.read_first_crash_report()
+        assert (
+            "Cloud storage client self-configuration failed" in report["crash_message"]
         )

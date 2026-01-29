@@ -205,6 +205,7 @@ partition_properties_stm::apply_raft_snapshot(const iobuf& buffer) {
 ss::future<result<model::offset>>
 partition_properties_stm::replicate_properties_update(
   model::timeout_clock::duration timeout, update_writes_disabled_cmd cmd) {
+    auto holder = _gate.hold();
     if (!co_await sync(timeout)) {
         co_return errc::not_leader;
     }
@@ -273,6 +274,7 @@ ss::future<result<model::offset>> partition_properties_stm::enable_writes() {
 
 ss::future<result<partition_properties_stm::writes_disabled>>
 partition_properties_stm::sync_writes_disabled() {
+    auto holder = _gate.hold();
     if (!co_await sync(_sync_timeout())) {
         co_return errc::not_leader;
     }

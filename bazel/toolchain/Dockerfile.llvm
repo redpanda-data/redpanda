@@ -24,14 +24,19 @@ RUN echo "deb http://archive.debian.org/debian bullseye-backports main" > /etc/a
       zlib1g-dev \
       pkg-config
 
-ARG STAGE_0_LLVM_VERSION=20
+ARG LLVM_VERSION=21
 
-RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && /llvm.sh ${STAGE_0_LLVM_VERSION} all
+RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && /llvm.sh ${LLVM_VERSION} all
+
+ARG LLVM_LIBS="/usr/lib/llvm-${LLVM_VERSION}/lib"
+
+# Seems the easiest way to convince the build to pick up the static versions of
+# these libraries is to blow away the shared objects.
+RUN rm ${LLVM_LIBS}/libc++.so*
+RUN rm ${LLVM_LIBS}/libc++abi.so*
 
 # Set working directory
 WORKDIR /src
-
-ARG LLVM_VERSION=20
 
 # Clone LLVM project (includes Clang, clang-tidy, clangd, and BOLT)
 # We use the latest version of the release branch to pick up fixes quicker rather than waiting for a full
@@ -56,6 +61,8 @@ set(LLVM_ENABLE_PROJECTS clang bolt lld lldb clang-tools-extra CACHE STRING "")
 set(LLVM_ENABLE_RUNTIMES libcxx libcxxabi compiler-rt CACHE STRING "")
 set(LLVM_USE_LINKER lld CACHE STRING "")
 set(LLVM_BUILD_TOOLS ON CACHE BOOL "")
+set(LLVM_BUILD_LLVM_DYLIB ON CACHE BOOL "")
+set(BUILD_SHARED_LIBS ON CACHE BOOL "")
 set(LLVM_BINUTILS_INCDIR ON CACHE BOOL "")
 set(CLANG_INCLUDE_TESTS OFF CACHE BOOL "")
 set(CLANG_PLUGIN_SUPPORT OFF CACHE BOOL "")
@@ -68,9 +75,19 @@ set(LIBCXX_INSTALL_EXPERIMENTAL_LIBRARY ON CACHE STRING "")
 set(LIBCXX_CXX_ABI libcxxabi CACHE STRING "")
 # in clang-18 this appears to be on by default, but we don't use libunwind
 set(LIBCXXABI_USE_LLVM_UNWINDER OFF CACHE BOOL "")
-set(LLVM_INSTALL_TOOLCHAIN_ONLY ON CACHE BOOL "")
+set(LLVM_INSTALL_TOOLCHAIN_ONLY OFF CACHE BOOL "")
 set(LLVM_ENABLE_LTO Thin CACHE STRING "")
+set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
 set(LLVM_PARALLEL_LINK_JOBS ${MAX_LINK_JOBS} CACHE STRING "")
+
+set(LIBCXX_USE_STATIC_LIBS ON CACHE BOOL "")
+set(LIBCXXABI_USE_STATIC_LIBS ON CACHE BOOL "")
+set(LIBCXX_LIBRARY_PATH "${LLVM_LIBS}/libc++.a" CACHE STRING "")
+set(LIBCXX_ABI_LIBRARY_PATH "${LLVM_LIBS}/libc++abi.a" CACHE STRING "")
+
+set(CMAKE_CXX_FLAGS "-stdlib=libc++" CACHE STRING "")
+set(CMAKE_EXE_LINKER_FLAGS "-stdlib=libc++ -L${LLVM_LIBS} -Wl,-Bstatic -lc++ -lc++abi -Wl,-Bdynamic")
+set(CMAKE_SHARED_LINKER_FLAGS "-stdlib=libc++ -L${LLVM_LIBS} -Wl,-Bstatic -lc++ -lc++abi -Wl,-Bdynamic")
 EOF
 
 # Create build directory
@@ -79,19 +96,19 @@ WORKDIR /src/build
 RUN cmake -G Ninja \
     -C /llvm.cmake \
     -DCMAKE_INSTALL_PREFIX=/opt/install \
-    -DCMAKE_C_COMPILER=/usr/bin/clang-${STAGE_0_LLVM_VERSION} \
-    -DCMAKE_ASM_COMPILER=/usr/bin/clang-${STAGE_0_LLVM_VERSION} \
-    -DCMAKE_CXX_COMPILER=/usr/bin/clang++-${STAGE_0_LLVM_VERSION} \
-    -DCMAKE_AR=/usr/bin/llvm-ar-${STAGE_0_LLVM_VERSION} \
-    -DCMAKE_LINKER=/usr/bin/llvm-ld-${STAGE_0_LLVM_VERSION} \
-    -DCMAKE_NM=/usr/bin/llvm-nm-${STAGE_0_LLVM_VERSION} \
-    -DCMAKE_OBJDUMP=/usr/bin/llvm-objdump-${STAGE_0_LLVM_VERSION} \
-    -DCMAKE_RANLIB=/usr/bin/llvm-ranlib-${STAGE_0_LLVM_VERSION} \
+    -DCMAKE_C_COMPILER=/usr/bin/clang-${LLVM_VERSION} \
+    -DCMAKE_ASM_COMPILER=/usr/bin/clang-${LLVM_VERSION} \
+    -DCMAKE_CXX_COMPILER=/usr/bin/clang++-${LLVM_VERSION} \
+    -DCMAKE_AR=/usr/bin/llvm-ar-${LLVM_VERSION} \
+    -DCMAKE_LINKER=/usr/bin/llvm-ld-${LLVM_VERSION} \
+    -DCMAKE_NM=/usr/bin/llvm-nm-${LLVM_VERSION} \
+    -DCMAKE_OBJDUMP=/usr/bin/llvm-objdump-${LLVM_VERSION} \
+    -DCMAKE_RANLIB=/usr/bin/llvm-ranlib-${LLVM_VERSION} \
     ../llvm-project/llvm
 
 RUN ninja -j$(nproc) && ninja install
 # This exists as an alias, but it's not in the default installation.
-RUN (cd /opt/install/bin && ln -s llvm-symbolizer llvm-addr2line)
+RUN (cd /opt/install/bin && ln -sf llvm-symbolizer llvm-addr2line)
 
 FROM scratch
 

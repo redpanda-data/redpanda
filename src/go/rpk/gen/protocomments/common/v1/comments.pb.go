@@ -17,6 +17,7 @@ var Comments = map[string]string{
 	"redpanda.core.common.v1.ACL_PATTERN_LITERAL": "Match a literal string",
 	"redpanda.core.common.v1.ACL_PATTERN_MATCH": `Match serves as a catch-all for all the names of a topic
  the principal is authorized to access`,
+	"redpanda.core.common.v1.ACL_PATTERN_PREFIX":        "Match a prefix",
 	"redpanda.core.common.v1.ACL_PATTERN_PREFIXED":      "Match a prefix",
 	"redpanda.core.common.v1.ACL_RESOURCE_ANY":          "Wildcard for selecting any ACL resource",
 	"redpanda.core.common.v1.ACL_RESOURCE_CLUSTER":      "Cluster wide resource",

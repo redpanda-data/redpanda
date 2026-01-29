@@ -643,7 +643,7 @@ static ss::future<chunked_vector<resp_resource_t>> alter_broker_configuration(
               .patch(
                 std::move(req),
                 model::timeout_clock::now()
-                  + config::shard_local_cfg().alter_topic_cfg_timeout_ms())
+                  + config::shard_local_cfg().internal_rpc_request_timeout_ms())
               .then([resource = std::move(resource_c)](
                       cluster::config_frontend::patch_result pr) {
                   std::error_code& ec = pr.errc;

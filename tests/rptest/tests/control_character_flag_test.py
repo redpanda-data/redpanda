@@ -92,15 +92,15 @@ class ControlCharacterPermittedAfterUpgrade(ControlCharacterPermittedBase):
 
         # Creates a user with invalid control characters
 
-        self._admin.create_user("my\nuser", "password", "SCRAM-SHA-256")
+        self._admin.create_user("my\nuser", "password012345", "SCRAM-SHA-256")
         self._perform_update(initial_version)
         # Should still be able to create a user
-        self._admin.create_user("my\notheruser", "password", "SCRAM-SHA-256")
+        self._admin.create_user("my\notheruser", "password012345", "SCRAM-SHA-256")
         self._admin.patch_cluster_config(
             {self.feature_legacy_permit_control_char: False}
         )
         try:
-            self._admin.create_user("my\nthirduser", "password", "SCRAM-SHA-256")
+            self._admin.create_user("my\nthirduser", "password012345", "SCRAM-SHA-256")
             assert False
         except requests.exceptions.HTTPError:
             pass
@@ -116,7 +116,7 @@ class ControlCharacterPermittedAfterUpgrade(ControlCharacterPermittedBase):
         assert config[self.feature_legacy_permit_control_char] is True
 
         try:
-            self._admin.create_user("my\nuser", "password", "SCRAM-SHA-256")
+            self._admin.create_user("my\nuser", "password012345", "SCRAM-SHA-256")
             assert False
         except requests.exceptions.HTTPError:
             pass
@@ -126,7 +126,7 @@ class ControlCharacterPermittedAfterUpgrade(ControlCharacterPermittedBase):
         )
 
         try:
-            self._admin.create_user("my\nuser", "password", "SCRAM-SHA-256")
+            self._admin.create_user("my\nuser", "password012345", "SCRAM-SHA-256")
             assert False
         except requests.exceptions.HTTPError:
             pass

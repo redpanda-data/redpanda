@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <list>
 #include <numeric>
 #include <ranges>
 #include <stdexcept>
@@ -263,6 +264,8 @@ TEST(Vector, IteratorTypes) {
     using vtype = chunked_vector<int64_t>;
     using iter = vtype::iterator;
     using citer = vtype::const_iterator;
+    using riter = vtype::reverse_iterator;
+    using criter = vtype::const_reverse_iterator;
     auto v = vtype{};
 
     // const and non-const iterators should be different!
@@ -273,6 +276,16 @@ TEST(Vector, IteratorTypes) {
     static_assert(std::is_same_v<
                   decltype(std::as_const(v).begin()),
                   decltype(v)::const_iterator>);
+
+    // const and non-const reverse iterators should be different!
+    static_assert(!std::is_same_v<riter, criter>);
+    static_assert(std::is_same_v<decltype(v.rbegin()), riter>);
+    static_assert(
+      std::
+        is_same_v<decltype(v.crbegin()), decltype(v)::const_reverse_iterator>);
+    static_assert(std::is_same_v<
+                  decltype(std::as_const(v).rbegin()),
+                  decltype(v)::const_reverse_iterator>);
 }
 
 struct foo {
@@ -293,7 +306,18 @@ TEST(Vector, IteratorAccess) {
     EXPECT_EQ(vec.begin()->a, 2);
 }
 
-TEST(Vector, IteartorArithmetic) {
+TEST(Vector, ReverseIteratorAccess) {
+    using vtype = chunked_vector<foo>;
+    auto vec = vtype{};
+    vec.push_back(foo{2});
+    vec.push_back(foo{3});
+
+    EXPECT_EQ(*vec.rbegin(), foo{3});
+    EXPECT_EQ((*vec.rbegin()).a, 3);
+    EXPECT_EQ(vec.rbegin()->a, 3);
+}
+
+TEST(Vector, IteratorArithmetic) {
     auto v = checker<int64_t>::make({0, 1, 2, 3});
 
     auto b = v->begin();
@@ -311,6 +335,26 @@ TEST(Vector, IteartorArithmetic) {
     EXPECT_EQ(*(e - 2), 2);
     EXPECT_EQ(*(e - 3), 1);
     EXPECT_EQ(*(e - 4), 0);
+}
+
+TEST(Vector, ReverseIteratorArithmetic) {
+    auto v = checker<int64_t>::make({0, 1, 2, 3});
+
+    auto b = v->rbegin();
+
+    EXPECT_EQ(*(b + 0), 3);
+    EXPECT_EQ(*(b + 1), 2);
+    EXPECT_EQ(*(b + 2), 1);
+    EXPECT_EQ(*(b + 3), 0);
+
+    auto e = v->rend();
+
+    EXPECT_EQ((e - 0), e);
+
+    EXPECT_EQ(*(e - 1), 0);
+    EXPECT_EQ(*(e - 2), 1);
+    EXPECT_EQ(*(e - 3), 2);
+    EXPECT_EQ(*(e - 4), 3);
 }
 
 TEST(Vector, IteratorCmp) {
@@ -562,9 +606,14 @@ TEST(ChunkedVector, FromRange) {
     for (int i = 0; i < 10; ++i) {
         buffer.push_back(i);
     }
-
     auto vec = chunked_vector<int32_t>(std::from_range, buffer);
     EXPECT_THAT(vec, ElementsAreArray(buffer));
+}
+
+TEST(ChunkedVector, FromRangeUnsized) {
+    std::list<int32_t> input{1, 2, 3, 4, 5};
+    auto vec = chunked_vector<int32_t>(std::from_range, input);
+    EXPECT_THAT(vec, ElementsAreArray(input));
 }
 
 struct move_only_t {

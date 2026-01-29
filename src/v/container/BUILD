@@ -44,9 +44,11 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/serde",
         "//src/v/serde:map",
+        "//src/v/utils:to_string",
         "@abseil-cpp//absl/container:btree",
     ],
 )

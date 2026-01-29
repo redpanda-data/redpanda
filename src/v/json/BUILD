@@ -24,6 +24,7 @@ redpanda_cc_library(
         "stream.h",
         "stringbuffer.h",
         "types.h",
+        "uri.h",
         "validator.h",
         "writer.h",
     ],

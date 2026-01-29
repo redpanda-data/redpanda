@@ -64,16 +64,23 @@ compaction_state_update
 meta_to_rpc_compact_update(const metastore::compaction_update& update) {
     compaction_state_update rpc_update;
 
-    if (update.new_cleaned_range) {
-        compaction_state_update::cleaned_range range;
-        range.base_offset = update.new_cleaned_range->base_offset;
-        range.last_offset = update.new_cleaned_range->last_offset;
-        range.has_tombstones = update.new_cleaned_range->has_tombstones;
-        rpc_update.new_cleaned_range = std::move(range);
+    if (!update.new_cleaned_ranges.empty()) {
+        auto& new_cleaned_ranges = update.new_cleaned_ranges;
+        chunked_vector<compaction_state_update::cleaned_range> ranges;
+        ranges.reserve(new_cleaned_ranges.size());
+        for (const auto& cleaned_range : new_cleaned_ranges) {
+            ranges.push_back(
+              {.base_offset = cleaned_range.base_offset,
+               .last_offset = cleaned_range.last_offset,
+               .has_tombstones = cleaned_range.has_tombstones});
+        }
+        rpc_update.new_cleaned_ranges = std::move(ranges);
     }
 
     rpc_update.removed_tombstones_ranges = update.removed_tombstones_ranges;
     rpc_update.cleaned_at = update.cleaned_at;
+    rpc_update.expected_compaction_epoch = partition_state::compaction_epoch_t{
+      update.expected_compaction_epoch()};
 
     return rpc_update;
 }
@@ -94,11 +101,14 @@ public:
 
     std::expected<object_id, error>
     get_or_create_object_for(const model::topic_id_partition&) override;
+    std::expected<object_id, error>
+    create_object_for(const model::topic_id_partition&) override;
     std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
       add(object_id, metastore::object_metadata::ntp_metadata) override;
     std::expected<void, error>
     finish(object_id, size_t footer_pos, size_t object_size) override;
+    bool is_empty() const override;
 
 private:
     friend class cloud_topics::l1::replicated_metastore;
@@ -131,6 +141,22 @@ replicated_object_builder::get_or_create_object_for(
         return oid;
     }
     return partition_objects.pending_objects_.begin()->first;
+}
+
+std::expected<object_id, replicated_object_builder::error>
+replicated_object_builder::create_object_for(
+  const model::topic_id_partition& tidp) {
+    auto metastore_pid = fe_.metastore_partition(tidp);
+    if (!metastore_pid) {
+        return std::unexpected(
+          error{
+            "could not determine metastore partition for create_object_for()"});
+    }
+    auto& partition_objects = partitions_[*metastore_pid];
+
+    auto oid = create_object_id();
+    partition_objects.pending_objects_[oid] = {};
+    return oid;
 }
 
 std::expected<void, replicated_object_builder::error>
@@ -201,6 +227,26 @@ replicated_object_builder::finish(
     objects.pending_objects_.erase(it);
 
     return {};
+}
+
+bool replicated_object_builder::is_empty() const {
+    if (partitions_.empty()) {
+        return true;
+    }
+
+    return std::ranges::all_of(partitions_, [](const auto& id_and_objects) {
+        return id_and_objects.second.finished_objects_.empty();
+    });
+}
+
+metastore::extent_metadata_vec
+rpc_to_meta_extent_metadata(chunked_vector<rpc::extent_metadata> v) {
+    metastore::extent_metadata_vec res;
+    res.reserve(v.size());
+    for (auto& e : v) {
+        res.emplace_back(e.base_offset, e.last_offset, e.max_timestamp);
+    }
+    return res;
 }
 
 } // anonymous namespace
@@ -345,7 +391,7 @@ replicated_metastore::replace_objects(
         req.new_objects = std::move(new_objects);
 
         // Empty compaction updates for basic replace
-        req.compaction_updates = {};
+        req.compaction_updates.clear();
         auto reply_fut = co_await ss::coroutine::as_future(
           fe_.replace_objects(std::move(req)));
         if (reply_fut.failed()) {
@@ -667,8 +713,157 @@ replicated_metastore::get_compaction_info(const compaction_info_spec& log) {
     resp.dirty_ratio = reply.dirty_ratio;
     resp.earliest_dirty_ts = reply.earliest_dirty_ts;
     resp.offsets_response = {
-      .dirty_ranges = reply.dirty_ranges,
-      .removable_tombstone_ranges = reply.removable_tombstone_ranges};
+      .dirty_ranges = std::move(reply.dirty_ranges),
+      .removable_tombstone_ranges = std::move(
+        reply.removable_tombstone_ranges)};
+    resp.compaction_epoch = metastore::compaction_epoch{
+      reply.compaction_epoch()};
+    resp.start_offset = reply.start_offset;
+
+    co_return resp;
+}
+
+ss::future<std::expected<metastore::compaction_info_map, metastore::errc>>
+replicated_metastore::get_compaction_infos(
+  const chunked_vector<metastore::compaction_info_spec>& logs) {
+    chunked_hash_map<model::partition_id, rpc::get_compaction_infos_request>
+      partitioned_reqs;
+    metastore::compaction_info_map resp;
+    for (const auto& log : logs) {
+        const auto& tp = log.tidp;
+        auto metastore_partition = fe_.metastore_partition(tp);
+        if (!metastore_partition) {
+            vlog(cd_log.warn, "Unable to get metastore partition for {}", tp);
+            resp.insert_or_assign(tp, std::unexpected(errc::transport_error));
+            continue;
+        }
+        auto [it, inserted] = partitioned_reqs.try_emplace(
+          metastore_partition.value(),
+          rpc::get_compaction_infos_request{
+            .metastore_partition = metastore_partition.value()});
+        auto& req = it->second;
+
+        req.logs.push_back(
+          rpc::get_compaction_info_request{
+            .tp = tp,
+            .tombstone_removal_upper_bound_ts
+            = log.tombstone_removal_upper_bound_ts});
+    }
+
+    static constexpr auto max_rpc_concurrency = 10;
+    auto fut = co_await ss::coroutine::as_future(
+      ss::max_concurrent_for_each(
+        partitioned_reqs,
+        max_rpc_concurrency,
+        [this, &resp](auto& partition_and_request) {
+            auto& request = partition_and_request.second;
+            auto logs = request.logs.copy();
+            return fe_.get_compaction_infos(std::move(request))
+              .then([&resp, logs = std::move(logs)](
+                      rpc::get_compaction_infos_reply reply) {
+                  if (reply.ec != rpc::errc::ok) {
+                      for (const auto& l : logs) {
+                          resp[l.tp] = std::unexpected(
+                            rpc_to_meta_errc(reply.ec));
+                      }
+                      return;
+                  }
+
+                  for (auto& [log, log_reply] : reply.responses) {
+                      if (log_reply.ec == rpc::errc::ok) {
+                          metastore::compaction_info_response log_resp{
+                            .dirty_ratio = log_reply.dirty_ratio,
+                            .earliest_dirty_ts = log_reply.earliest_dirty_ts,
+                            .offsets_response = {
+                              .dirty_ranges = std::move(log_reply.dirty_ranges),
+                              .removable_tombstone_ranges = std::move(log_reply.removable_tombstone_ranges)},
+                            .compaction_epoch = metastore::compaction_epoch{log_reply.compaction_epoch()},
+                            .start_offset = log_reply.start_offset};
+                          resp.insert_or_assign(log, std::move(log_resp));
+                      } else {
+                          resp.insert_or_assign(
+                            log,
+                            std::unexpected(rpc_to_meta_errc(log_reply.ec)));
+                      }
+                  }
+              });
+        }));
+
+    if (fut.failed()) {
+        auto e = fut.get_exception();
+        vlog(
+          cd_log.warn, "Error while sending compaction info requests: {}", e);
+        co_return std::unexpected(metastore::errc::transport_error);
+    }
+
+    co_return resp;
+}
+
+ss::future<std::expected<metastore::extent_metadata_response, metastore::errc>>
+replicated_metastore::get_extent_metadata_forwards(
+  const model::topic_id_partition& tidp,
+  kafka::offset min_offset,
+  kafka::offset max_offset,
+  size_t max_num_extents) {
+    static constexpr auto o = rpc::get_extent_metadata_request::order::forwards;
+
+    rpc::get_extent_metadata_request req;
+    req.tp = tidp;
+    req.min_offset = min_offset;
+    req.max_offset = max_offset;
+    req.max_num_extents = max_num_extents;
+    req.o = o;
+
+    auto reply_fut = co_await ss::coroutine::as_future(
+      fe_.get_extent_metadata(std::move(req)));
+    if (reply_fut.failed()) {
+        auto ex = reply_fut.get_exception();
+        vlog(cd_log.warn, "Error while sending request: {}", ex);
+        co_return std::unexpected(metastore::errc::transport_error);
+    }
+    auto reply = reply_fut.get();
+
+    if (reply.ec != rpc::errc::ok) {
+        co_return std::unexpected(rpc_to_meta_errc(reply.ec));
+    }
+
+    metastore::extent_metadata_response resp;
+    resp.extents = rpc_to_meta_extent_metadata(std::move(reply.extents));
+
+    co_return resp;
+}
+
+ss::future<std::expected<metastore::extent_metadata_response, metastore::errc>>
+replicated_metastore::get_extent_metadata_backwards(
+  const model::topic_id_partition& tidp,
+  kafka::offset min_offset,
+  kafka::offset max_offset,
+  size_t max_num_extents) {
+    static constexpr auto o
+      = rpc::get_extent_metadata_request::order::backwards;
+
+    rpc::get_extent_metadata_request req;
+    req.tp = tidp;
+    req.min_offset = min_offset;
+    req.max_offset = max_offset;
+    req.max_num_extents = max_num_extents;
+    req.o = o;
+
+    auto reply_fut = co_await ss::coroutine::as_future(
+      fe_.get_extent_metadata(std::move(req)));
+    if (reply_fut.failed()) {
+        auto ex = reply_fut.get_exception();
+        vlog(cd_log.warn, "Error while sending request: {}", ex);
+        co_return std::unexpected(metastore::errc::transport_error);
+    }
+    auto reply = reply_fut.get();
+
+    if (reply.ec != rpc::errc::ok) {
+        co_return std::unexpected(rpc_to_meta_errc(reply.ec));
+    }
+
+    metastore::extent_metadata_response resp;
+    resp.extents = rpc_to_meta_extent_metadata(std::move(reply.extents));
 
     co_return resp;
 }

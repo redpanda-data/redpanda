@@ -24,6 +24,23 @@ const entity_key key0{entity_key::client_id_default_match{}};
 const entity_key key1{entity_key::client_id_match{"producer-app-1"}};
 const entity_key key2{entity_key::client_id_match{"consumer-app-1"}};
 const entity_key key3{entity_key::client_id_prefix_match{"franz-go-prefix"}};
+const entity_key user_default_key{entity_key::user_default_match{}};
+const entity_key user_1_key{entity_key::user_match{"user-1"}};
+const entity_key user_2_key{entity_key::user_match{"user-2"}};
+const entity_key user_default_client_default_key{
+  entity_key::user_default_match{}, entity_key::client_id_default_match{}};
+const entity_key user_default_client_prefix_key{
+  entity_key::user_default_match{}, entity_key::client_id_prefix_match{}};
+const entity_key user_default_client_1_key{
+  entity_key::user_default_match{}, entity_key::client_id_match{"client-1"}};
+const entity_key user_1_client_default_key{
+  entity_key::user_match{"user-1"}, entity_key::client_id_default_match{}};
+const entity_key user_1_client_prefix_key{
+  entity_key::user_match{"user-1"}, entity_key::client_id_prefix_match{}};
+const entity_key user_1_client_1_key{
+  entity_key::user_match{"user-1"}, entity_key::client_id_match{"client-1"}};
+const entity_key client_1_user_1_key{
+  entity_key::client_id_match{"client-1"}, entity_key::user_match{"user-1"}};
 
 const entity_value val0{
   .consumer_byte_rate = 10240,
@@ -37,6 +54,12 @@ const entity_value val2{
 };
 const entity_value val3{
   .producer_byte_rate = 12345,
+};
+const entity_value val4{
+  .consumer_byte_rate = 12346,
+};
+const entity_value val5{
+  .controller_mutation_rate = 12347,
 };
 
 BOOST_AUTO_TEST_CASE(quota_store_set_get_remove) {
@@ -56,6 +79,43 @@ BOOST_AUTO_TEST_CASE(quota_store_set_get_remove) {
 
     st.remove_quota(key0);
     BOOST_CHECK(!st.get_quota(key0).has_value());
+}
+
+BOOST_AUTO_TEST_CASE(quota_store_users) {
+    store st;
+
+    BOOST_CHECK(!st.get_quota(user_default_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_1_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_2_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_default_client_default_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_default_client_prefix_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_default_client_1_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_1_client_default_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_1_client_prefix_key).has_value());
+    BOOST_CHECK(!st.get_quota(user_1_client_1_key).has_value());
+    BOOST_CHECK(!st.get_quota(client_1_user_1_key).has_value());
+
+    st.set_quota(user_default_key, val0);
+    st.set_quota(user_1_key, val1);
+    st.set_quota(user_2_key, val2);
+    st.set_quota(user_default_client_default_key, val0);
+    st.set_quota(user_default_client_prefix_key, val1);
+    st.set_quota(user_default_client_1_key, val2);
+    st.set_quota(user_1_client_default_key, val3);
+    st.set_quota(user_1_client_prefix_key, val4);
+    st.set_quota(user_1_client_1_key, val5);
+
+    BOOST_CHECK_EQUAL(st.get_quota(user_default_key), val0);
+    BOOST_CHECK_EQUAL(st.get_quota(user_1_key), val1);
+    BOOST_CHECK_EQUAL(st.get_quota(user_2_key), val2);
+    BOOST_CHECK_EQUAL(st.get_quota(user_default_client_default_key), val0);
+    BOOST_CHECK_EQUAL(st.get_quota(user_default_client_prefix_key), val1);
+    BOOST_CHECK_EQUAL(st.get_quota(user_default_client_1_key), val2);
+    BOOST_CHECK_EQUAL(st.get_quota(user_1_client_default_key), val3);
+    BOOST_CHECK_EQUAL(st.get_quota(user_1_client_prefix_key), val4);
+    BOOST_CHECK_EQUAL(st.get_quota(user_1_client_1_key), val5);
+    // Order of parts should not matter
+    BOOST_CHECK_EQUAL(st.get_quota(client_1_user_1_key), val5);
 }
 
 BOOST_AUTO_TEST_CASE(quota_store_size_clear) {
@@ -89,8 +149,7 @@ BOOST_AUTO_TEST_CASE(quota_store_range) {
       [](const std::pair<entity_key, entity_value>& kv) -> bool {
           return store::entity_part_filter(
             kv,
-            entity_key::part{
-              .part = entity_key::part::client_id_default_match{}});
+            entity_key::part_t{entity_key::part::client_id_default_match{}});
       });
     BOOST_CHECK_EQUAL(default_client_quotas.size(), 1);
     BOOST_CHECK_EQUAL(default_client_quotas[0].first, key0);

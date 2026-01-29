@@ -24,8 +24,6 @@ redpanda_cc_library(
     deps = [
         "//src/v/bytes:iobuf_parser",
         "//src/v/hashing:crc32c",
-        "//src/v/reflection:arity",
-        "//src/v/reflection:to_tuple",
         "//src/v/ssx:sformat",
     ],
 )
@@ -90,6 +88,17 @@ redpanda_cc_library(
     name = "map",
     hdrs = [
         "rw/map.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "pair",
+    hdrs = [
+        "rw/pair.h",
     ],
     visibility = ["//visibility:public"],
     deps = [

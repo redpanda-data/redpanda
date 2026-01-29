@@ -86,11 +86,11 @@ ss::future<> brokers::apply(
     chunked_vector<metadata_update::broker> brokers_to_add;
     chunked_vector<model::node_id> brokers_to_remove;
 
-    for (auto& broker : brokers_metadata) {
+    for (const auto& broker : brokers_metadata) {
         auto it = _brokers.find(broker.node_id);
         // not found broker, we need to add it
         if (it == _brokers.end()) {
-            brokers_to_add.push_back(std::move(broker));
+            brokers_to_add.push_back(broker);
             continue;
         }
         auto& existing_broker = it->second;
@@ -99,7 +99,7 @@ ss::future<> brokers::apply(
           != net::unresolved_address(broker.host, broker.port)) {
             // recreate broker with the new address
             brokers_to_remove.push_back(broker.node_id);
-            brokers_to_add.push_back(std::move(broker));
+            brokers_to_add.push_back(broker);
         }
     }
     for (auto& [id, b] : _brokers) {

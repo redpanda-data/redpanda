@@ -12,6 +12,7 @@
 #include "redpanda/admin/proxy/client.h"
 
 #include "base/vlog.h"
+#include "redpanda/admin/proxy/context.h"
 #include "redpanda/admin/proxy/proxy_service.h"
 #include "redpanda/admin/proxy/types.h"
 #include "rpc/connection_cache.h"
@@ -52,20 +53,20 @@ template<typename T>
 
 ss::future<iobuf> client::send(
   model::node_id target, serde::pb::rpc::context ctx, iobuf payload) noexcept {
-    if (ctx.has_visited_node(_self)) {
+    if (has_proxied_node(ctx, _self)) {
         vlog(
           log.warn,
           "proxy loop detected (self={}, via={})",
           target,
-          ctx.proxied_nodes);
+          get_proxied_nodes(ctx));
         throw serde::pb::rpc::unavailable_exception("proxy loop detected");
     }
     proxy_request req;
     req.service = ss::sstring(ctx.service_name);
     req.method = ss::sstring(ctx.method_name);
-    req.via = ctx.proxied_nodes;
-    req.via.push_back(_self);
     req.payload = std::move(payload);
+    req.via = get_proxied_nodes(ctx);
+    req.via.push_back(_self);
     // TODO: Cluster config for this timeout
     constexpr static std::chrono::milliseconds rpc_timeout = 10s;
     proxy_response proxy_resp;

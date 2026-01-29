@@ -230,10 +230,10 @@ static ss::sstring get_canonical_query_string(
         if (cnt++ > 0) {
             result.append("&", 1);
         }
-        result += ssx::sformat(
-          "{}={}",
-          http::uri_encode(pname, http::uri_encode_slash::yes),
-          http::uri_encode(pvalue, http::uri_encode_slash::yes));
+
+        // We expect the query string parameters to be already URI encoded
+        // in the canonical form by the caller.
+        result += ssx::sformat("{}={}", pname, pvalue);
     }
     return result;
 }
@@ -467,7 +467,10 @@ result<ss::sstring> signature_abs::get_canonicalized_resource(
 
     for (const auto& [pname, pvalue] : query_params) {
         // TODO(vlad): List values are not supported.
-        result += ssx::sformat("\n{}:{}", pname, pvalue);
+        // https://learn.microsoft.com/en-us/rest/api/storageservices/authorize-with-shared-key#shared-key-format-for-2009-09-19-and-later
+        // 6. URL-decode each query parameter name and value.
+        result += ssx::sformat(
+          "\n{}:{}", http::uri_decode(pname), http::uri_decode(pvalue));
     }
 
     return result;
@@ -545,7 +548,6 @@ std::error_code
 signature_abs::sign_header(http::client::request_header& header) const {
     auto ms_date = _sig_time.format_http_datetime();
     header.set("x-ms-date", {ms_date.data(), ms_date.size()});
-    header.set("x-ms-version", azure_storage_api_version);
 
     const auto to_sign = get_string_to_sign(header);
     if (!to_sign) {

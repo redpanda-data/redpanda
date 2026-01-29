@@ -78,7 +78,7 @@ public:
       model::timeout_clock::time_point);
 
     ss::future<errc> failover_link_topics(
-      ::cluster_link::model::id_t, model::timeout_clock::time_point);
+      ::cluster_link::model::id_t, model::timeout_clock::duration);
 
     bool cluster_link_active() const;
 
@@ -87,10 +87,10 @@ public:
     notification_id register_for_updates(notification_callback);
     void unregister_for_updates(notification_id);
 
-    std::optional<std::reference_wrapper<const ::cluster_link::model::metadata>>
+    ::cluster_link::model::metadata_ptr
     find_link_by_id(::cluster_link::model::id_t id) const;
 
-    std::optional<std::reference_wrapper<const ::cluster_link::model::metadata>>
+    ::cluster_link::model::metadata_ptr
     find_link_by_name(const ::cluster_link::model::name_t& name) const;
 
     std::optional<::cluster_link::model::id_t>
@@ -191,6 +191,6 @@ private:
     cluster::controller_stm* _controller;
     features::feature_table* _features;
 
-    mutex _mu{"panda-link::frontend::mu"};
+    ssx::mutex _mu{"panda-link::frontend::mu"};
 };
 } // namespace cluster::cluster_link

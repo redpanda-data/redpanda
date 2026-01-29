@@ -22,9 +22,9 @@ def data_dependency():
     http_archive(
         name = "avro",
         build_file = "//bazel/thirdparty:avro.BUILD",
-        sha256 = "f1a7d13b28ce5cc8812f26c705a6ea27b8bc63554d82d556c63b437da0338cf1",
-        strip_prefix = "avro-e54bf712fce903652f3eab7a6c16264ac5d17285",
-        url = "https://github.com/redpanda-data/avro/archive/e54bf712fce903652f3eab7a6c16264ac5d17285.tar.gz",
+        sha256 = "791d9f163f458d0ba4c94251f58ef5af9157952a9569ce0968d89aeb585af34f",
+        strip_prefix = "avro-46fe1e36f680d75219cba46368de38321f1810ed",
+        url = "https://github.com/redpanda-data/avro/archive/46fe1e36f680d75219cba46368de38321f1810ed.tar.gz",
         patches = ["//bazel/thirdparty:avro-snappy-includes.patch"],
         patch_args = ["-p1"],
     )
@@ -40,9 +40,9 @@ def data_dependency():
     http_archive(
         name = "c-ares",
         build_file = "//bazel/thirdparty:c-ares.BUILD",
-        sha256 = "7d935790e9af081c25c495fd13c2cfcda4792983418e96358ef6e7320ee06346",
-        strip_prefix = "c-ares-1.34.5",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.5.tar.gz",
+        sha256 = "912dd7cc3b3e8a79c52fd7fb9c0f4ecf0aaa73e45efda880266a2d6e26b84ef5",
+        strip_prefix = "c-ares-1.34.6",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.6.tar.gz",
     )
 
     http_archive(
@@ -100,9 +100,9 @@ def data_dependency():
     http_archive(
         name = "libxml2",
         build_file = "//bazel/thirdparty:libxml2.BUILD",
-        sha256 = "f52638e4d67135c49f676d1c8fcc4f9f35afb7ec9bfb4aee743e2e86d56e006b",
-        strip_prefix = "libxml2-2.14.5",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/libxml2-v2.14.5.tar.gz",
+        sha256 = "546ab74561c040df210c88dbd3c652bf509d826954ab2002c8973f1fa8d10130",
+        strip_prefix = "libxml2-2.14.6",
+        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/libxml2-v2.14.6.tar.gz",
     )
 
     http_archive(
@@ -113,6 +113,14 @@ def data_dependency():
         url = "https://vectorized-public.s3.amazonaws.com/dependencies/lksctp-tools-1.0.19.tar.gz",
     )
 
+    http_archive(
+        name = "ragel",
+        build_file = "//bazel/thirdparty:ragel.BUILD",
+        sha256 = "5f156edb65d20b856d638dd9ee2dfb43285914d9aa2b6ec779dac0270cd56c3f",
+        strip_prefix = "ragel-6.10",
+        url = "http://www.colm.net/files/ragel/ragel-6.10.tar.gz",
+    )
+
     #
     # ** IMPORTANT - OpenSSL and FIPS **
     #
@@ -120,9 +128,9 @@ def data_dependency():
     # simply "openssl", may reference any desired version of OpenSSL 3.0.0 and above.
     #
     # The second archive retrieved is named "openssl-fips", and *MUST* reference
-    # the specific version of OpenSSL, 3.0.9, which is the latest FIPS approved
-    # version as of 2/26/24. Do not change this version. For more info visit:
-    # https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4282
+    # the specific version of OpenSSL, 3.1.2, which is the latest FIPS approved
+    # version as of 3/11/2025. Do not change this version. For more info visit:
+    # https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/4985
     #
     # This 2 build approach is described in more detail in the FIPS README here:
     # https://github.com/openssl/openssl/blob/master/README-FIPS.md
@@ -130,17 +138,17 @@ def data_dependency():
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
-        sha256 = "d80c34f5cf902dccf1f1b5df5ebb86d0392e37049e5d73df1b3abae72e4ffe8b",
-        strip_prefix = "openssl-3.0.18",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.18/openssl-3.0.18.tar.gz",
+        sha256 = "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99",
+        strip_prefix = "openssl-3.5.4",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/openssl-3.5.4.tar.gz",
     )
 
     http_archive(
         name = "openssl-fips",
         build_file = "//bazel/thirdparty:openssl-fips.BUILD",
-        sha256 = "eb1ab04781474360f77c318ab89d8c5a03abc38e63d65a603cabbf1b00a1dc90",
-        strip_prefix = "openssl-3.0.9",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/openssl-3.0.9.tar.gz",
+        sha256 = "a0ce69b8b97ea6a35b96875235aa453b966ba3cba8af2de23657d8b6767d6539",
+        strip_prefix = "openssl-3.1.2",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/openssl-3.1.2.tar.gz",
     )
 
     http_archive(
@@ -162,9 +170,9 @@ def data_dependency():
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "8bdf1f71a2a61f1cd6d91102cae3616d3eca76afbaf753906a216b3b8bc3c4be",
-        strip_prefix = "seastar-5a3cf7aab98a3f3eea16399e5ab5f3dca489c90b",
-        url = "https://github.com/redpanda-data/seastar/archive/5a3cf7aab98a3f3eea16399e5ab5f3dca489c90b.tar.gz",
+        sha256 = "29c95e2ec964e63d18f6dc37938daab642fa4197887f6c5a66e95b2ee439e295",
+        strip_prefix = "seastar-804949ce1b428e17ec920bdf17f94cc4ebc6104f",
+        url = "https://github.com/redpanda-data/seastar/archive/804949ce1b428e17ec920bdf17f94cc4ebc6104f.tar.gz",
     )
 
     http_archive(

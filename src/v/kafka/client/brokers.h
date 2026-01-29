@@ -102,7 +102,7 @@ private:
     size_t _next_broker{0};
     prefix_logger* _logger;
     std::unique_ptr<broker_factory> _factory;
-    mutex _state_mutex{"brokers::mutex"};
+    ssx::mutex _state_mutex{"brokers::mutex"};
 };
 
 } // namespace kafka::client

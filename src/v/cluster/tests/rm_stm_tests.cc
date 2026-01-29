@@ -16,13 +16,16 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
+#include "storage/tests/batch_generators.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/boost_fixture.h"
 #include "test_utils/randoms.h"
@@ -48,7 +51,8 @@ static batches_with_identity make_batches(
   model::producer_identity pid,
   int first_seq,
   int count,
-  bool is_transactional) {
+  bool is_transactional,
+  bool is_idempotent = false) {
     batches_with_identity result;
     result.id = {
       .pid = pid,
@@ -56,15 +60,20 @@ static batches_with_identity make_batches(
       .last_seq = first_seq + count - 1,
       .record_count = count,
       .is_transactional = is_transactional};
-    result.batches.push_back(
-      model::test::make_random_batch(
-        {.offset = model::offset(0),
-         .allow_compression = true,
-         .count = count,
-         .producer_id = pid.id,
-         .producer_epoch = pid.epoch,
-         .base_sequence = first_seq,
-         .is_transactional = is_transactional}));
+    auto gen = linear_int_kv_batch_generator();
+    auto spec = model::test::record_batch_spec{
+      .offset = model::offset(0),
+      .allow_compression = true,
+      .count = count,
+      .enable_idempotence = is_idempotent,
+      .producer_id = pid.id,
+      .producer_epoch = pid.epoch,
+      .base_sequence = first_seq,
+      .is_transactional = is_transactional};
+    for (auto& batch : gen(spec, 1)) {
+        result.batches.push_back(std::move(batch));
+    }
+
     return result;
 }
 
@@ -177,16 +186,9 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
 //   - a simple tx aborting before prepare succeeds
 //   - an aborted tx is reflected in aborted_transactions
 FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
+    auto& stm = start_and_disable_auto_abort();
 
-    stm.start().get();
     auto tx_seq = model::tx_seq(0);
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
-
     auto min_offset = model::offset(0);
     auto max_offset = model::offset(std::numeric_limits<int64_t>::max());
 
@@ -246,16 +248,8 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
 //   - a simple tx aborting after prepare succeeds
 //   - an aborted tx is reflected in aborted_transactions
 FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
+    auto& stm = start_and_disable_auto_abort();
     auto tx_seq = model::tx_seq(0);
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
 
     auto min_offset = model::offset(0);
     auto max_offset = model::offset(std::numeric_limits<int64_t>::max());
@@ -316,14 +310,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
 
 // transactional writes of an unknown tx are rejected
 FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto pid1 = model::producer_identity{1, 0};
     auto rreader = make_batches(pid1, 0, 5, false);
@@ -341,14 +328,7 @@ FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
 }
 
 FIXTURE_TEST(test_stale_begin_tx_fenced, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto tx_seq = model::tx_seq(10);
     auto tx_seq_old = model::tx_seq(9);
@@ -386,17 +366,9 @@ FIXTURE_TEST(test_stale_begin_tx_fenced, rm_stm_test_fixture) {
 
 // begin fences off old transactions
 FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
+    auto& stm = start_and_disable_auto_abort();
 
     auto tx_seq = model::tx_seq(0);
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
-
     auto pid1 = model::producer_identity{1, 0};
     auto rreader = make_batches(pid1, 0, 5, false);
     auto offset_r = replicate_all(stm, std::move(rreader)).get();
@@ -421,17 +393,9 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
 
 // transactional writes of an aborted tx are rejected
 FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
+    auto& stm = start_and_disable_auto_abort();
 
     auto tx_seq = model::tx_seq(0);
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
-
     auto pid1 = model::producer_identity{1, 0};
     auto rreader = make_batches(pid1, 0, 5, false);
     auto offset_r = replicate_all(stm, std::move(rreader)).get();
@@ -461,14 +425,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
 // aborted transactions for correctness. These serve as regression tests so that
 // we do not break the semantics.
 FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto log = _storage.local().log_mgr().get(_raft->ntp());
     BOOST_REQUIRE(log);
@@ -764,12 +721,7 @@ SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
 }
 
 FIXTURE_TEST(test_snapshot_v4_v5_equivalence, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-    wait_for_confirmed_leader();
+    auto& stm = start_and_disable_auto_abort();
 
     // Check the stm can apply v4/v5 snapshots
     {
@@ -816,13 +768,8 @@ FIXTURE_TEST(test_snapshot_v4_v5_equivalence, rm_stm_test_fixture) {
 }
 
 FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.start().get();
-    stm.testing_only_disable_auto_abort();
+    auto& stm = start_and_disable_auto_abort();
 
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
     // Add a fence batch
     auto pid = model::producer_identity{0, 0};
     auto term_op = stm
@@ -850,13 +797,7 @@ FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
  * partition stop).
  */
 FIXTURE_TEST(test_concurrent_producer_evictions, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.start().get();
-    stm.testing_only_disable_auto_abort();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    start_and_disable_auto_abort();
 
     // Ensure eviction runs with higher frequency
     // and evicts everything possible.
@@ -945,14 +886,8 @@ FIXTURE_TEST(test_concurrent_producer_evictions, rm_stm_test_fixture) {
 }
 
 FIXTURE_TEST(test_lso_bound_by_open_tx, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
+    auto& stm = start_and_disable_auto_abort();
     auto raft = _raft;
-    stm.start().get();
-    stm.testing_only_disable_auto_abort();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
 
     auto pid = model::producer_identity{0, 0};
 
@@ -1028,4 +963,204 @@ FIXTURE_TEST(test_lso_bound_by_open_tx, rm_stm_test_fixture) {
     }
     as.request_abort();
     std::move(lso_bound_checker_f).get();
+}
+
+FIXTURE_TEST(test_tx_compaction_last_producer_batch, rm_stm_test_fixture) {
+    auto& stm = start_and_disable_auto_abort();
+
+    auto log = _storage.local().log_mgr().get(_raft->ntp());
+    BOOST_REQUIRE(log);
+    log->stm_manager()->add_stm(_stm);
+
+    auto tx_seq_zero = model::tx_seq{0};
+    auto produce = [&](auto pid, auto& seq, int count = 5) {
+        BOOST_REQUIRE(
+          stm
+            .begin_tx(
+              pid, seq, std::chrono::milliseconds(10), model::partition_id(0))
+            .get());
+        BOOST_REQUIRE(
+          replicate_all(stm, make_batches(pid, seq, count, true, true)).get());
+        BOOST_REQUIRE_EQUAL(
+          stm.commit_tx(pid, seq, timeout).get(), cluster::tx::errc::none);
+        seq += count;
+        log->flush().get();
+    };
+
+    auto pid_zero = model::producer_identity{0, 0};
+    produce(pid_zero, tx_seq_zero);
+
+    {
+        auto rdr = log
+                     ->make_reader(
+                       storage::local_log_reader_config(
+                         model::offset(0), model::offset::max()))
+                     .get();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(rdr), model::no_timeout)
+                         .get();
+
+        // Expect the only non-control raft data batch to be the last batch for
+        // a producer.
+        for (const auto& b : batches) {
+            if (
+              b.header().type == model::record_batch_type::raft_data
+              && !b.header().attrs.is_control()) {
+                BOOST_REQUIRE(
+                  stm.is_last_batch_for_idempotent_producer(b.header()));
+            }
+        }
+    }
+
+    // Produce more so we have multiple non-control raft data batches.
+    produce(pid_zero, tx_seq_zero);
+
+    {
+        auto rdr = log
+                     ->make_reader(
+                       storage::local_log_reader_config(
+                         model::offset(0), model::offset::max()))
+                     .get();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(rdr), model::no_timeout)
+                         .get();
+
+        // Expect the last non-control raft data batch to be the last batch for
+        // a producer.
+        bool seen_first_batch = false;
+        bool seen_last_batch = false;
+        for (const auto& b : batches) {
+            if (
+              b.header().type == model::record_batch_type::raft_data
+              && !b.header().attrs.is_control()) {
+                if (seen_first_batch) {
+                    BOOST_REQUIRE(
+                      stm.is_last_batch_for_idempotent_producer(b.header()));
+                    seen_last_batch = true;
+                } else {
+                    BOOST_REQUIRE(
+                      !stm.is_last_batch_for_idempotent_producer(b.header()));
+                    seen_first_batch = true;
+                }
+            }
+        }
+        BOOST_REQUIRE(seen_first_batch);
+        BOOST_REQUIRE(seen_last_batch);
+    }
+
+    // Force roll and compact the log.
+    log->force_roll().get();
+    auto& segments = log->segments();
+    BOOST_REQUIRE_EQUAL(segments.size(), 2);
+
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+
+    ss::abort_source as;
+    compaction::compaction_config cfg(
+      model::offset::max(),
+      model::offset::max(),
+      model::offset::max(),
+      std::nullopt,
+      std::nullopt,
+      as);
+    disk_log.sliding_window_compact(cfg).get();
+
+    {
+        auto rdr = log
+                     ->make_reader(
+                       storage::local_log_reader_config(
+                         model::offset(0), model::offset::max()))
+                     .get();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(rdr), model::no_timeout)
+                         .get();
+
+        // Expect the _only_ non-control raft data batch to be the last batch
+        // for a producer after compaction.
+        int num_seen_raft_batches = 0;
+        for (const auto& b : batches) {
+            if (
+              b.header().type == model::record_batch_type::raft_data
+              && !b.header().attrs.is_control()) {
+                BOOST_REQUIRE(
+                  stm.is_last_batch_for_idempotent_producer(b.header()));
+                ++num_seen_raft_batches;
+            }
+        }
+        BOOST_REQUIRE_EQUAL(num_seen_raft_batches, 1);
+    }
+
+    // Append more batches for a _different_ idempotent producer that will
+    // compact pid_zero's records.
+    auto pid_one = model::producer_identity{1, 0};
+    auto tx_seq_one = model::tx_seq{0};
+    produce(pid_one, tx_seq_one);
+
+    log->force_roll().get();
+
+    // Compact again to remove all the records from the idempotent producer's
+    // batch.
+    disk_log.sliding_window_compact(cfg).get();
+
+    {
+        auto rdr = log
+                     ->make_reader(
+                       storage::local_log_reader_config(
+                         model::offset(0), model::offset::max()))
+                     .get();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(rdr), model::no_timeout)
+                         .get();
+
+        // Expect a placeholder batch with the relevant important
+        // idempotent information.
+        bool seen_placeholder_batch_pid_zero = false;
+        for (const auto& b : batches) {
+            if (
+              b.header().type
+              == model::record_batch_type::compaction_placeholder) {
+                BOOST_REQUIRE(
+                  stm.is_last_batch_for_idempotent_producer(b.header()));
+                if (b.header().producer_id == pid_zero.get_id()()) {
+                    seen_placeholder_batch_pid_zero = true;
+                }
+            }
+        }
+        BOOST_REQUIRE(seen_placeholder_batch_pid_zero);
+    }
+
+    // Produce with pid zero and one one last time (with non-overlapping
+    // records)
+    produce(pid_zero, tx_seq_zero);
+
+    log->force_roll().get();
+
+    // Compact one last time with adjacent merging. We should see the
+    // placeholder batch for pid_zero disappear since it is no longer the last
+    // batch for the producer.
+    disk_log.sliding_window_compact(cfg).get();
+    disk_log.adjacent_merge_compact(segments.copy(), cfg).get();
+
+    {
+        auto rdr = log
+                     ->make_reader(
+                       storage::local_log_reader_config(
+                         model::offset(0), model::offset::max()))
+                     .get();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(rdr), model::no_timeout)
+                         .get();
+
+        bool seen_placeholder_batch_pid_zero = false;
+        for (const auto& b : batches) {
+            if (
+              b.header().type
+              == model::record_batch_type::compaction_placeholder) {
+                if (b.header().producer_id == pid_zero.get_id()()) {
+                    seen_placeholder_batch_pid_zero = true;
+                }
+            }
+        }
+        BOOST_REQUIRE(!seen_placeholder_batch_pid_zero);
+    }
 }

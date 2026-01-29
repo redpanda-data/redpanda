@@ -24,7 +24,7 @@ import (
 	"github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/authtoken"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -113,7 +113,7 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 				authToken := cfg.VirtualProfile().CurrentAuth().AuthToken
 				acl := auth0.NewClient(cfg.DevOverrides())
-				expired, err := oauth.ValidateToken(authToken, acl.Audience(), cfg.VirtualProfile().CurrentAuth().ClientID)
+				expired, err := authtoken.ValidateToken(authToken, acl.Audience(), cfg.VirtualProfile().CurrentAuth().ClientID)
 				if err != nil {
 					m.Lock()
 					tokenOK = false
@@ -283,7 +283,7 @@ Use --install to configure the MCP client instead of serving stdio.`,
 				}
 
 				acl := auth0.NewClient(cfg.DevOverrides())
-				expired, err := oauth.ValidateToken(authToken, acl.Audience(), cfg.VirtualProfile().CurrentAuth().ClientID)
+				expired, err := authtoken.ValidateToken(authToken, acl.Audience(), cfg.VirtualProfile().CurrentAuth().ClientID)
 				if err != nil {
 					m.Lock()
 					tokenOK = false

@@ -102,9 +102,11 @@ SEASTAR_THREAD_TEST_CASE(async_stream_zstd_test) {
         iobuf buf = gen(i);
 
         auto cbuf = fn.compress(buf.share(0, i)).get();
+        auto darr = fn.uncompress(ioarray::copy_from(cbuf)).get();
         auto dbuf = fn.uncompress(std::move(cbuf)).get();
 
         BOOST_CHECK_EQUAL(dbuf, buf);
+        BOOST_CHECK_EQUAL(dbuf, darr.as_iobuf());
     }
 }
 

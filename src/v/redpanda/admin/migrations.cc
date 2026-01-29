@@ -385,9 +385,15 @@ void admin_server::register_data_migration_routes() {
 }
 
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::list_data_migrations(
-  std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply> reply) {
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> reply) {
     auto& frontend = _controller->get_data_migration_frontend();
-    auto migrations = co_await frontend.local().list_migrations();
+    auto maybe_migrations = co_await frontend.local().list_migrations();
+    if (maybe_migrations.has_error()) {
+        co_await admin_server::throw_on_error(
+          *req, maybe_migrations.assume_error(), model::controller_ntp);
+    }
+    auto& migrations = maybe_migrations.assume_value();
     json::StringBuffer buf;
     json::Writer<json::StringBuffer> writer(buf);
     writer.StartArray();

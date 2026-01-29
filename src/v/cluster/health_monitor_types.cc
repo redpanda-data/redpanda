@@ -75,14 +75,25 @@ std::ostream& operator<<(std::ostream& o, const node_state& s) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const node_liveness_report& nls) {
+    fmt::print(o, "{{node_id_to_last_seen: {}}}", nls.node_id_to_last_seen);
+    return o;
+}
+
+bool operator==(const node_liveness_report& a, const node_liveness_report& b) {
+    return std::ranges::equal(a.node_id_to_last_seen, b.node_id_to_last_seen);
+}
+
 node_health_report::node_health_report(
   model::node_id id,
   node::local_state local_state,
   chunked_vector<topic_status> topics_vec,
-  std::optional<drain_manager::drain_status> drain_status)
+  std::optional<drain_manager::drain_status> drain_status,
+  struct node_liveness_report node_liveness_report)
   : id(id)
   , local_state(std::move(local_state))
-  , drain_status(drain_status) {
+  , drain_status(drain_status)
+  , node_liveness_report(std::move(node_liveness_report)) {
     topics.reserve(topics_vec.size());
     for (auto& topic : topics_vec) {
         topics.emplace(
@@ -91,7 +102,8 @@ node_health_report::node_health_report(
 }
 
 node_health_report node_health_report::copy() const {
-    node_health_report ret{id, local_state, {}, drain_status};
+    node_health_report ret{
+      id, local_state, {}, drain_status, node_liveness_report};
     ret.topics.reserve(topics.bucket_count());
     for (const auto& [tp_ns, partitions] : topics) {
         ret.topics.emplace(tp_ns, copy_partition_statuses(partitions));
@@ -104,7 +116,12 @@ std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
 }
 
 node_health_report_serde::node_health_report_serde(const node_health_report& hr)
-  : node_health_report_serde(hr.id, hr.local_state, {}, hr.drain_status) {
+  : node_health_report_serde(
+      hr.id,
+      hr.local_state,
+      /* topics */ {},
+      hr.drain_status,
+      hr.node_liveness_report) {
     topics.reserve(hr.topics.size());
     for (const auto& [tp_ns, partitions] : hr.topics) {
         topics.emplace_back(tp_ns, copy_to_vector(partitions));
@@ -154,11 +171,13 @@ partition_statuses_map_t copy_to_map(const partition_statuses_t& ps_vec) {
 std::ostream& operator<<(std::ostream& o, const node_health_report_serde& r) {
     fmt::print(
       o,
-      "{{id: {}, topics: {}, local_state: {}, drain_status: {}}}",
+      "{{id: {}, topics: {}, local_state: {}, drain_status: {}, "
+      "node_liveness_report {}}}",
       r.id,
       r.topics,
       r.local_state,
-      r.drain_status);
+      r.drain_status,
+      r.node_liveness_report);
     return o;
 }
 
@@ -171,7 +190,8 @@ bool operator==(
              a.topics.cbegin(),
              a.topics.cend(),
              b.topics.cbegin(),
-             b.topics.cend());
+             b.topics.cend())
+           && a.node_liveness_report == b.node_liveness_report;
 }
 
 std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
@@ -309,7 +329,7 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
     for (auto& [ns, tp_f] : filter.namespaces) {
         fmt::print(o, "{{namespace: {}, topics: [", ns);
         for (auto& [tp, p_f] : tp_f) {
-            fmt::print(o, "{{topic: {}, paritions: [", tp);
+            fmt::print(o, "{{topic: {}, partitions: [", tp);
             if (!p_f.empty()) {
                 auto it = p_f.begin();
                 fmt::print(o, "{}", *it);
@@ -366,13 +386,15 @@ std::ostream& operator<<(std::ostream& o, const cluster_health_overview& ho) {
     fmt::print(
       o,
       "{{controller_id: {}, nodes: {}, unhealthy_reasons: {}, nodes_down: {}, "
-      "nodes_in_recovery_mode: {}, bytes_in_cloud_storage: {}, "
-      "leaderless_count: {}, under_replicated_count: {}, "
-      "leaderless_partitions: {}, under_replicated_partitions: {}}}",
+      "high_disk_usage_nodes: {}, nodes_in_recovery_mode: {}, "
+      "bytes_in_cloud_storage: {}, leaderless_count: {}, "
+      "under_replicated_count: {}, leaderless_partitions: {}, "
+      "under_replicated_partitions: {}}}",
       ho.controller_id,
       ho.all_nodes,
       ho.unhealthy_reasons,
       ho.nodes_down,
+      ho.high_disk_usage_nodes,
       ho.nodes_in_recovery_mode,
       ho.bytes_in_cloud_storage,
       ho.leaderless_count,

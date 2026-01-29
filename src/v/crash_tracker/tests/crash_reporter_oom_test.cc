@@ -59,7 +59,6 @@ Total memory:  {total_memory}
 Hard failures: {hard_failures}
 
 Top-N alloc sites:
-If you work at Redpanda please refer to https://vectorizedio.atlassian.net/l/cp/iuEMd2NN
 )",
       fmt::arg("used_memory", used_mem_str),
       fmt::arg("free_memory", free_mem_str),

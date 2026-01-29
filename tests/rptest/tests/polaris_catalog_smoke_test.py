@@ -45,6 +45,7 @@ from rptest.services.tls import TLSCertManager
 from rptest.tests.crl_test import RedpandaTest
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import SISettings
+from rptest.utils.mode_checks import skip_fips_mode
 
 
 class PolarisCatalogSmokeTest(RedpandaTest):
@@ -205,6 +206,9 @@ class PolarisCatalogSmokeTest(RedpandaTest):
         )
         self.polaris.start()
 
+    # https://redpandadata.atlassian.net/browse/ENG-307
+    # https://redpandadata.atlassian.net/browse/CORE-14840?focusedCommentId=110974
+    @skip_fips_mode
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=supported_storage_types(),

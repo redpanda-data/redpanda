@@ -80,9 +80,6 @@ struct cloud_topic_log_reader_config {
 
     model::opt_client_address_t client_address;
 
-    // used by log reader
-    size_t bytes_consumed{0};
-
     // do not let the lower level readers go over budget even when that means
     // that the reader will return no batches.
     bool strict_max_bytes{false};

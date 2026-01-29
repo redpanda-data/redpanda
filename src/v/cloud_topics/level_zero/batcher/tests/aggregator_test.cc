@@ -83,7 +83,7 @@ TEST(AggregatorTest, SingleRequestDtorWithStagedRequest) {
     }
     ASSERT_TRUE(fut.available());
     auto err = fut.get();
-    ASSERT_TRUE(err.has_error());
+    ASSERT_TRUE(!err.has_value());
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 
@@ -103,7 +103,7 @@ TEST(AggregatorTest, SingleRequestDtorWithPreparedRequest) {
     }
     ASSERT_TRUE(fut.available());
     auto err = fut.get();
-    ASSERT_TRUE(err.has_error());
+    ASSERT_TRUE(!err.has_value());
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 
@@ -134,7 +134,7 @@ TEST(AggregatorTest, SingleRequestDtorWithLostRequestStaged) {
     }
     ASSERT_TRUE(fut.available());
     auto err = fut.get();
-    ASSERT_TRUE(err.has_error());
+    ASSERT_TRUE(!err.has_value());
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 
@@ -164,7 +164,7 @@ TEST(AggregatorTest, SingleRequestDtorWithLostRequestPrepared) {
     }
     ASSERT_TRUE(fut.available());
     auto err = fut.get();
-    ASSERT_TRUE(err.has_error());
+    ASSERT_TRUE(!err.has_value());
     ASSERT_TRUE(err.error() == cloud_topics::errc::timeout);
 }
 

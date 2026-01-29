@@ -79,6 +79,21 @@ class DebugServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    def call_log_message(self, req: proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageResponse]:
+        """Low-level method to call LogMessage, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.v2.internal.DebugService/LogMessage'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageResponse, extra_headers, timeout_seconds)
+
+    def log_message(self, req: proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageResponse:
+        response = self.call_log_message(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 class AsyncDebugServiceClient:
 
     def __init__(self, base_url: str, http_client: aiohttp.ClientSession, protocol: ConnectProtocol=ConnectProtocol.CONNECT_PROTOBUF):
@@ -130,6 +145,21 @@ class AsyncDebugServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    async def call_log_message(self, req: proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageResponse]:
+        """Low-level method to call LogMessage, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.v2.internal.DebugService/LogMessage'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageResponse, extra_headers, timeout_seconds)
+
+    async def log_message(self, req: proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageResponse:
+        response = await self.call_log_message(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 @typing.runtime_checkable
 class DebugServiceProtocol(typing.Protocol):
 
@@ -141,6 +171,9 @@ class DebugServiceProtocol(typing.Protocol):
 
     def stop_stress_fiber(self, req: ClientRequest[proto.redpanda.core.admin.internal.v1.debug_pb2.StopStressFiberRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.v1.debug_pb2.StopStressFiberResponse]:
         ...
+
+    def log_message(self, req: ClientRequest[proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageResponse]:
+        ...
 DEBUG_SERVICE_PATH_PREFIX = '/redpanda.core.admin.v2.internal.DebugService'
 
 def wsgi_debug_service(implementation: DebugServiceProtocol) -> WSGIApplication:
@@ -148,4 +181,5 @@ def wsgi_debug_service(implementation: DebugServiceProtocol) -> WSGIApplication:
     app.register_unary_rpc('/redpanda.core.admin.v2.internal.DebugService/ThrowStructuredException', implementation.throw_structured_exception, proto.redpanda.core.admin.internal.v1.debug_pb2.ThrowStructuredExceptionRequest)
     app.register_unary_rpc('/redpanda.core.admin.v2.internal.DebugService/StartStressFiber', implementation.start_stress_fiber, proto.redpanda.core.admin.internal.v1.debug_pb2.StartStressFiberRequest)
     app.register_unary_rpc('/redpanda.core.admin.v2.internal.DebugService/StopStressFiber', implementation.stop_stress_fiber, proto.redpanda.core.admin.internal.v1.debug_pb2.StopStressFiberRequest)
+    app.register_unary_rpc('/redpanda.core.admin.v2.internal.DebugService/LogMessage', implementation.log_message, proto.redpanda.core.admin.internal.v1.debug_pb2.LogMessageRequest)
     return app

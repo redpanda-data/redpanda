@@ -13,6 +13,7 @@
 
 #include "base/format_to.h"
 #include "model/timestamp.h"
+#include "ssx/async_algorithm.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/variant_utils.hh>
@@ -208,6 +209,31 @@ link_configuration link_configuration::copy() const {
     return copy;
 }
 
+ss::future<link_state> link_state::copy() const {
+    ssx::async_counter cnt;
+    link_state copy;
+    copy.status = status;
+    copy.mirror_topics.reserve(mirror_topics.size());
+
+    co_await ssx::async_for_each_counter(
+      cnt, mirror_topics, [&](const auto& pair) {
+          copy.mirror_topics.emplace(pair.first, pair.second.copy());
+      });
+
+    co_return copy;
+}
+
+ss::future<metadata> metadata::copy() const {
+    metadata md;
+    md.name = name;
+    md.uuid = uuid;
+    md.connection = connection;
+    md.state = co_await state.copy();
+    md.configuration = configuration.copy();
+
+    co_return md;
+}
+
 void link_state::set_mirror_topics(const mirror_topics_t& topics) {
     mirror_topics.reserve(topics.size());
     for (const auto& [topic, state] : topics) {
@@ -217,26 +243,6 @@ void link_state::set_mirror_topics(const mirror_topics_t& topics) {
 
 void link_state::set_mirror_topics(mirror_topics_t&& topics) {
     mirror_topics = std::move(topics);
-}
-
-link_state link_state::copy() const {
-    link_state copy;
-    copy.status = status;
-    copy.mirror_topics.reserve(mirror_topics.size());
-    for (const auto& [topic, state] : mirror_topics) {
-        copy.mirror_topics.emplace(topic, state.copy());
-    }
-    return copy;
-}
-
-metadata metadata::copy() const {
-    metadata copy;
-    copy.name = name;
-    copy.uuid = uuid;
-    copy.connection = connection;
-    copy.state = state.copy();
-    copy.configuration = configuration.copy();
-    return copy;
 }
 
 add_mirror_topic_cmd add_mirror_topic_cmd::copy() const {

@@ -190,7 +190,7 @@ get_tristate_value(const config_map_t& config, std::string_view key) {
         return tristate<T>(std::nullopt);
     }
     // disabled case
-    if (v <= 0) {
+    if (v < 0) {
         return tristate<T>(disable_tristate);
     }
     return tristate<T>(std::make_optional<T>(*v));

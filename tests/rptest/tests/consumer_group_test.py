@@ -8,6 +8,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import asyncio
+from contextlib import closing
 import random
 import threading
 import time
@@ -577,38 +579,39 @@ class ConsumerGroupTest(RedpandaTest):
         rounds = 10
         groups_in_round = 100
 
-        import asyncio
+        with closing(asyncio.new_event_loop()) as ev_loop:
 
-        ev_loop = asyncio.new_event_loop()
+            def poll_once(i):
+                try:
+                    consumer = KafkaConsumer(
+                        group_id=f"g-{i}",
+                        bootstrap_servers=self.redpanda.brokers(),
+                        enable_auto_commit=True,
+                        client_id=f"python-consumer-client-{i}",
+                    )
+                    try:
+                        consumer.subscribe([self.topic_spec.name])
+                        consumer.poll(1)
+                    finally:
+                        consumer.close(autocommit=True)
+                except Exception as e:
+                    self.logger.error(f"Failed to poll group g-{i}: {e}")
+                    raise
 
-        def poll_once(i):
-            try:
-                consumer = KafkaConsumer(
-                    group_id=f"g-{i}",
-                    bootstrap_servers=self.redpanda.brokers(),
-                    enable_auto_commit=True,
-                    client_id=f"python-consumer-client-{i}",
+            async def create_groups(r):
+                results = await asyncio.gather(
+                    *[
+                        asyncio.to_thread(poll_once, i + r * groups_in_round)
+                        for i in range(groups_in_round)
+                    ],
+                    return_exceptions=True,
                 )
-                consumer.subscribe([self.topic_spec.name])
-                consumer.poll(1)
-                consumer.close(autocommit=True)
-            except Exception as e:
-                self.logger.error(f"Failed to poll group g-{i}: {e}")
-                raise
+                for res in results:
+                    if isinstance(res, BaseException):
+                        raise res
 
-        async def create_groups(r):
-            await asyncio.gather(
-                *[
-                    asyncio.to_thread(poll_once, i + r * groups_in_round)
-                    for i in range(groups_in_round)
-                ]
-            )
-
-        for r in range(rounds):
-            ev_loop.run_until_complete(create_groups(r))
-
-        ev_loop.stop()
-        ev_loop.close()
+            for r in range(rounds):
+                ev_loop.run_until_complete(create_groups(r))
 
         rpk = RpkTool(self.redpanda)
         list = rpk.group_list_names()

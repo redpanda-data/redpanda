@@ -24,7 +24,9 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/optimized_optional.hh>
 
+#include <array>
 #include <exception>
+#include <expected>
 #include <functional>
 #include <type_traits>
 
@@ -53,10 +55,26 @@ public:
 
     /// Add write request to the pipeline
     /// The revision id is the topic creation revision id for the ntp.
-    ss::future<result<chunked_vector<extent_meta>>> write_and_debounce(
+    ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
+    write_and_debounce(
       model::ntp ntp,
       cluster_epoch min_epoch,
       chunked_vector<model::record_batch> batches,
+      Clock::time_point timeout);
+
+    struct prepared_data {
+        serialized_chunk data_chunk;
+        ss::semaphore_units<ss::named_semaphore_exception_factory, Clock> units;
+    };
+
+    ss::future<std::expected<prepared_data, std::error_code>>
+    prepare_write(chunked_vector<model::record_batch> batches);
+
+    ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
+    execute_write(
+      model::ntp ntp,
+      cluster_epoch min_epoch,
+      prepared_data prepped,
       Clock::time_point timeout);
 
     using write_requests_list
@@ -92,13 +110,13 @@ public:
 
         /// Wait until either the 'deadline' is reached or the pipeline
         /// accumulated 'max_bytes' bytes
-        ss::future<checked<event, errc>> wait_until(
+        ss::future<std::expected<event, errc>> wait_until(
           size_t max_bytes,
           Clock::time_point deadline,
           ss::abort_source* as = nullptr) noexcept;
 
         /// Wait until the next write_request is added to the pipeline
-        ss::future<checked<event, errc>>
+        ss::future<std::expected<event, errc>>
         wait_next(ss::abort_source* as = nullptr) noexcept;
 
         /// Apply lambda function to every write request at certain stage.
@@ -109,7 +127,7 @@ public:
         /// When this happens the write request is unlinked from the list.
         template<class Fn>
         requires std::is_nothrow_invocable_r_v<
-          checked<request_processing_result, errc>,
+          std::expected<request_processing_result, errc>,
           Fn,
           write_request<Clock>&>
         void process(Fn&& fn) {
@@ -117,8 +135,8 @@ public:
             uint32_t count = 0;
             for (auto& req : _parent->get_pending()) {
                 if (req.stage == _ps) {
-                    checked<request_processing_result, errc> r = fn(req);
-                    if (r.has_error()) {
+                    std::expected<request_processing_result, errc> r = fn(req);
+                    if (!r.has_value()) {
                         // Drop write request using the error code from the
                         // result
                         req.set_value(r.error());
@@ -126,11 +144,11 @@ public:
                     }
                     switch (r.value()) {
                     case request_processing_result::advance_and_continue:
-                        req.stage = _parent->next_stage(req.stage);
+                        _parent->advance_request_stage(req);
                         count++;
                         continue;
                     case request_processing_result::advance_and_stop:
-                        req.stage = _parent->next_stage(req.stage);
+                        _parent->advance_request_stage(req);
                         count++;
                         break;
                     case request_processing_result::ignore_and_continue:
@@ -147,6 +165,18 @@ public:
         }
 
         pipeline_stage id() const noexcept { return _ps; }
+
+        /// Write pipeline aggregates resources so it's easier to
+        /// track resources here than per request.
+        void register_micro_probe(const micro_probe& p) {
+            _parent->_probe.register_micro_probe(p);
+        }
+
+        /// Pipeline components can invoke this method to acquire units
+        /// before allocating memory.
+        auto acquire_mem_units(uint64_t units) {
+            return ss::get_units(_parent->_mem_budget, units);
+        }
 
     private:
         /// Pick the right abort source to use.
@@ -173,7 +203,18 @@ public:
 
     event trigger_event(pipeline_stage stage);
 
+    /// Advance a request to the next stage, updating per-stage byte accounting.
+    /// This is the canonical way to change a request's stage.
+    void advance_request_stage(write_request<Clock>& req);
+
+    /// Get the number of bytes at a specific pipeline stage.
+    size_t stage_bytes(pipeline_stage s) const;
+
 private:
+    /// Transfer bytes from one stage to another.
+    void
+    transfer_stage_bytes(pipeline_stage from, pipeline_stage to, size_t bytes);
+
     /// Get write requests atomically.
     /// The total size of returned write requests and the stage to which they
     /// belong to should be specified.
@@ -195,8 +236,12 @@ private:
     /// available
     void reenqueue(write_request<Clock>& req, bool signal = true);
 
-    // Current bytes (gauge)
-    size_t _current_size{0};
+    // Bytes per pipeline stage.
+    std::array<size_t, max_pipeline_stages> _stage_bytes{};
+
+    /// Sum of bytes across all pipeline stages.
+    size_t current_size() const;
+
     // Total bytes went through the pipeline
     size_t _bytes_total{0};
     // Semaphore that represents memory budget that we have

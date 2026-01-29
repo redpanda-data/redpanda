@@ -20,6 +20,7 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.errors import TimeoutError
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
+from enum import Enum
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
@@ -161,7 +162,9 @@ def wait_until_with_progress_check(
       - logger: log progress after each progress_sec iteration
     """
     val = check()
-    while timeout_sec > 0:
+    elapsed_sec = 0
+    last_exception: TimeoutError | None = None
+    while elapsed_sec < timeout_sec:
         try:
             wait_until(
                 condition,
@@ -169,16 +172,31 @@ def wait_until_with_progress_check(
                 backoff_sec=backoff_sec,
                 err_msg=err_msg,
             )
+            break
         except TimeoutError as e:
+            last_exception = e
+            elapsed_sec += progress_sec
             next_v = check()
             if next_v == val:
-                raise TimeoutError(f"Stopped making progress: {str(e)}")
+                raise TimeoutError(
+                    f"Stopped making progress after {elapsed_sec=}: {str(e)}"
+                )
             if logger is not None:
-                logger.debug(f"Progress: prev: {val} curr: {next_v}...")
+                logger.debug(
+                    f"Progress after {elapsed_sec=}: prev: {val} curr: {next_v}..."
+                )
             val = next_v
-            timeout_sec = timeout_sec - progress_sec
-        else:
-            break
+
+    if condition():
+        return
+
+    assert last_exception is not None, (
+        "If the condition doesn't hold an exception should have fired"
+    )
+
+    raise TimeoutError(
+        f"{err_msg if err_msg is not None else ''} after {timeout_sec=}"
+    ) from last_exception
 
 
 def segments_count(redpanda, topic, partition_idx):
@@ -267,7 +285,7 @@ def wait_for_removal_of_n_segments(
 
     def segments_removed():
         current_snapshot = redpanda.storage(
-            all_nodes=True, scan_cache=False
+            nodes=redpanda.nodes, scan_cache=False
         ).segments_by_node("kafka", topic, partition_idx)
 
         redpanda.logger.debug(
@@ -501,12 +519,26 @@ def search_logs_with_timeout(redpanda, pattern: str, timeout_s: int = 5):
     )
 
 
-def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
+def wait_for_recovery_throttle_rate(
+    redpanda, new_rate: int, await_rehabilitation: bool = True
+):
     # Recovery rate activates in the next coordinator tick, wait for it
     # to happen.
     def wait_for_throttle_update():
         def check_throttle_rate(node):
             try:
+                config = redpanda._admin.get_cluster_config(node, include_defaults=True)
+                current_rate = int(config["raft_learner_recovery_rate"])
+                redpanda.logger.debug(
+                    f"Node {node.name} has recovery throttle rate: {current_rate}, expecting: {new_rate}"
+                )
+                if current_rate != new_rate:
+                    return False
+                if not await_rehabilitation:
+                    # when recovery rate is set to low ongoing recoveries may
+                    # constantly overuse the allowance so that it never reaches
+                    # the set rate
+                    return True
                 metrics = list(redpanda.metrics(node))
                 family = filter(
                     lambda fam: fam.name
@@ -531,7 +563,7 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
                 )
             except Exception:
                 redpanda.logger.debug(
-                    f"Error getting throttle rate for {node}", exc_info=True
+                    f"Error getting throttle rate for {node.name}", exc_info=True
                 )
                 return False
 
@@ -542,7 +574,7 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
             n for n in redpanda.started_nodes() if redpanda.node_id(n) in active_brokers
         ]
         assert filtered
-        return all([check_throttle_rate(n) for n in filtered])
+        return all(check_throttle_rate(n) for n in filtered)
 
     wait_until(
         wait_for_throttle_update,
@@ -553,7 +585,11 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
 
 
 def ssh_output_stderr(
-    source_service, node, cmd, allow_fail=False, timeout_sec=None
+    source_service: Any,
+    node: Any,
+    cmd: str,
+    allow_fail: bool = False,
+    timeout_sec: int | None = None,
 ) -> tuple[bytes, bytes]:
     """Runs the command via SSH and captures stdout and stderr, returning it as a byte strings.
     this is a copy/mode of ssh_output, with the intention midterm to upstream it to ducktape
@@ -605,7 +641,7 @@ def bg_thread_cm(func) -> Callable[..., ContextManager]:
         while (yield):
             try:
                 # Some action we'd like to repeat
-            catch Exception as e:
+            except Exception as e:
                 # Handle exception, typically just log it.
                 # If we (re-)throw an exception, the background thread stops
         # Some cleanup if needed
@@ -667,3 +703,30 @@ def debounce(wait_sec: float):
         return wrapper
 
     return decorator
+
+
+class FIPSMode(Enum):
+    disabled = "disabled"
+    permissive = "permissive"
+    enabled = "enabled"
+
+
+def get_fips_mode() -> FIPSMode:
+    """
+    If the file /proc/sys/crypto/fips_enabled is present and
+    contains '1' it runs in a fips environment.
+
+    If the env var REDPANDA_FIPS_PERMISSIVE is set, it runs in permissive mode
+    """
+    fips_file = "/proc/sys/crypto/fips_enabled"
+    if os.path.exists(fips_file) and os.path.isfile(fips_file):
+        with open(fips_file, "r") as f:
+            contents = f.read().strip()
+            if contents == "1":
+                return FIPSMode.enabled
+
+    permissive_flag = os.environ.get("REDPANDA_FIPS_PERMISSIVE", None)
+    if permissive_flag is not None:
+        return FIPSMode.permissive
+
+    return FIPSMode.disabled

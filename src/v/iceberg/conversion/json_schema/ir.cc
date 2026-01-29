@@ -12,7 +12,7 @@
 
 #include "strings/string_switch.h"
 
-#include <fmt/format.h>
+#include <fmt/core.h>
 
 namespace iceberg::conversion::json_schema {
 

@@ -11,6 +11,7 @@ import random
 
 from ducktape.utils.util import wait_until
 
+from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -30,6 +31,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
                 # https://github.com/redpanda-data/redpanda/issues/5253
                 "enable_leader_balancer": False,
             },
+            environment={"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"},
         )
 
         self.admin = Admin(self.redpanda)
@@ -47,11 +49,11 @@ class ClusterHealthOverviewTest(RedpandaTest):
         self.client().create_topic(topics)
         return topics
 
-    def get_health(self):
+    def get_health(self, node: ClusterNode | None = None):
         """Wrapper around admin.get_cluster_health_overview which validates some invariants
         about each health report"""
 
-        hov = self.admin.get_cluster_health_overview()
+        hov = self.admin.get_cluster_health_overview(node=node)
 
         # these invariants should always hold
         if hov["is_healthy"]:
@@ -60,6 +62,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
             assert hov["leaderless_count"] == 0
             assert len(hov["under_replicated_partitions"]) == 0
             assert hov["under_replicated_count"] == 0
+            assert len(hov["high_disk_usage_nodes"]) == 0
             assert len(hov["unhealthy_reasons"]) == 0
             assert len(hov["all_nodes"]) > 0
         else:
@@ -151,4 +154,39 @@ class ClusterHealthOverviewTest(RedpandaTest):
         self.redpanda.start_node(first_down)
         self.redpanda.start_node(second_down)
 
+        self.wait_until_healthy()
+
+    @cluster(
+        num_nodes=5, log_allow_list=[".*cluster - storage space alert: free space.*"]
+    )
+    def cluster_health_overview_disk_usage_alert_test(self):
+        # Test that high_disk_usage_nodes is reported correctly
+        self.create_topics()
+        self.wait_until_healthy()
+
+        # Fake alert
+        self.redpanda.set_cluster_config(
+            {"storage_space_alert_free_threshold_percent": 100}
+        )
+
+        def ensure_high_disk_usage_reported(node: ClusterNode):
+            hov = self.get_health(node=node)
+            return (
+                not hov["is_healthy"]
+                and "high_disk_usage_nodes" in hov["unhealthy_reasons"]
+                and len(hov["high_disk_usage_nodes"]) == 5
+            )
+
+        def ensure_unhealthy_report():
+            return all(
+                ensure_high_disk_usage_reported(node)
+                for node in self.redpanda.started_nodes()
+            )
+
+        wait_until(ensure_unhealthy_report, 30, 2)
+
+        # Disable disk usage alert
+        self.redpanda.set_cluster_config(
+            {"storage_space_alert_free_threshold_percent": 5}
+        )
         self.wait_until_healthy()

@@ -25,9 +25,11 @@
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/rjson.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "ssx/sformat.h"
 #include "storage/record_batch_builder.h"
 #include "strings/string_switch.h"
 
@@ -36,7 +38,14 @@
 namespace pandaproxy::schema_registry {
 
 using topic_key_magic = named_type<int32_t, struct topic_key_magic_tag>;
-enum class topic_key_type { noop = 0, schema, config, mode, delete_subject };
+enum class topic_key_type {
+    noop = 0,
+    schema,
+    config,
+    mode,
+    delete_subject,
+    context
+};
 
 constexpr std::string_view to_string_view(topic_key_type kt) {
     switch (kt) {
@@ -50,6 +59,8 @@ constexpr std::string_view to_string_view(topic_key_type kt) {
         return "MODE";
     case topic_key_type::delete_subject:
         return "DELETE_SUBJECT";
+    case topic_key_type::context:
+        return "CONTEXT";
     }
     return "{invalid}";
 };
@@ -64,6 +75,7 @@ from_string_view<topic_key_type>(std::string_view sv) {
       .match(
         to_string_view(topic_key_type::delete_subject),
         topic_key_type::delete_subject)
+      .match(to_string_view(topic_key_type::context), topic_key_type::context)
       .default_match(std::nullopt);
 }
 
@@ -130,7 +142,7 @@ struct schema_key {
     // preceding valid writes.
     std::optional<model::node_id> node;
 
-    subject sub;
+    context_subject sub;
     schema_version version;
     topic_key_magic magic{1};
 
@@ -168,7 +180,7 @@ void rjson_serialize(
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
     w.Key("subject");
-    ::json::rjson_serialize(w, key.sub());
+    w.String(key.sub.to_string());
     w.Key("version");
     ::json::rjson_serialize(w, key.version);
     w.Key("magic");
@@ -275,7 +287,7 @@ public:
             return kt == result.keytype;
         }
         case state::subject: {
-            result.sub = subject{ss::sstring{sv}};
+            result.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -324,7 +336,7 @@ template<typename Buffer>
 void rjson_serialize(::json::iobuf_writer<Buffer>& w, const schema_value& val) {
     w.StartObject();
     w.Key("subject");
-    ::json::rjson_serialize(w, val.schema.sub());
+    w.String(val.schema.sub().to_string());
     w.Key("version");
     ::json::rjson_serialize(w, val.version);
     w.Key("id");
@@ -336,19 +348,9 @@ void rjson_serialize(::json::iobuf_writer<Buffer>& w, const schema_value& val) {
     }
     if (!val.schema.def().refs().empty()) {
         w.Key("references");
-        w.StartArray();
-        for (const auto& ref : val.schema.def().refs()) {
-            w.StartObject();
-            w.Key("name");
-            ::json::rjson_serialize(w, ref.name);
-            w.Key("subject");
-            ::json::rjson_serialize(w, ref.sub);
-            w.Key("version");
-            ::json::rjson_serialize(w, ref.version);
-            w.EndObject();
-        }
-        w.EndArray();
+        ::json::rjson_serialize(w, val.schema.def().refs());
     }
+    ::json::rjson_serialize(w, val.schema.def().meta());
     w.Key("schema");
     ::json::rjson_serialize(w, val.schema.def().raw());
     w.Key("deleted");
@@ -372,15 +374,20 @@ class schema_value_handler final : public json::base_handler<Encoding> {
         reference_name,
         reference_subject,
         reference_version,
+        metadata,
+        metadata_properties,
+        metadata_property,
     };
     state _state = state::empty;
 
     struct mutable_schema {
-        subject sub{invalid_subject};
+        context_subject sub{invalid_subject};
         typename schema_definition::raw_string def;
         schema_type type{schema_type::avro};
         typename schema_definition::references refs;
+        std::optional<schema_metadata> metadata;
     };
+    ss::sstring metadata_property_key;
     mutable_schema _schema;
 
 public:
@@ -399,6 +406,7 @@ public:
                                      .match("subject", state::subject)
                                      .match("version", state::version)
                                      .match("schemaType", state::type)
+                                     .match("metadata", state::metadata)
                                      .match("schema", state::definition)
                                      .match("id", state::id)
                                      .match("deleted", state::deleted)
@@ -420,6 +428,20 @@ public:
             }
             return s.has_value();
         }
+        case state::metadata: {
+            std::optional<state> s{
+              string_switch<std::optional<state>>(sv)
+                .match("properties", state::metadata_properties)
+                .default_match(std::nullopt)};
+            if (s.has_value()) {
+                _state = *s;
+            }
+            return s.has_value();
+        }
+        case state::metadata_property: {
+            metadata_property_key = ss::sstring{sv};
+            return true;
+        }
         case state::empty:
         case state::subject:
         case state::version:
@@ -431,6 +453,7 @@ public:
         case state::reference_name:
         case state::reference_subject:
         case state::reference_version:
+        case state::metadata_properties:
             return false;
         }
         return false;
@@ -463,6 +486,9 @@ public:
         case state::reference:
         case state::reference_name:
         case state::reference_subject:
+        case state::metadata:
+        case state::metadata_properties:
+        case state::metadata_property:
             return false;
         }
         return false;
@@ -487,6 +513,9 @@ public:
         case state::reference_name:
         case state::reference_subject:
         case state::reference_version:
+        case state::metadata:
+        case state::metadata_properties:
+        case state::metadata_property:
             return false;
         }
         return false;
@@ -496,7 +525,7 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
-            _schema.sub = subject{ss::sstring{sv}};
+            _schema.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -519,8 +548,13 @@ public:
             return true;
         }
         case state::reference_subject: {
-            _schema.refs.back().sub = subject{ss::sstring{sv}};
+            _schema.refs.back().sub = context_subject::from_string(sv);
             _state = state::reference;
+            return true;
+        }
+        case state::metadata_property: {
+            _schema.metadata->properties->insert_or_assign(
+              std::move(metadata_property_key), ss::sstring{sv});
             return true;
         }
         case state::empty:
@@ -531,6 +565,37 @@ public:
         case state::references:
         case state::reference:
         case state::reference_version:
+        case state::metadata:
+        case state::metadata_properties:
+            return false;
+        }
+        return false;
+    }
+
+    bool Null() {
+        switch (_state) {
+        case state::metadata: {
+            _state = state::object;
+            return true;
+        }
+        case state::metadata_properties: {
+            _state = state::metadata;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::subject:
+        case state::version:
+        case state::type:
+        case state::id:
+        case state::definition:
+        case state::deleted:
+        case state::references:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
+        case state::metadata_property:
             return false;
         }
         return false;
@@ -547,6 +612,15 @@ public:
             _state = state::reference;
             return true;
         }
+        case state::metadata: {
+            _schema.metadata.emplace();
+            return true;
+        }
+        case state::metadata_properties: {
+            _schema.metadata->properties.emplace();
+            _state = state::metadata_property;
+            return true;
+        }
         case state::object:
         case state::subject:
         case state::version:
@@ -558,6 +632,7 @@ public:
         case state::reference_name:
         case state::reference_subject:
         case state::reference_version:
+        case state::metadata_property:
             return false;
         }
         return false;
@@ -569,7 +644,10 @@ public:
             _state = state::empty;
             result.schema = {
               std::move(_schema.sub),
-              {std::move(_schema.def), _schema.type, std::move(_schema.refs)}};
+              {std::move(_schema.def),
+               _schema.type,
+               std::move(_schema.refs),
+               std::move(_schema.metadata)}};
             return true;
         }
         case state::reference: {
@@ -577,6 +655,15 @@ public:
             const auto& ref{_schema.refs.back()};
             return !ref.name.empty() && ref.sub != invalid_subject
                    && ref.version != invalid_schema_version;
+        }
+        case state::metadata: {
+            _state = state::object;
+            return true;
+        }
+        case state::metadata_properties:
+        case state::metadata_property: {
+            _state = state::metadata;
+            return true;
         }
         case state::empty:
         case state::subject:
@@ -605,7 +692,7 @@ struct config_key {
     static constexpr topic_key_type keytype{topic_key_type::config};
     std::optional<model::offset> seq;
     std::optional<model::node_id> node;
-    std::optional<subject> sub;
+    std::optional<context_subject> sub;
     topic_key_magic magic{0};
 
     friend bool operator==(const config_key&, const config_key&) = default;
@@ -640,7 +727,7 @@ void rjson_serialize(
     ::json::rjson_serialize(w, to_string_view(key.keytype));
     w.Key("subject");
     if (key.sub) {
-        ::json::rjson_serialize(w, key.sub.value());
+        w.String(key.sub->to_string());
     } else {
         w.Null();
     }
@@ -725,7 +812,7 @@ public:
             return kt == result.keytype;
         }
         case state::subject: {
-            result.sub = subject{ss::sstring{sv}};
+            result.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -756,7 +843,7 @@ public:
 
 struct config_value {
     compatibility_level compat{compatibility_level::none};
-    std::optional<subject> sub;
+    std::optional<context_subject> sub;
 
     friend bool operator==(const config_value&, const config_value&) = default;
 
@@ -776,7 +863,7 @@ void rjson_serialize(
     w.StartObject();
     if (val.sub.has_value()) {
         w.Key("subject");
-        ::json::rjson_serialize(w, val.sub.value());
+        w.String(val.sub->to_string());
     }
     w.Key("compatibilityLevel");
     ::json::rjson_serialize(w, to_string_view(val.compat));
@@ -821,7 +908,7 @@ public:
             }
             return s.has_value();
         } else if (_state == state::subject) {
-            result.sub.emplace(sv);
+            result.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -841,7 +928,7 @@ struct mode_key {
     static constexpr topic_key_type keytype{topic_key_type::mode};
     std::optional<model::offset> seq;
     std::optional<model::node_id> node;
-    std::optional<subject> sub;
+    std::optional<context_subject> sub;
     topic_key_magic magic{0};
 
     friend bool operator==(const mode_key&, const mode_key&) = default;
@@ -876,7 +963,7 @@ void rjson_serialize(
     ::json::rjson_serialize(w, to_string_view(key.keytype));
     w.Key("subject");
     if (key.sub) {
-        ::json::rjson_serialize(w, key.sub.value());
+        w.String(key.sub->to_string());
     } else {
         w.Null();
     }
@@ -961,7 +1048,7 @@ public:
             return kt == result.keytype;
         }
         case state::subject: {
-            result.sub = subject{ss::sstring{sv}};
+            result.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -992,7 +1079,7 @@ public:
 
 struct mode_value {
     mode mode{mode::read_write};
-    std::optional<subject> sub;
+    std::optional<context_subject> sub;
 
     friend bool operator==(const mode_value&, const mode_value&) = default;
 
@@ -1012,7 +1099,7 @@ void rjson_serialize(
     w.StartObject();
     if (val.sub.has_value()) {
         w.Key("subject");
-        ::json::rjson_serialize(w, val.sub.value());
+        w.String(val.sub->to_string());
     }
     w.Key("mode");
     ::json::rjson_serialize(w, to_string_view(val.mode));
@@ -1056,7 +1143,7 @@ public:
             }
             return s.has_value();
         } else if (_state == state::subject) {
-            result.sub.emplace(sv);
+            result.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -1076,7 +1163,7 @@ struct delete_subject_key {
     static constexpr topic_key_type keytype{topic_key_type::delete_subject};
     std::optional<model::offset> seq;
     std::optional<model::node_id> node;
-    subject sub;
+    context_subject sub;
     topic_key_magic magic{0};
 
     friend bool operator==(const delete_subject_key&, const delete_subject_key&)
@@ -1111,7 +1198,7 @@ void rjson_serialize(::json::Writer<Buffer>& w, const delete_subject_key& key) {
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
     w.Key("subject");
-    ::json::rjson_serialize(w, key.sub());
+    w.String(key.sub.to_string());
     w.Key("magic");
     ::json::rjson_serialize(w, key.magic);
     if (key.seq.has_value()) {
@@ -1208,7 +1295,7 @@ public:
             return kt == result.keytype;
         }
         case state::subject: {
-            result.sub = subject{ss::sstring{sv}};
+            result.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -1233,7 +1320,7 @@ public:
 };
 
 struct delete_subject_value {
-    subject sub;
+    context_subject sub;
 
     friend bool
     operator==(const delete_subject_value&, const delete_subject_value&)
@@ -1251,7 +1338,7 @@ void rjson_serialize(
   ::json::Writer<Buffer>& w, const delete_subject_value& val) {
     w.StartObject();
     w.Key("subject");
-    ::json::rjson_serialize(w, val.sub);
+    w.String(val.sub.to_string());
     w.EndObject();
 }
 
@@ -1298,7 +1385,7 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
-            result.sub = subject{ss::sstring{sv}};
+            result.sub = context_subject::from_string(sv);
             _state = state::object;
             return true;
         }
@@ -1321,6 +1408,272 @@ public:
         case state::empty:
         case state::object:
             return false;
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(::json::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
+struct context_key {
+    static constexpr topic_key_type keytype{topic_key_type::context};
+    std::optional<model::offset> seq;
+    std::optional<model::node_id> node;
+    ss::sstring tenant{"default"};
+    context ctx;
+    topic_key_magic magic{0};
+
+    friend bool operator==(const context_key&, const context_key&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const context_key& v) {
+        if (v.seq.has_value() && v.node.has_value()) {
+            fmt::print(
+              os,
+              "seq: {}, node: {}, keytype: {}, tenant: {}, context: {}, magic: "
+              "{}",
+              *v.seq,
+              *v.node,
+              to_string_view(v.keytype),
+              v.tenant,
+              v.ctx,
+              v.magic);
+        } else {
+            fmt::print(
+              os,
+              "unsequenced keytype: {}, tenant: {}, context: {}, magic: {}",
+              to_string_view(v.keytype),
+              v.tenant,
+              v.ctx,
+              v.magic);
+        }
+        return os;
+    }
+};
+
+struct context_value {
+    ss::sstring tenant{"default"};
+    context ctx;
+
+    friend bool operator==(const context_value&, const context_value&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const context_value& v) {
+        fmt::print(os, "tenant: {}, context: {}", v.tenant, v.ctx);
+        return os;
+    }
+};
+
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::context_key& key) {
+    w.StartObject();
+    w.Key("keytype");
+    ::json::rjson_serialize(w, to_string_view(key.keytype));
+    w.Key("tenant");
+    w.String(key.tenant);
+    w.Key("context");
+    w.String(key.ctx());
+    w.Key("magic");
+    ::json::rjson_serialize(w, key.magic);
+    if (key.seq.has_value()) {
+        w.Key("seq");
+        ::json::rjson_serialize(w, *key.seq);
+    }
+    if (key.node.has_value()) {
+        w.Key("node");
+        ::json::rjson_serialize(w, *key.node);
+    }
+    w.EndObject();
+}
+
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const schema_registry::context_value& val) {
+    w.StartObject();
+    w.Key("tenant");
+    w.String(val.tenant);
+    w.Key("context");
+    w.String(val.ctx());
+    w.EndObject();
+}
+
+template<typename Encoding = ::json::UTF8<>>
+class context_key_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        keytype,
+        seq,
+        node,
+        tenant,
+        context,
+        magic,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = context_key;
+    rjson_parse_result result;
+
+    context_key_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                 .match("keytype", state::keytype)
+                                 .match("seq", state::seq)
+                                 .match("node", state::node)
+                                 .match("tenant", state::tenant)
+                                 .match("context", state::context)
+                                 .match("magic", state::magic)
+                                 .default_match(std::nullopt)};
+        return s.has_value() && std::exchange(_state, *s) == state::object;
+    }
+
+    bool Uint(int i) {
+        switch (_state) {
+        case state::magic: {
+            result.magic = topic_key_magic{i};
+            _state = state::object;
+            return true;
+        }
+        case state::seq: {
+            result.seq = model::offset{i};
+            _state = state::object;
+            return true;
+        }
+        case state::node: {
+            result.node = model::node_id{i};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::tenant:
+        case state::context:
+        case state::keytype:
+        case state::object:
+            return false;
+        }
+        return false;
+    }
+
+    bool String(const Ch* str, ::json::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::keytype: {
+            auto kt = from_string_view<topic_key_type>(sv);
+            _state = state::object;
+            return kt == result.keytype;
+        }
+        case state::tenant: {
+            // Accept only "default" as valid tenant
+            if (sv != "default") {
+                return false;
+            }
+            result.tenant = ss::sstring{sv};
+            _state = state::object;
+            return true;
+        }
+        case state::context: {
+            result.ctx = context{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::seq:
+        case state::node:
+        case state::object:
+        case state::magic:
+            return false;
+        }
+        return false;
+    }
+
+    bool Null() {
+        // The tenant is nullable (treat as "default")
+        if (_state == state::tenant) {
+            result.tenant = "default";
+            _state = state::object;
+            return true;
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(::json::SizeType) {
+        return result.seq.has_value() == result.node.has_value()
+               && std::exchange(_state, state::empty) == state::object;
+    }
+};
+
+template<typename Encoding = ::json::UTF8<>>
+class context_value_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        tenant,
+        context,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = context_value;
+    rjson_parse_result result;
+
+    context_value_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                 .match("tenant", state::tenant)
+                                 .match("context", state::context)
+                                 .default_match(std::nullopt)};
+        return s.has_value() && std::exchange(_state, *s) == state::object;
+    }
+
+    bool String(const Ch* str, ::json::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::tenant: {
+            // Accept only "default" as valid tenant
+            if (sv != "default") {
+                return false;
+            }
+            result.tenant = ss::sstring{sv};
+            _state = state::object;
+            return true;
+        }
+        case state::context: {
+            result.ctx = context{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+            return false;
+        }
+        return false;
+    }
+
+    bool Null() {
+        // The tenant is nullable (treat as "default")
+        if (_state == state::tenant) {
+            result.tenant = "default";
+            _state = state::object;
+            return true;
         }
         return false;
     }
@@ -1388,6 +1741,19 @@ struct consume_to_store {
         switch (*key_type) {
         case topic_key_type::noop:
             break;
+        case topic_key_type::context: {
+            std::optional<context_value> val;
+            if (!record.value().empty()) {
+                val.emplace(
+                  from_json_iobuf<context_value_handler<>>(
+                    record.release_value()));
+            }
+            co_await apply(
+              offset,
+              from_json_iobuf<context_key_handler<>>(std::move(key)),
+              std::move(val));
+            break;
+        }
         case topic_key_type::schema: {
             std::optional<schema_value> val;
             if (!record.value().empty()) {
@@ -1532,33 +1898,35 @@ struct consume_to_store {
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
+        auto make_marker = [&key]() {
+            return seq_marker{
+              .seq = key.seq,
+              .node = key.node,
+              .version{invalid_schema_version}, // Not applicable
+              .key_type = seq_marker_key_type::config};
+        };
         try {
             vlog(srlog.debug, "Applying: {}", key);
-            if (key.sub.has_value()) {
+            if (key.sub.has_value() && !key.sub->is_context_only()) {
+                // Subject-level: non-empty subject name
                 if (!val.has_value()) {
                     co_await _store.clear_compatibility(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::config},
-                      *key.sub);
+                      make_marker(), *key.sub);
                 } else {
                     co_await _store.set_compatibility(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::config},
-                      *key.sub,
-                      val->compat);
+                      make_marker(), *key.sub, val->compat);
                 }
-            } else if (val.has_value()) {
-                co_await _store.set_compatibility(val->compat);
             } else {
-                vlog(
-                  srlog.warn,
-                  "Tried to apply config with neither subject nor value");
+                // Context-level: context-only qualified subject or nullopt
+                // (default context)
+                auto ctx = key.sub.has_value() ? key.sub->ctx : default_context;
+
+                if (val.has_value()) {
+                    co_await _store.set_compatibility(
+                      make_marker(), ctx, val->compat);
+                } else {
+                    co_await _store.clear_compatibility(ctx);
+                }
             }
         } catch (const exception& e) {
             vlog(srlog.debug, "Error replaying: {}: {}", key, e);
@@ -1585,35 +1953,35 @@ struct consume_to_store {
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
+        auto make_marker = [&key]() {
+            return seq_marker{
+              .seq = key.seq,
+              .node = key.node,
+              .version{invalid_schema_version}, // Not applicable
+              .key_type = seq_marker_key_type::mode};
+        };
         try {
             vlog(srlog.debug, "Applying: {}", key);
-            if (key.sub.has_value()) {
+            if (key.sub.has_value() && !key.sub->is_context_only()) {
+                // Subject-level: non-empty subject name
                 if (!val.has_value()) {
                     co_await _store.clear_mode(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::mode},
-                      *key.sub,
-                      force::yes);
+                      make_marker(), *key.sub, force::yes);
                 } else {
                     co_await _store.set_mode(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::mode},
-                      *key.sub,
-                      val->mode,
-                      force::yes);
+                      make_marker(), *key.sub, val->mode, force::yes);
                 }
-            } else if (val.has_value()) {
-                co_await _store.set_mode(val->mode, force::yes);
             } else {
-                vlog(
-                  srlog.warn,
-                  "Tried to apply mode with neither subject nor value");
+                // Context-level: context-only qualified subject or nullopt
+                // (default context)
+                auto ctx = key.sub.has_value() ? key.sub->ctx : default_context;
+
+                if (val.has_value()) {
+                    co_await _store.set_mode(
+                      make_marker(), ctx, val->mode, force::yes);
+                } else {
+                    co_await _store.clear_mode(ctx, force::yes);
+                }
             }
         } catch (const exception& e) {
             vlog(srlog.debug, "Error replaying: {}: {}", key, e);
@@ -1665,6 +2033,43 @@ struct consume_to_store {
                 .key_type = seq_marker_key_type::delete_subject},
               key.sub,
               permanent_delete::no);
+        } catch (const exception& e) {
+            vlog(srlog.debug, "Error replaying: {}: {}", key, e);
+        }
+    }
+
+    ss::future<> apply(
+      model::offset offset, context_key key, std::optional<context_value> val) {
+        // Check seq if it was provided, otherwise assume 3rdparty
+        // compatibility, which can't collide.
+        if (val && key.seq.has_value() && offset != key.seq) {
+            vlog(
+              srlog.debug,
+              "Ignoring out of order {} (at offset {})",
+              key,
+              offset);
+            co_return;
+        }
+
+        if (key.magic != 0) {
+            throw exception(
+              error_code::topic_parse_error,
+              fmt::format("Unexpected magic: {}", key));
+        }
+
+        try {
+            vlog(
+              srlog.debug,
+              "Applying: {} tombstone={} (at offset {})",
+              key,
+              !val.has_value(),
+              offset);
+
+            if (val.has_value()) {
+                co_await _store.set_context_materialized(key.ctx, true);
+            } else {
+                co_await _store.set_context_materialized(key.ctx, false);
+            }
         } catch (const exception& e) {
             vlog(srlog.debug, "Error replaying: {}: {}", key, e);
         }

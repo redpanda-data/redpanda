@@ -75,15 +75,11 @@ public:
     model::offset _latest_offset{0};
     model::transform_id _latest_id{0};
 
-    static void SetUpTestSuite() {
-        config::node().node_id.set_value(model::node_id{1});
-    }
-
     absl::flat_hash_set<model::topic> active_shadow_topics{};
 
     plugin_table _plugin_table;
     data_migrations::migrated_resources _migrated_resources;
-    topic_table _topic_table{_migrated_resources};
+    topic_table _topic_table{_migrated_resources, model::node_id{1}};
     plugin_frontend::validator _validator{
       &_topic_table,
       &_plugin_table,

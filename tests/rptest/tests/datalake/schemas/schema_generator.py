@@ -34,17 +34,15 @@ class SchemaGenerator:
         self,
         producer_type: ProducerType,
         complex_types: list[GenericDataType] = ALL_COMPLEX_DATA_TYPES,
-        complex_type_probabilities: list[float] = None,
+        complex_type_probabilities: list[float] | None = None,
         primitive_types: list[GenericDataType] = ALL_PRIMITIVE_DATA_TYPES,
-        primitive_type_probabilities: list[float] = None,
+        primitive_type_probabilities: list[float] | None = None,
         max_depth: int = 5,
         max_fields: int = 10,
         max_fields_per_type: int = 10,
     ):
         if complex_type_probabilities is None:
-            complex_type_probabilities: list[float] = [1.0 / len(complex_types)] * len(
-                complex_types
-            )
+            complex_type_probabilities = [1.0 / len(complex_types)] * len(complex_types)
         if primitive_type_probabilities is None:
             primitive_type_probabilities = [1.0 / len(primitive_types)] * len(
                 primitive_types

@@ -78,6 +78,20 @@ public:
         return *this;
     }
 
+    constexpr string_switch& starts_with(std::string_view S, T value) {
+        if (!result && view.starts_with(S)) {
+            result = std::move(value);
+        }
+        return *this;
+    }
+
+    constexpr string_switch& ends_with(std::string_view S, T value) {
+        if (!result && view.ends_with(S)) {
+            result = std::move(value);
+        }
+        return *this;
+    }
+
     constexpr string_switch&
     match_all(std::string_view S0, std::string_view S1, T value) {
         return match(S0, value).match(S1, value);

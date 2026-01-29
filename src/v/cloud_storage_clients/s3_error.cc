@@ -30,6 +30,9 @@ std::ostream& operator<<(std::ostream& o, s3_error_code code) {
     case s3_error_code::ambiguous_grant_by_email_address:
         o << "AmbiguousGrantByEmailAddress";
         break;
+    case s3_error_code::authentication_required:
+        o << "AuthenticationRequired";
+        break;
     case s3_error_code::authorization_header_malformed:
         o << "AuthorizationHeaderMalformed";
         break;
@@ -425,6 +428,7 @@ static const std::map<ss::sstring, s3_error_code> known_aws_error_codes = {
   {"AllAccessDisabled", s3_error_code::all_access_disabled},
   {"AmbiguousGrantByEmailAddress",
    s3_error_code::ambiguous_grant_by_email_address},
+  {"AuthenticationRequired", s3_error_code::authentication_required},
   {"AuthorizationHeaderMalformed",
    s3_error_code::authorization_header_malformed},
   {"BadDigest", s3_error_code::bad_digest},

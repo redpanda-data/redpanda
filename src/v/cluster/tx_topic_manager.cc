@@ -165,7 +165,8 @@ ss::future<std::error_code> tx_topic_manager::try_create_coordinator_topic() {
       .local()
       .autocreate_topics(
         {std::move(topic_cfg)},
-        config::shard_local_cfg().create_topic_timeout_ms() * partition_count)
+        config::shard_local_cfg().internal_rpc_request_timeout_ms()
+          * partition_count)
       .then([](std::vector<cluster::topic_result> results) {
           vassert(
             results.size() == 1,

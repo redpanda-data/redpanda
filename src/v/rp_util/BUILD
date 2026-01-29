@@ -6,6 +6,12 @@ redpanda_cc_binary(
     srcs = [
         "main.cc",
     ],
+    # Silences "CFG hash mismatch" warnings which stem from the fact that we compile
+    # multiple binaries with only the RP profile data
+    # Similar to: https://issues.chromium.org/issues/40272404
+    copts = [
+        "-Wno-backend-plugin",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

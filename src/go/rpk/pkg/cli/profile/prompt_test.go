@@ -53,23 +53,31 @@ func TestParsePrompt(t *testing.T) {
 		in      string
 		expText string
 		expAttr []color.Attribute
+		expRaw  bool
 		expErr  bool
 	}{
-		{"", "", nil, false}, // empty is ok
-		{`blue , green , bg-hi-blue, "%n"`, "foo", []color.Attribute{color.FgBlue, color.FgGreen, color.BgHiBlue}, false}, // somewhat complete
-		{`\"blue\"`, "", nil, true},          // backslash only allowed in quoted str
-		{` "prompt" `, "prompt", nil, false}, // simple
-		{`unknown-thing `, "", nil, true},    // unknown keyword stripped
-		{`blue	green red, bg-hi-blue`, "foo", []color.Attribute{color.FgBlue, color.FgGreen, color.FgRed, color.BgHiBlue}, false}, // attr at end is kept, name is added by default
-		{` " %n " `, " foo ", nil, false},   // name swapped in
-		{`"\\\%%%%n"`, "\\%%n", nil, false}, // escaping works, and %% works
-		{`"text1" "text2"`, "", nil, true},  // one quoted string
-		{`b"text"`, "", nil, true},          // unexpected text before quote
-		{`blue unknown`, "", nil, true},     // unknown attr at end
-		{`"%u"`, "", nil, true},             // unknown % escape
+		{"", "", nil, false, false}, // empty is ok
+		{`blue , green , bg-hi-blue, "%n"`, "foo", []color.Attribute{color.FgBlue, color.FgGreen, color.BgHiBlue}, false, false}, // somewhat complete
+		{`\"blue\"`, "", nil, false, true},          // backslash only allowed in quoted str
+		{` "prompt" `, "prompt", nil, false, false}, // simple
+		{`unknown-thing `, "", nil, false, true},    // unknown keyword stripped
+		{`blue	green red, bg-hi-blue`, "foo", []color.Attribute{color.FgBlue, color.FgGreen, color.FgRed, color.BgHiBlue}, false, false}, // attr at end is kept, name is added by default
+		{` " %n " `, " foo ", nil, false, false},   // name swapped in
+		{`"\\\%%%%n"`, "\\%%n", nil, false, false}, // escaping works, and %% works
+		{`"text1" "text2"`, "", nil, false, true},  // one quoted string
+		{`b"text"`, "", nil, false, true},          // unexpected text before quote
+		{`blue unknown`, "", nil, false, true},     // unknown attr at end
+		{`"%u"`, "", nil, false, true},             // unknown % escape
+
+		// raw modifier tests
+		{`raw, "%n"`, "foo", nil, true, false},                                   // raw with format string
+		{`raw`, "foo", nil, true, false},                                         // raw alone defaults to name
+		{`raw, blue, "%n"`, "foo", []color.Attribute{color.FgBlue}, true, false}, // raw with colors (raw wins, colors parsed but not applied)
+		{`RAW, "%n"`, "foo", nil, true, false},                                   // case-insensitive
+		{`blue, raw, "%n"`, "foo", []color.Attribute{color.FgBlue}, true, false}, // raw can appear anywhere
 	} {
 		t.Run(test.in, func(t *testing.T) {
-			gotText, gotAttr, err := parsePrompt(test.in, name)
+			gotText, gotAttr, gotRaw, err := parsePrompt(test.in, name)
 			gotErr := err != nil
 			if gotErr != test.expErr {
 				t.Errorf("got err? %v (%v), exp %v", gotErr, err, test.expErr)
@@ -80,6 +88,9 @@ func TestParsePrompt(t *testing.T) {
 			}
 			if !reflect.DeepEqual(gotAttr, test.expAttr) {
 				t.Errorf("got attr %v != exp %v", gotAttr, test.expAttr)
+			}
+			if gotRaw != test.expRaw {
+				t.Errorf("got raw %v != exp %v", gotRaw, test.expRaw)
 			}
 		})
 	}

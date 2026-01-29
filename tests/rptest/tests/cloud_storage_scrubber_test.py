@@ -335,11 +335,16 @@ class CloudStorageScrubberTest(RedpandaTest):
     def _delete_segment_and_await_anomaly(
         self, expected_anomalies: DefaultDict[NTPR, Anomalies]
     ):
-        segment_metas = [
-            meta
-            for meta in self.cloud_storage_client.list_objects(self.bucket_name)
-            if "log" in meta.key
-        ]
+        def get_segment_metas():
+            return [
+                meta
+                for meta in self.cloud_storage_client.list_objects(self.bucket_name)
+                if ".log" in meta.key
+                and not meta.key.endswith(".index")
+                and not meta.key.endswith(".tx")
+            ]
+
+        segment_metas = get_segment_metas()
 
         view = BucketView(self.redpanda)
         attempts = 1
@@ -360,7 +365,11 @@ class CloudStorageScrubberTest(RedpandaTest):
                     break
 
             attempts += 1
-            assert attempts < 100, "Too many attempts to find a segment to delete"
+            if attempts % 20 == 0:
+                # refresh and relax. let objects and manifests land
+                segment_metas = get_segment_metas()
+                time.sleep(0.25)
+            assert attempts <= 100, "Too many attempts to find a segment to delete"
 
         self.logger.info(f"Deleting segment at {to_delete.key}")
         self.cloud_storage_client.delete_object(

@@ -392,7 +392,7 @@ authorized_operations(authorized_function<T> fn, const T& resource) {
       ops.end(),
       std::back_inserter(allowed_operations),
       [&fn, &resource](security::acl_operation op) {
-          return fn(op, resource, authz_quiet::no, audit_authz_check::no);
+          return fn(op, resource, authz_quiet::yes, audit_authz_check::no);
       });
 
     return allowed_operations;

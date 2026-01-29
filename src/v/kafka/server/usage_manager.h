@@ -125,7 +125,7 @@ private:
 
     /// Per-core metric, shard-0 aggregates these values across shards
     usage _current_bucket;
-    mutex _background_mutex{"usage_monitor::_background_mutex"};
+    ssx::mutex _background_mutex{"usage_monitor::_background_mutex"};
     ss::gate _background_gate;
     ss::abort_source _as;
 

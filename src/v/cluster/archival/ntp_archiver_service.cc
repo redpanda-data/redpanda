@@ -1606,8 +1606,21 @@ ntp_archiver::make_segment_index(
   retry_chain_logger& ctxlog,
   std::string_view index_path,
   ss::input_stream<char> stream) {
-    auto base_kafka_offset = model::offset_cast(
-      _parent.log()->from_log_offset(base_rp_offset));
+    std::exception_ptr eptr;
+    auto base_kafka_offset = [this, base_rp_offset, &eptr]() -> kafka::offset {
+        try {
+            return model::offset_cast(
+              _parent.log()->from_log_offset(base_rp_offset));
+        } catch (...) {
+            eptr = std::current_exception();
+            return kafka::offset{};
+        }
+    }();
+
+    if (eptr) {
+        co_await stream.close();
+        std::rethrow_exception(eptr);
+    }
 
     cloud_storage::offset_index ix{
       base_rp_offset,
@@ -1821,7 +1834,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     // the read path will create the index on the fly while downloading the
     // segment, so it is okay to ignore the index upload failure, we still
     // want to advance the offsets because the segment did get uploaded.
-    co_await upload_index(std::move(index_path), std::move(index));
+    co_await upload_index(index_path, std::move(index));
 
     co_return ntp_archiver_upload_result(index_stats);
 
@@ -3516,7 +3529,9 @@ ntp_archiver::find_reupload_candidate(
           run->meta.base_offset,
           manifest(),
           log,
-          run->meta.size_bytes,
+          // We want to upload exactly the same range as in the run we got based
+          // on the manifest so do not limit collected range on the size.
+          std::numeric_limits<size_t>::max(),
           run->meta.committed_offset);
         collector.collect_segments();
         auto candidate = co_await collector.make_upload_candidate_stream(

@@ -79,6 +79,14 @@ public:
     ss::future<result<partition_offsets_map, cluster::errc>>
       get_partition_offsets(chunked_vector<topic_partitions>);
 
+    ss::future<result<consume_reply, cluster::errc>> consume(
+      model::topic_partition,
+      kafka::offset start_offset,
+      kafka::offset max_offset,
+      size_t min_bytes,
+      size_t max_bytes,
+      model::timeout_clock::duration timeout);
+
 private:
     ss::future<cluster::errc> do_produce_once(produce_request);
     ss::future<produce_reply> do_local_produce(produce_request);

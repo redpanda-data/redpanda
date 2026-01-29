@@ -66,10 +66,10 @@ class CompactionGapsTest(RedpandaTest):
         self.redpanda.logger.debug(f"Current segment count: {segment_count}")
         return segment_count
 
-    def wait_until_segment_count(self, count):
+    def wait_until_segment_count(self, count: int, timeout_sec: int = 120):
         wait_until(
             lambda: self.partition_segments() == count,
-            timeout_sec=120,
+            timeout_sec=timeout_sec,
             backoff_sec=2,
             err_msg=f"Timed out waiting for segment count to reach {count}",
         )
@@ -118,10 +118,19 @@ class CompactionGapsTest(RedpandaTest):
             # # Disable iceberg
             dl.set_iceberg_mode_on_topic(self.topic_name, "disabled")
             # Append more data
-            self.produce_until_segment_count(8)
+            curr_count = self.partition_segments()
+            self.produce_until_segment_count(max(curr_count + 3, 8))
             # # Compact the data
             # # One closed segment and one open (current) segment
-            self.wait_until_segment_count(2)
+            curr_count = self.partition_segments()
+            assert curr_count >= 2, f"unexpected number of segments {curr_count}"
+            # the test only establishes lower bounds the number of segments
+            # created. in practice we've seen 10+ segments created and it can
+            # take some time then for compaction to reduce this count. based on
+            # observations in the log and the housekeeping interval of 10
+            # seconds we can make a better guess at the timeout needed.
+            timeout_sec = 2 * (curr_count * 10)
+            self.wait_until_segment_count(count=2, timeout_sec=timeout_sec)
             # # Enable iceberg again
             dl.set_iceberg_mode_on_topic(self.topic_name, "key_value")
 
@@ -250,7 +259,7 @@ class CompactionTest(RedpandaTest):
         verifier.start()
         verifier.wait()
 
-        for partition, offset_consumed in verifier._max_consumed_offsets.items():
+        for partition, offset_consumed in verifier.max_consumed_offsets.items():
             assert (
                 consumer.consumer_status.validator.max_offsets_consumed[str(partition)]
                 == offset_consumed

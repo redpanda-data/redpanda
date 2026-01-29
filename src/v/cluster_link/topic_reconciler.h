@@ -76,7 +76,7 @@ private:
     kafka::data::rpc::topic_metadata_cache* _topic_metadata_cache;
     link_registry* _link_registry;
 
-    mutex _reconciler_mutex{"cluster_link::task_reconciler"};
+    ssx::mutex _reconciler_mutex{"cluster_link::task_reconciler"};
     ss::timer<ss::lowres_clock> _reconciler_timer;
     ss::lowres_clock::duration _run_interval;
     config::binding<int16_t> _default_topic_replication;

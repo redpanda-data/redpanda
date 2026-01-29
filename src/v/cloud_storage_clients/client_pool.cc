@@ -10,12 +10,11 @@
 
 #include "cloud_storage_clients/client_pool.h"
 
-#include "cloud_storage_clients/abs_client.h"
 #include "cloud_storage_clients/logger.h"
-#include "cloud_storage_clients/s3_client.h"
+#include "crash_tracker/recorder.h"
 #include "model/timeout_clock.h"
+#include "ssx/abort_source.h"
 #include "ssx/future-util.h"
-#include "utils/functional.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/timed_out_error.hh>
@@ -24,170 +23,109 @@
 #include <chrono>
 #include <optional>
 #include <random>
+#include <stdexcept>
 #include <utility>
 
 using namespace std::chrono_literals;
 
 namespace {
-constexpr auto self_configure_attempts = 3;
-constexpr auto self_configure_backoff = 1s;
-constexpr auto self_config_timeout = 15s;
+constexpr auto pool_ready_timeout = 15s;
 } // namespace
 
 namespace cloud_storage_clients {
 
+namespace {
+constexpr auto default_upstream_key = upstream_key{};
+}
+
 client_pool::client_pool(
+  upstream_registry& registry,
   size_t size,
   client_configuration conf,
-  client_pool_overdraft_policy policy,
-  std::optional<std::reference_wrapper<stop_signal>> application_stop_signal)
-  : _capacity(size)
+  client_pool_overdraft_policy policy)
+  : _upstreams(registry)
+  , _capacity(size)
   , _config(std::move(conf))
-  , _probe(std::visit([](auto&& p) { return p._probe; }, _config))
-  , _policy(policy) {
-    if (ss::this_shard_id() == self_config_shard) {
-        ssx::spawn_with_gate(
-          _gate, [this, app_stop_signal = application_stop_signal]() {
-              return client_self_configure(app_stop_signal);
-          });
-    }
-}
+  , _probe(registry.probe())
+  , _policy(policy) {}
 
-ss::future<> client_pool::client_self_configure(
+ss::future<> client_pool::start(
   std::optional<std::reference_wrapper<stop_signal>> application_stop_signal) {
-    if (!_apply_credentials) {
-        vlog(pool_log.trace, "Awaiting credentials ...");
-        co_await wait_for_credentials();
-    }
+    ssx::spawn_with_gate(_gate, [this, application_stop_signal]() {
+        // Eagerly attempt to start the default upstream and trigger stop on
+        // any failure.
+        return _upstreams.get(default_upstream_key)
+          .then([this](upstream_registry::handle up) {
+              _default_upstream.emplace(std::move(up));
+              populate_client_pool(*_default_upstream);
+          })
+          .handle_exception([application_stop_signal](std::exception_ptr e) {
+              try {
+                  std::rethrow_exception(e);
+              } catch (const upstream_self_configuration_error& ex) {
+                  // Fallthrough to the logic below.
+                  std::ignore = ex;
+              } catch (...) {
+                  vlog(
+                    pool_log.warn,
+                    "Failed to get upstream for client pool: {}",
+                    e);
 
-    std::optional<client_self_configuration_output> self_config_output;
+                  // Ignore other exceptions. We get here only when shutdown
+                  // happens before start completes.
+                  return ss::now();
+              }
 
-    const bool requires_self_config = std::visit(
-      [](const auto& cfg) -> bool { return cfg.requires_self_configuration; },
-      _config);
-    if (requires_self_config) {
-        vlog(
-          pool_log.info,
-          "Client requires self configuration step. Proceeding ...");
+              if (ss::this_shard_id() == self_config_shard) {
+                  vlog(
+                    pool_log.error,
+                    "Self configuration of the cloud storage client failed. "
+                    "This indicates a misconfiguration of Redpanda. "
+                    "Aborting start-up ...");
 
-        auto client = make_client();
-        auto result = co_await do_client_self_configure(client);
-        co_await client->stop();
+                  vassert(
+                    application_stop_signal.has_value(),
+                    "Application abort source not present in client pool");
 
-        if (!result) {
-            vlog(
-              pool_log.error,
-              "Self configuration of the cloud storage client failed. "
-              "This indicates a misconfiguration of Redpanda. "
-              "Aborting start-up ...");
+                  crash_tracker::get_recorder().record_crash_exception(
+                    std::make_exception_ptr(
+                      std::runtime_error(
+                        "Cloud storage client self-configuration failed. "
+                        "Check your cloud storage credentials and "
+                        "configuration.")));
 
-            vassert(
-              application_stop_signal.has_value(),
-              "Application abort source not present in client pool");
+                  application_stop_signal->get().signaled();
+              }
 
-            application_stop_signal->get().signaled();
-
-            // Return in order to drop _gate which allows stop() to proceed.
-            co_return;
-        }
-
-        self_config_output = *result;
-        vlog(
-          pool_log.info,
-          "Client self configuration completed with result {}",
-          *self_config_output);
-    }
-
-    co_await container().invoke_on_all([self_config_output](client_pool& svc) {
-        return svc.accept_self_configure_result(self_config_output)
-          .handle_exception_type([](const ss::gate_closed_exception&) {})
-          .handle_exception_type([](const ss::broken_condition_variable&) {})
-          .handle_exception([](std::exception_ptr e) {
-              vlog(
-                pool_log.error,
-                "Unexpected exception thrown while accepting self "
-                "configuration: {}",
-                e);
+              return ss::now();
           });
     });
-}
 
-ss::future<
-  std::optional<cloud_storage_clients::client_self_configuration_output>>
-client_pool::do_client_self_configure(http_client_ptr client) {
-    try {
-        for (auto attempt = 1; attempt <= self_configure_attempts; ++attempt) {
-            auto result = co_await client->self_configure();
-            if (result) {
-                co_return result.value();
-            }
-
-            if (result.error() == cloud_storage_clients::error_outcome::retry) {
-                vlog(
-                  pool_log.warn,
-                  "Self configuration attempt {}/{} failed with retryable "
-                  "error. "
-                  "Will retry in {}s.",
-                  attempt,
-                  self_configure_attempts,
-                  self_configure_backoff.count());
-                co_await ss::sleep_abortable(self_configure_backoff, _as);
-            } else {
-                break;
-            }
-        }
-    } catch (...) {
-        vlog(
-          pool_log.warn,
-          "Exception throw during client self configuration: {}",
-          std::current_exception());
-    }
-
-    co_return std::nullopt;
-}
-
-ss::future<> client_pool::accept_self_configure_result(
-  std::optional<client_self_configuration_output> result) {
-    if (!_apply_credentials) {
-        vlog(pool_log.trace, "Awaiting credentials ...");
-        co_await wait_for_credentials();
-    }
-
-    if (_gate.is_closed() || _as.abort_requested()) {
-        throw ss::gate_closed_exception();
-    }
-
-    if (result) {
-        cloud_storage_clients::apply_self_configuration_result(
-          _config, *result);
-    }
-
-    populate_client_pool();
-
-    // We signal the waiters only after the client pool is initialized, so
-    // that any upload operations waiting are ready to proceed.
-    _self_config_barrier.signal(_self_config_barrier.max_counter());
+    co_return;
 }
 
 ss::future<> client_pool::stop() {
-    vlog(pool_log.info, "Stopping client pool: {}", _pool.size());
+    vlog(
+      pool_log.info,
+      "Stopping client pool: {} ({} connections leased)",
+      _idle_clients.size(),
+      _leased.size());
 
     if (!_as.abort_requested()) {
         _as.request_abort();
     }
     _cvar.broken();
-    _self_config_barrier.broken();
-    _credentials_var.broken();
+    _pool_ready_barrier.broken();
     // Wait for all background operations to complete.
     co_await _bg_gate.close();
     // Wait until all leased objects are returned
     co_await _gate.close();
 
     std::vector<ss::future<>> stops;
-    stops.reserve(_pool.size());
+    stops.reserve(_idle_clients.size());
 
-    for (auto& it : _pool) {
-        stops.emplace_back(it->stop());
+    for (auto& [_, entry] : _idle_clients) {
+        stops.emplace_back(entry.ptr->stop());
     }
 
     co_await ss::when_all_succeed(stops.begin(), stops.end());
@@ -200,19 +138,18 @@ void client_pool::shutdown_connections() {
     vlog(
       pool_log.info,
       "Shutting down client pool: {} ({} connections leased)",
-      _pool.size(),
+      _idle_clients.size(),
       _leased.size());
 
     _as.request_abort();
     _cvar.broken();
-    _self_config_barrier.broken();
-    _credentials_var.broken();
+    _pool_ready_barrier.broken();
 
     for (auto& it : _leased) {
         it.client->shutdown();
     }
-    for (auto& it : _pool) {
-        it->shutdown();
+    for (auto& [_, entry] : _idle_clients) {
+        entry.ptr->shutdown();
     }
 
     vlog(pool_log.info, "Shut down of client pool complete");
@@ -251,11 +188,16 @@ std::tuple<unsigned int, unsigned int> pick_two_random_shards() {
 /// \return client pointer (via future that can wait if all clients
 ///         are in use)
 ss::future<client_pool::client_lease> client_pool::acquire(
-  ss::abort_source& as, std::optional<ss::lowres_clock::time_point> deadline) {
+  const bucket_name_parts& bucket,
+  ss::abort_source& as,
+  std::optional<ss::lowres_clock::time_point> deadline) {
     auto guard = _gate.hold();
 
+    // Support for bucket_name_parts connection parameters is currently a no-op.
+    std::ignore = bucket;
+
     std::optional<unsigned int> source_sid;
-    std::optional<http_client_ptr> client;
+    std::optional<client_ptr> client;
 
     auto deadline_reached = [&deadline] {
         return deadline.has_value()
@@ -269,8 +211,15 @@ ss::future<client_pool::client_lease> client_pool::acquire(
         // but we have scheduled an upload. This wait ensures that when we call
         // the storage API we have a set of valid credentials.
         if (std::optional<ssx::semaphore_units> u = ss::try_get_units(
-              _self_config_barrier, 1);
+              _pool_ready_barrier, 1);
             !u.has_value()) {
+            const auto ready_deadline = std::min(
+              deadline.value_or(ss::lowres_clock::time_point::max()),
+              ss::lowres_clock::now() + pool_ready_timeout);
+            auto timeout_as = ss::abort_on_expiry(ready_deadline);
+            auto wait_as = ssx::composite_abort_source(
+              as, timeout_as.abort_source());
+
             // Timeout exception will be thrown if the credentials are not
             // refreshed yet. The code in the 'remote' class handles this
             // exception. Most of the time this exception means that the
@@ -278,20 +227,41 @@ ss::future<client_pool::client_lease> client_pool::acquire(
             // properly.
             try {
                 u = co_await ss::get_units(
-                  _self_config_barrier, 1, self_config_timeout);
+                  _pool_ready_barrier, 1, wait_as.as());
             } catch (const ss::timed_out_error&) {
                 vlog(
-                  pool_log.error,
-                  "Failed to acquire credentials within timeout");
+                  pool_log.warn,
+                  "Timed out waiting for client pool to be ready");
                 throw;
             }
         }
 
-        while (!client.has_value() && !deadline_reached() && !_gate.is_closed()
+        // Pool is ready. This is unlikely to block but theoretically possible.
+        auto& up = _default_upstream.value();
+
+        while (!deadline_reached() && !_gate.is_closed()
                && !_as.abort_requested()) {
-            if (likely(!_pool.empty())) {
-                client = _pool.back();
-                _pool.pop_back();
+            if (client.has_value()) {
+                if (!(*client)->is_valid()) {
+                    vlog(
+                      pool_log.debug, "Ignoring invalid client from the pool");
+
+                    [this, &client, &up]() noexcept {
+                        _idle_clients.erase(client->get());
+                        (*client)->shutdown();
+                        ssx::spawn_with_gate(_bg_gate, [c = *client] {
+                            return c->stop().finally([c] {});
+                        });
+                        client.reset();
+                        emplace_idle(up);
+                    }();
+                } else {
+                    break;
+                }
+            }
+
+            if (likely(!_idle_clients.empty())) {
+                client = pop_most_recently_used();
             } else if (
               ss::smp::count == 1
               || _policy == client_pool_overdraft_policy::wait_if_empty
@@ -305,14 +275,17 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                 vlog(
                   pool_log.debug,
                   "cvar triggered, pool size: {}",
-                  _pool.size());
+                  _idle_clients.size());
             } else {
                 // Try borrowing from peer shard.
                 auto clients_in_use = [](client_pool& other) {
-                    return std::clamp(
-                      other._capacity - other._pool.size(),
-                      0UL,
-                      other._capacity);
+                    return ss::get_units(other._pool_ready_barrier, 1)
+                      .then([&other](ssx::semaphore_units) {
+                          return std::clamp(
+                            other._capacity - other._idle_clients.size(),
+                            0UL,
+                            other._capacity);
+                      });
                 };
                 // Use 2-random approach. Pick 2 random shards
                 auto [sid1, sid2] = pick_two_random_shards();
@@ -345,20 +318,22 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                         _probe->register_borrow();
                     }
                     source_sid = sid;
-                    client = make_client();
+                    client = up->make_client();
                 } else {
                     vlog(pool_log.debug, "can't borrow connection, waiting");
                     // In-between failing to borrow from local pool and failing
                     // to borrow from a remote pool (co_await/async-operation),
                     // local pool may have gotten a client back. There is no
                     // need to wait in such case.
-                    if (_pool.empty()) {
+                    if (_idle_clients.empty()) {
                         co_await ssx::with_timeout_abortable(
-                          _cvar.wait(), model::no_timeout, as);
+                          _cvar.wait(),
+                          deadline.value_or(model::no_timeout),
+                          as);
                         vlog(
                           pool_log.debug,
                           "cvar triggered, pool size: {}",
-                          _pool.size());
+                          _idle_clients.size());
                     }
                 }
             }
@@ -401,14 +376,12 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                   // to the source shard.
                   // Otherwise, we replace the oldest client in the
                   // pool to improve connection reuse.
-                  if (!pool->_pool.empty()) {
+                  if (!pool->_idle_clients.empty()) {
                       vlog(
                         pool_log.debug,
                         "disposing the oldest client connection and "
                         "replacing it with the borrowed one");
-                      pool->_pool.push_back(std::move(client));
-                      client = std::move(pool->_pool.front());
-                      pool->_pool.pop_front();
+                      client = pool->replace_least_recently_used(client);
                   } else {
                       vlog(
                         pool_log.debug,
@@ -422,29 +395,44 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                   // In the background return the client to the connection pool
                   // of the source shard. The lifetime is guaranteed by the gate
                   // guard.
-                  ssx::spawn_with_gate(pool->_bg_gate, [&pool, source_sid] {
-                      return pool->container().invoke_on(
-                        source_sid.value(),
-                        [my_sid = ss::this_shard_id()](client_pool& other) {
-                            other.return_one(my_sid);
-                        });
-                  });
+                  ssx::spawn_with_gate(
+                    pool->_bg_gate, [pool, source_sid] noexcept {
+                        return pool->container().invoke_on(
+                          source_sid.value(),
+                          [my_sid = ss::this_shard_id()](client_pool& other) {
+                              if (other._as.abort_requested()) {
+                                  // We are shutting down, ok to skip returning
+                                  // the borrowed connection.
+                                  return ss::now();
+                              }
+                              auto h = other._bg_gate.hold();
+                              return ss::get_units(other._pool_ready_barrier, 1)
+                                .then([&](ssx::semaphore_units) {
+                                    other.return_one(
+                                      other._default_upstream.value(), my_sid);
+                                })
+                                .finally([h = std::move(h)] {});
+                          });
+                    });
               } else {
-                  pool->release(client);
+                  pool->release_most_recently_used(client);
               }
           }
       }),
       std::move(measurement));
+
+    _as.check();
     _leased.push_back(lease);
 
     co_return lease;
 }
 
 auto client_pool::acquire_with_timeout(
+  const bucket_name_parts& bucket,
   ss::abort_source& as,
   ss::lowres_clock::duration timeout,
   std::optional<ss::sstring> ctx) -> ss::future<client_lease> {
-    auto lease = co_await acquire(as);
+    auto lease = co_await acquire(bucket, as);
     if (timeout < ss::lowres_clock::duration::max()) {
         // take a copy of the shared_ptr held by the lease to avoid racing with
         // client_pool teardown
@@ -487,14 +475,14 @@ size_t client_pool::normalized_num_clients_in_use() const {
     // Here we won't be showing that some clients are available if previously
     // the pool was depleted. This is needed to prevent borrowing from
     // overloaded shards.
-    auto current = _capacity - std::clamp(_pool.size(), 0UL, _capacity);
+    auto current = _capacity - std::clamp(_idle_clients.size(), 0UL, _capacity);
     auto normalized = static_cast<int>(
       100.0 * double(current) / static_cast<double>(_capacity));
     return normalized;
 }
 
-bool client_pool::borrow_one(unsigned other) {
-    if (_pool.empty()) {
+bool client_pool::borrow_one(unsigned other) noexcept {
+    if (_idle_clients.empty()) {
         vlog(pool_log.debug, "declining borrow by {}", other);
         return false;
     }
@@ -502,25 +490,24 @@ bool client_pool::borrow_one(unsigned other) {
       pool_log.debug,
       "approving borrow by {}, pool size {}/{}",
       other,
-      _pool.size(),
+      _idle_clients.size(),
       _capacity);
     // TODO: do not use the bottommost (oldest) element. Find the one
     // with expired connection.
-    auto c = _pool.front();
-    _pool.pop_front();
+    auto c = pop_least_recently_used();
     update_usage_stats();
     c->shutdown();
     ssx::spawn_with_gate(_bg_gate, [c] { return c->stop().finally([c] {}); });
     return true;
 }
 
-void client_pool::return_one(unsigned other) {
+void client_pool::return_one(
+  upstream_registry::handle& up, unsigned other) noexcept {
     vlog(pool_log.debug, "shard {} returns a client", other);
     vassert(
-      _pool.size() < _capacity,
+      _idle_clients.size() < _capacity,
       "tried to return a borrowed client but the pool is full");
-    // Cold clients are at the front. Hot clients are at the back.
-    _pool.emplace_front(make_client());
+    emplace_idle(up);
     update_usage_stats();
     vlog(
       pool_log.debug,
@@ -530,73 +517,100 @@ void client_pool::return_one(unsigned other) {
     _cvar.signal();
 }
 
-size_t client_pool::size() const noexcept { return _pool.size(); }
+void client_pool::emplace_idle(upstream_registry::handle& up) noexcept {
+    auto new_client = up->make_client();
+    const client* raw_ptr = new_client.get();
+    auto [it, inserted] = _idle_clients.emplace(
+      raw_ptr, idle_entry(std::move(new_client)));
+    // Cold clients are at the front. Hot clients are at the back.
+    _idle_clients_lru.push_front(it->second);
+}
 
-size_t client_pool::max_size() const noexcept { return _capacity; }
+client_pool::client_ptr client_pool::pop_least_recently_used() noexcept {
+    vassert(
+      !_idle_clients_lru.empty(),
+      "tried to pop from LRU idle list when it's empty");
+    auto& entry = _idle_clients_lru.front();
+    auto client = std::move(entry.ptr);
+    // Automatically removes the entry from the intrusive LRU list.
+    _idle_clients.erase(client.get());
+    return client;
+}
 
-void client_pool::populate_client_pool() {
-    _pool.reserve(_capacity);
+client_pool::client_ptr client_pool::pop_most_recently_used() noexcept {
+    vassert(
+      !_idle_clients_lru.empty(),
+      "tried to pop from LRU idle list when it's empty");
+    auto& entry = _idle_clients_lru.back();
+    auto client = std::move(entry.ptr);
+    // Automatically removes the entry from the intrusive LRU list.
+    _idle_clients.erase(client.get());
+    return client;
+}
+
+void client_pool::release_most_recently_used(client_ptr leased) noexcept {
+    vlog(
+      pool_log.debug,
+      "releasing a client, pool size: {}, capacity: {}",
+      _idle_clients.size(),
+      _capacity);
+    vassert(
+      _idle_clients.size() < _capacity,
+      "tried to release a client but the pool is at capacity");
+    const client* raw_ptr = leased.get();
+    auto [it, inserted] = _idle_clients.emplace(
+      raw_ptr, idle_entry(std::move(leased)));
+    vassert(
+      inserted,
+      "tried to release a client but the client is already in idle clients");
+    // Cold clients are at the front. Hot clients are at the back.
+    _idle_clients_lru.push_back(it->second);
+    _cvar.signal();
+}
+
+client_pool::client_ptr
+client_pool::replace_least_recently_used(client_ptr leased) noexcept {
+    const client* raw_ptr = leased.get();
+    auto [it, inserted] = _idle_clients.emplace(
+      raw_ptr, idle_entry(std::move(leased)));
+    vassert(
+      inserted,
+      "tried to replace LRU client but the client is already in idle clients");
+    _idle_clients_lru.push_back(it->second);
+
+    // Pop the oldest client
+    auto& lru_entry = _idle_clients_lru.front();
+    auto result = std::move(lru_entry.ptr);
+    _idle_clients.erase(result.get());
+    return result;
+}
+
+size_t client_pool::idle_count() const noexcept { return _idle_clients.size(); }
+
+size_t client_pool::capacity() const noexcept { return _capacity; }
+
+void client_pool::populate_client_pool(upstream_registry::handle& up) {
+    vlog(pool_log.info, "Populating client pool with {} clients", _capacity);
+
+    _idle_clients.reserve(_capacity);
     for (size_t i = 0; i < _capacity; i++) {
-        _pool.emplace_back(make_client());
+        emplace_idle(up);
     }
 
-    // Be defensive in checking that we properly synchronized access to `_pool`
-    // and `_cvar`. Before populate_client_pool() is called, we do not expect
-    // anyone to check the size of the pool or wait on the condition variable.
+    // Be defensive in checking that we properly synchronized access to
+    // `_idle_clients` and `_cvar`. Before populate_client_pool() is called, we
+    // do not expect anyone to check the size of the pool or wait on the
+    // condition variable.
     vassert(
       !_cvar.has_waiters(),
       "This is a bug: _cvar is not expected to have waiters at this point. "
       "Missing synchronization?");
+
+    _pool_ready_barrier.signal(_pool_ready_barrier.max_counter());
 }
 
-client_pool::http_client_ptr client_pool::make_client() const noexcept {
-    return std::visit(
-      [this](const auto& cfg) -> http_client_ptr {
-          using cfg_type = std::decay_t<decltype(cfg)>;
-          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
-              return ss::make_shared<s3_client>(cfg, _as, _apply_credentials);
-          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
-              return ss::make_shared<abs_client>(cfg, _as, _apply_credentials);
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
-      },
-      _config);
-}
-
-void client_pool::release(http_client_ptr leased) {
-    vlog(
-      pool_log.debug,
-      "releasing a client, pool size: {}, capacity: {}",
-      _pool.size(),
-      _capacity);
-    vassert(
-      _pool.size() < _capacity,
-      "tried to release a client but the pool is at capacity");
-    _pool.emplace_back(std::move(leased));
-    _cvar.signal();
-}
-
-void client_pool::load_credentials(cloud_roles::credentials credentials) {
-    if (unlikely(!_apply_credentials)) {
-        _apply_credentials = ss::make_lw_shared(
-          cloud_roles::make_credentials_applier(std::move(credentials)));
-        _credentials_var.signal();
-    } else {
-        _apply_credentials->reset_creds(std::move(credentials));
-    }
-}
-
-ss::future<> client_pool::wait_for_credentials() {
-    co_await _credentials_var.wait([this]() {
-        return _gate.is_closed() || _as.abort_requested()
-               || bool{_apply_credentials};
-    });
-
-    if (_gate.is_closed() || _as.abort_requested()) {
-        throw ss::gate_closed_exception();
-    }
-    co_return;
+uint64_t client_pool::token_refresh_count() const {
+    return _default_upstream.value()->token_refresh_count();
 }
 
 } // namespace cloud_storage_clients

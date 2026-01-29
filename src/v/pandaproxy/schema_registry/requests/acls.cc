@@ -55,7 +55,7 @@ security::acl_operation to_acl_operation(std::string_view op) {
     static const auto valid_ops = [] {
         auto ops = std::vector<security::acl_operation>{};
         ops.push_back(security::acl_operation::all);
-        ops.append_range(security::get_allowed_operations<subject>());
+        ops.append_range(security::get_allowed_operations<context_subject>());
         ops.append_range(security::get_allowed_operations<registry_resource>());
         std::ranges::sort(ops);
         ops.erase(std::ranges::unique(ops).begin(), ops.end());

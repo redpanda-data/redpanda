@@ -732,7 +732,7 @@ func Test_azureHyperVIrqToQueueIdx(t *testing.T) {
 	}
 }
 
-func test_azureManaIrqToQueueIdx(t *testing.T) {
+func Test_azureManaIrqToQueueIdx(t *testing.T) {
 	{
 		irq := IrqInfo{
 			Num:       34,

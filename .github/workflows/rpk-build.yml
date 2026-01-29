@@ -74,12 +74,12 @@ jobs:
         with:
           setup_only: true
       - name: Generate proto files
-        run: buf generate --path proto/redpanda/core/admin/v2/shadow_link.proto --path proto/redpanda/core/common/v1/acl.proto --path proto/redpanda/core/common/v1/tls.proto
+        run: buf generate
       - name: Check for uncommitted changes
         run: |
           if ! git diff --exit-code src/go/rpk/gen/; then
             git diff src/go/rpk/gen/
             echo "Error: Generated proto files are out of date"
-            echo "Run 'buf generate --path proto/redpanda/core/admin/v2/shadow_link.proto --path proto/redpanda/core/common/v1/acl.proto --path proto/redpanda/core/common/v1/tls.proto' and commit the changes"
+            echo "Run 'buf generate' and commit the changes"
             exit 1
           fi

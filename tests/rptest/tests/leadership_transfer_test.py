@@ -114,8 +114,10 @@ class LeadershipTransferTest(RedpandaTest):
         admin = Admin(self.redpanda)
         for topic in self.topics:
             for partition in range(topic.partition_count):
-                leader = admin.get_partitions(topic, partition)["leader_id"]
-                admin.partition_transfer_leadership("kafka", topic, partition, leader)
+                leader = admin.get_partitions(topic.name, partition)["leader_id"]
+                admin.partition_transfer_leadership(
+                    "kafka", topic.name, partition, leader
+                )
 
 
 class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):

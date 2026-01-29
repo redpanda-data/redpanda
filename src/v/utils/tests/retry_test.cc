@@ -72,7 +72,7 @@ SEASTAR_THREAD_TEST_CASE(retry_then_fail_when_cancelled) {
                        .then([](auto) { return false; })
                        .handle_exception([](std::exception_ptr eptr) {
                            try {
-                               std::rethrow_exception(std::move(eptr));
+                               std::rethrow_exception(eptr);
                            } catch (const ss::abort_requested_exception&) {
                                return true;
                            } catch (...) {

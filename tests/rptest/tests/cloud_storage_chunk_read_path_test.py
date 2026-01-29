@@ -18,7 +18,12 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.util import Scale, produce_until_segments, wait_for_removal_of_n_segments
+from rptest.util import (
+    Scale,
+    not_none,
+    produce_until_segments,
+    wait_for_removal_of_n_segments,
+)
 from rptest.utils.si_utils import nodes_report_cloud_segments
 
 
@@ -85,7 +90,7 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
                 ),
             )
             for ns in self.redpanda.storage().nodes:
-                if ns.cache.objects <= 1 and ns.name in trim_pending:
+                if not_none(ns.cache).objects <= 1 and ns.name in trim_pending:
                     trim_pending.pop(ns.name)
             self.logger.debug(f"nodes with more than one cache entry: {trim_pending}")
             return len(trim_pending) == 0
@@ -140,7 +145,7 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         finally:
             producer.stop()
 
-        snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
+        snapshot = self.redpanda.storage(nodes=self.redpanda.nodes).segments_by_node(
             "kafka", self.topic, 0
         )
 

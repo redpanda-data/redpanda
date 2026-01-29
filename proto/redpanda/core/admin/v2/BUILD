@@ -96,3 +96,31 @@ redpanda_proto_library(
         "@abseil-cpp//absl/time:time",
     ],
 )
+
+proto_library(
+    name = "security_proto",
+    srcs = ["security.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/common/v1:security_types_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
+        "@googleapis//google/api:field_behavior_proto",
+        "@googleapis//google/api:resource_proto",
+        "@protobuf//:field_mask_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+redpanda_proto_library(
+    name = "security_redpanda_proto",
+    protos = [
+        ":security_proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/common/v1:security_types_redpanda_proto",
+        "//src/v/serde/protobuf:field_mask",
+        "@abseil-cpp//absl/time:time",
+    ],
+)

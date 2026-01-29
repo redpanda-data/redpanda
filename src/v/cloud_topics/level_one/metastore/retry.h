@@ -65,4 +65,12 @@ auto retry_metastore_op(Func&& func, retry_chain_node& rtc)
       std::unexpected(metastore::errc::transport_error)};
 }
 
+template<typename Func>
+requires metastore_operation<Func>
+auto retry_metastore_op_with_default_rtc(Func&& func, ss::abort_source& as)
+  -> ss::future<typename std::invoke_result_t<Func>::value_type> {
+    auto rtc = make_default_metastore_rtc(as);
+    co_return co_await retry_metastore_op(std::forward<Func>(func), rtc);
+}
+
 } // namespace cloud_topics::l1

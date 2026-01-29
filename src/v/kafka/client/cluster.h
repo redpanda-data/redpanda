@@ -214,7 +214,7 @@ private:
       cluster_authorized_operations_not_set};
 
     ss::timer<> _metadata_update_timer;
-    mutex _update_lock{"kc/metadata_update_lock"};
+    ssx::mutex _update_lock{"kc/metadata_update_lock"};
     ss::lowres_clock::time_point _last_update_time
       = ss::lowres_clock::time_point::min();
     notification_list<metadata_callback, callback_id> _notifications;

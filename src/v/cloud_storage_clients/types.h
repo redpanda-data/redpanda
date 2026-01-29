@@ -36,7 +36,9 @@ enum class error_outcome {
     key_not_found,
     /// Currently used for directory deletion errors in ABS, typically treated
     /// as regular failure outcomes.
-    operation_not_supported
+    operation_not_supported,
+    /// Authentication failed
+    authentication_failed,
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -54,6 +56,8 @@ struct error_outcome_category final : public std::error_category {
             return "Key not found error";
         case error_outcome::operation_not_supported:
             return "Operation not supported error";
+        case error_outcome::authentication_failed:
+            return "Authentication failed";
         default:
             return "Undefined error_outcome encountered";
         }

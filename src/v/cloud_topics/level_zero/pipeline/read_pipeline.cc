@@ -17,6 +17,7 @@
 #include "cloud_topics/logger.h"
 #include "config/configuration.h"
 #include "resource_mgmt/memory_groups.h"
+#include "ssx/abort_source.h"
 #include "utils/human.h"
 
 #include <seastar/core/abort_source.hh>
@@ -52,7 +53,8 @@ void read_pipeline<Clock>::stage::push_next_stage(
 
 template<class Clock>
 read_pipeline<Clock>::read_pipeline()
-  : _mem_quota(get_cloud_topics_l0_read_path_memory(), "read-pipeline")
+  : _mem_quota_capacity(get_cloud_topics_l0_read_path_memory())
+  , _mem_quota(_mem_quota_capacity, "read-pipeline")
   // TODO: use config parameter
   , _breaker(10, std::chrono::seconds(1))
   , _probe(
@@ -61,10 +63,27 @@ read_pipeline<Clock>::read_pipeline()
       config::shard_local_cfg().disable_public_metrics()) {}
 
 template<class Clock>
-ss::future<result<dataplane_query_result>> read_pipeline<Clock>::make_reader(
-  model::ntp ntp, dataplane_query query, timestamp_t timeout) {
+ss::future<std::expected<dataplane_query_result, std::error_code>>
+read_pipeline<Clock>::make_reader(
+  model::ntp ntp,
+  dataplane_query query,
+  timestamp_t timeout,
+  model::opt_abort_source_t caller_as) {
     auto h = this->hold_gate();
-    auto& as = this->get_root_rtc().root_abort_source();
+
+    /*
+     * if caller provides an abort source, combine it with rtc
+     */
+    std::optional<ssx::composite_abort_source> combined_as;
+    auto& as = [this, &caller_as, &combined_as] -> ss::abort_source& {
+        auto& rtc_as = this->get_root_rtc().root_abort_source();
+        if (caller_as.has_value()) {
+            combined_as.emplace(caller_as->get(), rtc_as);
+            return combined_as.value().as();
+        }
+        return rtc_as;
+    }();
+
     auto size_estimate = query.output_size_estimate;
     _probe.register_request();
     _probe.set_memory_usage_gauge(_current_size + size_estimate);
@@ -91,7 +110,7 @@ ss::future<result<dataplane_query_result>> read_pipeline<Clock>::make_reader(
     case circuit_breaker_state::closed:
         err_fallback.cancel();
         _probe.register_request_timeout();
-        co_return errc::timeout;
+        co_return std::unexpected(errc::timeout);
     }
 
     // TODO: add timeout
@@ -128,15 +147,16 @@ ss::future<result<dataplane_query_result>> read_pipeline<Clock>::make_reader(
 
     if (this->stopped()) {
         err_fallback.cancel();
-        co_return errc::shutting_down;
+        co_return std::unexpected(errc::shutting_down);
     }
     auto res = co_await std::move(fut);
-    if (res.has_error()) {
+
+    if (!res.has_value()) {
         if (res.error() == errc::timeout) {
             err_fallback.cancel();
             _probe.register_request_timeout();
         }
-        co_return res.error();
+        co_return std::unexpected(make_error_code(res.error()));
     }
     err_fallback.cancel();
     _probe.register_request_completed();
@@ -161,13 +181,12 @@ read_pipeline<Clock>::get_fetch_requests(
     read_requests_list result(this, stage);
     size_t acc_size = 0;
 
-    // The elements in the list are in the insertion order.
     auto it = pending.begin();
-    for (; it != pending.end(); it++) {
+    for (; it != pending.end();) {
         if (it->stage != stage) {
+            it++;
             continue;
         }
-        // TODO: avoid copy
         auto sz = it->query.output_size_estimate;
         acc_size += sz;
         vlog(
@@ -175,13 +194,16 @@ read_pipeline<Clock>::get_fetch_requests(
           "get_fetch_requests processing req for {}, size estimate: {}",
           it->ntp,
           acc_size);
-        if (acc_size >= max_bytes) {
-            // Include last element
-            it++;
+        // Always include the first request even if it exceeds max_bytes
+        // to avoid stalling the pipeline with oversized requests
+        if (acc_size >= max_bytes && !result.requests.empty()) {
             break;
         }
+        auto& el = *it;
+        it++;
+        el._hook.unlink();
+        result.requests.push_back(el);
     }
-    result.requests.splice(result.requests.end(), pending, pending.begin(), it);
     result.complete = pending.empty();
     vlog(
       logger.debug,

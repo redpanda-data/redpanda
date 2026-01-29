@@ -63,6 +63,7 @@ redpanda_cc_library(
     hdrs = ["types.h"],
     visibility = [":__subpackages__"],
     deps = [
+        "//src/v/cloud_topics:types",
         "//src/v/model",
         "@fmt",
         "@seastar",
@@ -83,7 +84,11 @@ redpanda_cc_library(
     name = "ctp_stm_state",
     srcs = ["ctp_stm_state.cc"],
     hdrs = ["ctp_stm_state.h"],
+    implementation_deps = [
+        "//src/v/utils:to_string",
+    ],
     deps = [
+        "//src/v/base",
         "//src/v/cloud_topics:types",
         "//src/v/model",
         "//src/v/serde",
@@ -105,13 +110,17 @@ redpanda_cc_library(
         "//src/v/serde:uuid",
         "//src/v/serde:vector",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:watchdog",
         "//src/v/storage",
+        "//src/v/utils:to_string",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":ctp_stm_state",
         ":types",
+        "//src/v/cloud_topics/level_zero/common:producer_queue",
         "//src/v/raft",
+        "//src/v/ssx:mutex",
         "@seastar",
     ],
 )
@@ -135,6 +144,7 @@ redpanda_cc_library(
         ":dl_snapshot",
         ":dl_version",
         "//src/v/base",
+        "//src/v/cloud_topics/level_zero/common:producer_queue",
         "//src/v/model",
         "//src/v/ssx:future_util",
         "//src/v/utils:retry_chain_node",

@@ -54,7 +54,7 @@ KAFKA_CONNECTION_STATE_ABORTING: KafkaConnectionState.ValueType
 'The connection is aborting ongoing requests and about to be closed.\nThis is a transient state between open and closed that should rarely be\nobservable under normal circumstances.\n'
 KAFKA_CONNECTION_STATE_CLOSED: KafkaConnectionState.ValueType
 'The connection has been closed.'
-global___KafkaConnectionState = KafkaConnectionState
+Global___KafkaConnectionState: typing_extensions.TypeAlias = KafkaConnectionState
 
 class _AuthenticationState:
     ValueType = typing.NewType('ValueType', builtins.int)
@@ -73,7 +73,7 @@ AUTHENTICATION_STATE_UNSPECIFIED: AuthenticationState.ValueType
 AUTHENTICATION_STATE_UNAUTHENTICATED: AuthenticationState.ValueType
 AUTHENTICATION_STATE_SUCCESS: AuthenticationState.ValueType
 AUTHENTICATION_STATE_FAILURE: AuthenticationState.ValueType
-global___AuthenticationState = AuthenticationState
+Global___AuthenticationState: typing_extensions.TypeAlias = AuthenticationState
 
 class _AuthenticationMechanism:
     ValueType = typing.NewType('ValueType', builtins.int)
@@ -106,7 +106,7 @@ AUTHENTICATION_MECHANISM_SASL_PLAIN: AuthenticationMechanism.ValueType
 'SASL PLAIN (username/password in plaintext)'
 AUTHENTICATION_MECHANISM_SASL_GSSAPI: AuthenticationMechanism.ValueType
 'SASL GSSAPI (Kerberos)'
-global___AuthenticationMechanism = AuthenticationMechanism
+Global___AuthenticationMechanism: typing_extensions.TypeAlias = AuthenticationMechanism
 
 @typing.final
 class KafkaConnection(google.protobuf.message.Message):
@@ -157,7 +157,7 @@ class KafkaConnection(google.protobuf.message.Message):
     'Broker shard that handles the connection'
     uid: builtins.str
     'Kafka connection UUID'
-    state: global___KafkaConnectionState.ValueType
+    state: Global___KafkaConnectionState.ValueType
     'Lifecycle state of the connection (open/aborting/closed)'
     listener_name: builtins.str
     'Name of the Kafka listener that accepted this connection.\n    A listener is a named broker endpoint (for example, "internal",\n    "external", or "sasl_tls"). Each listener defines its network address and\n    enforces its protocol and authentication policy.\n    '
@@ -187,17 +187,17 @@ class KafkaConnection(google.protobuf.message.Message):
         """
 
     @property
-    def authentication_info(self) -> global___AuthenticationInfo:
+    def authentication_info(self) -> Global___AuthenticationInfo:
         """Information about the authentication state of the connection"""
 
     @property
-    def tls_info(self) -> global___TLSInfo:
+    def tls_info(self) -> Global___TLSInfo:
         """Information about the TLS state of the connection (e.g., whether TLS
         encryption is used for this connection)
         """
 
     @property
-    def source(self) -> global___Source:
+    def source(self) -> Global___Source:
         """Remote client address of the TCP connection"""
 
     @property
@@ -223,18 +223,18 @@ class KafkaConnection(google.protobuf.message.Message):
         """How long the connection has been idle (no in-flight requests)"""
 
     @property
-    def in_flight_requests(self) -> global___InFlightRequests:
+    def in_flight_requests(self) -> Global___InFlightRequests:
         """Currently in-flight requests"""
 
     @property
-    def total_request_statistics(self) -> global___RequestStatistics:
+    def total_request_statistics(self) -> Global___RequestStatistics:
         """Aggregated statistics for the entire connection's lifetime."""
 
     @property
-    def recent_request_statistics(self) -> global___RequestStatistics:
+    def recent_request_statistics(self) -> Global___RequestStatistics:
         """Statistics for previous last one minute window."""
 
-    def __init__(self, *, node_id: builtins.int=..., shard_id: builtins.int=..., uid: builtins.str=..., state: global___KafkaConnectionState.ValueType=..., open_time: google.protobuf.timestamp_pb2.Timestamp | None=..., close_time: google.protobuf.timestamp_pb2.Timestamp | None=..., authentication_info: global___AuthenticationInfo | None=..., listener_name: builtins.str=..., tls_info: global___TLSInfo | None=..., source: global___Source | None=..., client_id: builtins.str=..., client_software_name: builtins.str=..., client_software_version: builtins.str=..., transactional_id: builtins.str=..., group_id: builtins.str=..., group_instance_id: builtins.str=..., group_member_id: builtins.str=..., api_versions: collections.abc.Mapping[builtins.int, builtins.int] | None=..., idle_duration: google.protobuf.duration_pb2.Duration | None=..., in_flight_requests: global___InFlightRequests | None=..., total_request_statistics: global___RequestStatistics | None=..., recent_request_statistics: global___RequestStatistics | None=...) -> None:
+    def __init__(self, *, node_id: builtins.int=..., shard_id: builtins.int=..., uid: builtins.str=..., state: Global___KafkaConnectionState.ValueType=..., open_time: google.protobuf.timestamp_pb2.Timestamp | None=..., close_time: google.protobuf.timestamp_pb2.Timestamp | None=..., authentication_info: Global___AuthenticationInfo | None=..., listener_name: builtins.str=..., tls_info: Global___TLSInfo | None=..., source: Global___Source | None=..., client_id: builtins.str=..., client_software_name: builtins.str=..., client_software_version: builtins.str=..., transactional_id: builtins.str=..., group_id: builtins.str=..., group_instance_id: builtins.str=..., group_member_id: builtins.str=..., api_versions: collections.abc.Mapping[builtins.int, builtins.int] | None=..., idle_duration: google.protobuf.duration_pb2.Duration | None=..., in_flight_requests: Global___InFlightRequests | None=..., total_request_statistics: Global___RequestStatistics | None=..., recent_request_statistics: Global___RequestStatistics | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['authentication_info', b'authentication_info', 'close_time', b'close_time', 'idle_duration', b'idle_duration', 'in_flight_requests', b'in_flight_requests', 'open_time', b'open_time', 'recent_request_statistics', b'recent_request_statistics', 'source', b'source', 'tls_info', b'tls_info', 'total_request_statistics', b'total_request_statistics']) -> builtins.bool:
@@ -242,7 +242,7 @@ class KafkaConnection(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['api_versions', b'api_versions', 'authentication_info', b'authentication_info', 'client_id', b'client_id', 'client_software_name', b'client_software_name', 'client_software_version', b'client_software_version', 'close_time', b'close_time', 'group_id', b'group_id', 'group_instance_id', b'group_instance_id', 'group_member_id', b'group_member_id', 'idle_duration', b'idle_duration', 'in_flight_requests', b'in_flight_requests', 'listener_name', b'listener_name', 'node_id', b'node_id', 'open_time', b'open_time', 'recent_request_statistics', b'recent_request_statistics', 'shard_id', b'shard_id', 'source', b'source', 'state', b'state', 'tls_info', b'tls_info', 'total_request_statistics', b'total_request_statistics', 'transactional_id', b'transactional_id', 'uid', b'uid']) -> None:
         ...
-global___KafkaConnection = KafkaConnection
+Global___KafkaConnection: typing_extensions.TypeAlias = KafkaConnection
 
 @typing.final
 class AuthenticationInfo(google.protobuf.message.Message):
@@ -251,19 +251,19 @@ class AuthenticationInfo(google.protobuf.message.Message):
     STATE_FIELD_NUMBER: builtins.int
     MECHANISM_FIELD_NUMBER: builtins.int
     USER_PRINCIPAL_FIELD_NUMBER: builtins.int
-    state: global___AuthenticationState.ValueType
+    state: Global___AuthenticationState.ValueType
     'Authentication state'
-    mechanism: global___AuthenticationMechanism.ValueType
+    mechanism: Global___AuthenticationMechanism.ValueType
     'Authentication mechanism'
     user_principal: builtins.str
     'Authenticated user principal'
 
-    def __init__(self, *, state: global___AuthenticationState.ValueType=..., mechanism: global___AuthenticationMechanism.ValueType=..., user_principal: builtins.str=...) -> None:
+    def __init__(self, *, state: Global___AuthenticationState.ValueType=..., mechanism: Global___AuthenticationMechanism.ValueType=..., user_principal: builtins.str=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['mechanism', b'mechanism', 'state', b'state', 'user_principal', b'user_principal']) -> None:
         ...
-global___AuthenticationInfo = AuthenticationInfo
+Global___AuthenticationInfo: typing_extensions.TypeAlias = AuthenticationInfo
 
 @typing.final
 class TLSInfo(google.protobuf.message.Message):
@@ -277,7 +277,7 @@ class TLSInfo(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['enabled', b'enabled']) -> None:
         ...
-global___TLSInfo = TLSInfo
+Global___TLSInfo: typing_extensions.TypeAlias = TLSInfo
 
 @typing.final
 class Source(google.protobuf.message.Message):
@@ -292,7 +292,7 @@ class Source(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['ip_address', b'ip_address', 'port', b'port']) -> None:
         ...
-global___Source = Source
+Global___Source: typing_extensions.TypeAlias = Source
 
 @typing.final
 class InFlightRequests(google.protobuf.message.Message):
@@ -324,15 +324,15 @@ class InFlightRequests(google.protobuf.message.Message):
     'Whether there are more in-flight requests than those in\n    `sampled_in_flight_requests`.\n    '
 
     @property
-    def sampled_in_flight_requests(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___InFlightRequests.Request]:
+    def sampled_in_flight_requests(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___InFlightRequests.Request]:
         """A sample (e.g., the 5 latest) of the currently in-flight requests"""
 
-    def __init__(self, *, sampled_in_flight_requests: collections.abc.Iterable[global___InFlightRequests.Request] | None=..., has_more_requests: builtins.bool=...) -> None:
+    def __init__(self, *, sampled_in_flight_requests: collections.abc.Iterable[Global___InFlightRequests.Request] | None=..., has_more_requests: builtins.bool=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['has_more_requests', b'has_more_requests', 'sampled_in_flight_requests', b'sampled_in_flight_requests']) -> None:
         ...
-global___InFlightRequests = InFlightRequests
+Global___InFlightRequests: typing_extensions.TypeAlias = InFlightRequests
 
 @typing.final
 class RequestStatistics(google.protobuf.message.Message):
@@ -355,4 +355,4 @@ class RequestStatistics(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['fetch_bytes', b'fetch_bytes', 'produce_batch_count', b'produce_batch_count', 'produce_bytes', b'produce_bytes', 'request_count', b'request_count']) -> None:
         ...
-global___RequestStatistics = RequestStatistics
+Global___RequestStatistics: typing_extensions.TypeAlias = RequestStatistics

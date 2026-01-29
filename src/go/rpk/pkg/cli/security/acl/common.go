@@ -44,6 +44,8 @@ const (
 	kafkaCluster = "kafka-cluster"
 
 	rolePrefix = "RedpandaRole:"
+
+	groupPrefix = "Group:"
 )
 
 var (
@@ -354,7 +356,7 @@ func (a *acls) createKafkaACLCreation() (*kadm.ACLBuilder, error) {
 		Deny(a.denyPrincipals...).
 		DenyHosts(a.denyHosts...)
 
-	b.PrefixUserExcept(rolePrefix) // add "User:" prefix to everything if needed
+	b.PrefixUserExcept(rolePrefix, groupPrefix) // add "User:" prefix to everything if needed
 
 	return b, b.ValidateCreate()
 }
@@ -391,7 +393,7 @@ func (a *acls) createSRACLCreation() ([]rpsr.ACL, error) {
 		b.DenyHosts(a.denyHosts...)
 	}
 
-	b.PrefixUserExcept(rolePrefix)
+	b.PrefixUserExcept(rolePrefix, groupPrefix)
 
 	return b.ValidateAndBuildCreate()
 }
@@ -462,7 +464,7 @@ func (a *acls) createKafkaDeletionsAndDescribes(list bool) (*kadm.ACLBuilder, er
 		b.DenyHosts()
 	}
 
-	b.PrefixUserExcept(rolePrefix) // add "User:" prefix to everything if needed
+	b.PrefixUserExcept(rolePrefix, groupPrefix) // add "User:" prefix to everything if needed
 
 	return b, b.ValidateFilter()
 }
@@ -502,7 +504,7 @@ func (a *acls) createSRDeletionsAndDescribes() ([]rpsr.ACL, error) {
 		b.AnyResources()
 	}
 
-	b.PrefixUserExcept(rolePrefix)
+	b.PrefixUserExcept(rolePrefix, groupPrefix)
 
 	return b.BuildFilter(), nil
 }

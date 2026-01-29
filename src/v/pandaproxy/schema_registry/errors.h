@@ -68,59 +68,61 @@ inline error_info not_found(schema_id id) {
       fmt::format("Schema {} not found", id())};
 }
 
-inline error_info not_found(const subject& sub) {
+inline error_info not_found(const context_subject& sub) {
     return error_info{
       error_code::subject_not_found,
-      fmt::format("Subject '{}' not found.", sub())};
+      fmt::format("Subject '{}' not found.", sub)};
 }
 
-inline error_info not_found(const subject& sub, mode) {
+inline error_info not_found(const context_subject& sub, mode) {
     return error_info{
       error_code::mode_not_found,
       fmt::format(
-        "Subject '{}' does not have subject-level mode configured.", sub())};
+        "Subject '{}' does not have subject-level mode configured.", sub)};
 }
 
-inline error_info not_found(const subject&, schema_version id) {
+inline error_info not_found(const context_subject&, schema_version version) {
     return error_info{
       error_code::subject_version_not_found,
-      fmt::format("Version {} not found.", id())};
+      fmt::format("Version {} not found.", version())};
 }
 
-inline error_info soft_deleted(const subject& sub) {
+inline error_info soft_deleted(const context_subject& sub) {
     return error_info{
       error_code::subject_soft_deleted,
       fmt::format(
         "Subject '{}' was soft deleted.Set permanent=true to delete "
         "permanently",
-        sub())};
+        sub)};
 }
 
-inline error_info not_deleted(const subject& sub) {
+inline error_info not_deleted(const context_subject& sub) {
     return error_info{
       error_code::subject_not_deleted,
       fmt::format(
         "Subject '{}' was not deleted first before being permanently deleted",
-        sub())};
+        sub)};
 }
 
-inline error_info soft_deleted(const subject& sub, schema_version version) {
+inline error_info
+soft_deleted(const context_subject& sub, schema_version version) {
     return error_info{
       error_code::subject_version_soft_deleted,
       fmt::format(
         "Subject '{}' Version {} was soft deleted.Set permanent=true to "
         "delete permanently",
-        sub(),
+        sub,
         version())};
 }
 
-inline error_info not_deleted(const subject& sub, schema_version version) {
+inline error_info
+not_deleted(const context_subject& sub, schema_version version) {
     return error_info{
       error_code::subject_version_not_deleted,
       fmt::format(
         "Subject '{}' Version {} was not deleted first before being "
         "permanently deleted",
-        sub(),
+        sub,
         version())};
 }
 
@@ -139,10 +141,10 @@ inline error_info schema_version_invalid(ss::sstring v) {
         v)};
 }
 
-inline error_info invalid_subject_schema(const subject& sub) {
+inline error_info invalid_subject_schema(const context_subject& sub) {
     return {
       error_code::subject_schema_invalid,
-      fmt::format("Error while looking up schema under subject {}", sub())};
+      fmt::format("Error while looking up schema under subject {}", sub)};
 }
 
 inline error_info invalid_schema(const subject_schema& schema) {
@@ -154,57 +156,65 @@ inline error_info invalid_schema(std::string msg) {
     return {error_code::schema_invalid, std::move(msg)};
 }
 
-inline error_info has_references(const subject& sub, schema_version ver) {
+inline error_info
+has_references(const context_subject& sub, schema_version ver) {
     return {
       error_code::subject_version_has_references,
       fmt::format(
         "One or more references exist to the schema "
         "{{magic=1,keytype=SCHEMA,subject={},version={}}}",
-        sub(),
+        sub,
         ver())};
 }
 
 error_info no_reference_found_for(
-  const subject_schema& schema, const subject& sub, schema_version ver);
+  const subject_schema& schema, const context_subject& sub, schema_version ver);
 
-inline error_info compatibility_not_found(const subject& sub) {
+inline error_info compatibility_not_found(const context_subject& sub) {
     return error_info{
       error_code::compatibility_not_found,
       fmt::format(
         "Subject '{}' does not have subject-level compatibility configured",
-        sub())};
+        sub)};
 }
 
-inline error_info mode_not_found(const subject& sub) {
+inline error_info mode_not_found(const context_subject& sub) {
     return error_info{
       error_code::mode_not_found,
       fmt::format(
-        "Subject '{}' does not have subject-level mode configured", sub())};
+        "Subject '{}' does not have subject-level mode configured", sub)};
 }
 
-inline error_info mode_not_readwrite(const subject& sub) {
+inline error_info mode_not_readwrite(const context_subject& sub) {
     return error_info{
       error_code::subject_version_operation_not_permitted,
-      fmt::format("Subject {} is not in read-write mode", sub())};
+      fmt::format("Subject {} is not in read-write mode", sub)};
 }
 
-inline error_info mode_not_import(const subject& sub) {
+inline error_info mode_not_import(const context_subject& sub) {
     return error_info{
       error_code::subject_version_operation_not_permitted,
-      fmt::format("Subject {} is not in import mode", sub())};
+      fmt::format("Subject {} is not in import mode", sub)};
 }
 
-inline error_info mode_is_readonly(const std::optional<subject>& sub) {
+inline error_info
+mode_is_readonly(const context& ctx, const std::optional<subject>& sub) {
     return error_info{
       error_code::subject_version_operation_not_permitted,
       fmt::format(
-        "Subject {} is in read-only mode", sub.value_or(subject{"null"}))};
+        "Subject {} in context {} is in read-only mode",
+        sub.value_or(subject{"null"}),
+        ctx)};
 }
 
-inline error_info versions_exhausted(const subject& sub) {
+inline error_info mode_is_readonly(const context_subject& ctx) {
+    return mode_is_readonly(ctx.ctx, ctx.sub);
+}
+
+inline error_info versions_exhausted(const context_subject& sub) {
     return error_info{
       error_code::version_exhausted,
-      fmt::format("Versions exhausted for subject {}", sub())};
+      fmt::format("Versions exhausted for subject {}", sub)};
 }
 
 inline error_info format_not_supported(const output_format f) {

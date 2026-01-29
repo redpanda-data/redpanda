@@ -27,6 +27,8 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 
+#include <expected>
+
 namespace cloud_topics::l0 {
 
 struct read_pipeline_accessor;
@@ -45,8 +47,12 @@ public:
     /// that should be materialized.
     /// The result of the query is a reader that contains the
     /// actual raft_data batches.
-    ss::future<result<dataplane_query_result>>
-    make_reader(model::ntp ntp, dataplane_query query, timestamp_t timeout);
+    ss::future<std::expected<dataplane_query_result, std::error_code>>
+    make_reader(
+      model::ntp ntp,
+      dataplane_query query,
+      timestamp_t timeout,
+      model::opt_abort_source_t as = std::nullopt);
 
     using read_requests_list
       = requests_list<read_pipeline<Clock>, read_request<Clock>>;
@@ -69,7 +75,7 @@ public:
         /// Wait until fetch requests are available in the pipeline
         /// stage and return them (the requests are pulled out of
         /// the pipeline).
-        ss::future<checked<read_requests_list, errc>>
+        ss::future<std::expected<read_requests_list, errc>>
         pull_fetch_requests(size_t max_bytes) {
             l0::event_filter<Clock> filter(
               l0::event_type::new_read_request, _ps);
@@ -77,9 +83,9 @@ public:
               filter, _parent->get_abort_source());
             switch (event.type) {
             case l0::event_type::shutting_down:
-                co_return errc::shutting_down;
+                co_return std::unexpected(errc::shutting_down);
             case l0::event_type::err_timedout:
-                co_return errc::timeout;
+                co_return std::unexpected(errc::timeout);
             case l0::event_type::new_write_request:
             case l0::event_type::none:
                 vunreachable("Unexpected event type in the read_pipeline");
@@ -109,6 +115,13 @@ public:
 
         basic_retry_chain_logger<Clock>& logger() noexcept { return _logger; }
 
+        /// Track per-request statistics
+        void register_micro_probe(const micro_probe& p) {
+            _parent->_probe.register_micro_probe(p);
+        }
+
+        pipeline_stage id() const noexcept { return _ps; }
+
     private:
         pipeline_stage _ps;
         read_pipeline<Clock>* _parent;
@@ -123,6 +136,11 @@ public:
     void signal(pipeline_stage stage);
 
     event trigger_event(pipeline_stage stage);
+
+    /// Return the memory quota capacity for the read pipeline.
+    size_t memory_quota_capacity() const noexcept {
+        return _mem_quota_capacity;
+    }
 
 private:
     ss::abort_source& get_abort_source() {
@@ -151,6 +169,7 @@ private:
     // Total bytes went through the pipeline
     size_t _bytes_total{0};
 
+    size_t _mem_quota_capacity;
     ssx::named_semaphore<Clock> _mem_quota;
 
     circuit_breaker<Clock> _breaker;

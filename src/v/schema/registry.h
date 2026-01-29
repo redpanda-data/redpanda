@@ -58,16 +58,19 @@ public:
     sync(ss::lowres_clock::duration max_age = {}) = 0;
 
     ss::future<std::optional<pandaproxy::schema_registry::valid_schema>>
-    get_valid_schema(pandaproxy::schema_registry::schema_id schema_id) const;
+    get_valid_schema(
+      pandaproxy::schema_registry::context_schema_id schema_id) const;
 
     virtual ss::future<pandaproxy::schema_registry::schema_definition>
-      get_schema_definition(pandaproxy::schema_registry::schema_id) const = 0;
+      get_schema_definition(
+        pandaproxy::schema_registry::context_schema_id) const
+      = 0;
     virtual ss::future<pandaproxy::schema_registry::stored_schema>
       get_subject_schema(
-        pandaproxy::schema_registry::subject,
+        pandaproxy::schema_registry::context_subject,
         std::optional<pandaproxy::schema_registry::schema_version>) const
       = 0;
-    virtual ss::future<pandaproxy::schema_registry::schema_id>
+    virtual ss::future<pandaproxy::schema_registry::context_schema_id>
       create_schema(pandaproxy::schema_registry::subject_schema) = 0;
 };
 } // namespace schema

@@ -116,6 +116,9 @@ FIXTURE_TEST(
     auto cred = sec.get<security::scram_credential>(
       security::credential_user(user_name_256));
     BOOST_REQUIRE(cred.has_value());
+    BOOST_REQUIRE_MESSAGE(
+      !cred->password_set_at().is_missing(),
+      "Credential should have password_set_at");
     BOOST_CHECK_EQUAL(cred, creds_256);
 }
 
@@ -191,6 +194,9 @@ FIXTURE_TEST(
     auto cred = sec.get<security::scram_credential>(
       security::credential_user(user_name_512));
     BOOST_REQUIRE(cred.has_value());
+    BOOST_REQUIRE_MESSAGE(
+      !cred->password_set_at().is_missing(),
+      "Credential should have password_set_at");
     BOOST_CHECK_EQUAL(cred, creds_512);
 
     // now create a new client and authenticate with the created user
@@ -315,6 +321,9 @@ FIXTURE_TEST(
     auto cred = sec.get<security::scram_credential>(
       security::credential_user(user_name_256));
     BOOST_REQUIRE(cred.has_value());
+    BOOST_REQUIRE_MESSAGE(
+      !cred->password_set_at().is_missing(),
+      "Credential should have password_set_at");
     BOOST_CHECK_EQUAL(cred, creds_512);
 }
 
@@ -703,6 +712,9 @@ FIXTURE_TEST(
         auto cred = sec.get<security::scram_credential>(
           security::credential_user(user_name_256));
         BOOST_REQUIRE(cred.has_value());
+        BOOST_REQUIRE_MESSAGE(
+          !cred->password_set_at().is_missing(),
+          "Credential should have password_set_at");
         BOOST_CHECK_EQUAL(cred, creds_512);
     }
 
@@ -824,6 +836,9 @@ FIXTURE_TEST(
         auto cred = sec.get<security::scram_credential>(
           security::credential_user(user_name_256));
         BOOST_REQUIRE(cred.has_value());
+        BOOST_REQUIRE_MESSAGE(
+          !cred->password_set_at().is_missing(),
+          "Credential should have password_set_at");
         BOOST_CHECK_EQUAL(cred, creds_256);
     }
 
@@ -904,6 +919,9 @@ FIXTURE_TEST(
         auto cred = sec.get<security::scram_credential>(
           security::credential_user(user_name_256));
         BOOST_REQUIRE(cred.has_value());
+        BOOST_REQUIRE_MESSAGE(
+          !cred->password_set_at().is_missing(),
+          "Credential should have password_set_at");
         BOOST_CHECK_EQUAL(cred, creds_512);
     }
 

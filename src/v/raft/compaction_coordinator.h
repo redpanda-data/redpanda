@@ -28,22 +28,30 @@ namespace raft {
 using namespace std::chrono_literals;
 /**
  * The @compaction_coordinator component
- * - receives maximum cleanly compacted offset (MCCO) from storage subsystem;
- * - distributes MCCO from each group member to the leader;
- * - calculates maximum tombstone removal offset (MTRO) on the leader;
- * - propagates MTRO to followers;
- * - lets @storage::stm_manager know about the current MTRO.
+ * - receives maximum cleanly compacted offset (MCCO) and maximum
+ * transaction-free offset (MXFO) from storage subsystem;
+ * - distributes MCCO and MXFO from each group member to the leader;
+ * - calculates maximum tombstone removal offset (MTRO) and maximum transaction
+ * removal offset (MXRO) on the leader;
+ * - propagates MTRO and MXRO to followers;
+ * - lets @storage::stm_manager know about the current MTRO and MXRO.
  *
- * MCCO and MTRO are not inclusive, i.e. denote first non-cleanly-compacted and
- * first non-tombstone-removable offsets respectively.
+ * MCCO, MXFO, MTRO and MXRO are not inclusive, i.e. denote first
+ * non-cleanly-compacted and first non-tombstone-removable offsets respectively.
  *
  * MCCO of a replica log is defined as an offset where all data below it are
- * cleanly compacted. MCCO may be above the log's dirty offset if the data
- * replica receives in future is guaranteed to be cleanly compacted up to this
- * offset.
+ * cleanly compacted. MXFO of a replica log is defined as an offset where all
+ * data below it are free of transaction fence batches and transactional data.
+ *
+ * On a follower, the local MCCO and MXFO may be above the log's dirty offset if
+ * the data replica receives in future is guaranteed to be cleanly compacted up
+ * to this offset.
  *
  * MTRO is defined as an offset where all data below it are cleanly compacted on
- * all replicas. This makes MTRO never go back, as once data has been cleanly
+ * all replicas. MXRO is defined as an offset where all data below it is free
+ * from transaction fence batches and transactional data on all replicas.
+ *
+ * This makes MTRO amnd MXRO never go back, as once data has been cleanly
  * compacted on all replicas there's no uncompacted data for the same offset
  * range.
  */
@@ -51,7 +59,7 @@ using namespace std::chrono_literals;
 class compaction_coordinator {
     using clock_t = ss::lowres_clock;
     static constexpr auto timeout = 10s;
-    static constexpr auto mtro_send_delay = 3s;
+    static constexpr auto group_offsets_send_delay = 3s;
 
 public:
     compaction_coordinator(
@@ -75,47 +83,62 @@ public:
     // Should be called after each NTP config update.
     void on_ntp_config_change();
 
-    // process an RPC from a leader: tell them our MCCO
+    // process an RPC from a leader: tell them our MCCO and MXFO
     get_compaction_mcco_reply
-    do_get_compaction_mcco(get_compaction_mcco_request req);
+    do_get_local_replica_offsets(get_compaction_mcco_request req);
 
-    // process an RPC from a leader: update our MTRO
+    // process an RPC from a leader: update our MTRO and MXRO
     distribute_compaction_mtro_reply
-    do_distribute_compaction_mtro(distribute_compaction_mtro_request req);
+    do_distribute_group_offsets(distribute_compaction_mtro_request req);
 
     // Returns current MTRO.
     model::offset get_max_tombstone_remove_offset() const;
 
+    // Returns current MXRO.
+    model::offset get_max_transaction_remove_offset() const;
+
     // Returns current MCCO of the replica.
     model::offset get_local_max_cleanly_compacted_offset() const;
 
-private:
-    // from leader (on a follower) or from calculated value (on leader)
-    void update_mtro(model::offset new_mtro);
+    // Returns current MXFO of the replica.
+    model::offset get_local_max_transaction_free_offset() const;
 
-    // notify storage and followers (if leader) about MTRO update
-    void on_mtro_update();
+private:
+    // from leader (on a follower) or from calculated values (on leader)
+    void update_group_offsets(model::offset new_mtro, model::offset new_mxro);
+
+    // notify storage and followers (if leader) about MTRO and/or MXRO update
+    void on_group_offsets_update();
 
     // Ideally should be push-, not pull-based, but currently storage doesn't
     // provide such functionality. This is the entry point for periodic MCCO
-    // collection, which triggers MTRO update in turn.
-    void update_local_mcco();
+    // and MXFO collection, which may trigger MTRO and MXRO update in turn.
+    void update_local_replica_offsets();
 
     // both locally and from followers
-    void collect_mcco_from_all_members();
+    void collect_all_replica_offsets();
 
-    // the next 3 functions are for getting MCCO from followers
+    // generic helper to increase and log offset values
+    bool bump_offset_value(
+      model::offset compaction_coordinator::* member,
+      model::offset new_value,
+      std::string_view var_name);
+
+    // the next 3 functions are for getting MCCO and MXFO from followers
     ss::future<>
-    get_and_process_compaction_mcco(vnode node_id, ss::abort_source& op_as);
-    ss::future<std::optional<model::offset>> get_compaction_mcco(vnode node_id);
-    void on_local_mcco_update(model::offset new_mcco);
+    get_and_process_replica_offsets(vnode node_id, ss::abort_source& op_as);
+    ss::future<std::optional<get_compaction_mcco_reply>>
+    get_remote_replica_offsets(vnode node_id);
+    void on_local_replica_offsets_update(
+      model::offset new_mcco, model::offset new_mxfo);
 
-    // the next 2 functions are for sending MTRO to followers
-    void send_mtro_to_followers();
-    ss::future<ss::stop_iteration> send_mtro_to_follower(vnode node_id);
+    // the next 2 functions are for sending MTRO and MXRO to followers
+    void send_group_offsets_to_followers();
+    ss::future<ss::stop_iteration>
+    send_group_offsets_to_follower(vnode node_id);
 
-    // calculation of MTRO on the leader
-    void recalculate_mtro();
+    // calculation of MTRO and MXRO on the leader
+    void recalculate_group_offsets();
 
     bool is_leader() const;
     void arm_timer_if_needed(bool jitter_only);
@@ -169,8 +192,10 @@ private:
 
     // model::offset{} means never calculated
     model::offset _local_mcco;
-    // model::offset{} if never successfully calculated, pending remote MCCOs
+    model::offset _local_mxfo;
+    // model::offset{} if never successfully calculated, pending remote offsets
     model::offset _mtro;
+    model::offset _mxro;
 
     // current leader, std::nullopt if no leader
     bool _is_leader{false};
@@ -178,7 +203,7 @@ private:
     // cancels the timer when consensus' abort source is triggered
     ss::optimized_optional<ss::abort_source::subscription> _as_sub;
 
-    // binding to tombstone retention config, to adjust timer interval
+    // binding to global tombstone&tx retention config, to adjust timer interval
     config::binding<std::optional<std::chrono::milliseconds>>
       _tombstone_retention_ms_binding;
 
@@ -193,9 +218,9 @@ private:
 public:
     struct test_accessor {
         static clock_t::duration
-        mcco_getting_delay(const compaction_coordinator& coco);
+        local_offsets_getting_delay(const compaction_coordinator& coco);
 
-        static clock_t::duration mtro_distribution_delay();
+        static clock_t::duration group_offsets_distribution_delay();
     };
 };
 } // namespace raft

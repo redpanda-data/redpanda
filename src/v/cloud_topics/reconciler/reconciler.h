@@ -15,6 +15,7 @@
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
+#include "cloud_topics/reconciler/adaptive_interval.h"
 #include "cloud_topics/reconciler/reconciler_probe.h"
 #include "cloud_topics/reconciler/reconciliation_consumer.h"
 #include "cluster/partition.h"
@@ -121,8 +122,6 @@ private:
     chunked_hash_map<model::ntp, ss::shared_ptr<source>> _sources;
 
 private:
-    static constexpr size_t max_object_size = 64_MiB;
-
     /*
      * A container for an object in the process of being built.
      * Always requires cleanup via close_builder() and cleanup_staging().
@@ -130,7 +129,7 @@ private:
     struct builder_context {
         std::unique_ptr<l1::staging_file> staging;
         std::unique_ptr<l1::object_builder> builder;
-        size_t size_budget{max_object_size};
+        size_t size_budget{0};
 
         // Close the builder.
         // Should be called before cleanup_staging.
@@ -172,7 +171,6 @@ private:
 
     // Top-level background worker that drives reconciliation.
     ss::future<> reconciliation_loop();
-    ss::lowres_clock::duration reconciliation_interval() const;
 
     /*
      * Reconcile a set of sources into an object with id `oid`.
@@ -251,11 +249,27 @@ private:
       const chunked_vector<built_object_metadata>& objects,
       std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder);
 
+    /*
+     * Partition sources into sets for reconciliation.
+     */
+    chunked_vector<chunked_vector<ss::shared_ptr<source>>>
+    partition_sources_into_sets(chunked_vector<ss::shared_ptr<source>> sources);
+
+    /*
+     * Reconcile a set of sources. Creates a metadata builder, maps sources to
+     * objects, builds and uploads objects, and commits them to the metastore.
+     * Returns the max object size produced, or 0 if no objects were
+     * successfully committed.
+     */
+    ss::future<size_t>
+    reconcile_source_set(chunked_vector<ss::shared_ptr<source>> sources);
+
     l1::io* _l1_io;
     l1::metastore* _metastore;
     ss::gate _gate;
     ss::abort_source _as;
     reconciler_probe _probe;
+    adaptive_interval _scheduler;
 };
 
 } // namespace cloud_topics::reconciler

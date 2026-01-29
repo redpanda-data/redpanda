@@ -109,6 +109,6 @@ class FailureInjectionConfig:
             "ntps": [ntp_cfg.to_dict() for ntp_cfg in self.ntp_failure_configs],
         }
 
-    def write_to_file(self, path):
+    def write_to_file(self, path: str) -> None:
         with open(path, "w") as f:
             json.dump(self.to_dict(), f)

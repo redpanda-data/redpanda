@@ -126,6 +126,12 @@ logger:
                     metrics[family.name] = family_metrics
         return metrics
 
+    def total_records_sent(self, name: str):
+        samples = self.stream_metrics(name=name)["output_sent"]
+        result = next((s.value for s in samples if s.name == "output_sent_total"), None)
+        assert result is not None, f"Unable to probe metrics for stream {name}"
+        return result
+
     def stop_stream(self, name: str, should_finish: bool | None = True, timeout_sec=60):
         """
         Optionally makse waits for the stream to finish and then removes the stream

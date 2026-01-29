@@ -41,7 +41,7 @@ overwrite its scopes. Available scope options are: redpanda_connect, redpanda_cl
 
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			if !p.FromCloud {
+			if !p.CheckFromCloud() {
 				out.Die("this command is only available for cloud clusters")
 			}
 			var url string
@@ -72,7 +72,7 @@ overwrite its scopes. Available scope options are: redpanda_connect, redpanda_cl
 				Scopes:     scopeRequest,
 			}
 
-			response, err := cl.Secrets.UpdateSecret(cmd.Context(), connect.NewRequest(request))
+			response, err := cl.Secret.UpdateSecret(cmd.Context(), connect.NewRequest(request))
 			if err != nil {
 				var connectErr *connect.Error
 				if errors.As(err, &connectErr) {

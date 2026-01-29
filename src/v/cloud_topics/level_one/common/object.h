@@ -20,6 +20,7 @@
 #include "model/timestamp.h"
 #include "serde/envelope.h"
 
+#include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 

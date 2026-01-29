@@ -50,7 +50,7 @@ static auto with(
   ss::shared_ptr<tm_stm> stm,
   const kafka::transactional_id& tx_id,
   const std::string_view name,
-  Func&& func) noexcept {
+  Func&& func) {
     return stm->lock_tx(tx_id, name)
       .then([stm, func = std::forward<Func>(func)](auto units) mutable {
           return ss::futurize_invoke(std::forward<Func>(func))
@@ -63,7 +63,7 @@ static auto with_free(
   ss::shared_ptr<tm_stm> stm,
   const kafka::transactional_id& tx_id,
   const std::string_view name,
-  Func&& func) noexcept {
+  Func&& func) {
     auto units = stm->try_lock_tx(tx_id, name);
     auto f = ss::now();
 
@@ -473,24 +473,22 @@ ss::future<try_abort_reply> tx_gateway_frontend::process_locally(
 
     if (reply.ec == tx::errc::none) {
         ssx::spawn_with_gate(
-          _gate, [this, stm, tx_id, timeout, synced_term]() mutable {
-              return stm->read_lock()
-                .then([this, stm, tx_id, timeout, synced_term](
-                        ss::basic_rwlock<>::holder unit) mutable {
-                    return with(
-                             stm,
-                             tx_id,
-                             "try_abort:get_tx",
-                             [this,
-                              stm,
-                              tx_id,
-                              timeout,
-                              synced_term]() mutable {
-                                 return find_and_try_progressing_transaction(
-                                   synced_term, stm, tx_id, timeout);
-                             })
-                      .finally([u = std::move(unit)] {});
-                })
+          _gate,
+          [this,
+           stm,
+           tx_id,
+           timeout,
+           synced_term,
+           read_units = std::move(read_units)]() mutable {
+              return with(
+                       stm,
+                       tx_id,
+                       "try_abort:get_tx",
+                       [this, stm, tx_id, timeout, synced_term]() mutable {
+                           return find_and_try_progressing_transaction(
+                             synced_term, stm, tx_id, timeout);
+                       })
+                .finally([u = std::move(read_units)] {})
                 .discard_result();
           });
     }
@@ -877,7 +875,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
               old_tx.id);
             auto tx_units = co_await stm->lock_tx(old_tx.id, "init_tm_tx");
 
-            auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
+            auto timeout
+              = config::shard_local_cfg().internal_rpc_request_timeout_ms();
             auto tx_maybe = co_await find_and_try_progressing_transaction(
               term, stm, old_tx.id, timeout);
             if (tx_maybe.has_value()) {
@@ -1866,8 +1865,11 @@ tx_gateway_frontend::handle_commit_tx(
             }
             co_return r.error();
         } catch (...) {
-            vlog(
-              txlog.error,
+            vlogl(
+              txlog,
+              ssx::is_shutdown_exception(std::current_exception())
+                ? ss::log_level::debug
+                : ss::log_level::error,
               "[tx_id={}] error committing transaction: {} - {}",
               tx.id,
               tx,
@@ -1918,7 +1920,7 @@ tx_gateway_frontend::handle_abort_tx(
                 co_return r.value();
             }
             vlog(
-              txlog.error,
+              txlog.warn,
               "[tx_id={}] error aborting transaction: {} - {}",
               tx.id,
               tx,
@@ -2618,7 +2620,7 @@ ss::future<> tx_gateway_frontend::expire_old_tx(
     }
 
     auto term = sync_result.value();
-    auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
+    auto timeout = config::shard_local_cfg().internal_rpc_request_timeout_ms();
 
     auto tx_maybe = co_await find_and_try_progressing_transaction(
       term, stm, tx_id, timeout);
@@ -2690,48 +2692,40 @@ tx_gateway_frontend::get_all_transactions_for_one_tx_partition(
       _ssg,
       [tx_partition = tx_manager_ntp.tp.partition](tx_gateway_frontend& self)
         -> ss::future<tx_gateway_frontend::return_all_txs_res> {
-          model::ntp tx_manager_ntp{
-            model::tx_manager_nt.ns, model::tx_manager_nt.tp, tx_partition};
-          auto partition = self._partition_manager.local().get(tx_manager_ntp);
-          if (!partition) {
-              vlog(txlog.warn, "can't get partition by {} ntp", tx_manager_ntp);
-              return ss::make_ready_future<return_all_txs_res>(
-                return_all_txs_res{tx::errc::partition_not_found});
-          }
-
-          auto stm = partition->tm_stm();
-
-          if (!stm) {
-              vlog(
-                txlog.error,
-                "can't get tm stm of the {}' partition",
-                tx_manager_ntp);
-              return ss::make_ready_future<return_all_txs_res>(
-                return_all_txs_res{tx::errc::unknown_server_error});
-          }
-
           auto gate_lock = self._gate.hold();
-          return stm->read_lock()
-            .then([stm](ss::basic_rwlock<>::holder unit) {
-                return stm->get_all_transactions()
-                  .then(
-                    [](tm_stm::get_txs_result res)
-                      -> ss::future<return_all_txs_res> {
-                        if (!res.has_value()) {
-                            if (res.error() == tm_stm::op_status::not_leader) {
-                                return ss::make_ready_future<
-                                  return_all_txs_res>(return_all_txs_res{
-                                  tx::errc::not_coordinator});
-                            }
-                            return ss::make_ready_future<return_all_txs_res>(
-                              return_all_txs_res{
-                                tx::errc::unknown_server_error});
-                        }
-                        return ss::make_ready_future<return_all_txs_res>(
-                          std::move(res).value());
-                    })
-                  .finally([u = std::move(unit)] {});
-            })
+          return self
+            .with_stm(
+              tx_partition,
+              [](checked<ss::shared_ptr<tm_stm>, tx::errc> r) {
+                  if (!r) {
+                      return ssx::now(return_all_txs_res{r.error()});
+                  }
+                  auto stm = r.value();
+                  return stm->read_lock().then([stm](
+                                                 ss::basic_rwlock<>::holder
+                                                   unit) {
+                      return stm->get_all_transactions()
+                        .then(
+                          [](tm_stm::get_txs_result res)
+                            -> ss::future<return_all_txs_res> {
+                              if (!res.has_value()) {
+                                  if (
+                                    res.error()
+                                    == tm_stm::op_status::not_leader) {
+                                      return ss::make_ready_future<
+                                        return_all_txs_res>(return_all_txs_res{
+                                        tx::errc::not_coordinator});
+                                  }
+                                  return ss::make_ready_future<
+                                    return_all_txs_res>(return_all_txs_res{
+                                    tx::errc::unknown_server_error});
+                              }
+                              return ss::make_ready_future<return_all_txs_res>(
+                                std::move(res).value());
+                          })
+                        .finally([u = std::move(unit)] {});
+                  });
+              })
             .finally([l = std::move(gate_lock)] {});
       });
 }
@@ -2814,43 +2808,25 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
       _ssg,
       [tid, tm_ntp = std::move(tm_ntp)](tx_gateway_frontend& self)
         -> ss::future<result<tx_metadata, tx::errc>> {
-          auto partition = self._partition_manager.local().get(tm_ntp);
-          if (!partition) {
-              vlog(
-                txlog.warn,
-                "[tx_id={}] transaction manager {} partition not found",
-                tid,
-                tm_ntp);
-
-              return ss::make_ready_future<result<tx_metadata, tx::errc>>(
-                tx::errc::partition_not_found);
-          }
-
-          auto stm = partition->tm_stm();
-
-          if (!stm) {
-              vlog(
-                txlog.warn,
-                "[tx_id={}] can not get transactional manager stm for {}",
-                tid,
-                tm_ntp);
-              return ss::make_ready_future<result<tx_metadata, tx::errc>>(
-                tx::errc::stm_not_found);
-          }
-
-          return ss::with_gate(self._gate, [&stm, &self, tid] {
-              return stm->read_lock().then(
-                [&self, stm, tid](ss::basic_rwlock<>::holder unit) {
-                    return with(
-                             stm,
-                             tid,
-                             "get_tx",
-                             [&self, stm, tid]() {
-                                 return self.describe_tx(stm, tid);
-                             })
-                      .finally([u = std::move(unit)] {});
-                });
-          });
+          return self.with_stm(
+            tm_ntp.tp.partition,
+            [&self, tid](checked<ss::shared_ptr<tm_stm>, tx::errc> r) {
+                if (!r) {
+                    return ssx::now<result<tx_metadata, tx::errc>>(r.error());
+                }
+                auto stm = r.value();
+                return stm->read_lock().then(
+                  [&self, stm, tid](ss::basic_rwlock<>::holder unit) {
+                      return with(
+                               stm,
+                               tid,
+                               "get_tx",
+                               [&self, stm, tid]() {
+                                   return self.describe_tx(stm, tid);
+                               })
+                        .finally([u = std::move(unit)] {});
+                  });
+            });
       });
 }
 
@@ -2861,14 +2837,8 @@ ss::future<result<tx_metadata, tx::errc>> tx_gateway_frontend::describe_tx(
         co_return sync_result.error();
     }
     auto term = sync_result.value();
-
-    // create_topic_timeout_ms isn't the right timeout here but this change
-    // is intendent to be a backport so we're not at will to introduce new
-    // configuration; what we need there is a timeout which acts as an upper
-    // boundary for happy case replication and create_topic_timeout_ms is a
-    // good approximation, we already use it for that purpose in other api:
-    // init_producer_id, add_offsets_to_txn etc
-    auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
+    const auto timeout
+      = config::shard_local_cfg().internal_rpc_request_timeout_ms();
     co_return co_await find_and_try_progressing_transaction(
       term, stm, tid, timeout);
 }
@@ -2894,6 +2864,8 @@ ss::future<tx::errc> tx_gateway_frontend::delete_partition_from_tx(
         co_return tx::errc::coordinator_not_available;
     }
 
+    auto holder = _gate.hold();
+
     auto leader = co_await wait_for_leader(tm_ntp.value());
     if (leader != _self) {
         vlog(
@@ -2917,40 +2889,32 @@ ss::future<tx::errc> tx_gateway_frontend::delete_partition_from_tx(
 
     co_return co_await container().invoke_on(
       *shard, _ssg, [tid, ntp, tm_ntp](tx_gateway_frontend& self) {
-          auto partition = self._partition_manager.local().get(tm_ntp.value());
-          if (!partition) {
-              vlog(
-                txlog.warn,
-                "[tx_id={}] transaction manager {} partition not found",
-                tid,
-                tm_ntp);
-              return ss::make_ready_future<tx::errc>(
-                tx::errc::invalid_txn_state);
-          }
-
-          auto stm = partition->tm_stm();
-
-          if (!stm) {
-              vlog(
-                txlog.warn,
-                "[tx_id={}] can not get transactional manager stm for {}",
-                tid,
-                tm_ntp);
-              return ss::make_ready_future<tx::errc>(
-                tx::errc::invalid_txn_state);
-          }
-
-          return stm->read_lock().then(
-            [&self, stm, tid, ntp](ss::basic_rwlock<>::holder unit) {
-                return with(
-                         stm,
-                         tid,
-                         "delete_partition_from_tx",
-                         [&self, stm, tid, ntp]() {
-                             return self.do_delete_partition_from_tx(
-                               stm, tid, ntp);
-                         })
-                  .finally([u = std::move(unit)] {});
+          return self.with_stm(
+            tm_ntp.value().tp.partition,
+            [&self, tid, ntp](
+              checked<ss::shared_ptr<tm_stm>, tx::errc> r) mutable {
+                if (!r) {
+                    auto e = r.error();
+                    if (
+                      e == tx::errc::partition_not_found
+                      || e == tx::errc::stm_not_found) {
+                        return ssx::now(tx::errc::invalid_txn_state);
+                    }
+                    return ssx::now(e);
+                }
+                auto stm = r.value();
+                return stm->read_lock().then(
+                  [&self, stm, tid, ntp](ss::basic_rwlock<>::holder unit) {
+                      return with(
+                               stm,
+                               tid,
+                               "delete_partition_from_tx",
+                               [&self, stm, tid, ntp]() {
+                                   return self.do_delete_partition_from_tx(
+                                     stm, tid, ntp);
+                               })
+                        .finally([u = std::move(unit)] {});
+                  });
             });
       });
 }

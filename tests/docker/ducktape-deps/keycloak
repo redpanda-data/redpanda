@@ -4,7 +4,7 @@ set -e
 source "$(dirname "${BASH_SOURCE[0]}")/download-utils" # import download-utils
 
 # get keycloak binary
-KC_VERSION=23.0.3
+KC_VERSION=26.4.5
 
 download_extract "https://github.com/keycloak/keycloak/releases/download/${KC_VERSION}/keycloak-${KC_VERSION}.tar.gz" .
 

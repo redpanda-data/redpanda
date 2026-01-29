@@ -277,6 +277,7 @@ redpanda_cc_btest(
     cpu = 1,
     deps = [
         "//src/v/cluster",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/client:transport",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:describe_groups",

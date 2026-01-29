@@ -3302,7 +3302,6 @@ class pointer_metadata(object):
         self._is_containing_page_free = False
         self.is_small = False
         self.is_live = False
-        self.is_lsa = False
         self.size = 0
         self.offset_in_object = 0
 
@@ -3312,7 +3311,6 @@ class pointer_metadata(object):
         self._is_containing_page_free = None
         self.is_small = None
         self.is_live = None
-        self.is_lsa = None
         self.size = speculative_size
         self.offset_in_object = 0
 
@@ -3351,9 +3349,6 @@ class pointer_metadata(object):
         else:
             msg += ", free (0x%x +%d)" % (self.obj_ptr, self.offset_in_object)
 
-        if self.is_lsa:
-            msg += ", LSA-managed"
-
         return msg
 
 
@@ -3361,15 +3356,6 @@ def has_reactor():
     if gdb.parse_and_eval("'seastar'::local_engine"):
         return True
     return False
-
-
-def get_lsa_segment_pool():
-    try:
-        tracker = gdb.parse_and_eval("'logalloc::tracker_instance'")
-        tracker_impl = std_unique_ptr(tracker["_impl"]).get().dereference()
-        return std_unique_ptr(tracker_impl["_segment_pool"]).get().dereference()
-    except gdb.error:
-        return gdb.parse_and_eval("'logalloc::shard_segment_pool'")
 
 
 @functools.cache
@@ -3402,19 +3388,6 @@ def seastar_memory_layout():
         start, total_mem = get_seastar_memory_start_and_size()
         results.append((t, start, total_mem))
     return results
-
-
-def get_segment_base(segment_pool):
-    try:
-        segment_store = segment_pool["_store"]
-        try:
-            return int(
-                std_unique_ptr(segment_store["_backend"]).get()["_segments_base"]
-            )
-        except gdb.error:
-            return int(segment_store["_segments_base"])
-    except gdb.error:
-        return int(segment_pool["_segments_base"])
 
 
 class redpanda_ptr(gdb.Command):
@@ -3505,14 +3478,6 @@ class redpanda_ptr(gdb.Command):
             ptr_meta.is_live = not span.is_free()
             ptr_meta.size = span.size() * page_size
             ptr_meta.offset_in_object = ptr - span.start
-
-        # FIXME: handle debug-mode build
-        segment_pool = get_lsa_segment_pool()
-        segments_base = get_segment_base(segment_pool)
-        segment_size = int(gdb.parse_and_eval("'logalloc::segment'::size"))
-        index = int((int(ptr) - segments_base) / segment_size)
-        desc = std_vector(segment_pool["_segments"])[index]
-        ptr_meta.is_lsa = bool(desc["_region"])
 
         return ptr_meta
 

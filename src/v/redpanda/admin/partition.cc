@@ -37,7 +37,7 @@ using admin::apply_validator;
 
 ss::future<ss::json::json_return_type>
 admin_server::get_transactions_handler(std::unique_ptr<ss::http::request> req) {
-    const model::ntp ntp = parse_ntp_from_request(req->param);
+    model::ntp ntp = parse_ntp_from_request(req->param);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*req, ntp);
@@ -130,7 +130,7 @@ admin_server::get_transactions_inner_handler(
 ss::future<ss::json::json_return_type>
 admin_server::mark_transaction_expired_handler(
   std::unique_ptr<ss::http::request> req) {
-    const model::ntp ntp = parse_ntp_from_request(req->param);
+    model::ntp ntp = parse_ntp_from_request(req->param);
 
     model::producer_identity pid;
     auto param = req->get_query_param("id");
@@ -216,8 +216,9 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
 
     auto [reconfiguration_states, reconciliations]
       = co_await ss::when_all_succeed(
-        _controller->get_api().local().get_partitions_reconfiguration_state(
-          ntps, deadline),
+        _controller->get_api()
+          .local()
+          .get_partitions_leader_reconfiguration_state(ntps, deadline),
         _controller->get_api().local().get_global_reconciliation_state(
           ntps, deadline));
 
@@ -827,7 +828,7 @@ void admin_server::register_partition_routes() {
                 result.count = summary.count;
                 result.leaderless = summary.leaderless;
                 result.under_replicated = summary.under_replicated;
-                return ss::json::json_return_type(std::move(result));
+                return ss::json::json_return_type(result);
             });
       });
     register_route<user>(
@@ -1026,7 +1027,7 @@ admin_server::get_partition_handler(std::unique_ptr<ss::http::request> req) {
           .get_reconciliation_state(ntp)
           .then([p](const cluster::ntp_reconciliation_state& state) mutable {
               p.status = ssx::sformat("{}", state.status());
-              return ss::json::json_return_type(std::move(p));
+              return ss::json::json_return_type(p);
           });
     }
 }
@@ -1178,7 +1179,7 @@ admin_server::get_majority_lost_partitions(
             ntp_json.partition = ntp.ntp.tp.partition();
 
             ss::httpd::partition_json::ntp_with_majority_loss result;
-            result.ntp = std::move(ntp_json);
+            result.ntp = ntp_json;
             result.topic_revision = ntp.topic_revision;
             for (auto& replica : ntp.assignment) {
                 ss::httpd::partition_json::assignment assignment;

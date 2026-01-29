@@ -11,7 +11,9 @@
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 
 #include "cloud_topics/level_one/common/abstract_io.h"
-#include "cloud_topics/level_one/domain/domain_manager.h"
+#include "cloud_topics/level_one/domain/db_domain_manager.h"
+#include "cloud_topics/level_one/domain/simple_domain_manager.h"
+#include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/logger.h"
 #include "cluster/controller.h"
 #include "cluster/topics_frontend.h"
@@ -26,12 +28,19 @@
 using namespace std::chrono_literals;
 
 namespace cloud_topics::l1 {
-
 class domain_supervisor::impl {
 public:
-    explicit impl(cluster::controller* controller, io* io)
+    explicit impl(
+      cluster::controller* controller,
+      io* io,
+      std::filesystem::path staging_dir,
+      cloud_io::remote* remote,
+      cloud_storage_clients::bucket_name bucket)
       : _controller(controller)
       , _object_io(io)
+      , _staging_dir(std::move(staging_dir))
+      , _remote(remote)
+      , _bucket(std::move(bucket))
       , _queue([](const std::exception_ptr& ex) {
           vlog(cd_log.error, "Unexpected domain supervisor error: {}", ex);
       }) {}
@@ -47,9 +56,19 @@ public:
     void on_domain_leadership_change(
       const model::ntp& ntp,
       ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition) {
+        std::optional<model::term_id> term;
+        if (partition) {
+            auto raft = partition->get()->raft();
+            vassert(
+              raft->is_leader(),
+              "Expected to be leader of {} with `partition` set",
+              ntp);
+            term = raft->term();
+        }
         _queue.submit(
-          [this, ntp = ntp, partition = std::move(partition)]() mutable {
-              return reset_domain_manager(std::move(ntp), std::move(partition));
+          [this, ntp = ntp, partition = std::move(partition), term]() mutable {
+              return reset_domain_manager(
+                std::move(ntp), std::move(partition), term);
           });
     }
 
@@ -74,7 +93,7 @@ public:
         }
     }
 
-    ss::lw_shared_ptr<domain_manager> get(const model::ntp& ntp) const {
+    ss::shared_ptr<domain_manager> get(const model::ntp& ntp) const {
         auto it = _domains.find(ntp);
         if (it == _domains.end()) {
             return nullptr;
@@ -186,13 +205,13 @@ private:
     ss::future<> update_topic(cluster::topic_properties_update update) {
         cluster::errc ec{};
         try {
-            auto res
-              = co_await _controller->get_topics_frontend()
-                  .local()
-                  .update_topic_properties(
-                    {update},
-                    ss::lowres_clock::now()
-                      + config::shard_local_cfg().alter_topic_cfg_timeout_ms());
+            auto res = co_await _controller->get_topics_frontend()
+                         .local()
+                         .update_topic_properties(
+                           {update},
+                           ss::lowres_clock::now()
+                             + config::shard_local_cfg()
+                                 .internal_rpc_request_timeout_ms());
             vassert(res.size() == 1, "expected a single result");
             ec = res[0].ec;
         } catch (const std::exception& ex) {
@@ -223,7 +242,8 @@ private:
                          .local()
                          .autocreate_topics(
                            {std::move(topic_cfg)},
-                           config::shard_local_cfg().create_topic_timeout_ms());
+                           config::shard_local_cfg()
+                             .internal_rpc_request_timeout_ms());
             vassert(res.size() == 1, "expected a single result");
             ec = res[0].ec;
             // fall through to handle ec value
@@ -244,15 +264,15 @@ private:
 
     ss::future<> reset_domain_manager(
       model::ntp ntp,
-      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition) {
+      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition,
+      std::optional<model::term_id> expected_term) {
         auto dm_id = domain_manager_id{ntp};
         auto dm_it = _domains.find(dm_id);
-        auto dm_exists = dm_it != _domains.end();
-        if (dm_exists) {
-            if (partition) {
-                // We already have a domain manager, there is nothing to do.
-                co_return;
-            }
+
+        // Unconditionally remove the domain manager if it exists. If it
+        // exists, it belongs to an older term and we need to have one domain
+        // manager open at a time.
+        if (dm_it != _domains.end()) {
             auto dm = std::move(dm_it->second);
             _domains.erase(dm_it);
             auto stop_fut = co_await ss::coroutine::as_future(
@@ -269,14 +289,52 @@ private:
         if (!partition) {
             co_return;
         }
-        auto domain_mgr = ss::make_lw_shared<domain_manager>(
-          (*partition)->raft()->stm_manager()->get<simple_stm>(), _object_io);
+        vassert(
+          expected_term.has_value(),
+          "Expected call must be set of partition is set");
+        auto raft = partition->get()->raft();
+        if (!raft->is_leader() || raft->term() != *expected_term) {
+            // Only open a new domain manager if we're still in the expected
+            // term. If not, exit early and rely on a later queued call to open
+            // the domain manager for it. This helps ensure exactly one domain
+            // manager is opened per term, since we're expecting exacly one
+            // reset_domain_manager() call per term.
+            vlog(
+              cd_log.trace,
+              "No longer leader of {} term {}, current term: {}, exiting early",
+              dm_id,
+              *expected_term,
+              raft->term());
+            co_return;
+        }
+        vlog(
+          cd_log.info,
+          "Starting new domain manager for {} in term {}",
+          dm_id,
+          *expected_term);
+
+        ss::shared_ptr<domain_manager> domain_mgr;
+        auto& stm_manager = (*partition)->raft()->stm_manager();
+        if (stm_manager->get<stm>()) {
+            domain_mgr = ss::make_shared<db_domain_manager>(
+              *expected_term,
+              stm_manager->get<stm>(),
+              _staging_dir,
+              _remote,
+              _bucket);
+        } else {
+            domain_mgr = ss::make_shared<simple_domain_manager>(
+              stm_manager->get<simple_stm>(), _object_io);
+        }
         domain_mgr->start();
         _domains.emplace(dm_id, std::move(domain_mgr));
     }
 
     cluster::controller* _controller;
     io* _object_io;
+    std::filesystem::path _staging_dir;
+    cloud_io::remote* _remote;
+    cloud_storage_clients::bucket_name _bucket;
 
     // Queue to process async work associated with starting and stopping domain
     // managers when handling partition notifications.
@@ -285,15 +343,22 @@ private:
     // Container for domain managers, one per leader of L1 metastore topic
     // partition.
     using domain_manager_id = model::ntp;
-    chunked_hash_map<domain_manager_id, ss::lw_shared_ptr<domain_manager>>
+    chunked_hash_map<domain_manager_id, ss::shared_ptr<domain_manager>>
       _domains;
 
     std::optional<ss::future<>> _loop;
     ss::abort_source _as;
 };
 
-domain_supervisor::domain_supervisor(cluster::controller* controller, io* io)
-  : _impl(std::make_unique<impl>(controller, io)) {}
+domain_supervisor::domain_supervisor(
+  cluster::controller* controller,
+  io* io,
+  std::filesystem::path staging_dir,
+  cloud_io::remote* remote,
+  cloud_storage_clients::bucket_name bucket)
+  : _impl(
+      std::make_unique<impl>(
+        controller, io, std::move(staging_dir), remote, std::move(bucket))) {}
 
 domain_supervisor::~domain_supervisor() = default;
 
@@ -301,7 +366,7 @@ ss::future<> domain_supervisor::start() { return _impl->start(); }
 
 ss::future<> domain_supervisor::stop() { return _impl->stop(); }
 
-ss::lw_shared_ptr<domain_manager>
+ss::shared_ptr<domain_manager>
 domain_supervisor::get(const model::ntp& ntp) const {
     return _impl->get(ntp);
 }

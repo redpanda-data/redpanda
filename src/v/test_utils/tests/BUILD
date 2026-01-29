@@ -32,8 +32,6 @@ redpanda_cc_gtest(
     srcs = [
         "test_utils_test.cc",
     ],
-    # CORE-14523
-    flaky = True,
     deps = [
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

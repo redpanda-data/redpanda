@@ -12,6 +12,7 @@ package role
 import (
 	"strings"
 
+	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
 	"github.com/redpanda-data/common-go/rpadmin"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -61,4 +62,25 @@ func parseRoleMember(principals []string) []rpadmin.RoleMember {
 		members = append(members, rpadmin.RoleMember{Name: name, PrincipalType: pType})
 	}
 	return members
+}
+
+// roleMemberToMembership converts []rpadmin.RoleMember to []*dataplanev1.RoleMembership.
+func roleMemberToMembership(members []rpadmin.RoleMember) []*dataplanev1.RoleMembership {
+	result := make([]*dataplanev1.RoleMembership, len(members))
+	for i, m := range members {
+		result[i] = &dataplanev1.RoleMembership{Principal: m.PrincipalType + ":" + m.Name}
+	}
+	return result
+}
+
+// membershipToRoleMember converts []*dataplanev1.RoleMembership to []rpadmin.RoleMember.
+// If memberships is nil, returns an empty slice (to avoid printing "null" in
+// JSON/YAML output).
+func membershipToRoleMember(memberships []*dataplanev1.RoleMembership) []rpadmin.RoleMember {
+	result := make([]rpadmin.RoleMember, len(memberships))
+	for i, m := range memberships {
+		pType, name := parsePrincipal(m.Principal)
+		result[i] = rpadmin.RoleMember{Name: name, PrincipalType: pType}
+	}
+	return result
 }

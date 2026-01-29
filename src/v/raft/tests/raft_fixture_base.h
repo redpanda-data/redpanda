@@ -30,6 +30,7 @@
 #include "raft/types.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
+#include "storage/log.h"
 #include "test_utils/random_bytes.h"
 #include "utils/prefix_logger.h"
 
@@ -49,12 +50,9 @@ inline constexpr raft::group_id test_group(123);
 enum class msg_type {
     append_entries,
     vote,
-    heartbeat,
     heartbeat_v2,
     install_snapshot,
     timeout_now,
-    transfer_leadership,
-    remake_learner_state,
     get_compaction_mcco,
     distribute_compaction_mtro
 };
@@ -110,12 +108,9 @@ struct raft_node_map {
 using reply_variant = std::variant<
   vote_reply,
   append_entries_reply,
-  heartbeat_reply,
   heartbeat_reply_v2,
   install_snapshot_reply,
   timeout_now_reply,
-  transfer_leadership_reply,
-  remake_learner_state_reply,
   get_compaction_mcco_reply,
   distribute_compaction_mtro_reply>;
 
@@ -129,14 +124,17 @@ class in_memory_test_protocol : public consensus_client_protocol::impl {
 public:
     explicit in_memory_test_protocol(raft_node_map&, prefix_logger&);
 
+    ss::future<bool> ensure_disconnect(model::node_id) final {
+        co_return true;
+    };
+
+    ss::future<> reset_backoff(model::node_id) final { co_return; }
+
     ss::future<result<vote_reply>>
       vote(model::node_id, vote_request, rpc::client_opts) final;
 
     ss::future<result<append_entries_reply>> append_entries(
       model::node_id, append_entries_request, rpc::client_opts) final;
-
-    ss::future<result<heartbeat_reply>>
-      heartbeat(model::node_id, heartbeat_request, rpc::client_opts) final;
 
     ss::future<result<heartbeat_reply_v2>> heartbeat_v2(
       model::node_id, heartbeat_request_v2, rpc::client_opts) final;
@@ -147,15 +145,6 @@ public:
     ss::future<result<timeout_now_reply>>
       timeout_now(model::node_id, timeout_now_request, rpc::client_opts) final;
 
-    ss::future<result<transfer_leadership_reply>> transfer_leadership(
-      model::node_id, transfer_leadership_request, rpc::client_opts) final;
-
-    // TODO: move those methods out of Raft protocol.
-    ss::future<> reset_backoff(model::node_id) final { co_return; }
-
-    ss::future<result<remake_learner_state_reply>> remake_learner_state(
-      model::node_id, remake_learner_state_request, rpc::client_opts) final;
-
     ss::future<result<get_compaction_mcco_reply>> get_compaction_mcco(
       model::node_id, get_compaction_mcco_request, rpc::client_opts) final;
 
@@ -164,10 +153,6 @@ public:
         model::node_id,
         distribute_compaction_mtro_request,
         rpc::client_opts) final;
-
-    ss::future<bool> ensure_disconnect(model::node_id) final {
-        co_return true;
-    };
 
     channel& get_channel(model::node_id id);
 
@@ -268,7 +253,6 @@ public:
 
     ss::future<> remove_data();
 
-    ss::future<std::error_code> remake_learner_callback(group_id g);
     void leadership_notification_callback(leadership_status);
 
     model::ntp ntp() const {
@@ -321,6 +305,8 @@ public:
 
     ss::shared_ptr<failure_injectable_log> f_injectable_log() { return _f_log; }
 
+    ss::shared_ptr<storage::log> underlying_log() { return _underlying_log; }
+
     service_t& get_service() { return _service; }
 
     void set_default_recovery_read_size(size_t bytes) {
@@ -354,6 +340,7 @@ private:
     ss::sharded<fixture_group_manager> _group_manager;
     fixture_shard_manager _shard_manager{};
     service_t _service;
+    ss::shared_ptr<storage::log> _underlying_log;
     ss::shared_ptr<raft::failure_injectable_log> _f_log;
 };
 

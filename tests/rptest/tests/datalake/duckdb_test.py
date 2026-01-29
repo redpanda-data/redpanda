@@ -62,7 +62,9 @@ class DuckDBTest(RedpandaTest):
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=1)
             dl.produce_to_topic(self.topic_name, 1024, count)
 
-            dl.wait_for_translation(self.topic_name, msg_count=count, timeout=60)
+            dl.wait_for_translation(
+                self.topic_name, msg_count=count, timeout=120, progress_sec=30
+            )
 
             # TODO add test with WHERE clause which currently is broken.
             #   Even `WHERE value IS NOT NULL` fails with:

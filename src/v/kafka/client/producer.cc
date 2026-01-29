@@ -51,7 +51,7 @@ produce_response::partition make_produce_response(
       .error_code = error_code::none,
     };
     try {
-        std::rethrow_exception(std::move(ex));
+        std::rethrow_exception(ex);
     } catch (const partition_error& ex) {
         vlog(logger.debug, "handling partition_error {}", ex.what());
         response.error_code = ex.error;
@@ -175,7 +175,7 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
     return ss::do_with(
              std::move(batch),
              [this, tp](model::record_batch& batch) mutable {
-                 return ss::with_gate(_gate, [this, tp, &batch]() {
+                 return ss::with_gate(_gate, [this, tp, &batch]() mutable {
                      return retry_with_mitigation(
                        _retries_config.max_retries,
                        _retries_config.retry_base_backoff,
@@ -183,8 +183,8 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
                            return do_send(tp, batch.share());
                        },
                        [this](std::exception_ptr ex) {
-                           return _error_handler(std::move(ex))
-                             .handle_exception([this](std::exception_ptr ex) {
+                           return _error_handler(ex).handle_exception(
+                             [this](std::exception_ptr ex) {
                                  vlog(
                                    _logger->trace,
                                    "Error during mitigation: {}",
@@ -196,7 +196,7 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
                  });
              })
       .handle_exception([this, p_id](std::exception_ptr ex) {
-          return make_produce_response(p_id, std::move(ex), *_logger);
+          return make_produce_response(p_id, ex, *_logger);
       })
       .then([this, tp, record_count](produce_response::partition res) mutable {
           vlog(

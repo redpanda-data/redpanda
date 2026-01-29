@@ -346,7 +346,7 @@ ss::future<> transport::do_dispatch_send() {
           auto units = std::move(resp_entry->resource_units);
           auto msg_size = v.size();
 
-          auto f = _out.write(std::move(v));
+          auto f = out().write(std::move(v));
           resp_entry->timing.dispatched_at = clock_type::now();
           vlog(
             rpclog.trace,
@@ -393,7 +393,7 @@ ss::future<> transport::do_reads() {
     return ss::do_until(
       [this] { return !is_valid(); },
       [this] {
-          return parse_header(_in).then([this](std::optional<header> h) {
+          return parse_header(in()).then([this](std::optional<header> h) {
               if (!h) {
                   vlog(
                     rpclog.debug,
@@ -421,7 +421,7 @@ ss::future<> transport::dispatch(header h) {
           h.correlation_id);
         // we have to skip received bytes to make input stream
         // state correct
-        return _in.skip(h.payload_size);
+        return in().skip(h.payload_size);
     }
     _probe->add_bytes_received(size_of_rpc_header + h.payload_size);
     auto ctx = std::make_unique<client_context_impl>(*this, h);

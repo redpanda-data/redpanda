@@ -37,13 +37,14 @@ static cloud_topics::cluster_epoch min_epoch{3840};
 namespace cloud_topics {
 namespace l0 {
 struct write_request_balancer_accessor {
-    static void disable_data_threshold_uploads(write_request_scheduler* s) {
+    static void disable_data_threshold_uploads(write_request_scheduler<>* s) {
         s->_test_only_disable_data_threshold = true;
     }
-    static void disable_time_based_fallback(write_request_scheduler* s) {
+    static void disable_time_based_fallback(write_request_scheduler<>* s) {
         s->_test_only_disable_time_based_fallback = true;
     }
-    static ss::future<> apply_time_based_fallback(write_request_scheduler* s) {
+    static ss::future<>
+    apply_time_based_fallback(write_request_scheduler<>* s) {
         return s->apply_time_based_fallback();
     }
 };
@@ -67,7 +68,7 @@ struct pipeline_sink {
         auto h = _gate.hold();
         while (!_as.abort_requested()) {
             auto res = co_await stage.wait_next(&_as);
-            if (res.has_error()) {
+            if (!res.has_value()) {
                 co_return;
             }
             auto event = res.value();
@@ -102,7 +103,7 @@ public:
 
         co_await scheduler.invoke_on_all(
           [disable_data_threshold, disable_time_based_fallback](
-            cloud_topics::l0::write_request_scheduler& s) {
+            cloud_topics::l0::write_request_scheduler<>& s) {
               if (disable_data_threshold) {
                   cloud_topics::l0::write_request_balancer_accessor::
                     disable_data_threshold_uploads(&s);
@@ -129,7 +130,7 @@ public:
     }
 
     ss::sharded<cloud_topics::l0::write_pipeline<>> pipeline;
-    ss::sharded<cloud_topics::l0::write_request_scheduler> scheduler;
+    ss::sharded<cloud_topics::l0::write_request_scheduler<>> scheduler;
     ss::sharded<cloud_topics::pipeline_sink> request_sink;
 };
 

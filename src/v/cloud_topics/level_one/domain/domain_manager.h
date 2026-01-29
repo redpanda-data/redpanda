@@ -10,66 +10,61 @@
 #pragma once
 
 #include "cloud_topics/level_one/metastore/rpc_types.h"
-#include "cloud_topics/level_one/metastore/simple_stm.h"
 
 namespace cloud_topics::l1 {
-class io;
 
-// Encapsulates management of a given L1 metastore domain by wrapping a STM.
-// Expected to be running on the leader replicas of the partition that backs
-// the STM.
-//
-// The underlying STM itself focuses solely on persisting deterministic
-// updates, while this:
-// 1. wrangles additional aspects of these updates like concurrency, and
-// 2. TODO: reconciles the STM state with cloud-recoverable state.
+// Abstract base class for domain managers.
+// Defines the interface used by leader_router to interact with domain managers.
 class domain_manager {
 public:
-    explicit domain_manager(ss::shared_ptr<simple_stm> stm, io* io);
+    domain_manager() = default;
+    domain_manager(const domain_manager&) = delete;
+    domain_manager(domain_manager&&) = delete;
+    domain_manager& operator=(const domain_manager&) = delete;
+    domain_manager& operator=(domain_manager&&) = delete;
+    virtual ~domain_manager() = default;
 
-    void start();
-    ss::future<> stop_and_wait();
+    virtual void start() = 0;
+    virtual ss::future<> stop_and_wait() = 0;
 
-    ss::future<rpc::add_objects_reply> add_objects(rpc::add_objects_request);
+    virtual ss::future<rpc::add_objects_reply>
+      add_objects(rpc::add_objects_request) = 0;
 
-    ss::future<rpc::replace_objects_reply>
-      replace_objects(rpc::replace_objects_request);
+    virtual ss::future<rpc::replace_objects_reply>
+      replace_objects(rpc::replace_objects_request) = 0;
 
-    ss::future<rpc::get_first_offset_ge_reply>
-      get_first_offset_ge(rpc::get_first_offset_ge_request);
+    virtual ss::future<rpc::get_first_offset_ge_reply>
+      get_first_offset_ge(rpc::get_first_offset_ge_request) = 0;
 
-    ss::future<rpc::get_first_timestamp_ge_reply>
-      get_first_timestamp_ge(rpc::get_first_timestamp_ge_request);
+    virtual ss::future<rpc::get_first_timestamp_ge_reply>
+      get_first_timestamp_ge(rpc::get_first_timestamp_ge_request) = 0;
 
-    ss::future<rpc::get_first_offset_for_bytes_reply>
-      get_first_offset_for_bytes(rpc::get_first_offset_for_bytes_request);
+    virtual ss::future<rpc::get_first_offset_for_bytes_reply>
+      get_first_offset_for_bytes(rpc::get_first_offset_for_bytes_request) = 0;
 
-    ss::future<rpc::get_offsets_reply> get_offsets(rpc::get_offsets_request);
+    virtual ss::future<rpc::get_offsets_reply>
+      get_offsets(rpc::get_offsets_request) = 0;
 
-    ss::future<rpc::get_compaction_info_reply>
-      get_compaction_info(rpc::get_compaction_info_request);
+    virtual ss::future<rpc::get_compaction_info_reply>
+      get_compaction_info(rpc::get_compaction_info_request) = 0;
 
-    ss::future<rpc::get_term_for_offset_reply>
-      get_term_for_offset(rpc::get_term_for_offset_request);
+    virtual ss::future<rpc::get_term_for_offset_reply>
+      get_term_for_offset(rpc::get_term_for_offset_request) = 0;
 
-    ss::future<rpc::get_end_offset_for_term_reply>
-      get_end_offset_for_term(rpc::get_end_offset_for_term_request);
+    virtual ss::future<rpc::get_end_offset_for_term_reply>
+      get_end_offset_for_term(rpc::get_end_offset_for_term_request) = 0;
 
-    ss::future<rpc::set_start_offset_reply>
-      set_start_offset(rpc::set_start_offset_request);
+    virtual ss::future<rpc::set_start_offset_reply>
+      set_start_offset(rpc::set_start_offset_request) = 0;
 
-    ss::future<rpc::remove_topics_reply>
-      remove_topics(rpc::remove_topics_request);
+    virtual ss::future<rpc::remove_topics_reply>
+      remove_topics(rpc::remove_topics_request) = 0;
 
-private:
-    std::optional<ss::gate::holder> maybe_gate();
-    ss::future<> gc_loop();
-    ss::lowres_clock::duration gc_interval() const;
+    virtual ss::future<rpc::get_compaction_infos_reply>
+      get_compaction_infos(rpc::get_compaction_infos_request) = 0;
 
-    ss::gate gate_;
-    ss::abort_source as_;
-    ss::shared_ptr<simple_stm> stm_;
-    io* object_io_;
+    virtual ss::future<rpc::get_extent_metadata_reply>
+      get_extent_metadata(rpc::get_extent_metadata_request) = 0;
 };
 
 } // namespace cloud_topics::l1

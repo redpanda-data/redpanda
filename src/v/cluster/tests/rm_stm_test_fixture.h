@@ -55,6 +55,15 @@ struct rm_stm_test_fixture : simple_raft_fixture {
         _started = true;
     }
 
+    cluster::rm_stm& start_and_disable_auto_abort() {
+        create_stm_and_start_raft();
+        _stm->testing_only_disable_auto_abort();
+        _stm->start().get();
+        wait_for_confirmed_leader();
+        wait_for_meta_initialized();
+        return *_stm;
+    }
+
     ~rm_stm_test_fixture() {
         if (_started) {
             stop_all();

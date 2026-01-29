@@ -15,8 +15,8 @@
 #include "config/property.h"
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
+#include "ssx/mutex.h"
 #include "storage/fwd.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -229,7 +229,7 @@ private:
     /// Timer used to clean up previous runs of the debug bundle
     ss::timer<ss::lowres_clock> _cleanup_timer;
     /// Mutex to guard control over the rpk debug bundle process
-    mutex _process_control_mutex;
+    ssx::mutex _process_control_mutex;
     ss::gate _gate;
 };
 } // namespace debug_bundle

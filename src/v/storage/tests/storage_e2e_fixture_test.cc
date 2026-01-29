@@ -62,7 +62,7 @@ FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     produces.reserve(5);
     int incomplete = 5;
     for (int i = 0; i < 5; i++) {
-        auto fut = produce_to_fixture(topic_name, &incomplete);
+        auto fut = produce_to_fixture_with_retries(topic_name, &incomplete);
         produces.emplace_back(std::move(fut));
     }
     auto partition = app.partition_manager.local().get(ntp);
@@ -83,9 +83,16 @@ FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     vlog(test_logger.info, "Applied segment_ms {} times", retention_rounds);
 
     // Ensure all produces completed successfully.
+    std::exception_ptr error;
     for (auto&& p : produces) {
-        std::move(p).get();
+        try {
+            std::move(p).get();
+        } catch (...) {
+            error = std::current_exception();
+            vlog(test_logger.info, "Error from produce: {}", error);
+        }
     }
+    BOOST_REQUIRE(!error);
     app.stress_fiber_manager.local().stop().get();
 }
 
@@ -112,6 +119,7 @@ FIXTURE_TEST(test_concurrent_log_eviction_and_append, storage_e2e_fixture) {
       /*max_bytes_in_log=*/1,
       /*max_collect_offset=*/model::offset::min(),
       /*max_tombstone_remove_offset=*/model::offset::min(),
+      /*max_tx_end_remove_offset=*/model::offset::min(),
       /*tombstone_retention_ms=*/std::nullopt,
       /*tx_retention_ms=*/std::nullopt,
       /*min_lag_ms=*/std::chrono::milliseconds{0},

@@ -50,6 +50,7 @@
 #include "random/generators.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
+#include "resource_mgmt/memory_groups.h"
 #include "security/acl.h"
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
@@ -79,11 +80,10 @@ redpanda_thread_fixture::redpanda_thread_fixture(
   model::node_id node_id,
   int32_t kafka_port,
   int32_t rpc_port,
-  int32_t proxy_port,
-  int32_t schema_reg_port,
+  std::optional<int32_t> proxy_port,
+  std::optional<int32_t> schema_reg_port,
   std::vector<config::seed_server> seed_servers,
   ss::sstring base_dir,
-  std::optional<scheduling_groups> sch_groups,
   bool remove_on_shutdown,
   std::optional<cloud_storage_clients::s3_configuration> s3_config,
   std::optional<archival::configuration> archival_cfg,
@@ -94,14 +94,16 @@ redpanda_thread_fixture::redpanda_thread_fixture(
   bool enable_legacy_upload_mode,
   bool iceberg_enabled,
   bool enable_cloud_topics,
-  bool development_cluster_linking_enabled)
+  bool development_cluster_linking_enabled,
+  bool use_lsm_metastore)
   : app(ssx::sformat("redpanda-{}", node_id()))
   , proxy_port(proxy_port)
   , schema_reg_port(schema_reg_port)
   , kafka_port(kafka_port)
   , data_dir(std::move(base_dir))
   , remove_on_shutdown(remove_on_shutdown)
-  , app_signal(std::make_unique<::stop_signal>()) {
+  , app_signal(std::make_unique<::stop_signal>())
+  , use_lsm_metastore(use_lsm_metastore) {
     configure(
       node_id,
       kafka_port,
@@ -117,15 +119,27 @@ redpanda_thread_fixture::redpanda_thread_fixture(
       iceberg_enabled,
       enable_cloud_topics,
       development_cluster_linking_enabled);
-    app.initialize(
-      proxy_config(proxy_port),
-      proxy_client_config(kafka_port),
-      schema_reg_config(schema_reg_port),
-      proxy_client_config(kafka_port),
-      audit_log_client_config(kafka_port),
-      sch_groups);
-    app.check_environment();
-    app.wire_up_and_start(*app_signal, true);
+    try {
+        app.initialize(
+          proxy_port.transform(
+            [this](auto port) { return proxy_config(port); }),
+          proxy_port.and_then([this, kafka_port](auto) {
+              return std::make_optional(proxy_client_config(kafka_port));
+          }),
+          schema_reg_port.transform(
+            [this](auto port) { return schema_reg_config(port); }),
+          schema_reg_port.and_then([this, kafka_port](auto) {
+              return std::make_optional(proxy_client_config(kafka_port));
+          }),
+          audit_log_client_config(kafka_port));
+        app.check_environment();
+        app.wire_up_and_start(*app_signal, true, use_lsm_metastore);
+    } catch (...) {
+        // shutdown half-initialized app nicely so that its destructor doesn't
+        // assert and the exception bubbles up
+        app.shutdown();
+        throw;
+    }
 
     net::server_configuration scfg("fixture_config");
     scfg.max_service_memory_per_core = int64_t(
@@ -139,9 +153,9 @@ redpanda_thread_fixture::redpanda_thread_fixture(
       .start(
         &configs,
         app.smp_service_groups.kafka_smp_sg(),
-        app.sched_groups.fetch_sg(),
-        app.sched_groups.produce_sg(),
-        app.sched_groups.kafka_sg(),
+        scheduling_groups::instance().fetch_sg(),
+        scheduling_groups::instance().produce_sg(),
+        scheduling_groups::instance().kafka_sg(),
         std::ref(app.metadata_cache),
         std::ref(app.controller->get_topics_frontend()),
         std::ref(app.controller->get_config_frontend()),
@@ -175,15 +189,7 @@ redpanda_thread_fixture::redpanda_thread_fixture(
 // creates single node with default configuration
 redpanda_thread_fixture::redpanda_thread_fixture()
   : redpanda_thread_fixture(
-      model::node_id(1),
-      9092,
-      33145,
-      8082,
-      8081,
-      {},
-      test_directory(),
-      std::nullopt,
-      true) {}
+      model::node_id(1), 9092, 33145, 8082, 8081, {}, test_directory(), true) {}
 
 // Restart the fixture with an existing data directory
 redpanda_thread_fixture::redpanda_thread_fixture(
@@ -196,7 +202,6 @@ redpanda_thread_fixture::redpanda_thread_fixture(
       8081,
       {},
       existing_data_dir.string(),
-      std::nullopt,
       true) {}
 
 struct init_cloud_storage_tag {};
@@ -214,7 +219,6 @@ redpanda_thread_fixture::redpanda_thread_fixture(
       8081,
       {},
       test_directory(),
-      std::nullopt,
       true,
       get_s3_config(port, url_style),
       get_archival_config(),
@@ -234,7 +238,6 @@ redpanda_thread_fixture::redpanda_thread_fixture(
       8081,
       {},
       test_directory(),
-      std::nullopt,
       true,
       get_s3_config(port, url_style),
       get_archival_config(),
@@ -258,7 +261,6 @@ redpanda_thread_fixture::redpanda_thread_fixture(
       8081,
       {},
       test_directory(),
-      std::nullopt,
       true,
       get_s3_config(port, url_style),
       get_archival_config(),
@@ -333,7 +335,7 @@ void redpanda_thread_fixture::restart(should_wipe w) {
     }).get();
     app.initialize(proxy_config(), proxy_client_config());
     app.check_environment();
-    app.wire_up_and_start(*app_signal, true);
+    app.wire_up_and_start(*app_signal, true, use_lsm_metastore);
 }
 
 void redpanda_thread_fixture::configure(
@@ -408,6 +410,7 @@ void redpanda_thread_fixture::configure(
         if (archival_cfg) {
             // Copy archival config to this shard to avoid `config::binding`
             // asserting on cross-shard access.
+            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             auto local_cfg = archival_cfg;
 
             config.get("cloud_storage_disable_tls").set_value(true);
@@ -450,6 +453,10 @@ void redpanda_thread_fixture::configure(
 
         config.get("enable_shadow_linking")
           .set_value(development_cluster_linking_enabled);
+
+        // Disable automatic cluster metadata uploads by default. Only tests
+        // that explicitly want it should enable it.
+        config.get("enable_cluster_metadata_upload_loop").set_value(false);
     }).get();
 }
 
@@ -908,8 +915,7 @@ security::server_final_message redpanda_thread_fixture::send_scram_client_final(
             "failed to send scram client final: {}",
             client_last_resp.data.error_code));
     }
-    return security::server_final_message(
-      std::move(client_last_resp.data.auth_bytes));
+    return security::server_final_message(client_last_resp.data.auth_bytes);
 }
 
 template<typename Authenticator>

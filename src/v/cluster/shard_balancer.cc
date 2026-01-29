@@ -210,7 +210,7 @@ ss::future<> shard_balancer::start(size_t kvstore_shard_count) {
 }
 
 ss::future<> shard_balancer::init_shard_placement(
-  mutex::units& lock,
+  ssx::mutex::units& lock,
   const chunked_hash_map<raft::group_id, model::ntp>& local_group2ntp,
   const chunked_hash_map<model::ntp, model::revision_id>&
     local_ntp2log_revision,
@@ -390,7 +390,7 @@ ss::future<> shard_balancer::assign_fiber() {
 using ntp2target_t
   = chunked_hash_map<model::ntp, std::optional<shard_placement_target>>;
 
-ss::future<> shard_balancer::do_assign_ntps(mutex::units& lock) {
+ss::future<> shard_balancer::do_assign_ntps(ssx::mutex::units& lock) {
     if (
       _features.is_active(features::feature::node_local_core_assignment)
       && !_shard_placement.is_persistence_enabled()) {
@@ -514,7 +514,7 @@ void shard_balancer::maybe_assign(
 }
 
 ss::future<> shard_balancer::balance_on_core_count_change(
-  mutex::units& lock, size_t kvstore_shard_count) {
+  ssx::mutex::units& lock, size_t kvstore_shard_count) {
     uint32_t last_rebalance_core_count = 0;
     auto state_buf = _storage.kvs().get(
       storage::kvstore::key_space::shard_placement, state_kvstore_key());
@@ -542,10 +542,10 @@ ss::future<> shard_balancer::balance_on_core_count_change(
 void shard_balancer::balance_timer_callback() {
     ssx::spawn_with_gate(_gate, [this] {
         return _mtx.get_units()
-          .then([this](mutex::units lock) {
-              return ss::do_with(std::move(lock), [this](mutex::units& lock) {
-                  return do_balance(lock);
-              });
+          .then([this](ssx::mutex::units lock) {
+              return ss::do_with(
+                std::move(lock),
+                [this](ssx::mutex::units& lock) { return do_balance(lock); });
           })
           .handle_exception([this](const std::exception_ptr& e) {
               if (ssx::is_shutdown_exception(e)) {
@@ -565,7 +565,7 @@ void shard_balancer::balance_timer_callback() {
     });
 }
 
-ss::future<> shard_balancer::do_balance(mutex::units& lock) {
+ss::future<> shard_balancer::do_balance(ssx::mutex::units& lock) {
     // Go over all node-local ntps in random order and try to find a more
     // optimal core for them.
     chunked_vector<model::ntp> ntps;
@@ -607,7 +607,7 @@ ss::future<> shard_balancer::do_balance(mutex::units& lock) {
 ss::future<> shard_balancer::set_target(
   const model::ntp& ntp,
   const std::optional<shard_placement_target>& target,
-  mutex::units& /*lock*/) {
+  ssx::mutex::units& /*lock*/) {
     auto shard_callback = [this](const model::ntp& ntp) {
         _controller_backend.local().notify_reconciliation(ntp);
     };

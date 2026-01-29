@@ -14,6 +14,7 @@
 #include "cloud_io/logger.h"
 #include "cloud_io/provider.h"
 #include "cloud_io/transfer_details.h"
+#include "cloud_storage_clients/bucket_name_parts.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/types.h"
@@ -112,10 +113,7 @@ remote::remote(
   model::cloud_credentials_source cloud_credentials_source,
   ss::scheduling_group sg)
   : _pool(clients)
-  , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source}
   , _resources(std::make_unique<io_resources>(sg))
-  , _azure_shared_key_binding(
-      config::shard_local_cfg().cloud_storage_azure_shared_key.bind())
   , _cloud_storage_backend{cloud_storage_clients::
                              infer_backend_from_configuration(
                                conf, cloud_credentials_source)}
@@ -124,48 +122,6 @@ remote::remote(
       config::shard_local_cfg().cloud_storage_client_lease_timeout_ms.bind()) {
     vlog(
       log.info, "remote initialized with backend {}", _cloud_storage_backend);
-    // If the credentials source is from config file, bypass the background
-    // op to refresh credentials periodically, and load pool with static
-    // credentials right now.
-    if (_auth_refresh_bg_op.is_static_config()) {
-        _pool.local().load_credentials(
-          _auth_refresh_bg_op.build_static_credentials());
-    }
-
-    _azure_shared_key_binding.watch([this] {
-        auto current_config = _auth_refresh_bg_op.get_client_config();
-        if (!std::holds_alternative<cloud_storage_clients::abs_configuration>(
-              current_config)) {
-            vlog(
-              log.warn,
-              "Attempt to set cloud_storage_azure_shared_key for cluster using "
-              "S3 detected");
-            return;
-        }
-
-        vlog(
-          log.info,
-          "cloud_storage_azure_shared_key was updated. Refreshing "
-          "credentials.");
-
-        auto new_shared_key = _azure_shared_key_binding();
-        if (!new_shared_key) {
-            vlog(
-              log.info,
-              "cloud_storage_azure_shared_key was unset. Will continue "
-              "using the previous value until restart.");
-
-            return;
-        }
-
-        auto& abs_config = std::get<cloud_storage_clients::abs_configuration>(
-          current_config);
-        abs_config.shared_key = cloud_roles::private_key_str{*new_shared_key};
-        _auth_refresh_bg_op.set_client_config(std::move(current_config));
-
-        _pool.local().load_credentials(
-          _auth_refresh_bg_op.build_static_credentials());
-    });
 }
 
 remote::~remote() {
@@ -173,20 +129,7 @@ remote::~remote() {
     // link with destructors for unique_ptr wrapped members
 }
 
-ss::future<> remote::start() {
-    if (!_auth_refresh_bg_op.is_static_config()) {
-        // Launch background operation to fetch credentials on
-        // auth_refresh_shard_id, and copy them to other shards. We do not wait
-        // for this operation here, the wait is done in client_pool::acquire to
-        // avoid delaying application startup.
-        _auth_refresh_bg_op.maybe_start_auth_refresh_op(
-          [this](auto credentials) {
-              return propagate_credentials(credentials);
-          });
-    }
-
-    co_await _resources->start();
-}
+ss::future<> remote::start() { co_await _resources->start(); }
 
 void remote::request_stop() {
     vlog(log.debug, "Requesting stop of remote...");
@@ -199,15 +142,10 @@ ss::future<> remote::stop() {
     }
     co_await _resources->stop();
     co_await _gate.close();
-    co_await _auth_refresh_bg_op.stop();
     vlog(log.debug, "Stopped remote...");
 }
 
-size_t remote::concurrency() const { return _pool.local().max_size(); }
-
-model::cloud_storage_backend remote::backend() const {
-    return _cloud_storage_backend;
-}
+size_t remote::concurrency() const { return _pool.local().capacity(); }
 
 const provider& remote::provider() const { return _provider; }
 
@@ -228,11 +166,11 @@ int remote::delete_objects_max_keys() const {
     case model::cloud_storage_backend::minio:
         // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
         return 1000;
-    case model::cloud_storage_backend::google_s3_compat:
-        [[fallthrough]];
     case model::cloud_storage_backend::azure:
-        // Will be supported once azurite supports batch blob delete
-        [[fallthrough]];
+        // https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch
+        return 256;
+    case model::cloud_storage_backend::google_s3_compat:
+        return 100;
     case model::cloud_storage_backend::unknown:
         return 1;
     }
@@ -247,6 +185,15 @@ ss::future<upload_result> remote::upload_stream(
   std::optional<size_t> max_retries) {
     const auto& path = transfer_details.key;
     const auto& bucket = transfer_details.bucket;
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return upload_result::failed;
+    }
     auto guard = _gate.hold();
     retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(log, fib);
@@ -265,7 +212,7 @@ ss::future<upload_result> remote::upload_stream(
         }
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -289,7 +236,7 @@ ss::future<upload_result> remote::upload_stream(
         auto reader_handle = co_await reset_str();
         // Segment upload attempt
         auto res = co_await lease.client->put_object(
-          bucket,
+          bucket_parts->name,
           path,
           content_length,
           reader_handle->take_stream(),
@@ -330,6 +277,9 @@ ss::future<upload_result> remote::upload_stream(
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = upload_result::failed;
+            break;
         }
     }
 
@@ -366,15 +316,24 @@ ss::future<download_result> remote::download_stream(
   std::function<void(size_t)> throttle_metric_ms_cb) {
     const auto& path = transfer_details.key;
     const auto& bucket = transfer_details.bucket;
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return download_result::failed;
+    }
 
     auto guard = _gate.hold();
     retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(log, fib);
 
-    auto fut = co_await [this, &fib, &transfer_details] {
+    auto fut = co_await [this, &fib, &transfer_details, &bucket_parts] {
         transfer_details.on_client_acquire();
         return ss::coroutine::as_future(_pool.local().acquire_with_timeout(
-          fib.root_abort_source(), _lease_timeout(), fib()));
+          *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
     }();
     if (fut.failed()) {
         co_return throw_if_not_timeout(
@@ -391,7 +350,7 @@ ss::future<download_result> remote::download_stream(
         auto download_latency_measure
           = transfer_details.scoped_latency_measurement();
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), false, byte_range);
+          bucket_parts->name, path, fib.get_timeout(), false, byte_range);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -460,6 +419,9 @@ ss::future<download_result> remote::download_stream(
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = download_result::failed;
+            break;
         }
     }
     transfer_details.on_failure();
@@ -493,11 +455,20 @@ remote::download_object(download_request download_request) {
 
     const auto path = transfer_details.key;
     const auto bucket = transfer_details.bucket;
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return download_result::failed;
+    }
     const auto object_type = download_request.display_str;
 
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -511,14 +482,15 @@ remote::download_object(download_request download_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         download_request.transfer_details.on_request(fib.retry_count());
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), download_request.expect_missing);
+          bucket_parts->name,
+          path,
+          fib.get_timeout(),
+          download_request.expect_missing);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             try {
-                auto buffer
-                  = co_await cloud_storage_clients::util::drain_response_stream(
-                    resp.value());
+                auto buffer = co_await http::drain(resp.value());
                 download_request.payload.append_fragments(std::move(buffer));
                 transfer_details.on_success();
                 co_return download_result::success;
@@ -552,6 +524,9 @@ remote::download_object(download_request download_request) {
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = download_result::failed;
+            break;
         }
     }
     transfer_details.on_failure();
@@ -583,12 +558,22 @@ ss::future<download_result> remote::object_exists(
   const cloud_storage_clients::object_key& path,
   retry_chain_node& parent,
   std::string_view object_type) {
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return download_result::failed;
+    }
+
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), download_result::timedout);
@@ -599,7 +584,7 @@ ss::future<download_result> remote::object_exists(
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto resp = co_await lease.client->head_object(
-          bucket, path, fib.get_timeout());
+          bucket_parts->name, path, fib.get_timeout());
         if (resp) {
             vlog(
               ctxlog.debug,
@@ -632,6 +617,9 @@ ss::future<download_result> remote::object_exists(
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = download_result::failed;
+            break;
         }
     }
     if (!result) {
@@ -658,6 +646,15 @@ ss::future<download_result> remote::object_exists(
 ss::future<upload_result>
 remote::delete_object(transfer_details transfer_details) {
     const auto& bucket = transfer_details.bucket;
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return upload_result::failed;
+    }
     const auto& path = transfer_details.key;
     auto& parent = transfer_details.parent_rtc;
     ss::gate::holder gh{_gate};
@@ -665,7 +662,7 @@ remote::delete_object(transfer_details transfer_details) {
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -682,7 +679,7 @@ remote::delete_object(transfer_details transfer_details) {
         // represents any mutable operation.
         transfer_details.on_request(fib.retry_count());
         auto res = co_await lease.client->delete_object(
-          bucket, path, fib.get_timeout());
+          bucket_parts->name, path, fib.get_timeout());
 
         if (res) {
             co_return upload_result::success;
@@ -713,6 +710,9 @@ remote::delete_object(transfer_details transfer_details) {
               "from bucket {}",
               path,
               bucket);
+            break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = upload_result::failed;
             break;
         }
     }
@@ -818,13 +818,23 @@ ss::future<upload_result> remote::delete_object_batch(
   chunked_vector<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent,
   std::function<void(size_t)> req_cb) {
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return upload_result::failed;
+    }
+
     ss::gate::holder gh{_gate};
 
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), upload_result::timedout);
@@ -836,7 +846,7 @@ ss::future<upload_result> remote::delete_object_batch(
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         req_cb(fib.retry_count());
         auto res = co_await lease.client->delete_objects(
-          bucket, keys, fib.get_timeout());
+          bucket_parts->name, keys, fib.get_timeout());
 
         if (res) {
             if (!res.value().undeleted_keys.empty()) {
@@ -879,6 +889,9 @@ ss::future<upload_result> remote::delete_object_batch(
               "from bucket {}",
               keys.size(),
               bucket);
+            break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = upload_result::failed;
             break;
         }
     }
@@ -1011,12 +1024,22 @@ ss::future<list_result> remote::list_objects(
   std::optional<cloud_storage_clients::client::item_filter> item_filter,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token) {
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return cloud_storage_clients::error_outcome::fail;
+    }
+
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
     auto fut = co_await ss::coroutine::as_future(
       _pool.local().acquire_with_timeout(
-        fib.root_abort_source(), _lease_timeout(), fib()));
+        *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
     if (fut.failed()) {
         co_return throw_if_not_timeout(
           fut.get_exception(), cloud_storage_clients::error_outcome::retry);
@@ -1040,7 +1063,7 @@ ss::future<list_result> remote::list_objects(
     // Keep iterating while the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto res = co_await lease.client->list_objects(
-          bucket,
+          bucket_parts->name,
           prefix,
           std::nullopt,
           max_keys,
@@ -1109,11 +1132,11 @@ ss::future<list_result> remote::list_objects(
             result = cloud_storage_clients::error_outcome::fail;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
-            vassert(
-              false,
-              "Unexpected key_not_found outcome received when listing bucket "
-              "{}",
-              bucket);
+            result = cloud_storage_clients::error_outcome::fail;
+            break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = cloud_storage_clients::error_outcome::fail;
+            break;
         }
     }
 
@@ -1134,6 +1157,18 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     auto guard = _gate.hold();
 
     auto& transfer_details = upload_request.transfer_details;
+
+    auto& bucket = transfer_details.bucket;
+    const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
+    if (!bucket_parts) {
+        vlog(
+          log.warn,
+          "Failed to parse bucket name {}: {}",
+          bucket,
+          bucket_parts.error());
+        co_return upload_result::failed;
+    }
+
     retry_chain_node fib(&transfer_details.parent_rtc);
     retry_chain_logger ctxlog(log, fib);
     auto permit = fib.retry();
@@ -1146,7 +1181,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -1163,7 +1198,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
 
         auto to_upload = upload_request.payload.copy();
         auto res = co_await lease.client->put_object(
-          transfer_details.bucket,
+          bucket_parts->name,
           path,
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
@@ -1197,6 +1232,9 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
+        case cloud_storage_clients::error_outcome::authentication_failed:
+            result = upload_result::failed;
+            break;
         }
     }
 
@@ -1222,14 +1260,6 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           upload_type);
     }
     co_return *result;
-}
-
-ss::future<>
-remote::propagate_credentials(cloud_roles::credentials credentials) {
-    return container().invoke_on_all(
-      [c = std::move(credentials)](remote& svc) mutable {
-          svc._pool.local().load_credentials(std::move(c));
-      });
 }
 
 } // namespace cloud_io

@@ -27,6 +27,31 @@
 
 namespace security {
 
+namespace {
+std::optional<std::tuple<principal_type, std::string_view>>
+extract_principal_and_type(std::string_view principal) {
+    constexpr std::string_view user_prefix{"User:"};
+    constexpr std::string_view role_prefix{"RedpandaRole:"};
+    constexpr std::string_view group_prefix{"Group:"};
+
+    if (principal.starts_with(user_prefix)) {
+        return std::make_tuple(
+          principal_type::user, principal.substr(user_prefix.size()));
+    }
+
+    if (principal.starts_with(group_prefix)) {
+        return std::make_tuple(
+          principal_type::group, principal.substr(group_prefix.size()));
+    }
+
+    if (principal.starts_with(role_prefix)) {
+        return std::make_tuple(
+          principal_type::role, principal.substr(role_prefix.size()));
+    }
+    return std::nullopt;
+}
+} // namespace
+
 void acl_entry_set::insert(acl_entry entry) {
     auto [it, ins] = _entries.insert(std::move(entry));
     if (const auto& principal = it->principal();
@@ -288,28 +313,26 @@ acl_store::reset_bindings(const chunked_vector<acl_binding>& bindings) {
 }
 
 acl_principal acl_principal::from_string(std::string_view principal) {
-    constexpr std::string_view user_prefix{"User:"};
-    constexpr std::string_view role_prefix{"RedpandaRole:"};
-    auto usr = principal.starts_with(user_prefix);
-    auto rol = !usr && principal.starts_with(role_prefix);
-
-    if (unlikely(!usr && !rol)) {
+    auto maybe_type_and_name = extract_principal_and_type(principal);
+    if (!maybe_type_and_name) {
         throw acl_conversion_error(
           fmt::format("Invalid principal name: {{{}}}", principal));
     }
 
-    auto name = principal.substr(usr ? user_prefix.size() : role_prefix.size());
+    auto [type, name] = maybe_type_and_name.value();
+
     if (unlikely(name.empty())) {
         throw acl_conversion_error(
           fmt::format("Principal name cannot be empty"));
     }
-    if (name == "*" && !usr) {
+    if (name == "*" && type != principal_type::user) {
         throw acl_conversion_error(
-          fmt::format("Illegal wildcard role: {{{}}}", principal));
+          fmt::format(
+            "Illegal wildcard principal: only user principals support "
+            "wildcards: {{{}}}",
+            principal));
     }
-    return {
-      usr ? security::principal_type::user : security::principal_type::role,
-      ss::sstring{name}};
+    return {type, ss::sstring{name}};
 }
 
 template<>
@@ -879,7 +902,7 @@ get_allowed_operations<acl_cluster_name>();
 template const std::vector<acl_operation>&
 get_allowed_operations<kafka::transactional_id>();
 template const std::vector<acl_operation>&
-get_allowed_operations<pandaproxy::schema_registry::subject>();
+get_allowed_operations<pandaproxy::schema_registry::context_subject>();
 template const std::vector<acl_operation>&
 get_allowed_operations<pandaproxy::schema_registry::registry_resource>();
 

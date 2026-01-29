@@ -9,8 +9,8 @@
  */
 
 #include "absl/container/flat_hash_set.h"
-#include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
+#include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/anomalies_detector.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/inventory/utils.h"
@@ -30,8 +30,6 @@
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
-
-#include <chrono>
 
 using namespace std::chrono_literals;
 
@@ -234,43 +232,21 @@ public:
     bucket_view_fixture()
       : http_imposter_fixture{port}
       , _root_rtc{_as}
-      , _rtc_logger{test_logger, _root_rtc} {
-        _pool
-          .start(10, ss::sharded_parameter([this] {
-                     return get_client_configuration();
-                 }))
-          .get();
-
-        _io
-          .start(
-            std::ref(_pool),
-            ss::sharded_parameter(
-              [this] { return get_client_configuration(); }),
-            ss::sharded_parameter(
-              [] { return model::cloud_credentials_source::config_file; }),
-            ss::sharded_parameter(
-              [] { return ss::default_scheduling_group(); }))
-          .get();
-        _io.invoke_on_all([](cloud_io::remote& io) { return io.start(); })
-          .get();
+      , _rtc_logger{test_logger, _root_rtc}
+      , _scoped_remote_io{
+          cloud_io::scoped_remote::create(10, get_client_configuration())} {
         _remote
-          .start(std::ref(_io), ss::sharded_parameter([this] {
-                     return get_client_configuration();
-                 }))
+          .start(
+            std::ref(_scoped_remote_io->remote), get_client_configuration())
           .get();
-
         _remote
           .invoke_on_all([](cloud_storage::remote& api) { return api.start(); })
           .get();
     }
 
     ~bucket_view_fixture() override {
-        if (!_pool.local().shutdown_initiated()) {
-            _pool.local().shutdown_connections();
-        }
+        _scoped_remote_io->request_stop();
         _remote.stop().get();
-        _io.stop().get();
-        _pool.stop().get();
     }
 
     void init_view(
@@ -544,11 +520,6 @@ private:
         conf.service = cloud_roles::aws_service_name("s3");
         conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
         conf.server_addr = server_addr;
-        conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-          net::metrics_disabled::yes,
-          net::public_metrics_disabled::yes,
-          cloud_roles::aws_region_name{"us-east-1"},
-          cloud_storage_clients::endpoint_url{httpd_host_name});
 
         return conf;
     }
@@ -557,8 +528,7 @@ private:
     retry_chain_node _root_rtc;
     retry_chain_logger _rtc_logger;
 
-    ss::sharded<cloud_storage_clients::client_pool> _pool;
-    ss::sharded<cloud_io::remote> _io;
+    std::unique_ptr<cloud_io::scoped_remote> _scoped_remote_io;
     ss::sharded<cloud_storage::remote> _remote;
 
     cloud_storage::partition_manifest _stm_manifest;

@@ -102,7 +102,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
         "//src/v/container:chunked_hash_map",
-        "//src/v/model",
         "//src/v/serde/json:writer",
         "@seastar",
     ],

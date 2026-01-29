@@ -42,17 +42,12 @@ public:
 
     raft::consensus* raft() const { return _raft; }
 
-    // wait until at least offset is translated
+    // wait until at least `offset` is translated
     ss::future<> wait_translated(
-      kafka::offset,
+      model::offset offset,
       model::timeout_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>> as
-      = std::nullopt) const;
-    ss::future<> wait_translated(
-      model::offset,
-      model::timeout_clock::time_point,
-      std::optional<std::reference_wrapper<ss::abort_source>> as
-      = std::nullopt) const;
+      = std::nullopt);
 
     ss::future<std::optional<kafka::offset>>
     highest_translated_offset(model::timeout_clock::duration timeout);
@@ -107,6 +102,12 @@ private:
         }
     };
 
+    ss::future<> wait_translated(
+      kafka::offset,
+      model::timeout_clock::time_point,
+      std::optional<std::reference_wrapper<ss::abort_source>> as
+      = std::nullopt);
+
     void update_highest_translated_offset(kafka::offset new_offset);
 
     // The offset one below the starting point of the next translation.
@@ -117,7 +118,7 @@ private:
     // approximate system time at which _highest_translated_offset became
     // available for translation.
     std::optional<model::timestamp> _last_translated_timestamp{};
-    mutable raft::offset_monitor<kafka::offset> _waiters_for_translated;
+    raft::offset_monitor<kafka::offset> _waiters_for_translated;
 };
 
 class stm_factory : public cluster::state_machine_factory {

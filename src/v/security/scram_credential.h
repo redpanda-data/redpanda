@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "bytes/bytes.h"
+#include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
 #include "serde/envelope.h"
@@ -26,7 +27,7 @@ enum class scram_algorithm_t {
 
 class scram_credential
   : public serde::
-      envelope<scram_credential, serde::version<0>, serde::compat_version<0>> {
+      envelope<scram_credential, serde::version<1>, serde::compat_version<0>> {
 public:
     scram_credential() noexcept = default;
 
@@ -35,23 +36,36 @@ public:
       bytes server_key,
       bytes stored_key,
       int iterations,
-      std::optional<acl_principal> principal = std::nullopt) noexcept
+      std::optional<acl_principal> principal = std::nullopt,
+      model::timestamp password_set_at = model::timestamp::missing()) noexcept
       : _salt(std::move(salt))
       , _server_key(std::move(server_key))
       , _stored_key(std::move(stored_key))
       , _iterations(iterations)
-      , _principal(std::move(principal)) {}
+      , _principal(std::move(principal))
+      , _password_set_at(password_set_at) {}
 
     const bytes& salt() const { return _salt; }
     const bytes& server_key() const { return _server_key; }
     const bytes& stored_key() const { return _stored_key; }
     int iterations() const { return _iterations; }
     const std::optional<acl_principal>& principal() const { return _principal; }
+    model::timestamp password_set_at() const { return _password_set_at; }
 
-    bool operator==(const scram_credential&) const = default;
+    // Equality comparison excludes password_set_at timestamp, as it's metadata
+    // rather than part of the credential's identity. This allows comparing
+    // credentials based on their authentication data (salt, keys, iterations)
+    // without requiring timestamp matches.
+    bool operator==(const scram_credential& other) const {
+        return _salt == other._salt && _server_key == other._server_key
+               && _stored_key == other._stored_key
+               && _iterations == other._iterations
+               && _principal == other._principal;
+    }
 
     auto serde_fields() {
-        return std::tie(_salt, _server_key, _stored_key, _iterations);
+        return std::tie(
+          _salt, _server_key, _stored_key, _iterations, _password_set_at);
     }
 
 private:
@@ -63,6 +77,8 @@ private:
     int _iterations{0};
     // Principal is not serialized on disk, it is sent over internal rpc
     std::optional<acl_principal> _principal;
+    // Records when the password was last set
+    model::timestamp _password_set_at;
 };
 
 } // namespace security

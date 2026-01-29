@@ -9,6 +9,7 @@
  */
 
 #include "cloud_topics/errc.h"
+#include "cloud_topics/level_zero/common/micro_probe.h"
 #include "cloud_topics/level_zero/reader/materialized_extent.h"
 #include "cloud_topics/level_zero/reader/tests/materialized_extent_fixture.h"
 #include "test_utils/test.h"
@@ -30,20 +31,23 @@ TEST_F_CORO(materialized_extent_fixture, materialize_from_cache) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_FALSE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(res.has_value());
 
     chunked_vector<model::record_batch> actual;
     actual.emplace_back(make_raft_data_batch(std::move(extent)));
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
     ASSERT_TRUE_CORO(actual == expected);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 1);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cache_get_fails) {
@@ -59,15 +63,18 @@ TEST_F_CORO(materialized_extent_fixture, cache_get_fails) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::cache_read_error);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 1);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cache_get_throws) {
@@ -83,15 +90,18 @@ TEST_F_CORO(materialized_extent_fixture, cache_get_throws) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::cache_read_error);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 1);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cache_get_shutdown) {
@@ -108,16 +118,18 @@ TEST_F_CORO(materialized_extent_fixture, cache_get_shutdown) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
-
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::shutting_down);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 1);
 }
 
 TEST_F_CORO(materialized_extent_fixture, is_cached_throws) {
@@ -134,16 +146,18 @@ TEST_F_CORO(materialized_extent_fixture, is_cached_throws) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
-
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::cache_read_error);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, is_cached_throws_shutdown) {
@@ -160,16 +174,18 @@ TEST_F_CORO(materialized_extent_fixture, is_cached_throws_shutdown) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
-
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::shutting_down);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, is_cached_stall_then_success) {
@@ -185,14 +201,16 @@ TEST_F_CORO(materialized_extent_fixture, is_cached_stall_then_success) {
     retry_chain_node rtc(as, 10s, 200ms);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_FALSE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(res.has_value());
 
     chunked_vector<model::record_batch> actual;
     actual.emplace_back(
@@ -200,6 +218,7 @@ TEST_F_CORO(materialized_extent_fixture, is_cached_stall_then_success) {
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
     ASSERT_TRUE_CORO(actual == expected);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 1);
 }
 
 TEST_F_CORO(materialized_extent_fixture, is_cached_stall_then_timeout) {
@@ -217,15 +236,18 @@ TEST_F_CORO(materialized_extent_fixture, is_cached_stall_then_timeout) {
     auto extent = make_materialized_extent(partition.front().copy());
 
     co_await ss::sleep(100ms);
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::timeout);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, materialize_from_cloud) {
@@ -237,14 +259,16 @@ TEST_F_CORO(materialized_extent_fixture, materialize_from_cloud) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_FALSE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(res.has_value());
 
     chunked_vector<model::record_batch> actual;
     actual.emplace_back(
@@ -252,6 +276,12 @@ TEST_F_CORO(materialized_extent_fixture, materialize_from_cloud) {
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
     ASSERT_TRUE_CORO(actual == expected);
+    // NOTE: the cloud_io::remote is mocked so the callbacks
+    // that update cloud_* metrics are not invoked. But we can
+    // at least register cache writes which happen after successful
+    // object download.
+    ASSERT_EQ_CORO(probe.num_cache_writes, 1);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cloud_get_return_failure) {
@@ -267,14 +297,16 @@ TEST_F_CORO(materialized_extent_fixture, cloud_get_return_failure) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::download_failure);
 }
 
@@ -291,15 +323,18 @@ TEST_F_CORO(materialized_extent_fixture, cloud_get_throw_shutdown) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::shutting_down);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cloud_get_return_notfound) {
@@ -315,15 +350,18 @@ TEST_F_CORO(materialized_extent_fixture, cloud_get_return_notfound) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::download_not_found);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cloud_get_return_timeout) {
@@ -339,15 +377,18 @@ TEST_F_CORO(materialized_extent_fixture, cloud_get_return_timeout) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::timeout);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cloud_get_throw_error) {
@@ -363,15 +404,18 @@ TEST_F_CORO(materialized_extent_fixture, cloud_get_throw_error) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::unexpected_failure);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cache_reserve_space_throws) {
@@ -389,14 +433,16 @@ TEST_F_CORO(materialized_extent_fixture, cache_reserve_space_throws) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_FALSE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(res.has_value());
 
     chunked_vector<model::record_batch> actual;
     actual.emplace_back(
@@ -404,6 +450,7 @@ TEST_F_CORO(materialized_extent_fixture, cache_reserve_space_throws) {
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
     ASSERT_TRUE_CORO(actual == expected);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cache_reserve_space_throws_shutdown) {
@@ -421,15 +468,18 @@ TEST_F_CORO(materialized_extent_fixture, cache_reserve_space_throws_shutdown) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::shutting_down);
+    ASSERT_EQ_CORO(probe.num_cache_reads, 0);
 }
 
 TEST_F_CORO(materialized_extent_fixture, cache_put_throws) {
@@ -446,14 +496,16 @@ TEST_F_CORO(materialized_extent_fixture, cache_put_throws) {
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
     auto extent = make_materialized_extent(partition.front().copy());
+    cloud_topics::l0::micro_probe probe;
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_FALSE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(res.has_value());
 
     chunked_vector<model::record_batch> actual;
     actual.emplace_back(
@@ -477,14 +529,16 @@ TEST_F_CORO(materialized_extent_fixture, cache_put_throws_shutdown) {
     ss::abort_source as;
     retry_chain_node rtc(as, 10s, 200ms, retry_strategy::disallow);
 
+    cloud_topics::l0::micro_probe probe;
     auto extent = make_materialized_extent(partition.front().copy());
     auto res = co_await cloud_topics::l0::materialize(
       &extent,
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
-      &rtc);
+      &rtc,
+      &probe);
 
-    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_TRUE_CORO(!res.has_value());
     ASSERT_EQ_CORO(res.error(), cloud_topics::errc::shutting_down);
 }

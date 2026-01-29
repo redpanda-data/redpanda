@@ -21,9 +21,7 @@
 #include "storage/storage_resources.h"
 
 #include <seastar/core/file.hh>
-#include <seastar/core/fstream.hh>
-#include <seastar/core/iostream.hh>
-#include <seastar/core/sstring.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <iosfwd>
 
@@ -71,10 +69,20 @@ public:
         size_t fallocations{0};
         // A counter of number of last page hydrations
         size_t last_page_hydrations{0};
+        // A counter of number of bytes copied into new chunk to avoid writing
+        // to a chunk which write was already dispatched
+        size_t bytes_copied_in_chunk_remainder{0};
+        // A counter of the number of writes that needed to be split across
+        // multiple chunks (i.e., the write didn't fit in the current chunk)
+        size_t split_writes{0};
+        // A counter of the number of physical writes (dma_write calls) that
+        // completed successfully
+        size_t writes_completed{0};
 
         fmt::iterator format_to(fmt::iterator it) const;
     };
 
+    using stats_ptr = ss::lw_shared_ptr<stats>;
     using chunk = segment_appender_chunk;
     using committed_offset_clb = ss::noncopyable_function<void(size_t)>;
 
@@ -82,9 +90,11 @@ public:
       = segment_appender_fallocation_alignment;
 
     struct options {
-        options(std::optional<uint64_t> s, storage_resources& r)
+        options(
+          std::optional<uint64_t> s, storage_resources& r, stats_ptr shared)
           : segment_size(s)
-          , resources(r) {}
+          , resources(r)
+          , shared_stats(std::move(shared)) {}
 
         // Generally a segment appender doesn't need to know the target size
         // of the segment it's appending to, but this is used as an input
@@ -92,6 +102,9 @@ public:
         // more space than a segment would ever need.
         std::optional<uint64_t> segment_size;
         storage_resources& resources;
+        // Optional shared stats for shard-level metrics aggregation.
+        // May be null in which case stats will not be collected.
+        stats_ptr shared_stats;
     };
 
     segment_appender(ss::file f, options opts);
@@ -153,9 +166,10 @@ public:
         _committed_offset_clb = std::move(callback);
     }
 
-    fmt::iterator format_to(fmt::iterator) const;
+    // Returns the shared stats pointer.
+    stats_ptr get_stats() const { return _opts.shared_stats; }
 
-    const stats& get_stats() const { return _stats; }
+    fmt::iterator format_to(fmt::iterator) const;
 
 private:
     using chunk_ptr = ss::lw_shared_ptr<chunk>;
@@ -221,15 +235,24 @@ private:
     // still heavy weight operations compared to regular flush()
     ss::future<> hard_flush();
 
+    /**
+     * Returns true if there is an inflight write for the current head chunk and
+     * that write is already dispatched.
+     */
+    bool is_chunk_write_dispatched(const chunk_ptr& chunk) const {
+        return chunk && !_inflight.empty() && _inflight.back()->chunk == chunk
+               && _inflight.back()->state == inflight_write::DISPATCHED;
+    }
+
     enum class write_state : char { QUEUED = 1, DISPATCHED, DONE };
 
     struct inflight_write {
         using enum write_state;
 
-        // true if the write extends to the end of the chunk, i.e., this
-        // is the last write that will use the current chunk before it
-        // is recycled
-        bool full;
+        // true if the write extends to the end of the chunk or current write is
+        // the last one using current chunk i.e., this is the last write that
+        // will use the current chunk before it is recycled
+        bool last_write_to_current_chunk;
 
         // the current state of the write
         write_state state = QUEUED;
@@ -250,6 +273,9 @@ private:
         // The committed file offset after this this write, i.e., the offset
         // one beyond the last byte logically written by this write.
         size_t committed_offset;
+
+        // write alignment
+        size_t alignment;
 
         /**
          * @brief Set the state of the write
@@ -286,6 +312,13 @@ private:
         bool
         try_merge(const inflight_write& other, size_t prior_committed_offset);
 
+        /**
+         * Returns true if the write's end is aligned to the page boundary.
+         */
+        bool is_aligned_to_page_boundary() const {
+            return committed_offset % alignment == 0;
+        }
+
         friend std::ostream&
         operator<<(std::ostream& s, const inflight_write& op);
     };
@@ -309,7 +342,6 @@ private:
     void handle_inactive_timer();
 
     size_t _chunk_size{0};
-    stats _stats;
     // Bit-map tracking the types of batches in the `_head` chunk that have
     // not been written to disk yet.
     static_assert(static_cast<uint8_t>(model::record_batch_type::MAX) <= 63);

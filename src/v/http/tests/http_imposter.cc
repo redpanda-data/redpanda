@@ -119,6 +119,10 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
               if (fp[i](req)) {
                   auto response = _fail_responses[i];
                   repl.set_status(response.status);
+                  if (response.content_type.has_value()) {
+                      content_type = response.content_type.value();
+                      repl.set_content_type(content_type);
+                  }
                   vlog(
                     http_imposter_log.trace,
                     "HTTP imposter id {} failing request {} - {} - {} with "
@@ -150,8 +154,7 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
           } else if (req._method == "DELETE") {
               repl.set_status(ss::http::reply::status_type::no_content);
               return "";
-          } else if (
-            req._method == "POST" && req.query_parameters.contains("delete")) {
+          } else if (req._method == "POST" && req.has_query_param("delete")) {
               // Delete objects
               content_type = "xml";
               return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";

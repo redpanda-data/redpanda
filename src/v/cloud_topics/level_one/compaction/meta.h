@@ -20,6 +20,7 @@
 #include "model/timestamp.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/sharded.hh>
 
 #include <memory>
 
@@ -30,6 +31,7 @@ namespace cloud_topics::l1 {
 struct compaction_info_and_timestamp {
     metastore::compaction_info_response info;
     model::timestamp collected_at;
+    kafka::offset max_compactible_offset;
 };
 
 struct log_compaction_meta {
@@ -39,13 +41,22 @@ struct log_compaction_meta {
 
     model::topic_id_partition tidp;
     model::ntp ntp;
+    // Whether this log is:
+    // 1. `idle` (not yet queued for compaction)
+    // 2. `queued` (present in the scheduler's `log_compaction_queue`)
+    // 3. `inflight` (currently undergoing a compaction on a worker shard)
+    enum class log_state { idle, queued, inflight } state{log_state::idle};
     // If set, this is cached compaction metadata obtained from the metastore at
-    // the `collected_at` time.
+    // the `collected_at` time. Guaranteed to have a value if `state == queued`
+    // or `state == inflight`.
     std::optional<compaction_info_and_timestamp> info_and_ts{std::nullopt};
     // If set, this is the shard on which the log is currently undergoing an
-    // inflight compaction.
-    std::optional<ss::shard_id> inflight{std::nullopt};
+    // inflight compaction. Guaranteed to have a value if `state == inflight`.
+    std::optional<ss::shard_id> inflight_shard{std::nullopt};
     intrusive_list_hook link;
+    // If `true`, we have been able to sample compaction info from the
+    // `metastore` previously.
+    bool has_seen_reconciled_data{false};
 };
 
 using log_compaction_meta_ptr = ss::lw_shared_ptr<log_compaction_meta>;
@@ -95,19 +106,51 @@ using log_set_t = chunked_hash_set<
 using log_list_t
   = intrusive_list<log_compaction_meta, &log_compaction_meta::link>;
 
-// Represents the output from a compaction job over a cloud topic partition.
-// Highly subject to change in the future.
-struct object_output_t {
-    metastore::object_metadata::ntp_metadata ntp_md;
-    object_builder::object_info info;
-    std::unique_ptr<staging_file> staging_file;
-};
-
 using cmp_t = std::function<bool(
   const log_compaction_meta_ptr&, const log_compaction_meta_ptr&)>;
 using log_compaction_queue = std::priority_queue<
   log_compaction_meta_ptr,
   chunked_vector<log_compaction_meta_ptr>,
   cmp_t>;
+
+enum class compaction_job_state {
+    // No compaction job is currently inflight.
+    idle,
+    // A compaction job is currently inflight.
+    running,
+    // A graceful stop has been requested of an inflight compaction job.
+    // The user should try to commit as much useful data as possible while still
+    // shutting down in a prompt manner.
+    soft_stop,
+    // A forceful stop has been requested of an inflight compaction job.
+    // The user should abandon any work and shutdown immediately.
+    hard_stop
+};
+
+inline std::ostream& operator<<(std::ostream& o, compaction_job_state s) {
+    switch (s) {
+    case compaction_job_state::idle:
+        return o << "idle";
+    case compaction_job_state::running:
+        return o << "running";
+    case compaction_job_state::soft_stop:
+        return o << "soft_stop";
+    case compaction_job_state::hard_stop:
+        return o << "hard_stop";
+    }
+}
+
+struct file_and_md_info {
+    std::unique_ptr<staging_file> staging_file;
+    object_builder::object_info info;
+    metastore::object_metadata::ntp_metadata ntp_md;
+};
+
+// An object ID is a unique identifier for a cloud topic compaction job.
+using compaction_job_id = named_type<uuid_t, struct l1_compaction_job_id_tag>;
+
+inline compaction_job_id create_compaction_job_id() {
+    return compaction_job_id{uuid_t::create()};
+}
 
 } // namespace cloud_topics::l1

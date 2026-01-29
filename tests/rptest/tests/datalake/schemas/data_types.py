@@ -28,7 +28,7 @@ class GenericDataType:
         elif producer_type == ProducerType.PROTO3:
             return cls.to_proto()
         else:
-            raise NotImplementedError(f"Unknown ProducerType {producer_type}")
+            raise NotImplementedError(f"Unknown ProducerType {producer_type}")  # pyright: ignore[reportUnreachable]
 
     @staticmethod
     def name() -> str:

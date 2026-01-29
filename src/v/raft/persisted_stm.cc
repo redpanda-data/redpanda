@@ -357,25 +357,22 @@ ss::future<> persisted_stm_base<BaseT, T>::ensure_local_snapshot_exists(
       _log.debug,
       "ensure snapshot_exists with target offset: {}",
       target_offset);
-    return _op_lock.with([this, target_offset]() {
-        return wait_for_snapshot_hydrated().then([this, target_offset] {
-            if (target_offset <= _last_snapshot_offset) {
-                return ss::now();
-            }
-            return BaseT::wait(target_offset, model::no_timeout)
-              .then([this, target_offset]() {
-                  vassert(
-                    target_offset < BaseT::next(),
-                    "[{} ({})]  after we waited for target_offset ({}) "
-                    "next ({}) must be greater",
-                    _raft->ntp(),
-                    name(),
-                    target_offset,
-                    BaseT::next());
-                  return do_write_local_snapshot();
-              });
-        });
-    });
+    auto gate_holder = _gate.hold();
+    auto lock_holder = co_await _op_lock.get_units();
+    co_await wait_for_snapshot_hydrated();
+    if (target_offset <= _last_snapshot_offset) {
+        co_return;
+    }
+    co_await BaseT::wait(target_offset, model::no_timeout);
+    vassert(
+      target_offset < BaseT::next(),
+      "[{} ({})]  after we waited for target_offset ({}) "
+      "next ({}) must be greater",
+      _raft->ntp(),
+      name(),
+      target_offset,
+      BaseT::next());
+    co_await do_write_local_snapshot();
 }
 
 template<typename BaseT, supported_stm_snapshot T>
@@ -564,6 +561,7 @@ ss::future<bool> persisted_stm_base<BaseT, T>::wait_no_throw(
 
 template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::start() {
+    auto holder = _gate.hold();
     if (_raft->dirty_offset() == model::offset{}) {
         co_await _snapshot_backend.perform_initial_cleanup();
     }
@@ -584,7 +582,9 @@ ss::future<> persisted_stm_base<BaseT, T>::start() {
     if (maybe_snapshot) {
         stm_snapshot& snapshot = *maybe_snapshot;
         auto next_offset = model::next_offset(snapshot.header.offset);
-        if (next_offset >= _raft->start_offset()) {
+        if (
+          next_offset >= _raft->start_offset()
+          && snapshot.header.offset <= _raft->dirty_offset()) {
             auto snapshot_applied = co_await apply_local_snapshot(
               snapshot.header, std::move(snapshot.data));
             if (snapshot_applied == local_snapshot_applied::yes) {
@@ -609,8 +609,11 @@ ss::future<> persisted_stm_base<BaseT, T>::start() {
             // it in the apply fiber by calling handle_eviction.
             vlog(
               _log.warn,
-              "Skipping snapshot {} since it's out of sync with the log",
-              _snapshot_backend.store_path());
+              "Skipping snapshot {} since it's out of sync with the log. Log "
+              "offsets: {}, last included snapshot offset: {}",
+              _snapshot_backend.store_path(),
+              _raft->log()->offsets(),
+              snapshot.header.offset);
         }
 
     } else {

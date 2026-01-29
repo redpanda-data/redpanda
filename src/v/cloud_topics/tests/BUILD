@@ -53,6 +53,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/cloud_topics:object_utils",
+        "//src/v/ssx:sformat",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

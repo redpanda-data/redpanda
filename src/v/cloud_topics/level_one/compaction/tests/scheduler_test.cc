@@ -36,7 +36,7 @@ TEST_F(SchedulerTestFixture, TestScheduler) {
 #endif
 
     scoped_config cfg;
-    cfg.get("log_compaction_interval_ms").set_value(100ms);
+    cfg.get("cloud_topics_compaction_interval_ms").set_value(100ms);
     ss::abort_source as;
     chunked_hash_set<ss::shard_id> paused_workers;
     chunked_hash_map<model::ntp, model::topic_id_partition> managed_ntps;
@@ -56,7 +56,7 @@ TEST_F(SchedulerTestFixture, TestScheduler) {
       };
     auto unmanage_random_partition_func = [this, &managed_ntps]() {
         if (managed_ntps.empty()) {
-            return ss::now();
+            return;
         }
         auto ntp_to_remove
           = random_generators::random_choice(
@@ -64,8 +64,7 @@ TEST_F(SchedulerTestFixture, TestScheduler) {
                 managed_ntps.begin(), managed_ntps.end()))
               .first;
         managed_ntps.erase(ntp_to_remove);
-        return scheduler->unmanage_partition(
-          std::move(ntp_to_remove), "unmanage_partition_func");
+        scheduler->unmanage_partition(ntp_to_remove, "unmanage_partition_func");
     };
     auto pause_random_worker_func = [this, &paused_workers]() {
         auto random_shard = random_generators::get_int(ss::smp::count - 1);
@@ -132,8 +131,8 @@ TEST_F(SchedulerTestFixture, TestScheduler) {
     auto unmanage_ntp_fut = ss::do_until(
       [&] { return as.abort_requested(); },
       [&]() {
-          return unmanage_random_partition_func().then(
-            [&]() { return ss::sleep(unmanage_sleep); });
+          unmanage_random_partition_func();
+          return ss::sleep(unmanage_sleep);
       });
 
     static constexpr auto pause_worker_sleep = 50ms;

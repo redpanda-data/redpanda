@@ -13,9 +13,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
+	"time"
 
+	"golang.org/x/term"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
@@ -65,7 +68,10 @@ func parseArgs(args []string) ([]string, error) {
 }
 
 func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var noConfirm bool
+	var (
+		noConfirm bool
+		timeout   time.Duration
+	)
 	cmd := &cobra.Command{
 		Use:   "set [KEY] [VALUE]",
 		Short: "Set a single cluster configuration property",
@@ -89,15 +95,44 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			vp := cfg.VirtualProfile()
 
-			if vp.FromCloud {
+			if vp.CheckFromCloud() {
 				if vp.CloudCluster.IsServerless() {
 					out.Die("rpk cluster config set is not supported on Redpanda serverless clusters")
 				}
 				out.MaybeDie(err, "rpk unable to load config: %v", err)
 				operation, err := setCloudConfig(cmd.Context(), cfg, vp, configs)
 				out.MaybeDieErr(err)
-				fmt.Print("Processing configuration, this operation may take up to 10 minutes. To check the status, run 'rpk cluster config status'\n\n")
-				fmt.Printf("Operation ID: %s \n", operation.GetOperation().GetId())
+
+				operationID := operation.GetOperation().GetId()
+				fmt.Print("Processing configuration...")
+
+				// Check if stdout is a terminal for progress indication
+				isTerminal := term.IsTerminal(int(os.Stdout.Fd()))
+				cloudClient := publicapi.NewCloudClientSet(cfg.DevOverrides().PublicAPIURL, vp.CurrentAuth().AuthToken)
+				pollCtx, cancel := context.WithTimeout(cmd.Context(), timeout)
+				defer cancel()
+				finalOp, completedInTime, err := pollOperationStatusWithConfig(pollCtx, cloudClient, operationID, isTerminal, nil)
+				out.MaybeDieErr(err)
+
+				// Clear the progress line
+				if isTerminal {
+					fmt.Print("\r\033[K")
+				} else {
+					fmt.Println() // Add newline for non-terminal output
+				}
+
+				// Handle the result based on state
+				state := finalOp.GetState()
+				if completedInTime {
+					if state == controlplanev1.Operation_STATE_COMPLETED {
+						fmt.Printf("Configuration update completed successfully. Operation ID: %s\n", operationID)
+					} else if state == controlplanev1.Operation_STATE_FAILED {
+						fmt.Printf("Configuration update failed. Operation ID: %s\n", operationID)
+					}
+				} else {
+					fmt.Printf("Configuration update is in progress and may take up to 10 minutes. We've waited for %s. To check the status, run 'rpk cluster config status' with the operation ID below.\n\n", timeout)
+					fmt.Printf("Operation ID: %s\n", operationID)
+				}
 			} else {
 				client, err := adminapi.NewClient(cmd.Context(), fs, vp)
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
@@ -136,6 +171,7 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 	}
 
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Maximum time to poll for operation completion before displaying operation ID for manual status checking (e.g. 300ms, 1.5s, 30s)")
 	return cmd
 }
 
@@ -263,4 +299,128 @@ func setCloudConfig(ctx context.Context, cfg *config.Config, p *config.RpkProfil
 		return nil, fmt.Errorf("internal error while updating redpanda cloud configs: %v", err)
 	}
 	return operation.Msg, nil
+}
+
+// pollConfig contains timing configuration for operation polling.
+type pollConfig struct {
+	initialDelay      time.Duration
+	fastPollInterval  time.Duration
+	slowPollInterval  time.Duration
+	fastPollThreshold time.Duration
+}
+
+// pollOperationStatusWithConfig is the same as pollOperationStatus but allows overriding timing configuration.
+// This is primarily useful for testing with shorter intervals.
+func pollOperationStatusWithConfig(ctx context.Context, cloudClient *publicapi.CloudClientSet, operationID string, isTerminal bool, cfg *pollConfig) (*controlplanev1.Operation, bool, error) {
+	// Use default production timing if no config provided
+	if cfg == nil {
+		cfg = &pollConfig{
+			initialDelay:      2 * time.Second,
+			fastPollInterval:  500 * time.Millisecond,
+			slowPollInterval:  1 * time.Second,
+			fastPollThreshold: 5 * time.Second,
+		}
+	}
+
+	startTime := time.Now()
+	initialDelay := cfg.initialDelay
+	fastPollInterval := cfg.fastPollInterval
+	slowPollInterval := cfg.slowPollInterval
+	fastPollThreshold := cfg.fastPollThreshold
+
+	// For exponential backoff in slow polling phase
+	currentSlowInterval := slowPollInterval
+	maxSlowInterval := 32 * time.Second
+
+	// Cap initial delay at half the timeout to ensure time for at least one poll
+	if deadline, ok := ctx.Deadline(); ok {
+		timeRemaining := time.Until(deadline)
+		maxInitialDelay := timeRemaining / 2
+		if initialDelay > maxInitialDelay {
+			initialDelay = maxInitialDelay
+		}
+	}
+
+	// Wait for initial delay before first poll
+	select {
+	case <-time.After(initialDelay):
+		// Print initial progress after initial delay
+		if isTerminal {
+			fmt.Printf("\rProcessing configuration... (%ds elapsed)", int(time.Since(startTime).Seconds()))
+		}
+	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			// Timeout during initial delay - get final status
+			return getFinalOperationStatus(ctx, cloudClient, operationID)
+		}
+		return nil, false, fmt.Errorf("context cancelled while waiting for initial delay: %w", ctx.Err())
+	}
+
+	for {
+		resp, err := cloudClient.Operations.GetOperation(ctx, connect.NewRequest(&controlplanev1.GetOperationRequest{
+			Id: operationID,
+		}))
+		if err != nil {
+			// Check if timeout was reached
+			if ctx.Err() == context.DeadlineExceeded {
+				return getFinalOperationStatus(ctx, cloudClient, operationID)
+			}
+			return nil, false, fmt.Errorf("failed to get operation status: %v", err)
+		}
+
+		op := resp.Msg.Operation
+		state := op.GetState()
+
+		if state == controlplanev1.Operation_STATE_COMPLETED || state == controlplanev1.Operation_STATE_FAILED {
+			return op, true, nil
+		}
+
+		// Print progress with elapsed time
+		elapsed := time.Since(startTime)
+		if isTerminal {
+			fmt.Printf("\rProcessing configuration... (%ds elapsed)", int(elapsed.Seconds()))
+		}
+
+		// Adaptive polling with exponential backoff:
+		// - Fast polling (500ms) for first 5 seconds
+		// - Exponential backoff after 5 seconds: 1s, 2s, 4s, 8s, 16s, 32s (max)
+		var pollInterval time.Duration
+		if elapsed < fastPollThreshold {
+			pollInterval = fastPollInterval
+		} else {
+			pollInterval = currentSlowInterval
+			nextInterval := currentSlowInterval * 2
+			if nextInterval > maxSlowInterval {
+				nextInterval = maxSlowInterval
+			}
+			currentSlowInterval = nextInterval
+		}
+
+		// Wait for next poll or context cancellation
+		select {
+		case <-time.After(pollInterval):
+			// Continue to next iteration
+		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				return getFinalOperationStatus(ctx, cloudClient, operationID)
+			}
+			return nil, false, fmt.Errorf("context cancelled while polling operation status: %w", ctx.Err())
+		}
+	}
+}
+
+// getFinalOperationStatus retrieves the operation status one final time after timeout.
+// Uses context.Background() to ensure this call isn't affected by the timeout.
+// The ctx parameter is accepted to satisfy linters but is intentionally not used.
+func getFinalOperationStatus(ctx context.Context, cloudClient *publicapi.CloudClientSet, operationID string) (*controlplanev1.Operation, bool, error) {
+	_ = ctx // Explicitly mark as intentionally unused to satisfy linters
+	// Use context.Background() to ensure this call succeeds even though the original context timed out
+	//nolint:contextcheck // Intentionally using context.Background() since ctx has already timed out
+	resp, err := cloudClient.Operations.GetOperation(context.Background(), connect.NewRequest(&controlplanev1.GetOperationRequest{
+		Id: operationID,
+	}))
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get final operation status: %v", err)
+	}
+	return resp.Msg.Operation, false, nil
 }

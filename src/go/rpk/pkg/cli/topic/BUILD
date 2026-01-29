@@ -49,6 +49,7 @@ go_test(
     srcs = [
         "analyze_test.go",
         "consume_test.go",
+        "create_test.go",
         "describe_test.go",
         "list_test.go",
         "trim_test.go",

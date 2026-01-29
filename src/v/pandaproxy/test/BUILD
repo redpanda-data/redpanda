@@ -22,6 +22,7 @@ redpanda_test_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/http",
         "//src/v/redpanda/tests:fixture",
     ],

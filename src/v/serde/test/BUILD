@@ -39,6 +39,7 @@ redpanda_cc_btest(
         "//src/v/serde:inet_address",
         "//src/v/serde:iobuf",
         "//src/v/serde:map",
+        "//src/v/serde:pair",
         "//src/v/serde:set",
         "//src/v/serde:sstring",
         "//src/v/serde:variant",

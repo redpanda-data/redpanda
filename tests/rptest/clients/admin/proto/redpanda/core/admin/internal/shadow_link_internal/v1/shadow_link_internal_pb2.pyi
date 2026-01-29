@@ -19,7 +19,12 @@ import builtins
 import google.protobuf.descriptor
 import google.protobuf.message
 from ........ import proto
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
@@ -38,7 +43,7 @@ class RemoveShadowTopicRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['shadow_link_name', b'shadow_link_name', 'shadow_topic_name', b'shadow_topic_name']) -> None:
         ...
-global___RemoveShadowTopicRequest = RemoveShadowTopicRequest
+Global___RemoveShadowTopicRequest: typing_extensions.TypeAlias = RemoveShadowTopicRequest
 
 @typing.final
 class RemoveShadowTopicResponse(google.protobuf.message.Message):
@@ -47,7 +52,7 @@ class RemoveShadowTopicResponse(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___RemoveShadowTopicResponse = RemoveShadowTopicResponse
+Global___RemoveShadowTopicResponse: typing_extensions.TypeAlias = RemoveShadowTopicResponse
 
 @typing.final
 class ForceUpdateShadowTopicStateRequest(google.protobuf.message.Message):
@@ -68,7 +73,7 @@ class ForceUpdateShadowTopicStateRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['new_state', b'new_state', 'shadow_link_name', b'shadow_link_name', 'shadow_topic_name', b'shadow_topic_name']) -> None:
         ...
-global___ForceUpdateShadowTopicStateRequest = ForceUpdateShadowTopicStateRequest
+Global___ForceUpdateShadowTopicStateRequest: typing_extensions.TypeAlias = ForceUpdateShadowTopicStateRequest
 
 @typing.final
 class ForceUpdateShadowTopicStateResponse(google.protobuf.message.Message):
@@ -77,4 +82,4 @@ class ForceUpdateShadowTopicStateResponse(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___ForceUpdateShadowTopicStateResponse = ForceUpdateShadowTopicStateResponse
+Global___ForceUpdateShadowTopicStateResponse: typing_extensions.TypeAlias = ForceUpdateShadowTopicStateResponse

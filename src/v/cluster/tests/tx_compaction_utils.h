@@ -111,6 +111,7 @@ public:
                       std::nullopt,
                       log->stm_manager()->max_removable_local_log_offset(),
                       log->stm_manager()->max_tombstone_remove_offset(),
+                      log->stm_manager()->max_tx_end_remove_offset(),
                       std::nullopt,
                       std::nullopt,
                       std::chrono::milliseconds{0},
@@ -240,6 +241,7 @@ public:
         storage::housekeeping_config ccfg(
           model::timestamp::min(),
           std::nullopt,
+          model::offset::max(),
           model::offset::max(),
           model::offset::max(),
           std::nullopt,

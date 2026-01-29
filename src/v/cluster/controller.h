@@ -205,10 +205,6 @@ public:
         return _cluster_link_frontend;
     }
 
-    ss::sharded<shard_placement_table>& get_shard_placement_table() {
-        return _shard_placement;
-    }
-
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
@@ -290,15 +286,6 @@ public:
 private:
     friend controller_probe;
     friend class controller_forced_reconfiguration_manager;
-
-    using remake_cb_t
-      = ss::noncopyable_function<ss::future<std::error_code>(model::ntp)>;
-
-    ss::future<std::error_code> trigger_remake_cb(raft::group_id g);
-
-    ss::future<> set_raft_manager_remake_cb();
-
-    ss::future<> clear_raft_manager_remake_cb();
 
     /**
      * Create a \c bootstrap_cluster_cmd, replicate-and-wait it to the current

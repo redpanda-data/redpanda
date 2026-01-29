@@ -11,7 +11,10 @@
 
 #include "cloud_io/io_result.h"
 #include "cloud_storage_clients/client.h"
+#include "cloud_storage_clients/types.h"
+#include "cloud_topics/level_zero/gc/level_zero_gc_probe.h"
 #include "cloud_topics/types.h"
+#include "container/chunked_hash_map.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
@@ -26,8 +29,11 @@ class remote;
 }
 
 namespace cluster {
+class controller_stm;
 class health_monitor_frontend;
-}
+class topic_table;
+class members_table;
+} // namespace cluster
 
 namespace cloud_topics {
 
@@ -55,9 +61,9 @@ namespace cloud_topics {
  *
  * The `level_zero_gc` class implements L0 garbage collection as described
  * above. It uses two service provider interfaces defined in the class. The
- * `epoch_source` interface provides access to the safe-to-delete epoch, and the
- * `object_storage` interface provides access to listing and deleting objects
- * from the configured storage service.
+ * `epoch_source` interface provides access to the safe-to-delete epoch, and
+ * the `object_storage` interface provides access to listing and deleting
+ * objects from the configured storage service.
  *
  * Incremental collection
  * ======================
@@ -132,16 +138,9 @@ namespace cloud_topics {
  * epochs starting at 0.
  */
 struct level_zero_gc_config {
-    /*
-     * TODO(noah): the grace period controls the minimum age of objects before
-     * they are eligible for removal, and likely deserves to be a proper
-     * configuration tunable. The throttling parameters are for preventing the
-     * polling worker from spinning. The throttling policy is very crude, and
-     * will need to be revisited, but should keep things in check for now.
-     */
-    std::chrono::milliseconds deletion_grace_period{10s};
-    std::chrono::milliseconds throttle_progress{2s};
-    std::chrono::milliseconds throttle_no_progress{10s};
+    config::binding<std::chrono::milliseconds> deletion_grace_period;
+    config::binding<std::chrono::milliseconds> throttle_progress;
+    config::binding<std::chrono::milliseconds> throttle_no_progress;
 };
 
 class level_zero_gc {
@@ -165,12 +164,17 @@ public:
         virtual seastar::future<std::expected<
           cloud_storage_clients::client::list_bucket_result,
           cloud_storage_clients::error_outcome>>
-        list_objects(seastar::abort_source*) = 0;
+        list_objects(
+          seastar::abort_source*,
+          std::optional<cloud_storage_clients::object_key> prefix
+          = std::nullopt,
+          std::optional<ss::sstring> continuation_token = std::nullopt)
+          = 0;
 
         virtual seastar::future<std::expected<void, cloud_io::upload_result>>
         delete_objects(
           seastar::abort_source*,
-          std::vector<cloud_storage_clients::client::list_bucket_item>)
+          chunked_vector<cloud_storage_clients::client::list_bucket_item>)
           = 0;
     };
 
@@ -179,6 +183,23 @@ public:
      */
     class epoch_source {
     public:
+        struct partitions_snapshot {
+            using partition_map = chunked_hash_map<
+              model::topic_namespace,
+              chunked_vector<model::partition_id>,
+              model::topic_namespace_hash,
+              model::topic_namespace_eq>;
+
+            partition_map partitions;
+            cluster_epoch snap_revision;
+        };
+
+        using partitions_max_gc_epoch = chunked_hash_map<
+          model::topic_namespace,
+          chunked_hash_map<model::partition_id, cluster_epoch>,
+          model::topic_namespace_hash,
+          model::topic_namespace_eq>;
+
         epoch_source() = default;
         epoch_source(const epoch_source&) = default;
         epoch_source(epoch_source&&) = delete;
@@ -193,7 +214,38 @@ public:
          */
         virtual seastar::future<
           std::expected<std::optional<cluster_epoch>, std::string>>
-        max_gc_eligible_epoch(seastar::abort_source*) = 0;
+        max_gc_eligible_epoch(seastar::abort_source*);
+
+        /*
+         * Snapshot of existing cloud topic partition identifiers along with the
+         * maximum possible GC eligible epoch for the set of partitions.
+         */
+        virtual seastar::future<std::expected<partitions_snapshot, std::string>>
+        get_partitions(seastar::abort_source*) = 0;
+
+        /*
+         * Reported max GC eligible epochs for cloud topic partitions.
+         */
+        virtual seastar::future<
+          std::expected<partitions_max_gc_epoch, std::string>>
+        get_partitions_max_gc_epoch(seastar::abort_source*) = 0;
+    };
+
+    /**
+     * Interface for determining the total number of shards in the cluster
+     * and the current shard's position in logical, ordered list of shard IDs
+     * starting at 0 (node 0, shard 0) and ending at total_shards - 1.
+     */
+    struct node_info {
+        node_info() = default;
+        node_info(const node_info&) = default;
+        node_info(node_info&&) = delete;
+        node_info& operator=(const node_info&) = default;
+        node_info& operator=(node_info&&) = delete;
+        virtual ~node_info() = default;
+
+        virtual size_t shard_index() const = 0;
+        virtual size_t total_shards() const = 0;
     };
 
 public:
@@ -204,16 +256,22 @@ public:
     level_zero_gc(
       level_zero_gc_config,
       std::unique_ptr<object_storage>,
-      std::unique_ptr<epoch_source>);
+      std::unique_ptr<epoch_source>,
+      std::unique_ptr<node_info>);
 
     /*
      * Construct with default implementations of storage and epoch providers.
      */
     level_zero_gc(
+      model::node_id,
       cloud_io::remote*,
       cloud_storage_clients::bucket_name,
       seastar::sharded<cluster::health_monitor_frontend>*,
-      level_zero_gc_config = {});
+      seastar::sharded<cluster::controller_stm>*,
+      seastar::sharded<cluster::topic_table>*,
+      seastar::sharded<cluster::members_table>*);
+
+    ~level_zero_gc();
 
     /*
      * Request that GC be started or paused. These can be called multiple times
@@ -230,7 +288,6 @@ public:
 
 private:
     level_zero_gc_config config_;
-    std::unique_ptr<object_storage> storage_;
     std::unique_ptr<epoch_source> epoch_source_;
 
     bool should_run_;
@@ -242,6 +299,34 @@ private:
     seastar::future<> worker();
     enum class collection_error : int8_t;
     seastar::future<std::expected<size_t, collection_error>> try_to_collect();
+    seastar::future<std::expected<size_t, collection_error>>
+    do_try_to_collect(std::optional<cluster_epoch>&);
+
+    level_zero_gc_probe probe_;
+
+    class list_delete_worker;
+    std::unique_ptr<list_delete_worker> delete_worker_{};
 };
+
+/**
+ * @brief Compute a subrange of [0,999] for some shard.
+ *
+ * Aims to partition the object prefix space ([0-999]) perfectly (i.e. with no
+ * missing prefixes or overlap between shards). As a result, might _not_ assign
+ * a sub-range to some shard, e.g. if the shard index exceeds the total number
+ * of prefixes.
+ *
+ * For example:
+ *   - 2 nodes, 5 shards per node (10 total shards)
+ *     - compute_prefix_range(0,10) -> {.min=0,.max=99} (node 0,shard 0)
+ *     - compute_prefix_range(8,10) -> {.min=800,.max=899} (node 1,shard 3)
+ *  - 3 nodes, 3 shards per node (9 total shards)
+ *     - compute_prefix_range(8,9)  -> {.min=888,.max=999} (node 2,shard 2)
+ * @param shard_idx - Shard index as computed by an implementation of node_info
+ * @param total_shards - Total number of shards in the cluster
+ */
+struct prefix_range_inclusive;
+std::optional<prefix_range_inclusive>
+compute_prefix_range(size_t shard_idx, size_t total_shards);
 
 } // namespace cloud_topics

@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import os
 from math import ceil
 from typing import Any, Optional
 
@@ -14,10 +15,14 @@ from ducktape.tests.test import TestContext
 
 from rptest.services.client_swarm_base import ClientSwarmBase
 from rptest.services.redpanda import AnyRedpandaService
-from rptest.services.utils import assert_int, assert_int_or_none
+from rptest.services.utils import LocalPayloadDirectory, assert_int, assert_int_or_none
 
 
 class ProducerSwarm(ClientSwarmBase):
+    CUSTOM_PAYLOAD_DIR = os.path.join(
+        ClientSwarmBase.PERSISTENT_ROOT, "custom_payloads"
+    )
+
     def __init__(
         self,
         context: TestContext,
@@ -37,12 +42,25 @@ class ProducerSwarm(ClientSwarmBase):
         messages_per_second_per_producer: Optional[int] = None,
         message_period: Optional[str] = None,
         topics_per_client: Optional[int] = None,
+        local_payload_dir: Optional[LocalPayloadDirectory] = None,
     ):
         super().__init__(context, redpanda, topic, log_level, properties)
 
         assert not (messages_per_second_per_producer and message_period), (
             "only one of these properties can be set"
         )
+
+        assert not (
+            (compressible_payload or min_record_size or max_record_size)
+            and local_payload_dir
+        ), (
+            "if a local payload directory is specified then all other payload options are ignored"
+        )
+
+        if local_payload_dir is not None:
+            assert local_payload_dir.has_payloads(), (
+                "local_payload_dir must have at least one payload"
+            )
 
         self._producers = assert_int(producers)
         self._records_per_producer = assert_int(records_per_producer)
@@ -58,6 +76,7 @@ class ProducerSwarm(ClientSwarmBase):
         self._unique_topics = unique_topics
         self._message_period = message_period
         self._topics_per_client = topics_per_client
+        self._local_payload_dir = local_payload_dir
 
     def _additional_args(self) -> str:
         cmd = ""
@@ -96,7 +115,17 @@ class ProducerSwarm(ClientSwarmBase):
         if self._topics_per_client:
             cmd += f" --topics-per-client {self._topics_per_client}"
 
+        if self._local_payload_dir:
+            cmd += f" --payload-directory {ProducerSwarm.CUSTOM_PAYLOAD_DIR}"
+
         return cmd
+
+    def _pre_run_tasks(self):
+        if self._local_payload_dir and self._node:
+            self.logger.info("Copying custom payloads to producer swarm node.")
+            self._local_payload_dir.copy_to_node(
+                self._node, ProducerSwarm.CUSTOM_PAYLOAD_DIR
+            )
 
     def wait_for_all_started(self):
         """Wait until the requested number of producers have started. Note that if the expected

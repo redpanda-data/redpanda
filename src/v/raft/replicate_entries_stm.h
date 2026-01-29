@@ -19,9 +19,9 @@
 #include "raft/fwd.h"
 #include "raft/logger.h"
 #include "raft/types.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
 #include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/shared_ptr.hh>

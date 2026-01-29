@@ -20,14 +20,7 @@
 FIXTURE_TEST(
   test_rm_stm_doesnt_interfere_with_out_of_session_messages,
   rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto count = 5;
     auto batch_1 = model::test::make_random_batch(
@@ -74,14 +67,7 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(
   test_rm_stm_passes_monotonic_in_session_messages, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto count = 5;
     auto batch1 = model::test::make_random_batch(
@@ -131,14 +117,7 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     std::vector<kafka::offset> offsets;
 
@@ -199,14 +178,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
 }
 
 FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto count = 5;
 
@@ -263,14 +235,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
 }
 
 FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto count = 5;
     auto batch1 = model::test::make_random_batch(
@@ -319,14 +284,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
 }
 
 FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
-    create_stm_and_start_raft();
-    auto& stm = *_stm;
-    stm.testing_only_disable_auto_abort();
-
-    stm.start().get();
-
-    wait_for_confirmed_leader();
-    wait_for_meta_initialized();
+    auto& stm = start_and_disable_auto_abort();
 
     auto count = 5;
     auto batch1 = model::test::make_random_batch(

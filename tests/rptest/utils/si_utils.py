@@ -418,7 +418,7 @@ def verify_file_layout(
     file name of the restored segment might be different from the original
     segment. This is because we're deleting raft configuration batches
     from the segments.
-    The function checks the size of the parition over the size of the original.
+    The function checks the size of the partition over the size of the original.
     The assertion is triggered only if the difference can't be explained by the
     upload lag and removal of configuration/archival-metadata batches.
     """
@@ -1130,7 +1130,7 @@ class BucketView:
                         # and deleted by Redpanda concurrently.
                         # We don't expect this to happen with the manifests
                         # so this error is only handled in case of segments
-                        if err["Error"]["Code"] == "NoSuchKey":
+                        if err.response["Error"]["Code"] == "NoSuchKey":
                             self._state.ignored_objects += 1
             elif self.path_matcher.is_topic_manifest(o):
                 pass
@@ -1574,6 +1574,7 @@ class BucketView:
         """
         try:
             if not self.path_matcher.is_segment(o):
+                self.logger.debug(f"Object '{o}' is not a segment")
                 return None
 
             segment_path = parse_s3_segment_path(o.key)

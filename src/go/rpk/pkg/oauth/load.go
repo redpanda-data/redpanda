@@ -1,3 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package oauth
 
 import (
@@ -320,4 +329,66 @@ func MaybePrintSwapMessage(clearedProfile bool, priorProfile *config.RpkProfile,
 	if clearedProfile {
 		PrintSwapMessage(priorProfile, newAuth)
 	}
+}
+
+// DiagnoseAuthCredentials returns a user-friendly diagnostic message with
+// guidance on resolving authentication issues based on the auth type and error.
+func DiagnoseAuthCredentials(auth *config.RpkCloudAuth, err error) string {
+	if auth == nil {
+		return "No authentication configuration found. Please run 'rpk cloud login' to authenticate."
+	}
+
+	var diagnosis string
+	switch auth.Kind {
+	case config.CloudAuthClientCredentials:
+		if auth.ClientSecret == "" {
+			clientID := "<id>"
+			if auth.ClientID != "" {
+				clientID = auth.ClientID
+			}
+			diagnosis = fmt.Sprintf(`Authentication using client credentials failed.
+
+The client secret is not stored in your configuration.
+To re-authenticate, you can:
+  - Set the RPK_CLOUD_CLIENT_SECRET environment variable
+  - Use the --client-secret flag
+  - Re-login with 'rpk cloud login --client-id %s --client-secret <secret> --save'
+`, clientID)
+		} else {
+			diagnosis = `Authentication using client credentials failed.
+
+Please verify your client credentials are correct.
+You may need to:
+  - Check that your client ID and secret are still valid in the Redpanda Cloud console
+  - Clear credentials with 'rpk cloud logout --clear-credentials' and re-login
+`
+		}
+
+	case config.CloudAuthSSO:
+		diagnosis = `Authentication using SSO failed.
+
+This may be due to:
+  - Browser not opening or authentication not completed
+  - Network connectivity issues
+  - Session timeout
+
+To resolve:
+  - Try logging in again with 'rpk cloud login'
+  - Use 'rpk cloud login --no-browser' if browser doesn't open automatically
+  - Check your network connection and firewall settings
+`
+
+	default:
+		diagnosis = `Authentication failed.
+
+To resolve:
+  - Try logging in again with 'rpk cloud login'
+  - Clear credentials with 'rpk cloud logout --clear-credentials' if the issue persists
+`
+	}
+
+	if err != nil {
+		diagnosis += fmt.Sprintf("\nError details: %v\n", err)
+	}
+	return diagnosis
 }

@@ -305,13 +305,13 @@ static void preload_local(
             // but for strings it's not (the literal value in the cache is
             // "\"foo\"").
             auto decoded = YAML::Load(raw_value);
-            property.set_value(decoded);
+            bool set = property.set_value(decoded);
 
             // Because we are in preload, it doesn't matter if the property
             // requires restart.  We are setting it before anything else
             // can be using it.
 
-            if (result.has_value()) {
+            if (result.has_value() && set) {
                 vlog(
                   clusterlog.trace,
                   "Loaded property {}={} from local cache",
@@ -359,7 +359,7 @@ static void preload_local(
             return;
         }
 
-        return preload_local(key, ss::sstring(std::move(raw_value)), result);
+        return preload_local(key, ss::sstring(raw_value), result);
     } else {
         if (result.has_value()) {
             vlog(clusterlog.info, "Ignoring unknown property: {}", key);

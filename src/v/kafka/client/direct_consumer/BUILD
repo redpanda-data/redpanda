@@ -36,7 +36,7 @@ redpanda_cc_library(
         "//src/v/model",
         "//src/v/ssx:async_algorithm",
         "//src/v/ssx:future_util",
-        "//src/v/utils:mutex",
+        "//src/v/ssx:mutex",
         "//src/v/utils:prefix_logger",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@fmt",

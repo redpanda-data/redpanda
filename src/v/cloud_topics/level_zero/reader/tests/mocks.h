@@ -128,6 +128,16 @@ public:
       ());
 
     MOCK_METHOD(
+      ss::future<std::optional<cloud_io::cache_item_stream>>,
+      get_stream_range,
+      (std::filesystem::path key,
+       uint64_t offset,
+       uint64_t length,
+       size_t read_buffer_size,
+       unsigned int read_ahead),
+      ());
+
+    MOCK_METHOD(
       ss::future<>,
       put,
       (std::filesystem::path key,
@@ -195,6 +205,35 @@ public:
         auto fut = ss::make_exception_future<
           std::optional<cloud_io::cache_item_stream>>(e);
         EXPECT_CALL(*this, get_stream(p, ::testing::_, ::testing::_))
+          .Times(1)
+          .WillOnce(::testing::Return(std::move(fut)));
+    }
+
+    void expect_get_stream_range(
+      std::filesystem::path p,
+      uint64_t offset,
+      uint64_t length,
+      std::optional<cloud_io::cache_item_stream> item) {
+        auto fut
+          = ss::make_ready_future<std::optional<cloud_io::cache_item_stream>>(
+            std::move(item));
+        EXPECT_CALL(
+          *this,
+          get_stream_range(p, offset, length, ::testing::_, ::testing::_))
+          .Times(1)
+          .WillOnce(::testing::Return(std::move(fut)));
+    }
+
+    void expect_get_stream_range_throws(
+      std::filesystem::path p,
+      uint64_t offset,
+      uint64_t length,
+      std::exception_ptr e) {
+        auto fut = ss::make_exception_future<
+          std::optional<cloud_io::cache_item_stream>>(e);
+        EXPECT_CALL(
+          *this,
+          get_stream_range(p, offset, length, ::testing::_, ::testing::_))
           .Times(1)
           .WillOnce(::testing::Return(std::move(fut)));
     }

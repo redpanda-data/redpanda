@@ -18,7 +18,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin, Replica
+from rptest.services.admin import Admin, PartitionDetails, Replica
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import RedpandaService, SISettings
@@ -504,6 +504,131 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self.await_num_produced(min_records=10000)
         self.start_consumer()
         self.run_validation()
+
+    @cluster(num_nodes=5)
+    def test_reconfigure_away_from_leader(self):
+        """
+        Regression test for a force reconfiguration deadlock
+
+        Previously, a force reconfiguration away from the partition leader may deadlock
+
+        This would happen because:
+        The previous leader would not step down. This allowed it to continue sending
+        heartbeats which would squash the leadership ambition of any voter in the new config.
+
+        Additionally: shutdown of a partitions which are leaving a replica set only occurs
+        on update_finish, which only occurs when a new leader has been elected.
+
+        The confluence of these two factors allowed the force_reconfiguration to stall forever.
+
+        This test recreates this scenario by doing the following:
+        given a cluster
+        [A B C D E]
+        and a replica placement for a partition
+        [A B C D E]
+        [F L F    ] where F is a follower and L is a leader
+
+        kill one of the followers
+        [A B C D E]
+        [    x    ]
+
+        and then launch a force reconfiguration from [A B C] to [A D E]
+        the new configuration now looks like
+        [A B C D E]
+        [V     L L] where V is voter and L is learner
+
+        A should be able to vote itself leader and finish the reconfiguration even though it
+        was not the leader at the time of force reconfiguration.
+        """
+        self.start_redpanda(
+            num_nodes=5,
+            extra_rp_conf={
+                "partition_autobalancing_mode": "continuous",
+                "enable_leader_balancer": False,
+            },
+        )
+        self.topic = "my_topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=3, partition_count=1)
+        )
+
+        admin = self.redpanda._admin
+        rpk = RpkTool(self.redpanda)
+        replicas = []
+        for p in rpk.describe_topic(self.topic, tolerant=True):
+            replicas = [int(r) for r in p.replicas]
+
+        self.logger.info(f"Test topic {self.topic} replicas: {replicas}")
+
+        leader_id = admin.await_stable_leader(topic=self.topic, partition=0)
+        assert leader_id > 0, "should have found leader id"
+
+        non_leader_replicas = list(set(replicas) - {leader_id})
+        random.shuffle(non_leader_replicas)
+        assert len(non_leader_replicas) == 2, "invariant"
+        non_leader_replica, to_kill_replica = non_leader_replicas
+
+        # find two other replicas that are NOT part of the current configuration
+        all_node_ids = {
+            self.redpanda.node_id(node) for node in self.redpanda.started_nodes()
+        }
+        non_replica_node_ids = list(all_node_ids - set(replicas))
+
+        # we want to reconfigure to one voter and two learners, but the voter should NOT be the current
+        # leader
+        assert len(non_replica_node_ids) == 2, "invariant"
+        reconfiguration_target = non_replica_node_ids + [non_leader_replica]
+
+        self.logger.info(
+            f"Force reconfiguration of {self.topic}/0 from {replicas} to {reconfiguration_target} with leader {leader_id}"
+        )
+
+        # stop to kill replica
+        node_to_stop = self.redpanda.get_node_by_id(to_kill_replica)
+        self.logger.debug(f"Stopping node: {to_kill_replica}")
+        self.redpanda.stop_node(node_to_stop)
+
+        target_replicas = [
+            Replica(dict(node_id=node_id, core=0)) for node_id in reconfiguration_target
+        ]
+        self._force_reconfiguration(target_replicas)
+
+        def force_reconfigure_complete():
+            partition_details: PartitionDetails | None = (
+                admin._get_stable_configuration(
+                    hosts=[node.name for node in self.redpanda.started_nodes()],
+                    topic=self.topic,
+                    partition=0,
+                )
+            )
+            if not partition_details:
+                return False
+
+            # movement in flight
+            if partition_details.status == "in_progress":
+                return False
+
+            current_nodes = {replica.node_id for replica in partition_details.replicas}
+            # not on the right nodes
+            if current_nodes != set(reconfiguration_target):
+                return False
+
+            # misplaced leader
+            current_leader = partition_details.leader
+            if current_leader not in reconfiguration_target:
+                return False
+
+            return True
+
+        # force reconfiguration should complete in far less that 30s, any more
+        # and it is likely deadlocked
+        wait_until(
+            condition=force_reconfigure_complete,
+            timeout_sec=30,
+            backoff_sec=3,
+            err_msg="force reconfiguration failed to complete in 30 seconds",
+            retry_on_exc=True,
+        )
 
 
 class NodeWiseRecoveryTest(RedpandaTest):

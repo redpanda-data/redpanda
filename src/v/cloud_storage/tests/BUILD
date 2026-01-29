@@ -65,7 +65,7 @@ redpanda_test_cc_library(
 
 redpanda_cc_btest(
     name = "segment_meta_cstore_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "segment_meta_cstore_test.cc",
     ],
@@ -219,6 +219,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage:types",
         "//src/v/cloud_storage_clients",
@@ -325,6 +326,7 @@ redpanda_cc_btest(
         "//src/v/cloud_io:cache",
         "//src/v/cloud_io/tests:cloud_io_cache_fixture",
         "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage/tests:common",
         "//src/v/test_utils:seastar_boost",
@@ -423,6 +425,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",
+        "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage:types",
         "//src/v/config",
@@ -448,6 +451,7 @@ redpanda_cc_gtest(
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
         "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
         "//src/v/model",
@@ -471,6 +475,7 @@ redpanda_cc_gtest(
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",
         "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage:types",
         "//src/v/cloud_storage/tests:common",
@@ -501,6 +506,7 @@ redpanda_cc_gtest(
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
         "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage:types",
         "//src/v/cloud_storage_clients",

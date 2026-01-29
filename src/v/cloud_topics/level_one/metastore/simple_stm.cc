@@ -59,6 +59,7 @@ simple_stm::simple_stm(
 
 ss::future<std::expected<model::term_id, simple_stm::errc>>
 simple_stm::sync(model::timeout_clock::duration timeout) {
+    auto holder = _gate.hold();
     auto sync_res = co_await ss::coroutine::as_future(
       metastore_stm_base::sync(timeout));
     if (sync_res.failed()) {
@@ -84,10 +85,18 @@ simple_stm::sync(model::timeout_clock::duration timeout) {
 ss::future<std::expected<void, simple_stm::errc>>
 simple_stm::replicate_and_wait(
   model::term_id term, model::record_batch batch, ss::abort_source& as) {
+    auto holder = _gate.hold();
+    // This timeout should prevent services that depend on the metastore from
+    // hanging during shutdown because they are waiting on a replicate. The OCC
+    // checks in the apply fiber should prevent issues with replicates that
+    // succeed after the timeout pops.
+    // 10s chosen because it's a long time but less than the 15s it takes for a
+    // "slow shutdown" log.
+    constexpr auto replicate_timeout = 10s;
     auto opts = raft::replicate_options(
       raft::consistency_level::quorum_ack,
       /*expected_term=*/term,
-      /*timeout=*/std::nullopt,
+      replicate_timeout,
       std::ref(as));
     opts.set_force_flush();
     auto res = co_await _raft->replicate(std::move(batch), opts);
@@ -196,7 +205,7 @@ stm_snapshot simple_stm::make_snapshot() const {
 
 ss::future<> simple_stm::stop() {
     snapshot_timer_.cancel();
-    co_return co_await metastore_stm_base::stop();
+    co_await metastore_stm_base::stop();
 }
 
 ss::future<> simple_stm::maybe_write_snapshot() {

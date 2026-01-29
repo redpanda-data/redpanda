@@ -34,72 +34,125 @@ void pipeline_probe::setup_internal_metrics(bool disable, ss::sstring name) {
     // Set up private metrics
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_topics_pipeline"),
-      {sm::make_counter(
-         "requests_in",
-         [this] { return _requests_in; },
-         sm::description("Number of requests that entered the pipeline."),
-         labels),
-       sm::make_counter(
-         "requests_completed",
-         [this] { return _requests_completed; },
-         sm::description("Number of requests that completed successfully."),
-         labels),
-       sm::make_counter(
-         "requests_error",
-         [this] { return _requests_error; },
-         sm::description("Number of requests that completed with error."),
-         labels),
-       sm::make_counter(
-         "requests_timeout",
-         [this] { return _requests_timeout; },
-         sm::description("Number of requests that timed out."),
-         labels),
-       sm::make_histogram(
-         "request_processing_time_ms",
-         [this] { return _request_processing_time.public_histogram_logform(); },
-         sm::description("Request processing time histogram in milliseconds."),
-         labels),
-       sm::make_gauge(
-         "current_memory_usage",
-         [this] { return _current_memory_usage; },
-         sm::description(
-           "Current memory usage of the pipeline. Includes all "
-           "requests in-flight."),
-         labels),
-       sm::make_counter(
-         "memory_pressure_waits",
-         [this] { return _memory_pressure_waits; },
-         sm::description("Number of times requests had to wait for memory."),
-         labels),
-       sm::make_gauge(
-         "memory_pressure_blocked",
-         [this] { return _memory_pressure_blocked; },
-         sm::description(
-           "Amount of memory (in bytes) blocked due to memory pressure."),
-         labels),
-       sm::make_counter(
-         "bytes_in",
-         [this] { return _total_bytes_in; },
-         sm::description(
-           "Total number of bytes processed by the pipeline. "
-           "For write pipeline it's bytes written, for read "
-           "pipeline it's bytes fetched."),
-         labels),
-       sm::make_counter(
-         "bytes_out",
-         [this] { return _total_bytes_out; },
-         sm::description(
-           "Total number of bytes processed by the pipeline. "
-           "For write pipeline it's bytes written, for read "
-           "pipeline it's bytes fetched."),
-         labels),
-       sm::make_histogram(
-         "request_size_bytes",
-         [this] {
-             return _request_memory_histogram.public_histogram_logform();
-         },
-         sm::description("Request size histogram."),
-         labels)});
+      {
+        sm::make_counter(
+          "requests_in",
+          [this] { return _requests_in; },
+          sm::description("Number of requests that entered the pipeline."),
+          labels),
+        sm::make_counter(
+          "requests_completed",
+          [this] { return _requests_completed; },
+          sm::description("Number of requests that completed successfully."),
+          labels),
+        sm::make_counter(
+          "requests_error",
+          [this] { return _requests_error; },
+          sm::description("Number of requests that completed with error."),
+          labels),
+        sm::make_counter(
+          "requests_timeout",
+          [this] { return _requests_timeout; },
+          sm::description("Number of requests that timed out."),
+          labels),
+        sm::make_histogram(
+          "request_processing_time_ms",
+          [this] {
+              return _request_processing_time.public_histogram_logform();
+          },
+          sm::description("Request processing time histogram in milliseconds."),
+          labels),
+        sm::make_gauge(
+          "current_memory_usage",
+          [this] { return _current_memory_usage; },
+          sm::description(
+            "Current memory usage of the pipeline. Includes all "
+            "requests in-flight."),
+          labels),
+        sm::make_counter(
+          "memory_pressure_waits",
+          [this] { return _memory_pressure_waits; },
+          sm::description("Number of times requests had to wait for memory."),
+          labels),
+        sm::make_gauge(
+          "memory_pressure_blocked",
+          [this] { return _memory_pressure_blocked; },
+          sm::description(
+            "Amount of memory (in bytes) blocked due to memory pressure."),
+          labels),
+        sm::make_counter(
+          "bytes_in",
+          [this] { return _total_bytes_in; },
+          sm::description(
+            "Total number of bytes processed by the pipeline. "
+            "For write pipeline it's bytes written, for read "
+            "pipeline it's bytes fetched."),
+          labels),
+        sm::make_counter(
+          "bytes_out",
+          [this] { return _total_bytes_out; },
+          sm::description(
+            "Total number of bytes processed by the pipeline. "
+            "For write pipeline it's bytes written, for read "
+            "pipeline it's bytes fetched."),
+          labels),
+        sm::make_histogram(
+          "request_size_bytes",
+          [this] {
+              return _request_memory_histogram.batch_size_histogram_logform();
+          },
+          sm::description("Request size histogram."),
+          labels),
+        sm::make_counter(
+          "req_num_cache_reads",
+          [this] { return _request_probe.num_cache_reads; },
+          sm::description(
+            "Number of times the pipeline read data from the cloud storage "
+            "cache."),
+          labels),
+        sm::make_counter(
+          "req_num_cache_writes",
+          [this] { return _request_probe.num_cache_writes; },
+          sm::description(
+            "Number of times the pipeline wrote data to the cloud storage "
+            "cache."),
+          labels),
+        sm::make_counter(
+          "req_num_cloud_reads",
+          [this] { return _request_probe.num_cloud_reads; },
+          sm::description(
+            "Number of GET requests to the cloud storage API generated by the "
+            "pipeline."),
+          labels),
+        sm::make_counter(
+          "req_num_cloud_writes",
+          [this] { return _request_probe.num_cloud_writes; },
+          sm::description(
+            "Number of PUT requests to the cloud storage API generated by the "
+            "pipeline."),
+          labels),
+        sm::make_counter(
+          "req_cache_read_bytes",
+          [this] { return _request_probe.cache_read_bytes; },
+          sm::description("Number of bytes read from the cloud storage cache."),
+          labels),
+        sm::make_counter(
+          "req_cache_write_bytes",
+          [this] { return _request_probe.cache_write_bytes; },
+          sm::description(
+            "Number of bytes written to the cloud storage cache."),
+          labels),
+        sm::make_counter(
+          "req_cloud_read_bytes",
+          [this] { return _request_probe.cloud_read_bytes; },
+          sm::description("Number of bytes downloaded from the cloud storage."),
+          labels),
+        sm::make_counter(
+          "req_cloud_write_bytes",
+          [this] { return _request_probe.cloud_write_bytes; },
+          sm::description("Number of bytes uploaded to the cloud storage."),
+          labels),
+      });
 }
 
 void pipeline_probe::setup_public_metrics(bool disable, ss::sstring name) {

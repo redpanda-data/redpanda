@@ -35,7 +35,7 @@ members_frontend::members_frontend(
   ss::sharded<ss::abort_source>& as)
   : _self(*config::node().node_id())
   , _node_op_timeout(
-      config::shard_local_cfg().node_management_operation_timeout_ms)
+      config::shard_local_cfg().internal_rpc_request_timeout_ms())
   , _stm(stm)
   , _connections(connections)
   , _leaders(leaders)

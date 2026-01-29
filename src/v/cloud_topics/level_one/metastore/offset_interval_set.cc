@@ -14,20 +14,6 @@
 
 namespace cloud_topics::l1 {
 
-bool offset_interval_set::stream::has_next() const noexcept {
-    return iter_ != set_.end();
-}
-
-offset_interval_set::interval offset_interval_set::stream::next() {
-    vassert(has_next(), "next() called while has_next() is false");
-    interval ret{
-      .base_offset = kafka::offset(iter_->first),
-      .last_offset = kafka::offset(iter_->second - 1),
-    };
-    ++iter_;
-    return ret;
-}
-
 std::ostream&
 operator<<(std::ostream& o, const offset_interval_set::interval& iv) {
     fmt::print(o, "{}", iv);
@@ -52,10 +38,6 @@ bool offset_interval_set::covers(kafka::offset start, kafka::offset end) const {
     }
 
     return (it->first <= start && it->second > end);
-}
-
-offset_interval_set::stream offset_interval_set::make_stream() const {
-    return stream(iset_);
 }
 
 chunked_vector<offset_interval_set::interval>

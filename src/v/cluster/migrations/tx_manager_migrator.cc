@@ -28,6 +28,7 @@
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 #include "storage/types.h"
 
@@ -174,7 +175,8 @@ tx_manager_read_router::tx_manager_read_router(
   : leader_router<
       tx_manager_read_request,
       tx_manager_read_reply,
-      tx_manager_read_handler>(
+      tx_manager_read_handler,
+      leader_router_ungated_tag>(
       shard_table,
       metadata_cache,
       connection_cache,
@@ -195,7 +197,8 @@ tx_manager_replicate_router::tx_manager_replicate_router(
   : leader_router<
       tx_manager_replicate_request,
       tx_manager_replicate_reply,
-      tx_manager_replicate_handler>(
+      tx_manager_replicate_handler,
+      leader_router_ungated_tag>(
       shard_table,
       metadata_cache,
       connection_cache,
@@ -262,7 +265,8 @@ tx_manager_migrator::tx_manager_migrator(
   ss::sharded<partition_leaders_table>& leaders,
   model::node_id self,
   int16_t internal_topic_replication_factor,
-  config::binding<int> requested_partition_count)
+  config::binding<int> requested_partition_count,
+  ss::abort_source& as)
   : _topics_frontend(topics_frontend)
   , _controller_api(controller_api)
   , _topics(topics)
@@ -281,7 +285,12 @@ tx_manager_migrator::tx_manager_migrator(
       leaders,
       self)
   , _internal_topic_replication_factor(internal_topic_replication_factor)
-  , _manager_partition_count(std::move(requested_partition_count)) {}
+  , _manager_partition_count(std::move(requested_partition_count))
+  , _as(as)
+  , _as_sub(ssx::subscribe_or_trigger(as, [this] noexcept {
+      _read_router.request_stop();
+      _replicate_router.request_stop();
+  })) {}
 
 std::chrono::milliseconds tx_manager_migrator::default_timeout = 30s;
 
@@ -649,10 +658,7 @@ tx_manager_migrator::copy_from_temporary_to_tx_manager_topic(
       });
 }
 
-ss::future<> tx_manager_migrator::stop() {
-    _as.request_abort();
-    co_return;
-}
+ss::future<> tx_manager_migrator::stop() { return ss::now(); }
 
 std::ostream&
 operator<<(std::ostream& o, tx_manager_migrator::migration_step step) {

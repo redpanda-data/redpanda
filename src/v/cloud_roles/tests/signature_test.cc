@@ -11,6 +11,7 @@
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "cloud_roles/signature.h"
+#include "cloud_roles/types.h"
 #include "http/client.h"
 
 #include <seastar/core/temporary_buffer.hh>
@@ -233,6 +234,7 @@ SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation) {
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+    header.insert("x-ms-version", cloud_roles::azure_storage_api_version);
 
     BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 
@@ -261,6 +263,7 @@ SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation_many_query_params) {
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+    header.insert("x-ms-version", cloud_roles::azure_storage_api_version);
 
     BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
 

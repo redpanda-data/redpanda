@@ -135,7 +135,7 @@ class ResourceDescriptor(google.protobuf.message.Message):
     'The resource type. It must be in the format of\n    {service_name}/{resource_type_kind}. The `resource_type_kind` must be\n    singular and must not include version numbers.\n\n    Example: `storage.googleapis.com/Bucket`\n\n    The value of the resource_type_kind must follow the regular expression\n    /[A-Za-z][a-zA-Z0-9]+/. It should start with an upper case character and\n    should use PascalCase (UpperCamelCase). The maximum number of\n    characters allowed for the `resource_type_kind` is 100.\n    '
     name_field: builtins.str
     'Optional. The field on the resource that designates the resource name\n    field. If omitted, this is assumed to be "name".\n    '
-    history: global___ResourceDescriptor.History.ValueType
+    history: Global___ResourceDescriptor.History.ValueType
     'Optional. The historical or future-looking state of the resource pattern.\n\n    Example:\n\n        // The InspectTemplate message originally only supported resource\n        // names with organization, and project was added later.\n        message InspectTemplate {\n          option (google.api.resource) = {\n            type: "dlp.googleapis.com/InspectTemplate"\n            pattern:\n            "organizations/{organization}/inspectTemplates/{inspect_template}"\n            pattern: "projects/{project}/inspectTemplates/{inspect_template}"\n            history: ORIGINALLY_SINGLE_PATTERN\n          };\n        }\n    '
     plural: builtins.str
     "The plural name used in the resource name and permission names, such as\n    'projects' for the resource name of 'projects/{project}' and the permission\n    name of 'cloudresourcemanager.googleapis.com/projects.get'. One exception\n    to this is for Nested Collections that have stuttering names, as defined\n    in [AIP-122](https://google.aip.dev/122#nested-collections), where the\n    collection ID in the resource name pattern does not necessarily directly\n    match the `plural` value.\n\n    It is the same concept of the `plural` field in k8s CRD spec\n    https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definitions/\n\n    Note: The plural form is required even for singleton resources. See\n    https://aip.dev/156\n    "
@@ -166,18 +166,18 @@ class ResourceDescriptor(google.protobuf.message.Message):
         """
 
     @property
-    def style(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[global___ResourceDescriptor.Style.ValueType]:
+    def style(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[Global___ResourceDescriptor.Style.ValueType]:
         """Style flag(s) for this resource.
         These indicate that a resource is expected to conform to a given
         style. See the specific style flags for additional information.
         """
 
-    def __init__(self, *, type: builtins.str=..., pattern: collections.abc.Iterable[builtins.str] | None=..., name_field: builtins.str=..., history: global___ResourceDescriptor.History.ValueType=..., plural: builtins.str=..., singular: builtins.str=..., style: collections.abc.Iterable[global___ResourceDescriptor.Style.ValueType] | None=...) -> None:
+    def __init__(self, *, type: builtins.str=..., pattern: collections.abc.Iterable[builtins.str] | None=..., name_field: builtins.str=..., history: Global___ResourceDescriptor.History.ValueType=..., plural: builtins.str=..., singular: builtins.str=..., style: collections.abc.Iterable[Global___ResourceDescriptor.Style.ValueType] | None=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['history', b'history', 'name_field', b'name_field', 'pattern', b'pattern', 'plural', b'plural', 'singular', b'singular', 'style', b'style', 'type', b'type']) -> None:
         ...
-global___ResourceDescriptor = ResourceDescriptor
+Global___ResourceDescriptor: typing_extensions.TypeAlias = ResourceDescriptor
 
 @typing.final
 class ResourceReference(google.protobuf.message.Message):
@@ -197,13 +197,13 @@ class ResourceReference(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['child_type', b'child_type', 'type', b'type']) -> None:
         ...
-global___ResourceReference = ResourceReference
+Global___ResourceReference: typing_extensions.TypeAlias = ResourceReference
 RESOURCE_REFERENCE_FIELD_NUMBER: builtins.int
 RESOURCE_DEFINITION_FIELD_NUMBER: builtins.int
 RESOURCE_FIELD_NUMBER: builtins.int
-resource_reference: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.FieldOptions, global___ResourceReference]
+resource_reference: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.FieldOptions, Global___ResourceReference]
 'An annotation that describes a resource reference, see\n[ResourceReference][].\n'
-resource_definition: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.FileOptions, google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___ResourceDescriptor]]
+resource_definition: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.FileOptions, google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___ResourceDescriptor]]
 'An annotation that describes a resource definition without a corresponding\nmessage; see [ResourceDescriptor][].\n'
-resource: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.MessageOptions, global___ResourceDescriptor]
+resource: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.MessageOptions, Global___ResourceDescriptor]
 'An annotation that describes a resource definition, see\n[ResourceDescriptor][].\n'

@@ -7,14 +7,18 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
+#include "cloud_topics/level_one/metastore/tests/builders.h"
 #include "gmock/gmock.h"
 
 #include <gtest/gtest.h>
 
 using namespace cloud_topics;
 using namespace cloud_topics::l1;
+using namespace cloud_topics::l1::test_utils;
+
 using ::testing::Field;
 using ::testing::IsEmpty;
 using ::testing::Optional;
@@ -46,89 +50,6 @@ model::term_id operator""_tm(unsigned long long t) {
 MATCHER_P2(MatchesRange, base, last, "") {
     return arg.base_offset == base && arg.last_offset == last;
 }
-
-using term_list_t = chunked_vector<metastore::term_offset>;
-using term_map_t = metastore::term_offset_map_t;
-class terms_builder {
-public:
-    terms_builder&
-    add(std::string_view tp_str, model::term_id t, kafka::offset o) {
-        auto tp = model::topic_id_partition::from(tp_str);
-        out[tp].emplace_back(
-          metastore::term_offset{.term = t, .first_offset = o});
-        return *this;
-    }
-    term_map_t build() { return std::move(out); }
-
-private:
-    term_map_t out;
-};
-
-using om_list_t = chunked_vector<metastore::object_metadata>;
-using cmap_t = metastore::compaction_map_t;
-class om_builder {
-public:
-    om_builder(object_id oid, size_t footer_pos, size_t object_size) {
-        out.oid = oid;
-        out.footer_pos = footer_pos;
-        out.object_size = object_size;
-    }
-    om_builder& add(
-      std::string_view tpr_str,
-      kafka::offset base_o,
-      kafka::offset last_o,
-      model::timestamp last_t,
-      size_t first_pos,
-      size_t last_pos) {
-        out.ntp_metas.emplace_back(
-          metastore::object_metadata::ntp_metadata{
-            .tidp = model::topic_id_partition::from(tpr_str),
-            .base_offset = base_o,
-            .last_offset = last_o,
-            .max_timestamp = last_t,
-            .pos = first_pos,
-            .size = last_pos - first_pos,
-          });
-        return *this;
-    }
-    metastore::object_metadata build() { return std::move(out); }
-
-private:
-    metastore::object_metadata out;
-};
-class cm_builder {
-public:
-    cm_builder& clean(
-      std::string_view tpr_str,
-      kafka::offset base,
-      kafka::offset last,
-      std::optional<model::timestamp> with_tombstones_ts = std::nullopt) {
-        auto tp = model::topic_id_partition::from(tpr_str);
-        auto& cmp_meta = out[tp];
-        cmp_meta.new_cleaned_range
-          = metastore::compaction_update::cleaned_range{
-            .base_offset = base,
-            .last_offset = last,
-            .has_tombstones = with_tombstones_ts.has_value(),
-          };
-        if (with_tombstones_ts) {
-            cmp_meta.cleaned_at = *with_tombstones_ts;
-        }
-        return *this;
-    }
-    cm_builder& remove_tombstones(
-      std::string_view tpr_str, kafka::offset base, kafka::offset last) {
-        auto tp = model::topic_id_partition::from(tpr_str);
-        auto& cmp_meta = out[tp];
-        cmp_meta.removed_tombstones_ranges.insert(base, last);
-        cmp_meta.cleaned_at = model::timestamp::now();
-        return *this;
-    }
-    cmap_t build() { return std::move(out); }
-
-private:
-    cmap_t out;
-};
 
 } // namespace
 
@@ -857,6 +778,7 @@ TEST(SimpleMetastoreTest, TestCompactionOffsets) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 3_o, 5_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -902,6 +824,7 @@ TEST(SimpleMetastoreTest, TestCompactionOffsets) {
         auto cmb = cm_builder();
         cmb.clean(tid_a, 0_o, 2_o);
         cmb.remove_tombstones(tid_a, 3_o, 4_o);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{1});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -926,6 +849,7 @@ TEST(SimpleMetastoreTest, TestCompactionOffsets) {
         auto cmb = cm_builder();
         cmb.clean(tid_a, 6_o, 10_o);
         cmb.remove_tombstones(tid_a, 5_o, 5_o);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{2});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -956,6 +880,7 @@ TEST(SimpleMetastoreTest, TestCompactionOffsetsNoTombstones) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 3_o, 5_o);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -999,6 +924,7 @@ TEST(SimpleMetastoreTest, TestCompactionOffsetsNoTombstones) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 0_o, 2_o);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{1});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -1021,6 +947,7 @@ TEST(SimpleMetastoreTest, TestCompactionOffsetsNoTombstones) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 6_o, 10_o);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{2});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -1070,6 +997,24 @@ TEST(SimpleMetastoreTest, TestObjectBuilder) {
     ASSERT_EQ(2, release_res->size());
     ASSERT_EQ(1, release_res.value()[0].ntp_metas.size());
     ASSERT_EQ(0, release_res.value()[1].ntp_metas.size());
+}
+
+TEST(SimpleMetastoreTest, TestObjectBuilderCreatesNewObjects) {
+    simple_metastore m;
+    auto ob = m.object_builder().get().value();
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    chunked_hash_set<object_id> oids;
+    static constexpr size_t num_objects = 1000;
+    // Creating objects for the same partition will result in a different object
+    // everytime.
+    for (size_t i = 0; i < num_objects; ++i) {
+        auto oid_opt = ob->create_object_for(tp);
+        ASSERT_TRUE(oid_opt.has_value());
+        auto [_, inserted] = oids.insert(oid_opt.value());
+        ASSERT_TRUE(inserted);
+    }
+    ASSERT_EQ(oids.size(), num_objects);
 }
 
 TEST(SimpleMetastoreTest, TestObjectBuilderBadObjects) {
@@ -1227,6 +1172,7 @@ TEST(SimpleMetastoreTest, TestUpdateWithObjectBuilder) {
 
         cm_builder cmb;
         cmb.clean(tid_a, 10_o, 19_o);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
         auto compact_obj_res = m.compact_objects(*ob, cmb.build()).get();
         ASSERT_TRUE(compact_obj_res.has_value());
 
@@ -1508,6 +1454,7 @@ TEST(SimpleMetastoreTest, TestSetStartWithCompactionState) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 5_o, 15_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -1535,17 +1482,23 @@ TEST(SimpleMetastoreTest, TestSetStartWithCompactionState) {
     ASSERT_EQ(21_o, offsets_res->next_offset);
 
     // Only the [16, 20] should remain dirty.
-    auto cmp_after = m.get_compaction_offsets(tp, 3000_t).get();
+    auto to_collect = metastore::compaction_info_spec{
+      .tidp = tp, .tombstone_removal_upper_bound_ts = 3000_t};
+    auto cmp_after = m.get_compaction_info(to_collect).get();
     ASSERT_TRUE(cmp_after.has_value());
     EXPECT_THAT(
-      cmp_after->dirty_ranges.to_vec(),
+      cmp_after->offsets_response.dirty_ranges.to_vec(),
       testing::ElementsAre(MatchesRange(16_o, 20_o)));
 
     // Removable tombstone ranges should also be adjusted to reflect the new
     // start.
     EXPECT_THAT(
-      cmp_after->removable_tombstone_ranges.to_vec(),
+      cmp_after->offsets_response.removable_tombstone_ranges.to_vec(),
       testing::ElementsAre(MatchesRange(10_o, 15_o)));
+
+    // Assert that the new start offset is reported correctly in the compaction
+    // info as well.
+    ASSERT_EQ(cmp_after->start_offset, 10_o);
 }
 
 TEST(SimpleMetastoreTest, TestDirtyRatio) {
@@ -1569,6 +1522,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 0_o, 5_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -1578,6 +1532,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
     auto compaction_info = m.get_compaction_info(to_collect).get();
     ASSERT_TRUE(compaction_info.has_value());
     ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 1.0);
+    ASSERT_EQ(compaction_info->start_offset, 0_o);
 
     // Clean range is now [0, 9]. Only one extent still has dirty offsets.
     {
@@ -1588,6 +1543,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 6_o, 9_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{1});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -1595,6 +1551,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
     compaction_info = m.get_compaction_info(to_collect).get();
     ASSERT_TRUE(compaction_info.has_value());
     ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 0.5);
+    ASSERT_EQ(compaction_info->start_offset, 0_o);
 
     // Clean range is now [0, 19], the entire log is clean.
     {
@@ -1605,6 +1562,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
 
         auto cmb = cm_builder();
         cmb.clean(tid_a, 10_o, 19_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{2});
         auto compact_res = m.compact_objects(new_os, cmb.build()).get();
         ASSERT_TRUE(compact_res.has_value());
     }
@@ -1612,6 +1570,187 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
     compaction_info = m.get_compaction_info(to_collect).get();
     ASSERT_TRUE(compaction_info.has_value());
     ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 0.0);
+    ASSERT_EQ(compaction_info->start_offset, 0_o);
+}
+
+TEST(SimpleMetastoreTest, TestCompactionOffsetsSingleDirtyAtEnd) {
+    simple_metastore m;
+    om_list_t os;
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    // Create a log with offsets [0, 100] (next_offset = 101).
+    os.emplace_back(om_builder(oid1, 100, 1010)
+                      .add(tid_a, 0_o, 100_o, 1000_t, 0, 1009)
+                      .build());
+    auto add_res
+      = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
+    ASSERT_TRUE(add_res.has_value());
+
+    // Clean all offsets except the last one: clean [0, 99].
+    // This leaves only offset 100 dirty.
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid2, 100, 1010)
+                              .add(tid_a, 0_o, 100_o, 1000_t, 0, 1009)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 0_o, 99_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    auto to_collect = metastore::compaction_info_spec{
+      .tidp = tp, .tombstone_removal_upper_bound_ts = 3000_t};
+    auto compaction_info = m.get_compaction_info(to_collect).get();
+    ASSERT_TRUE(compaction_info.has_value());
+
+    // The dirty ratio should be non-zero
+    EXPECT_GT(compaction_info->dirty_ratio, 0.0);
+
+    // The dirty_ranges should contain [100, 100]
+    EXPECT_THAT(
+      compaction_info->offsets_response.dirty_ranges.to_vec(),
+      testing::ElementsAre(MatchesRange(100_o, 100_o)));
+}
+
+TEST(
+  SimpleMetastoreTest,
+  TestEarliestDirtyTsNonMonotonicTimestampsCleanedInOrder) {
+    simple_metastore m;
+    om_list_t os;
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    // Create three extents with non-monotonic timestamps:
+    // - Extent 1: offsets [0-9], max_timestamp = 1000
+    // - Extent 2: offsets [10-19], max_timestamp = 300
+    // - Extent 3: offsets [20-29], max_timestamp = 500
+    os.emplace_back(
+      om_builder(oid1, 100, 1100).add(tid_a, 0_o, 9_o, 1000_t, 0, 99).build());
+    os.emplace_back(
+      om_builder(oid2, 100, 1100).add(tid_a, 10_o, 19_o, 300_t, 0, 99).build());
+    os.emplace_back(
+      om_builder(oid3, 100, 1100).add(tid_a, 20_o, 29_o, 500_t, 0, 99).build());
+    auto add_res
+      = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
+    ASSERT_TRUE(add_res.has_value());
+
+    // Initially all extents are dirty. The earliest_dirty_ts should be the
+    // minimum timestamp across all extents, which is 300.
+    auto to_collect = metastore::compaction_info_spec{
+      .tidp = tp, .tombstone_removal_upper_bound_ts = 3000_t};
+    auto compaction_info = m.get_compaction_info(to_collect).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->earliest_dirty_ts.has_value());
+    EXPECT_EQ(compaction_info->earliest_dirty_ts.value(), 300_t);
+
+    // Clean the first extent [0-9]. Now only extents 2 and 3 are dirty.
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid4, 100, 1100)
+                              .add(tid_a, 0_o, 9_o, 1000_t, 0, 99)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 0_o, 9_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    compaction_info = m.get_compaction_info(to_collect).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->earliest_dirty_ts.has_value());
+    EXPECT_EQ(compaction_info->earliest_dirty_ts.value(), 300_t);
+
+    // Clean extent 2 [0-19].
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid5, 100, 1100)
+                              .add(tid_a, 0_o, 19_o, 300_t, 0, 99)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 10_o, 19_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{1});
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    compaction_info = m.get_compaction_info(to_collect).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->earliest_dirty_ts.has_value());
+    EXPECT_EQ(compaction_info->earliest_dirty_ts.value(), 500_t);
+}
+
+TEST(
+  SimpleMetastoreTest,
+  TestEarliestDirtyTsNonMonotonicTimestampsCleanedOutOfOrder) {
+    simple_metastore m;
+    om_list_t os;
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    // Create three extents with non-monotonic timestamps:
+    // - Extent 1: offsets [0-9], max_timestamp = 1000
+    // - Extent 2: offsets [10-19], max_timestamp = 500
+    // - Extent 3: offsets [20-29], max_timestamp = 300
+    os.emplace_back(
+      om_builder(oid1, 100, 1100).add(tid_a, 0_o, 9_o, 1000_t, 0, 99).build());
+    os.emplace_back(
+      om_builder(oid2, 100, 1100).add(tid_a, 10_o, 19_o, 500_t, 0, 99).build());
+    os.emplace_back(
+      om_builder(oid3, 100, 1100).add(tid_a, 20_o, 29_o, 300_t, 0, 99).build());
+    auto add_res
+      = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
+    ASSERT_TRUE(add_res.has_value());
+
+    // Initially all extents are dirty. The earliest_dirty_ts should be the
+    // minimum timestamp across all extents, which is 300.
+    auto to_collect = metastore::compaction_info_spec{
+      .tidp = tp, .tombstone_removal_upper_bound_ts = 3000_t};
+    auto compaction_info = m.get_compaction_info(to_collect).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->earliest_dirty_ts.has_value());
+    EXPECT_EQ(compaction_info->earliest_dirty_ts.value(), 300_t);
+
+    // Clean the first extent [0-9]. Now only extents 2 and 3 are dirty.
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid4, 100, 1100)
+                              .add(tid_a, 0_o, 9_o, 1000_t, 0, 99)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 0_o, 9_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    compaction_info = m.get_compaction_info(to_collect).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->earliest_dirty_ts.has_value());
+    EXPECT_EQ(compaction_info->earliest_dirty_ts.value(), 300_t);
+
+    // Clean extent 3 [20-29].
+    {
+        om_list_t new_os;
+        new_os.emplace_back(om_builder(oid5, 100, 1100)
+                              .add(tid_a, 0_o, 29_o, 500_t, 0, 99)
+                              .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 20_o, 29_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{1});
+        auto compact_res = m.compact_objects(new_os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    compaction_info = m.get_compaction_info(to_collect).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->earliest_dirty_ts.has_value());
+    EXPECT_EQ(compaction_info->earliest_dirty_ts.value(), 500_t);
 }
 
 TEST(SimpleMetastoreTest, TestAddGetOffsetAfterBytes) {
@@ -1648,4 +1787,414 @@ TEST(SimpleMetastoreTest, TestAddGetOffsetAfterBytes) {
     ASSERT_FALSE(get_res.has_value()) << "for size: " << query_size;
     ASSERT_EQ(get_res.error(), metastore::errc::out_of_range)
       << "for size: " << query_size;
+}
+
+TEST(SimpleMetastoreTest, TestCompactionMultipleDirtyRangesMadeClean) {
+    simple_metastore m;
+    {
+        om_list_t os;
+        os.emplace_back(om_builder(oid1, 100, 1100)
+                          .add(tid_a, 0_o, 20_o, 2000_t, 0, 99)
+                          .build());
+        auto add_res = m.add_objects(
+                          os, terms_builder().add(tid_a, 0_tm, 0_o).build())
+                         .get();
+        ASSERT_TRUE(add_res.has_value());
+    }
+
+    // Clean range is [5, 15].
+    {
+        om_list_t os;
+        os.emplace_back(om_builder(oid2, 100, 1100)
+                          .add(tid_a, 0_o, 20_o, 2000_t, 0, 99)
+                          .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 5_o, 15_o, 3000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{0});
+        auto compact_res = m.compact_objects(os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    {
+        // Verify compaction state and dirty ranges: [0, 4] and [16, 20].
+        auto cmp = m.get_compaction_offsets(tp, 3000_t).get();
+        ASSERT_TRUE(cmp.has_value());
+        EXPECT_THAT(
+          cmp->dirty_ranges.to_vec(),
+          testing::ElementsAre(
+            MatchesRange(0_o, 4_o), MatchesRange(16_o, 20_o)));
+        EXPECT_THAT(
+          cmp->removable_tombstone_ranges.to_vec(),
+          testing::ElementsAre(MatchesRange(5_o, 15_o)));
+    }
+
+    // Clean range is [5, 15]. Try to make both of [[0, 4], [16, 20]] clean.
+    {
+        om_list_t os;
+        os.emplace_back(om_builder(oid3, 100, 1100)
+                          .add(tid_a, 0_o, 20_o, 2000_t, 0, 99)
+                          .build());
+
+        auto cmb = cm_builder();
+        cmb.clean(tid_a, 0_o, 4_o, 6000_t);
+        cmb.clean(tid_a, 16_o, 20_o, 6000_t);
+        cmb.set_expected_epoch(tid_a, metastore::compaction_epoch{1});
+        auto compact_res = m.compact_objects(os, cmb.build()).get();
+        ASSERT_TRUE(compact_res.has_value());
+    }
+
+    {
+        // Verify compaction state (no dirty ranges).
+        auto cmp_before = m.get_compaction_offsets(tp, 6000_t).get();
+        ASSERT_TRUE(cmp_before.has_value());
+        EXPECT_THAT(cmp_before->dirty_ranges.to_vec(), testing::IsEmpty());
+        EXPECT_THAT(
+          cmp_before->removable_tombstone_ranges.to_vec(),
+          testing::ElementsAre(MatchesRange(0_o, 20_o)));
+    }
+}
+
+TEST(SimpleMetastoreTest, TestGetExtentMetadataForwards) {
+    simple_metastore m;
+    om_list_t os;
+    constexpr size_t data_size = 99;
+    os.emplace_back(om_builder(oid1, 100, 1100)
+                      .add(tid_a, 0_o, 9_o, 2000_t, 0, data_size)
+                      .build());
+    os.emplace_back(om_builder(oid2, 100, 1100)
+                      .add(tid_a, 10_o, 19_o, 2000_t, 0, data_size)
+                      .build());
+    os.emplace_back(om_builder(oid3, 100, 1100)
+                      .add(tid_a, 20_o, 29_o, 2000_t, 0, data_size)
+                      .build());
+    auto add_res
+      = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
+    ASSERT_TRUE(add_res.has_value());
+
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    // A few basic test cases with an expanding `max_offset`.
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{9};
+        auto extent_metadata_res = m.get_extent_metadata_forwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{15};
+        auto extent_metadata_res = m.get_extent_metadata_forwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(0_o, 9_o), MatchesRange(10_o, 19_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{19};
+        auto extent_metadata_res = m.get_extent_metadata_forwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(0_o, 9_o), MatchesRange(10_o, 19_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{20};
+        auto extent_metadata_res = m.get_extent_metadata_forwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(0_o, 9_o),
+            MatchesRange(10_o, 19_o),
+            MatchesRange(20_o, 29_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{100};
+        auto extent_metadata_res = m.get_extent_metadata_forwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(0_o, 9_o),
+            MatchesRange(10_o, 19_o),
+            MatchesRange(20_o, 29_o)));
+    }
+
+    // A few test cases where the number of extents is limited.
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{9};
+        auto extent_metadata_res
+          = m.get_extent_metadata_forwards(tp, min_offset, max_offset, 0).get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        ASSERT_TRUE(extent_metadata_res->extents.empty());
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{15};
+        auto extent_metadata_res
+          = m.get_extent_metadata_forwards(tp, min_offset, max_offset, 1).get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{20};
+        auto extent_metadata_res
+          = m.get_extent_metadata_forwards(tp, min_offset, max_offset, 2).get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(0_o, 9_o), MatchesRange(10_o, 19_o)));
+    }
+
+    // Non zero min_offset test cases.
+    {
+        auto min_offset = kafka::offset{5};
+        auto max_offset = kafka::offset{9};
+        auto extent_metadata_res = m.get_extent_metadata_forwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{9};
+        auto max_offset = kafka::offset{29};
+        auto extent_metadata_res = m.get_extent_metadata_forwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(0_o, 9_o),
+            MatchesRange(10_o, 19_o),
+            MatchesRange(20_o, 29_o)));
+    }
+}
+
+TEST(SimpleMetastoreTest, TestGetExtentMetadataBackwards) {
+    simple_metastore m;
+    om_list_t os;
+    constexpr size_t data_size = 99;
+    os.emplace_back(om_builder(oid1, 100, 1100)
+                      .add(tid_a, 0_o, 9_o, 2000_t, 0, data_size)
+                      .build());
+    os.emplace_back(om_builder(oid2, 100, 1100)
+                      .add(tid_a, 10_o, 19_o, 2000_t, 0, data_size)
+                      .build());
+    os.emplace_back(om_builder(oid3, 100, 1100)
+                      .add(tid_a, 20_o, 29_o, 2000_t, 0, data_size)
+                      .build());
+    auto add_res
+      = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
+    ASSERT_TRUE(add_res.has_value());
+
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    // A few basic test cases with an expanding `max_offset`.
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{9};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{15};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(10_o, 19_o), MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{19};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(10_o, 19_o), MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{20};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(20_o, 29_o),
+            MatchesRange(10_o, 19_o),
+            MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{100};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(20_o, 29_o),
+            MatchesRange(10_o, 19_o),
+            MatchesRange(0_o, 9_o)));
+    }
+
+    // A few test cases where the number of extents is limited.
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{9};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 0)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        ASSERT_TRUE(extent_metadata_res->extents.empty());
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{15};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 1)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(MatchesRange(10_o, 19_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{21};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 1)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(MatchesRange(20_o, 29_o)));
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{20};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 2)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(20_o, 29_o), MatchesRange(10_o, 19_o)));
+    }
+
+    // Non zero min_offset test cases.
+    {
+        auto min_offset = kafka::offset{5};
+        auto max_offset = kafka::offset{9};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(MatchesRange(0_o, 9_o)));
+    }
+    {
+        auto min_offset = kafka::offset{9};
+        auto max_offset = kafka::offset{29};
+        auto extent_metadata_res = m.get_extent_metadata_backwards(
+                                      tp, min_offset, max_offset, 10)
+                                     .get();
+        ASSERT_TRUE(extent_metadata_res.has_value());
+        EXPECT_THAT(
+          extent_metadata_res->extents,
+          testing::ElementsAre(
+            MatchesRange(20_o, 29_o),
+            MatchesRange(10_o, 19_o),
+            MatchesRange(0_o, 9_o)));
+    }
+}
+
+TEST(SimpleMetastoreTest, TestGetExtentMetadataEmpty) {
+    simple_metastore m;
+    om_list_t os;
+    constexpr size_t data_size = 99;
+    os.emplace_back(om_builder(oid1, 100, 1100)
+                      .add(tid_a, 0_o, 9_o, 2000_t, 0, data_size)
+                      .build());
+    os.emplace_back(om_builder(oid2, 100, 1100)
+                      .add(tid_a, 10_o, 19_o, 2000_t, 0, data_size)
+                      .build());
+    os.emplace_back(om_builder(oid3, 100, 1100)
+                      .add(tid_a, 20_o, 29_o, 2000_t, 0, data_size)
+                      .build());
+    auto add_res
+      = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
+    ASSERT_TRUE(add_res.has_value());
+
+    auto tp = model::topic_id_partition::from(tid_a);
+
+    auto set_start_res = m.set_start_offset(tp, 30_o).get();
+    ASSERT_TRUE(set_start_res.has_value());
+
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{100};
+        auto extent_metadata_ge_res = m.get_extent_metadata_forwards(
+                                         tp, min_offset, max_offset, 10)
+                                        .get();
+        ASSERT_TRUE(extent_metadata_ge_res.has_value());
+        ASSERT_TRUE(extent_metadata_ge_res->extents.empty());
+    }
+    {
+        auto min_offset = kafka::offset{0};
+        auto max_offset = kafka::offset{100};
+        auto extent_metadata_le_res = m.get_extent_metadata_backwards(
+                                         tp, min_offset, max_offset, 10)
+                                        .get();
+        ASSERT_TRUE(extent_metadata_le_res.has_value());
+        ASSERT_TRUE(extent_metadata_le_res->extents.empty());
+    }
 }

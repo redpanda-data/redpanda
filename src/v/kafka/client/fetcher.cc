@@ -54,7 +54,7 @@ fetch_response
 make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
     error_code error;
     try {
-        std::rethrow_exception(std::move(ex));
+        std::rethrow_exception(ex);
     } catch (const partition_error& ex) {
         vlog(kclog.debug, "handling partition_error {}", ex);
         error = ex.error;
@@ -72,7 +72,7 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
       .partition_index{tp.partition},
       .error_code = error,
       .high_watermark{model::offset{-1}},
-      .last_stable_offset{model::offset{-1}},
+      .last_stable_offset{model::invalid_lso},
       .log_start_offset{model::offset{-1}},
       .aborted_transactions{},
       .records{}};

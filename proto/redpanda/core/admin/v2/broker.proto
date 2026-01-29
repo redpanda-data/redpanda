@@ -24,13 +24,17 @@ option (pbgen.cpp_namespace) = "proto::admin";
 // The BrokerService gives information about individual brokers within the
 // cluster.
 service BrokerService {
-    // GetBroker returns information about a single broker in the cluster.
+    // GetBroker
+    //
+    // Returns information about a single broker in the cluster.
     rpc GetBroker(GetBrokerRequest) returns (GetBrokerResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
-    // ListBrokers returns information about all brokers in the cluster.
+    // ListBrokers
+    //
+    // Returns information about all brokers in the cluster.
     rpc ListBrokers(ListBrokersRequest) returns (ListBrokersResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
@@ -40,9 +44,9 @@ service BrokerService {
 
 // GetBrokerRequest returns information about a single broker in the cluster
 message GetBrokerRequest {
-    // The node ID for the broker. If set to -1, the broker handling the RPC
+    // The node ID for the broker. If unset, the broker handling the RPC
     // request returns information about itself.
-    int32 node_id = 1;
+    optional int32 node_id = 1;
 }
 
 // GetBrokerResponse is the response from the GetBroker RPC.
@@ -65,9 +69,13 @@ message Broker {
     // This broker's node ID.
     int32 node_id = 1;
     // The build this broker is running.
-    BuildInfo build_info = 2;
+    //
+    // Only populated for `GetBroker` RPCs
+    optional BuildInfo build_info = 2;
     // The admin server information.
-    AdminServer admin_server = 3;
+    //
+    // Only populated for `GetBroker` RPCs
+    optional AdminServer admin_server = 3;
 }
 
 // BuildInfo contains information about the Redpanda build.

@@ -69,12 +69,11 @@ model::record_batch tm_stm::serialize_tx(tx_metadata tx) {
 
 tm_stm::tm_stm(ss::logger& logger, raft::consensus* c)
   : raft::persisted_stm<>(tm_stm_snapshot, logger, c)
-  , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
+  , _sync_timeout(
+      config::shard_local_cfg().internal_rpc_request_timeout_ms.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.bind())
   , _ctx_log(logger, ssx::sformat("[{}]", _raft->ntp())) {}
-
-ss::future<> tm_stm::start() { co_await raft::persisted_stm<>::start(); }
 
 uint8_t tm_stm::active_snapshot_version() { return tm_snapshot::version; }
 
@@ -108,8 +107,7 @@ tm_stm::get_tx(kafka::transactional_id tx_id) {
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
-    return handle_shutdown_exceptions(
-      ss::with_gate(_gate, [this] { return do_barrier(); }));
+    return handle_shutdown_exceptions(do_barrier());
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
@@ -182,8 +180,7 @@ ss::future<ss::basic_rwlock<>::holder> tm_stm::prepare_transfer_leadership() {
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
 tm_stm::sync(model::timeout_clock::duration timeout) {
-    return handle_shutdown_exceptions(
-      ss::with_gate(_gate, [this, timeout] { return do_sync(timeout); }));
+    return handle_shutdown_exceptions(do_sync(timeout));
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
@@ -202,10 +199,7 @@ tm_stm::do_sync(model::timeout_clock::duration timeout) {
 
 ss::future<checked<tx_metadata, tm_stm::op_status>>
 tm_stm::update_tx(tx_metadata tx, model::term_id term) {
-    return handle_shutdown_exceptions(
-      ss::with_gate(_gate, [this, tx = std::move(tx), term]() mutable {
-          return do_update_tx(std::move(tx), term);
-      }));
+    return handle_shutdown_exceptions(do_update_tx(std::move(tx), term));
 }
 
 ss::future<checked<tx_metadata, tm_stm::op_status>>
@@ -437,23 +431,6 @@ tm_stm::reset_transaction_state(tx_metadata& tx) {
 }
 
 ss::future<tm_stm::op_status> tm_stm::register_new_producer(
-  model::term_id expected_term,
-  kafka::transactional_id tx_id,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::producer_identity pid) {
-    return ss::with_gate(
-      _gate,
-      [this,
-       expected_term,
-       tx_id = std::move(tx_id),
-       transaction_timeout_ms,
-       pid] {
-          return do_register_new_producer(
-            expected_term, tx_id, transaction_timeout_ms, pid);
-      });
-}
-
-ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
   model::term_id expected_term,
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
@@ -776,7 +753,7 @@ ss::future<txlock_unit>
 tm_stm::lock_tx(kafka::transactional_id tx_id, std::string_view lock_name) {
     auto [lock_it, inserted] = _tx_locks.try_emplace(tx_id, nullptr);
     if (inserted) {
-        lock_it->second = ss::make_lw_shared<mutex>("lock_tx");
+        lock_it->second = ss::make_lw_shared<ssx::mutex>("lock_tx");
     }
     auto units = co_await lock_it->second->get_units();
     co_return txlock_unit(this, std::move(units), tx_id, lock_name);
@@ -786,7 +763,7 @@ std::optional<txlock_unit> tm_stm::try_lock_tx(
   const kafka::transactional_id& tx_id, std::string_view lock_name) {
     auto [lock_it, inserted] = _tx_locks.try_emplace(tx_id, nullptr);
     if (inserted) {
-        lock_it->second = ss::make_lw_shared<mutex>("tm_stm::tx_lock");
+        lock_it->second = ss::make_lw_shared<ssx::mutex>("tm_stm::tx_lock");
     }
     auto units = lock_it->second->try_get_units();
     if (units) {
@@ -868,7 +845,6 @@ tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
     auto etag = tx.etag;
-    auto holder = _gate.hold();
     // we are using replicate_tx_update instead of update_tx as we do not need
     // the updated transaction metadata.
     auto replicate_result = co_await replicate_tx_update(std::move(tx), etag);

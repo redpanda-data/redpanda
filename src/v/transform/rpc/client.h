@@ -267,7 +267,7 @@ private:
     ss::sharded<features::feature_table>* _feature_table;
     ss::abort_source _as;
     ss::gate _gate;
-    mutex _wasm_binary_max_size_updater_mu{
+    ssx::mutex _wasm_binary_max_size_updater_mu{
       "client::wasm_binary_max_size_updater"};
     config::binding<size_t> _max_wasm_binary_size;
 };

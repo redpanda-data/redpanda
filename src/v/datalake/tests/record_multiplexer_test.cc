@@ -464,19 +464,19 @@ TEST_F(RecordMultiplexerTest, TestBadData) {
     auto reg_res
       = gen.register_avro_schema("avro_v1", avro_schema_v1_str).get();
     EXPECT_FALSE(reg_res.has_error()) << reg_res.error();
-    auto schema_id = reg_res.value();
+    auto ctx_schema_id = reg_res.value();
 
     auto start_offset = model::offset{0};
     record_multiplexer::finished_files files;
     auto res = mux(
       default_param,
       start_offset,
-      [schema_id](storage::record_batch_builder& b) {
+      [ctx_schema_id](storage::record_batch_builder& b) {
           iobuf buf;
           // Append data with a magic bytes that corresponds to the actual
           // schema.
           buf.append("\0", 1);
-          int32_t encoded_id = ss::cpu_to_be(schema_id());
+          int32_t encoded_id = ss::cpu_to_be(ctx_schema_id.id());
           buf.append((const uint8_t*)(&encoded_id), 4);
           buf.append("\1\1\1", 3);
           b.add_raw_kv(std::nullopt, std::move(buf));

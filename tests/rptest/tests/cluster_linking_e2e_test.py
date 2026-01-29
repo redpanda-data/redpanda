@@ -493,7 +493,7 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
         Test validates that when cluster linking is active, that topics can only be created by superusers
         """
         username = "test-user"
-        password = "test-password"
+        password = "test-password0"
         topic_name_prefix = "test-topic"
 
         superuser_rpk = RpkTool(
@@ -1547,6 +1547,25 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
         )
 
 
+class ShadowLinkSmallerShadowCluster(ShadowLinkTestBase):
+    """
+    Tests for when the Shadow Cluster is smaller than the source cluster
+    """
+
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(test_context, num_brokers=1, *args, **kwargs)
+
+    def _expect_connect_error(self, expected_code: ConnectErrorCode):
+        return expect_exception(ConnectError, lambda e: e.code == expected_code)
+
+    @cluster(num_nodes=4)
+    def test_warn_on_smaller_cluster(self):
+        self.create_link("test-link")
+        assert self.target_cluster_service.search_log_any(
+            "Cluster link 'test-link' connecting to source cluster with 3 brokers, which is more than the shadow cluster's 1 nodes"
+        ), "Did not find expected warning about smaller shadow cluster"
+
+
 class ShadowLinkingAuthzTests(ShadowLinkTestBase):
     SUPERUSER_ERROR = "[permission_denied] Forbidden (superuser role required)"
 
@@ -1646,10 +1665,8 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
                     self.logger.debug(
                         f"Partition {partition_id}: source hwm={hwm}, shadow_hwm{p_info.source_high_watermark}, last_update={p_info.source_last_updated_timestamp}"
                     )
-                    # TODO: Re-enable once CORE-14617 is addressed
-                    # TODO: CORE-14653
-                    # if p_info.source_high_watermark != hwm:
-                    #     return False
+                    if p_info.source_high_watermark != hwm:
+                        return False
         return True
 
     def _fetch_shadow_topic_and_compare_results(
@@ -1701,8 +1718,8 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         with self.leadership_shuffler(
             self.target_cluster.service, topic.name, enabled=shuffle_leadership
         ):
-            self.start_producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000)
-            self.verify()
+            with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000):
+                self.verify()
 
         self.logger.info("Starting cycle looking for shadow topic status")
         wait_until(
@@ -1737,12 +1754,12 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             err_msg=f"Topic {topic.name} not found in target cluster",
         )
 
-        self.start_producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000)
-        with (
-            self.create_source_failure_injector(),
-            self.create_target_failure_injector(),
-        ):
-            self.verify()
+        with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000):
+            with (
+                self.create_source_failure_injector(),
+                self.create_target_failure_injector(),
+            ):
+                self.verify()
 
         self.logger.info("Starting cycle looking for shadow topic status")
         wait_until(
@@ -1768,7 +1785,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         topic = TopicSpec(name="source-topic", partition_count=5, replication_factor=3)
 
         self.source_default_client().create_topic(topic)
-        shadow_link = self.create_link("test-link")
+        self.create_link("test-link")
 
         self.target_cluster.service.wait_until(
             lambda: self.topic_partitions_exists_in_target(topic),
@@ -1776,8 +1793,8 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             backoff_sec=1,
             err_msg=f"Topic {topic.name} not found in target cluster",
         )
-        self.start_producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000)
-        self.verify()
+        with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000):
+            self.verify()
 
         target_client = self.target_default_client()
 
@@ -1787,22 +1804,34 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         ):
             target_client.delete_topic(topic.name)
 
-        shadow_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters.extend(
-            [
-                shadow_link_pb2.NameFilter(
-                    pattern_type=shadow_link_pb2.PATTERN_TYPE_LITERAL,
-                    filter_type=shadow_link_pb2.FILTER_TYPE_EXCLUDE,
-                    name=topic.name,
-                ),
-            ]
-        )
-        update_mask: google.protobuf.field_mask_pb2.FieldMask = google.protobuf.field_mask_pb2.FieldMask(
-            paths=[
-                "configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters"
-            ]
-        )
-        self.update_link(shadow_link=shadow_link, update_mask=update_mask)
+        def update_link_config(include: bool) -> None:
+            shadow_link = self.get_link("test-link")
+            shadow_link.configurations.topic_metadata_sync_options.ClearField(
+                "auto_create_shadow_topic_filters"
+            )
+            filter_type = (
+                shadow_link_pb2.FILTER_TYPE_INCLUDE
+                if include
+                else shadow_link_pb2.FILTER_TYPE_EXCLUDE
+            )
+            shadow_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters.extend(
+                [
+                    shadow_link_pb2.NameFilter(
+                        pattern_type=shadow_link_pb2.PATTERN_TYPE_LITERAL,
+                        filter_type=filter_type,
+                        name=topic.name,
+                    ),
+                ]
+            )
+            update_mask: google.protobuf.field_mask_pb2.FieldMask = (
+                google.protobuf.field_mask_pb2.FieldMask(
+                    paths=["configurations.topic_metadata_sync_options"]
+                )
+            )
+            self.update_link(shadow_link=shadow_link, update_mask=update_mask)
 
+        # Update the link to exclude the topic from autocreation filters
+        update_link_config(include=False)
         # Now the topic should be deletable, as it is not in the autocreate filters
         target_client.delete_topic(topic.name)
         link_state = self.get_link("test-link")
@@ -1810,6 +1839,19 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             "Expected empty shadow_topic list. "
             f"Instead got {link_state.status.shadow_topics}"
         )
+        # Re-add the topic to the autocreation filters
+        update_link_config(include=True)
+        # Verify that the shadow topic is re-created
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster after re-adding to autocreation filters",
+        )
+
+        # Replicate more data to ensure replication still works
+        with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=200000):
+            self.verify()
 
     @cluster(num_nodes=7)
     def test_replication_with_transactions(self):
@@ -1825,14 +1867,14 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             err_msg=f"Topic {topic.name} not found in target cluster",
         )
 
-        self.start_producer_consumer(
+        with self.producer_consumer(
             topic=topic.name,
             msg_size=128,
             msg_cnt=10000,
             use_transactions=True,
             producer_properties={"transaction_abort_rate": "0.3"},
-        )
-        self.verify()
+        ):
+            self.verify()
 
     @cluster(num_nodes=8)
     def test_replication_with_truncated_topic(self):
@@ -1876,12 +1918,11 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             return self._nop_context_manager()
 
     def _perform_auto_prefix_trimming(self, topic_name: str, partition_count: int):
-        self.start_producer_consumer(topic=topic_name, msg_size=128, msg_cnt=100000)
         offsets = [1000, 1001, 1200, 1500, 2000, 2500]
 
         def wait_for_records(rpk: RpkTool, offset: int, expected_partition_count: int):
             num_parts = 0
-            for part in rpk.describe_topic("source-topic"):
+            for part in rpk.describe_topic(topic_name):
                 num_parts += 1
                 if (part.high_watermark or 0) < offset:
                     return False
@@ -1903,14 +1944,14 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
 
             self.logger.info(f"Trimming source topic prefixes to {o}")
             self.source_cluster_rpk.trim_prefix(
-                topic="source-topic", partitions=partitions, offset=o
+                topic=topic_name, partitions=partitions, offset=o
             )
 
             def wait_for_start_offset(
                 rpk: RpkTool, offset: int, expected_partition_count: int
             ):
                 num_parts = 0
-                for part in rpk.describe_topic("source-topic"):
+                for part in rpk.describe_topic(topic_name):
                     num_parts += 1
                     self.logger.info(
                         f"Offset for source-topic/{part.id} is {part.start_offset}"
@@ -1934,7 +1975,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             for part in range(0, partition_count):
                 self.logger.info(f"Producing trim-trigger message to partition {part}")
                 self.source_cluster_rpk.produce(
-                    topic="source-topic",
+                    topic=topic_name,
                     key="trim-trigger",
                     msg="trim-trigger",
                     partition=part,
@@ -1988,7 +2029,173 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         )
 
         with self._maybe_failure_injector(with_failures):
-            self._perform_auto_prefix_trimming(topic.name, partition_count)
+            with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000):
+                self._perform_auto_prefix_trimming(topic.name, partition_count)
+
+    @cluster(num_nodes=7)
+    @ignore(
+        with_failures=True,
+        source_cluster_spec=SecondaryClusterSpec(
+            ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+        ),
+    )
+    @matrix(
+        with_failures=[True, False],
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
+        ],
+    )
+    def test_start_offset_catch_up(self, with_failures, source_cluster_spec):
+        """
+        Test that verifies shadow link can catch up to a source topic that has been
+        prefix-trimmed to its HWM (i.e., all data has been trimmed).
+
+        1. Create a source topic with 5 partitions
+        2. Write data to the topic across all partitions
+        3. Trim the prefix of each partition of the source topic to the partition's HWM
+        4. Create a new Shadow Link on the Shadow Cluster
+        5. Wait for the shadow topic to be created on the Shadow Cluster
+        6. Verify that the start offset and HWM of all shadow partitions match the source partitions
+        7. Write data to the source partitions
+        8. Verify that the shadow partitions replicate that data
+        """
+        partition_count = 5
+        topic = TopicSpec(
+            name="source-topic", partition_count=partition_count, replication_factor=3
+        )
+        self.source_default_client().create_topic(topic)
+
+        # Step 2: Write data to the topic across all partitions
+        initial_msg_count = 1000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.source_cluster.service,
+            topic=topic.name,
+            msg_size=128,
+            msg_count=initial_msg_count,
+            custom_node=self.preallocated_nodes,
+        )
+
+        # Wait for all messages to be written (sum of HWMs across all partitions should equal msg_count)
+        def all_messages_written():
+            total_hwm = 0
+            for part in self.source_cluster_rpk.describe_topic(topic.name):
+                total_hwm += part.high_watermark or 0
+            return total_hwm >= initial_msg_count
+
+        self.source_cluster.service.wait_until(
+            all_messages_written,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Timed out waiting for {initial_msg_count} messages to be written",
+        )
+
+        # Step 3: Trim the prefix of each partition to its HWM
+        # First, collect the HWM for each partition
+        source_hwms: dict[int, int] = {}
+        for part in self.source_cluster_rpk.describe_topic(topic.name):
+            source_hwms[part.id] = part.high_watermark
+            self.logger.info(f"Source partition {part.id}: HWM={part.high_watermark}")
+
+        # Trim each partition to its HWM
+        for part_id, hwm in source_hwms.items():
+            self.logger.info(f"Trimming partition {part_id} to offset {hwm}")
+            self.source_cluster_rpk.trim_prefix(
+                topic=topic.name, offset=hwm, partitions=[part_id]
+            )
+
+        # Wait for the trim to take effect on all partitions
+        def all_partitions_trimmed():
+            for part in self.source_cluster_rpk.describe_topic(topic.name):
+                expected_offset = source_hwms[part.id]
+                if (part.start_offset or 0) != expected_offset:
+                    self.logger.debug(
+                        f"Partition {part.id}: start_offset={part.start_offset}, expected={expected_offset}"
+                    )
+                    return False
+            return True
+
+        self.source_cluster.service.wait_until(
+            all_partitions_trimmed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timed out waiting for prefix trim to take effect",
+        )
+
+        # Step 4: Create a new Shadow Link on the Shadow Cluster
+        with self._maybe_failure_injector(with_failures):
+            self.create_link("test-link")
+
+            # Step 5: Wait for the shadow topic to be created on the Shadow Cluster
+            self.target_cluster.service.wait_until(
+                lambda: self.topic_partitions_exists_in_target(topic),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"Topic {topic.name} not found in target cluster",
+            )
+
+            # Step 6: Verify that the start offset and HWM of all shadow partitions match the source partitions
+            def shadow_partitions_match_source():
+                target_parts = {
+                    p.id: p for p in self.target_cluster_rpk.describe_topic(topic.name)
+                }
+                source_parts = {
+                    p.id: p for p in self.source_cluster_rpk.describe_topic(topic.name)
+                }
+
+                if len(target_parts) != partition_count:
+                    self.logger.debug(
+                        f"Target partition count mismatch: {len(target_parts)} != {partition_count}"
+                    )
+                    return False
+
+                for part_id in range(partition_count):
+                    if part_id not in target_parts or part_id not in source_parts:
+                        return False
+
+                    target_part = target_parts[part_id]
+                    source_part = source_parts[part_id]
+
+                    # Start offset should match
+                    if target_part.start_offset != source_part.start_offset:
+                        self.logger.debug(
+                            f"Partition {part_id}: target start_offset={target_part.start_offset}, "
+                            f"source start_offset={source_part.start_offset}"
+                        )
+                        return False
+
+                    # HWM should match (both should be equal to start_offset since topic was trimmed to HWM)
+                    if target_part.high_watermark != source_part.high_watermark:
+                        self.logger.debug(
+                            f"Partition {part_id}: target HWM={target_part.high_watermark}, "
+                            f"source HWM={source_part.high_watermark}"
+                        )
+                        return False
+
+                return True
+
+            self.target_cluster.service.wait_until(
+                shadow_partitions_match_source,
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg="Shadow partitions do not match source partitions after prefix trim",
+            )
+
+            # Log the final state after matching
+            self.logger.info(
+                "Shadow partitions match source partitions after prefix trim:"
+            )
+            for part in self.target_cluster_rpk.describe_topic(topic.name):
+                self.logger.info(
+                    f"  Partition {part.id}: start_offset={part.start_offset}, HWM={part.high_watermark}"
+                )
+
+            # Step 7 & 8: Write data to the source partitions and verify replication
+            with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=10000):
+                self.verify()
 
     @cluster(num_nodes=7)
     @matrix(
@@ -2023,7 +2230,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         )
         msg_cnt = 100
         base_ts = 1664453149000
-        self.start_producer_consumer(
+        with self.producer_consumer(
             topic=topic.name,
             msg_size=128,
             msg_cnt=msg_cnt,
@@ -2031,8 +2238,8 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
                 "fake_timestamp_ms": base_ts,
                 "rate_limit_bps": 1024,
             },
-        )
-        self.verify()
+        ):
+            self.verify()
 
         def get_timestamps(rpk: RpkTool, n: int, offset: str):
             return {
@@ -2091,13 +2298,13 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             err_msg=f"Topic {topic.name} not found in target cluster",
         )
 
-        self.start_producer_consumer(
+        with self.producer_consumer(
             topic=topic.name,
             msg_size=msg_size,
             msg_cnt=20,
             producer_properties={"batch_max_bytes": max_bytes},
-        )
-        self.verify()
+        ):
+            self.verify()
 
     @cluster(num_nodes=7)
     def test_replication_with_compaction(self):
@@ -2128,7 +2335,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             err_msg=f"Topic {topic.name} not found in target cluster",
         )
 
-        self.start_producer_consumer(
+        with self.producer_consumer(
             topic=topic.name,
             msg_size=128,
             msg_cnt=10000,
@@ -2136,8 +2343,8 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
                 "key_set_cardinality": 600,
                 "tombstone_probability": 0.4,
             },
-        )
-        self.verify()
+        ):
+            self.verify()
 
         def get_compaction_progress(
             rpk: RpkTool = self.target_cluster_rpk,
@@ -2237,17 +2444,17 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             name="source-topic-1", partition_count=3, replication_factor=1
         )
         self.source_default_client().create_topic(topic_1)
-        self.start_producer_consumer(topic=topic_1.name, msg_size=128, msg_cnt=100000)
-        restart_nodes(self.target_cluster_service)
-        self.verify()
+        with self.producer_consumer(topic=topic_1.name, msg_size=128, msg_cnt=100000):
+            restart_nodes(self.target_cluster_service)
+            self.verify()
 
         topic_2 = TopicSpec(
             name="source-topic-2", partition_count=3, replication_factor=1
         )
         self.source_default_client().create_topic(topic_2)
-        self.start_producer_consumer(topic=topic_2.name, msg_size=128, msg_cnt=100000)
-        restart_nodes(self.source_cluster_service)
-        self.verify()
+        with self.producer_consumer(topic=topic_2.name, msg_size=128, msg_cnt=100000):
+            restart_nodes(self.source_cluster_service)
+            self.verify()
 
 
 class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
@@ -2361,6 +2568,7 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
     def test_continuous_group_sync(self, with_failures, source_cluster_spec):
         partition_count = 120
         topic_count = 6
+        failure_duration = 10 if with_failures else 0
 
         topics = [
             TopicSpec(
@@ -2379,13 +2587,16 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
 
         def _maybe_failure_injector():
             if with_failures:
-                return self.create_source_failure_injector()
+                return self.create_source_failure_injector(
+                    max_suspend_duration_seconds=failure_duration
+                )
             else:
                 return self._nop_context_manager()
 
         def _consume_with_group(
             topic: str,
             group_id: str,
+            fetch_max_wait: float,
             rpk: RpkTool = source_rpk,
             format: str | None = None,
         ) -> str | None:
@@ -2394,9 +2605,9 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
                     topic=topic,
                     group=group_id,
                     n=1,
-                    timeout=10,
+                    timeout=fetch_max_wait + 5,
                     offset="start",
-                    fetch_max_wait=5,
+                    fetch_max_wait=fetch_max_wait,
                     format=format,
                 )
             except Exception as e:
@@ -2435,11 +2646,29 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
             return True
 
         def _execute_random_updates(cnt: int):
+            backoff_sec = 2
+            backoff_and_a_bit_sec = backoff_sec + 1
+            retries = 3
+            fetch_max_wait_sec = failure_duration + 5
+            fetch_timeout_sec = fetch_max_wait_sec + 5
+            iteration_timeout_sec = (
+                fetch_timeout_sec + backoff_and_a_bit_sec
+            ) * retries
             for _ in range(cnt):
                 topic = topics[random.randint(0, len(topics) - 1)].name
                 group = groups[random.randint(0, len(groups) - 1)]
                 self.logger.debug(f"Consuming from topic {topic}, group {group}")
-                _consume_with_group(topic, group)
+                wait_until(
+                    lambda: _consume_with_group(
+                        topic,
+                        group,
+                        fetch_max_wait=fetch_max_wait_sec,
+                    )
+                    is not None,
+                    timeout_sec=iteration_timeout_sec,
+                    backoff_sec=backoff_sec,
+                    err_msg=f"Failed to consume from topic {topic}, group {group}",
+                )
 
         for t in topics:
             self.source_default_client().create_topic(t)
@@ -2508,6 +2737,7 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
                         group_name,
                         rpk=target_rpk,
                         format="%p,%o\n",
+                        fetch_max_wait=5,
                     )
                     assert r is not None, f"Failed to consume from {group_name=}"
                     p, consumed = (int(v) for v in r.split(","))
@@ -2709,6 +2939,190 @@ class ShadowLinkSecurityTests(ShadowLinkTestBase):
             backoff_sec=1,
             err_msg="Failed to sync acls",
         )
+
+    @cluster(num_nodes=6)
+    def test_group_acl_sync(self):
+        """
+        This test verifies that Group: principal ACLs are synced from source
+        to target cluster when a shadow link is created and configured
+        """
+        req = self.create_default_link_request("test-link")
+
+        resource_filter = shadow_link_pb2.ACLResourceFilter(
+            resource_type=acl_pb2.ACL_RESOURCE_ANY,
+            pattern_type=acl_pb2.ACL_PATTERN_ANY,
+        )
+        access_filter = shadow_link_pb2.ACLAccessFilter(
+            permission_type=acl_pb2.ACL_PERMISSION_TYPE_ANY,
+            operation=acl_pb2.ACL_OPERATION_ANY,
+        )
+        acl_filter = shadow_link_pb2.ACLFilter(
+            resource_filter=resource_filter, access_filter=access_filter
+        )
+        acl_filters: list[shadow_link_pb2.ACLFilter] = [acl_filter]
+
+        security_sync_options = shadow_link_pb2.SecuritySettingsSyncOptions(
+            interval=google.protobuf.duration_pb2.Duration(seconds=1),
+            acl_filters=acl_filters,
+        )
+        req.shadow_link.configurations.security_sync_options.CopyFrom(
+            security_sync_options
+        )
+
+        _ = self.create_link_with_request(req=req)
+        self.logger.info("Successfully created link")
+
+        target_acls: Any = self.target_cluster_rpk.acl_list(format="json")
+        assert len(target_acls["matches"]) == 0, (
+            f"Expected no ACLs on target cluster, got {target_acls}"
+        )
+
+        # Create a Group ACL on the source cluster
+        group_acl = RPKACLInput(
+            allow_principal=["Group:test-group"],
+            allow_host=["*"],
+            topic=["test-topic"],
+            operation=["read", "describe"],
+            resource_pattern_type="literal",
+        )
+        self.source_cluster_rpk.acl_create(group_acl)
+
+        def check_if_group_acls_synced():
+            target_acls: Any = self.target_cluster_rpk.acl_list(format="json")
+            # We expect 2 ACLs (one for read, one for describe)
+            group_acls_found = [
+                acl
+                for acl in target_acls.get("matches", [])
+                if acl.get("principal") == "Group:test-group"
+            ]
+            if len(group_acls_found) != 2:
+                self.logger.debug(f"Found {len(group_acls_found)} ACLs")
+                return False
+
+            self.logger.info(f"Found Group ACLs on target cluster: {group_acls_found}")
+            for acl in group_acls_found:
+                if not (
+                    acl["host"] == "*"
+                    and acl["resource_type"] == "TOPIC"
+                    and acl["resource_name"] == "test-topic"
+                    and acl["resource_pattern_type"] == "LITERAL"
+                    and acl["permission"] == "ALLOW"
+                ):
+                    return False
+            return True
+
+        wait_until(
+            check_if_group_acls_synced,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Failed to sync Group ACLs",
+        )
+
+        self.logger.info("Group ACLs successfully synced")
+
+    @cluster(num_nodes=6)
+    def test_mixed_principal_acl_sync(self):
+        """
+        This test verifies that a mix of User, Role, and Group ACLs are all
+        synced from source to target cluster
+        """
+        req = self.create_default_link_request("test-link")
+
+        resource_filter = shadow_link_pb2.ACLResourceFilter(
+            resource_type=acl_pb2.ACL_RESOURCE_ANY,
+            pattern_type=acl_pb2.ACL_PATTERN_ANY,
+        )
+        access_filter = shadow_link_pb2.ACLAccessFilter(
+            permission_type=acl_pb2.ACL_PERMISSION_TYPE_ANY,
+            operation=acl_pb2.ACL_OPERATION_ANY,
+        )
+        acl_filter = shadow_link_pb2.ACLFilter(
+            resource_filter=resource_filter, access_filter=access_filter
+        )
+        acl_filters: list[shadow_link_pb2.ACLFilter] = [acl_filter]
+
+        security_sync_options = shadow_link_pb2.SecuritySettingsSyncOptions(
+            interval=google.protobuf.duration_pb2.Duration(seconds=1),
+            acl_filters=acl_filters,
+        )
+        req.shadow_link.configurations.security_sync_options.CopyFrom(
+            security_sync_options
+        )
+
+        _ = self.create_link_with_request(req=req)
+        self.logger.info("Successfully created link")
+
+        target_acls: Any = self.target_cluster_rpk.acl_list(format="json")
+        assert len(target_acls["matches"]) == 0, (
+            f"Expected no ACLs on target cluster, got {target_acls}"
+        )
+
+        # Create User ACL
+        user_acl = RPKACLInput(
+            allow_principal=["test-user"],
+            topic=["mixed-topic"],
+            operation=["read"],
+            resource_pattern_type="literal",
+        )
+        self.source_cluster_rpk.acl_create(user_acl)
+
+        # Create Role ACL
+        role_acl = RPKACLInput(
+            allow_role=["test-role"],
+            topic=["mixed-topic"],
+            operation=["write"],
+            resource_pattern_type="literal",
+        )
+        self.source_cluster_rpk.acl_create(role_acl)
+
+        # Create Group ACL
+        group_acl = RPKACLInput(
+            allow_principal=["Group:test-group"],
+            allow_host=["*"],
+            topic=["mixed-topic"],
+            operation=["describe"],
+            resource_pattern_type="literal",
+        )
+        self.source_cluster_rpk.acl_create(group_acl)
+
+        def check_if_all_acls_synced():
+            target_acls: Any = self.target_cluster_rpk.acl_list(format="json")
+            matches = target_acls.get("matches", [])
+
+            user_acl_found = any(
+                acl.get("principal") == "User:test-user"
+                and acl.get("operation") == "READ"
+                for acl in matches
+            )
+            role_acl_found = any(
+                acl.get("principal") == "RedpandaRole:test-role"
+                and acl.get("operation") == "WRITE"
+                for acl in matches
+            )
+            group_acl_found = any(
+                acl.get("principal") == "Group:test-group"
+                and acl.get("operation") == "DESCRIBE"
+                for acl in matches
+            )
+
+            if user_acl_found and role_acl_found and group_acl_found:
+                self.logger.info(f"All ACL types found on target cluster: {matches}")
+                return True
+
+            self.logger.debug(
+                f"Waiting for ACLs - User: {user_acl_found}, Role: {role_acl_found}, "
+                f"Group: {group_acl_found}, matches: {matches}"
+            )
+            return False
+
+        wait_until(
+            check_if_all_acls_synced,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Failed to sync mixed principal ACLs",
+        )
+
+        self.logger.info("All mixed principal ACLs successfully synced")
 
 
 class ShadowLinkTopicFailoverTests(ShadowLinkPreAllocTestBase):
@@ -3095,6 +3509,9 @@ class ShadowLinkUpdateBrokersTests(ShadowLinkPreAllocTestBase):
         ), f"Topic {old_source_topic} should not be visible to the target cluster"
 
 
+Validator = Callable[[list[dict[str, MetricSamples]]], bool]
+
+
 class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
     SHADOW_TOPIC_STATE = "redpanda_shadow_link_shadow_topic_state"
     TOTAL_RECORDS_FETCHED = "redpanda_shadow_link_total_records_fetched"
@@ -3109,22 +3526,11 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
         node: ClusterNode,
         patterns: list[str],
     ) -> Optional[dict[str, MetricSamples]]:
-        def get_metrics_from_node_sync(patterns: list[str]):
-            samples = self.redpanda.metrics_samples(
-                patterns, [node], MetricsEndpoint.PUBLIC_METRICS
-            )
-            success = set(samples.keys()) == set(patterns)
-            return success, samples
-
-        try:
-            samples = wait_until_result(
-                lambda: get_metrics_from_node_sync(patterns),
-                timeout_sec=2,
-                backoff_sec=0.1,
-            )
-            return samples
-        except ducktape.errors.TimeoutError:
-            return None
+        samples = self.redpanda.metrics_samples(
+            patterns, [node], MetricsEndpoint.PUBLIC_METRICS
+        )
+        self.logger.debug(f"patterns: {patterns} node: {node.name} samples: {samples}")
+        return samples
 
     def _get_metrics_for_nodes(
         self,
@@ -3141,10 +3547,7 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
         return metrics
 
     def _validate_metrics(
-        self,
-        nodes: list[ClusterNode],
-        patterns: list[str],
-        validator: Callable[[list[dict[str, MetricSamples]]], bool],
+        self, nodes: list[ClusterNode], patterns: list[str], validator: Validator
     ):
         metrics = self._get_metrics_for_nodes(nodes, patterns)
         if metrics is None:
@@ -3159,8 +3562,8 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
         self.source_default_client().create_topic(topic_1)
         self.create_link("test-link")
 
-        self.start_producer_consumer(topic=topic_1.name, msg_size=128, msg_cnt=1000)
-        self.verify()
+        with self.producer_consumer(topic=topic_1.name, msg_size=128, msg_cnt=1000):
+            self.verify()
 
         def collect_shadow_topic_states(
             node_samples: list[dict[str, MetricSamples]],
@@ -3285,10 +3688,12 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
             return check_metric_exists(node_samples, self.CLIENT_ERRORS)
 
         def validate_metrics(
-            timeout_sec: int, metric_validators: list[tuple[str, Callable]]
+            timeout_sec: int, metric_validators: list[tuple[str, Validator]]
         ):
             for metric_name, validator in metric_validators:
-                self.logger.debug(f"Validating values of metric: {metric_name}")
+                self.logger.debug(
+                    f"Validating values of metric: '{metric_name}', method: '{getattr(validator, '__name__')}'"
+                )
                 wait_until(
                     lambda: self._validate_metrics(
                         target_nodes, [metric_name], validator
@@ -3317,8 +3722,8 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
             name="test-topic-2", partition_count=3, replication_factor=1
         )
         self.source_default_client().create_topic(topic_2)
-        self.start_producer_consumer(topic=topic_2.name, msg_size=128, msg_cnt=1500)
-        self.verify()
+        with self.producer_consumer(topic=topic_2.name, msg_size=128, msg_cnt=1500):
+            self.verify()
 
         validate_metrics(
             timeout_sec=10,
@@ -3344,23 +3749,22 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
             err_msg=f"Topic {topic_3.name} not found in target cluster",
         )
 
-        self.start_producer_consumer(
+        with self.producer_consumer(
             topic=topic_3.name,
             msg_size=128,
             msg_cnt=5000000,
             use_transactions=True,
             producer_properties={
-                "msgs_per_transaction": "10000",
-                "transaction_abort_rate": "0.3",
+                "msgs_per_transaction": "100000",
             },
-        )
-        validate_metrics(
-            timeout_sec=30,
-            metric_validators=[
-                (self.SHADOW_LAG, check_shadow_lag_positive),
-            ],
-        )
-        self.verify()
+        ):
+            validate_metrics(
+                timeout_sec=120,
+                metric_validators=[
+                    (self.SHADOW_LAG, check_shadow_lag_positive),
+                ],
+            )
+            self.verify()
 
         validate_metrics(
             timeout_sec=30,

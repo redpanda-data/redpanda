@@ -35,6 +35,16 @@ public:
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() noexcept = 0;
 
+    /**
+     * Reset the data sink to its initial state.
+     */
+    virtual ss::future<> reset() = 0;
+
+    /**
+     * Keeps track of the last replicated offset. Factors in inflight batches.
+     * Updated eagerly as soon as replicate() is called. If the replication
+     * fails, the offset may be out of sync.
+     */
     virtual kafka::offset last_replicated_offset() const = 0;
 
     virtual raft::replicate_stages replicate(
@@ -49,6 +59,9 @@ public:
 
     // Returns the HWM of the partition
     virtual kafka::offset high_watermark() const = 0;
+
+    // Returns whether or not the sink support prefix truncation
+    virtual bool can_prefix_truncate() const = 0;
 
     // Performs a prefix truncation on the sink partition
     virtual ss::future<kafka::error_code> prefix_truncate(

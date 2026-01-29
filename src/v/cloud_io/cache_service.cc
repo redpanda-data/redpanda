@@ -1133,6 +1133,28 @@ ss::future<std::optional<cloud_io::cache_item_stream>> cache::get_stream(
     };
 }
 
+ss::future<std::optional<cloud_io::cache_item_stream>> cache::get_stream_range(
+  std::filesystem::path key,
+  uint64_t offset,
+  uint64_t length,
+  size_t read_buffer_size,
+  unsigned int read_ahead) {
+    auto get_res = co_await get(key);
+    if (!get_res.has_value()) {
+        co_return std::nullopt;
+    }
+
+    ss::file_input_stream_options options{};
+    options.buffer_size = read_buffer_size;
+    options.read_ahead = read_ahead;
+    auto stream = ss::make_file_input_stream(
+      std::move(get_res->body), offset, length, std::move(options));
+    co_return cloud_io::cache_item_stream{
+      .body = std::move(stream),
+      .size = length,
+    };
+}
+
 ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     auto guard = _gate.hold();
     vlog(log.debug, "Trying to get {} from archival cache.", key.native());

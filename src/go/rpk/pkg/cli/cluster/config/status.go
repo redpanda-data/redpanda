@@ -49,7 +49,7 @@ is offline.`,
 			vp, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
-			if vp.FromCloud {
+			if vp.CheckFromCloud() {
 				if vp.CloudCluster.IsServerless() {
 					out.Die("rpk cluster config status is not supported on Redpanda serverless clusters")
 				}

@@ -71,14 +71,12 @@ struct controller_workers {
 public:
     controller_workers()
       : dispatcher(allocator, table, state) {
-        ss::smp::invoke_on_all([] {
-            config::node().node_id.set_value(model::node_id{1});
-        }).get();
         migrated_resources.start().get();
         table
-          .start(ss::sharded_parameter([this] {
-              return std::ref(migrated_resources.local());
-          }))
+          .start(
+            ss::sharded_parameter(
+              [this] { return std::ref(migrated_resources.local()); }),
+            model::node_id{1})
           .get();
         members.start_single().get();
         features.start().get();
@@ -203,6 +201,7 @@ struct partition_balancer_planner_fixture {
             .segment_fallocation_step = 16,
             .node_responsiveness_timeout = std::chrono::seconds(10),
             .topic_aware = true,
+            .node_autodecommission_timeout = {},
           },
           workers.state.local(),
           workers.allocator.local());
@@ -314,7 +313,7 @@ struct partition_balancer_planner_fixture {
               model::broker_shard{
                 n, random_generators::get_int<uint32_t>(0, 3)});
         }
-        move_partition_replicas(std::move(ntp), std::move(new_replicas));
+        move_partition_replicas(ntp, new_replicas);
     }
 
     void move_partition_replicas(cluster::ntp_reassignment& reassignment) {
@@ -410,7 +409,8 @@ struct partition_balancer_planner_fixture {
                 model::node_id(i),
                 local_state,
                 std::move(node_topics),
-                std::nullopt));
+                /* drain status */ std::nullopt,
+                cluster::node_liveness_report{}));
         }
 
         return health_report;

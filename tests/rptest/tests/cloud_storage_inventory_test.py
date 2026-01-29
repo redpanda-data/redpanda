@@ -67,7 +67,9 @@ class CloudStorageInventoryTest(PreallocNodesTest):
             manifest_json_path = f"{root_path}{sample_date}manifest.json"
             manifest_checksum_path = f"{root_path}{sample_date}manifest.checksum"
             self.cloud_storage_client.put_object(
-                self.si_settings.cloud_storage_bucket, manifest_checksum_path, ""
+                self.si_settings.cloud_storage_bucket,
+                "report.gz",
+                base64.decodebytes(self.compressed_report.encode()),
             )
             self.cloud_storage_client.put_object(
                 self.si_settings.cloud_storage_bucket,
@@ -77,10 +79,7 @@ class CloudStorageInventoryTest(PreallocNodesTest):
                 }]}""",
             )
             self.cloud_storage_client.put_object(
-                self.si_settings.cloud_storage_bucket,
-                "report.gz",
-                base64.decodebytes(self.compressed_report.encode()),
-                is_bytes=True,
+                self.si_settings.cloud_storage_bucket, manifest_checksum_path, ""
             )
 
     @cluster(num_nodes=3)

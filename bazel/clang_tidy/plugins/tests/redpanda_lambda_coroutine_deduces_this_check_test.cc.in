@@ -1,0 +1,159 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+// clang-format off
+// Test file for `redpanda-lambda-coroutine-deduces-this`.
+// Run with `./tools/clang-tidy --checks=-*,redpanda-lambda-coroutine-deduces-this bazel/clang_tidy/plugins/tests/redpanda_lambda_coroutine_deduces_this_check_test.cc.in`
+// clang-format on
+#include <coroutine>
+#include <exception>
+
+namespace {
+
+template<typename T>
+struct promise_type {
+    T get_return_object() { return {}; }
+    std::suspend_never initial_suspend() { return {}; }
+    std::suspend_never final_suspend() noexcept { return {}; }
+    void return_void() {}
+    void unhandled_exception() { std::terminate(); }
+};
+
+// Fun hack to get immediate validation in output diagnostics.
+struct CheckShouldFail {
+    using promise_type = ::promise_type<CheckShouldFail>;
+};
+
+struct CheckShouldPass {
+    using promise_type = ::promise_type<CheckShouldPass>;
+};
+
+struct Test {
+    void Caught() {
+        // 1. Basic example, a single captured variable without deducing this.
+        {
+            const int a{};
+            void([a]() -> CheckShouldFail {
+                (void)a;
+                co_return;
+            });
+        }
+        // 2. Basic example, a single captured by reference variable without
+        // deducing this.
+        {
+            const int a{};
+            void([&a]() -> CheckShouldFail {
+                (void)a;
+                co_return;
+            });
+        }
+        // 3. Captures the containing struct `Test` and uses `this`.
+        {
+            void([this]() -> CheckShouldFail {
+                (void)this;
+                co_return;
+            });
+        }
+        // 4. Default captures by reference and uses a variable.
+        {
+            [[maybe_unused]] const int a{};
+            [[maybe_unused]] const bool b{};
+            [[maybe_unused]] const char c{};
+            [[maybe_unused]] const double d{};
+            void([&]() -> CheckShouldFail {
+                (void)a;
+                co_return;
+            });
+        }
+        // 5. Captures a variable and takes one argument.
+        {
+            const int a{};
+            void([&](int n) -> CheckShouldFail {
+                (void)a;
+                (void)n;
+                co_return;
+            });
+        }
+        // 6. Lambda without an argument list.
+        {
+            const int a{};
+            void([a] -> CheckShouldFail {
+                (void)a;
+                co_return;
+            });
+        }
+        // 7. Default captures by reference and uses a member variable (implicit
+        // use of `this->`)
+        {
+            void([&]() -> CheckShouldFail {
+                (void)_a;
+                co_return;
+            });
+        }
+    }
+
+    void Safe() {
+        // No captures.
+        {
+            void([]() -> CheckShouldPass { co_return; });
+        }
+        // Fixed example 1.
+        {
+            const int a{};
+            void([a](this auto) -> CheckShouldPass {
+                (void)a;
+                co_return;
+            });
+        }
+        // Fixed example 2.
+        {
+            const int a{};
+            void([&a](this auto) -> CheckShouldPass {
+                (void)a;
+                co_return;
+            });
+        }
+        // Fixed example 3.
+        {
+            void([this](this auto) -> CheckShouldPass {
+                (void)this;
+                co_return;
+            });
+        }
+        // Fixed example 4.
+        {
+            [[maybe_unused]] const int a{};
+            [[maybe_unused]] const bool b{};
+            [[maybe_unused]] const char c{};
+            [[maybe_unused]] const double d{};
+            void([&]() -> CheckShouldPass { co_return; });
+        }
+        // Fixed example 5.
+        {
+            const int a{};
+            void([&](this auto, int n) -> CheckShouldPass {
+                (void)a;
+                (void)n;
+                co_return;
+            });
+        }
+        // Fixed example 7.
+        {
+            void([&](this auto) -> CheckShouldPass {
+                (void)_a;
+                co_return;
+            });
+        }
+    }
+    [[maybe_unused]] int _a;
+};
+
+} // namespace
+
+int main() { return 0; }

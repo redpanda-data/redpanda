@@ -20,8 +20,10 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/node_status_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/partition_probe.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
 #include "container/chunked_hash_map.h"
@@ -30,6 +32,7 @@
 #include "model/metadata.h"
 #include "raft/fwd.h"
 #include "rpc/connection_cache.h"
+#include "rpc/types.h"
 #include "ssx/async_algorithm.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -47,6 +50,7 @@
 #include <fmt/ranges.h>
 
 #include <algorithm>
+#include <chrono>
 #include <iterator>
 #include <optional>
 #include <ranges>
@@ -67,7 +71,8 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<drain_manager>& drain_manager,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<partition_leaders_table>& partition_leaders_table,
-  ss::sharded<topic_table>& topic_table)
+  ss::sharded<topic_table>& topic_table,
+  ss::sharded<node_status_table>& node_status_table)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -78,6 +83,7 @@ health_monitor_backend::health_monitor_backend(
   , _feature_table(feature_table)
   , _partition_leaders_table(partition_leaders_table)
   , _topic_table(topic_table)
+  , _node_status_table(node_status_table)
   , _reports{ss::make_lw_shared<report_cache_t>()}
   , _local_monitor(local_monitor)
   , _self(_raft0->self().id()) {}
@@ -199,7 +205,11 @@ std::optional<node_health_report_ptr> health_monitor_backend::build_node_report(
     }
 
     node_health_report ret{
-      it->second->id, it->second->local_state, {}, it->second->drain_status};
+      it->second->id,
+      it->second->local_state,
+      {},
+      it->second->drain_status,
+      it->second->node_liveness_report};
     ret.local_state.logical_version
       = features::feature_table::get_latest_logical_version();
     ret.topics = filter_topic_status(it->second->topics, f.ntp_filters);
@@ -888,13 +898,18 @@ health_monitor_backend::collect_current_node_health() {
 
     auto drain_status = co_await _drain_manager.local().status();
     auto topics = co_await collect_topic_status();
+    auto node_liveness_report = collect_node_liveness_report();
 
     auto [it, _] = _status.try_emplace(id);
     it->second.is_alive = alive::yes;
     it->second.last_reply_timestamp = ss::lowres_clock::now();
 
     co_return node_health_report{
-      id, std::move(local_state), std::move(topics), std::move(drain_status)};
+      id,
+      std::move(local_state),
+      std::move(topics),
+      std::move(drain_status),
+      std::move(node_liveness_report)};
 }
 ss::future<result<node_health_report_ptr>>
 health_monitor_backend::get_current_node_health() {
@@ -1024,6 +1039,7 @@ reports_acc_t reduce_reports_map(reports_acc_t acc, shard_report shard_report) {
     return acc;
 }
 } // namespace
+
 ss::future<chunked_vector<topic_status>>
 health_monitor_backend::collect_topic_status() {
     auto reports_map = co_await _partition_manager.map_reduce0(
@@ -1038,6 +1054,30 @@ health_monitor_backend::collect_topic_status() {
     }
 
     co_return topics;
+}
+
+node_liveness_report health_monitor_backend::collect_node_liveness_report() {
+    const auto now = rpc::clock_type::now();
+    absl::flat_hash_map<model::node_id, rpc::clock_type::duration>
+      node_to_last_seen{};
+    auto node_status_range
+      = _members.local().node_ids()
+        | std::ranges::views::transform([this](model::node_id node_id) {
+              return _node_status_table.local().get_node_status(node_id);
+          })
+        | std::ranges::views::filter(
+          [](auto maybe_node_status) { return maybe_node_status.has_value(); })
+        | std::ranges::views::transform(
+          [](auto maybe_node_status) { return *maybe_node_status; });
+
+    std::ranges::for_each(
+      std::move(node_status_range),
+      [&node_to_last_seen, &now](node_status node_status) {
+          node_to_last_seen.emplace(
+            node_status.node_id, now - node_status.last_seen);
+      });
+    return node_liveness_report{
+      {.node_id_to_last_seen = std::move(node_to_last_seen)}};
 }
 
 std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
@@ -1122,8 +1162,8 @@ ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
 health_monitor_backend::aggregated_report
 health_monitor_backend::aggregate_reports(const report_cache_t& reports) {
     struct collector {
-        absl::node_hash_set<model::ntp> to_ntp_set() const {
-            absl::node_hash_set<model::ntp> ret;
+        chunked_hash_set<model::ntp> to_ntp_set() const {
+            chunked_hash_set<model::ntp> ret;
             for (const auto& [topic, parts] : t_to_p) {
                 for (auto part : parts) {
                     ret.emplace(topic.ns, topic.tp, part);
@@ -1144,9 +1184,9 @@ health_monitor_backend::aggregate_reports(const report_cache_t& reports) {
             return sum;
         }
 
-        absl::node_hash_map<
+        chunked_hash_map<
           model::topic_namespace,
-          absl::node_hash_set<model::partition_id>>
+          chunked_hash_set<model::partition_id>>
           t_to_p;
     };
 
@@ -1194,17 +1234,28 @@ health_monitor_backend::get_cluster_health_overview(
             }
         }
         auto report_it = reports().find(id);
-        if (
-          report_it != reports().end()
-          && report_it->second->local_state.recovery_mode_enabled) {
+        if (report_it == reports().end()) {
+            continue;
+        }
+        const auto& report = report_it->second;
+        if (report->local_state.recovery_mode_enabled) {
             ret.nodes_in_recovery_mode.push_back(id);
+        }
+        auto disk_usage_alert = report->local_state.get_disk_alert();
+        switch (disk_usage_alert) {
+        case storage::disk_space_alert::ok:
+            break;
+        case storage::disk_space_alert::low_space:
+        case storage::disk_space_alert::degraded:
+            ret.high_disk_usage_nodes.push_back(id);
+            break;
         }
     }
 
-    std::sort(ret.all_nodes.begin(), ret.all_nodes.end());
-    std::sort(ret.nodes_down.begin(), ret.nodes_down.end());
-    std::sort(
-      ret.nodes_in_recovery_mode.begin(), ret.nodes_in_recovery_mode.end());
+    std::ranges::sort(ret.all_nodes);
+    std::ranges::sort(ret.nodes_down);
+    std::ranges::sort(ret.nodes_in_recovery_mode);
+    std::ranges::sort(ret.high_disk_usage_nodes);
 
     auto aggr_report = aggregate_reports(reports());
     co_await fill_aggregate_with_offline_partitions(
@@ -1226,6 +1277,12 @@ health_monitor_backend::get_cluster_health_overview(
     // cluster is not healthy if some nodes are down
     if (!ret.nodes_down.empty()) {
         ret.unhealthy_reasons.emplace_back("nodes_down");
+    }
+
+    // disk usage on a subset of nodes exceeds configured storage
+    // alert thresholds
+    if (!ret.high_disk_usage_nodes.empty()) {
+        ret.unhealthy_reasons.emplace_back("high_disk_usage_nodes");
     }
 
     // cluster is not healthy if some partitions do not have leaders

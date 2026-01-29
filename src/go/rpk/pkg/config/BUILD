@@ -6,6 +6,7 @@ go_library(
         "config.go",
         "format.go",
         "params.go",
+        "profile_doc.go",
         "redpanda_yaml.go",
         "rpk_yaml.go",
         "weak.go",
@@ -17,6 +18,7 @@ go_library(
         "//src/go/rpk/pkg/os",
         "//src/go/rpk/pkg/out",
         "@build_buf_gen_go_redpandadata_cloud_protocolbuffers_go//redpanda/api/controlplane/v1:controlplane",
+        "@com_github_fatih_color//:color",
         "@com_github_mattn_go_isatty//:go-isatty",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
@@ -35,6 +37,7 @@ go_test(
     srcs = [
         "config_test.go",
         "params_test.go",
+        "profile_doc_test.go",
         "rpk_yaml_test.go",
         "weak_test.go",
     ],

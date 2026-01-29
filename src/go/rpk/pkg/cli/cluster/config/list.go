@@ -67,7 +67,7 @@ List configuration properties in YAML format:
 
 			var configMap map[string]any
 
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				if p.CloudCluster.IsServerless() {
 					out.Die("rpk cluster config list is not supported for serverless clusters")
 				}

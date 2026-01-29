@@ -20,8 +20,10 @@
 #include "model/metadata.h"
 
 #include <chrono>
+#include <functional>
 
 namespace cluster {
+class partition_balancer_planner_accessor;
 
 enum ntp_reassignment_type : int8_t { regular, force };
 
@@ -42,7 +44,12 @@ struct planner_config {
     double max_disk_usage_ratio;
     // Max number of actions that can be scheduled in one planning iteration
     size_t max_concurrent_actions;
+    // If a node is unresponsive for more than node_availability_timeout_sec,
+    // begin moving partitions off of that node
     std::chrono::seconds node_availability_timeout_sec;
+    // If a node is unresponsive for more than decommission timeout, launch a
+    // decommission operation against it
+    std::chrono::seconds decommission_timeout;
     // If the user manually requested a rebalance (not connected to node
     // addition)
     bool ondemand_rebalance_requested = false;
@@ -60,6 +67,8 @@ struct planner_config {
     // partitions on each node, as opposed to balancing the total number of
     // partitions.
     bool topic_aware = false;
+    // Timeout after which a node is considered for automatic decommissioning
+    std::optional<std::chrono::seconds> node_autodecommission_timeout;
 
     // If true, expects nodes to report their space management statistics in the
     // health report.
@@ -86,6 +95,7 @@ public:
         chunked_vector<model::ntp> cancellations;
         chunked_hash_map<model::ntp, reallocation_failure_details>
           reallocation_failures;
+        std::optional<model::node_id> maybe_node_to_autodecommission;
         bool counts_rebalancing_finished = false;
         size_t failed_actions_count = 0;
         status status = status::empty;
@@ -123,13 +133,45 @@ private:
     static ss::future<> get_full_node_actions(request_context&);
     static ss::future<> get_counts_rebalancing_actions(request_context&);
     static ss::future<> get_force_repair_actions(request_context&);
+    static void get_auto_decommission_actions(
+      request_context&, const cluster_health_report& health_report);
 
     static size_t calculate_full_disk_partition_move_priority(
       model::node_id, const reassignable_partition&, const request_context&);
 
+    using node_liveness_ref
+      = std::reference_wrapper<const node_liveness_report>;
+    struct auto_decom_node_report {
+        std::chrono::milliseconds uptime;
+        node_liveness_ref liveness_report;
+    };
+
+    using auto_decom_report_map
+      = absl::flat_hash_map<model::node_id, auto_decom_node_report>;
+    struct do_get_auto_decommission_actions_params {
+        std::chrono::seconds node_autodecommission_time;
+        auto_decom_report_map auto_decom_report_map;
+        absl::flat_hash_map<model::node_id, rpc::clock_type::duration>
+          node_boot_time_map;
+        absl::flat_hash_set<model::node_id> cluster_members;
+        absl::flat_hash_set<model::node_id> decommissioning_nodes;
+        absl::flat_hash_set<model::node_id> maintenance_mode_nodes;
+    };
+    static absl::flat_hash_set<model::node_id> do_get_auto_decommission_actions(
+      const do_get_auto_decommission_actions_params& params) noexcept;
+
+    // choose a candidate node to decom, or skip
+    static std::optional<model::node_id>
+    do_postprocess_auto_decommission_actions(
+      const absl::flat_hash_set<model::node_id>&
+        candidate_nodes_to_decommission,
+      const absl::flat_hash_set<model::node_id>& decommissioning_nodes);
+
     planner_config _config;
     partition_balancer_state& _state;
     partition_allocator& _partition_allocator;
+
+    friend class ::cluster::partition_balancer_planner_accessor;
 };
 
 } // namespace cluster

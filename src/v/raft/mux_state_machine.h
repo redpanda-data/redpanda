@@ -24,8 +24,8 @@
 #include "raft/errc.h"
 #include "raft/state_machine.h"
 #include "ssx/future-util.h"
+#include "ssx/mutex.h"
 #include "utils/expiring_promise.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -220,10 +220,10 @@ protected:
 
     // Locked for the whole duration of writing a snapshot to ensure that there
     // are no concurrent attempts.
-    mutex _write_snapshot_mtx{"mex_state_machine::write_snapshot"};
+    ssx::mutex _write_snapshot_mtx{"mex_state_machine::write_snapshot"};
     // Locked when a command is applied to the stm or when creating a snapshot
     // to ensure that the state machine state does not change.
-    mutex _apply_mtx{"mex_state_machine::apply"};
+    ssx::mutex _apply_mtx{"mex_state_machine::apply"};
 
     // we keep states in a tuple to automatically dispatch updates to correct
     // state

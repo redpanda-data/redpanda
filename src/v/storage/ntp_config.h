@@ -353,6 +353,22 @@ public:
     }
 
     std::optional<std::chrono::milliseconds> delete_retention_ms() const {
+        if (_overrides) {
+            // Tombstone (or tx end marker) deletion should not be enabled at
+            // the same time as tiered storage.
+            // This is because of a race condition:
+            // 1) a prefix of a log is uploaded to TS with a value record (or a
+            // tx fence batch or a transactional data record)
+            // 2) this prefix is truncated away locally
+            // 3) correspondent tombstone (or tx end marker) is compacted away
+            // locally.
+            if (
+              _overrides->shadow_indexing_mode.has_value()
+              && _overrides->shadow_indexing_mode.value()
+                   != model::shadow_indexing_mode::disabled) {
+                return std::nullopt;
+            }
+        }
         if (is_read_replica_mode_enabled()) {
             // RRR sanity check.
             return std::nullopt;
@@ -378,31 +394,6 @@ public:
         return cluster_default;
     }
 
-    // Unfortunately delete.retention.ms has to be split into two logical
-    // properties- tombstone_retention_ms and tx_retention_ms.
-    // This is because of the race conditions that exist with tombstone removal
-    // within a tiered storage enabled topic that don't exist with tx batch
-    // removal.
-    // tombstone_retention_ms should always == std::nullopt if tiered storage is
-    // enabled.
-    std::optional<std::chrono::milliseconds> tombstone_retention_ms() const {
-        if (_overrides) {
-            // Tombstone deletion should not be enabled at the same time as
-            // tiered storage.
-            if (
-              _overrides->shadow_indexing_mode.has_value()
-              && _overrides->shadow_indexing_mode.value()
-                   != model::shadow_indexing_mode::disabled) {
-                return std::nullopt;
-            }
-        }
-        return delete_retention_ms();
-    }
-
-    std::optional<std::chrono::milliseconds> tx_retention_ms() const {
-        return delete_retention_ms();
-    }
-
     std::optional<model::cleanup_policy_bitflags>
     cleanup_policy_override() const {
         return _overrides ? _overrides->cleanup_policy_bitflags : std::nullopt;
@@ -415,10 +406,6 @@ public:
     }
 
     model::iceberg_mode iceberg_mode() const {
-        // TODO(cloud_topics): support iceberg
-        if (cloud_topic_enabled()) {
-            return model::iceberg_mode::disabled;
-        }
         if (!config::shard_local_cfg().iceberg_enabled) {
             return model::iceberg_mode::disabled;
         }

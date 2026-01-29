@@ -586,9 +586,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         # Get a snapshot of the current segments, before tightening the
         # retention policy.
-        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0
-        )
+        original_snapshot = self.redpanda.storage(
+            nodes=self.redpanda.nodes
+        ).segments_by_node("kafka", self.topic, 0)
 
         for node, node_segments in original_snapshot.items():
             assert len(node_segments) >= 10, (
@@ -665,9 +665,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             partition_idx=0,
             count=10,
         )
-        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0
-        )
+        original_snapshot = self.redpanda.storage(
+            nodes=self.redpanda.nodes
+        ).segments_by_node("kafka", self.topic, 0)
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
@@ -711,9 +711,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             partition_idx=0,
             count=10,
         )
-        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0
-        )
+        original_snapshot = self.redpanda.storage(
+            nodes=self.redpanda.nodes
+        ).segments_by_node("kafka", self.topic, 0)
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
@@ -813,9 +813,9 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         rpk_client = RpkTool(self.redpanda)
         rpk_client.cluster_config_set("log_compaction_interval_ms", f"{2000}")
 
-        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0
-        )
+        original_snapshot = self.redpanda.storage(
+            nodes=self.redpanda.nodes
+        ).segments_by_node("kafka", self.topic, 0)
 
         for node, node_segments in original_snapshot.items():
             assert len(node_segments) >= segment_count, (
@@ -944,9 +944,9 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
 
         # Get a snapshot of the current segments, before tightening the
         # retention policy.
-        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0
-        )
+        original_snapshot = self.redpanda.storage(
+            nodes=self.redpanda.nodes
+        ).segments_by_node("kafka", self.topic, 0)
 
         for node, node_segments in original_snapshot.items():
             assert len(node_segments) >= 10, (
@@ -1512,9 +1512,9 @@ class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
         producer.wait(timeout_sec=300)
         producer.free()
 
-        original_snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", self.topic, 0
-        )
+        original_snapshot = self.redpanda.storage(
+            nodes=self.redpanda.nodes
+        ).segments_by_node("kafka", self.topic, 0)
 
         for node, node_segments in original_snapshot.items():
             assert len(node_segments) >= 5, (

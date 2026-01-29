@@ -44,7 +44,7 @@ ss::json::json_return_type raw_data_to_usage_response(
             dl_usage_response.missing_reason = fmt::format(
               "{}", dl_usage.missing_reason);
         }
-        resp.back().datalake_usage = std::move(dl_usage_response);
+        resp.back().datalake_usage = dl_usage_response;
     }
     if (include_open && !resp.empty()) {
         /// Handle case where client does not want to observe

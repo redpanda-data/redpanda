@@ -316,7 +316,9 @@ class TestReadReplicaService(EndToEndTest):
     def test_identical_lwms_after_delete_records(
         self, partition_count: int, cloud_storage_type: CloudStorageType
     ) -> None:
-        self._setup_read_replica(partition_count=partition_count, num_messages=1000)
+        self._setup_read_replica(
+            partition_count=partition_count, num_messages=partition_count * 2000
+        )
         rpk = RpkTool(self.redpanda)
 
         def set_lwm(new_lwm):

@@ -62,7 +62,7 @@ struct parser_state {
         std::optional<client::item_filter> _item_filter;
         client::list_bucket_result _items;
         std::optional<client::list_bucket_item> _current_item;
-
+        std::string _current_chars;
         xml_tag _current_tag;
         std::vector<ss::sstring> _tags;
     };
@@ -100,6 +100,7 @@ private:
     bool is_top_level() const;
     bool is_in_contents() const;
     bool is_in_common_prefixes() const;
+    void consume_characters();
 };
 
 struct abs_parse_impl final : public parser_state::impl {
@@ -113,6 +114,8 @@ private:
     bool is_in_blob_properties() const;
     bool is_in_blob() const;
     bool is_in_blob_prefixes() const;
+    // Consumes characters in `_current_chars`, leaving it empty.
+    void consume_characters();
 };
 
 class xml_sax_parser {

@@ -22,11 +22,11 @@
 #include "serde/async.h"
 #include "serde/rw/rw.h"
 #include "ssx/future-util.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
 #include "ssx/watchdog.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>

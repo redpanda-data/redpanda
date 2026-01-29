@@ -53,11 +53,6 @@ cloud_storage_clients::s3_configuration get_configuration() {
     conf.server_addr = server_addr;
     conf.disable_metrics = net::metrics_disabled::yes;
     conf.disable_public_metrics = net::public_metrics_disabled::yes;
-    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
-      net::metrics_disabled::yes,
-      net::public_metrics_disabled::yes,
-      cloud_roles::aws_region_name{"us-east-1"},
-      cloud_storage_clients::endpoint_url{httpd_host_name});
     return conf;
 }
 
@@ -69,6 +64,7 @@ struct archival_stm_node {
     archival_stm_node() = default;
 
     ss::shared_ptr<cluster::archival_metadata_stm> archival_stm;
+    ss::sharded<cloud_storage_clients::upstream_registry> upstreams;
     ss::sharded<cloud_storage_clients::client_pool> client_pool;
     ss::sharded<cloud_io::remote> cloud_io;
     ss::sharded<cloud_storage::remote> remote;
@@ -83,7 +79,8 @@ public:
           _archival_stm_nodes, [](archival_stm_node& node) {
               return node.remote.stop()
                 .then([&node]() { return node.cloud_io.stop(); })
-                .then([&node]() { return node.client_pool.stop(); });
+                .then([&node]() { return node.client_pool.stop(); })
+                .then([&node]() { return node.upstreams.stop(); });
           });
 
         co_await raft::raft_fixture::TearDownAsync();
@@ -97,8 +94,13 @@ public:
         for (auto& [id, node] : nodes()) {
             auto& stm_node = _archival_stm_nodes.at(id());
 
+            co_await stm_node.upstreams.start(
+              ss::sharded_parameter([]() { return get_configuration(); }));
             co_await stm_node.client_pool.start(
-              10, ss::sharded_parameter([]() { return get_configuration(); }));
+              ss::sharded_parameter(
+                [&stm_node]() { return std::ref(stm_node.upstreams.local()); }),
+              10,
+              ss::sharded_parameter([]() { return get_configuration(); }));
             co_await stm_node.cloud_io.start(
               std::ref(stm_node.client_pool),
               ss::sharded_parameter([]() { return get_configuration(); }),

@@ -20,7 +20,12 @@ import collections.abc
 import google.protobuf.descriptor
 import google.protobuf.internal.containers
 import google.protobuf.message
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
@@ -29,14 +34,20 @@ class GetBrokerRequest(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NODE_ID_FIELD_NUMBER: builtins.int
     node_id: builtins.int
-    'The node ID for the broker. If set to -1, the broker handling the RPC\n    request returns information about itself.\n    '
+    'The node ID for the broker. If unset, the broker handling the RPC\n    request returns information about itself.\n    '
 
-    def __init__(self, *, node_id: builtins.int=...) -> None:
+    def __init__(self, *, node_id: builtins.int | None=...) -> None:
         ...
 
-    def ClearField(self, field_name: typing.Literal['node_id', b'node_id']) -> None:
+    def HasField(self, field_name: typing.Literal['_node_id', b'_node_id', 'node_id', b'node_id']) -> builtins.bool:
         ...
-global___GetBrokerRequest = GetBrokerRequest
+
+    def ClearField(self, field_name: typing.Literal['_node_id', b'_node_id', 'node_id', b'node_id']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['_node_id', b'_node_id']) -> typing.Literal['node_id'] | None:
+        ...
+Global___GetBrokerRequest: typing_extensions.TypeAlias = GetBrokerRequest
 
 @typing.final
 class GetBrokerResponse(google.protobuf.message.Message):
@@ -45,10 +56,10 @@ class GetBrokerResponse(google.protobuf.message.Message):
     BROKER_FIELD_NUMBER: builtins.int
 
     @property
-    def broker(self) -> global___Broker:
+    def broker(self) -> Global___Broker:
         """The specified broker and it's information."""
 
-    def __init__(self, *, broker: global___Broker | None=...) -> None:
+    def __init__(self, *, broker: Global___Broker | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['broker', b'broker']) -> builtins.bool:
@@ -56,7 +67,7 @@ class GetBrokerResponse(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['broker', b'broker']) -> None:
         ...
-global___GetBrokerResponse = GetBrokerResponse
+Global___GetBrokerResponse: typing_extensions.TypeAlias = GetBrokerResponse
 
 @typing.final
 class ListBrokersRequest(google.protobuf.message.Message):
@@ -65,7 +76,7 @@ class ListBrokersRequest(google.protobuf.message.Message):
 
     def __init__(self) -> None:
         ...
-global___ListBrokersRequest = ListBrokersRequest
+Global___ListBrokersRequest: typing_extensions.TypeAlias = ListBrokersRequest
 
 @typing.final
 class ListBrokersResponse(google.protobuf.message.Message):
@@ -74,15 +85,15 @@ class ListBrokersResponse(google.protobuf.message.Message):
     BROKERS_FIELD_NUMBER: builtins.int
 
     @property
-    def brokers(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___Broker]:
+    def brokers(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Broker]:
         """The brokers in the cluster and their information."""
 
-    def __init__(self, *, brokers: collections.abc.Iterable[global___Broker] | None=...) -> None:
+    def __init__(self, *, brokers: collections.abc.Iterable[Global___Broker] | None=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['brokers', b'brokers']) -> None:
         ...
-global___ListBrokersResponse = ListBrokersResponse
+Global___ListBrokersResponse: typing_extensions.TypeAlias = ListBrokersResponse
 
 @typing.final
 class Broker(google.protobuf.message.Message):
@@ -95,22 +106,36 @@ class Broker(google.protobuf.message.Message):
     "This broker's node ID."
 
     @property
-    def build_info(self) -> global___BuildInfo:
-        """The build this broker is running."""
+    def build_info(self) -> Global___BuildInfo:
+        """The build this broker is running.
+
+        Only populated for `GetBroker` RPCs
+        """
 
     @property
-    def admin_server(self) -> global___AdminServer:
-        """The admin server information."""
+    def admin_server(self) -> Global___AdminServer:
+        """The admin server information.
 
-    def __init__(self, *, node_id: builtins.int=..., build_info: global___BuildInfo | None=..., admin_server: global___AdminServer | None=...) -> None:
+        Only populated for `GetBroker` RPCs
+        """
+
+    def __init__(self, *, node_id: builtins.int=..., build_info: Global___BuildInfo | None=..., admin_server: Global___AdminServer | None=...) -> None:
         ...
 
-    def HasField(self, field_name: typing.Literal['admin_server', b'admin_server', 'build_info', b'build_info']) -> builtins.bool:
+    def HasField(self, field_name: typing.Literal['_admin_server', b'_admin_server', '_build_info', b'_build_info', 'admin_server', b'admin_server', 'build_info', b'build_info']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['admin_server', b'admin_server', 'build_info', b'build_info', 'node_id', b'node_id']) -> None:
+    def ClearField(self, field_name: typing.Literal['_admin_server', b'_admin_server', '_build_info', b'_build_info', 'admin_server', b'admin_server', 'build_info', b'build_info', 'node_id', b'node_id']) -> None:
         ...
-global___Broker = Broker
+
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal['_admin_server', b'_admin_server']) -> typing.Literal['admin_server'] | None:
+        ...
+
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal['_build_info', b'_build_info']) -> typing.Literal['build_info'] | None:
+        ...
+Global___Broker: typing_extensions.TypeAlias = Broker
 
 @typing.final
 class BuildInfo(google.protobuf.message.Message):
@@ -128,7 +153,7 @@ class BuildInfo(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['build_sha', b'build_sha', 'version', b'version']) -> None:
         ...
-global___BuildInfo = BuildInfo
+Global___BuildInfo: typing_extensions.TypeAlias = BuildInfo
 
 @typing.final
 class AdminServer(google.protobuf.message.Message):
@@ -137,15 +162,15 @@ class AdminServer(google.protobuf.message.Message):
     ROUTES_FIELD_NUMBER: builtins.int
 
     @property
-    def routes(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___RPCRoute]:
+    def routes(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___RPCRoute]:
         """All of the ConnectRPC routes available on this admin server."""
 
-    def __init__(self, *, routes: collections.abc.Iterable[global___RPCRoute] | None=...) -> None:
+    def __init__(self, *, routes: collections.abc.Iterable[Global___RPCRoute] | None=...) -> None:
         ...
 
     def ClearField(self, field_name: typing.Literal['routes', b'routes']) -> None:
         ...
-global___AdminServer = AdminServer
+Global___AdminServer: typing_extensions.TypeAlias = AdminServer
 
 @typing.final
 class RPCRoute(google.protobuf.message.Message):
@@ -163,4 +188,4 @@ class RPCRoute(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['http_route', b'http_route', 'name', b'name']) -> None:
         ...
-global___RPCRoute = RPCRoute
+Global___RPCRoute: typing_extensions.TypeAlias = RPCRoute

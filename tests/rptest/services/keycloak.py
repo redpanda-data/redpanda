@@ -6,6 +6,7 @@ import requests
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from keycloak import KeycloakAdmin
+from keycloak.exceptions import KeycloakGetError
 
 KC_INSTALL_DIR = os.path.join("/", "opt", "keycloak")
 KC_DATA_DIR = os.path.join(KC_INSTALL_DIR, "data")
@@ -18,7 +19,7 @@ KC_CFG = "keycloak.conf"
 KC_TLS_KEY_FILE = os.path.join(KC_CONF_DIR, "key.pem")
 KC_TLS_CRT_FILE = os.path.join(KC_CONF_DIR, "crt.pem")
 KC_TLS_CA_CRT_FILE = os.path.join(KC_CONF_DIR, "ca.crt")
-KC_TLS_TRUST_STORE = os.path.join(KC_CONF_DIR, "kcTrustStore")
+KC_TLS_TRUST_STORE = os.path.join(KC_CONF_DIR, "kcTrustStore.jks")
 KC_ADMIN = "admin"
 KC_ADMIN_PASSWORD = "admin"
 KC_ROOT_LOG_LEVEL = "INFO"
@@ -36,8 +37,8 @@ DEFAULT_AT_LIFESPAN_S = 600
 
 START_CMD_TMPL = """
 LAUNCH_JBOSS_IN_BACKGROUND=1 \
-KEYCLOAK_ADMIN={admin} \
-KEYCLOAK_ADMIN_PASSWORD={pw} \
+KC_BOOTSTRAP_ADMIN_USERNAME={admin} \
+KC_BOOTSTRAP_ADMIN_PASSWORD={pw} \
 {kc} start-dev &
 """
 
@@ -96,6 +97,8 @@ class OAuthConfig:
 
 
 class KeycloakAdminClient:
+    GROUP_MAPPER_NAME = "groups-mapper"
+
     def __init__(
         self,
         logger,
@@ -118,9 +121,10 @@ class KeycloakAdminClient:
                 "realm": realm,
                 "enabled": True,
                 "accessTokenLifespan": access_token_lifespan_s,
+                "requiredActions": [],
             }
         )
-        self.kc_admin.realm_name = realm
+        self.kc_admin.change_current_realm(realm_name=realm)
 
     def config(self, server_url, username, password, realm):
         self.kc_admin = KeycloakAdmin(
@@ -141,12 +145,98 @@ class KeycloakAdminClient:
         self.logger.debug(f"client_id: {id}")
         return id
 
+    def create_group_mapper(self, client_id: str, use_full_path: bool = True):
+        id = self.kc_admin.get_client_id(client_id)
+        assert id is not None, f"Client {client_id} not found"
+        self.logger.debug(f"Creating group mapper for client {client_id} (id: {id})")
+
+        try:
+            mappers = self.kc_admin.get_mappers_from_client(id)
+            mapper = next(
+                (m for m in mappers if m["name"] == self.GROUP_MAPPER_NAME), None
+            )
+        except KeycloakGetError:
+            mapper = None
+
+        mapper_representation = {
+            "name": self.GROUP_MAPPER_NAME,
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-group-membership-mapper",
+            "config": {
+                "access.token.claim": "true",
+                "id.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "full.path": f"{use_full_path}".lower(),
+                "claim.name": "groups",
+                "jsonType.label": "String",
+            },
+        }
+
+        if mapper is None:
+            self.logger.debug("Creating group mapper")
+            self.kc_admin.add_mapper_to_client(id, mapper_representation)
+
+    def create_group(
+        self,
+        group_name: str,
+        parent: str | None = None,
+        skip_exists: bool = True,
+        **kwargs,
+    ) -> str:
+        self.logger.debug(f"Creating group named {group_name}")
+        payload = {"name": group_name}
+        payload.update(kwargs)
+
+        group_id = self.kc_admin.create_group(
+            payload=payload, parent=parent, skip_exists=skip_exists
+        )
+
+        if group_id is None:
+            if not skip_exists:
+                raise RuntimeError(f"Failed to create group named {group_name}")
+            group_id = self.kc_admin.get_groups({"name": group_name})[0]["id"]
+
+        return group_id
+
+    def _get_group_id(self, group_name: str) -> str | None:
+        groups = self.kc_admin.get_groups()
+        group = next(g for g in groups if g["name"] == group_name)
+        if group is None:
+            return None
+        return group["id"]
+
+    def _add_user_to_group(self, user_id: str, group_id: str):
+        self.kc_admin.group_user_add(user_id=user_id, group_id=group_id)
+
+    def _remove_user_from_group(self, user_id: str, group_id: str):
+        self.kc_admin.group_user_remove(user_id=user_id, group_id=group_id)
+
+    def add_service_user_to_group(self, client_id: str, group_name: str):
+        id = self.kc_admin.get_client_id(client_id)
+        assert id is not None, f"Client {client_id} not found"
+        service_account_user = self.kc_admin.get_client_service_account_user(id)
+        account_id = service_account_user["id"]
+        group_id = self._get_group_id(group_name=group_name)
+        assert group_id is not None, f"Group {group_name} not found"
+        self._add_user_to_group(user_id=account_id, group_id=group_id)
+
+    def remove_service_user_from_group(self, client_id: str, group_name: str):
+        id = self.kc_admin.get_client_id(client_id)
+        assert id is not None, f"Client {client_id} not found"
+        service_account_user = self.kc_admin.get_client_service_account_user(id)
+        account_id = service_account_user["id"]
+        group_id = self._get_group_id(group_name=group_name)
+        assert group_id is not None, f"Group {group_name} not found"
+        self._remove_user_from_group(user_id=account_id, group_id=group_id)
+
     def generate_client_secret(self, client_id):
         id = self.kc_admin.get_client_id(client_id)
+        assert id is not None, f"Client {client_id} not found"
         self.kc_admin.generate_client_secrets(id)
 
     def get_client_secret(self, client_id):
         id = self.kc_admin.get_client_id(client_id)
+        assert id is not None, f"Client {client_id} not found"
         secret = self.kc_admin.get_client_secrets(id)
         return secret["value"]
 
@@ -168,13 +258,15 @@ class KeycloakAdminClient:
 
         if realm_admin:
             client_id = self.kc_admin.get_client_id("realm-management")
+            assert client_id is not None, "Client realm-management not found"
             role_id = self.kc_admin.get_client_role_id(
                 client_id=client_id, role_name="realm-admin"
             )
+            assert role_id is not None, "Role realm-admin not found"
             self.kc_admin.assign_client_role(
                 user_id=user_id,
                 client_id=client_id,
-                roles={"name": "realm-admin", "id": role_id},
+                roles=[{"name": "realm-admin", "id": role_id}],
             )
         return user_id
 
@@ -216,7 +308,7 @@ class KeycloakService(Service):
             self.https_port = https_port
 
     @property
-    def admin(self):
+    def admin(self) -> KeycloakAdminClient:
         assert self._admin is not None
         return self._admin
 
@@ -303,8 +395,9 @@ class KeycloakService(Service):
         }
 
     def start_node(self, node, access_token_lifespan_s=DEFAULT_AT_LIFESPAN_S, **kwargs):
+        scheme = "https" if self.using_tls else "http"
         extra_cfg = {
-            "hostname": self.host(node),
+            "hostname": f"{scheme}://{self.host(node)}:{self.hostname_port}",
             "hostname-port": self.hostname_port,
             "http-port": self.http_port,
             "log-level": self.log_level,
@@ -320,7 +413,7 @@ class KeycloakService(Service):
         with node.account.monitor_log(KC_LOG_FILE) as monitor:
             node.account.ssh(f"{KC} build", allow_fail=False)
             node.account.ssh_capture(self._start_cmd(), allow_fail=False)
-            monitor.wait_until("Running the server in", timeout_sec=300)
+            monitor.wait_until("(main) Profile dev activated.", timeout_sec=30)
 
         self.logger.debug(f"Keycloak PIDs: {self.pids(node)}")
 

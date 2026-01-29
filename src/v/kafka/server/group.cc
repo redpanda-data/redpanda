@@ -2152,7 +2152,6 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
         case raft::errc::group_not_exists:
         case raft::errc::replicate_first_stage_exception:
         case raft::errc::transfer_to_current_leader:
-        case raft::errc::not_learner:
             return error_code::unknown_server_error;
         }
     }
@@ -3331,7 +3330,7 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
         producer_tx.coordinator_partition,
         pid,
         producer_tx.tx_seq,
-        config::shard_local_cfg().rm_sync_timeout_ms.value()));
+        config::shard_local_cfg().internal_rpc_request_timeout_ms.value()));
 
     if (r.ec != cluster::tx::errc::none) {
         co_return r.ec;
@@ -3666,12 +3665,12 @@ group::delete_offsets(const chunked_vector<model::topic_partition>& offsets) {
      * Delete the requested offsets, unless there is at least one active
      * subscription for an offset.
      */
-    for (auto& offset : offsets) {
+    for (const auto& offset : offsets) {
         if (!subscribed(offset.topic)) {
             vlog(_ctxlog.debug, "Deleting group offset {}", offset);
             _offsets.erase(offset);
             _pending_offset_commits.erase(offset);
-            deleted_offsets.push_back(std::move(offset));
+            deleted_offsets.push_back(offset);
         }
     }
 

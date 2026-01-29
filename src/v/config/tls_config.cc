@@ -14,8 +14,6 @@
 #include "config/configuration.h"
 #include "config/convert.h"
 #include "net/tls.h"
-#include "thirdparty/openssl/err.h"
-#include "thirdparty/openssl/ssl.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>
@@ -23,6 +21,9 @@
 #include <seastar/net/tls.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/variant_utils.hh>
+
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 
 namespace config {
 namespace {

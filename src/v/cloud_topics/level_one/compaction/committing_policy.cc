@@ -13,7 +13,7 @@
 namespace cloud_topics::l1 {
 
 committing_policy::update_response
-commit_on_update_policy::on_update(const object_output_t&) {
+commit_on_update_policy::on_update(const file_and_md_info&) {
     return update_response::preempt;
 }
 

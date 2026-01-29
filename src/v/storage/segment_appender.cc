@@ -62,6 +62,9 @@ segment_appender::segment_appender(ss::file f, options opts)
   , _prev_head_write(ss::make_lw_shared<ssx::semaphore>(1, head_sem_name))
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(internal::chunks().chunk_size()) {
+    if (!_opts.shared_stats) {
+        _opts.shared_stats = ss::make_lw_shared<stats>();
+    }
     const auto alignment = _out.disk_write_dma_alignment();
     vassert(
       internal::chunk_cache::alignment % alignment == 0,
@@ -104,8 +107,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _dispatched_writes(std::exchange(o._dispatched_writes, 0))
   , _committed_offset_clb(std::exchange(o._committed_offset_clb, {}))
   , _inactive_timer([this] { handle_inactive_timer(); })
-  , _chunk_size(o._chunk_size)
-  , _stats(std::exchange(o._stats, {})) {
+  , _chunk_size(o._chunk_size) {
     o._closed = true;
 }
 
@@ -145,8 +147,8 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 }
 
 ss::future<> segment_appender::do_append(const char* buf, size_t n) {
-    ++_stats.appends;
-    _stats.bytes_requested += n;
+    ++_opts.shared_stats->appends;
+    _opts.shared_stats->bytes_requested += n;
     while (true) {
         vassert(!_closed, "append() on closed segment: {}", *this);
 
@@ -165,6 +167,56 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             co_await do_next_adaptive_fallocation();
             continue;
         }
+        // we need to copy the reminder of the chunk into the new one not write
+        // to the one currently being written
+        if (is_chunk_write_dispatched(_head)) {
+            // if head write is dispatched it means there is at least one
+            // inflight write. Always copy the remainder to a new chunk
+            // to simplify the logic (aligned case is very rare ~0.02%)
+            auto last_inflight_write = _inflight.back();
+            auto old_head = std::exchange(_head, nullptr);
+            /**
+             * NOTE: Why we do not release _prev_head_write semaphore ?
+             * The _prev_head_write semaphore is used to guarantee orders of
+             * pending writes, it is exchanged when the head is full. This
+             * guarantees that all the writes to the are of the file covered
+             * by old head are dispatched in order. It is ok to release the
+             * semaphore if it is guaranteed that all subsequent writes will
+             * not be in the area of the prev head.
+             *
+             * This is not the case when we are copying the remainder from
+             * the old head. In this case the new head will be written to
+             * the same file offset range as the previous head this is why
+             * we MUST NOT release the semaphore here.
+             */
+
+            auto new_head = co_await internal::chunks().get();
+
+            const auto remainder_sz = old_head->size()
+                                      - old_head->pending_aligned_begin();
+
+            new_head->copy_remainder_from(*old_head);
+            // swap in the new head with the remainder from the old one.
+
+            _head = new_head;
+            _opts.shared_stats->bytes_copied_in_chunk_remainder += remainder_sz;
+            /**
+             * This is the place where we need to release the old head or
+             * mark it for release after the write completes. The
+             * last_inflight_write reference may not longer be valid after
+             * the scheduling point when the new chunk was requested.
+             */
+
+            if (last_inflight_write->state == inflight_write::DISPATCHED) {
+                // chunk write isn't finished yet
+                last_inflight_write->last_write_to_current_chunk = true;
+            } else {
+                // chunk was already written and it is done, we can release
+                // it right away
+                old_head->reset();
+                internal::chunks().add(old_head);
+            }
+        }
 
         size_t written = 0;
         if (likely(_head)) {
@@ -178,6 +230,8 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
         if (written == n) {
             co_return;
         }
+
+        ++_opts.shared_stats->split_writes;
 
         // barrier. do not hold the units!
         auto units = co_await ss::get_units(_concurrent_flushes, 1);
@@ -210,11 +264,12 @@ void segment_appender::handle_inactive_timer() {
     /*
      * inactive segment chunk reclaim
      *
-     * if we can ensure there are no outstanding writes (including the one that
-     * may have been dispatched above in this handler) then we can reclaim the
-     * chunk and return it to the cache. but we need a retry loop because the
-     * background write may take some time and it steals _head until it
-     * completes. it may also return the chunk to the cache if it empty.
+     * if we can ensure there are no outstanding writes (including the
+     * one that may have been dispatched above in this handler) then we
+     * can reclaim the chunk and return it to the cache. but we need a
+     * retry loop because the background write may take some time and it
+     * steals _head until it completes. it may also return the chunk to
+     * the cache if it empty.
      */
     if (_concurrent_flushes.try_wait(ss::semaphore::max_counter())) {
         if (_head && !_head->bytes_pending()) {
@@ -242,8 +297,8 @@ ss::future<> segment_appender::hydrate_last_half_page() {
      *    the read alignment because our goal is to read half-page
      *    for the next **write()**
      *
-     * 2. the file handle DMA read must be the full dma alignment even if
-     *    it returns less bytes, and even if it is the last page
+     * 2. the file handle DMA read must be the full dma alignment even
+     * if it returns less bytes, and even if it is the last page
      */
     const size_t read_align = _head->alignment();
     const size_t sz = ss::align_down<size_t>(_committed_offset, read_align);
@@ -260,10 +315,11 @@ ss::future<> segment_appender::hydrate_last_half_page() {
       .dma_read(sz, buff, read_align /*must be full _write_ alignment*/)
 #pragma clang diagnostic pop
       .then([this, bytes_to_read](size_t actual) {
-          ++_stats.last_page_hydrations;
+          ++_opts.shared_stats->last_page_hydrations;
           vassert(
             bytes_to_read <= actual && bytes_to_read == _head->flushed_pos(),
-            "Could not hydrate partial page bytes: expected:{}, got:{}. "
+            "Could not hydrate partial page bytes: expected:{}, "
+            "got:{}. "
             "chunk:{} - appender:{}",
             bytes_to_read,
             actual,
@@ -273,7 +329,8 @@ ss::future<> segment_appender::hydrate_last_half_page() {
       .handle_exception([this](std::exception_ptr e) {
           vassert(
             false,
-            "Could not read the last half page in dma_write_alignment: {} - {}",
+            "Could not read the last half page in dma_write_alignment: "
+            "{} - {}",
             e,
             *this);
       });
@@ -282,8 +339,8 @@ ss::future<> segment_appender::hydrate_last_half_page() {
 ss::future<> segment_appender::do_truncation(size_t n) {
     return _out.truncate(n)
       .then([this] {
-          ++_stats.truncates;
-          return _out.flush().then([this] { ++_stats.fsyncs; });
+          ++_opts.shared_stats->truncates;
+          return _out.flush().then([this] { ++_opts.shared_stats->fsyncs; });
       })
       .handle_exception([n, this](std::exception_ptr e) {
           vassert(
@@ -298,7 +355,8 @@ ss::future<> segment_appender::do_truncation(size_t n) {
 ss::future<> segment_appender::truncate(size_t n) {
     vassert(
       n <= file_byte_offset(),
-      "Cannot ask to truncate at:{} which is more bytes than we have:{} - {}",
+      "Cannot ask to truncate at:{} which is more bytes than we "
+      "have:{} - {}",
       file_byte_offset(),
       n,
       *this);
@@ -311,9 +369,10 @@ ss::future<> segment_appender::truncate(size_t n) {
           _stable_offset = n;
           auto f = ss::now();
           if (_head) {
-              // NOTE: Important to reset chunks for offset accounting.  reset
-              // any partial state, since after the truncate, it makes no sense
-              // to keep any old state/pointers/sizes, etc
+              // NOTE: Important to reset chunks for offset accounting.
+              // reset any partial state, since after the truncate, it
+              // makes no sense to keep any old state/pointers/sizes,
+              // etc
               _head->reset();
           } else {
               // https://github.com/redpanda-data/redpanda/issues/43
@@ -352,9 +411,9 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
              ss::semaphore::max_counter(),
              [this, step]() mutable {
                  check_no_dispatched_writes();
-                 // step - compute step rounded to alignment(4096); this is
-                 // needed because during a truncation the follow up fallocation
-                 // might not be page aligned
+                 // step - compute step rounded to alignment(4096); this
+                 // is needed because during a truncation the follow up
+                 // fallocation might not be page aligned
                  if (_fallocation_offset % fallocation_alignment != 0) {
                      // add left over bytes to a full page
                      step += fallocation_alignment
@@ -363,16 +422,18 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
 
                  vassert(
                    _fallocation_offset >= _committed_offset,
-                   "Attempting to fallocate at {} below the committed offset "
+                   "Attempting to fallocate at {} below the committed "
+                   "offset "
                    "{}",
                    _fallocation_offset,
                    _committed_offset);
                  return _out.allocate(_fallocation_offset, step)
                    .then([this, step] {
-                       ++_stats.fallocations;
-                       // ss::file::allocate does not adjust logical file size
-                       // hence we need to do that explicitly with an extra
-                       // truncate. This allows for more efficient writes.
+                       ++_opts.shared_stats->fallocations;
+                       // ss::file::allocate does not adjust logical
+                       // file size hence we need to do that explicitly
+                       // with an extra truncate. This allows for more
+                       // efficient writes.
                        // https://github.com/redpanda-data/redpanda/pull/18598.
                        return _out.truncate(_fallocation_offset + step);
                    })
@@ -381,8 +442,10 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
       .handle_exception([this](std::exception_ptr e) {
           vassert(
             false,
-            "We failed to fallocate file. This usually means we have ran out "
-            "of disk space. Please check your data partition and ensure you "
+            "We failed to fallocate file. This usually means we have "
+            "ran out "
+            "of disk space. Please check your data partition and "
+            "ensure you "
             "have enough space. Error: {} - {}",
             e,
             *this);
@@ -455,30 +518,34 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
     _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
 
     return _out.flush().then([this, committed, ops = std::move(ops)]() mutable {
-        // Inflight_dispatched is incremented right before a write is dispatched
-        // and then must be decremented when the write is "finished", where we
-        // don't consider the write finished until any associated flush
-        // operations that were triggered as part of write completion (i.e.,
-        // stuff in this method) are complete.
+        // Inflight_dispatched is incremented right before a write is
+        // dispatched and then must be decremented when the write is
+        // "finished", where we don't consider the write finished
+        // until any associated flush operations that were triggered
+        // as part of write completion (i.e., stuff in this method)
+        // are complete.
         //
         // We also don't want to decrement this too late, i.e., in a
-        // continuation attached the write completion path (which would be
-        // easier), because then it might be non-zero unexpectedly as observed
-        // by a client do does an append + flush and waits for the futures to
-        // resolve: the flush future resolves immediately below in the set_value
-        // loop, but the future returned by *this* method may resolve later,
-        // after the client observes a non-zero value. So we decrement the
-        // counter here, *after* the flush has completed but before we set the
-        // futures which have been returned to the callers.
+        // continuation attached the write completion path (which
+        // would be easier), because then it might be non-zero
+        // unexpectedly as observed by a client do does an append +
+        // flush and waits for the futures to resolve: the flush
+        // future resolves immediately below in the set_value loop,
+        // but the future returned by *this* method may resolve later,
+        // after the client observes a non-zero value. So we decrement
+        // the counter here, *after* the flush has completed but
+        // before we set the futures which have been returned to the
+        // callers.
         //
-        // Unfortunately this means we need to decrement this counter in
-        // multiple places.
+        // Unfortunately this means we need to decrement this counter
+        // in multiple places.
         --_inflight_dispatched;
         _flushed_offset = committed;
-        ++_stats.fsyncs;
+        ++_opts.shared_stats->fsyncs;
         /*
-         * TODO: as an optimization, add a little house keeping to determine if
-         * eligible flush operations showed up while flush() was completing.
+         * TODO: as an optimization, add a little house keeping to
+         * determine if eligible flush operations showed up while
+         * flush() was completing.
          */
         for (auto& op : ops) {
             op.p.set_value();
@@ -500,45 +567,46 @@ void segment_appender::dispatch_background_head_write() {
     const auto prior_co = _committed_offset;
     _committed_offset += _head->bytes_pending();
     _bytes_flush_pending -= _head->bytes_pending();
-
     inflight_write entry{
-      .full = _head->is_full(),
+      .last_write_to_current_chunk = _head->is_full(),
       .chunk = _head,
       .chunk_begin = _head->pending_aligned_begin(),
       .chunk_end = _head->pending_aligned_end(),
       .file_start_offset = start_offset,
-      .committed_offset = _committed_offset};
+      .committed_offset = _committed_offset,
+      .alignment = _head->alignment(),
+    };
 
     // background write
     _head->flush();
 
     auto head_sem = _prev_head_write;
 
-    if (entry.full) {
+    if (entry.last_write_to_current_chunk) {
         /*
-         * If _head is full then this is the last write to this chunk, so we
-         * clear out the head pointer synchronously here, then release it
-         * back into the chunk cache after the write completes. Otherwise,
-         * leave it in place so that new appends may accumulate. this
-         * optimization is meant to avoid rehydrating the chunk on append
-         * following a flush when the head has pending bytes and a write is
-         * dispatched.
+         * If _head is full then this is the last write to this chunk,
+         * so we clear out the head pointer synchronously here, then
+         * release it back into the chunk cache after the write
+         * completes. Otherwise, leave it in place so that new appends
+         * may accumulate. this optimization is meant to avoid
+         * rehydrating the chunk on append following a flush when the
+         * head has pending bytes and a write is dispatched.
          */
         _head = nullptr;
         /*
          * When the head becomes full it still needs to be properly
          * sequenced with earlier writes to the same head, but no future
-         * writes to same head head are possible so the dependency chain is
-         * reset for the next head.
+         * writes to same head head are possible so the dependency chain
+         * is reset for the next head.
          */
         _prev_head_write = ss::make_lw_shared<ssx::semaphore>(1, head_sem_name);
     }
 
     if (!_inflight.empty() && _inflight.back()->try_merge(entry, prior_co)) {
-        // Yay! The latest in-flight write is still queued (i.e., has not
-        // been dispatched to the disk) so we just append this write
+        // Yay! The latest in-flight write is still queued (i.e., has
+        // not been dispatched to the disk) so we just append this write
         // to that entry.
-        ++_stats.merged_writes;
+        ++_opts.shared_stats->merged_writes;
         return;
     }
 
@@ -586,21 +654,22 @@ void segment_appender::dispatch_background_head_write() {
                     dma_size)
 #pragma clang diagnostic pop
                   .then([this, w, dma_size](size_t got) {
-                      _stats.bytes_written += dma_size;
+                      _opts.shared_stats->bytes_written += dma_size;
+                      ++_opts.shared_stats->writes_completed;
                       /*
-                       * the continuation that captured full=true is the end
-                       * of the dependency chain for this chunk. it can be
-                       * returned to cache.
+                       * the continuation that captured full=true is the
+                       * end of the dependency chain for this chunk. it
+                       * can be returned to cache.
                        */
-                      if (w->full) {
+                      if (w->last_write_to_current_chunk) {
                           w->chunk->reset();
                           internal::chunks().add(w->chunk);
                       }
 
                       // release our reference to the chunk since this
                       // structure might hang around for a while in the
-                      // _inflight list but we can free this chunk to re-use
-                      // now as we won't use it again
+                      // _inflight list but we can free this chunk to
+                      // re-use now as we won't use it again
                       w->chunk = nullptr;
 
                       const auto expected = w->chunk_end - w->chunk_begin;
@@ -620,7 +689,7 @@ void segment_appender::dispatch_background_head_write() {
 }
 
 ss::future<> segment_appender::flush() {
-    ++_stats.flushes;
+    ++_opts.shared_stats->flushes;
     _inactive_timer.cancel();
 
     // dispatched write will drive flush completion
@@ -638,8 +707,9 @@ ss::future<> segment_appender::flush() {
     }
 
     /*
-     * if there are inflight write _ops_ then we can be sure that flush ops will
-     * be processed eventually (see: maybe advance stable offset).
+     * if there are inflight write _ops_ then we can be sure that flush
+     * ops will be processed eventually (see: maybe advance stable
+     * offset).
      */
     if (!_inflight.empty()) {
         auto& w = _flush_ops.emplace_back(file_byte_offset());
@@ -653,9 +723,11 @@ ss::future<> segment_appender::flush() {
       _stable_offset,
       *this);
 
-    return _out.flush().handle_exception([this](std::exception_ptr e) {
-        vunreachable("Could not flush: {} - {}", e, *this);
-    });
+    return _out.flush()
+      .then([this] { ++_opts.shared_stats->fsyncs; })
+      .handle_exception([this](std::exception_ptr e) {
+          vunreachable("Could not flush: {} - {}", e, *this);
+      });
 }
 
 ss::future<> segment_appender::hard_flush() {
@@ -672,7 +744,8 @@ ss::future<> segment_appender::hard_flush() {
                    _flush_ops.empty(),
                    "Pending flushes after hard flush {}",
                    *this);
-                 return _out.flush().then([this] { ++_stats.fsyncs; });
+                 return _out.flush().then(
+                   [this] { ++_opts.shared_stats->fsyncs; });
              })
       .handle_exception([this](std::exception_ptr e) {
           vunreachable("Could not flush: {} - {}", e, *this);
@@ -682,20 +755,20 @@ ss::future<> segment_appender::hard_flush() {
 bool segment_appender::inflight_write::try_merge(
   const inflight_write& other, size_t pco) {
     if (state == QUEUED && chunk == other.chunk) {
-        // this next check is an assert rather than a check since we always
-        // expect the writes to match up (i.e., right bound of prior write
-        // matches the left bound of the current one), since the in-flight
-        // writes should form a contiguous series of writes and we only check
-        // the last write for merging.
+        // this next check is an assert rather than a check since we
+        // always expect the writes to match up (i.e., right bound of
+        // prior write matches the left bound of the current one), since
+        // the in-flight writes should form a contiguous series of
+        // writes and we only check the last write for merging.
         vassert(
           committed_offset == pco,
           "in try_merge writes didn't touch: {} {}",
           committed_offset,
           pco);
 
-        // the lhs write cannot be full since then how could the next write
-        // share its chunk: it must use a new chunk
-        vassert(!full, "the lhs write cannot be full");
+        // the lhs write cannot be full since then how could the next
+        // write share its chunk: it must use a new chunk
+        vassert(!last_write_to_current_chunk, "the lhs write cannot be full");
 
         // lhs chunk cannot start or end after rhs
         vassert(
@@ -706,14 +779,14 @@ bool segment_appender::inflight_write::try_merge(
           other.chunk_begin,
           other.chunk_end);
 
-        // we merge this write in by updating everything associated with the
-        // right boundary
+        // we merge this write in by updating everything associated with
+        // the right boundary
         committed_offset = other.committed_offset;
         chunk_end = other.chunk_end;
 
         // the only possible change here is false -> true, which occurs
         // when the rhs completes the chunk
-        full = other.full;
+        last_write_to_current_chunk = other.last_write_to_current_chunk;
 
         return true;
     }
@@ -725,23 +798,23 @@ fmt::iterator segment_appender::format_to(fmt::iterator iterator) const {
       iterator,
       "{{closed:{}, fallocation_offset:{}, stable_offset:{}, "
       "flushed_offset:{}, committed_offset:{}, inflight: {}, "
-      "bytes_flush_pending:{}, stats: {}}}",
+      "bytes_flush_pending:{}}}",
       _closed,
       _fallocation_offset,
       _stable_offset,
       _flushed_offset,
       _committed_offset,
       _inflight.size(),
-      _bytes_flush_pending,
-      _stats);
+      _bytes_flush_pending);
 }
 
 fmt::iterator segment_appender::stats::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "{{ merged_writes: {}, bytes_requested : {}, bytes_written : {}, appends "
+      "{{ merged_writes: {}, bytes_requested : {}, bytes_written : {}, "
+      "appends "
       ": {}, flushes: {}, fsyncs: {}, truncates: {}, fallocations: {}, "
-      "last_page_hydrations: {}}}",
+      "last_page_hydrations: {}, split_writes: {}, writes_completed: {}}}",
       merged_writes,
       bytes_requested,
       bytes_written,
@@ -750,16 +823,19 @@ fmt::iterator segment_appender::stats::format_to(fmt::iterator it) const {
       fsyncs,
       truncates,
       fallocations,
-      last_page_hydrations);
+      last_page_hydrations,
+      split_writes,
+      writes_completed);
 }
 
 std::ostream&
 operator<<(std::ostream& s, const segment_appender::inflight_write& op) {
     fmt::print(
       s,
-      "{{state: {}, committed_offset: {}}}",
+      "{{state: {}, committed_offset: {}, alignment: {}}}",
       (int)op.state,
-      op.committed_offset);
+      op.committed_offset,
+      op.alignment);
     return s;
 }
 

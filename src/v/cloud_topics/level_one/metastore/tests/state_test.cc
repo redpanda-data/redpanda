@@ -367,3 +367,58 @@ TEST(CompactionStateTest, TestTruncateCleanedRanges) {
     };
     EXPECT_EQ(s.cleaned_ranges_with_tombstones, expected);
 }
+
+TEST(CompactionStateTest, TestContiguousTombstoneRangeMany) {
+    compaction_state s;
+    // Create many contiguous ranges:
+    // [0, 9], [10, 19], [20, 29], ..., [90, 99]
+    for (int i = 0; i < 10; ++i) {
+        s.cleaned_ranges_with_tombstones.insert(
+          tombstone_range(i * 10, i * 10 + 9, 1000));
+    }
+
+    // The full range [0, 99] should be contiguous.
+    ASSERT_TRUE(s.has_contiguous_range_with_tombstones(o{0}, o{99}));
+
+    // Any sub-range should also be contiguous.
+    ASSERT_TRUE(s.has_contiguous_range_with_tombstones(o{0}, o{50}));
+    ASSERT_TRUE(s.has_contiguous_range_with_tombstones(o{25}, o{75}));
+    ASSERT_TRUE(s.has_contiguous_range_with_tombstones(o{50}, o{99}));
+
+    // Erasing the full range should work.
+    ASSERT_TRUE(s.erase_contiguous_range_with_tombstones(o{0}, o{99}));
+    EXPECT_TRUE(s.cleaned_ranges_with_tombstones.empty());
+}
+
+TEST(CompactionStateTest, TestContiguousTombstoneRangeManyNonUniform) {
+    compaction_state s;
+    // Ranges with varying sizes, similar to real compaction output.
+    s.cleaned_ranges_with_tombstones = {
+      tombstone_range(120198, 120282, 1000),
+      tombstone_range(120283, 120383, 1000),
+      tombstone_range(120384, 120495, 1000),
+      tombstone_range(120496, 120597, 1000),
+      tombstone_range(120598, 120707, 1000),
+      tombstone_range(120708, 120796, 1000),
+      tombstone_range(120797, 120893, 1000),
+      tombstone_range(120894, 120992, 1000),
+      tombstone_range(120993, 121091, 1000),
+      tombstone_range(121092, 121184, 1000),
+      tombstone_range(121185, 121187, 1000),
+      tombstone_range(121188, 121268, 1000),
+      tombstone_range(121269, 121374, 1000),
+      tombstone_range(121375, 121485, 1000),
+      tombstone_range(121486, 121587, 1000),
+      tombstone_range(121588, 121693, 1000),
+      tombstone_range(121694, 121785, 1000),
+      tombstone_range(121786, 121881, 1000),
+      tombstone_range(121882, 121979, 1000),
+    };
+
+    // The full range [120198, 121979] should be contiguous.
+    ASSERT_TRUE(s.has_contiguous_range_with_tombstones(o{120198}, o{121979}));
+
+    // Erasing should work.
+    ASSERT_TRUE(s.erase_contiguous_range_with_tombstones(o{120198}, o{121979}));
+    EXPECT_TRUE(s.cleaned_ranges_with_tombstones.empty());
+}

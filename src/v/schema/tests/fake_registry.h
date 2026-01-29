@@ -20,14 +20,15 @@ namespace schema {
 struct fake_store : public pandaproxy::schema_registry::schema_getter {
 public:
     ss::future<pandaproxy::schema_registry::stored_schema> get_subject_schema(
-      pandaproxy::schema_registry::subject sub,
+      pandaproxy::schema_registry::context_subject sub,
       std::optional<pandaproxy::schema_registry::schema_version> version,
       pandaproxy::schema_registry::include_deleted inc_dec) final;
     ss::future<pandaproxy::schema_registry::schema_definition>
-    get_schema_definition(pandaproxy::schema_registry::schema_id id) final;
+    get_schema_definition(
+      pandaproxy::schema_registry::context_schema_id id) final;
     ss::future<std::optional<pandaproxy::schema_registry::schema_definition>>
     maybe_get_schema_definition(
-      pandaproxy::schema_registry::schema_id id) final;
+      pandaproxy::schema_registry::context_schema_id id) final;
 
     std::vector<pandaproxy::schema_registry::stored_schema> schemas;
 };
@@ -53,14 +54,14 @@ public:
 
     ss::future<pandaproxy::schema_registry::schema_definition>
     get_schema_definition(
-      pandaproxy::schema_registry::schema_id id) const override;
+      pandaproxy::schema_registry::context_schema_id id) const override;
 
     ss::future<pandaproxy::schema_registry::stored_schema> get_subject_schema(
-      pandaproxy::schema_registry::subject sub,
+      pandaproxy::schema_registry::context_subject sub,
       std::optional<pandaproxy::schema_registry::schema_version> version)
       const override;
 
-    ss::future<pandaproxy::schema_registry::schema_id> create_schema(
+    ss::future<pandaproxy::schema_registry::context_schema_id> create_schema(
       pandaproxy::schema_registry::subject_schema unparsed) override;
 
     const std::vector<pandaproxy::schema_registry::stored_schema>& get_all();

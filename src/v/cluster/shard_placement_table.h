@@ -12,12 +12,12 @@
 #pragma once
 
 #include "absl/container/node_hash_map.h"
+#include "base/format_to.h"
 #include "base/seastarx.h"
-#include "cluster/shard_placement_table_probe.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
+#include "ssx/mutex.h"
 #include "storage/fwd.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/rwlock.hh>
 #include <seastar/core/sharded.hh>
@@ -42,7 +42,7 @@ namespace cluster {
 class shard_placement_table
   : public ss::peering_sharded_service<shard_placement_table> {
 private:
-    using probe = shard_placement_table_probe;
+    class probe;
 
 public:
     // assignment modification methods must be called on this shard
@@ -69,7 +69,9 @@ public:
         obsolete,
     };
 
-    enum class remake_partition_state {
+    // unused. This is from a reverted piece of code, retained for serde
+    // compatibility
+    enum class deprecated_remake_partition_state {
         // Default state, no remake necessary.
         none,
         // A request has been made to remake the partition.
@@ -84,19 +86,16 @@ public:
         model::revision_id log_revision;
         hosted_status status;
         model::shard_revision_id shard_revision;
-        remake_partition_state remake_state{remake_partition_state::none};
 
         shard_local_state(
           raft::group_id g,
           model::revision_id lr,
           hosted_status s,
-          model::shard_revision_id sr,
-          remake_partition_state nr = remake_partition_state::none)
+          model::shard_revision_id sr)
           : group(g)
           , log_revision(lr)
           , status(s)
-          , shard_revision(sr)
-          , remake_state(nr) {}
+          , shard_revision(sr) {}
 
         shard_local_state(
           const shard_local_assignment& as, hosted_status status)
@@ -118,8 +117,6 @@ public:
         wait_for_target_update,
         /// Partition must be created on this shard
         create,
-        /// Partition must be re-created on this shard
-        remake,
     };
 
     /// A struct holding both current shard-local and target states for an ntp.
@@ -131,6 +128,8 @@ public:
           std::optional<model::revision_id> expected_log_revision) const;
 
         friend std::ostream& operator<<(std::ostream&, const placement_state&);
+
+        fmt::iterator format_to(fmt::iterator) const;
 
         placement_state() = default;
 
@@ -261,13 +260,6 @@ public:
     ss::future<>
     finish_delete(const model::ntp&, model::revision_id expected_log_rev);
 
-    ss::future<std::error_code> set_remake_state(
-      const model::ntp& ntp,
-      remake_partition_state remake_state,
-      model::revision_id expected_log_rev);
-
-    probe* get_probe() const { return _probe.get(); }
-
 private:
     void assert_is_assignment_shard() const;
 
@@ -306,7 +298,7 @@ private:
     // only on shard 0, _ntp2entry will hold targets for all ntps on this node.
     struct entry_t {
         std::optional<shard_placement_target> target;
-        mutex mtx;
+        ssx::mutex mtx;
 
         entry_t()
           : mtx("shard_placement_table") {}
@@ -319,8 +311,6 @@ private:
 };
 
 std::ostream& operator<<(std::ostream&, shard_placement_table::hosted_status);
-std::ostream&
-operator<<(std::ostream&, shard_placement_table::remake_partition_state);
 
 /// Enum with all key types in the shard_placement key space. All keys in this
 /// key space must be prefixed with the serialized type. Enum type is
@@ -332,33 +322,33 @@ enum class shard_placement_kvstore_key_type {
     balancer_state = 3,
 };
 
-inline bytes current_state_kvstore_key(const raft::group_id group) {
-    iobuf buf;
-    serde::write(buf, shard_placement_kvstore_key_type::current_state);
-    serde::write(buf, group);
-    return iobuf_to_bytes(buf);
-}
+} // namespace cluster
 
-struct current_state_marker
-  : serde::envelope<
-      current_state_marker,
-      serde::version<1>,
-      serde::compat_version<0>> {
-    // NOTE: we need ntp in this marker because we want to be able to find and
-    // clean garbage kvstore state for old groups that have already been deleted
-    // from topic_table. Some of the partition kvstore state items use keys
-    // based on group id and some - based on ntp, so we need both.
-    model::ntp ntp;
-    model::revision_id log_revision;
-    model::shard_revision_id shard_revision;
-    bool is_complete = false;
-    shard_placement_table::remake_partition_state remake_state
-      = shard_placement_table::remake_partition_state::none;
-
-    auto serde_fields() {
-        return std::tie(
-          ntp, log_revision, shard_revision, is_complete, remake_state);
+template<>
+struct fmt::formatter<cluster::shard_placement_table::reconciliation_action>
+  : fmt::formatter<std::string_view> {
+    inline auto format(
+      cluster::shard_placement_table::reconciliation_action action,
+      format_context& ctx) const -> decltype(ctx.out()) {
+        std::string_view result = "unknown";
+        switch (action) {
+            using enum cluster::shard_placement_table::reconciliation_action;
+        case remove_partition:
+            result = "reconciliation_action::remove_partition";
+            break;
+        case remove_kvstore_state:
+            result = "reconciliation_action::remove_kvstore_state";
+            break;
+        case transfer:
+            result = "reconciliation_action::transfer";
+            break;
+        case wait_for_target_update:
+            result = "reconciliation_action::wait_for_target_update";
+            break;
+        case create:
+            result = "reconciliation_action::create";
+            break;
+        }
+        return formatter<std::string_view>::format(result, ctx);
     }
 };
-
-} // namespace cluster

@@ -51,15 +51,15 @@ class KubectlTool:
 
     def __init__(
         self,
-        redpanda,
+        redpanda: Any,
         *,
-        remote_uri=None,
-        namespace="redpanda",
-        cluster_id="",
-        cluster_provider="aws",
-        cluster_region="us-west-2",
-        tp_proxy=None,
-        tp_token=None,
+        remote_uri: str | None = None,
+        namespace: str = "redpanda",
+        cluster_id: str = "",
+        cluster_provider: str = "aws",
+        cluster_region: str = "us-west-2",
+        tp_proxy: str | None = None,
+        tp_token: str | None = None,
     ):
         self._redpanda = redpanda
         self._remote_uri = remote_uri
@@ -333,7 +333,7 @@ class KubectlTool:
         cmd = _kubectl + _kcmd
         return self._ssh_cmd(cmd, capture=capture)
 
-    def exec(self, remote_cmd, pod_name=None) -> str:
+    def exec(self, remote_cmd: str, pod_name: str | None = None) -> str:
         """Execute a command inside of a redpanda pod container.
 
         :param remote_cmd: string of bash command to run inside of pod container
@@ -353,9 +353,9 @@ class KubectlTool:
             "bash",
             "-c",
         ] + ['"' + remote_cmd + '"']
-        return self._ssh_cmd(cmd)  # type: ignore
+        return self._ssh_cmd(cmd)
 
-    def exists(self, remote_path, pod_name=None):
+    def exists(self, remote_path: str, pod_name: str | None = None) -> bool:
         self._install()
         if pod_name is None:
             pod_name = self._redpanda_broker_pod_name()

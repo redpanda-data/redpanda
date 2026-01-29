@@ -41,6 +41,21 @@ redpanda_cc_btest_no_seastar(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "detailed_error_test",
+    timeout = "short",
+    srcs = [
+        "detailed_error_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:detailed_error",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "object_pool_test",
     timeout = "short",

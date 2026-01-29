@@ -131,4 +131,35 @@ debug_service_impl::stop_stress_fiber(
     co_return proto::stop_stress_fiber_response{};
 }
 
+seastar::future<proto::admin::log_message_response>
+debug_service_impl::log_message(
+  serde::pb::rpc::context, proto::admin::log_message_request req) {
+    auto msg = req.get_message();
+    auto level = req.get_level();
+
+    using enum proto::admin::log_level;
+
+    ss::log_level ss_level = [=]() {
+        switch (level) {
+        case trace:
+            return ss::log_level::trace;
+        case debug:
+            return ss::log_level::debug;
+        case info:
+            return ss::log_level::info;
+        case warn:
+            return ss::log_level::warn;
+        case error:
+            return ss::log_level::error;
+        case unspecified:
+        default:
+            throw serde::pb::rpc::invalid_argument_exception(
+              "Invalid log level specified");
+        }
+    }();
+
+    log.log(ss_level, "{}", msg);
+    co_return proto::admin::log_message_response{};
+}
+
 } // namespace admin

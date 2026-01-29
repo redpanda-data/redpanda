@@ -11,6 +11,7 @@ redpanda_cc_library(
         "types.h",
     ],
     implementation_deps = [
+        "//src/v/ssx:async_algorithm",
         "//src/v/utils:to_string",
     ],
     visibility = ["//visibility:public"],

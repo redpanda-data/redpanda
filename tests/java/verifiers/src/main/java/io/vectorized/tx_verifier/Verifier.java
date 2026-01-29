@@ -568,8 +568,7 @@ class Verifier {
           "consumer should observe committed offset; committed offset: "
               + first_offset + ", group offset: " + group_offset);
 
-      var mapping
-          = stream.process(last_offset, x -> x.toUpperCase(), 1, topic2);
+      var mapping = stream.process(last_offset, x -> x.toUpperCase(), topic2);
       stream.close();
       stream = null;
 

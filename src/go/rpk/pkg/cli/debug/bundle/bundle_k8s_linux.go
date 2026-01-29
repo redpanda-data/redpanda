@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
+	"connectrpc.com/connect"
 	"github.com/hashicorp/go-multierror"
 	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
@@ -123,7 +125,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	}
 	zap.L().Debug("using admin API addresses", zap.Strings("addresses", adminAddresses))
 	steps = append(steps, []step{
-		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
+		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions, bp.connectionLimit),
 		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.cpuProfilerWait),
 		saveMetricsAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval, bp.metricsSampleCount),
 	}...)
@@ -316,7 +318,7 @@ func resolveNamespace(ns string) string {
 
 // saveClusterAdminAPICalls saves per-cluster Admin API requests in the 'admin/'
 // directory of the bundle zip.
-func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, partitions []topicPartitionFilter) step {
+func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, partitions []topicPartitionFilter, connectionLimit int32) step {
 	return func() error {
 		p = &config.RpkProfile{
 			KafkaAPI: config.RpkKafkaAPI{
@@ -367,6 +369,17 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 					return cl.AllClusterPartitions(ctx, true, false) // include defaults, and include disabled.
 				}
 				return requestAndSave(ctx, ps, "admin/cluster_partitions.json", f)
+			},
+			func() error {
+				return requestAndSave(ctx, ps, "admin/kafka_connections.json", func(ctx context.Context) (*adminv2.ListKafkaConnectionsResponse, error) {
+					resp, err := cl.ClusterService().ListKafkaConnections(ctx, &connect.Request[adminv2.ListKafkaConnectionsRequest]{Msg: &adminv2.ListKafkaConnectionsRequest{PageSize: connectionLimit}})
+
+					if err != nil {
+						return nil, err
+					} else {
+						return resp.Msg, nil
+					}
+				})
 			},
 		}
 		if partitions != nil {

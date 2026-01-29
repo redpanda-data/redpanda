@@ -30,6 +30,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		noConfirm   bool
 		outputFile  string
 		timeout     time.Duration
+		iotunePath  string
 	)
 	cmd := &cobra.Command{
 		Use:   "iotune",
@@ -62,6 +63,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				outputFile,
 				duration,
 				timeout,
+				iotunePath,
 			)
 			fmt.Println("Starting iotune...")
 			result := tuner.Tune()
@@ -71,9 +73,10 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&outputFile, "out", filepath.Join(filepath.Dir(config.DefaultRedpandaYamlPath), "io-config.yaml"), "The file path where the IO config will be written")
-	cmd.Flags().StringSliceVar(&directories, "directories", []string{}, "List of directories to evaluate")
+	cmd.Flags().StringSliceVar(&directories, "directories", []string{}, "Comma separated list of directories to evaluate")
 	cmd.Flags().DurationVar(&duration, "duration", 10*time.Minute, "Duration of tests (e.g. 300ms, 1.5s, 2h45m)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 1*time.Hour, "The maximum time after --duration to wait for iotune to complete (e.g. 300ms, 1.5s, 2h45m)")
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt if the iotune file already exists")
+	cmd.Flags().StringVar(&iotunePath, "iotune-path", "", "Path to the iotune executable (default: iotune-redpanda)")
 	return cmd
 }

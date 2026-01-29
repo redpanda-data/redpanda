@@ -17,11 +17,27 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/scheduling.hh>
 
-// manage cpu scheduling groups. scheduling groups are global, so one instance
-// of this class can be created at the top level and passed down into any server
-// and any shard that needs to schedule continuations into a given group.
+// Manages cpu scheduling groups. Use the singleton instance() method to access
+// scheduling groups from any server or shard that needs to schedule
+// continuations into a given group.
+//
+// IMPORTANT: Scheduling groups are intentionally never destroyed after
+// creation, as they may be captured by lingering continuations/timers and
+// accessed after destruction, leading to undefined behavior. The singleton
+// pattern enforces one instance per process, avoiding reactor limits (~16
+// groups) and metric registration conflicts.
 class scheduling_groups final {
 public:
+    /// Returns the singleton instance, creating it on first access.
+    static scheduling_groups& instance() {
+        static scheduling_groups instance = []() {
+            scheduling_groups groups;
+            groups.create_groups().get();
+            return groups;
+        }();
+        return instance;
+    }
+
     ss::future<> create_groups() {
         /**
          * Scheduling group to process requests received via the REST API of
@@ -108,25 +124,6 @@ public:
           "cluster_linking", 600);
     }
 
-    ss::future<> destroy_groups() {
-        co_await destroy_scheduling_group(_admin);
-        co_await destroy_scheduling_group(_raft_recv);
-        co_await destroy_scheduling_group(_kafka);
-        co_await destroy_scheduling_group(_cluster);
-        co_await destroy_scheduling_group(_cache_background_reclaim);
-        co_await destroy_scheduling_group(_compaction);
-        co_await destroy_scheduling_group(_raft_send);
-        co_await destroy_scheduling_group(_archival_upload);
-        co_await destroy_scheduling_group(_raft_heartbeats);
-        co_await destroy_scheduling_group(_self_test);
-        co_await destroy_scheduling_group(_fetch);
-        co_await destroy_scheduling_group(_transforms);
-        co_await destroy_scheduling_group(_datalake);
-        co_await destroy_scheduling_group(_produce);
-        co_await destroy_scheduling_group(_ts_read);
-        co_await destroy_scheduling_group(_cluster_linking);
-    }
-
     ss::scheduling_group admin_sg() { return _admin; }
     ss::scheduling_group raft_recv_sg() { return _raft_recv; }
     ss::scheduling_group kafka_sg() { return _kafka; }
@@ -188,6 +185,8 @@ public:
     }
 
 private:
+    scheduling_groups() = default;
+
     ss::scheduling_group _default{
       seastar::default_scheduling_group()}; // created and managed by seastar
     ss::scheduling_group _admin;

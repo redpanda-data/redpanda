@@ -63,3 +63,78 @@ BOOST_AUTO_TEST_CASE(test_invalid_url) {
     BOOST_REQUIRE_THROW(
       cluster::details::parse_url("vectorized.io"), std::invalid_argument);
 }
+
+void unset_all_kubernetes_env_vars() {
+    unsetenv("REDPANDA_METRICS_K8S_DEPLOYMENT_TYPE");
+    unsetenv("REDPANDA_METRICS_K8S_CHART_VERSION");
+    unsetenv("REDPANDA_METRICS_K8S_OPERATOR_IMAGE_VERSION");
+    unsetenv("REDPANDA_METRICS_K8S_VERSION");
+    unsetenv("REDPANDA_METRICS_K8S_ENVIRONMENT");
+    unsetenv("REDPANDA_METRICS_K8S_CLUSTER_ID");
+}
+
+BOOST_AUTO_TEST_CASE(test_kubernetes_metrics) {
+    unset_all_kubernetes_env_vars();
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(!km.has_value());
+    }
+    // empty check
+    setenv("REDPANDA_METRICS_K8S_DEPLOYMENT_TYPE", "", 1);
+    setenv("REDPANDA_METRICS_K8S_CHART_VERSION", "", 1);
+    setenv("REDPANDA_METRICS_K8S_OPERATOR_IMAGE_VERSION", "", 1);
+    setenv("REDPANDA_METRICS_K8S_VERSION", "", 1);
+    setenv("REDPANDA_METRICS_K8S_ENVIRONMENT", "", 1);
+    setenv("REDPANDA_METRICS_K8S_CLUSTER_ID", "", 1);
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(!km.has_value());
+    }
+    unset_all_kubernetes_env_vars();
+    setenv("REDPANDA_METRICS_K8S_DEPLOYMENT_TYPE", "operator", 1);
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(km.has_value());
+        BOOST_REQUIRE_EQUAL(km->deployment_type.value(), "operator");
+    }
+    unset_all_kubernetes_env_vars();
+    setenv("REDPANDA_METRICS_K8S_CHART_VERSION", "1.2.3", 1);
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(km.has_value());
+        BOOST_REQUIRE_EQUAL(km->chart_version.value(), "1.2.3");
+    }
+    unset_all_kubernetes_env_vars();
+    setenv(
+      "REDPANDA_METRICS_K8S_OPERATOR_IMAGE_VERSION",
+      "redpanda/operator:latest",
+      1);
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(km.has_value());
+        BOOST_REQUIRE_EQUAL(
+          km->operator_image_version.value(), "redpanda/operator:latest");
+    }
+    unset_all_kubernetes_env_vars();
+    setenv("REDPANDA_METRICS_K8S_VERSION", "v1.24.0", 1);
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(km.has_value());
+        BOOST_REQUIRE_EQUAL(km->k8s_version.value(), "v1.24.0");
+    }
+    unset_all_kubernetes_env_vars();
+    setenv("REDPANDA_METRICS_K8S_ENVIRONMENT", "azure", 1);
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(km.has_value());
+        BOOST_REQUIRE_EQUAL(km->k8s_environment.value(), "azure");
+    }
+    unset_all_kubernetes_env_vars();
+    setenv("REDPANDA_METRICS_K8S_CLUSTER_ID", "cluster-1234", 1);
+    {
+        auto km = cluster::get_kubernetes_metrics();
+        BOOST_REQUIRE(km.has_value());
+        BOOST_REQUIRE_EQUAL(km->k8s_cluster_id.value(), "cluster-1234");
+    }
+    unset_all_kubernetes_env_vars();
+}

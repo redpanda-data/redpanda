@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_topics/types.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/rwlock.hh>
@@ -23,12 +24,20 @@ enum class ctp_stm_key : uint8_t {
 
 struct [[nodiscard]] cluster_epoch_fence {
     // Units protecting the epoch state.
-    // If it's set to nullopt the batch has to be discarded
-    // because of the out of order epoch.
-    std::optional<ss::rwlock::holder> unit;
+    ss::rwlock::holder unit;
     // Term in which the batch is replicated.
     model::term_id term;
 };
+
+// The error returned when the CTP STM has seen a newer epoch than the one
+// attempting to be used.
+struct [[nodiscard]] stale_cluster_epoch {
+    // The lowest epoch we accept
+    cluster_epoch window_min;
+    // The highest epoch we accept
+    cluster_epoch window_max;
+};
+
 } // namespace cloud_topics
 
 template<>

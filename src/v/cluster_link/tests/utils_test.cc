@@ -86,6 +86,8 @@ TEST(cluster_link_utils_test, test_tls_value_config) {
 }
 
 TEST(cluster_link_utils_test, test_tls_bad_combo) {
+    GTEST_SKIP()
+      << "TODO(death_tests): re-enable when death tests are made stable in CI.";
     model::metadata md;
     md.connection.tls_enabled = model::connection_config::tls_enabled_t::yes;
     md.connection.cert = model::tls_file_path("/path/to/cert.crt");

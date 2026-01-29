@@ -273,6 +273,19 @@ std::optional<ss::sstring> validate_iceberg_topic_name_dot_replacement(
 }
 
 std::optional<ss::sstring>
+validate_iceberg_default_catalog_namespace(const std::vector<ss::sstring>& ns) {
+    if (ns.empty()) {
+        return "Iceberg namespace must contain at least one element";
+    }
+    for (const auto& s : ns) {
+        if (s.empty()) {
+            return "Iceberg namespace elements cannot be empty strings";
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
 validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
     auto auth_mode = config.iceberg_rest_catalog_authentication_mode();
     switch (auth_mode) {
@@ -418,6 +431,22 @@ validate_cloud_storage_cluster_name(const std::optional<ss::sstring>& input) {
             return "Only alphanumeric characters, hyphens, and underscores are "
                    "allowed";
         }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
+validate_cloud_topics_reconciliation_intervals(const configuration& config) {
+    auto min_interval = config.cloud_topics_reconciliation_min_interval();
+    auto max_interval = config.cloud_topics_reconciliation_max_interval();
+
+    if (min_interval > max_interval) {
+        return fmt::format(
+          "cloud_topics_reconciliation_min_interval ({}) must be less than or "
+          "equal to cloud_topics_reconciliation_max_interval ({})",
+          min_interval.count(),
+          max_interval.count());
     }
 
     return std::nullopt;

@@ -98,16 +98,10 @@ inline constexpr std::size_t checksum_envelope_header_size
   = envelope_header_size + 4;
 
 template<typename T, typename Version = const serde::version_t&>
-concept is_envelope = requires {
-    { T::redpanda_serde_version } -> std::same_as<Version>;
-    { T::redpanda_serde_compat_version } -> std::same_as<Version>;
-};
+concept is_envelope = T::redpanda_inherits_from_envelope;
 
 template<typename T>
 concept is_checksum_envelope = is_envelope<T>
                                && T::redpanda_serde_build_checksum;
-
-template<typename T>
-concept inherits_from_envelope = T::redpanda_inherits_from_envelope;
 
 } // namespace serde

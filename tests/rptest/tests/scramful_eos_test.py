@@ -30,6 +30,7 @@ def on_delivery(err, msg):
 
 class ScramfulEosTest(RedpandaTest):
     topics = [TopicSpec(name="topic1")]
+    BOB_PASSWORD = "boberto1234567890"
 
     def __init__(self, test_context):
         extra_rp_conf = {
@@ -69,7 +70,7 @@ class ScramfulEosTest(RedpandaTest):
                 "sasl.mechanism": algorithm,
                 "security.protocol": "SASL_PLAINTEXT",
                 "sasl.username": "bob",
-                "sasl.password": "bob",
+                "sasl.password": self.BOB_PASSWORD,
             }
         )
         producer.produce(
@@ -85,7 +86,7 @@ class ScramfulEosTest(RedpandaTest):
         username, password, algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
         rpk = RpkTool(self.redpanda)
-        rpk.sasl_create_user("bob", "bob", algorithm)
+        rpk.sasl_create_user("bob", self.BOB_PASSWORD, algorithm)
 
         try:
             self.write_by_bob(algorithm)
@@ -102,7 +103,7 @@ class ScramfulEosTest(RedpandaTest):
         username, password, algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
         rpk = RpkTool(self.redpanda)
-        rpk.sasl_create_user("bob", "bob", algorithm)
+        rpk.sasl_create_user("bob", self.BOB_PASSWORD, algorithm)
         rpk.sasl_allow_principal(
             "User:bob",
             ["write", "read", "describe"],
@@ -123,7 +124,7 @@ class ScramfulEosTest(RedpandaTest):
         username, password, algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
         rpk = RpkTool(self.redpanda)
-        rpk.sasl_create_user("bob", "bob", algorithm)
+        rpk.sasl_create_user("bob", self.BOB_PASSWORD, algorithm)
         rpk.sasl_allow_principal(
             "User:bob",
             ["write", "read", "describe"],
@@ -149,7 +150,7 @@ class ScramfulEosTest(RedpandaTest):
                 "transactional.id": tx_id,
                 "security.protocol": "SASL_PLAINTEXT",
                 "sasl.username": "bob",
-                "sasl.password": "bob",
+                "sasl.password": self.BOB_PASSWORD,
             }
         )
         producer.init_transactions()
@@ -159,7 +160,7 @@ class ScramfulEosTest(RedpandaTest):
         username, password, algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
         rpk = RpkTool(self.redpanda)
-        rpk.sasl_create_user("bob", "bob", algorithm)
+        rpk.sasl_create_user("bob", self.BOB_PASSWORD, algorithm)
         rpk.sasl_allow_principal(
             "User:bob",
             ["write", "read", "describe"],
@@ -186,7 +187,7 @@ class ScramfulEosTest(RedpandaTest):
         username, password, algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
         rpk = RpkTool(self.redpanda)
-        rpk.sasl_create_user("bob", "bob", algorithm)
+        rpk.sasl_create_user("bob", self.BOB_PASSWORD, algorithm)
         rpk.sasl_allow_principal(
             "User:bob",
             ["write", "read", "describe"],
@@ -217,7 +218,7 @@ class ScramfulEosTest(RedpandaTest):
         username, password, algorithm = self.redpanda.SUPERUSER_CREDENTIALS
 
         rpk = RpkTool(self.redpanda)
-        rpk.sasl_create_user("bob", "bob", algorithm)
+        rpk.sasl_create_user("bob", self.BOB_PASSWORD, algorithm)
         rpk.sasl_allow_principal(
             "User:bob",
             ["write", "read", "describe"],

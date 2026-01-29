@@ -73,13 +73,16 @@ id_allocator_stm::sync(model::timeout_clock::duration timeout) {
 ss::future<id_allocator_stm::stm_allocation_result>
 id_allocator_stm::reset_next_id(
   int64_t id, model::timeout_clock::duration timeout) {
-    return _lock
-      .with(
-        timeout, [this, id, timeout]() { return advance_state(id, timeout); })
-      .handle_exception_type(
-        [](const ss::semaphore_timed_out&) -> stm_allocation_result {
-            return raft::make_error_code(raft::errc::timeout);
-        });
+    return ss::with_gate(_gate, [this, id, timeout]() {
+        return _lock
+          .with(
+            timeout,
+            [this, id, timeout]() { return advance_state(id, timeout); })
+          .handle_exception_type(
+            [](const ss::semaphore_timed_out&) -> stm_allocation_result {
+                return raft::make_error_code(raft::errc::timeout);
+            });
+    });
 }
 
 ss::future<id_allocator_stm::stm_allocation_result>
@@ -121,12 +124,14 @@ ss::future<bool> id_allocator_stm::set_state(
 
 ss::future<id_allocator_stm::stm_allocation_result>
 id_allocator_stm::allocate_id(model::timeout_clock::duration timeout) {
-    return _lock
-      .with(timeout, [this, timeout]() { return do_allocate_id(timeout); })
-      .handle_exception_type(
-        [](const ss::semaphore_timed_out&) -> stm_allocation_result {
-            return raft::make_error_code(raft::errc::timeout);
-        });
+    return ss::with_gate(_gate, [this, timeout] {
+        return _lock
+          .with(timeout, [this, timeout]() { return do_allocate_id(timeout); })
+          .handle_exception_type(
+            [](const ss::semaphore_timed_out&) -> stm_allocation_result {
+                return raft::make_error_code(raft::errc::timeout);
+            });
+    });
 }
 
 ss::future<id_allocator_stm::stm_allocation_result>

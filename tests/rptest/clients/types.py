@@ -188,6 +188,9 @@ class TopicSpec:
     def __str__(self):
         return self.name
 
+    def __hash__(self):
+        return hash(self.name)
+
     def __eq__(self, other: object):
         if not isinstance(other, TopicSpec):
             return False

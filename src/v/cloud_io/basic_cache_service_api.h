@@ -113,6 +113,21 @@ public:
       unsigned int read_ahead = default_read_ahead)
       = 0;
 
+    /// Get a range of a cached value as a stream if it exists
+    ///
+    /// \param key is a cache key
+    /// \param offset is the byte offset to start reading from
+    /// \param length is the number of bytes to read
+    /// \param read_buffer_size is a read buffer size for the iostream
+    /// \param read_ahead number of pages that can be read asynchronously
+    virtual ss::future<std::optional<cache_item_stream>> get_stream_range(
+      std::filesystem::path key,
+      uint64_t offset,
+      uint64_t length,
+      size_t read_buffer_size = default_read_buffer_size,
+      unsigned int read_ahead = default_read_ahead)
+      = 0;
+
     /// Add new value to the cache, overwrite if it's already exist
     ///
     /// \param key is a cache key

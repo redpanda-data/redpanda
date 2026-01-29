@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
@@ -23,6 +22,8 @@
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/weak_ptr.hh>
+
+#include <expected>
 
 namespace cloud_topics::l0 {
 
@@ -64,7 +65,7 @@ struct read_request : ss::weakly_referencable<read_request<Clock>> {
     /// Per-request logger
     basic_retry_chain_logger<Clock> rtc_logger;
 
-    using response_t = checked<dataplane_query_result, errc>;
+    using response_t = std::expected<dataplane_query_result, errc>;
 
     /// The promise is used to signal to the caller
     /// after the data is fetched

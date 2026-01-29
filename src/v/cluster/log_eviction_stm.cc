@@ -170,18 +170,17 @@ log_eviction_stm::sync_kafka_start_offset_override(
     /// most recent known version of the special batch. This is particularly
     /// useful to know if the start offset is up to date in the case
     /// leadership has recently changed for example.
+    auto holder = _gate.hold();
     auto term = _raft->term();
-    return sync(timeout).then(
-      [this, term](bool success) -> result<kafka::offset, std::error_code> {
-          if (!success) {
-              if (term != _raft->term()) {
-                  return errc::not_leader;
-              } else {
-                  return errc::timeout;
-              }
-          }
-          return kafka_start_offset_override();
-      });
+    auto sync_res = co_await sync(timeout);
+    if (!sync_res) {
+        if (term != _raft->term()) {
+            co_return errc::not_leader;
+        } else {
+            co_return errc::timeout;
+        }
+    }
+    co_return kafka_start_offset_override();
 }
 
 model::offset log_eviction_stm::effective_start_offset() const {
@@ -204,6 +203,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::truncate(
   kafka::offset kafka_start_offset,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto holder = _gate.hold();
     /// Create the special prefix_truncate batch, it is a model::record_batch
     /// with exactly one record within it, the point at which to truncate
     storage::record_batch_builder builder(

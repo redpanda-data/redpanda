@@ -82,7 +82,7 @@ public:
     //
     // Callers are expected to use the identifier used when creating or loading
     // the table.
-    virtual ss::future<checked<std::nullopt_t, errc>>
+    virtual ss::future<checked<table_metadata, errc>>
     commit_txn(const table_identifier& table_ident, transaction) = 0;
 
     virtual ss::future<> stop() = 0;

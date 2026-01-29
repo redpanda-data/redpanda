@@ -229,7 +229,7 @@ ss::future<chunked_vector<R>> do_alter_topics_configuration(
       = co_await ctx.topics_frontend().update_topic_properties(
         std::move(updates),
         model::timeout_clock::now()
-          + config::shard_local_cfg().alter_topic_cfg_timeout_ms());
+          + config::shard_local_cfg().internal_rpc_request_timeout_ms());
     for (auto& res : update_results) {
         responses.push_back(
           R{

@@ -214,7 +214,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         if not compacted:
             self.start_consumer(compacted=compacted, tolerate_data_loss=unclean_abort)
         # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
 
         for i in range(self.moves):
             self._random_move_and_cancel(
@@ -252,7 +252,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self.start_producer()
         self.start_consumer(compacted=True, tolerate_data_loss=unclean_abort)
         # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
 
         partition = random.randint(0, self.partition_count - 1)
         for i in range(self.moves):
@@ -389,7 +389,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self.start_producer()
         self.start_consumer(compacted=False, tolerate_data_loss=False)
         # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
         current_movements = {}
         partitions = list(range(0, self.partition_count))
         for _ in range(self.partition_count - 1):
@@ -436,7 +436,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         self.start_consumer(compacted=False, tolerate_data_loss=False)
 
         # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
         current_movements = {}
         partitions = list(range(0, self.partition_count))
         for _ in range(self.partition_count - 1):
@@ -515,7 +515,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
 
         replica_ids = [a["node_id"] for a in prev_assignments]
         # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(10)
+        self._throttle_recovery(0)
         to_stop = None
         for n in self.redpanda.nodes:
             id = self.redpanda.node_id(n)
@@ -591,7 +591,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
         # throttle recovery to prevent partition move from finishing
 
         for i in range(0, 10):
-            self._throttle_recovery(10)
+            self._throttle_recovery(0)
             should_cancel = i % 2
             assignments = self._get_node_assignments(admin, topic, partition)
             prev_assignments = assignments.copy()

@@ -15,9 +15,11 @@
 #include "cluster/drain_manager.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
+#include "cluster/types.h"
 #include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "rpc/types.h"
 #include "serde/async.h"
 #include "serde/rw/bool_class.h"
 #include "serde/rw/envelope.h"
@@ -197,6 +199,42 @@ struct topic_status
 };
 
 /**
+ * Status for the automatic decommissioning of dead nodes
+ */
+
+struct node_liveness_report_data {
+    // map between a given node id and how long ago that node was last seen
+    // no entry will be present for a given node if it has not been seen
+    absl::flat_hash_map<model::node_id, rpc::clock_type::duration>
+      node_id_to_last_seen;
+};
+
+struct node_liveness_report
+  : serde::envelope<
+      node_liveness_report,
+      serde::version<0>,
+      serde::compat_version<0>>
+  , node_liveness_report_data {
+    static constexpr int8_t current_version = 0;
+
+    using node_liveness_report_data::node_liveness_report_data;
+
+    // NOLINTNEXTLINE hicpp-explicit-conversions
+    node_liveness_report(node_liveness_report_data data) noexcept
+      : node_liveness_report_data{std::move(data)} {
+        static_assert(
+          sizeof(node_liveness_report_data) == sizeof(node_liveness_report));
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const node_liveness_report&);
+
+    auto serde_fields() { return std::tie(node_id_to_last_seen); }
+
+    friend bool
+    operator==(const node_liveness_report& a, const node_liveness_report& b);
+};
+
+/**
  * Node health report is collected built based on node local state at given
  * instance of time
  */
@@ -211,12 +249,14 @@ struct node_health_report {
     node::local_state local_state;
     topics_t topics;
     std::optional<drain_manager::drain_status> drain_status;
+    node_liveness_report node_liveness_report;
 
     node_health_report(
       model::node_id,
       node::local_state,
       chunked_vector<topic_status>,
-      std::optional<drain_manager::drain_status>);
+      std::optional<drain_manager::drain_status>,
+      struct node_liveness_report);
 
     node_health_report copy() const;
 
@@ -234,15 +274,17 @@ using node_health_report_ptr
 struct node_health_report_serde
   : serde::envelope<
       node_health_report_serde,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     model::node_id id;
     node::local_state local_state;
     chunked_vector<topic_status> topics;
     std::optional<drain_manager::drain_status> drain_status;
+    node_liveness_report node_liveness_report;
 
     auto serde_fields() {
-        return std::tie(id, local_state, topics, drain_status);
+        return std::tie(
+          id, local_state, topics, drain_status, node_liveness_report);
     }
 
     node_health_report_serde() = default;
@@ -251,14 +293,17 @@ struct node_health_report_serde
       model::node_id id,
       node::local_state local_state,
       chunked_vector<topic_status> topics,
-      std::optional<drain_manager::drain_status> drain_status)
+      std::optional<drain_manager::drain_status> drain_status,
+      struct node_liveness_report node_liveness_report)
       : id(id)
       , local_state(std::move(local_state))
       , topics(std::move(topics))
-      , drain_status(drain_status) {}
+      , drain_status(drain_status)
+      , node_liveness_report(std::move(node_liveness_report)) {}
 
     node_health_report_serde copy() const {
-        return {id, local_state, topics.copy(), drain_status};
+        return {
+          id, local_state, topics.copy(), drain_status, node_liveness_report};
     }
 
     explicit node_health_report_serde(const node_health_report& hr);
@@ -268,7 +313,8 @@ struct node_health_report_serde
           id,
           std::move(local_state),
           std::move(topics),
-          std::move(drain_status)};
+          drain_status,
+          std::move(node_liveness_report)};
     }
 
     friend std::ostream&
@@ -421,6 +467,10 @@ struct cluster_health_overview {
     // A list of known nodes which are down from the point of view of the health
     // subsystem.
     std::vector<model::node_id> nodes_down;
+    // A list of nodes that exceed disk usage alerts defined by
+    // storage_space_alert_free_threshold_percent and
+    // storage_space_alert_free_threshold_bytes
+    std::vector<model::node_id> high_disk_usage_nodes;
     // A list of nodes that have been booted up in recovery mode.
     std::vector<model::node_id> nodes_in_recovery_mode;
     std::vector<model::ntp> leaderless_partitions;

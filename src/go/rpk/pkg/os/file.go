@@ -10,6 +10,7 @@
 package os
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -146,7 +147,37 @@ func EditTmpYAMLFile[T any](fs afero.Fs, v T) (T, error) {
 	if len(read) == 0 || string(read) == "\n" {
 		return update, fmt.Errorf("no changes made")
 	}
-	if err := yaml.Unmarshal(read, &update); err != nil {
+	if err := decodeStrictYAML(read, &update); err != nil {
+		return update, fmt.Errorf("unable to parse edited file: %w", err)
+	}
+	return update, nil
+}
+
+// decodeStrict decodes YAML from b into v, returning an error if there are
+// unknown fields.
+func decodeStrictYAML(b []byte, v any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	return dec.Decode(v)
+}
+
+// EditTmpYAMLFileWithEncoder is like EditTmpYAMLFile but accepts a custom
+// encoder function to generate the initial YAML content. This allows for
+// customization such as adding documentation comments.
+func EditTmpYAMLFileWithEncoder[T any](fs afero.Fs, v T, encode func(T) ([]byte, error)) (T, error) {
+	var update T
+	f, err := encode(v)
+	if err != nil {
+		return update, fmt.Errorf("unable to encode: %w", err)
+	}
+	read, err := EditTmpFile(fs, f)
+	if err != nil {
+		return update, fmt.Errorf("unable to edit: %w", err)
+	}
+	if len(read) == 0 || string(read) == "\n" {
+		return update, fmt.Errorf("no changes made")
+	}
+	if err := decodeStrictYAML(read, &update); err != nil {
 		return update, fmt.Errorf("unable to parse edited file: %w", err)
 	}
 	return update, nil

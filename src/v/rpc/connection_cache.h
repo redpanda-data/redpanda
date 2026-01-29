@@ -18,8 +18,8 @@
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
+#include "ssx/mutex.h"
 #include "utils/backoff_policy.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -210,7 +210,7 @@ private:
     }
 
     struct coordinator_state {
-        mutex mtx; // to add/remove nodes
+        ssx::mutex mtx; // to add/remove nodes
         connection_allocation_strategy alloc_strat;
     };
 

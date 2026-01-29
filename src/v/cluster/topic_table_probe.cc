@@ -19,9 +19,10 @@
 
 namespace cluster {
 
-topic_table_probe::topic_table_probe(const topic_table& topic_table)
+topic_table_probe::topic_table_probe(
+  const topic_table& topic_table, model::node_id node_id)
   : _topic_table(topic_table)
-  , _node_id(config::node().node_id().value()) {
+  , _node_id(node_id) {
     setup_metrics();
 }
 

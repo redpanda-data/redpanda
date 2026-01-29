@@ -138,7 +138,7 @@ ss::future<> feature_backend::save_local_snapshot() {
 }
 
 ss::future<> feature_backend::do_save_local_snapshot(
-  storage::api& storage, const features::feature_table_snapshot& snapshot) {
+  storage::api& storage, features::feature_table_snapshot snapshot) {
     // kvstore is shard-local: must be on a consistent shard every
     // time for snapshot storage to work.
     vassert(ss::this_shard_id() == ss::shard_id{0}, "wrong shard");

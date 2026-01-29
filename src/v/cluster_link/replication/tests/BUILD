@@ -38,9 +38,9 @@ redpanda_cc_gtest(
         "//src/v/model/tests:random",
         "//src/v/random:generators",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:mutex",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random",
-        "//src/v/utils:mutex",
         "@seastar",
     ],
 )

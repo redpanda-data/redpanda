@@ -143,7 +143,7 @@ ss::future<std::unique_ptr<ss::http::reply>> file_handler::handle(
         return read(file, std::move(req), std::move(rep))
           .then([mime_type](std::unique_ptr<ss::http::reply> rep) {
               // read incorrectly sets the mime_type, fix it up.
-              rep->set_mime_type(mime_type);
+              rep->set_content_type(mime_type);
               return rep;
           });
     }

@@ -33,6 +33,7 @@ namespace security::oidc {
 result<authentication_data> authenticate(
   const jwt& jwt,
   const principal_mapping_rule& mapping,
+  const group_claim_policy& group_policy,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -66,16 +67,24 @@ result<authentication_data> authenticate(
         return principal.assume_error();
     }
 
-    return authentication_data{
+    auto groups = group_policy_apply(group_policy, jwt);
+    if (!groups.has_value()) {
+        return groups.error();
+    }
+    vlog(seclog.trace, "Groups found in claim: {}", groups.value());
+
+    return {
       std::move(principal).assume_value(),
       ss::sstring{jwt.sub().value_or("")},
-      exp};
+      exp,
+      std::move(groups).value()};
 }
 
 result<authentication_data> authenticate(
   const jws& jws,
   const verifier& verifier,
   const principal_mapping_rule& mapping,
+  const group_claim_policy& group_policy,
   std::string_view issuer,
   std::string_view audience,
   std::chrono::seconds clock_skew_tolerance,
@@ -87,8 +96,9 @@ result<authentication_data> authenticate(
     }
 
     auto jwt = std::move(jwt_res).assume_value();
+    vlog(seclog.debug, "Claims found in JWT: {}", jwt.get_claim_names());
     auto a_res = authenticate(
-      jwt, mapping, issuer, audience, clock_skew_tolerance, now);
+      jwt, mapping, group_policy, issuer, audience, clock_skew_tolerance, now);
     if (a_res.has_error()) {
         vlog(
           seclog.warn,
@@ -127,6 +137,7 @@ public:
           jws.assume_value(),
           _service.get_verifier(),
           _service.get_principal_mapping_rule(),
+          _service.get_group_claim_policy(),
           issuer.assume_value(),
           _service.audience(),
           _service.clock_skew_tolerance(),
@@ -192,7 +203,7 @@ ss::future<result<bytes>> sasl_authenticator::authenticate(bytes auth_bytes) {
         co_return security::errc::invalid_credentials;
     }
 
-    _auth_data = auth_res.assume_value();
+    _auth_data = std::move(auth_res).assume_value();
     _audit_user.type_id = audit::user::type::user;
     _audit_user.name = _auth_data.principal.name();
     _audit_user.uid = _auth_data.sub;

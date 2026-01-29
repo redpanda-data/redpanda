@@ -34,6 +34,7 @@ redpanda_test_cc_library(
         "//src/v/base",
         "//src/v/cloud_storage_clients",
         "//src/v/config",
+        "//src/v/http:utils",
         "//src/v/http/tests:utils",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:flat_hash_set",

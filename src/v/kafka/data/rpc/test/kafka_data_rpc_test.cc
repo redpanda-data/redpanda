@@ -154,6 +154,18 @@ public:
           .get();
     }
 
+    result<consume_reply, cluster::errc> consume(
+      model::topic_partition tp,
+      kafka::offset start_offset,
+      kafka::offset max_offset,
+      size_t min_bytes = 0,
+      size_t max_bytes = std::numeric_limits<size_t>::max()) {
+        return _kd->client()
+          .local()
+          .consume(tp, start_offset, max_offset, min_bytes, max_bytes, 1s)
+          .get();
+    }
+
 private:
     record_batches batches_for(model::node_id node, const model::ntp& ntp) {
         auto manager = node == self_node ? _kd->local_partition_manager()
@@ -249,6 +261,58 @@ TEST_P(KafkaDataRpcTest, ClientCanRequestPartitionOffsets) {
     auto p_offsets_2
       = offsets_2[not_existing.tp.topic][not_existing.tp.partition];
     EXPECT_EQ(p_offsets_2.err, cluster::errc::topic_not_exists);
+}
+
+TEST_P(KafkaDataRpcTest, ClientCanConsume) {
+    auto ntp = make_ntp("foo");
+    create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
+
+    // Produce some batches
+    auto batches = record_batches::make();
+    cluster::errc ec = produce(ntp, batches);
+    EXPECT_EQ(ec, cluster::errc::success)
+      << cluster::error_category().message(int(ec));
+
+    // Verify batches were produced to the leader
+    EXPECT_EQ(leader_batches(ntp), batches);
+
+    // Consume from offset 0 to max
+    auto consume_result = consume(
+      ntp.tp,
+      kafka::offset(0),
+      kafka::offset::max(),
+      0,
+      std::numeric_limits<size_t>::max());
+
+    ASSERT_TRUE(consume_result.has_value());
+    auto reply = std::move(consume_result.value());
+
+    EXPECT_EQ(reply.err, cluster::errc::success)
+      << cluster::error_category().message(int(reply.err));
+    EXPECT_EQ(reply.tp, ntp.tp);
+    EXPECT_EQ(reply.batches.size(), batches.size());
+
+    // Verify consumed batches match produced batches
+    auto batches_it = batches.underlying.begin();
+    for (const auto& consumed_batch : reply.batches) {
+        EXPECT_EQ(
+          consumed_batch.header().record_count,
+          batches_it->header().record_count);
+        ++batches_it;
+    }
+
+    // Test consuming non-existent topic
+    auto not_existing = make_ntp("bar");
+    auto ne_result = consume(
+      not_existing.tp,
+      kafka::offset(0),
+      kafka::offset::max(),
+      0,
+      std::numeric_limits<size_t>::max());
+
+    ASSERT_TRUE(ne_result.has_value());
+    auto ne_reply = std::move(ne_result.value());
+    EXPECT_EQ(ne_reply.err, cluster::errc::topic_not_exists);
 }
 
 INSTANTIATE_TEST_SUITE_P(

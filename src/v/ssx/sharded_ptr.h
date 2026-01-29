@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "base/vassert.h"
-#include "utils/mutex.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -154,7 +154,7 @@ private:
     }
     ss::shard_id _shard;
     std::vector<std::shared_ptr<T>> _state;
-    mutex _mutex{"sharded_ptr"};
+    ssx::mutex _mutex{"sharded_ptr"};
 };
 
 } // namespace ssx

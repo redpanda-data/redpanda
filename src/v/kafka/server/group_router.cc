@@ -270,9 +270,10 @@ group_router::offset_fetch(offset_fetch_request request) {
     offset_fetch_response response;
     // Collect requests by shard
     for (auto& group : request.data.groups) {
-        requests_by_shard
-          .try_emplace(shard_for(group.group_id), offset_fetch_request{})
-          .first->second.data.groups.push_back(std::move(group));
+        auto [it, _] = requests_by_shard.try_emplace(
+          shard_for(group.group_id), offset_fetch_request{});
+        it->second.data.groups.push_back(std::move(group));
+        it->second.data.require_stable = request.data.require_stable;
     }
     // Collect responses
     for (auto& [key, request] : requests_by_shard) {

@@ -19,7 +19,12 @@ import builtins
 import google.protobuf.descriptor
 import google.protobuf.message
 from ........ import proto
+import sys
 import typing
+if sys.version_info >= (3, 10):
+    import typing as typing_extensions
+else:
+    import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
@@ -42,7 +47,7 @@ class GetOffsetsRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['partition', b'partition']) -> None:
         ...
-global___GetOffsetsRequest = GetOffsetsRequest
+Global___GetOffsetsRequest: typing_extensions.TypeAlias = GetOffsetsRequest
 
 @typing.final
 class GetOffsetsResponse(google.protobuf.message.Message):
@@ -53,10 +58,10 @@ class GetOffsetsResponse(google.protobuf.message.Message):
     OFFSETS_FIELD_NUMBER: builtins.int
 
     @property
-    def offsets(self) -> global___Offsets:
+    def offsets(self) -> Global___Offsets:
         """The offsets for this ntp in the metastore."""
 
-    def __init__(self, *, offsets: global___Offsets | None=...) -> None:
+    def __init__(self, *, offsets: Global___Offsets | None=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['offsets', b'offsets']) -> builtins.bool:
@@ -64,7 +69,7 @@ class GetOffsetsResponse(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['offsets', b'offsets']) -> None:
         ...
-global___GetOffsetsResponse = GetOffsetsResponse
+Global___GetOffsetsResponse: typing_extensions.TypeAlias = GetOffsetsResponse
 
 @typing.final
 class Offsets(google.protobuf.message.Message):
@@ -82,4 +87,4 @@ class Offsets(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['next_offset', b'next_offset', 'start_offset', b'start_offset']) -> None:
         ...
-global___Offsets = Offsets
+Global___Offsets: typing_extensions.TypeAlias = Offsets

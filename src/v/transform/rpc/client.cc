@@ -838,7 +838,7 @@ std::invoke_result_t<Func> client::retry(Func&& func) {
 }
 
 ss::future<> client::update_wasm_binary_size() {
-    mutex::units _ = co_await _wasm_binary_max_size_updater_mu.get_units();
+    ssx::mutex::units _ = co_await _wasm_binary_max_size_updater_mu.get_units();
     auto tn = model::topic_namespace_view(model::wasm_binaries_internal_ntp);
     auto config = _topic_metadata->find_topic_cfg(tn);
     if (!config) {

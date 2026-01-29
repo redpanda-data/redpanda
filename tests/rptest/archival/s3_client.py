@@ -132,11 +132,25 @@ class S3Client:
                     populate_handler(h.baseFilename, h.level)
 
     def make_client(self):
+        # Disable automatic checksum calculation for GCS to avoid aws-chunked
+        # Content-Encoding. GCS stores and returns content with this encoding
+        # as-is, which breaks consumers expecting decoded content.
+        if self._is_gcs:
+            checksum_config = {
+                "request_checksum_calculation": "when_required",
+                "response_checksum_validation": "when_required",
+            }
+        else:
+            checksum_config = {}
+
         cfg = Config(
             region_name=self._region,
             signature_version=self._signature_version,
             retries={"max_attempts": 10, "mode": "adaptive"},
-            s3={"addressing_style": f"{self._addressing_style}"},
+            s3={
+                "addressing_style": f"{self._addressing_style}",
+            },
+            **checksum_config,
             use_fips_endpoint=True if self._use_fips_endpoint else None,
         )
         cl = boto3.client(
@@ -186,7 +200,7 @@ class S3Client:
 
         return
 
-    def create_bucket(self, name):
+    def create_bucket(self, name: str):
         """Create bucket in S3"""
         try:
             res = self._cli.create_bucket(
@@ -224,7 +238,7 @@ class S3Client:
             err_msg=f"Bucket {name} didn't become visible to ListObjectsvv2 requests",
         )
 
-    def empty_and_delete_bucket(self, name, parallel=False):
+    def empty_and_delete_bucket(self, name: str, parallel: bool = False) -> None:
         failed_deletions = self.empty_bucket(name, parallel=parallel)
 
         assert len(failed_deletions) == 0
@@ -404,22 +418,6 @@ class S3Client:
                 raise
 
     @retry_on_slowdown()
-    def _put_object(self, bucket, key, content, is_bytes=False):
-        """Put object to S3"""
-        try:
-            if not is_bytes:
-                payload = bytes(content, encoding="utf-8")
-            else:
-                payload = content
-            return self._cli.put_object(Bucket=bucket, Key=key, Body=payload)
-        except ClientError as err:
-            self.logger.debug(f"error response putting {bucket}/{key} {err}")
-            if err.response["Error"]["Code"] == "SlowDown":
-                raise SlowDown()
-            else:
-                raise
-
-    @retry_on_slowdown()
     def _copy_single_object(self, bucket, src, dst):
         """Copy object to another location within the bucket"""
         try:
@@ -438,12 +436,23 @@ class S3Client:
             else:
                 raise
 
-    def get_object_data(self, bucket, key):
+    def get_object_data(self, bucket: str, key: str) -> bytes:
         resp = self._get_object(bucket, key)
         return resp["Body"].read()
 
-    def put_object(self, bucket, key, data, is_bytes=False):
-        self._put_object(bucket, key, data, is_bytes)
+    @retry_on_slowdown()
+    def put_object(self, bucket: str, key: str, data: str | bytes) -> None:
+        """Put object to S3"""
+        try:
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            self._cli.put_object(Bucket=bucket, Key=key, Body=data)
+        except ClientError as err:
+            self.logger.debug(f"error response putting {bucket}/{key} {err}")
+            if err.response["Error"]["Code"] == "SlowDown":
+                raise SlowDown()
+            else:
+                raise
 
     def copy_object(self, bucket, src, dst, validate=False, validation_timeout_sec=30):
         """Copy object inside a bucket and optionally poll the destination until
@@ -505,10 +514,10 @@ class S3Client:
 
     def list_objects(
         self,
-        bucket,
-        topic: Optional[str] = None,
-        prefix: Optional[str] = None,
-        client=None,
+        bucket: str,
+        topic: str | None = None,
+        prefix: str | None = None,
+        client: object | None = None,
     ) -> Iterator[ObjectMetadata]:
         """
         :param bucket: S3 bucket name

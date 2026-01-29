@@ -24,7 +24,7 @@ ss::future<ss::stop_iteration> filter::operator()(model::record_batch b) {
     if (!b.compressed()) {
         co_return co_await filter_and_rewrite_with_sink(comp, std::move(b));
     }
-    auto batch = co_await model::decompress_batch(std::move(b));
+    auto batch = co_await model::decompress_batch(b);
 
     co_return co_await filter_and_rewrite_with_sink(comp, std::move(batch));
 }

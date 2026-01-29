@@ -271,6 +271,8 @@ public:
 
     virtual model::offset cleanly_compacted_prefix_offset() const = 0;
 
+    virtual model::offset transaction_free_prefix_offset() const = 0;
+
     virtual bool needs_compaction() const = 0;
 
 private:

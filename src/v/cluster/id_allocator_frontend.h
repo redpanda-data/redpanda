@@ -149,7 +149,10 @@ public:
     ss::future<reset_id_allocator_reply>
     reset_next_id(model::producer_id, model::timeout_clock::duration timeout);
 
-    ss::future<> stop() { return _allocator_router.stop(); }
+    ss::future<> stop() {
+        co_await _allocator_router.stop();
+        co_await _id_reset_router.stop();
+    }
 
     allocate_id_router& allocator_router() { return _allocator_router; }
     reset_id_router& id_reset_router() { return _id_reset_router; }

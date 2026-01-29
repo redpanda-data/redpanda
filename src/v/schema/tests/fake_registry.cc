@@ -16,6 +16,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/util/log.hh>
 
 namespace {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cert-err58-cpp)
@@ -32,7 +33,7 @@ bool same_schema(
 } // namespace
 
 ss::future<ppsr::stored_schema> schema::fake_store::get_subject_schema(
-  ppsr::subject sub,
+  ppsr::context_subject sub,
   std::optional<ppsr::schema_version> version,
   ppsr::include_deleted) {
     std::optional<ppsr::stored_schema> found;
@@ -55,7 +56,7 @@ ss::future<ppsr::stored_schema> schema::fake_store::get_subject_schema(
 }
 
 ss::future<ppsr::schema_definition>
-schema::fake_store::get_schema_definition(ppsr::schema_id id) {
+schema::fake_store::get_schema_definition(ppsr::context_schema_id id) {
     for (const auto& s : schemas) {
         if (s.id == id) {
             co_return s.schema.def().share();
@@ -65,7 +66,7 @@ schema::fake_store::get_schema_definition(ppsr::schema_id id) {
 }
 
 ss::future<std::optional<ppsr::schema_definition>>
-schema::fake_store::maybe_get_schema_definition(ppsr::schema_id id) {
+schema::fake_store::maybe_get_schema_definition(ppsr::context_schema_id id) {
     for (const auto& s : schemas) {
         if (s.id == id) {
             co_return s.schema.def().share();
@@ -81,12 +82,13 @@ void schema::fake_registry::maybe_throw_injected_failure() const {
 }
 
 ss::future<ppsr::schema_definition>
-schema::fake_registry::get_schema_definition(ppsr::schema_id id) const {
+schema::fake_registry::get_schema_definition(ppsr::context_schema_id id) const {
     maybe_throw_injected_failure();
     return _store.get_schema_definition(id);
 }
 ss::future<ppsr::stored_schema> schema::fake_registry::get_subject_schema(
-  ppsr::subject sub, std::optional<ppsr::schema_version> version) const {
+  ppsr::context_subject sub,
+  std::optional<ppsr::schema_version> version) const {
     maybe_throw_injected_failure();
     return _store.get_subject_schema(sub, version, ppsr::include_deleted::no);
 }
@@ -94,7 +96,7 @@ ss::future<ppsr::schema_getter*> schema::fake_registry::getter() const {
     maybe_throw_injected_failure();
     co_return &_store;
 }
-ss::future<ppsr::schema_id>
+ss::future<ppsr::context_schema_id>
 schema::fake_registry::create_schema(ppsr::subject_schema unparsed) {
     maybe_throw_injected_failure();
     // This is wrong, but simple for our testing.

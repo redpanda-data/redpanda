@@ -9,16 +9,19 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "absl/container/flat_hash_set.h"
 #include "base/format_to.h"
 #include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/client/direct_consumer/api_types.h"
 #include "kafka/client/direct_consumer/data_queue.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
-#include "utils/mutex.h"
+#include "model/record.h"
+#include "ssx/mutex.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -28,6 +31,8 @@
 #include <fmt/format.h>
 
 #include <optional>
+
+class fetcher_accessor;
 
 namespace kafka::client {
 class direct_consumer;
@@ -298,6 +303,42 @@ private:
       fetch_response resp,
       const topic_partition_map<epoch_set>& epochs,
       const chunked_vector<partitions_to_process>& partitions);
+
+    ss::future<std::optional<fetched_partition_data>>
+    process_partition_response(
+      const model::topic& topic,
+      partition_data partition_data,
+      const topic_partition_map<epoch_set>& epochs,
+      /* in&out */ fetch_response_content& result,
+      /* in&out */
+      chunked_hash_map<model::topic, absl::flat_hash_set<model::partition_id>>&
+        dirty_partitions);
+
+    struct partition_response_actions {
+        // error if any
+        kafka::error_code error{kafka::error_code::none};
+        // should the partition's fetch offsets be reset s.t. they will be set
+        // on the next list offsets
+        bool should_reset_offsets{false};
+        // indicates that the entire fetch needs a metadata update, probably a
+        // leadership transfer
+        bool should_update_metadata{false};
+        // should the fetch be included in the next round of incremental fetch
+        // requests
+        bool is_dirty{false};
+        // if present, this fetch data will be added to the response queue
+        std::optional<fetched_partition_data> maybe_fetched_partition_data{
+          std::nullopt};
+    };
+
+    // unit testable function to make decisions on what update actions should be
+    // done considering given response
+    static partition_response_actions do_process_partition_response(
+      partition_data partition_data,
+      chunked_vector<model::record_batch> response_batches,
+      size_t response_size,
+      epoch_set epoch_set);
+
     /**
      * Returns false if the partition was not found or the fetch offset was
      * not updated.
@@ -322,7 +363,7 @@ private:
     topic_partition_map<model::partition_id> _partitions_to_forget;
     ss::condition_variable _partitions_updated;
     ss::gate _gate;
-    mutex _state_lock;
+    ssx::mutex _state_lock;
     /**
      * A fetcher epoch will be incremented and assigned to every assigned
      * partition. This allows for different assignment instances of a tp to be
@@ -334,6 +375,8 @@ private:
      */
     fetcher_epoch _epoch{0};
     ss::abort_source _as;
+
+    friend class ::fetcher_accessor;
 };
 } // namespace kafka::client
 

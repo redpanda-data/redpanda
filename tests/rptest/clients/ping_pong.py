@@ -1,23 +1,26 @@
 import random
 import time
+from collections.abc import Callable, Generator
+from logging import Logger
 
 from confluent_kafka import (
     OFFSET_BEGINNING,
     Consumer,
     KafkaError,
     KafkaException,
+    Message,
     Producer,
     TopicPartition,
 )
 
 
 class SyncProducer:
-    def __init__(self, bootstrap):
+    def __init__(self, bootstrap: str) -> None:
         self.bootstrap = bootstrap
-        self.producer = None
-        self.last_msg = None
+        self.producer: Producer | None = None
+        self.last_msg: Message | None = None
 
-    def init(self):
+    def init(self) -> None:
         self.producer = Producer(
             {
                 "bootstrap.servers": self.bootstrap,
@@ -27,13 +30,16 @@ class SyncProducer:
             }
         )
 
-    def on_delivery(self, err, msg):
+    def on_delivery(self, err: KafkaError | None, msg: Message) -> None:
         if err is not None:
             raise KafkaException(err)
         self.last_msg = msg
 
-    def produce(self, topic, partition, key, value, timeout_s):
+    def produce(
+        self, topic: str, partition: int, key: str, value: str, timeout_s: float
+    ) -> int:
         self.last_msg = None
+        assert self.producer is not None
         self.producer.produce(
             topic,
             key=key.encode("utf-8"),
@@ -52,12 +58,12 @@ class SyncProducer:
 
 
 class LogReader:
-    def __init__(self, bootstrap):
+    def __init__(self, bootstrap: str) -> None:
         self.bootstrap = bootstrap
-        self.consumer = None
-        self.stream = None
+        self.consumer: Consumer | None = None
+        self.stream: Generator[Message, None, None] | None = None
 
-    def init(self, group, topic, partition):
+    def init(self, group: str, topic: str, partition: int) -> None:
         self.consumer = Consumer(
             {
                 "bootstrap.servers": self.bootstrap,
@@ -70,27 +76,36 @@ class LogReader:
         self.consumer.assign([TopicPartition(topic, partition, OFFSET_BEGINNING)])
         self.stream = self.stream_gen()
 
-    def stream_gen(self):
+    def stream_gen(self) -> Generator[Message, None, None]:
+        assert self.consumer is not None
         while True:
             msgs = self.consumer.consume(timeout=10)
             for msg in msgs:
                 yield msg
 
-    def read_until(self, check, timeout_s):
+    def read_until(
+        self, check: Callable[[int, str, str], bool], timeout_s: float
+    ) -> None:
+        assert self.stream is not None
         begin = time.time()
         while True:
             if time.time() - begin > timeout_s:
                 raise KafkaException(KafkaError(KafkaError._TIMED_OUT))
             for msg in self.stream:
                 offset = msg.offset()
-                value = msg.value().decode("utf-8")
-                key = msg.key().decode("utf-8")
+                assert offset is not None
+                value_bytes = msg.value()
+                assert value_bytes is not None
+                value = value_bytes.decode("utf-8")
+                key_bytes = msg.key()
+                assert key_bytes is not None
+                key = key_bytes.decode("utf-8")
                 if check(offset, key, value):
                     return
 
 
-def expect(offset, key, value):
-    def check(ro, rk, rv):
+def expect(offset: int, key: str, value: str) -> Callable[[int, str, str], bool]:
+    def check(ro: int, rk: str, rv: str) -> bool:
         if ro < offset:
             return False
         if ro == offset:
@@ -105,7 +120,9 @@ def expect(offset, key, value):
 
 
 class PingPong:
-    def __init__(self, brokers, topic, partition, logger):
+    def __init__(
+        self, brokers: list[str], topic: str, partition: int, logger: Logger
+    ) -> None:
         self.brokers = brokers
         random.shuffle(self.brokers)
         bootstrap = ",".join(self.brokers)
@@ -117,13 +134,13 @@ class PingPong:
         self.topic = topic
         self.partition = partition
 
-    def ping_pong(self, timeout_s=5, retries=0):
+    def ping_pong(self, timeout_s: float = 5, retries: int = 0) -> None:
         key = str(random.randint(0, 1000))
         value = str(random.randint(0, 1000))
 
         start = time.time()
 
-        offset = None
+        offset: int | None = None
         count = 0
         while True:
             count += 1
@@ -139,10 +156,14 @@ class PingPong:
             except KafkaException as e:
                 if count > retries:
                     raise
-                if e.args[0].code() == KafkaError._MSG_TIMED_OUT:
-                    pass
-                elif e.args[0].code() == KafkaError._TIMED_OUT:
-                    pass
+                kafka_error = e.args[0]
+                if isinstance(kafka_error, KafkaError):
+                    error_code = kafka_error.code()
+                    if (
+                        error_code != KafkaError._MSG_TIMED_OUT
+                        and error_code != KafkaError._TIMED_OUT
+                    ):
+                        raise
                 else:
                     raise
                 random.shuffle(self.brokers)
@@ -155,6 +176,7 @@ class PingPong:
                 self.producer.init()
                 self.logger.info(f"produce request {key}={value} timed out")
 
+        assert offset is not None
         self.consumer.read_until(expect(offset, key, value), timeout_s=timeout_s)
         latency = time.time() - start
         self.logger.info(

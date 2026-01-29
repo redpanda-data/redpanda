@@ -1,2 +1,8 @@
 leak:seastar::net::conntrack::handle::~handle
 leak:fips/self_test.c
+
+# There is a known issue with the OpenSSL memory allocator in 3.5.4
+# and OpenSSL-FIPS 3.1.2. The issue is fixed in later versions.
+# This suppression should be revisited/removed once both OpenSSL
+# versions have been updated.
+leak:crypto/mem.c

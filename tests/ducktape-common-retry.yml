@@ -4,7 +4,15 @@
 #
 # See https://redpandadata.atlassian.net/wiki/x/CAAIRg
 
-zero-drift: &zero-drift
+common_pc_definitions: &common_pc_definitions
+  statistical-default:
+    mode:
+      statistical:
+        compare_with_branch: dev
+        time_window: 2w
+        reject_threshold: 0.01
+        trust_threshold: 0.5
+        max_retry_sessions: 5
   zero-drift:
     mode:
       dynamic_reliability:

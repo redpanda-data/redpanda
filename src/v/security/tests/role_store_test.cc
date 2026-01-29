@@ -13,264 +13,337 @@
 #include "security/role.h"
 #include "security/role_store.h"
 
-#include <boost/algorithm/string.hpp>
 #include <boost/range/irange.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
-#include <fmt/ostream.h>
 
 #include <algorithm>
 #include <vector>
 
 namespace security {
 
-BOOST_AUTO_TEST_CASE(role_test) {
-    const role_member mem0{role_member_type::user, "member0"};
-    const role_member mem1{role_member_type::user, "member1"};
+namespace {
 
-    std::vector<role_member> mems{mem0, mem1, mem0};
-    role::container_type members{mems.begin(), mems.end()};
-    const role rol{std::move(members)};
-
-    for (const auto& m : mems) {
-        BOOST_CHECK(rol.members().contains(m));
-        BOOST_CHECK_EQUAL(rol.members().count(m), 1);
-    }
-
-    auto rep = fmt::format("{}", rol);
-    BOOST_CHECK(rep.find("{User}:{member0}") != std::string::npos);
-    BOOST_CHECK(rep.find("{User}:{member1}") != std::string::npos);
+absl::node_hash_set<role_name>
+make_role_name_set(const role_store::roles_range& range) {
+    return {range.begin(), range.end()};
 }
 
-BOOST_AUTO_TEST_CASE(role_store_test) {
-    const role_member mem0{role_member_type::user, "m0"};
-    const role_member mem1{role_member_type::user, "m1"};
+} // namespace
 
-    std::vector<role_member> mems{mem0, mem1};
-    const role role0{{mem0, mem1}};
-    const role role1{{mem1}};
+// This simple role store fixture prepopulates a role store with a single role
+// that contains a single member.
+struct simple_role_store_fixture {
+    simple_role_store_fixture()
+      : test_role_member{role_member_type::user, "test_user"}
+      , test_role{{test_role_member}}
+      , test_role_name("test_role") {
+        BOOST_REQUIRE(store.put(test_role_name, test_role));
+        BOOST_REQUIRE(store.size() == 1);
+    }
 
-    auto role0_copy = role0;
-    auto role1_copy = role1;
-
-    BOOST_CHECK_NE(role0, role1);
-    BOOST_CHECK_NE(role0_copy, role1_copy);
-
-    const role_name copied("copied");
-    const role_name moved("moved");
-
+    role_member test_role_member;
+    role test_role;
+    role_name test_role_name;
     role_store store;
-    BOOST_CHECK(store.put(copied, role0));
-    store.put(moved, std::move(role0_copy));
+};
 
-    BOOST_REQUIRE(store.get(copied).has_value());
-    BOOST_CHECK_EQUAL(store.get(copied).value(), role0);
+// Verify that the role in the fixture was correctly inserted into the store.
+BOOST_FIXTURE_TEST_CASE(role_store_put_role_test, simple_role_store_fixture) {
+    BOOST_CHECK_MESSAGE(
+      store.contains(test_role_name), "Role should exist in store");
 
-    BOOST_REQUIRE(store.get(moved).has_value());
-    BOOST_CHECK_EQUAL(store.get(moved).value(), role0);
+    auto result = store.get(test_role_name);
+    BOOST_CHECK_MESSAGE(
+      result.has_value(), "Role should be retrievable from store");
+    BOOST_CHECK_EQUAL(result.value(), test_role);
 
-    // update roles
-    BOOST_CHECK(store.remove(copied));
-    BOOST_CHECK(store.remove(moved));
-    BOOST_CHECK(store.put(copied, role1));
-    store.put(moved, std::move(role1_copy));
+    // Verify that the member is associated with the role
+    auto role_names = make_role_name_set(
+      store.roles_for_member(test_role_member));
+    BOOST_CHECK_MESSAGE(
+      role_names.contains(test_role_name), "Member should belong to the role");
+}
 
-    BOOST_REQUIRE(store.get(copied).has_value());
-    BOOST_CHECK_EQUAL(store.get(copied).value(), role1);
+// Verify that a role can be removed from the store.
+BOOST_FIXTURE_TEST_CASE(
+  role_store_remove_role_test, simple_role_store_fixture) {
+    bool removed = store.remove(test_role_name);
+    BOOST_CHECK_MESSAGE(removed, "Failed to remove role from store");
+    BOOST_CHECK_MESSAGE(
+      !store.contains(test_role_name),
+      "Role should no longer exist after removal");
+    BOOST_CHECK_MESSAGE(
+      !store.get(test_role_name).has_value(),
+      "Getting removed role should return no value");
+    BOOST_CHECK_MESSAGE(
+      !store.remove(test_role_name),
+      "Removing non-existent role should return false");
 
-    BOOST_REQUIRE(store.get(moved).has_value());
-    BOOST_CHECK_EQUAL(store.get(moved).value(), role1);
+    auto role_names = make_role_name_set(
+      store.roles_for_member(test_role_member));
+    BOOST_CHECK_MESSAGE(
+      !role_names.contains(test_role_name),
+      "Member should no longer belong to the removed role");
+}
 
-    // remove a role
-    BOOST_CHECK(store.contains(copied));
-    BOOST_CHECK(store.remove(copied));
-    BOOST_CHECK(!store.remove(copied));
-    BOOST_CHECK(!store.contains(copied));
-    BOOST_REQUIRE(!store.get(copied).has_value());
-    BOOST_CHECK(store.contains(moved));
+// Verify that a role can be retrieved from the store.
+BOOST_FIXTURE_TEST_CASE(role_store_get_role_test, simple_role_store_fixture) {
+    BOOST_CHECK_MESSAGE(
+      store.contains(test_role_name), "Role should exist in store");
+    auto result = store.get(test_role_name);
+    BOOST_CHECK_MESSAGE(
+      result.has_value(), "Role should be retrievable from store");
+    BOOST_CHECK_EQUAL(result.value(), test_role);
+}
+
+// Verify that a role can be updated in the store by first removing it and then
+// inserting the updated role with the same name.
+BOOST_FIXTURE_TEST_CASE(
+  role_store_update_flow_test, simple_role_store_fixture) {
+    const role_member new_member{role_member_type::user, "new_member"};
+    const role updated_role{{new_member}};
+    BOOST_REQUIRE_NE(test_role, updated_role);
+
+    BOOST_REQUIRE(store.remove(test_role_name));
+    BOOST_REQUIRE(store.put(test_role_name, updated_role));
+
+    BOOST_CHECK_MESSAGE(
+      store.get(test_role_name).has_value(),
+      "Updated role should be retrievable from store");
+    BOOST_CHECK_EQUAL(store.get(test_role_name).value(), updated_role);
+
+    {
+        auto role_names = make_role_name_set(
+          store.roles_for_member(test_role_member));
+        BOOST_CHECK_MESSAGE(
+          !role_names.contains(test_role_name),
+          "Old member should no longer be associated with the updated role");
+    }
+    {
+        auto role_names = make_role_name_set(
+          store.roles_for_member(new_member));
+        BOOST_CHECK_MESSAGE(
+          role_names.contains(test_role_name),
+          "New member should be associated with the updated role");
+    }
+}
+
+// Verify that the role store only inserts new roles and will not overwrite
+// existing ones. A role must be explicitly removed from the store by name
+// before a new role with the same name can be inserted.
+BOOST_FIXTURE_TEST_CASE(
+  role_store_no_overwrite_test, simple_role_store_fixture) {
+    const role_member new_member{role_member_type::user, "new_member"};
+    const role updated_role{{new_member}};
+    BOOST_REQUIRE_NE(test_role, updated_role);
+
+    BOOST_CHECK_MESSAGE(
+      !store.put(test_role_name, updated_role),
+      "Inserting a role with an existing name should fail");
+
+    auto result = store.get(test_role_name);
+    BOOST_CHECK_MESSAGE(
+      result.has_value(),
+      "Original role should still be retrievable from store");
+    BOOST_CHECK_EQUAL(result.value(), test_role);
+
+    {
+        auto role_names = make_role_name_set(
+          store.roles_for_member(test_role_member));
+        BOOST_CHECK_MESSAGE(
+          role_names.contains(test_role_name),
+          "Old member should still be associated with the role");
+    }
+    {
+        auto role_names = make_role_name_set(
+          store.roles_for_member(new_member));
+        BOOST_CHECK_MESSAGE(
+          !role_names.contains(test_role_name),
+          "New member should not be associated with the role");
+    }
+}
+
+// Verify that empty roles (roles with no members) can be stored and retrieved.
+BOOST_FIXTURE_TEST_CASE(role_store_empty_role_test, simple_role_store_fixture) {
+    const role empty_role;
+    const role_name empty_role_name("empty_role");
+    BOOST_REQUIRE_MESSAGE(
+      empty_role.members().empty(), "Role should have no members");
+
+    bool inserted = store.put(empty_role_name, empty_role);
+    BOOST_CHECK_MESSAGE(inserted, "Failed to put empty role in store");
+    auto r = store.get(empty_role_name);
+    BOOST_CHECK_MESSAGE(
+      r.has_value(), "Empty role should be retrievable from store");
+    BOOST_CHECK_EQUAL(r.value(), empty_role);
+}
+
+// Verify that the role store can be cleared of all roles.
+BOOST_FIXTURE_TEST_CASE(role_store_clear_test, simple_role_store_fixture) {
+    BOOST_REQUIRE_EQUAL(store.size(), 1);
     store.clear();
-    BOOST_CHECK(!store.contains(moved));
+    BOOST_CHECK_EQUAL(store.size(), 0);
 }
 
-BOOST_AUTO_TEST_CASE(role_store_no_update) {
-    const role_member m{role_member_type::user, "m0"};
-    const role r{{m}};
-    const role_name n{"r"};
-
-    role_store store;
-
-    {
-        BOOST_CHECK(store.put(n, r));
-        auto o = store.get(n);
-        BOOST_REQUIRE(o.has_value());
-        BOOST_CHECK(o.value() == r);
-    }
-
-    {
-        BOOST_CHECK(!store.put(n, role{}));
-        auto o = store.get(n);
-        BOOST_REQUIRE(o.has_value());
-        BOOST_CHECK(o.value() == r);
-    }
-
-    BOOST_CHECK(store.remove(n));
-
-    {
-        BOOST_CHECK(store.put(n, role{}));
-        auto o = store.get(n);
-        BOOST_REQUIRE(o.has_value());
-        BOOST_CHECK(o.value() == role{});
-    }
-}
-
-BOOST_AUTO_TEST_CASE(role_store_empty_role_test) {
-    role_store store;
-    const role r0;
-    const role_name r0_name("r0");
-    BOOST_CHECK(r0.members().empty());
-    BOOST_CHECK(store.put(r0_name, r0));
-    BOOST_CHECK(!store.put(r0_name, r0));
-    auto r = store.get(r0_name);
-    BOOST_REQUIRE(r.has_value());
-    BOOST_CHECK_EQUAL(r.value(), r0);
-}
-
+// Verify that all operations on an empty role_store behave correctly:
+// queries return empty/nullopt, and removal operations return false.
 BOOST_AUTO_TEST_CASE(role_store_empty_store) {
     role_store store;
     const role_name n{"foo"};
     const role_member m{role_member_type::user, "bar"};
+    BOOST_REQUIRE_EQUAL(store.size(), 0);
 
     BOOST_CHECK(!store.get(n).has_value());
     BOOST_CHECK(store.roles_for_member(m).empty());
-    BOOST_CHECK(store
-                  .range([&m](const auto& e) {
-                      return role_store::has_member(e, m)
-                             || role_store::name_prefix_filter(e, "f");
-                  })
-                  .empty());
+    BOOST_CHECK(store.range([](const auto&) { return true; }).empty());
     BOOST_CHECK(!store.remove(n));
     BOOST_CHECK(!store.contains(n));
+
+    auto range = store.roles_for_member(m);
+    BOOST_CHECK_MESSAGE(
+      range.empty(),
+      "No roles should be associated with any member in an empty store");
 }
 
-BOOST_AUTO_TEST_CASE(role_store_range_test) {
-    const role_member mem0{role_member_type::user, "member0"};
-    const role_member mem1{role_member_type::user, "member1"};
+// Shared fixture for role_store range query tests.
+// Prepopulates a role store with two roles (role0 and role1), each containing
+// the same two members (member0 and member1).
+struct role_store_range_fixture {
+    role_store_range_fixture()
+      : mem0{role_member_type::user, "member0"}
+      , mem1{role_member_type::user, "member1"}
+      , role0_name("role0")
+      , role1_name("role1")
+      , other_role_name("other_role") {
+        const role role_with_both{{mem0, mem1}};
 
-    std::vector<role_member> mems{mem0, mem1};
-    const role role0{{mem0, mem1}};
-    const role role1{{mem0, mem1}};
-
-    BOOST_CHECK_EQUAL(role0, role1);
-
-    const role_name r0_name("role0");
-    const role_name r1_name("role1");
+        BOOST_REQUIRE(store.put(role0_name, role_with_both));
+        BOOST_REQUIRE(store.put(role1_name, role_with_both));
+        BOOST_REQUIRE(store.put(other_role_name, role_with_both));
+        BOOST_REQUIRE_EQUAL(store.size(), 3);
+    }
 
     role_store store;
-    store.put(r0_name, role0);
-    store.put(r1_name, role1);
+    role_member mem0;
+    role_member mem1;
+    role_name role0_name;
+    role_name role1_name;
+    role_name other_role_name;
+};
 
-    auto prefix_pred = [](std::string_view pfx) {
-        return [pfx](const auto& e) {
-            return role_store::name_prefix_filter(e, pfx);
-        };
-    };
+// Verify that a range query with a predicate that always returns true
+// return all roles in the store.
+BOOST_FIXTURE_TEST_CASE(range_all, role_store_range_fixture) {
+    auto pred = [](const auto&) { return true; };
 
-    auto member_prefix_pred =
-      [](const role_member& mem, std::string_view filter) {
-          return [&mem, filter](const auto& e) {
-              return role_store::has_member(e, mem)
-                     && role_store::name_prefix_filter(e, filter);
-          };
-      };
+    auto result = store.range(pred);
+    absl::node_hash_set<role_name> got{result.begin(), result.end()};
 
-    auto check_range_query =
-      [](auto& rng, absl::node_hash_set<role_name> expected) -> bool {
-        absl::node_hash_set<role_name> got{rng.begin(), rng.end()};
-        return got == expected;
-    };
-
-    {
-        auto res = store.range(prefix_pred("rol"));
-        BOOST_CHECK(check_range_query(res, {r0_name, r1_name}));
-    }
-
-    {
-        auto res = store.range(prefix_pred(""));
-        BOOST_CHECK(check_range_query(res, {r0_name, r1_name}));
-    }
-
-    {
-        // both roles contain mem1 but we also filter on the name
-        auto res = store.range(member_prefix_pred(mem1, r0_name()));
-        BOOST_CHECK(check_range_query(res, {r0_name}));
-    }
+    BOOST_CHECK_EQUAL(got.size(), 3);
+    BOOST_CHECK(got.contains(role0_name));
+    BOOST_CHECK(got.contains(role1_name));
+    BOOST_CHECK(got.contains(other_role_name));
 }
 
-BOOST_AUTO_TEST_CASE(role_store_roles_for_member) {
-    const role_member mem0{role_member_type::user, "m0"};
-    const role_member mem1{role_member_type::user, "m1"};
-    const role_member mem2{role_member_type::user, "m2"};
+// Verify that a range query with a predicate that always returns false
+// returns no roles.
+BOOST_FIXTURE_TEST_CASE(range_none, role_store_range_fixture) {
+    auto pred = [](const auto&) { return false; };
 
-    const role role0{{mem0, mem1, mem2}};
-    const role role1{{mem1, mem2}};
-    const role role2{{mem2}};
+    auto result = store.range(pred);
+    BOOST_CHECK_MESSAGE(
+      result.empty(), "Expected no roles to match the false predicate");
+}
 
-    const role_name r0_name("role0");
-    const role_name r1_name("role1");
-    const role_name r2_name("role2");
-
-    BOOST_CHECK_NE(role0, role1);
-    BOOST_CHECK_NE(role0, role2);
-    BOOST_CHECK_NE(role1, role2);
-
-    role_store store;
-    BOOST_CHECK(store.put(r0_name, role0));
-    BOOST_CHECK(store.put(r1_name, role1));
-    BOOST_CHECK(store.put(r2_name, role2));
-
-    auto check_membership =
-      [](const auto& rng, absl::node_hash_set<role_name> expected) {
-          absl::node_hash_set<role_name> got{rng.begin(), rng.end()};
-          return got == expected;
-      };
-
-    {
-        auto itr = store.roles_for_member(mem0);
-        BOOST_CHECK(check_membership(itr, {r0_name}));
-    }
-
-    {
-        auto itr = store.roles_for_member(mem1);
-        BOOST_CHECK(check_membership(itr, {r0_name, r1_name}));
-    }
-
-    {
-        auto itr = store.roles_for_member(mem2);
-        BOOST_CHECK(check_membership(itr, {r0_name, r1_name, r2_name}));
-    }
-
-    store.remove(r0_name);
-
-    {
-        auto itr = store.roles_for_member(mem0);
-        BOOST_CHECK(check_membership(itr, {}));
-    }
-
-    {
-        auto itr = store.roles_for_member(mem1);
-        BOOST_CHECK(check_membership(itr, {r1_name}));
-    }
-
-    {
-        auto itr = store.roles_for_member(mem2);
-        BOOST_CHECK(check_membership(itr, {r1_name, r2_name}));
-    }
-
-    store.clear();
-    for (const auto& m : {mem0, mem1, mem2}) {
-        auto itr = store.roles_for_member(m);
-        BOOST_CHECK(itr.empty());
+// Verify that range queries can filter roles by name prefix.
+BOOST_FIXTURE_TEST_CASE(
+  range_filters_by_name_prefix, role_store_range_fixture) {
+    auto pred = [](const auto& e) {
+        return role_store::name_prefix_filter(e, "rol");
     };
+
+    auto result = store.range(pred);
+    absl::node_hash_set<role_name> got{result.begin(), result.end()};
+
+    BOOST_CHECK_EQUAL(got.size(), 2);
+    BOOST_CHECK(got.contains(role0_name));
+    BOOST_CHECK(got.contains(role1_name));
+    BOOST_CHECK_MESSAGE(
+      !got.contains(other_role_name),
+      "other_role should not match the 'rol' prefix");
+}
+
+// Verify that an empty name prefix matches all roles in the store.
+BOOST_FIXTURE_TEST_CASE(
+  range_with_empty_prefix_returns_all, role_store_range_fixture) {
+    auto pred = [](const auto& e) {
+        return role_store::name_prefix_filter(e, "");
+    };
+
+    auto result = store.range(pred);
+    absl::node_hash_set<role_name> got{result.begin(), result.end()};
+
+    BOOST_CHECK_EQUAL(got.size(), 3);
+    BOOST_CHECK(got.contains(role0_name));
+    BOOST_CHECK(got.contains(role1_name));
+    BOOST_CHECK(got.contains(other_role_name));
+}
+
+// Verify that a name prefix that matches no roles returns no results.
+BOOST_FIXTURE_TEST_CASE(
+  range_with_different_prefix_returns_none, role_store_range_fixture) {
+    auto pred = [](const auto& e) {
+        return role_store::name_prefix_filter(e, "different_prefix");
+    };
+
+    auto result = store.range(pred);
+    BOOST_CHECK_MESSAGE(
+      result.empty(), "Expected no roles to match the different prefix filter");
+}
+
+// Verify that a range query can filter by member presence and returns all
+// roles containing that member.
+BOOST_FIXTURE_TEST_CASE(range_filters_by_member, role_store_range_fixture) {
+    auto result = store.range(
+      [this](const auto& e) { return role_store::has_member(e, mem0); });
+    absl::node_hash_set<role_name> got{result.begin(), result.end()};
+
+    BOOST_CHECK_EQUAL(got.size(), 3);
+    BOOST_CHECK(got.contains(role0_name));
+    BOOST_CHECK(got.contains(role1_name));
+    BOOST_CHECK(got.contains(other_role_name));
+}
+
+// Verify that a range query filtering by a member that doesn't belong to any
+// roles returns no results.
+BOOST_FIXTURE_TEST_CASE(
+  range_filters_by_nonexistent_member, role_store_range_fixture) {
+    role_member nonexistent_member{role_member_type::user, "nonexistent"};
+
+    auto result = store.range([&nonexistent_member](const auto& e) {
+        return role_store::has_member(e, nonexistent_member);
+    });
+    BOOST_CHECK_MESSAGE(
+      result.empty(), "Expected no roles to contain the nonexistent member");
+}
+
+// Verify that range queries can filter by both member presence and name prefix.
+// All 3 roles contain mem1, but only other_role matches the name prefix filter.
+BOOST_FIXTURE_TEST_CASE(
+  range_filters_by_member_and_prefix, role_store_range_fixture) {
+    auto pred = [this](const auto& e) {
+        return role_store::has_member(e, mem1)
+               && role_store::name_prefix_filter(e, "other");
+    };
+
+    auto result = store.range(pred);
+    absl::node_hash_set<role_name> got{result.begin(), result.end()};
+
+    BOOST_CHECK_EQUAL(got.size(), 1);
+    BOOST_CHECK_MESSAGE(
+      got.contains(other_role_name),
+      "Expected to find other_role_name in the filtered results");
 }
 
 BOOST_AUTO_TEST_CASE(role_store_big_store) {
@@ -310,7 +383,7 @@ BOOST_AUTO_TEST_CASE(role_store_big_store) {
                       role_mems.insert(m);
                   }
               }
-              store.put(std::move(n), std::move(role_mems));
+              store.put(std::move(n), role_mems);
           }
           return store;
       }();

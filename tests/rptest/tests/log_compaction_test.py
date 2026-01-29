@@ -6,29 +6,40 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import os
 import threading
 import time
+import math
 from dataclasses import dataclass
+from typing import List, Tuple
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
+import ducktape.errors
 
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda_installer import (
+    RedpandaVersion,
     RedpandaVersionLine,
+    RedpandaVersionTriple,
 )
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.util import wait_until_result
+
+import confluent_kafka as ck
 
 
 class LogCompactionTestBase(PartitionMovementMixin):
@@ -36,7 +47,7 @@ class LogCompactionTestBase(PartitionMovementMixin):
         self,
         cleanup_policy,
         replication_factor,
-        key_set_cardinality,
+        key_set_cardinality=None,
         partition_count=10,
         tombstone_probability=0.4,
         min_cleanable_dirty_ratio=0.0,
@@ -636,7 +647,210 @@ class LogCompactionEnableSlidingWindow(RedpandaTest):
             )
 
 
-class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
+class LogCompactionTxRemovalMixin:
+    def wait_for_all_tx_batches_removed(
+        self,
+        produce_func,
+        timeout_sec=240,
+        backoff_sec=5,
+        nodes=None,
+        allow_failure=False,
+    ):
+        assert self.redpanda, (
+            "Must set self.redpanda before calling wait_for_all_tx_batches_removed()"
+        )
+        assert self.topic_spec, (
+            "Must set self.topic_spec before calling wait_for_all_tx_batches_removed()"
+        )
+        assert self.partition_count, (
+            "Must set self.partition_count before calling wait_for_all_tx_batches_removed()"
+        )
+
+        commit_idxs = self.wait_until_stms_caught_up(nodes=nodes)
+        self.logger.debug(
+            f"STMs caught up at commit indexes {commit_idxs}, waiting for local snapshots to catchup"
+        )
+
+        self.wait_for_local_snapshot_catchup(commit_idxs, produce_func, nodes=nodes)
+
+        # Check that no tx batches are seen after compaction settles
+        try:
+            self.redpanda.wait_until(
+                lambda: self.all_tx_batches_removed(nodes),
+                timeout_sec=timeout_sec,
+                backoff_sec=backoff_sec,
+                err_msg="Transactional batches were not removed after compaction.",
+                retry_on_exc=True,
+            )
+            return True
+        except ducktape.errors.TimeoutError:
+            if allow_failure:
+                return False
+            raise
+
+    def all_tx_batches_removed(self, nodes=None, throw_on_open_tx=False):
+        viewer = OfflineLogViewer(self.redpanda)
+        node_results = []
+        for node in self.get_nodes(nodes):
+            num_control_batches = 0
+            num_tx_data_batches = 0
+            num_fence_batches = 0
+            partitions = viewer.read_kafka_records(node, self.topic_spec.name)
+            partition_results = []
+            for partition_id, partition in enumerate(partitions):
+                for record_or_batch in partition:
+                    if "expanded_attrs" not in record_or_batch:
+                        continue
+                    if record_or_batch["type_name"] == "tx_fence":
+                        self.redpanda.logger.debug(
+                            f"Node {node.name} partition {partition_id} found fence batch: {record_or_batch}"
+                        )
+                        num_fence_batches += 1
+                    elif record_or_batch["expanded_attrs"]["control_batch"]:
+                        self.redpanda.logger.debug(
+                            f"Node {node.name} partition {partition_id} found control batch: {record_or_batch}"
+                        )
+                        num_control_batches += 1
+                    elif record_or_batch["expanded_attrs"]["transactional"]:
+                        self.redpanda.logger.debug(
+                            f"Node {node.name} partition {partition_id} found tx data batch: {record_or_batch}"
+                        )
+                        num_tx_data_batches += 1
+
+                if (
+                    throw_on_open_tx
+                    and (num_fence_batches > 0 or num_tx_data_batches > 0)
+                    and num_control_batches == 0
+                ):
+                    assert False, (
+                        f"Node {node.name} partition {partition_id} has open transactions after compaction: "
+                        f"{num_fence_batches} fence batches, {num_tx_data_batches} tx data batches, {num_control_batches} control batches"
+                    )
+
+                partition_results.append(
+                    (num_fence_batches, num_control_batches, num_tx_data_batches)
+                )
+            self.redpanda.logger.debug(
+                f"Node {node.name} compaction results {partition_results}"
+            )
+            node_results.append(
+                all(
+                    all(counter == 0 for counter in partition_result)
+                    for partition_result in partition_results
+                )
+            )
+        return all(node_results)
+
+    def get_raft_states(self, partition_id: int, nodes: list[int] | None):
+        requested_node = (
+            self.redpanda.get_node_by_id(nodes[0])
+            if nodes is not None and len(nodes) == 1
+            else None
+        )
+        state = self.redpanda._admin.get_partition_state(
+            namespace="kafka",
+            topic=self.topic_spec.name,
+            partition=partition_id,
+            node=requested_node,
+        )
+        raft_states = [
+            r["raft_state"]
+            for r in state["replicas"]
+            if nodes is None or r["raft_state"]["node_id"] in nodes
+        ]
+        self.redpanda.logger.debug(f"Partition {partition_id} {raft_states=}")
+        return raft_states
+
+    def wait_until_stms_caught_up(self, nodes=None):
+        # grab the debug partition dump for each partition ensure
+        # committed index matches last applied offset
+        def stms_caught_up(partition_id: int):
+            raft_states = self.get_raft_states(partition_id, nodes)
+            commit_indexes = []
+            commit_and_applied = []
+            for s in raft_states:
+                commit_index = s["commit_index"]
+                commit_indexes.append(commit_index)
+                last_applied = -1
+                for stm in s["stms"]:
+                    if stm["name"] == "tx.snapshot":
+                        last_applied = stm["last_applied_offset"]
+                commit_and_applied.append(commit_index == last_applied)
+                self.redpanda.logger.debug(
+                    f"Partition {partition_id} {commit_index=}, {last_applied=}"
+                )
+            synced = all(commit_and_applied) and len(set(commit_indexes)) == 1
+            # Returns whether all STMs are caught up, and the commit index
+            # at which they are caught up.
+            return (synced, commit_indexes[0])
+
+        def all_partition_stms_caught_up():
+            stm_results = [
+                stms_caught_up(partition_id)
+                for partition_id in range(self.partition_count)
+            ]
+            synced, commit_indexes = map(list, zip(*stm_results))
+            return all(synced), commit_indexes
+
+        return wait_until_result(
+            all_partition_stms_caught_up,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="STMs did not catch up for all partitions.",
+            retry_on_exc=True,
+        )
+
+    def wait_for_local_snapshot_catchup(
+        self, offsets: list[int], produce_func, nodes=None
+    ):
+        def stms_snapshotted(partition_id: int, target_offset: int):
+            raft_states = self.get_raft_states(partition_id, nodes)
+            snapshotted = []
+            for s in raft_states:
+                for stm in s["stms"]:
+                    if stm["name"] == "tx.snapshot":
+                        last_snapshot = stm["last_local_snapshot_offset"]
+                        snapshotted.append(last_snapshot >= target_offset)
+                        self.redpanda.logger.debug(
+                            f"Partition {partition_id} node {s['node_id']} STM last local snapshot offset: {last_snapshot}, target: {target_offset}"
+                        )
+            return all(snapshotted) and len(snapshotted) == len(raft_states)
+
+        def all_partition_stms_snapshotted():
+            return all(
+                [
+                    stms_snapshotted(partition_id, offsets[partition_id])
+                    for partition_id in range(self.partition_count)
+                ]
+            )
+
+        deadline = time.time() + 120
+        while True:
+            if time.time() > deadline:
+                raise TimeoutError(
+                    "Not all STMs have local snapshots at target offsets."
+                )
+            try:
+                if all_partition_stms_snapshotted():
+                    return
+                # Produce some garbage to force snapshots
+                produce_func()
+            except Exception as e:
+                self.redpanda.logger.warning(
+                    f"Exception while checking STM snapshots, retrying... {e}",
+                    exc_info=True,
+                )
+            time.sleep(5)
+
+    def get_nodes(self, maybe_node_ids: list[int] | None):
+        if maybe_node_ids is None:
+            return self.redpanda.nodes
+        return [self.redpanda.get_node_by_id(nid) for nid in maybe_node_ids]
+
+
+class LogCompactionTxRemovalTestBase(
+    LogCompactionTestBase, LogCompactionTxRemovalMixin, PreallocNodesTest
+):
     @dataclass
     class TestCase:
         msg_size: int
@@ -671,14 +885,33 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
         ),
     }
 
-    def __init__(self, test_context):
+    def __init__(self, test_context, extra_rp_conf=None):
         self.test_context = test_context
         # Run with small segments and a very frequent compaction interval.
+        self.segment_size = 2 * 1024**2  # 2 MiB
+        raft_max_recovery_memory = 32 * 1024**2  # 32 MiB
+        self.raft_learner_recovery_rate = 2 * self.segment_size  # 2 segments per second
+
         self.extra_rp_conf = {
             "log_compaction_interval_ms": 1000,
-            "log_segment_size": 2 * 1024**2,  # 2 MiB
-            "compacted_log_segment_size": 1024**2,  # 1 MiB
+            "log_segment_size": self.segment_size,
+            "compacted_log_segment_size": self.segment_size,
+            "max_compacted_log_segment_size": self.segment_size,
+            # Trigger tombstone removal quickly
+            "storage_target_replay_bytes": 100,
+            "log_segment_ms": 60,
+            "raft_learner_recovery_rate": self.raft_learner_recovery_rate,
+            "raft_max_recovery_memory": raft_max_recovery_memory,
+            "raft_recovery_concurrency_per_shard": math.ceil(
+                raft_max_recovery_memory / self.raft_learner_recovery_rate
+            ),
+            "raft_recovery_default_read_size": self.raft_learner_recovery_rate,
+            "health_monitor_max_metadata_age": 100,  # ms
+            "enable_leader_balancer": False,
+            "partition_autobalancing_mode": "off",
         }
+        if extra_rp_conf:
+            self.extra_rp_conf.update(extra_rp_conf)
         self.transaction_timeout_ms = 2000
 
         super().__init__(
@@ -688,6 +921,9 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
             extra_rp_conf=self.extra_rp_conf,
         )
 
+        self.redpanda.logger.info(
+            f"{self.raft_learner_recovery_rate=}, raft_recovery_concurrency_per_shard={raft_max_recovery_memory // self.raft_learner_recovery_rate}"
+        )
         self._rpk_client = RpkTool(self.redpanda)
 
     def produce(self, test_case):
@@ -711,32 +947,12 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
         producer.wait(timeout_sec=180)
         producer.stop()
 
-    def check_tx_batches(self):
-        viewer = OfflineLogViewer(self.redpanda)
-        for node in self.redpanda.nodes:
-            num_control_batches = 0
-            num_fence_batches = 0
-            partitions = viewer.read_kafka_records(node, self.topic_spec.name)
-            for partition in partitions:
-                for record_or_batch in partition:
-                    if "expanded_attrs" not in record_or_batch:
-                        continue
-                    if record_or_batch["expanded_attrs"]["control_batch"]:
-                        num_control_batches += 1
-                    if record_or_batch["type_name"] == "tx_fence":
-                        num_fence_batches += 1
-
-                assert num_control_batches == 0, (
-                    f"expected 0 control batches (abort/commit batches), saw {num_control_batches} on node {node.name}"
-                )
-                assert num_fence_batches == 0, (
-                    f"expected 0 tx_fence batches, saw {num_fence_batches}  on node {node.name}"
-                )
-
     def do_test_tx_control_batch_removal(self, test_case_name, test_case):
         self.logger.info(
             f"Running test case {test_case_name} with topic {self.topic_spec.name}"
         )
+
+        self.check_all_offsets(lambda offset: offset <= 0)
 
         self.start_partition_movement()
         self.produce(test_case)
@@ -751,13 +967,48 @@ class LogCompactionTxRemovalTestBase(LogCompactionTestBase, PreallocNodesTest):
 
         self.stop_partition_movement()
 
-        # Check that no tx batches are seen after compaction settles
-        self.check_tx_batches()
+        def produce_func():
+            KgoVerifierProducer.oneshot(
+                context=self.test_context,
+                redpanda=self.redpanda,
+                topic=self.topic_spec.name,
+                msg_size=1024,
+                msg_count=10000,
+                custom_node=self.preallocated_nodes,
+            )
+
+        self.wait_for_all_tx_batches_removed(produce_func)
+
+        self.check_all_offsets(lambda offset: offset > 0)
+
+    def get_partition_state(self, node: ClusterNode | None = None):
+        state = self.redpanda._admin.get_partition_state(
+            namespace="kafka",
+            topic=self.topic_spec.name,
+            partition=0,
+            node=node,
+        )["replicas"]
+        self.redpanda.logger.debug(f"partition state: {state}")
+        return state
+
+    def check_all_offsets(self, predicate):
+        states = self.get_partition_state()
+        for state in states:
+            for offset_name in (
+                "max_tombstone_removable_offset",
+                "max_transaction_removable_offset",
+                "max_cleanly_compacted_offset",
+                "max_transaction_free_offset",
+            ):
+                if not predicate(state[offset_name]):
+                    return False
+        return True
 
 
 class LogCompactionTxRemovalTest(LogCompactionTxRemovalTestBase):
     def __init__(self, test_context):
-        super().__init__(test_context)
+        extra_rp_conf = {"log_compaction_tx_batch_removal_enabled": True}
+        super().__init__(test_context, extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=4)
     def test_tx_control_batch_removal(self):
@@ -773,7 +1024,9 @@ class LogCompactionTxRemovalTest(LogCompactionTxRemovalTestBase):
             try:
                 self.do_test_tx_control_batch_removal(name, test_case)
             except Exception as e:
-                self.logger.info(f"Test case {name} failed with exception {e}")
+                self.logger.info(
+                    f"Test case {name} failed with exception {e}", exc_info=True
+                )
 
                 failed_test_cases.append(e)
         assert len(failed_test_cases) == 0, (
@@ -781,27 +1034,61 @@ class LogCompactionTxRemovalTest(LogCompactionTxRemovalTestBase):
         )
 
 
-class LogCompactionTxRemovalUpgradeTest(LogCompactionTxRemovalTestBase):
-    def __init__(self, test_context):
+class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
+    def __init__(self, test_context, initial_version):
         super().__init__(test_context)
-        # Version before `may_have_transactional_batches` was added.
-        self.initial_version: RedpandaVersionLine = (25, 1)
-        # Version before tx removal was added to compaction.
-        self.may_have_tx_batch_version: RedpandaVersionLine = (25, 2)
+        self.initial_version: RedpandaVersion = initial_version
 
     def setUp(self):
+        self.redpanda._installer.start()
         self.redpanda._installer.install(self.redpanda.nodes, self.initial_version)
         self.redpanda.start()
+        self.admin = Admin(self.redpanda)
 
-    def upgrade_to_version(self, version):
-        self.redpanda._installer.install(self.redpanda.nodes, version)
+    def upgrade_to_version(self, target_version):
+        def logical_version():
+            return self.admin.get_features()["cluster_version"]
+
+        def cluster_converged():
+            f = self.admin.get_features()
+            return f["cluster_version"] == f["node_latest_version"]
+
+        self.redpanda._installer.install(self.redpanda.nodes, target_version)
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
-    @cluster(num_nodes=4)
-    @matrix(test_case_name=list(LogCompactionTxRemovalTestBase.test_cases.keys()))
-    def test_tx_control_batch_removal_with_upgrade(self, test_case_name):
-        test_case = LogCompactionTxRemovalTestBase.test_cases[test_case_name]
+        wait_until(
+            lambda: cluster_converged() and self.redpanda.healthy(),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg=lambda: f"Cluster did not become healthy after restart/upgrade: {self.admin.get_features()}",
+        )
+        self.redpanda._admin.await_stable_leader(
+            namespace="redpanda", topic="controller", partition=0
+        )
 
+    def upgrade_to_head_from(self, current_version):
+        path = self.redpanda._installer.upgrade_path_to_head(current_version)
+        for version in path:
+            self.upgrade_to_version(version)
+
+    def produce_data(self, producers: List[ck.Producer], segments):
+        record_size = 10240  # 10kb
+        key_size = 10
+        value_size = record_size - key_size
+
+        total_size = self.segment_size * segments
+        size_per_producer = total_size / len(producers)
+        num_records = math.ceil(size_per_producer / record_size)
+
+        for _ in range(num_records):
+            for p in producers:
+                key = os.urandom(key_size)
+                value = os.urandom(value_size)
+                p.produce(self.topic_spec.name, key=key, partition=0, value=value)
+                p.flush()  # for split into batches, so that recovery is granular
+        return num_records * len(producers)
+
+    def run_3segment_scenario(self):
         self.topic_setup(
             cleanup_policy=TopicSpec.CLEANUP_COMPACT,
             replication_factor=3,
@@ -809,20 +1096,232 @@ class LogCompactionTxRemovalUpgradeTest(LogCompactionTxRemovalTestBase):
             partition_count=1,
         )
 
-        # Produce some transactional data
-        self.produce(test_case)
+        # Produce multiple-segment transactional data without closing transactions.
+        producers = [
+            ck.Producer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "transactional.id": f"tx_producer_{producer_id}",
+                }
+            )
+            for producer_id in [0, 1]
+        ]
+        for p in producers:
+            p.init_transactions()
+            p.begin_transaction()
+        self.produce_data(producers, segments=2)
+        for p in producers:
+            p.flush()
 
-        # Upgrade to `may_have_transactional_batch` version.
-        self.upgrade_to_version(self.may_have_tx_batch_version)
+        # Close transactions only after upgrade
+        producers[0].commit_transaction()
+        producers[1].abort_transaction()
+        # Start one more tx to prevent compaction of this segment
+        producers[0].begin_transaction()
+        # some garbage to force segment roll and prevent segment merge
+        self.produce_data([producers[0]], segments=2)
 
-        # Produce more transactional data.
-        self.produce(test_case)
+        self.wait_for_sliding_window_compaction()
 
-        # Upgrade to `HEAD`.
-        for version in self.redpanda._installer.upgrade_path_to_head(
-            self.may_have_tx_batch_version
-        ):
-            self.upgrade_to_version(version)
+        self.upgrade_to_head_from(self.initial_version)
 
-        # Perform rest of test
-        self.do_test_tx_control_batch_removal(test_case_name, test_case)
+        self.redpanda.set_cluster_config(
+            {"log_compaction_tx_batch_removal_enabled": True}
+        )
+
+        producers[0].commit_transaction()
+
+        def produce_func():
+            KgoVerifierProducer.oneshot(
+                context=self.test_context,
+                redpanda=self.redpanda,
+                topic=self.topic_spec.name,
+                msg_size=1024,
+                msg_count=10000,
+                custom_node=self.preallocated_nodes,
+            )
+
+        self.wait_for_all_tx_batches_removed(produce_func)
+
+    def nth_segment_recovered(self, n: int, node: int) -> bool:
+        reconfigurations = self.redpanda._admin.list_reconfigurations(
+            node=self.redpanda.get_node_by_id(node)
+        )
+        self.redpanda.logger.debug(f"reconfigurations: {reconfigurations}")
+        if not reconfigurations:
+            return False
+        bytes_moved = reconfigurations[0]["bytes_moved"]
+        assert bytes_moved <= 2 * n * self.segment_size, "node recovered too fast"
+        return bytes_moved >= n * self.segment_size
+
+    def run_2segment_scenario(self):
+        def produce_func():
+            KgoVerifierProducer.oneshot(
+                context=self.test_context,
+                redpanda=self.redpanda,
+                topic=self.topic_spec.name,
+                msg_size=1024,
+                msg_count=10000,
+                custom_node=self.preallocated_nodes,
+            )
+
+        self.topic_setup(
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+            replication_factor=1,
+            key_set_cardinality=100,
+            partition_count=1,
+        )
+
+        # produce tx data in segment 1 and commit around segment 9
+        tx_producer = ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": "tx_producer",
+            }
+        )
+        tx_producer.init_transactions()
+        tx_producer.begin_transaction()
+
+        messages_per_segment = self.produce_data([tx_producer], segments=1)
+
+        non_tx_producer = ck.Producer({"bootstrap.servers": self.redpanda.brokers()})
+        self.produce_data([non_tx_producer], segments=7)
+        tx_producer.commit_transaction()
+        tx_producer.flush()
+        self.produce_data([non_tx_producer], segments=3)
+
+        self.wait_for_sliding_window_compaction()
+        wait_until(
+            lambda: self.get_cleanly_compacted_segments() >= 9,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="timed out waiting for clean compaction",
+        )
+        self.redpanda.logger.debug("Leader is cleanly compacted")
+
+        # upgrade the node with the partition
+        def get_leader() -> Tuple[bool, int]:
+            leader = self.redpanda._admin.get_partition(
+                "kafka", self.topic_spec.name, 0
+            )["leader_id"]
+            return (leader is not None and leader >= 0, leader)
+
+        leader_node = wait_until_result(get_leader, timeout_sec=10, backoff_sec=1)
+
+        self.upgrade_to_head_from(self.initial_version)
+
+        # make sure it sets MTRO beyond the segment with the commit batch
+        def get_mtro():
+            state = self.get_partition_state(self.redpanda.get_node_by_id(leader_node))
+            assert len(state) == 1
+            return state[0]["max_tombstone_removable_offset"]
+
+        wait_until(
+            # segments may be laid not exactly as planned,
+            # but for us it's critical that the commit batch is below MTRO
+            lambda: get_mtro() >= 8 * messages_per_segment + 2,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="timed out waiting for MTRO to advance",
+        )
+
+        # init a replica and let it recover the first 2 segments only
+        new_replica_node = leader_node % len(self.redpanda.nodes) + 1
+        self.redpanda._admin.set_partition_replicas(
+            topic=self.topic_spec.name,
+            partition=0,
+            replicas=[
+                {"node_id": leader_node, "core": 0},
+                {"node_id": new_replica_node, "core": 0},
+            ],
+        )
+        wait_until(
+            lambda: self.nth_segment_recovered(2, leader_node),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="timed out waiting for partial recovery",
+        )
+
+        # throttle down recovery to prevent recovery of further segments
+        self.redpanda.set_cluster_config({"raft_learner_recovery_rate": 0})
+
+        # enable tx batch compaction
+        self.redpanda.set_cluster_config(
+            {"log_compaction_tx_batch_removal_enabled": True}
+        )
+
+        # see if compaction removes tx commit batch on leader node
+        # (it shouldn't, but we don't stop the test if it does to demonstrate the data corruption effect later)
+        leader_has_no_tx = self.wait_for_all_tx_batches_removed(
+            produce_func,
+            nodes=[leader_node],
+            timeout_sec=60,
+            backoff_sec=5,
+            allow_failure=True,
+        )
+        self.redpanda.logger.info(
+            f"Leader node tx batch removal result: {leader_has_no_tx}"
+        )
+
+        # make sure the replica didn't recover much further
+        assert not self.nth_segment_recovered(7, leader_node)
+
+        # temporarily disable tx removal
+        self.redpanda.set_cluster_config(
+            {"log_compaction_tx_batch_removal_enabled": False}
+        )
+
+        # unthrottle recovery and wait for full recovery
+        self.redpanda.set_cluster_config(
+            {"raft_learner_recovery_rate": 1024**3}  # 1GB/s
+        )
+        wait_until(
+            lambda: self.redpanda._admin.list_reconfigurations(
+                node=self.redpanda.get_node_by_id(new_replica_node)
+            )
+            == [],
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="timed out waiting for final recovery",
+        )
+
+        # check for unclosed transactions on the new replica, these would be incorrect
+        self.all_tx_batches_removed(nodes=[new_replica_node], throw_on_open_tx=True)
+
+        # re-enable tx removal, make sure it removes any leftover tx batches
+        self.redpanda.set_cluster_config(
+            {"log_compaction_tx_batch_removal_enabled": True}
+        )
+        self.wait_for_all_tx_batches_removed(produce_func, nodes=[new_replica_node])
+
+
+class LogCompactionTxRemovalUpgradeFrom25_2_Test(LogCompactionTxRemovalUpgradeTestBase):
+    def __init__(self, test_context):
+        # before `may_have_transactional_batches`
+        initial_version: RedpandaVersionLine = (25, 2)
+        super().__init__(test_context, initial_version=initial_version)
+
+    @cluster(num_nodes=4)
+    def test_tx_control_batch_removal_with_upgrade(self):
+        self.run_3segment_scenario()
+
+    @cluster(num_nodes=4)
+    def test_tx_control_batch_removal_with_upgrade_and_recovery(self):
+        self.run_2segment_scenario()
+
+
+class LogCompactionTxRemovalUpgradeFrom25_3_1_Test(
+    LogCompactionTxRemovalUpgradeTestBase
+):
+    def __init__(self, test_context):
+        # before `may_have_transaction_data_or_fence_batches`
+        initial_version: RedpandaVersionTriple = (25, 3, 1)
+        super().__init__(test_context, initial_version=initial_version)
+
+    @cluster(num_nodes=4)
+    def test_tx_control_batch_removal_with_upgrade(self):
+        self.run_3segment_scenario()
+
+    @cluster(num_nodes=4)
+    def test_tx_control_batch_removal_with_upgrade_and_recovery(self):
+        self.run_2segment_scenario()

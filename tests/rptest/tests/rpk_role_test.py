@@ -16,7 +16,7 @@ from rptest.util import expect_exception
 
 class RpkRoleTest(RedpandaTest):
     username = "red"
-    password = "panda"
+    password = "panda012345678"
     mechanism = "SCRAM-SHA-256"
 
     def __init__(self, test_ctx, *args, **kwargs):

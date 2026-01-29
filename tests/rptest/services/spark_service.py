@@ -9,7 +9,6 @@
 
 from typing import Optional
 
-from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from pyhive import hive
 
@@ -19,7 +18,7 @@ from rptest.services.nessie_catalog import NessieCatalog
 from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
 
 
-class SparkService(Service, QueryEngineBase):
+class SparkService(QueryEngineBase):
     """Spark service for querying data generated in datalake."""
 
     SPARK_HOME = "/opt/spark"

@@ -21,9 +21,9 @@
 #include "serde/envelope.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/map.h"
+#include "ssx/mutex.h"
 #include "storage/snapshot.h"
 #include "utils/absl_sstring_hash.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
@@ -194,7 +194,7 @@ private:
 
         ss::sstring name;
         ss::shared_ptr<state_machine_base> stm;
-        mutex background_apply_mutex{
+        ssx::mutex background_apply_mutex{
           "state_machine_manager::background_apply_mutex"};
     };
     using entry_ptr = ss::lw_shared_ptr<state_machine_entry>;
@@ -254,7 +254,7 @@ private:
 
     consensus* _raft;
     ctx_log _log;
-    mutex _apply_mutex{"stm_manager::apply"};
+    ssx::mutex _apply_mutex{"stm_manager::apply"};
     state_machines_t _machines;
     model::offset _next{0};
     ss::gate _gate;

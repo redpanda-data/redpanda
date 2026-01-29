@@ -256,5 +256,4 @@ static constexpr auto acceptable_audit_log_failure_policy_values() {
 
 std::ostream& operator<<(std::ostream&, audit_failure_policy);
 std::istream& operator>>(std::istream&, audit_failure_policy&);
-
 } // namespace config

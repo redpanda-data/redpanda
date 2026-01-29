@@ -47,7 +47,7 @@ ss::future<> read_fanout::bg_process() {
             continue;
         }
         auto fut_res = std::move(fut).get();
-        if (fut_res.has_error()) {
+        if (!fut_res.has_value()) {
             auto err = fut_res.error();
             if (err == errc::shutting_down) {
                 vlog(
@@ -88,7 +88,8 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
         }
 
         const chunked_vector<extent_meta>& metadata = req->query.meta;
-        using ret_future_t = ss::future<checked<dataplane_query_result, errc>>;
+        using ret_future_t
+          = ss::future<std::expected<dataplane_query_result, errc>>;
         chunked_vector<ret_future_t> futures;
         std::optional<dataplane_query> curr_query;
         curr_query.emplace();
@@ -164,7 +165,7 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
         chunked_vector<model::record_batch> results;
         for (auto& fut : fut_res) {
             auto res = fut.get();
-            if (res.has_error()) {
+            if (!res.has_value()) {
                 vlog(
                   req->rtc_logger.warn,
                   "Materialize operation returned error: {}",

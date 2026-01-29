@@ -59,6 +59,16 @@
             "name": "remove_topics",
             "input_type": "remove_topics_request",
             "output_type": "remove_topics_reply"
+        },
+        {
+            "name": "get_compaction_infos",
+            "input_type": "get_compaction_infos_request",
+            "output_type": "get_compaction_infos_reply"
+        },
+        {
+            "name": "get_extent_metadata",
+            "input_type": "get_extent_metadata_request",
+            "output_type": "get_extent_metadata_reply"
         }
     ]
 }

@@ -13,7 +13,8 @@
 #include "base/seastarx.h"
 #include "config/property.h"
 #include "metrics/metrics.h"
-#include "ssx/semaphore.h"
+#include "ssx/condition_variable.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -58,7 +59,7 @@ public:
         return _throttler.throttle(size, as);
     }
 
-    size_t available() const { return _throttler.available(); }
+    ssize_t available() const { return _throttler.available(); }
     size_t waiting_bytes() const { return _throttler.waiting_bytes(); }
     size_t admitted_bytes() const { return _throttler.admitted_bytes(); }
 
@@ -68,52 +69,55 @@ private:
     using clock_t = ss::lowres_clock;
     static constexpr ss::shard_id _coordinator_shard = ss::shard_id{0};
 
-    /// A wrapper around a sempahore that tracks additional metrics
+    /// A semaphore-like class that tracks additional metrics
     /// used for coordination. The capacity of the bucket is refilled
     /// by the recovery throttle periodically as a part of coordination.
     class token_bucket {
     public:
         explicit token_bucket(size_t /*initial_size*/);
         ss::future<> throttle(size_t /*bytes*/, ss::abort_source&);
-        /// Resets to the newly passed capacity argument. If the current
-        /// availability is higher, the capacity is reduced, otherwise
-        /// the delta is added.
-        void reset_capacity(size_t /*new capacity*/);
-        void shutdown() { return _sem.broken(); }
+        /// Adds granted capacity to the token bucket (removes if negative)
+        void renew_capacity(ssize_t added_capacity);
+        void shutdown() {
+            _mutex.broken();
+            _cv.broken();
+        }
         size_t waiting_bytes() const { return _waiting_bytes; }
         size_t admitted_bytes() const {
             return _admitted_bytes_since_last_reset;
         }
-        size_t available() const { return _sem.current(); }
-        size_t last_reset_capacity() const { return _last_reset_capacity; }
+        ssize_t available() const { return _available_units; }
+        ssize_t last_reset_capacity() const { return _last_reset_capacity; }
 
     private:
-        ssx::named_semaphore<> _sem;
+        ssize_t _available_units{0};
+        ssx::condition_variable _cv;
+        ssx::mutex _mutex{"recovery_throttle"};
         /// Counter tracking the total bytes throttled.
         size_t _waiting_bytes{0};
         /// Counter tracking the total bytes admitted since the capacity
         /// is last reset. We use this as a heuristic when estimating
         /// the capacity needed for the next tick. See required_capacity().
         size_t _admitted_bytes_since_last_reset{0};
-        size_t _last_reset_capacity;
+        ssize_t _last_reset_capacity;
     };
-
-    /// Rate allocated to a shard if the total rate is uniformly allocated
-    /// among all shards. We call this a 'fair rate' in multiple places.
-    size_t fair_rate_per_shard() const {
-        return _rate_binding() / ss::smp::count;
-    }
 
     /// Helpers to reset capacity on all/specific shard to the passed capacity.
     /// Used by the coordinator.
-    ss::future<> reset_capacity_all_shards(size_t /* new capacity*/);
-    ss::future<> reset_capacity_on_shard(ss::shard_id, size_t /*new capacity*/);
+    ss::future<> renew_capacity_all_shards(ssize_t added_capacity);
+    ss::future<> renew_capacity_on_shard(ss::shard_id, ssize_t added_capacity);
 
     void arm_coordinator_timer();
 
-    /// The capacity in bytes required in the next period as reported to the
-    /// callee shard. See below.
-    size_t required_capacity() const;
+    struct shard_capacity_request {
+        // "Hard" demand or surplus:
+        // Negative indicates demand for more capacity as a result of overuse,
+        // positive indicates unused capacity that can be redistributed.
+        ssize_t remaining_units;
+        // Preferred capacity to be added for the next period.
+        size_t desired_additional_capacity;
+    };
+    shard_capacity_request required_capacity() const;
 
     /// Throttle operates in ticks of period 1sec (hard code becaused rate is
     /// measured in bytes / sec).
@@ -122,8 +126,14 @@ private:
     /// from all the shards and redistributes the total bandwidth among them
     /// them and fills up the shard local token buckets accordingly. See
     /// the implementation for more details.
+    /// Multiple concurrent invocations of this function are not allowed.
     ss::future<> coordinate_tick();
     ss::future<> do_coordinate_tick();
+
+    template<typename Func>
+    ss::future<> renew_capacity_on_shards(
+      const std::vector<shard_capacity_request>& requests,
+      Func&& added_capacity_calculator);
 
     config::binding<size_t> _rate_binding;
     // Allocates fair share to all shards. A fall back option for issues

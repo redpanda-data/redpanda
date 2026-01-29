@@ -12,6 +12,7 @@
 #include "redpanda/admin/proxy/service.h"
 
 #include "base/vlog.h"
+#include "redpanda/admin/proxy/context.h"
 #include "serde/protobuf/rpc.h"
 
 #include <exception>
@@ -46,8 +47,8 @@ service_impl::proxy_rpc(proxy_request req, rpc::streaming_context&) {
       .service_name = req.service,
       .method_name = req.method,
       .content_type = serde::pb::rpc::content_type::proto,
-      .proxied_nodes = req.via,
     };
+    append_proxied_nodes(ctx, req.via);
     proxy_response response;
     try {
         auto payload = co_await _handler(

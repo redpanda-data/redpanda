@@ -552,10 +552,10 @@ redpanda_cc_gtest(
         "//src/v/bytes:iostream",
         "//src/v/model",
         "//src/v/random:generators",
+        "//src/v/ssx:mutex",
         "//src/v/storage",
         "//src/v/storage:scoped_file_tracker",
         "//src/v/test_utils:gtest",
-        "//src/v/utils:mutex",
         "@googletest//:gtest",
         "@seastar",
     ],
@@ -1022,6 +1022,7 @@ redpanda_cc_bench(
 
 redpanda_cc_bench(
     name = "segment_appender_rpbench",
+    timeout = "moderate",
     srcs = ["segment_appender_bench.cc"],
     deps = [
         "//src/v/model",

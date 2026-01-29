@@ -13,6 +13,9 @@ import random
 
 from ducktape.utils.util import wait_until
 
+from rptest.clients.admin.proto.redpanda.core.admin.v2 import security_pb2
+from rptest.clients.admin.v2 import Admin as AdminV2
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -243,3 +246,142 @@ class SingleNodeMetricsReporterTest(MetricsReporterTest):
     @cluster(num_nodes=2, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_redpanda_metrics_reporting(self):
         self._test_redpanda_metrics_reporting()
+
+
+class UniqueGroupCountMetricsTest(RedpandaTest):
+    """
+    Test that unique_group_count is correctly reported in metrics.
+    Groups can come from two sources:
+    - Role members with type 'Group'
+    - ACL principals with 'Group:' prefix
+    """
+
+    def __init__(self, test_ctx):
+        self._ctx = test_ctx
+        self.metrics = MetricsReporterServer(self._ctx)
+        super(UniqueGroupCountMetricsTest, self).__init__(
+            test_context=test_ctx,
+            num_brokers=1,
+            extra_rp_conf={
+                "health_monitor_max_metadata_age": 1000,
+                **self.metrics.rp_conf(),
+            },
+        )
+
+    def setUp(self):
+        self.metrics.start()
+        self.redpanda.start()
+
+    def _make_group_member(self, group_name: str) -> security_pb2.RoleMember:
+        """Create a RoleMember with a group."""
+        return security_pb2.RoleMember(group=security_pb2.RoleGroup(name=group_name))
+
+    @cluster(num_nodes=2)
+    def test_unique_group_count(self):
+        """
+        Test that unique_group_count correctly counts groups from roles and ACLs.
+        """
+        superuser = self.redpanda.SUPERUSER_CREDENTIALS
+        admin_v2 = AdminV2(self.redpanda, auth=(superuser.username, superuser.password))
+        rpk = RpkTool(self.redpanda)
+
+        # Initially, unique_group_count should be 0
+        def _get_unique_group_count():
+            if self.metrics.requests():
+                r = self.metrics.reports()[-1]
+                self.logger.info(f"Latest request: {r}")
+                return r.get("unique_group_count", -1)
+            return -1
+
+        def _wait_for_group_count(expected):
+            def check():
+                count = _get_unique_group_count()
+                self.logger.info(
+                    f"Current unique_group_count: {count}, expected: {expected}"
+                )
+                return count == expected
+
+            wait_until(check, timeout_sec=20, backoff_sec=1)
+
+        # Wait for initial report with 0 groups
+        _wait_for_group_count(0)
+
+        # Add a role with a group member
+        self.logger.info("Creating role with group member")
+        admin_v2.security().create_role(
+            security_pb2.CreateRoleRequest(
+                role=security_pb2.Role(
+                    name="test_role_1",
+                    members=[self._make_group_member("group1")],
+                )
+            )
+        )
+
+        # Should now have 1 unique group
+        _wait_for_group_count(1)
+
+        # Add another role with the same group (should still be 1 unique)
+        self.logger.info("Creating another role with same group member")
+        admin_v2.security().create_role(
+            security_pb2.CreateRoleRequest(
+                role=security_pb2.Role(
+                    name="test_role_2",
+                    members=[self._make_group_member("group1")],
+                )
+            )
+        )
+
+        # Still 1 unique group (same group name)
+        _wait_for_group_count(1)
+
+        # Add a role with a different group
+        self.logger.info("Creating role with different group member")
+        admin_v2.security().create_role(
+            security_pb2.CreateRoleRequest(
+                role=security_pb2.Role(
+                    name="test_role_3",
+                    members=[self._make_group_member("group2")],
+                )
+            )
+        )
+
+        # Now 2 unique groups
+        _wait_for_group_count(2)
+
+        # Add an ACL with Group: principal
+        self.logger.info("Creating ACL with Group: principal")
+        rpk.acl_create_allow_cluster(
+            username="group3", op="describe", principal_type="Group"
+        )
+
+        # Now 3 unique groups
+        _wait_for_group_count(3)
+
+        # Add another ACL with same group (should still be 3)
+        self.logger.info("Creating another ACL with same Group: principal")
+        rpk.acl_create_allow_cluster(
+            username="group3", op="alter", principal_type="Group"
+        )
+
+        # Still 3 unique groups
+        _wait_for_group_count(3)
+
+        # Add an ACL with a group that's also in a role (group1)
+        self.logger.info("Creating ACL with Group: principal that matches role group")
+        rpk.acl_create_allow_cluster(
+            username="group1", op="describe", principal_type="Group"
+        )
+
+        # Still 3 unique groups (group1 already counted from roles)
+        _wait_for_group_count(3)
+
+        # Add a new unique group via ACL
+        self.logger.info("Creating ACL with new Group: principal")
+        rpk.acl_create_allow_cluster(
+            username="group4", op="describe", principal_type="Group"
+        )
+
+        # Now 4 unique groups
+        _wait_for_group_count(4)
+
+        self.metrics.stop()

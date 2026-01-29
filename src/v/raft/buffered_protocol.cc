@@ -84,6 +84,14 @@ buffered_protocol::buffered_protocol(
     _gc_timer.arm_periodic(gc_interval);
 }
 
+ss::future<bool> buffered_protocol::ensure_disconnect(model::node_id node_id) {
+    return _base_protocol.ensure_disconnect(node_id);
+}
+
+ss::future<> buffered_protocol::reset_backoff(model::node_id node_id) {
+    return _base_protocol.reset_backoff(node_id);
+}
+
 ss::future<result<vote_reply>> buffered_protocol::vote(
   model::node_id target_node, vote_request req, rpc::client_opts opts) {
     return apply_with_gate(
@@ -125,17 +133,6 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
       });
 };
 
-ss::future<result<heartbeat_reply>> buffered_protocol::heartbeat(
-  model::node_id target_node, heartbeat_request req, rpc::client_opts opts) {
-    return apply_with_gate(
-      _gate,
-      _base_protocol,
-      target_node,
-      std::move(req),
-      std::move(opts),
-      &consensus_client_protocol::heartbeat);
-}
-
 ss::future<result<heartbeat_reply_v2>> buffered_protocol::heartbeat_v2(
   model::node_id target_node, heartbeat_request_v2 req, rpc::client_opts opts) {
     return apply_with_gate(
@@ -171,34 +168,6 @@ ss::future<result<timeout_now_reply>> buffered_protocol::timeout_now(
       &consensus_client_protocol::timeout_now);
 }
 
-ss::future<result<transfer_leadership_reply>>
-buffered_protocol::transfer_leadership(
-  model::node_id target_node,
-  transfer_leadership_request req,
-  rpc::client_opts opts) {
-    return apply_with_gate(
-      _gate,
-      _base_protocol,
-      target_node,
-      std::move(req),
-      std::move(opts),
-      &consensus_client_protocol::transfer_leadership);
-}
-
-ss::future<result<remake_learner_state_reply>>
-buffered_protocol::remake_learner_state(
-  model::node_id target_node,
-  remake_learner_state_request req,
-  rpc::client_opts opts) {
-    return apply_with_gate(
-      _gate,
-      _base_protocol,
-      target_node,
-      std::move(req),
-      std::move(opts),
-      &consensus_client_protocol::remake_learner_state);
-}
-
 ss::future<result<get_compaction_mcco_reply>>
 buffered_protocol::get_compaction_mcco(
   model::node_id target_node,
@@ -225,14 +194,6 @@ buffered_protocol::distribute_compaction_mtro(
       std::move(req),
       std::move(opts),
       &consensus_client_protocol::distribute_compaction_mtro);
-}
-
-ss::future<bool> buffered_protocol::ensure_disconnect(model::node_id node_id) {
-    return _base_protocol.ensure_disconnect(node_id);
-}
-
-ss::future<> buffered_protocol::reset_backoff(model::node_id node_id) {
-    return _base_protocol.reset_backoff(node_id);
 }
 
 ss::future<> buffered_protocol::stop() {

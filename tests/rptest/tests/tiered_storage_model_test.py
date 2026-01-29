@@ -13,7 +13,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Condition
-from typing import List
+from typing import Any, List
 
 from ducktape.mark import matrix
 
@@ -591,7 +591,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
     def test_tiered_storage(
         self,
         cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle],
-        test_case: TestCase,
+        test_case: Any,
     ):
         """This is a main entry point of the test.
         The test runs if 5 phases:

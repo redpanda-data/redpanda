@@ -16,7 +16,9 @@
 #include "kafka/client/direct_consumer/data_queue.h"
 #include "kafka/client/direct_consumer/direct_consumer.h"
 #include "kafka/client/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/types.h"
+#include "model/fundamental.h"
 #include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
 
@@ -151,7 +153,8 @@ ss::future<fetcher::partitions_with_epoch> fetcher::collect_partitions() {
         co_await ssx::async_for_each_counter(
           cnt,
           partitions,
-          [&to_process, &ret, inc = _session_state.incremental()](auto& p_fs) {
+          [this, &topic, &to_process, &ret, inc = _session_state.incremental()](
+            auto& p_fs) {
               partition_fetch_state& fetch_state = p_fs.second;
               ret.epochs[to_process.topic].insert_or_assign(
                 fetch_state.partition_id,
@@ -171,6 +174,12 @@ ss::future<fetcher::partitions_with_epoch> fetcher::collect_partitions() {
                 };
 
               if (inc && should_skip(fetch_state)) {
+                  vlog(
+                    logger().trace,
+                    "[broker: {}] skipping tp {}/{} in incremental include",
+                    _id,
+                    topic,
+                    p_fs.first);
                   // session should be up to date, so we can omit this
                   // partition from the request
                   return;
@@ -239,6 +248,7 @@ ss::future<fetch_request> fetcher::make_fetch_request(
               [this, &f_topic](const partition_fetch_state& f_state) {
                   fetch_partition f_partition;
                   f_partition.partition = f_state.partition_id;
+
                   f_partition.fetch_offset = kafka::offset_cast(
                     *f_state.fetch_offset);
                   f_partition.last_fetched_epoch = f_state.current_leader_epoch;
@@ -301,6 +311,10 @@ bool fetcher::maybe_update_fetch_offset(
       fetch_state.fetch_offset,
       kafka::next_offset(last_received),
       high_watermark);
+
+    if (fetch_state.fetch_offset == kafka::next_offset(last_received)) {
+        return false;
+    }
     fetch_state.high_watermark = high_watermark;
     fetch_state.fetch_offset = kafka::next_offset(last_received);
     // we updated the fetch offset, so we should sync to with the broker's
@@ -451,7 +465,7 @@ fetcher::process_fetch_response(
     // assignment updates are not blocked by a longstanding fetch. At this
     // point, all inconsistent fetch responses should be discarded
     for (auto& topic_response : resp.data.responses) {
-        auto consistent_subrange = std::ranges::partition(
+        auto inconsistent_subrange = std::ranges::partition(
           topic_response.partitions,
           [this, &topic_response, &epochs](partition_data& partition_response) {
               return is_consistent_fetcher_epoch(
@@ -459,8 +473,7 @@ fetcher::process_fetch_response(
                 partition_response.partition_index,
                 epochs);
           });
-        topic_response.partitions.erase_to_end(
-          topic_response.partitions.end() - consistent_subrange.size());
+        topic_response.partitions.erase_to_end(inconsistent_subrange.begin());
     } // all responses now belong to consistent tps
 
     // For fetch session maintenance, the goal is to omit partitions from each
@@ -491,121 +504,28 @@ fetcher::process_fetch_response(
         topic_data.partitions.reserve(topic_response.partitions.size());
 
         for (auto& part_response : topic_response.partitions) {
-            fetched_partition_data part_data{};
-            part_data.error = part_response.error_code;
-            part_data.partition_id = part_response.partition_index;
-
-            auto maybe_epoch_set = find_epoch_set(
-              topic_data.topic, part_response.partition_index, epochs);
-            vassert(
-              maybe_epoch_set.has_value(),
-              "tp should be found in snapshotted epochs if the response is "
-              "epoch consistent");
-            part_data.subscription_epoch
-              = maybe_epoch_set.value().subscription_epoch;
-
-            if (part_response.error_code != kafka::error_code::none) {
-                _parent->with_probe(increment_fetch_errors);
-                if (
-                  part_response.error_code
-                  == kafka::error_code::offset_out_of_range) {
-                    vlog(
-                      logger().warn,
-                      "[broker: {}] {}/{} fetch returned: {}, resetting "
-                      "offset with policy: {}",
-                      _id,
-                      topic_data.topic,
-                      part_data.partition_id,
-                      part_response.error_code,
-                      _parent->_config.reset_policy);
-                    reset_partition_offset(
-                      model::topic_partition_view(
-                        topic_data.topic, part_data.partition_id));
-                    continue;
-                }
-                if (is_retriable_error(part_response.error_code)) {
-                    vlog(
-                      logger().debug,
-                      "[broker: {}] {}/{} retriable fetch error: {}",
-                      _id,
-                      topic_data.topic,
-                      part_data.partition_id,
-                      part_response.error_code);
-
-                    result.needs_metadata_update = true;
-                    // skip partition in the result, but mark that we
-                    // need to update metadata
-                    // so that we can retry fetching it later
-                    continue;
-                }
-                vlog(
-                  logger().warn,
-                  "[broker: {}] {}/{} fetch error: {}",
-                  _id,
-                  topic_data.topic,
-                  part_data.partition_id,
-                  part_response.error_code);
-
-                // this partition errored, so any pending incremental fetches
-                // should be retried
-                dirty_partitions[topic_data.topic].insert(
-                  part_data.partition_id);
-            } else {
-                source_partition_offsets offsets{
-                  .log_start_offset = model::offset_cast(
-                    part_response.log_start_offset),
-                  .high_watermark = model::offset_cast(
-                    part_response.high_watermark),
-                  .last_stable_offset = model::offset_cast(
-                    part_response.last_stable_offset),
-                  .last_offset_update_timestamp = ss::lowres_clock::now(),
-                };
-                part_data.start_offset = offsets.log_start_offset;
-                part_data.high_watermark = offsets.high_watermark;
-                part_data.last_stable_offset = offsets.last_stable_offset;
-                part_data.leader_epoch
-                  = part_response.current_leader.leader_epoch;
-                part_data.aborted_transactions = std::move(
-                  part_response.aborted_transactions);
-
-                _parent->maybe_update_source_partition_offsets(
-                  {topic_data.topic, part_response.partition_index},
-                  std::move(offsets));
-
-                vlog(
-                  logger().trace,
-                  "[broker: {}] topic: {}, partition fetch response: {}",
-                  _id,
-                  topic_data.topic,
-                  part_response);
-
-                if (
-                  !part_response.records.has_value()
-                  || part_response.records->is_end_of_stream()) {
-                    continue;
-                }
-                auto partition_response_size
-                  = part_response.records->size_bytes();
-                part_data.size_bytes = partition_response_size;
-                topic_data.total_bytes += partition_response_size;
-                part_data.data = co_await reader_to_chunked_vector(
-                  std::move(part_response.records.value()));
-
-                bool updated_offset = maybe_update_fetch_offset(
-                  topic_data.topic,
-                  part_data.partition_id,
-                  model::offset_cast(part_data.data.back().last_offset()),
-                  part_data.high_watermark);
-                if (!updated_offset) {
-                    continue;
-                }
-                dirty_partitions[topic_data.topic].insert(
-                  part_data.partition_id);
+            auto maybe_fetched_partition_data
+              = co_await process_partition_response(
+                topic_data.topic,
+                std::move(part_response),
+                epochs,
+                result,
+                dirty_partitions);
+            if (maybe_fetched_partition_data) {
+                topic_data.total_bytes
+                  += maybe_fetched_partition_data->size_bytes;
+                topic_data.partitions.emplace_back(
+                  *std::move(maybe_fetched_partition_data));
             }
-            topic_data.partitions.push_back(std::move(part_data));
         }
         result.total_bytes += topic_data.total_bytes;
         if (topic_data.partitions.empty()) {
+            vassert(
+              topic_data.total_bytes == 0,
+              "fetched_topic_data::total_size should be the sum of all "
+              "contained fetched_partition_data::size_bytes. If "
+              "topic_data::partitions is empty, total_size must necessarily be "
+              "0");
             continue;
         }
         result.topics.push_back(std::move(topic_data));
@@ -679,6 +599,201 @@ fetcher::process_fetch_response(
     co_return result;
 }
 
+ss::future<std::optional<fetched_partition_data>>
+fetcher::process_partition_response(
+  const model::topic& topic,
+  partition_data partition_response,
+  const topic_partition_map<epoch_set>& epochs,
+  fetch_response_content& result,
+  chunked_hash_map<model::topic, absl::flat_hash_set<model::partition_id>>&
+    dirty_partitions) {
+    vlog(
+      logger().trace,
+      "[broker: {}] topic: {}, partition fetch response: {}",
+      _id,
+      topic,
+      partition_response);
+
+    // the response will be consumed, grab some vars for logs
+    const auto partition_id = partition_response.partition_index;
+
+    // pull the records from the response if present
+    chunked_vector<model::record_batch> response_records{};
+    size_t response_size{0};
+    if (
+      partition_response.records.has_value()
+      && !partition_response.records->is_end_of_stream()) {
+        response_size = partition_response.records->size_bytes();
+        response_records = co_await reader_to_chunked_vector(
+          std::move(partition_response.records.value()));
+    }
+
+    // null this out as the records are already consumed
+    partition_response.records = std::nullopt;
+
+    fetched_partition_data part_data{};
+    part_data.error = partition_response.error_code;
+    part_data.partition_id = partition_response.partition_index;
+
+    auto maybe_epoch_set = find_epoch_set(
+      topic, partition_response.partition_index, epochs);
+
+    vassert(
+      maybe_epoch_set,
+      "All partition response handling assumes that fetch responses have been "
+      "filtered to consistent fetch reponses. Consistency demands that a tps "
+      "epoch_set must present.");
+
+    auto actions = do_process_partition_response(
+      std::move(partition_response),
+      std::move(response_records),
+      response_size,
+      *maybe_epoch_set);
+
+    if (actions.error != kafka::error_code::none) {
+        _parent->with_probe(increment_fetch_errors);
+        const bool is_retriable = is_retriable_error(actions.error);
+        const auto level = is_retriable ? ss::log_level::debug
+                                        : ss::log_level::warn;
+        vlogl(
+          logger(),
+          level,
+          "[broker: {}] {}/{} fetch returned error: {}",
+          _id,
+          topic,
+          partition_id,
+          actions.error);
+    }
+    if (actions.should_reset_offsets) {
+        reset_partition_offset(
+          model::topic_partition_view{topic, partition_id});
+    }
+    if (actions.should_update_metadata) {
+        vlog(
+          logger().trace,
+          "[broker: {}] {}/{} requesting metadata update",
+          _id,
+          topic,
+          partition_id);
+        result.needs_metadata_update = true;
+    }
+    if (actions.is_dirty) {
+        vlog(
+          logger().trace,
+          "[broker: {}] {}/{} is dirty, will attempt to add to next fetch",
+          _id,
+          topic,
+          partition_id);
+        dirty_partitions[topic].insert(part_data.partition_id);
+    }
+    if (actions.maybe_fetched_partition_data.has_value()) {
+        auto& fetched_partition_data = *actions.maybe_fetched_partition_data;
+
+        // if the fetched data is empty, its probably an offset update
+        // notification, log it
+        if (fetched_partition_data.data.empty()) {
+            vlog(
+              logger().debug,
+              "[broker: {}] tp: {}/{}, received recordless response",
+              _id,
+              topic,
+              part_data.partition_id);
+        } else {
+            // otherwise, update fetch offsets
+            bool updated_offset = maybe_update_fetch_offset(
+              topic,
+              part_data.partition_id,
+              model::offset_cast(
+                fetched_partition_data.data.back().last_offset()),
+              part_data.high_watermark);
+
+            if (!updated_offset) {
+                // This implies a mistake in the fetch logic. A response
+                // that is
+                // 1. consistent
+                // 2. record bearing
+                // 3. redundant
+                // should not occur and can be considered a
+                // non-monatomic fetch
+                vlog(
+                  logger().error,
+                  "[broker: {}] tp: {}/{} received a record bearing "
+                  "fetch "
+                  "that did not update fetch offsets",
+                  _id,
+                  topic,
+                  part_data.partition_id);
+                // record will still go on the queue, but with records
+                // emptied in case it contains a start offset update
+                // topic_data.total_bytes -= partition_response_size;
+                part_data.size_bytes = 0u;
+                part_data.data.clear();
+            }
+        }
+    }
+
+    co_return std::move(actions.maybe_fetched_partition_data);
+}
+
+fetcher::partition_response_actions fetcher::do_process_partition_response(
+  partition_data partition_response,
+  chunked_vector<model::record_batch> response_batches,
+  size_t response_size,
+  fetcher::epoch_set epoch_set) {
+    // Record deserialization is async, extract the records before calling this
+    // method
+    vassert(
+      !partition_response.records.has_value(),
+      "a precondition of calling this function is moving the records into the "
+      "response_batches vector");
+
+    partition_response_actions output_actions{};
+    output_actions.error = partition_response.error_code;
+
+    fetched_partition_data output_partition_data{};
+    output_partition_data.error = partition_response.error_code;
+    output_partition_data.partition_id = partition_response.partition_index;
+    output_partition_data.subscription_epoch = epoch_set.subscription_epoch;
+
+    if (partition_response.error_code != kafka::error_code::none) {
+        if (
+          partition_response.error_code
+          == kafka::error_code::offset_out_of_range) {
+            output_actions.should_reset_offsets = true;
+            return output_actions;
+        }
+        if (is_retriable_error(partition_response.error_code)) {
+            output_actions.should_update_metadata = true;
+            output_actions.is_dirty = true;
+            return output_actions;
+        }
+
+        output_actions.is_dirty = true;
+        output_actions.maybe_fetched_partition_data = std::move(
+          output_partition_data);
+        return output_actions;
+    }
+    output_partition_data.start_offset = model::offset_cast(
+      partition_response.log_start_offset);
+    output_partition_data.high_watermark = model::offset_cast(
+      partition_response.high_watermark);
+    output_partition_data.last_stable_offset = model::offset_cast(
+      partition_response.last_stable_offset);
+    output_partition_data.leader_epoch
+      = partition_response.current_leader.leader_epoch;
+    output_partition_data.aborted_transactions = std::move(
+      partition_response.aborted_transactions);
+
+    output_partition_data.size_bytes = response_size;
+    output_partition_data.data = std::move(response_batches);
+    if (!output_partition_data.data.empty()) {
+        output_actions.is_dirty = true;
+    }
+    output_actions.maybe_fetched_partition_data = std::move(
+      output_partition_data);
+    return output_actions;
+}
+
 void fetcher::reset_partition_offset(model::topic_partition_view tp) {
     auto t_it = _partitions.find(tp.topic);
     if (t_it == _partitions.end()) {
@@ -688,8 +803,16 @@ void fetcher::reset_partition_offset(model::topic_partition_view tp) {
     if (p_it == t_it->second.end()) {
         return;
     }
+    auto new_epoch = next_epoch();
+    vlog(
+      logger().info,
+      "[broker: {}] {} resetting fetch offsets, epoch {} -> {}",
+      _id,
+      tp,
+      p_it->second.fetcher_epoch,
+      new_epoch);
     p_it->second.fetch_offset = std::nullopt;
-    p_it->second.fetcher_epoch = next_epoch();
+    p_it->second.fetcher_epoch = new_epoch;
 }
 
 namespace {
@@ -787,7 +910,9 @@ ss::future<kafka::error_code> fetcher::maybe_initialise_fetch_offsets(
               response_topic.topic, response_partition.partition_id);
             vassert(
               maybe_fetch_state.has_value(),
-              "fetch state should be found if the tp is consistent");
+              "Initializing list offsets should be performed behind a "
+              "partition consistency check. The partition must be assigned to "
+              "be consistent, which means the fetcher state must be found.");
             auto& fetch_state = maybe_fetch_state->get();
 
             vlog(
@@ -887,6 +1012,7 @@ ss::future<> fetcher::assign_partition(
     _partitions_updated.signal();
     co_return;
 }
+
 ss::future<std::optional<kafka::offset>>
 fetcher::unassign_partition(model::topic_partition_view tp_v) {
     auto lock = co_await _state_lock.get_units();

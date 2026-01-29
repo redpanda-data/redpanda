@@ -41,7 +41,7 @@ struct read_pipeline_sink {
         auto h = _gate.hold();
         while (!_pipeline->stopped()) {
             auto res = co_await _my_stage.pull_fetch_requests(0x100000);
-            if (res.has_error()) {
+            if (!res.has_value()) {
                 throw std::system_error(res.error());
             }
             for (auto& req : res.value().requests) {

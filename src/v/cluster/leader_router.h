@@ -20,9 +20,12 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/rwlock.hh>
 #include <seastar/core/sharded.hh>
 
 #include <fmt/format.h>
+
+#include <type_traits>
 
 namespace rpc {
 class connection_cache;
@@ -58,6 +61,12 @@ concept IsHandler = requires(req_t req, resp_t resp, handler_t handler) {
     } -> std::same_as<ss::future<resp_t>>;
 };
 
+// For using a leader_router in a component without async stop(). Such
+// components must make sure to drain the router before destructing it.
+struct leader_router_ungated_tag;
+// default safe behavior with async stop()
+struct leader_router_gated_tag;
+
 // Encapsulates logic to direct RPCs to a specific NTP's leader.
 //
 // When a caller invokes process_or_dispatch() directed at an NTP whose leader
@@ -67,10 +76,17 @@ concept IsHandler = requires(req_t req, resp_t resp, handler_t handler) {
 // When a caller is colocated with the leader, the router calls
 // find_shard_and_process() directly, calling into the handler's process()
 // implementations.
-template<typename req_t, typename resp_t, typename handler_t>
+template<
+  typename req_t,
+  typename resp_t,
+  typename handler_t,
+  typename gatedness_tag = leader_router_gated_tag>
 requires IsHandler<req_t, resp_t, handler_t>
 class leader_router {
 public:
+    using self = leader_router<req_t, resp_t, handler_t, gatedness_tag>;
+    constexpr static bool is_gated
+      = std::is_same_v<gatedness_tag, leader_router_gated_tag>;
     using duration = model::timeout_clock::duration;
     leader_router(
       ss::sharded<cluster::shard_table>&,
@@ -81,6 +97,19 @@ public:
       model::node_id self,
       int16_t retries,
       std::chrono::milliseconds timeout);
+
+    leader_router(const self&) = delete;
+    self& operator=(const self&) = delete;
+    leader_router(self&&) = delete;
+    self& operator=(self&&) = delete;
+
+    ~leader_router() {
+        if constexpr (is_gated) {
+            vassert(
+              _gate.is_closed(),
+              "leader_router gate still open on destruction");
+        }
+    }
 
     // Sends the given request to the leader, or processes it on the
     // appropriate shard if this node is the leader.
@@ -101,6 +130,7 @@ public:
     }
 
     ss::future<> stop() {
+        static_assert(is_gated);
         vlog(
           clusterlog.debug,
           "Shutting down {} router",
@@ -119,7 +149,29 @@ private:
     dispatch_to_leader(req_t req, model::node_id, duration timeout);
 
     ss::abort_source _as;
-    ss::gate _gate;
+
+    // to use without async stop: it can only error if there are active users
+    class fake_gate {
+    public:
+        auto hold() { return _counter.hold_read_lock(); }
+        fake_gate() = default;
+        fake_gate(const fake_gate&) = delete;
+        fake_gate& operator=(const fake_gate&) = delete;
+        fake_gate(fake_gate&&) = default;
+        fake_gate& operator=(fake_gate&&) = default;
+        ~fake_gate() {
+            if (_counter.locked()) {
+                vlog(
+                  clusterlog.error,
+                  "ungated leader_router is destroyed with active users");
+            }
+        }
+
+    private:
+        ss::rwlock _counter;
+    };
+
+    std::conditional_t<is_gated, ss::gate, fake_gate> _gate;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<rpc::connection_cache>& _connection_cache;
@@ -131,9 +183,13 @@ private:
     std::chrono::milliseconds _retry_delay_ms;
 };
 
-template<typename req_t, typename resp_t, typename handler_t>
+template<
+  typename req_t,
+  typename resp_t,
+  typename handler_t,
+  typename gatedness_tag>
 requires IsHandler<req_t, resp_t, handler_t>
-leader_router<req_t, resp_t, handler_t>::leader_router(
+leader_router<req_t, resp_t, handler_t, gatedness_tag>::leader_router(
   ss::sharded<cluster::shard_table>& shard_table,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<rpc::connection_cache>& connection_cache,
@@ -151,15 +207,20 @@ leader_router<req_t, resp_t, handler_t>::leader_router(
   , _retries(retries)
   , _retry_delay_ms(retry_delay_ms) {}
 
-template<typename req_t, typename resp_t, typename handler_t>
+template<
+  typename req_t,
+  typename resp_t,
+  typename handler_t,
+  typename gatedness_tag>
 requires IsHandler<req_t, resp_t, handler_t>
-ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::process_or_dispatch(
+ss::future<resp_t>
+leader_router<req_t, resp_t, handler_t, gatedness_tag>::process_or_dispatch(
   req_t req, model::ntp ntp, model::timeout_clock::duration timeout) {
     auto retries = _retries;
     auto delay_ms = _retry_delay_ms;
     std::optional<std::string> error;
 
-    auto holder = ss::gate::holder(_gate);
+    auto holder = _gate.hold();
     auto r = handler_t::error_resp(errc::not_leader);
     while (!_as.abort_requested() && 0 < retries--) {
         auto leader_opt = _leaders.local().get_leader(ntp);
@@ -223,9 +284,14 @@ ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::process_or_dispatch(
     co_return r;
 }
 
-template<typename req_t, typename resp_t, typename handler_t>
+template<
+  typename req_t,
+  typename resp_t,
+  typename handler_t,
+  typename gatedness_tag>
 requires IsHandler<req_t, resp_t, handler_t>
-ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::dispatch_to_leader(
+ss::future<resp_t>
+leader_router<req_t, resp_t, handler_t, gatedness_tag>::dispatch_to_leader(
   req_t req, model::node_id leader_id, model::timeout_clock::duration timeout) {
     using proto_t = handler_t::proto_t;
     return _connection_cache.local()
@@ -252,12 +318,16 @@ ss::future<resp_t> leader_router<req_t, resp_t, handler_t>::dispatch_to_leader(
       });
 }
 
-template<typename req_t, typename resp_t, typename handler_t>
+template<
+  typename req_t,
+  typename resp_t,
+  typename handler_t,
+  typename gatedness_tag>
 requires IsHandler<req_t, resp_t, handler_t>
 ss::future<resp_t>
-leader_router<req_t, resp_t, handler_t>::find_shard_and_process(
+leader_router<req_t, resp_t, handler_t, gatedness_tag>::find_shard_and_process(
   req_t req, model::ntp ntp, model::timeout_clock::duration) {
-    auto holder = ss::gate::holder(_gate);
+    auto holder = _gate.hold();
     auto shard = _shard_table.local().shard_for(ntp);
     if (unlikely(!shard)) {
         auto retries = _retries;

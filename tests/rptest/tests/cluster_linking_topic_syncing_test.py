@@ -431,6 +431,117 @@ class ClusterLinkingTopicSyncingWithScram(ClusterLinkingTopicSyncingTestBase):
             }
         )
 
+    @cluster(num_nodes=6)
+    def test_set_same_password(self):
+        shadow_link_req = self.create_default_link_request("test-link")
+        created_link = self.create_link_with_request(req=shadow_link_req)
+
+        orig_timestamp = created_link.configurations.client_options.authentication_configuration.scram_configuration.password_set_at
+        self.logger.debug(f"Original password set at: {orig_timestamp}")
+
+        # Update with the exact same password
+        shadow_link_update = shadow_link_req.shadow_link
+
+        update_mask: google.protobuf.field_mask_pb2.FieldMask = (
+            google.protobuf.field_mask_pb2.FieldMask(
+                paths=["configurations.client_options"]
+            )
+        )
+
+        updated_link = self.update_link(
+            shadow_link=shadow_link_update, update_mask=update_mask
+        )
+
+        new_timestamp = updated_link.configurations.client_options.authentication_configuration.scram_configuration.password_set_at
+
+        self.logger.debug(f"New timestamp: {new_timestamp}")
+
+        assert new_timestamp == orig_timestamp, (
+            f"Password set timestamp should not have changed: {new_timestamp} != {orig_timestamp}"
+        )
+
+
+class ClusterLinkingTopicSyncingWithPlain(ClusterLinkingTopicSyncingTestBase):
+    """
+    Run the same battery of tests with PLAIN
+    """
+
+    def __init__(self, test_context, *args, **kwargs):
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.sasl_mechanisms = ["SCRAM", "PLAIN"]
+        secondary_args: SecondaryClusterArgs = SecondaryClusterArgs(security=security)
+        self.cluster_link_user = "cluster-link-user"
+        self.cluster_link_password = "cluster-link-password"
+
+        super().__init__(
+            test_context=test_context,
+            secondary_cluster_args=secondary_args,
+            *args,
+            **kwargs,
+        )
+
+    def validate_created_link(self, shadow_link: shadow_link_pb2.ShadowLink) -> None:
+        now = time.time()
+        assert (
+            shadow_link.configurations.client_options.authentication_configuration.WhichOneof(
+                "authentication"
+            )
+            == "plain_configuration"
+        ), (
+            f"Expected 'plain_configuration' but got {shadow_link.configurations.client_options.authentication_configuration.WhichOneof('authentication')}"
+        )
+
+        plain_config = shadow_link.configurations.client_options.authentication_configuration.plain_configuration
+        assert plain_config.password_set, "Password not set in plain configuration"
+        assert plain_config.password == "", "Password should not be set"
+        assert plain_config.username == self.cluster_link_user, (
+            f"Username does not match: {plain_config.username} != {self.cluster_link_user}"
+        )
+        assert (
+            plain_config.password_set_at != google.protobuf.timestamp_pb2.Timestamp()
+        ), "Password set time not set"
+
+        assert now - 5 <= plain_config.password_set_at.seconds <= now + 5, (
+            f"Password set time not recent: {plain_config.password_set_at.seconds} vs {now}"
+        )
+
+    def add_credentials_to_link(
+        self, shadow_link: shadow_link_pb2.ShadowLink
+    ) -> shadow_link_pb2.ShadowLink:
+        self.logger.debug(
+            f"Adding PLAIN credentials for user {self.cluster_link_user} to link"
+        )
+
+        shadow_link.configurations.client_options.authentication_configuration.plain_configuration.CopyFrom(
+            shadow_link_pb2.PlainConfig(
+                username=self.cluster_link_user, password=self.cluster_link_password
+            )
+        )
+        return shadow_link
+
+    def get_source_cluster_rpk(self) -> RpkTool:
+        return RpkTool(
+            self.source_cluster.service,
+            username=self.redpanda.SUPERUSER_CREDENTIALS.username,
+            password=self.redpanda.SUPERUSER_CREDENTIALS.password,
+            sasl_mechanism=self.redpanda.SUPERUSER_CREDENTIALS.mechanism,
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.get_source_cluster_rpk().sasl_create_user(
+            self.cluster_link_user, self.cluster_link_password
+        )
+        self.source_cluster.service.set_cluster_config(
+            {
+                "superusers": [
+                    self.redpanda.SUPERUSER_CREDENTIALS.username,
+                    self.cluster_link_user,
+                ]
+            }
+        )
+
 
 class ClusterLinkingTopicSyncingWithTlsFiles(ClusterLinkingTopicSyncingTestBase):
     """

@@ -199,11 +199,8 @@ public:
       model::record_batch batch,
       raft::replicate_options);
 
+    // Caller must keep the STM alive until it destructs the returned holder.
     ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
-
-    ss::future<> stop() override;
-
-    ss::future<> start() override;
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
@@ -228,7 +225,11 @@ public:
         return raft::stm_initial_recovery_policy::read_everything;
     }
 
+    bool is_last_batch_for_idempotent_producer(
+      const model::record_batch_header&) const override;
+
 protected:
+    ss::future<> stop() override;
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
 private:
@@ -434,7 +435,7 @@ private:
     // Highest producer ID applied to this stm.
     model::producer_id _highest_producer_id;
     // for monotonicity of computed LSO.
-    model::offset _last_known_lso{-1};
+    model::offset _last_known_lso{model::invalid_lso};
     /**
      * LSO lock protects the LSO from being exposed before transaction begin
      * batch is applied.

@@ -250,6 +250,13 @@
                     },
                     "description": "ids of all nodes being recognized as down"
                 },
+                "high_disk_usage_nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    },
+                    "description": "ids of all nodes with disk usage exceeding storage alert thresholds"
+                },
                 "nodes_in_recovery_mode": {
                     "type": "array",
                     "items": {

@@ -27,6 +27,7 @@ class accounting_sink : public data_sink {
 public:
     ss::future<> start() override;
     ss::future<> stop() noexcept override;
+    ss::future<> reset() override;
     kafka::offset last_replicated_offset() const override;
     raft::replicate_stages replicate(
       chunked_vector<::model::record_batch> batches,
@@ -34,6 +35,7 @@ public:
       ss::abort_source& as) override;
     void notify_replicator_failure(::model::term_id) override;
     kafka::offset high_watermark() const final;
+    bool can_prefix_truncate() const final;
     ss::future<kafka::error_code> prefix_truncate(
       kafka::offset truncation_offset,
       ss::lowres_clock::time_point deadline) final;

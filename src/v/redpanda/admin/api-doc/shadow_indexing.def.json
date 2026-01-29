@@ -1,0 +1,12 @@
+"automated_recovery_request_body": {
+    "description": "Request body for initializing a cluster recovery",
+    "type": "object",
+    "properties": {
+        "cluster_uuid_override": {
+            "description": "Optional cluster uuid to recover. If not provided, will auto-discover the manifest with highest sequence number.",
+            "type": "string",
+            "format": "uuid"
+        }
+    },
+    "additionalProperties": false
+}

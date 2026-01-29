@@ -24,7 +24,10 @@ namespace security {
 
 enum class role_member_type {
     user = 0,
+    group = 1,
 };
+
+std::ostream& operator<<(std::ostream& os, role_member_type t);
 
 class role_member;
 

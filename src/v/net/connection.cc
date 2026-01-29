@@ -146,6 +146,19 @@ bool is_invalid_character_error(std::exception_ptr e) {
     }
 }
 
+namespace {
+ss::input_stream<char> get_input_stream(
+  ss::connected_socket& fd, std::optional<size_t> in_max_buffer_size) {
+    if (in_max_buffer_size.has_value()) {
+        auto in_config = ss::connected_socket_input_stream_config{};
+        in_config.max_buffer_size = in_max_buffer_size.value();
+        return fd.input(in_config);
+    } else {
+        return fd.input();
+    }
+}
+} // namespace
+
 connection::connection(
   boost::intrusive::list<connection>& hook,
   ss::sstring name,
@@ -160,19 +173,11 @@ connection::connection(
   , _name(std::move(name))
   , _fd(std::move(f))
   , _local_addr(_fd.local_address())
-  , _in(_fd.input())
+  , _in(get_input_stream(_fd, in_max_buffer_size))
   , _out(_fd.output())
   , _probe(p)
   , _tls_enabled(tls_enabled)
   , _log(log) {
-    if (in_max_buffer_size.has_value()) {
-        auto in_config = ss::connected_socket_input_stream_config{};
-        in_config.max_buffer_size = in_max_buffer_size.value();
-        _in = _fd.input(in_config);
-    } else {
-        _in = _fd.input();
-    }
-
     _hook.push_back(*this);
     _probe.connection_established();
 }

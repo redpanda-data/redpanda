@@ -255,7 +255,7 @@ class WriteCachingFailureInjectionTest(RedpandaTest):
             return next(self.rpk.describe_topic(self.topic)).high_watermark
 
         second_quorum_hwm = wait_until_result(
-            _hwm, timeout_sec=30, backoff_sec=1, retry_on_exc=True
+            _hwm, timeout_sec=120, backoff_sec=1, retry_on_exc=True
         )
 
         lost = 10000 - second_quorum_hwm

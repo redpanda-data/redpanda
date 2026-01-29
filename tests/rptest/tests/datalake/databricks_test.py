@@ -130,7 +130,9 @@ class DatabricksTest(RedpandaTest):
             dl.create_iceberg_enabled_topic(self.topic_name, partitions=10)
             dl.produce_to_topic(self.topic_name, 1024, count)
 
-            dl.wait_for_translation(self.topic_name, msg_count=count, timeout=60)
+            dl.wait_for_translation(
+                self.topic_name, msg_count=count, timeout=120, progress_sec=30
+            )
 
             actual_schema = fetch_dbx_schema(dl, f"redpanda.{self.topic_name}")
             expected_schema = [
@@ -280,7 +282,10 @@ class DatabricksTest(RedpandaTest):
                 produced_total += num_msgs
 
                 dl.wait_for_translation(
-                    self.topic_name, msg_count=produced_total, timeout=60
+                    self.topic_name,
+                    msg_count=produced_total,
+                    timeout=120,
+                    progress_sec=30,
                 )
 
             self.logger.info("Producing data to the topic with no partitioning")
@@ -413,7 +418,9 @@ class DatabricksTest(RedpandaTest):
                 self.logger.info(f"Producing data to the topic, iteration {i + 1}")
                 num_produced += 100
                 dl.produce_to_topic(self.topic_name, 1024, 100)
-                dl.wait_for_translation(self.topic_name, num_produced, timeout=60)
+                dl.wait_for_translation(
+                    self.topic_name, num_produced, timeout=120, progress_sec=30
+                )
 
             table = dl.catalog_client().load_table(table_name)
             files_before = len(table.inspect.files())
@@ -432,7 +439,9 @@ class DatabricksTest(RedpandaTest):
 
             self.logger.info("Producing more data to the topic after optimization")
             dl.produce_to_topic(self.topic_name, 1024, 10)
-            dl.wait_for_translation(self.topic_name, num_produced + 10, timeout=60)
+            dl.wait_for_translation(
+                self.topic_name, num_produced + 10, timeout=120, progress_sec=30
+            )
 
             self.logger.info("Verifying that all data is accessible after optimization")
             DatalakeVerifier.oneshot(

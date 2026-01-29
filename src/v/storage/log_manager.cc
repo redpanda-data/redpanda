@@ -20,6 +20,7 @@
 #include "resource_mgmt/memory_groups.h"
 #include "ssx/async-clear.h"
 #include "ssx/future-util.h"
+#include "ssx/mutex.h"
 #include "ssx/watchdog.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
@@ -39,7 +40,6 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "utils/directory_walker.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
@@ -431,6 +431,26 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           = current_log.handle->stm_manager()->max_removable_local_log_offset();
         model::offset max_tombstone_remove_offset
           = current_log.handle->stm_manager()->max_tombstone_remove_offset();
+        model::offset max_tx_end_remove_offset
+          = current_log.handle->stm_manager()->max_tx_end_remove_offset();
+        model::offset tx_snapshot_offset
+          = current_log.handle->stm_manager()->tx_snapshot_offset();
+        // We clamp the offset up to which we can remove transactional control
+        // batches to the last snapshot taken by the transactional stm. This
+        // ensures that we do not remove control batches that may be needed to
+        // reconstruct the state machine during recovery.
+        model::offset max_tx_remove_offset = std::min(
+          max_tx_end_remove_offset, tx_snapshot_offset);
+
+        vlog(
+          gclog.trace,
+          "{}: max tombstone remove offset: {}, max tx remove offset: {}, max "
+          "tx end remove snapshot: {}, tx_snapshot_offset: {}",
+          ntp,
+          max_tombstone_remove_offset,
+          max_tx_remove_offset,
+          max_tx_end_remove_offset,
+          tx_snapshot_offset);
         if (
           max_unpinned_offset
           && *max_unpinned_offset < max_compactible_offset) {
@@ -444,17 +464,19 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
               max_compactible_offset);
             max_compactible_offset = *max_unpinned_offset;
         }
-        co_await current_log.handle->housekeeping(housekeeping_config(
-          collection_threshold,
-          _config.retention_bytes(),
-          max_compactible_offset,
-          max_tombstone_remove_offset,
-          current_log.handle->config().tombstone_retention_ms(),
-          current_log.handle->config().tx_retention_ms(),
-          current_log.handle->config().min_compaction_lag_ms(),
-          _abort_source,
-          std::move(ntp_sanitizer_cfg),
-          _compaction_hash_key_map.get()));
+        co_await current_log.handle->housekeeping(
+          housekeeping_config::make_config(
+            collection_threshold,
+            _config.retention_bytes(),
+            max_compactible_offset,
+            max_tombstone_remove_offset,
+            max_tx_remove_offset,
+            current_log.handle->config().delete_retention_ms(),
+            current_log.handle->config().delete_retention_ms(),
+            current_log.handle->config().min_compaction_lag_ms(),
+            _abort_source,
+            std::move(ntp_sanitizer_cfg),
+            _compaction_hash_key_map.get()));
         _probe->housekeeping_log_processed();
     }
 }
@@ -690,7 +712,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
       _resources,
       _feature_table,
       std::move(ntp_sanitizer_cfg),
-      segment_size_hint);
+      segment_size_hint,
+      _probe->get_appender_stats());
 }
 
 std::optional<batch_cache_index>
@@ -963,7 +986,7 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
     return ss::smp::submit_to(
              0,
              [dir = std::move(dir)]() mutable {
-                 static thread_local mutex fs_lock{
+                 static thread_local ssx::mutex fs_lock{
                    "dispatch_topic_dir_deletion"};
                  return fs_lock.with([dir = std::move(dir)] {
                      return ss::file_exists(dir).then([dir](bool exists) {

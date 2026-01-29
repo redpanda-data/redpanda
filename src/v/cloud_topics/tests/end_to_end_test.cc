@@ -98,6 +98,10 @@ TEST_F(e2e_fixture, test_create_cloud_topic) {
 }
 
 TEST_F(e2e_fixture, test_l0_path) {
+    // Disable reconciliation to ensure we test the L0 path exclusively.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+
     auto* producer = make_producer();
     size_t total_records = 100;
     size_t records_per_batch = 5;

@@ -16,6 +16,7 @@ go_library(
         "grafana-dashboards/Kafka-Consumer-Offsets.json.gz",
         "grafana-dashboards/Kafka-Topic-Metrics.json.gz",
         "grafana-dashboards/Redpanda-Ops-Dashboard.json.gz",
+        "grafana-dashboards/Redpanda-Serverless-Dashboard.json.gz",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate",
     visibility = ["//visibility:public"],

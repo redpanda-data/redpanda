@@ -58,7 +58,7 @@ public:
       model::node_id node, check_ntp_states_request&& req);
 
     ss::future<result<migration_metadata>> get_migration(id);
-    ss::future<chunked_vector<migration_metadata>> list_migrations();
+    ss::future<result<chunked_vector<migration_metadata>>> list_migrations();
 
     using list_mountable_topics_result
       = result<chunked_vector<cloud_storage::topic_mount_manifest_path>>;

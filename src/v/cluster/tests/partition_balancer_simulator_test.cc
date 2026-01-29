@@ -30,6 +30,8 @@ static constexpr size_t recovery_batch_size = 512_KiB;
 static constexpr size_t recovery_throttle_burst = 100_MiB;
 static constexpr size_t recovery_throttle_ticks_between_refills = 10;
 
+static constexpr auto node_responsiveness_timeout = std::chrono::seconds(10);
+
 class partition_balancer_sim_fixture {
 public:
     void add_node(
@@ -67,6 +69,8 @@ public:
         _nodes.emplace(
           id, node_state{.id = id, .total = total_size, .used = initial_used});
     }
+
+    void remove_node(model::node_id id) { _nodes.erase(id); }
 
     const auto& nodes() const { return _nodes; }
 
@@ -229,39 +233,43 @@ public:
 
     // return the number of scheduled actions
     size_t run_balancer() {
+        auto plan_data = do_run_balancer();
+
+        logger.info(
+          "planned action counts: reassignments: {}, cancellations: {}, "
+          "failed: {}",
+          plan_data.reassignments.size(),
+          plan_data.cancellations.size(),
+          plan_data.failed_actions_count);
+
+        size_t actions_count = plan_data.reassignments.size()
+                               + plan_data.cancellations.size();
+
+        _last_run_in_progress_updates
+          = _workers.table.local().updates_in_progress().size() + actions_count;
+
+        for (const auto& reassignment : plan_data.reassignments) {
+            dispatch_move(reassignment.ntp, reassignment.allocated.replicas());
+        }
+        for (const auto& ntp : plan_data.cancellations) {
+            dispatch_cancel(ntp);
+        }
+
+        return actions_count;
+    }
+
+    // run the balancer planner, return its plan
+    cluster::partition_balancer_planner::plan_data do_run_balancer() {
         auto hr = create_health_report();
         populate_node_status_table();
 
         auto planner = make_planner();
 
-        {
-            ss::abort_source as;
-            auto plan_data = planner.plan_actions(hr, as).get();
+        ss::abort_source as;
 
-            logger.info(
-              "planned action counts: reassignments: {}, cancellations: {}, "
-              "failed: {}",
-              plan_data.reassignments.size(),
-              plan_data.cancellations.size(),
-              plan_data.failed_actions_count);
+        auto plan_data = planner.plan_actions(hr, as).get();
 
-            size_t actions_count = plan_data.reassignments.size()
-                                   + plan_data.cancellations.size();
-
-            _last_run_in_progress_updates
-              = _workers.table.local().updates_in_progress().size()
-                + actions_count;
-
-            for (const auto& reassignment : plan_data.reassignments) {
-                dispatch_move(
-                  reassignment.ntp, reassignment.allocated.replicas());
-            }
-            for (const auto& ntp : plan_data.cancellations) {
-                dispatch_cancel(ntp);
-            }
-
-            return actions_count;
-        }
+        return plan_data;
     }
 
     size_t last_run_in_progress_updates() const {
@@ -523,9 +531,9 @@ private:
             .max_concurrent_actions = 50,
             .node_availability_timeout_sec = std::chrono::minutes(1),
             .segment_fallocation_step = 16_MiB,
-            .node_responsiveness_timeout = std::chrono::seconds(10),
+            .node_responsiveness_timeout = node_responsiveness_timeout,
             .topic_aware = true,
-          },
+            .node_autodecommission_timeout = {}},
           _workers.state.local(),
           _workers.allocator.local());
     }
@@ -732,7 +740,11 @@ private:
 
             return ss::make_foreign(
               ss::make_lw_shared<const cluster::node_health_report>(
-                id, local_state, std::move(topics), std::nullopt));
+                id,
+                local_state,
+                std::move(topics),
+                /* drain_status */ std::nullopt,
+                cluster::node_liveness_report{}));
         }
     };
 
@@ -977,4 +989,42 @@ FIXTURE_TEST(test_mixed_replication_factors, partition_balancer_sim_fixture) {
     BOOST_REQUIRE(run_to_completion(total_replicas() * 3));
     set_decommissioning(model::node_id{4});
     BOOST_REQUIRE(run_to_completion(total_replicas() * 3));
+}
+
+// this test checks that the partition balancer planner will report
+// reallocation failures when a decommissioning node's partitions have lost
+// source quorum
+//
+// 1. create a number of RF=1 partitions
+// 2. decommission a node to start partition moves
+// 3. remove the decommissioned node, wait for it to be deemed unresponsive
+// 4. run the planner again to check that the moving partitions have become
+//    reallocation failures
+FIXTURE_TEST(
+  test_report_dead_decom_as_realloc_failure, partition_balancer_sim_fixture) {
+    add_node(model::node_id{0}, 100_GiB, 1);
+    add_node(model::node_id{1}, 100_GiB, 1);
+    add_node(model::node_id{2}, 100_GiB, 1);
+
+    model::node_id node_to_kill{1};
+
+    // if randomly distributed, 10^-6 probability that no partition lands on
+    // node_to_kill
+    for (int i = 0; i < 33; ++i) {
+        add_topic(fmt::format("topic_rf_1_iteration_{}", i), 1, 1, 10_MiB);
+    }
+
+    run_balancer();
+
+    // start a decommission and run the planner
+    set_decommissioning(node_to_kill);
+    std::ignore = do_run_balancer();
+
+    remove_node(node_to_kill);
+
+    // guarantee that the node will be deemed unresponsive
+    ss::sleep(node_responsiveness_timeout + 1s).get();
+
+    auto plan = do_run_balancer();
+    BOOST_REQUIRE(plan.reallocation_failures.size() > 0);
 }

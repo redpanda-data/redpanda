@@ -221,7 +221,7 @@ class column_store
     };
 
     static_assert(
-      reflection::arity<segment_meta>()
+      std::tuple_size_v<decltype(std::declval<segment_meta>().serde_fields())>
         == std::tuple_size_v<decltype(segment_meta_accessors)>,
       "segment_meta has a field that is not in segment_meta_accessors. check "
       "also that the members of column_store match the members of "

@@ -103,6 +103,8 @@ to_proto(const datalake::coordinator::topic_state& state) {
     pb_state.set_partition_states(std::move(pb_partition_states));
     pb_state.set_lifecycle_state(to_proto(state.lifecycle_state));
     pb_state.set_total_kafka_processed_bytes(state.total_kafka_bytes_processed);
+    pb_state.set_last_committed_snapshot_id(
+      state.last_committed_snapshot_id.value_or(iceberg::invalid_snapshot_id));
     return pb_state;
 }
 

@@ -36,6 +36,13 @@ model::offset stm_manager::max_removable_local_log_offset() {
     return result;
 }
 
+model::offset stm_manager::tx_snapshot_offset() const {
+    if (_tx_stm) {
+        return _tx_stm->last_locally_snapshotted_offset();
+    }
+    return model::offset::max();
+}
+
 std::optional<kafka::offset> stm_manager::lowest_pinned_data_offset() const {
     std::optional<kafka::offset> result;
     for (const auto& stm : _stms) {
@@ -53,6 +60,22 @@ model::offset stm_manager::max_tombstone_remove_offset() const {
 
 void stm_manager::set_max_tombstone_remove_offset(model::offset o) {
     _max_tombstone_remove_offset = o;
+}
+
+model::offset stm_manager::max_tx_end_remove_offset() const {
+    return _max_tx_end_remove_offset;
+}
+
+void stm_manager::set_max_tx_end_remove_offset(model::offset o) {
+    _max_tx_end_remove_offset = o;
+}
+
+bool stm_manager::is_last_batch_for_idempotent_producer(
+  const model::record_batch_header& hdr) const {
+    if (!_tx_stm) {
+        return false;
+    }
+    return _tx_stm->is_last_batch_for_idempotent_producer(hdr);
 }
 
 fmt::iterator local_log_reader_config::format_to(fmt::iterator it) const {

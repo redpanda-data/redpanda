@@ -154,7 +154,9 @@ ss::future<> cluster_epoch_service<Clock>::raft0_state::service_loop() {
     while (!_abort_source.abort_requested()) {
         try {
             co_await ss::sleep_abortable<Clock>(
-              epoch_bump_interval, _abort_source);
+              config::shard_local_cfg()
+                .cloud_topics_epoch_service_epoch_increment_interval(),
+              _abort_source);
         } catch (const ss::sleep_aborted& e) {
             std::ignore = e;
         }
@@ -523,7 +525,8 @@ void cluster_epoch_service<Clock>::set_raft0(
 
 template<typename Clock>
 bool cluster_epoch_service<Clock>::cache_entry_expired() const noexcept {
-    return Clock::now() > (_cached_epoch_time + epoch_cache_timeout);
+    return Clock::now()
+           > (_cached_epoch_time + config::shard_local_cfg().cloud_topics_epoch_service_local_epoch_cache_duration());
 }
 template<typename Clock>
 bool cluster_epoch_service<Clock>::cache_entry_needs_updated() const noexcept {

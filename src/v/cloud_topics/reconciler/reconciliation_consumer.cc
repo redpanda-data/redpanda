@@ -28,7 +28,7 @@ ss::future<std::optional<consumer_metadata>> build_from_reader(
     while (auto batches = co_await gen()) {
         read_duration->stop();
         build_duration->start();
-        for (auto& batch : *batches) {
+        for (auto& batch : batches->get()) {
             if (metadata.base_offset == kafka::offset::min()) {
                 metadata.base_offset = model::offset_cast(batch.base_offset());
             }

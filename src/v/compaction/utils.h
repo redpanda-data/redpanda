@@ -20,6 +20,9 @@
 
 namespace compaction {
 
+bool is_tx_batch_compaction_enabled(
+  ss::sharded<features::feature_table>& feature_table);
+
 // Returns `true` if the provided `record_batch_type` is a control batch that is
 // immediately removable during compaction. This means we do not need to
 // consider either deduplication (compactible) or `delete.retention.ms` (a form
@@ -28,7 +31,7 @@ namespace compaction {
 bool is_removable_control_batch(
   const model::ntp& ntp,
   const model::record_batch_type batch_type,
-  ss::sharded<features::feature_table>& feature_table);
+  bool remove_user_tx_fence_enabled);
 
 // Returns `true` or `false` indicating whether the batch type of the header
 // passed contains records that may be removed by compaction- whether that is by

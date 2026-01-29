@@ -27,13 +27,19 @@ ss::future<ctx_server<service>::reply_t>
 put_config(ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
 ss::future<ctx_server<service>::reply_t> get_config_subject(
-  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+  ctx_server<service>::request_t rq,
+  ctx_server<service>::reply_t rp,
+  std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t> put_config_subject(
-  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+  ctx_server<service>::request_t rq,
+  ctx_server<service>::reply_t rp,
+  std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t> delete_config_subject(
-  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+  ctx_server<service>::request_t rq,
+  ctx_server<service>::reply_t rp,
+  std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t>
 get_mode(ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
@@ -42,13 +48,19 @@ ss::future<ctx_server<service>::reply_t>
 put_mode(ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
 ss::future<ctx_server<service>::reply_t> get_mode_subject(
-  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+  ctx_server<service>::request_t rq,
+  ctx_server<service>::reply_t rp,
+  std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t> put_mode_subject(
-  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+  ctx_server<service>::request_t rq,
+  ctx_server<service>::reply_t rp,
+  std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t> delete_mode_subject(
-  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+  ctx_server<service>::request_t rq,
+  ctx_server<service>::reply_t rp,
+  std::optional<request_auth_result> auth_result);
 
 ss::future<ctx_server<service>::reply_t> get_schemas_types(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);

@@ -30,7 +30,6 @@ group_tx_tracker_stm::group_tx_tracker_stm(
 }
 
 ss::future<> group_tx_tracker_stm::gc_expired_tx_fence_transactions() {
-    auto holder = _gate.hold();
     auto it = _all_txs.begin();
     while (it != _all_txs.end()) {
         it->second.gc_expired_tx_fence_transactions();
@@ -101,7 +100,6 @@ void group_tx_tracker_stm::maybe_end_tx(
 }
 
 ss::future<> group_tx_tracker_stm::do_apply(const model::record_batch& b) {
-    auto holder = _gate.hold();
     // fast path, check without a scheduling point.
     if (unlikely(!_feature_table.local().is_active(
           features::feature::group_tx_fence_dedicated_batch_type))) {
@@ -131,7 +129,6 @@ model::offset group_tx_tracker_stm::max_removable_local_log_offset() {
 ss::future<raft::local_snapshot_applied>
 group_tx_tracker_stm::apply_local_snapshot(
   raft::stm_snapshot_header header, iobuf&& snap_buf) {
-    auto holder = _gate.hold();
     if (header.version != supported_local_snapshot_version) {
         // fall back to applying from the log
         co_return raft::local_snapshot_applied::no;
@@ -146,7 +143,6 @@ group_tx_tracker_stm::apply_local_snapshot(
 
 ss::future<raft::stm_snapshot>
 group_tx_tracker_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
-    auto holder = _gate.hold();
     // Copy over the snapshot state for a consistent view.
     auto offset = last_applied_offset();
     snapshot snap{

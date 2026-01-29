@@ -59,7 +59,8 @@ ss::temporary_buffer<char> hdr_hist::print_classic() const {
         throw std::runtime_error(
           fmt::format("Failed to print histogram: {}", p_ret));
     }
-    return ss::temporary_buffer<char>(buf, len, ss::make_free_deleter(buf));
+    return ss::temporary_buffer<char>::maybe_unsafe_from_deleter(
+      buf, len, ss::make_free_deleter(buf));
 }
 // getters
 int64_t hdr_hist::get_value_at(double percentile) const {

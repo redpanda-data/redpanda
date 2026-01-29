@@ -31,11 +31,23 @@ void handle_authz(
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
   std::optional<request_auth_result>& auth_result,
-  const chunked_vector<subject>& subjects);
+  const chunked_vector<context_subject>& subjects);
 
 void handle_get_subjects_authz(
   const server::request_t& rq,
   std::optional<request_auth_result>& auth_result,
-  chunked_vector<subject>& subjects);
+  chunked_vector<context_subject>& subjects);
+
+/// Handles authorization for config/mode endpoints that operate on either
+/// a context (e.g., PUT /config/:.ctx:) or a subject (e.g., PUT
+/// /config/:.ctx:subject).
+/// - Context-level operations require sr_registry access
+/// - Subject-level operations require sr_subject access on the specific subject
+void handle_config_mode_authz(
+  const server::request_t& rq,
+  std::string_view operation_name,
+  std::optional<request_auth_result>& auth_result,
+  const context_subject& ctx_sub,
+  security::acl_operation op);
 
 } // namespace pandaproxy::schema_registry::enterprise

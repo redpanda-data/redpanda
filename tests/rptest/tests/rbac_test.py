@@ -39,7 +39,7 @@ from rptest.util import expect_exception, expect_http_error, wait_until_result
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
 
-ALICE = SaslCredentials("alice", "itsMeH0nest", "SCRAM-SHA-256")
+ALICE = SaslCredentials("alice", "itsMeH0nest012", "SCRAM-SHA-256")
 
 
 def expect_role_error(status_code: RoleErrorCode):
@@ -49,7 +49,7 @@ def expect_role_error(status_code: RoleErrorCode):
 
 
 class RBACTestBase(RedpandaTest):
-    password = "password"
+    password = "password012345"
     algorithm = "SCRAM-SHA-256"
     role_name0 = "foo"
     role_name1 = "bar"
@@ -831,6 +831,84 @@ class RBACLicenseTest(RBACTestBase):
 
         self.logger.debug("Delete should work regardless")
         check_action(lambda: admin.delete_role(role_name_0), False)
+
+    @cluster(num_nodes=1)
+    @skip_fips_mode
+    def test_sanction_group_acls(self):
+        """
+        Test that ACLs with Group: principal are blocked when the license expires.
+
+        This test verifies that:
+        1. Under trial license, we can create ACLs with Group: principal
+        2. Without a license, we cannot create ACLs with Group: principal
+        3. We can still delete existing Group: ACLs without a license
+        4. After installing a license, we can create Group: ACLs again
+        """
+        rpk = RpkTool(self.redpanda)
+
+        def check_rpk_output(tbl: str, search: str, expect_found: bool):
+            rows = tbl.split("\n")[1:]
+            res = any(search in r for r in rows)
+            assert res is expect_found, (
+                f"{'' if expect_found else 'un'}expected '{search}' in {json.dumps(rows, indent=1)}"
+            )
+
+        self.logger.debug("Under trial license, we can bind an ACL to a Group")
+        check_rpk_output(
+            rpk.allow_principal("Group:test-group", ["all"], "topic", "test-topic"),
+            "INVALID_CONFIG",
+            False,
+        )
+        check_rpk_output(rpk.acl_list(), "Group:test-group", True)
+
+        self.redpanda.set_environment({"__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE": "1"})
+        self.redpanda.rolling_restart_nodes(
+            self.redpanda.nodes, use_maintenance_mode=False
+        )
+
+        self.logger.debug("Without a license, we cannot bind an ACL to a Group")
+
+        check_rpk_output(
+            rpk.allow_principal(
+                "Group:another-group", ["all"], "topic", "another-topic"
+            ),
+            "INVALID_CONFIG",
+            True,
+        )
+        check_rpk_output(rpk.acl_list(), "Group:another-group", False)
+        check_rpk_output(rpk.acl_list(), "Group:test-group", True)
+
+        self.logger.debug("but we can still _delete_ an ACL bound to a group")
+
+        check_rpk_output(
+            rpk.delete_principal("Group:test-group", ["all"], "topic", "test-topic"),
+            "INVALID_CONFIG",
+            False,
+        )
+
+        check_rpk_output(rpk.acl_list(), "Group:test-group", False)
+
+        self.logger.debug("Install a license, everything should work as expected")
+
+        self.redpanda.install_license()
+
+        check_rpk_output(
+            rpk.allow_principal(
+                "Group:another-group", ["all"], "topic", "another-topic"
+            ),
+            "INVALID_CONFIG",
+            False,
+        )
+        check_rpk_output(rpk.acl_list(), "Group:another-group", True)
+
+        check_rpk_output(
+            rpk.delete_principal(
+                "Group:another-group", ["all"], "topic", "another-topic"
+            ),
+            "INVALID_CONFIG",
+            False,
+        )
+        check_rpk_output(rpk.acl_list(), "Group:another-group", False)
 
 
 class RBACEndToEndTest(RBACTestBase):

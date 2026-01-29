@@ -57,13 +57,13 @@ TEST_CORO(RecordBatchReaderGenerator, SmallSetMemory) {
     chunked_vector<model::record_batch> r1_materialized;
     auto gen1 = std::move(r1).generator(model::no_timeout);
     while (auto batch = co_await gen1()) {
-        r1_materialized.push_back(std::move(batch.value()));
+        r1_materialized.push_back(std::move(batch->get()));
     }
 
     chunked_vector<model::record_batch> r2_materialized;
     auto gen2 = std::move(r2).slice_generator(model::no_timeout);
     while (auto batches = co_await gen2()) {
-        for (auto& batch : batches.value()) {
+        for (auto& batch : batches->get()) {
             r2_materialized.push_back(std::move(batch));
         }
     }

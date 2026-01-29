@@ -154,8 +154,11 @@ struct linear_int_kv_batch_generator {
     static void validate_post_compaction(
       chunked_circular_buffer<model::record_batch>&& batches) {
         int idx = 0;
-        for (const auto& batch : batches) {
+        for (auto& batch : batches) {
             RPTEST_EXPECT_EQ(batch.record_count(), 1);
+            if (batch.compressed()) {
+                batch = model::decompress_batch_sync(batch);
+            }
             batch.for_each_record([&idx](model::record rec) {
                 RPTEST_EXPECT_EQ(
                   reflection::from_iobuf<int>(rec.release_key()), idx++);

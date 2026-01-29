@@ -65,7 +65,7 @@ struct coordinator_node {
       std::chrono::milliseconds commit_interval)
       : stm(*stm)
       , commit_interval_ms(commit_interval)
-      , topic_table(mr)
+      , topic_table(mr, model::node_id{0})
       , file_committer(std::move(committer))
       , snapshot_remover(std::move(remover))
       , crd(
@@ -206,9 +206,6 @@ public:
     }
 
     void SetUp() override {
-        ss::smp::invoke_on_all([] {
-            config::node().node_id.set_value(model::node_id{1});
-        }).get();
         cfg.get("raft_heartbeat_interval_ms").set_value(50ms);
         cfg.get("raft_heartbeat_timeout_ms").set_value(500ms);
         auto args = param();

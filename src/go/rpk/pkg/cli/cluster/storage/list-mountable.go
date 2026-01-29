@@ -41,7 +41,7 @@ List all mountable topics:
 			config.CheckExitServerlessAdmin(p)
 
 			var mountableTopics []rpadmin.MountableTopic
-			if p.FromCloud {
+			if p.CheckFromCloud() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(p)
 				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 

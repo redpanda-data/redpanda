@@ -198,7 +198,7 @@ class StorageResourceRestartTest(RedpandaTest):
         return sum(s.value for s in samples)
 
     def _get_partition_segments(self, partition_idx):
-        storage = self.redpanda.storage(all_nodes=True)
+        storage = self.redpanda.storage(nodes=self.redpanda.nodes)
         partitions = list(storage.partitions("kafka", self.topic))
         p = partitions[partition_idx]
         segments = list(p.segments.values())

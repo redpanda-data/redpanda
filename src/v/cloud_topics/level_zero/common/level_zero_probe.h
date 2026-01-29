@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "cloud_topics/level_zero/common/micro_probe.h"
 #include "metrics/metrics.h"
 #include "utils/hdr_hist.h"
 #include "utils/log_hist.h"
@@ -57,6 +58,8 @@ public:
     }
     void register_bytes_out(uint64_t bytes) { _total_bytes_out += bytes; }
 
+    void register_micro_probe(const micro_probe& p) { _request_probe += p; }
+
 private:
     void setup_internal_metrics(bool disable, ss::sstring name);
     void setup_public_metrics(bool disable, ss::sstring name);
@@ -83,6 +86,8 @@ private:
     uint64_t _total_bytes_out{0};
     // request memory histogram (distribution of memory sizes used by requests)
     batch_size_hist _request_memory_histogram;
+
+    micro_probe _request_probe{};
 
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;

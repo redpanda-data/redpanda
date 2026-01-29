@@ -34,7 +34,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			if !p.FromCloud {
+			if !p.CheckFromCloud() {
 				out.Die("this command is only available for cloud clusters")
 			}
 			var url string
@@ -53,7 +53,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			request := &dataplanev1.DeleteSecretRequest{
 				Id: secretName,
 			}
-			_, err = cl.Secrets.DeleteSecret(cmd.Context(), &connect.Request[dataplanev1.DeleteSecretRequest]{Msg: request})
+			_, err = cl.Secret.DeleteSecret(cmd.Context(), &connect.Request[dataplanev1.DeleteSecretRequest]{Msg: request})
 			out.MaybeDie(err, "unable to delete secret: %v", err)
 
 			fmt.Printf("Secret %s deleted successfully \n", secretName)
