@@ -104,6 +104,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/domain:domain_supervisor",
         "//src/v/cloud_topics/level_one/metastore:leader_router",
         "//src/v/cloud_topics/level_one/metastore:replicated_metastore",
+        "//src/v/cloud_topics/level_zero/cluster_services_impl",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/cloud_topics/reconciler",
         "//src/v/cluster",

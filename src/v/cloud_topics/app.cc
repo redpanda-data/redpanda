@@ -141,6 +141,9 @@ ss::future<> app::construct(
       &controller->get_partition_manager(),
       &controller->get_raft_manager(),
       &controller->get_topics_state());
+
+    co_await construct_service(
+      cluster_services, std::ref(controller->get_cluster_epoch_generator()));
 }
 
 ss::future<> app::start() {
@@ -238,5 +241,9 @@ l1::compaction_scheduler* app::get_compaction_scheduler() {
 }
 
 ss::sharded<level_zero_gc>* app::get_level_zero_gc() { return &l0_gc; }
+
+cluster_services& app::get_local_cluster_services() {
+    return std::ref(cluster_services.local());
+};
 
 } // namespace cloud_topics
