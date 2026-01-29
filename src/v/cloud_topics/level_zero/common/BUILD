@@ -35,6 +35,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "object",
+    srcs = [
+        "object.cc",
+    ],
+    hdrs = [
+        "object.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "@fmt",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/serde:map",
+        "@abseil-cpp//absl/container:btree",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "micro_probe",
     hdrs = [
         "micro_probe.h",
