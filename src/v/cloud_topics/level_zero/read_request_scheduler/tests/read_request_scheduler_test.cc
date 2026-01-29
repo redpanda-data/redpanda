@@ -144,6 +144,9 @@ static const model::ntp
 static const model::ntp
   test_ntp1(test_topic.ns, test_topic.tp, model::partition_id(1));
 
+static const model::topic_id_partition
+  test_tidp0(model::topic_id::create(), model::partition_id(0));
+
 TEST_F_CORO(read_request_scheduler_fixture, smoke_test) {
     co_await start();
 
@@ -158,7 +161,10 @@ TEST_F_CORO(read_request_scheduler_fixture, smoke_test) {
             .byte_range_size = ct::byte_range_size_t{1_MiB}});
 
         auto result = co_await pipeline.local().make_reader(
-          test_ntp0, std::move(query), ss::lowres_clock::now() + 10s);
+          test_ntp0,
+          test_tidp0,
+          std::move(query),
+          ss::lowres_clock::now() + 10s);
         ASSERT_TRUE_CORO(result.has_value());
         ASSERT_EQ_CORO(result.value().results.size(), 1);
         ASSERT_EQ_CORO(
@@ -186,7 +192,7 @@ TEST_F_CORO(read_request_scheduler_fixture, error_propagation) {
         .byte_range_size = ct::byte_range_size_t{1_MiB}});
 
     auto result = co_await pipeline.local().make_reader(
-      test_ntp0, std::move(query), ss::lowres_clock::now() + 10s);
+      test_ntp0, test_tidp0, std::move(query), ss::lowres_clock::now() + 10s);
 
     ASSERT_FALSE_CORO(result.has_value());
 
