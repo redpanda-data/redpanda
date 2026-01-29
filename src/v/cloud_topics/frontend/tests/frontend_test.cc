@@ -82,6 +82,8 @@ public:
 
     MOCK_METHOD(size_t, materialize_max_bytes, (), (const, override));
 
+    MOCK_METHOD(batch_cache_stats, cache_stats, (), (const, override));
+
     MOCK_METHOD(ss::future<>, start, (), (override));
 
     MOCK_METHOD(ss::future<>, stop, (), (override));

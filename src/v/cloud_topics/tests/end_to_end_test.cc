@@ -9,7 +9,9 @@
  */
 
 #include "cloud_io/tests/s3_imposter.h"
+#include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "cloud_topics/state_accessors.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/batch_builder.h"
@@ -245,5 +247,141 @@ TEST_F(e2e_fixture, timequery) {
         EXPECT_EQ(offset, testcase.expected_offset)
           << "for L1 timequery at relative timestamp: "
           << testcase.relative_timestamp;
+    }
+}
+
+/// Test that cache statistics are tracked correctly.
+/// This test verifies the cache stats API works and the materialized cache
+/// is being used (since the data is produced locally and cached immediately).
+///
+/// Note: The hydrated cache is used when downloading L0 objects from S3,
+/// which requires the data to NOT be in the materialized cache. For testing
+/// the hydrated cache specifically, you would need to evict the materialized
+/// cache first or test against a remote-only data source.
+TEST_F(e2e_fixture, test_l0_cache_stats) {
+    // Disable reconciliation to ensure we test the L0 path exclusively.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+
+    auto* producer = make_producer();
+
+    // Produce some records
+    const size_t total_records = 50;
+    const size_t records_per_batch = 10;
+    std::vector<kv_t> records;
+    for (size_t i = 0; i < total_records; i += records_per_batch) {
+        std::vector<kv_t> batch;
+        for (size_t j = 0; j < records_per_batch; j++) {
+            records.emplace_back(
+              ssx::sformat("cache_key{}", i + j),
+              ssx::sformat("cache_val{}", i + j));
+            batch.push_back(records.back());
+        }
+        producer
+          ->produce_to_partition(topic_name, model::partition_id(0), batch)
+          .get();
+    }
+
+    // Get access to the data plane for cache stats
+    auto partition = app.partition_manager.local().get(ntp);
+    ASSERT_NE(partition, nullptr);
+    auto* state = partition->get_cloud_topics_state();
+    ASSERT_NE(state, nullptr);
+    auto* data_plane = state->local().get_data_plane();
+    ASSERT_NE(data_plane, nullptr);
+
+    // Get initial cache stats
+    auto stats_before = data_plane->cache_stats();
+    vlog(
+      e2e_test_log.info,
+      "Cache stats before reads: materialized_hits={}, "
+      "materialized_get_bytes={}, hydrated_hits={}, hydrated_get_bytes={}",
+      stats_before.materialized_hits,
+      stats_before.materialized_get_bytes,
+      stats_before.hydrated_hits,
+      stats_before.hydrated_get_bytes);
+
+    auto consumer = make_consumer();
+
+    // First read - data comes from the materialized cache (populated during
+    // produce)
+    auto consumed_records1 = consumer
+                               ->consume_from_partition(
+                                 topic_name,
+                                 model::partition_id(0),
+                                 model::offset(0))
+                               .get();
+    ASSERT_EQ(consumed_records1.size(), total_records);
+
+    auto stats_after_first_read = data_plane->cache_stats();
+    vlog(
+      e2e_test_log.info,
+      "Cache stats after first read: materialized_hits={}, "
+      "materialized_get_bytes={}, hydrated_hits={}, hydrated_get_bytes={}",
+      stats_after_first_read.materialized_hits,
+      stats_after_first_read.materialized_get_bytes,
+      stats_after_first_read.hydrated_hits,
+      stats_after_first_read.hydrated_get_bytes);
+
+    // Verify we got materialized cache hits (data was cached during produce)
+    EXPECT_GT(
+      stats_after_first_read.materialized_hits, stats_before.materialized_hits)
+      << "Expected materialized cache hits on first read";
+    EXPECT_GT(
+      stats_after_first_read.materialized_get_bytes,
+      stats_before.materialized_get_bytes)
+      << "Expected materialized cache data read on first read";
+
+    // Second read - should continue to hit the materialized cache
+    auto consumed_records2 = consumer
+                               ->consume_from_partition(
+                                 topic_name,
+                                 model::partition_id(0),
+                                 model::offset(0))
+                               .get();
+    ASSERT_EQ(consumed_records2.size(), total_records);
+
+    auto stats_after_second_read = data_plane->cache_stats();
+    vlog(
+      e2e_test_log.info,
+      "Cache stats after second read: materialized_hits={}, "
+      "materialized_get_bytes={}",
+      stats_after_second_read.materialized_hits,
+      stats_after_second_read.materialized_get_bytes);
+
+    // Verify cache hits continue to increase
+    EXPECT_GT(
+      stats_after_second_read.materialized_hits,
+      stats_after_first_read.materialized_hits)
+      << "Expected materialized cache hits to increase on second read";
+
+    // Third read from middle of the data
+    auto consumed_records3 = consumer
+                               ->consume_from_partition(
+                                 topic_name,
+                                 model::partition_id(0),
+                                 model::offset(20))
+                               .get();
+    // Records are in batches of 10, so offset 20 starts at batch 3
+    // We have 5 batches total (50 records), so reading from offset 20 gives us
+    // 3 batches (30 records: offsets 20-29, 30-39, 40-49)
+    ASSERT_EQ(consumed_records3.size(), 30);
+
+    auto stats_after_third_read = data_plane->cache_stats();
+    vlog(
+      e2e_test_log.info,
+      "Cache stats after third read: materialized_hits={}",
+      stats_after_third_read.materialized_hits);
+
+    // Verify cache hits increased again
+    EXPECT_GT(
+      stats_after_third_read.materialized_hits,
+      stats_after_second_read.materialized_hits)
+      << "Expected materialized cache hits to increase on third read";
+
+    // Verify records are correct
+    for (size_t i = 0; i < consumed_records1.size(); i++) {
+        ASSERT_EQ(records[i].key, consumed_records1[i].key);
+        ASSERT_EQ(records[i].val, consumed_records1[i].val);
     }
 }

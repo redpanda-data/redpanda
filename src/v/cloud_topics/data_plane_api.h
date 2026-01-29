@@ -26,6 +26,22 @@
 
 namespace cloud_topics {
 
+/// Statistics for the batch cache, tracking materialized and hydrated
+/// cache operations separately.
+struct batch_cache_stats {
+    // Materialized cache stats (record batches with offsets)
+    uint64_t materialized_hits{0};
+    uint64_t materialized_misses{0};
+    uint64_t materialized_put_bytes{0};
+    uint64_t materialized_get_bytes{0};
+
+    // Hydrated cache stats (raw L0 object data)
+    uint64_t hydrated_hits{0};
+    uint64_t hydrated_misses{0};
+    uint64_t hydrated_put_bytes{0};
+    uint64_t hydrated_get_bytes{0};
+};
+
 // staged_write is a write operation that has been reserved in the pipeline.
 // it is decoupled from uploading so that we can provide backpressure before
 // accepting more batches into the pipeline
@@ -75,6 +91,7 @@ public:
     // `output_size_estimate` must not exceed `materialize_max_bytes()`.
     virtual ss::future<result<chunked_vector<model::record_batch>>> materialize(
       model::ntp ntp,
+      model::topic_id_partition tidp,
       size_t output_size_estimate,
       chunked_vector<extent_meta> metadata,
       model::timeout_clock::time_point timeout,
@@ -95,6 +112,10 @@ public:
     /// Retrieve materialized record batch from cache
     virtual std::optional<model::record_batch>
     cache_get(const model::topic_id_partition&, model::offset o) = 0;
+
+    /// Get cache statistics for monitoring and testing.
+    /// Returns aggregated stats across all shards.
+    virtual batch_cache_stats cache_stats() const = 0;
 };
 
 } // namespace cloud_topics

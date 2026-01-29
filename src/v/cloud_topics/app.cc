@@ -48,7 +48,6 @@ ss::future<> app::construct(
     data_plane = co_await make_data_plane(
       ssx::sformat("{}::data_plane", _logger_name),
       remote,
-      cloud_cache,
       bucket,
       storage,
       &controller->get_cluster_epoch_generator());

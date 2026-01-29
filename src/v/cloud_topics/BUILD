@@ -55,6 +55,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/frontend_reader/tests:__pkg__",
         "//src/v/cloud_topics/level_zero/frontend_reader:__pkg__",
         "//src/v/cloud_topics/reconciler:__pkg__",
+        "//src/v/cloud_topics/tests:__pkg__",
         "//src/v/kafka/data:__pkg__",
         "//src/v/redpanda:__pkg__",
     ],
@@ -126,7 +127,6 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/base",
-        "//src/v/cloud_io:cache",
         "//src/v/cloud_io:remote",
         "//src/v/cloud_topics:cluster_services_interface",
         "//src/v/cloud_topics:data_plane_api",

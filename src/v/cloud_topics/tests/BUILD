@@ -28,6 +28,8 @@ redpanda_cc_gtest(
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
+        "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:state_accessors",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/config",
         "//src/v/kafka/server/tests:kafka_test_utils",

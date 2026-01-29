@@ -11,7 +11,6 @@
 #include "cloud_topics/data_plane_impl.h"
 
 #include "base/outcome.h"
-#include "cloud_io/cache_service.h"
 #include "cloud_topics/batch_cache/batch_cache.h"
 #include "cloud_topics/cluster_services.h"
 #include "cloud_topics/data_plane_api.h"
@@ -31,6 +30,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/thread.hh>
 
 #include <memory>
 
@@ -49,7 +49,6 @@ public:
 
     ss::future<> construct(
       seastar::sharded<cloud_io::remote>* io,
-      seastar::sharded<cloud_io::cache>* cache,
       cloud_storage_clients::bucket_name bucket,
       seastar::sharded<storage::api>* storage_api,
       seastar::sharded<cluster::cluster_epoch_service<ss::lowres_clock>>*
@@ -93,6 +92,13 @@ public:
               }));
         }
 
+        // Batch cache must be constructed before fetch_handler since it
+        // provides the hydrated cache
+        co_await construct_service(
+          _batch_cache, ss::sharded_parameter([storage_api] {
+              return &storage_api->local().log_mgr();
+          }));
+
         co_await construct_service(
           _fetch_handler,
           ss::sharded_parameter([this] {
@@ -100,11 +106,8 @@ public:
           }),
           ss::sharded_parameter([bucket] { return bucket; }),
           ss::sharded_parameter([io] { return &io->local(); }),
-          ss::sharded_parameter([cache] { return &cache->local(); }));
-
-        co_await construct_service(
-          _batch_cache, ss::sharded_parameter([storage_api] {
-              return &storage_api->local().log_mgr();
+          ss::sharded_parameter([this] {
+              return _batch_cache.local().get_partition_hydrated_cache();
           }));
     }
 
@@ -158,11 +161,16 @@ public:
         auto staged = std::unique_ptr<staged_pipeline_write>(
           static_cast<staged_pipeline_write*>(reservation.staged.release()));
         co_return co_await _write_pipeline.local().execute_write(
-          std::move(ntp), topic_id, min_epoch, std::move(staged->data), deadline);
+          std::move(ntp),
+          topic_id,
+          min_epoch,
+          std::move(staged->data),
+          deadline);
     }
 
     ss::future<result<chunked_vector<model::record_batch>>> materialize(
       model::ntp ntp,
+      model::topic_id_partition tidp,
       size_t output_size_estimate,
       chunked_vector<extent_meta> metadata,
       model::timeout_clock::time_point timeout,
@@ -181,6 +189,7 @@ public:
           max_bytes);
         auto res = co_await _read_pipeline.local().make_reader(
           ntp,
+          tidp,
           {
             .output_size_estimate = output_size_estimate,
             .meta = std::move(metadata),
@@ -208,6 +217,21 @@ public:
         return _read_pipeline.local().memory_quota_capacity();
     }
 
+    batch_cache_stats cache_stats() const final {
+        batch_cache_stats stats;
+        // Aggregate stats from local shard's batch_cache
+        const auto& probe = _batch_cache.local().probe();
+        stats.materialized_hits = probe.materialized_hits();
+        stats.materialized_misses = probe.materialized_misses();
+        stats.materialized_put_bytes = probe.materialized_put_bytes();
+        stats.materialized_get_bytes = probe.materialized_get_bytes();
+        stats.hydrated_hits = probe.hydrated_hits();
+        stats.hydrated_misses = probe.hydrated_misses();
+        stats.hydrated_put_bytes = probe.hydrated_put_bytes();
+        stats.hydrated_get_bytes = probe.hydrated_get_bytes();
+        return stats;
+    }
+
 private:
     ss::sharded<l0::cluster_services> _cluster_services;
     // Write path
@@ -228,17 +252,12 @@ private:
 ss::future<std::unique_ptr<data_plane_api>> make_data_plane(
   ss::sstring logger_name,
   ss::sharded<cloud_io::remote>* remote,
-  ss::sharded<cloud_io::cache>* cache,
   cloud_storage_clients::bucket_name bucket,
   ss::sharded<storage::api>* log_manager,
   seastar::sharded<cluster::cluster_epoch_service<>>* cluster_services) {
     auto p = std::make_unique<impl>(std::move(logger_name));
     co_await p->construct(
-      remote,
-      cache,
-      std::move(bucket),
-      log_manager,
-      std::ref(cluster_services));
+      remote, std::move(bucket), log_manager, std::ref(cluster_services));
     co_return std::move(p);
 }
 
