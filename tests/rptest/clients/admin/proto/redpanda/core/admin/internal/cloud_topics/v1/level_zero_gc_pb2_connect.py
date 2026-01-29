@@ -79,6 +79,36 @@ class LevelZeroGcServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    def call_advance_epoch(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochResponse]:
+        """Low-level method to call AdvanceEpoch, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/AdvanceEpoch'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochResponse, extra_headers, timeout_seconds)
+
+    def advance_epoch(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochResponse:
+        response = self.call_advance_epoch(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    def call_get_epoch_info(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoResponse]:
+        """Low-level method to call GetEpochInfo, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/GetEpochInfo'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoResponse, extra_headers, timeout_seconds)
+
+    def get_epoch_info(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoResponse:
+        response = self.call_get_epoch_info(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 class AsyncLevelZeroGcServiceClient:
 
     def __init__(self, base_url: str, http_client: aiohttp.ClientSession, protocol: ConnectProtocol=ConnectProtocol.CONNECT_PROTOBUF):
@@ -130,6 +160,36 @@ class AsyncLevelZeroGcServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    async def call_advance_epoch(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochResponse]:
+        """Low-level method to call AdvanceEpoch, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/AdvanceEpoch'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochResponse, extra_headers, timeout_seconds)
+
+    async def advance_epoch(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochResponse:
+        response = await self.call_advance_epoch(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    async def call_get_epoch_info(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoResponse]:
+        """Low-level method to call GetEpochInfo, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/GetEpochInfo'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoResponse, extra_headers, timeout_seconds)
+
+    async def get_epoch_info(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoResponse:
+        response = await self.call_get_epoch_info(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 @typing.runtime_checkable
 class LevelZeroGcServiceProtocol(typing.Protocol):
 
@@ -141,6 +201,12 @@ class LevelZeroGcServiceProtocol(typing.Protocol):
 
     def pause(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.PauseRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.PauseResponse]:
         ...
+
+    def advance_epoch(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochResponse]:
+        ...
+
+    def get_epoch_info(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoResponse]:
+        ...
 LEVEL_ZERO_GC_SERVICE_PATH_PREFIX = '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService'
 
 def wsgi_level_zero_gc_service(implementation: LevelZeroGcServiceProtocol) -> WSGIApplication:
@@ -148,4 +214,6 @@ def wsgi_level_zero_gc_service(implementation: LevelZeroGcServiceProtocol) -> WS
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/GetStatus', implementation.get_status, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetStatusRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/Start', implementation.start, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.StartRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/Pause', implementation.pause, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.PauseRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/AdvanceEpoch', implementation.advance_epoch, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.AdvanceEpochRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroGcService/GetEpochInfo', implementation.get_epoch_info, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_gc_pb2.GetEpochInfoRequest)
     return app
