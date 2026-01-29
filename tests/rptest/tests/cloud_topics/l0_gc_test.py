@@ -7,9 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
 from typing import TypeAlias, cast
 
-from rptest.clients.admin.v2 import Admin, l0_gc_pb
+
+from rptest.clients.admin.v2 import Admin, l0_gc_pb, ntp_pb
 from rptest.context.cloud_storage import CloudStorageType
 from rptest.services.kgo_repeater_service import repeater_traffic
 from ducktape.mark import matrix
@@ -74,7 +76,9 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
         )
         self.logger.info(samples)
         if samples is not None and samples.samples:
-            return int(sum(s.value for s in samples.samples))
+            deleted_total = int(sum(s.value for s in samples.samples))
+            self.logger.debug(f"{deleted_total=}")
+            return deleted_total
         return 0
 
     def produce_some(self, topics: list[str], n: int = 300):
@@ -111,6 +115,8 @@ class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
 
 GcStatus: TypeAlias = l0_gc_pb.Status
 StatusReport: TypeAlias = dict[int, dict[int, GcStatus] | str]
+EpochInfo: TypeAlias = l0_gc_pb.EpochInfo
+EpochReport: TypeAlias = dict[str, dict[int, l0_gc_pb.EpochInfo | str]]
 
 
 class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
@@ -161,6 +167,46 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
             f"{len(response.results)=} != {expected_nodes=}"
         )
         return {r.node_id: r.error for r in response.results if r.error}
+
+    def gc_advance_epoch(self, topic: str, partition: int) -> tuple[EpochInfo, str]:
+        self.logger.debug(f"Advance epoch for '{topic}/{partition}'")
+        response = self.l0_gc_client.advance_epoch(
+            l0_gc_pb.AdvanceEpochRequest(
+                partition=ntp_pb.TopicPartition(topic=topic, partition=partition)
+            )
+        )
+        assert response is not None, "AdvanceEpochResponse should not be None"
+        return (response.epoch, response.error)
+
+    def gc_get_epoch_info(
+        self,
+        topic_partitions: list[tuple[str, int]] | None = None,
+    ) -> EpochReport:
+        if topic_partitions is None:
+            topic_partitions = [
+                (t.name, i) for t in self.topics for i in range(0, t.partition_count)
+            ]
+        self.logger.debug(f"Get epoch info for {topic_partitions=}")
+        response = self.l0_gc_client.get_epoch_info(
+            l0_gc_pb.GetEpochInfoRequest(
+                partitions=[
+                    ntp_pb.TopicPartition(topic=tp[0], partition=tp[1])
+                    for tp in topic_partitions
+                ]
+            )
+        )
+        assert response is not None, "GetEpochInfoResponse should not be None"
+        if response.error:
+            raise RuntimeError(response.error)
+
+        result: dict[str, dict[int, l0_gc_pb.EpochInfo | str]] = {}
+        for ep in response.epochs:
+            if ep.partition.topic not in result:
+                result[ep.partition.topic] = {}
+            result[ep.partition.topic][ep.partition.partition] = (
+                ep.error if ep.error else ep.epoch_info
+            )
+        return result
 
     def check_statuses(
         self,
@@ -390,3 +436,126 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
         )
         errs = self.gc_pause(node_to_kill_id)
         assert len(errs) == 0, "Unexpected errors: {errs=}"
+
+    def _epoch_report_to_str(self, epochs: EpochReport, indent: int = 1) -> str:
+        def epoch_info_to_dict(info: l0_gc_pb.EpochInfo) -> dict[str, int]:
+            return {
+                "estimated_inactive_epoch": info.estimated_inactive_epoch,
+                "max_applied_epoch": info.max_applied_epoch,
+                "last_reconciled_log_offset": info.last_reconciled_log_offset,
+                "current_epoch_window_offset": info.current_epoch_window_offset,
+            }
+
+        serializable = {
+            t: {
+                p: (epoch_info_to_dict(e) if isinstance(e, l0_gc_pb.EpochInfo) else e)
+                for p, e in ps.items()
+            }
+            for t, ps in epochs.items()
+        }
+        return json.dumps(serializable, indent=indent)
+
+    def check_epochs(
+        self, epochs: EpochReport, active_topics: list[str], stalled_topics: list[str]
+    ):
+        self.logger.debug(self._epoch_report_to_str(epochs))
+        for t in self.topics:
+            assert t.name in epochs, f"Expected {t.name=} got {epochs=}"
+            ps = epochs[t.name]
+            assert all(p in ps for p in range(0, t.partition_count)), (
+                f"Expected partitions [0..{t.partition_count}] got {ps=}"
+            )
+            if t.name in active_topics:
+                # active topics should have EpochInfo with positive inactive epoch
+                assert all(
+                    isinstance(e, l0_gc_pb.EpochInfo) and e.estimated_inactive_epoch > 0
+                    for _, e in ps.items()
+                ), f"Expected EpochInfo with positive epochs for {t.name=}"
+            elif t.name in stalled_topics:
+                # Stalled topics should have EpochInfo with nonexistent estimated_inactive_epoch
+                # since no data has been reconciled
+                assert all(
+                    isinstance(e, l0_gc_pb.EpochInfo) and e.estimated_inactive_epoch < 0
+                    for _, e in ps.items()
+                ), f"Expected EpochInfo with min epoch for stalled {t.name=}"
+            else:
+                assert False, f"{t.name} not in {(active_topics + stalled_topics)=}"
+
+        return True
+
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_advance_epoch(self, cloud_storage_type: CloudStorageType):
+        self.topics = [
+            TopicSpec(partition_count=1),
+            TopicSpec(partition_count=1),
+        ]
+        self.create_topics(self.topics)
+        produce_topics = [t.name for t in self.topics[0:1]]
+        stalled_topic = self.topics[1].name
+        assert stalled_topic not in produce_topics, (
+            f"{stalled_topic=} in {produce_topics=}"
+        )
+
+        self.produce_some(topics=produce_topics, n=200)
+
+        # since we've produced nothing to stalled_topic, that partition will block GC
+        # from progressing. this block checks that the epoch report has the right shape
+        # and that it shows errors for all the partitions of stalled_topic
+        # NOTE: wait_until here so we don't race against reconciliation of produce_topics data.
+        # "monotonic epoch" invariant guarantees that epoch(stalled_topic) didn't advance then return to 0.
+        wait_until(
+            lambda: self.check_epochs(
+                self.gc_get_epoch_info(), produce_topics, [stalled_topic]
+            ),
+            timeout_sec=15,
+            backoff_sec=3,
+            retry_on_exc=True,
+        )
+        epochs = self.gc_get_epoch_info()
+        self.check_epochs(epochs, produce_topics, [stalled_topic])
+
+        self.logger.debug(
+            f"Check that GC doesn't progress despite reconciliation making progress on {produce_topics=}"
+        )
+        with expect_exception(TimeoutError, lambda _: True):
+            wait_until(
+                lambda: self.get_num_objects_deleted() > 0,
+                timeout_sec=30,
+                backoff_sec=5,
+                retry_on_exc=True,
+            )
+
+        self.check_epochs(self.gc_get_epoch_info(), produce_topics, [stalled_topic])
+
+        new_epoch, err = self.gc_advance_epoch(
+            topic=stalled_topic,
+            partition=0,
+        )
+        assert not err, f"AdvanceEpoch errored unexpectedly {err=}"
+
+        self.logger.debug(f"New EpochInfo for {stalled_topic=}: {new_epoch}")
+
+        gc_epoch = new_epoch.estimated_inactive_epoch
+        max_epoch = new_epoch.max_applied_epoch
+        epoch_offset = new_epoch.current_epoch_window_offset
+        lrlo = new_epoch.last_reconciled_log_offset
+
+        assert gc_epoch > 0 and gc_epoch < max_epoch, (
+            f"Expected 0 < {gc_epoch=} == {(max_epoch-1)=}"
+        )
+        assert epoch_offset == lrlo and epoch_offset > 0, (
+            f"Expected {epoch_offset=} == {lrlo=} == 1 on {stalled_topic=}"
+        )
+
+        self.logger.debug(
+            f"Now that we've advanced {stalled_topic=} epoch window, GC can make progress"
+        )
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=5,
+            retry_on_exc=True,
+        )
