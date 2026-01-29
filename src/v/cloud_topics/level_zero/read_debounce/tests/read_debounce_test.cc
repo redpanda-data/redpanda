@@ -98,6 +98,9 @@ static const model::topic_namespace
 static const model::ntp
   test_ntp(test_topic.ns, test_topic.tp, model::partition_id(0));
 
+static const model::topic_id_partition
+  test_tidp(model::topic_id::create(), model::partition_id(0));
+
 TEST_F_CORO(read_debounce_fixture, test_happy_path) {
     // Check that the read request is going through and the correct results
     // are propagated back to the caller.
@@ -107,7 +110,7 @@ TEST_F_CORO(read_debounce_fixture, test_happy_path) {
     query.meta.push_back(
       extent_meta{.byte_range_size = byte_range_size_t{1_MiB}});
     auto result_fut = pipeline.local().make_reader(
-      test_ntp, std::move(query), ss::manual_clock::now() + 10s);
+      test_ntp, test_tidp, std::move(query), ss::manual_clock::now() + 10s);
 
     auto request = co_await fetch_handler.local().get_next_requests();
     ASSERT_TRUE_CORO(request.has_value());
@@ -140,7 +143,7 @@ TEST_F_CORO(read_debounce_fixture, test_error_propagation) {
     query.meta.push_back(
       extent_meta{.byte_range_size = byte_range_size_t{1_MiB}});
     auto result_fut = pipeline.local().make_reader(
-      test_ntp, std::move(query), ss::manual_clock::now() + 10s);
+      test_ntp, test_tidp, std::move(query), ss::manual_clock::now() + 10s);
 
     auto request = co_await fetch_handler.local().get_next_requests();
     ASSERT_TRUE_CORO(request.has_value());

@@ -140,6 +140,7 @@ read_debounce<Clock>::process_single_request(read_request<Clock>* req) {
 
         auto proxy = ss::make_lw_shared<read_request<Clock>>(
           req->ntp,
+          req->tidp,
           std::move(query),
           req->expiration_time,
           &_pipeline_stage.get_root_rtc(),

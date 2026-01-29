@@ -30,6 +30,10 @@
 #include <limits>
 
 using namespace std::chrono_literals;
+
+static const model::topic_id_partition
+  bench_tidp(model::topic_id::create(), model::partition_id(0));
+
 namespace cloud_topics {
 
 struct fetch_handler {
@@ -141,6 +145,7 @@ public:
             perf_tests::do_not_optimize(
               co_await pipeline.local().make_reader(
                 model::controller_ntp,
+                bench_tidp,
                 std::move(query),
                 ss::lowres_clock::now() + std::chrono::seconds(10)));
             perf_tests::stop_measuring_time();
