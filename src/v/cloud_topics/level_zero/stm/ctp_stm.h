@@ -121,6 +121,7 @@ private:
     void apply_placeholder(const model::record_batch&);
     void apply_advance_reconciled_offset(model::record);
     void apply_set_start_offset(model::record);
+    void apply_advance_epoch(model::record, model::offset base_offset);
 
     ss::future<raft::local_snapshot_applied>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
