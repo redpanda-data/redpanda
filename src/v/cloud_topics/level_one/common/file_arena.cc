@@ -22,7 +22,7 @@ using namespace std::chrono_literals;
 namespace cloud_topics::l1 {
 
 staging_file_with_reservation::staging_file_with_reservation(
-  std::unique_ptr<staging_file> file, ssx::semaphore_units disk_reservation)
+  std::unique_ptr<staging> file, ssx::semaphore_units disk_reservation)
   : _file(std::move(file))
   , _disk_reservation(std::move(disk_reservation)) {}
 

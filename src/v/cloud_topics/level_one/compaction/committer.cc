@@ -60,7 +60,7 @@ void compaction_committer::compaction_job::add_l1_object(
 
     auto update_response = _policy->on_update(file_and_info);
 
-    _staging_file_and_md_infos.push_back(std::move(file_and_info));
+    _staging_and_md_infos.push_back(std::move(file_and_info));
 
     if (update_response == committing_policy::update_response::preempt) {
         _upload_sem.signal();
@@ -84,9 +84,9 @@ ss::future<> compaction_committer::compaction_job::finalize(
         res.ignore_ready_future();
     }
 
-    if (!_staging_file_and_md_infos.empty()) {
-        // Remove leftover staging files, if any.
-        co_await remove_staging_files();
+    if (!_staging_and_md_infos.empty()) {
+        // Remove leftover staging, if any.
+        co_await remove_staging();
     }
 }
 
@@ -97,19 +97,19 @@ ss::future<> compaction_committer::compaction_job::stop() {
     co_await _gate.close();
 }
 
-ss::future<> compaction_committer::compaction_job::remove_staging_files() {
+ss::future<> compaction_committer::compaction_job::remove_staging() {
     static constexpr size_t max_concurrent_removal = 1024;
     co_await ss::max_concurrent_for_each(
-      _staging_file_and_md_infos,
+      _staging_and_md_infos,
       max_concurrent_removal,
       [](auto& file_and_md_info) {
-          return file_and_md_info.staging_file->remove();
+          return file_and_md_info.staging->remove();
       });
 }
 
 bool compaction_committer::compaction_job::all_uploads_inflight() const {
     return _state == compaction_job::state::finalized
-           && _staging_file_and_md_infos.empty();
+           && _staging_and_md_infos.empty();
 }
 
 ss::future<> compaction_committer::compaction_job::upload_loop() {
@@ -122,7 +122,7 @@ ss::future<> compaction_committer::compaction_job::upload_loop() {
             // Fall through
         }
 
-        if (!_staging_file_and_md_infos.empty()) {
+        if (!_staging_and_md_infos.empty()) {
             if (_policy->should_commit()) {
                 upload_some();
             }
@@ -151,7 +151,7 @@ void compaction_committer::compaction_job::start_upload_loop() {
 
 ss::future<compaction_committer::compaction_job::expected_t>
 compaction_committer::compaction_job::do_upload(
-  staging_file* file,
+  staging* stg,
   object_builder::object_info info,
   metastore::object_metadata::ntp_metadata ntp_md) {
     auto& metadata_builder = _metadata_builder;
@@ -165,7 +165,7 @@ compaction_committer::compaction_job::do_upload(
 
     auto oid = std::move(oid_res).value();
 
-    auto put_res = co_await _io->put_object(oid, file, &_as);
+    auto put_res = co_await _io->put_object(oid, stg, &_as);
 
     if (!put_res.has_value()) {
         std::ignore = metadata_builder->remove_pending_object(oid);
@@ -210,23 +210,23 @@ compaction_committer::compaction_job::do_upload(
 }
 
 ss::future<compaction_committer::compaction_job::expected_t>
-compaction_committer::compaction_job::upload_file(
+compaction_committer::compaction_job::upload_staging(
   file_and_md_info file_and_info) {
-    auto file = std::move(file_and_info.staging_file);
+    auto stg = std::move(file_and_info.staging);
     auto res = co_await do_upload(
-      file.get(),
+      stg.get(),
       std::move(file_and_info.info),
       std::move(file_and_info.ntp_md));
-    co_await file->remove();
+    co_await stg->remove();
     co_return res;
 }
 
 void compaction_committer::compaction_job::upload_some() {
-    auto updates = std::exchange(_staging_file_and_md_infos, {});
+    auto updates = std::exchange(_staging_and_md_infos, {});
     while (!updates.empty()) {
         auto update = std::move(updates.front());
         updates.pop_front();
-        auto inflight_upload = upload_file(std::move(update));
+        auto inflight_upload = upload_staging(std::move(update));
         _inflight_uploads.push_back(std::move(inflight_upload));
     }
 }

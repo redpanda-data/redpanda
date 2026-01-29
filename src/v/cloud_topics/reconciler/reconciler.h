@@ -128,7 +128,7 @@ private:
      * Always requires cleanup via close_builder() and cleanup_staging().
      */
     struct builder_context {
-        std::unique_ptr<l1::staging_file> staging;
+        std::unique_ptr<l1::staging> staging;
         std::unique_ptr<l1::object_builder> builder;
         size_t size_budget{0};
 

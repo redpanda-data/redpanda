@@ -23,29 +23,28 @@
 
 namespace cloud_topics::l1 {
 
-// An abstraction for a local file that is used for staging uploads to object
-// storage.
-class staging_file {
+// An abstraction for staging data before uploading to object storage.
+class staging {
 public:
-    staging_file() = default;
-    staging_file(const staging_file&) = delete;
-    staging_file(staging_file&&) = delete;
-    staging_file& operator=(const staging_file&) = delete;
-    staging_file& operator=(staging_file&&) = delete;
-    virtual ~staging_file() = default;
+    staging() = default;
+    staging(const staging&) = delete;
+    staging(staging&&) = delete;
+    staging& operator=(const staging&) = delete;
+    staging& operator=(staging&&) = delete;
+    virtual ~staging() = default;
 
-    // Return the size of this file in bytes on disk.
+    // Return the size of staged data in bytes.
     virtual ss::future<size_t> size() = 0;
-    // Return an output stream for appending to this file.
+    // Return an output stream for appending to this staging area.
     virtual ss::future<ss::output_stream<char>> output_stream() = 0;
-    // Remove the file from the local filesystem.
+    // Clean up the staging area.
     //
     // This should always be called (outside of unclean shutdown).
     virtual ss::future<> remove() = 0;
 
 private:
     friend class io;
-    // Return an input stream for reading from this file.
+    // Return an input stream for reading from this staging area.
     virtual ss::future<ss::input_stream<char>> input_stream() = 0;
 };
 
@@ -65,19 +64,19 @@ public:
     io& operator=(io&&) = delete;
     virtual ~io() = default;
 
-    // Create a temporary file for staging uploads into object storage.
+    // Create a disk-based staging area for data to be uploaded to object
+    // storage.
     //
-    // If the operation writing to the file succeeds, then the local file should
-    // be uploaded using `io::upload_file`, then deleted using
-    // `local_file::remove()`. If there is an error than `local_file::remove()`
-    // should still be called to clean up the temporary file.
-    virtual ss::future<std::expected<std::unique_ptr<staging_file>, errc>>
+    // If the operation writing to the staging area succeeds, then it should
+    // be uploaded using `io::put_object`, then cleaned up using
+    // `staging::remove()`. If there is an error then `staging::remove()`
+    // should still be called to clean up resources.
+    virtual ss::future<std::expected<std::unique_ptr<staging>, errc>>
     create_tmp_file() = 0;
 
-    // Upload a local file to object storage, returning the object ID that was
-    // used to identify the object in the bucket.
+    // Upload staged data to object storage.
     virtual ss::future<std::expected<void, errc>>
-    put_object(object_id, staging_file*, ss::abort_source*) = 0;
+    put_object(object_id, staging*, ss::abort_source*) = 0;
 
     // Read part of an object from object storage, returning an input stream
     // representing the object data.
@@ -96,8 +95,8 @@ public:
     delete_objects(chunked_vector<object_id>, ss::abort_source*) = 0;
 
 protected:
-    // A helper to read a staging file.
-    ss::future<ss::input_stream<char>> read_file(staging_file*);
+    // A helper to read from a staging area.
+    ss::future<ss::input_stream<char>> read_staging(staging*);
 };
 
 } // namespace cloud_topics::l1

@@ -117,7 +117,7 @@ private:
 
 class unreliable_io : public l1::fake_io {
 public:
-    ss::future<std::expected<std::unique_ptr<l1::staging_file>, l1::io::errc>>
+    ss::future<std::expected<std::unique_ptr<l1::staging>, l1::io::errc>>
     create_tmp_file() override {
         if (_fail_create_tmp_file) {
             co_return std::unexpected(l1::io::errc::file_io_error);
@@ -126,13 +126,11 @@ public:
     }
 
     ss::future<std::expected<void, l1::io::errc>> put_object(
-      l1::object_id oid,
-      l1::staging_file* file,
-      ss::abort_source* as) override {
+      l1::object_id oid, l1::staging* stg, ss::abort_source* as) override {
         if (_fail_put_object) {
             co_return std::unexpected(l1::io::errc::cloud_op_error);
         }
-        co_return co_await l1::fake_io::put_object(oid, file, as);
+        co_return co_await l1::fake_io::put_object(oid, stg, as);
     }
 
     void fail_create_tmp_file(bool fail) { _fail_create_tmp_file = fail; }

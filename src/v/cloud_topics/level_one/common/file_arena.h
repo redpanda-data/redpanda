@@ -21,7 +21,7 @@ struct FileArenaTestFixture;
 
 namespace cloud_topics::l1 {
 
-// A thin wrapper around a `staging_file` which also holds on to some semaphore
+// A thin wrapper around a staging file which also holds on to some semaphore
 // units. These units are obtained from a `file_arena` and are held until
 // `finalize()` & `remove()` are called, or the `staging_file_with_reservation`
 // goes out of scope. `staging_file_with_reservation`s must not outlive the
@@ -29,7 +29,7 @@ namespace cloud_topics::l1 {
 class staging_file_with_reservation {
 public:
     staging_file_with_reservation(
-      std::unique_ptr<staging_file>, ssx::semaphore_units);
+      std::unique_ptr<staging>, ssx::semaphore_units);
 
     // Returns `_file->size()`.
     ss::future<size_t> size();
@@ -47,7 +47,7 @@ public:
     ss::future<> remove();
 
 private:
-    std::unique_ptr<staging_file> _file;
+    std::unique_ptr<staging> _file;
     ssx::semaphore_units _disk_reservation;
 };
 

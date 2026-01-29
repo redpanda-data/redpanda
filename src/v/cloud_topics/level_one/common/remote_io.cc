@@ -30,9 +30,10 @@ namespace cloud_topics::l1 {
 
 namespace {
 
-class staging_file_impl : public staging_file {
+// Disk-based staging implementation.
+class staging_file : public staging {
 public:
-    explicit staging_file_impl(std::filesystem::path path)
+    explicit staging_file(std::filesystem::path path)
       : _path(std::move(path)) {}
 
     ss::future<size_t> size() override { return ss::file_size(_path.native()); }
@@ -99,15 +100,15 @@ remote_io::remote_io(
   , _staging_dir(std::move(staging_dir))
   , _cache(cache) {}
 
-ss::future<std::expected<std::unique_ptr<staging_file>, io::errc>>
+ss::future<std::expected<std::unique_ptr<staging>, io::errc>>
 remote_io::create_tmp_file() {
-    co_return std::make_unique<staging_file_impl>(
+    co_return std::make_unique<staging_file>(
       _staging_dir / fmt::format("{}.tmp", uuid_t::create()));
 }
 
 ss::future<std::expected<void, io::errc>>
-remote_io::put_object(object_id oid, staging_file* file, ss::abort_source* as) {
-    auto file_size = co_await file->size();
+remote_io::put_object(object_id oid, staging* stg, ss::abort_source* as) {
+    auto data_size = co_await stg->size();
     static constexpr auto timeout = 10s;
     static constexpr auto backoff = 100ms;
     retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);
@@ -123,9 +124,9 @@ remote_io::put_object(object_id oid, staging_file* file, ss::abort_source* as) {
             .key = object_path_factory::level_one_path(oid),
             .parent_rtc = root,
           },
-          file_size,
-          [this, file]() {
-              return io::read_file(file).then(
+          data_size,
+          [this, stg]() {
+              return io::read_staging(stg).then(
                 [](ss::input_stream<char> stream)
                   -> std::unique_ptr<stream_provider> {
                     return std::make_unique<one_time_stream_provider>(

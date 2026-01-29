@@ -141,7 +141,7 @@ inline std::ostream& operator<<(std::ostream& o, compaction_job_state s) {
 }
 
 struct file_and_md_info {
-    std::unique_ptr<staging_file> staging_file;
+    std::unique_ptr<staging> staging;
     object_builder::object_info info;
     metastore::object_metadata::ntp_metadata ntp_md;
 };

@@ -96,9 +96,9 @@ private:
 
     // The L1 object currently being built.
     struct compacted_object {
-        // Both `active_staging_file` and `builder` are guaranteed to have a
+        // Both `active_staging` and `builder` are guaranteed to have a
         // value for an active `compacted_object`.
-        std::unique_ptr<staging_file> active_staging_file{nullptr};
+        std::unique_ptr<staging> active_staging{nullptr};
         std::unique_ptr<object_builder> builder{nullptr};
         kafka::offset object_base_offset{};
     };

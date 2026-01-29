@@ -500,12 +500,12 @@ ss::future<std::expected<reconciler::builder_context, reconcile_error>>
 reconciler::make_context() {
     builder_context ctx;
 
-    // Create staging file.
+    // Create staging area.
     auto staging_result = co_await _l1_io->create_tmp_file();
     if (!staging_result.has_value()) {
         co_return std::unexpected(
           reconcile_error(
-            "Failed to create staging file: {}", staging_result.error())
+            "Failed to create staging: {}", staging_result.error())
             .non_benign());
     }
     ctx.staging = std::move(staging_result).value();

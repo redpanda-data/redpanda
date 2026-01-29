@@ -128,30 +128,30 @@ compaction_sink::initialize(compaction::sliding_window_reducer::source& src) {
 
 ss::future<>
 compaction_sink::initialize_builder(kafka::offset object_base_offset) {
-    auto staging_file_fut = co_await ss::coroutine::as_future(
+    auto staging_fut = co_await ss::coroutine::as_future(
       _io->create_tmp_file());
 
-    if (staging_file_fut.failed()) {
-        auto e = staging_file_fut.get_exception();
+    if (staging_fut.failed()) {
+        auto e = staging_fut.get_exception();
         vlogl(
           compaction_log,
           ssx::is_shutdown_exception(e) ? ss::log_level::warn
                                         : ss::log_level::error,
-          "Exception creating staging file: {}",
+          "Exception creating staging: {}",
           e);
         std::rethrow_exception(e);
     }
-    auto staging_file_result = staging_file_fut.get();
+    auto staging_result = staging_fut.get();
 
-    auto active_staging_file = std::move(staging_file_result).value();
-    auto output_stream = co_await active_staging_file->output_stream();
+    auto active_staging = std::move(staging_result).value();
+    auto output_stream = co_await active_staging->output_stream();
 
     auto builder = object_builder::create(std::move(output_stream), _opts);
 
     co_await builder->start_partition(_tp);
 
     _inflight_object = std::make_unique<compacted_object>(
-      std::move(active_staging_file), std::move(builder), object_base_offset);
+      std::move(active_staging), std::move(builder), object_base_offset);
 }
 
 ss::future<> compaction_sink::flush(kafka::offset object_last_offset) {
@@ -160,8 +160,8 @@ ss::future<> compaction_sink::flush(kafka::offset object_last_offset) {
     }
 
     auto inflight_object = std::exchange(_inflight_object, nullptr);
-    auto active_staging_file = std::exchange(
-      inflight_object->active_staging_file, nullptr);
+    auto active_staging = std::exchange(
+      inflight_object->active_staging, nullptr);
     auto builder = std::exchange(inflight_object->builder, nullptr);
     auto object_base_offset = inflight_object->object_base_offset;
 
@@ -175,7 +175,7 @@ ss::future<> compaction_sink::flush(kafka::offset object_last_offset) {
                                         : ss::log_level::error,
           "Exception creating object_info: {}. Exiting compaction early.",
           e);
-        co_await active_staging_file->remove();
+        co_await active_staging->remove();
         std::rethrow_exception(e);
     }
 
@@ -198,7 +198,7 @@ ss::future<> compaction_sink::flush(kafka::offset object_last_offset) {
     }(object_info, object_base_offset, object_last_offset);
 
     auto file_and_info = file_and_md_info{
-      .staging_file = std::move(active_staging_file),
+      .staging = std::move(active_staging),
       .info = std::move(object_info),
       .ntp_md = std::move(ntp_md)};
 
@@ -270,10 +270,10 @@ ss::future<> compaction_sink::finalize() {
                 // means no meaningful work has been performed. Discard the
                 // inflight object.
                 auto inflight_object = std::exchange(_inflight_object, nullptr);
-                auto active_staging_file = std::exchange(
-                  inflight_object->active_staging_file, nullptr);
+                auto active_staging = std::exchange(
+                  inflight_object->active_staging, nullptr);
                 auto builder = std::exchange(inflight_object->builder, nullptr);
-                co_await active_staging_file->remove();
+                co_await active_staging->remove();
                 co_await builder->close();
             }
         }

@@ -17,23 +17,24 @@ namespace cloud_topics::l1 {
 
 fake_io::fake_io() = default;
 
-class fake_file : public staging_file {
+// In-memory staging implementation for testing.
+class fake_staging : public staging {
 public:
-    fake_file() = default;
-    fake_file(const fake_file&) = delete;
-    fake_file(fake_file&&) = delete;
-    fake_file& operator=(const fake_file&) = delete;
-    fake_file& operator=(fake_file&&) = delete;
-    ~fake_file() override {
-        vassert(_removed, "staging_file must be removed before destruction");
+    fake_staging() = default;
+    fake_staging(const fake_staging&) = delete;
+    fake_staging(fake_staging&&) = delete;
+    fake_staging& operator=(const fake_staging&) = delete;
+    fake_staging& operator=(fake_staging&&) = delete;
+    ~fake_staging() override {
+        vassert(_removed, "staging must be removed before destruction");
     }
 
     ss::future<size_t> size() override {
-        vassert(!_removed, "cannot get size of a removed file");
+        vassert(!_removed, "cannot get size of removed staging");
         co_return _data.size_bytes();
     }
     ss::future<ss::output_stream<char>> output_stream() override {
-        vassert(!_removed, "cannot get output stream of a removed file");
+        vassert(!_removed, "cannot get output stream of removed staging");
         co_return make_iobuf_ref_output_stream(_data);
     }
 
@@ -43,7 +44,7 @@ public:
     }
 
     ss::future<ss::input_stream<char>> input_stream() override {
-        vassert(!_removed, "cannot get input stream of a removed file");
+        vassert(!_removed, "cannot get input stream of removed staging");
         co_return make_iobuf_input_stream(_data.share(0, _data.size_bytes()));
     }
 
@@ -52,16 +53,16 @@ private:
     iobuf _data;
 };
 
-ss::future<std::expected<std::unique_ptr<staging_file>, io::errc>>
+ss::future<std::expected<std::unique_ptr<staging>, io::errc>>
 fake_io::create_tmp_file() {
-    std::unique_ptr<staging_file> file = std::make_unique<fake_file>();
-    co_return file;
+    std::unique_ptr<staging> stg = std::make_unique<fake_staging>();
+    co_return stg;
 }
 
 ss::future<std::expected<void, io::errc>>
-fake_io::put_object(object_id oid, staging_file* file, ss::abort_source*) {
-    auto stream = co_await io::read_file(file);
-    auto size = co_await file->size();
+fake_io::put_object(object_id oid, staging* stg, ss::abort_source*) {
+    auto stream = co_await io::read_staging(stg);
+    auto size = co_await stg->size();
     auto data = co_await read_iobuf_exactly(stream, size);
     put_object(oid, std::move(data));
     co_return std::expected<void, io::errc>();

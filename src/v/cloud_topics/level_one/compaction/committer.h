@@ -65,8 +65,8 @@ public:
         // shut down a `compaction_job` after `finalize()` is called.
         ss::future<> stop();
 
-        // Removes all staging files left on disk for the provided job.
-        ss::future<> remove_staging_files();
+        // Cleans up all staging areas for the provided job.
+        ss::future<> remove_staging();
 
     private:
         struct error {
@@ -102,13 +102,13 @@ public:
         // put the object into cloud storage, and finalize the object. Returns
         // an error if any step of that process should fail.
         ss::future<expected_t> do_upload(
-          staging_file*,
+          staging*,
           object_builder::object_info,
           metastore::object_metadata::ntp_metadata);
 
-        // Calls `do_upload()` and unconditionally removes the `staging_file`
+        // Calls `do_upload()` and unconditionally removes the staging
         // before returning the result.
-        ss::future<expected_t> upload_file(file_and_md_info);
+        ss::future<expected_t> upload_staging(file_and_md_info);
 
         // Attempts to upload & build all updates currently in
         // `_staging_file_and_md_infos` to cloud storage via `start_upload()`.
@@ -178,7 +178,7 @@ public:
         ss::gate::holder _holder;
 
         state _state{state::in_progress};
-        chunked_circular_buffer<file_and_md_info> _staging_file_and_md_infos;
+        chunked_circular_buffer<file_and_md_info> _staging_and_md_infos;
         chunked_circular_buffer<ss::future<expected_t>> _inflight_uploads;
     };
 

@@ -20,11 +20,11 @@ namespace cloud_topics::l1 {
 class fake_io : public io {
 public:
     fake_io();
-    ss::future<std::expected<std::unique_ptr<staging_file>, errc>>
+    ss::future<std::expected<std::unique_ptr<staging>, errc>>
     create_tmp_file() override;
 
     ss::future<std::expected<void, errc>>
-    put_object(object_id, staging_file*, ss::abort_source*) override;
+    put_object(object_id, staging*, ss::abort_source*) override;
 
     ss::future<std::expected<ss::input_stream<char>, errc>>
     read_object(object_extent, ss::abort_source*) override;

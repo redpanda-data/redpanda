@@ -14,8 +14,8 @@
 
 namespace cloud_topics::l1 {
 
-ss::future<ss::input_stream<char>> io::read_file(staging_file* file) {
-    return file->input_stream();
+ss::future<ss::input_stream<char>> io::read_staging(staging* s) {
+    return s->input_stream();
 }
 
 ss::future<std::expected<iobuf, io::errc>>
