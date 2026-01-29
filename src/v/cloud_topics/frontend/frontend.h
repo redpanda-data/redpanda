@@ -167,6 +167,11 @@ public:
     /// Return current epoch state.
     epoch_info get_epoch_info() const;
 
+    /// Advance the partition to the current cluster epoch and return epoch
+    /// state.
+    ss::future<std::expected<epoch_info, frontend_errc>> advance_epoch(
+      cloud_topics::cluster_epoch, model::timeout_clock::time_point);
+
 private:
     // All timequeries work by first getting a coarse grained timequery result
     // from metadata indexes, then getting an exact answer using the datapath.

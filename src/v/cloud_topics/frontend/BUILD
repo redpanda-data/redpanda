@@ -40,6 +40,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:data_plane_api",
         "//src/v/cloud_topics:log_reader_config",
         "//src/v/cloud_topics:state_accessors",
+        "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_one/frontend_reader:reader",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/cloud_topics/level_zero/frontend_reader",
