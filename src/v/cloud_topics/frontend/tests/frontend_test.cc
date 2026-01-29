@@ -61,6 +61,7 @@ public:
       ss::future<result<chunked_vector<model::record_batch>>>,
       materialize,
       (model::ntp ntp,
+       model::topic_id_partition tidp,
        size_t output_size_estimate,
        chunked_vector<extent_meta> metadata,
        model::timeout_clock::time_point timeout,
