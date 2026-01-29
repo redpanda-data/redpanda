@@ -172,9 +172,9 @@ client_quota_value client_quota_translator::get_client_quota_value(
           const auto& [u, c] = p;
           // Exact user exact client id
           {
-              auto match_key = entity_key{
+              const entity_key match_key{
                 entity_key::user_match{u}, entity_key::client_id_match{c}};
-              auto quota = get_quota(match_key);
+              const auto quota = get_quota(match_key);
               if (quota) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_user_client_id};
@@ -183,10 +183,10 @@ client_quota_value client_quota_translator::get_client_quota_value(
 
           // Exact user default client id
           {
-              auto match_key = entity_key{
+              const entity_key match_key{
                 entity_key::user_match{u},
                 entity_key::client_id_default_match{}};
-              auto quota = get_quota(match_key);
+              const auto quota = get_quota(match_key);
               if (quota) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_user_client_default};
@@ -195,10 +195,10 @@ client_quota_value client_quota_translator::get_client_quota_value(
 
           // Default user exact client id
           {
-              auto match_key = entity_key{
+              const entity_key match_key{
                 entity_key::user_default_match{},
                 entity_key::client_id_match{c}};
-              auto quota = get_quota(match_key);
+              const auto quota = get_quota(match_key);
               if (quota) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_user_default_client_id};
@@ -207,10 +207,10 @@ client_quota_value client_quota_translator::get_client_quota_value(
 
           // Default user default client id
           {
-              auto match_key = entity_key{
+              const entity_key match_key{
                 entity_key::user_default_match{},
                 entity_key::client_id_default_match{}};
-              auto quota = get_quota(match_key);
+              const auto quota = get_quota(match_key);
               if (quota) {
                   return client_quota_value{
                     quota,
@@ -226,10 +226,10 @@ client_quota_value client_quota_translator::get_client_quota_value(
           const auto& [u, g] = p;
           // Exact user client group
           {
-              auto match_key = entity_key{
+              const entity_key match_key{
                 entity_key::user_match{u},
                 entity_key::client_id_prefix_match{g}};
-              auto quota = get_quota(match_key);
+              const auto quota = get_quota(match_key);
               if (quota) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_user_client_prefix};
@@ -238,10 +238,10 @@ client_quota_value client_quota_translator::get_client_quota_value(
 
           // Default user client group
           {
-              auto match_key = entity_key{
+              const entity_key match_key{
                 entity_key::user_default_match{},
                 entity_key::client_id_prefix_match{g}};
-              auto quota = get_quota(match_key);
+              const auto quota = get_quota(match_key);
               if (quota) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_user_default_client_prefix};
@@ -254,8 +254,8 @@ client_quota_value client_quota_translator::get_client_quota_value(
       [&get_quota](const k_user& u) -> client_quota_value {
           // Exact user
           {
-              auto match_key = entity_key{entity_key::user_match{u}};
-              auto quota = get_quota(match_key);
+              const entity_key match_key{entity_key::user_match{u}};
+              const auto quota = get_quota(match_key);
               if (quota) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_user};
@@ -264,8 +264,8 @@ client_quota_value client_quota_translator::get_client_quota_value(
 
           // Default user
           {
-              auto match_key = entity_key{entity_key::user_default_match{}};
-              auto quota = get_quota(match_key);
+              const entity_key match_key{entity_key::user_default_match{}};
+              const auto quota = get_quota(match_key);
               if (quota.has_value()) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_user_default};
@@ -278,8 +278,8 @@ client_quota_value client_quota_translator::get_client_quota_value(
       [&get_quota](const k_client_id& k) -> client_quota_value {
           // Exact client id
           {
-              auto match_key = entity_key{entity_key::client_id_match{k}};
-              auto quota = get_quota(match_key);
+              const auto match_key = entity_key{entity_key::client_id_match{k}};
+              const auto quota = get_quota(match_key);
               if (quota.has_value()) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_client_id};
@@ -288,9 +288,8 @@ client_quota_value client_quota_translator::get_client_quota_value(
 
           // Default client id
           {
-              auto match_key = entity_key{
-                entity_key::client_id_default_match{}};
-              auto quota = get_quota(match_key);
+              const entity_key match_key{entity_key::client_id_default_match{}};
+              const auto quota = get_quota(match_key);
               if (quota.has_value()) {
                   return client_quota_value{
                     quota, client_quota_rule::kafka_client_default};
@@ -301,8 +300,8 @@ client_quota_value client_quota_translator::get_client_quota_value(
             std::nullopt, client_quota_rule::not_applicable};
       },
       [&get_quota](const k_group_name& k) -> client_quota_value {
-          auto match_key = entity_key{entity_key::client_id_prefix_match{k}};
-          auto quota = get_quota(match_key);
+          const auto match_key = entity_key{entity_key::client_id_prefix_match{k}};
+          const auto quota = get_quota(match_key);
           if (quota.has_value()) {
               return client_quota_value{
                 quota, client_quota_rule::kafka_client_prefix};
