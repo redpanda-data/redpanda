@@ -65,6 +65,7 @@ public:
       std::expected<chunked_vector<extent_meta>, std::error_code>>
     execute_write(
       model::ntp ntp,
+      model::topic_id topic_id,
       cluster_epoch min_epoch,
       staged_write reservation,
       model::timeout_clock::time_point deadline)

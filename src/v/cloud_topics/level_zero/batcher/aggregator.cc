@@ -12,8 +12,9 @@
 
 #include "cloud_topics/level_zero/pipeline/serializer.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
+#include "serde/rw/rw.h"
 
-#include <seastar/core/future.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/util/defer.hh>
 
 namespace cloud_topics::l0 {
@@ -77,7 +78,7 @@ aggregator<Clock>::get_extents(object_id id) {
         for (auto& req : list) {
             vassert(
               !req.data_chunk.payload.empty(),
-              "Empty write request for ntp: {}",
+              "Empty write request for topic_id_partition: {}",
               key);
             make_ctp_placeholders(ctx, req, req.data_chunk);
         }
@@ -86,23 +87,66 @@ aggregator<Clock>::get_extents(object_id id) {
 }
 
 template<class Clock>
-iobuf aggregator<Clock>::get_stream() {
+iobuf aggregator<Clock>::get_stream(l0::footer& footer_out) {
     iobuf concat;
+    size_t current_offset = 0;
+    std::optional<model::topic_id_partition> current_tp;
+    size_t tp_start_offset = 0;
+
     for (auto& p : _aggregated) {
         if (p->ref != nullptr) {
-            concat.append(std::move(p->ref->data_chunk.payload));
+            model::topic_id_partition req_tp(
+              p->ref->topic_id, p->ref->ntp.tp.partition);
+
+            // Detect when we switch to a new partition
+            if (!current_tp || req_tp != *current_tp) {
+                // Record the previous partition's info (if any)
+                if (current_tp) {
+                    footer_out.partitions[*current_tp] = {
+                      .file_position = tp_start_offset,
+                      .length = current_offset - tp_start_offset,
+                    };
+                }
+                current_tp = req_tp;
+                tp_start_offset = current_offset;
+            }
+
+            auto& payload = p->ref->data_chunk.payload;
+            current_offset += payload.size_bytes();
+            concat.append(std::move(payload));
         }
     }
+
+    // Record the final partition's info
+    if (current_tp) {
+        footer_out.partitions[*current_tp] = {
+          .file_position = tp_start_offset,
+          .length = current_offset - tp_start_offset,
+        };
+    }
+
+    // Serialize the footer and append it to the payload
+    iobuf footer_buf = serde::to_iobuf(footer_out.copy());
+    auto footer_size = static_cast<uint32_t>(footer_buf.size_bytes());
+    concat.append(std::move(footer_buf));
+
+    // Append the footer size (4 bytes, little-endian) for tail-reading
+    auto footer_size_le = ss::cpu_to_le(footer_size);
+    concat.append(
+      reinterpret_cast<const char*>(&footer_size_le), sizeof(footer_size_le));
+
     return concat;
 }
 
 template<class Clock>
-aggregator<Clock>::L0_object aggregator<Clock>::prepare(object_id id) {
+typename aggregator<Clock>::L0_object aggregator<Clock>::prepare(object_id id) {
     // Move data from staging to aggregated
     _aggregated = get_extents(id);
     _staging.clear();
-    // Produce input stream
-    return {id, get_stream()};
+    // Produce input stream with footer
+    l0::footer index;
+    auto payload = get_stream(index);
+    return L0_object{id, std::move(payload), std::move(index)};
 }
 
 template<class Clock>
@@ -141,10 +185,10 @@ void aggregator<Clock>::ack_error(errc e) {
 
 template<class Clock>
 void aggregator<Clock>::add(l0::write_request<Clock>& req) {
-    auto it = _staging.find(req.ntp);
+    model::topic_id_partition tp(req.topic_id, req.ntp.tp.partition);
+    auto it = _staging.find(tp);
     if (it == _staging.end()) {
-        it = _staging.emplace_hint(
-          it, req.ntp, l0::write_request_list<Clock>());
+        it = _staging.emplace_hint(it, tp, l0::write_request_list<Clock>());
     }
     req._hook.unlink();
     it->second.push_back(req);

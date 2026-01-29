@@ -13,6 +13,7 @@
 #include "absl/container/btree_map.h"
 #include "base/seastarx.h"
 #include "cloud_topics/errc.h"
+#include "cloud_topics/level_zero/common/object.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
 #include "cloud_topics/types.h"
 #include "container/chunked_vector.h"
@@ -66,6 +67,7 @@ public:
     struct L0_object {
         object_id id;
         iobuf payload;
+        l0::footer index;
     };
     L0_object prepare(object_id);
 
@@ -78,15 +80,18 @@ private:
     chunked_vector<std::unique_ptr<extents_for_req<Clock>>>
       get_extents(object_id);
 
-    /// Produce L0 object payload.
+    /// Produce L0 object payload with footer.
     /// The method messes up the state so it can only
     /// be called once.
-    iobuf get_stream();
+    /// Returns the payload with footer appended and populates the footer
+    /// struct.
+    iobuf get_stream(l0::footer& footer_out);
 
     cluster_epoch _highest_topic_start_epoch;
 
     /// Source data for the aggregator
-    absl::btree_map<model::ntp, l0::write_request_list<Clock>> _staging;
+    absl::btree_map<model::topic_id_partition, l0::write_request_list<Clock>>
+      _staging;
     /// Prepared placeholders
     chunked_vector<std::unique_ptr<extents_for_req<Clock>>> _aggregated;
     size_t _size_bytes{0};

@@ -15,3 +15,20 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "object_test",
+    timeout = "short",
+    srcs = [
+        "object_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/cloud_topics/level_zero/common:object",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

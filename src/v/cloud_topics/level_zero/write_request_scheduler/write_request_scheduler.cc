@@ -351,6 +351,7 @@ write_request_scheduler<Clock>::proxy_write_request(
     _probe.register_receive_xshard(req->size_bytes());
     write_request<Clock> proxy(
       req->ntp,
+      req->topic_id,
       req->topic_start_epoch,
       shallow_copy(req->data_chunk),
       req->expiration_time);

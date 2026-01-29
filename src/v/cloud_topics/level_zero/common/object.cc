@@ -21,18 +21,19 @@ namespace cloud_topics::l0 {
 
 footer footer::copy() const {
     footer result;
-    for (const auto& [ntp, info] : partitions) {
-        result.partitions.emplace_hint(result.partitions.end(), ntp, info);
+    for (const auto& [tp, info] : partitions) {
+        result.partitions.emplace_hint(result.partitions.end(), tp, info);
     }
     return result;
 }
 
 std::variant<footer, size_t> footer::read(iobuf buf) {
     if (buf.size_bytes() < sizeof(uint32_t)) {
-        throw std::runtime_error(fmt::format(
-          "expected at least {} bytes in footer, got: {}",
-          sizeof(uint32_t),
-          buf.size_bytes()));
+        throw std::runtime_error(
+          fmt::format(
+            "expected at least {} bytes in footer, got: {}",
+            sizeof(uint32_t),
+            buf.size_bytes()));
     }
 
     // Read the footer size from the last 4 bytes

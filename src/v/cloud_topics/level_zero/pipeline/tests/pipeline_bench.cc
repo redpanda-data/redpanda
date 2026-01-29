@@ -27,6 +27,7 @@
 namespace ct = ::cloud_topics;
 
 static cloud_topics::cluster_epoch min_epoch{3840};
+static model::topic_id test_topic_id = model::topic_id::create();
 
 struct read_pipeline_sink {
     explicit read_pipeline_sink(ct::l0::read_pipeline<>& p)
@@ -118,6 +119,7 @@ PERF_TEST_C(write_pipeline_bench, propagation_latency) {
     perf_tests::do_not_optimize(
       co_await pipeline.write_and_debounce(
         model::controller_ntp,
+        test_topic_id,
         min_epoch,
         {},
         ss::lowres_clock::now() + std::chrono::milliseconds(10)));

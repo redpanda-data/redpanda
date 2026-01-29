@@ -19,11 +19,13 @@ namespace cloud_topics::l0 {
 template<class Clock>
 write_request<Clock>::write_request(
   model::ntp ntp,
+  model::topic_id topic_id,
   cluster_epoch topic_start_epoch,
   serialized_chunk chunk,
   timestamp_t timeout,
   pipeline_stage stage)
   : ntp(std::move(ntp))
+  , topic_id(topic_id)
   , topic_start_epoch(topic_start_epoch)
   , data_chunk(std::move(chunk))
   , ingestion_time(Clock::now())

@@ -34,6 +34,8 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     using timestamp_t = Clock::time_point;
     /// Target NTP
     model::ntp ntp;
+    /// Topic ID (UUID) for the target topic
+    model::topic_id topic_id;
     /// The NTPs topic start epoch for GC (i.e. topic revision id)
     cluster_epoch topic_start_epoch;
     /// Serialized record batches
@@ -64,6 +66,7 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     /// The object can't be copied to another shard directly.
     write_request(
       model::ntp ntp,
+      model::topic_id topic_id,
       cluster_epoch topic_start_epoch,
       serialized_chunk chunk,
       timestamp_t timeout,

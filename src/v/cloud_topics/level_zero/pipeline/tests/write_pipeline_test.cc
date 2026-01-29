@@ -35,6 +35,7 @@
 using namespace std::chrono_literals;
 
 static cloud_topics::cluster_epoch min_epoch{3840};
+static model::topic_id test_topic_id = model::topic_id::create();
 
 namespace cloud_topics::l0 {
 struct write_pipeline_accessor {
@@ -80,7 +81,7 @@ TEST_CORO(write_pipeline_test, single_write_request) {
 
     const auto timeout = ss::manual_clock::now() + 1s;
     auto fut = pipeline.write_and_debounce(
-      model::controller_ntp, min_epoch, {}, timeout);
+      model::controller_ntp, test_topic_id, min_epoch, {}, timeout);
 
     // Make sure the write request is in the _pending list
     co_await sleep_until(
@@ -109,7 +110,7 @@ TEST_CORO(batcher_test, expired_write_request) {
     static constexpr auto timeout = 1s;
     auto deadline = ss::manual_clock::now() + 1s;
     auto expect_fail_fut = pipeline.write_and_debounce(
-      model::controller_ntp, min_epoch, {}, deadline);
+      model::controller_ntp, test_topic_id, min_epoch, {}, deadline);
 
     // Expire first request
     co_await sleep_until(
@@ -118,7 +119,7 @@ TEST_CORO(batcher_test, expired_write_request) {
 
     deadline = ss::manual_clock::now() + 1s;
     auto expect_pass_fut = pipeline.write_and_debounce(
-      model::controller_ntp, min_epoch, {}, deadline);
+      model::controller_ntp, test_topic_id, min_epoch, {}, deadline);
 
     // Make sure that both write requests are pending
     co_await sleep_until(
@@ -155,7 +156,11 @@ TEST_CORO(write_pipeline_test, stage_bytes_accounting) {
     std::ranges::move(std::move(test_data), std::back_inserter(batches));
 
     auto fut = pipeline.write_and_debounce(
-      model::controller_ntp, min_epoch, std::move(batches), timeout);
+      model::controller_ntp,
+      test_topic_id,
+      min_epoch,
+      std::move(batches),
+      timeout);
 
     co_await sleep_until(
       10ms, [&] { return accessor.write_requests_pending(1); });
@@ -190,7 +195,11 @@ TEST_CORO(write_pipeline_test, stage_bytes_accounting_on_timeout) {
     std::ranges::move(std::move(test_data), std::back_inserter(batches));
 
     auto fut = pipeline.write_and_debounce(
-      model::controller_ntp, min_epoch, std::move(batches), timeout);
+      model::controller_ntp,
+      test_topic_id,
+      min_epoch,
+      std::move(batches),
+      timeout);
 
     co_await sleep_until(
       10ms, [&] { return accessor.write_requests_pending(1); });
@@ -248,7 +257,11 @@ TEST_CORO(write_pipeline_test, interleaving_stages_bug) {
         auto chunk = co_await make_chunk();
         auto req
           = std::make_unique<cloud_topics::l0::write_request<ss::manual_clock>>(
-            model::controller_ntp, min_epoch, std::move(chunk), timeout);
+            model::controller_ntp,
+            test_topic_id,
+            min_epoch,
+            std::move(chunk),
+            timeout);
         requests.push_back(std::move(req));
     }
 
@@ -336,14 +349,22 @@ TEST_CORO(write_pipeline_test, oversized_request) {
     auto chunk1 = co_await make_chunk_with_size(10000);
     auto req1
       = std::make_unique<cloud_topics::l0::write_request<ss::manual_clock>>(
-        model::controller_ntp, min_epoch, std::move(chunk1), timeout);
+        model::controller_ntp,
+        test_topic_id,
+        min_epoch,
+        std::move(chunk1),
+        timeout);
     requests.push_back(std::move(req1));
 
     // Second request is normal size (approximately 1000 bytes)
     auto chunk2 = co_await make_chunk_with_size(1000);
     auto req2
       = std::make_unique<cloud_topics::l0::write_request<ss::manual_clock>>(
-        model::controller_ntp, min_epoch, std::move(chunk2), timeout);
+        model::controller_ntp,
+        test_topic_id,
+        min_epoch,
+        std::move(chunk2),
+        timeout);
     requests.push_back(std::move(req2));
 
     // Add both requests to stage
@@ -417,7 +438,11 @@ TEST_CORO(write_pipeline_test, multiple_requests_within_limit) {
         auto chunk = co_await make_chunk_with_size(1000);
         auto req
           = std::make_unique<cloud_topics::l0::write_request<ss::manual_clock>>(
-            model::controller_ntp, min_epoch, std::move(chunk), timeout);
+            model::controller_ntp,
+            test_topic_id,
+            min_epoch,
+            std::move(chunk),
+            timeout);
         requests.push_back(std::move(req));
     }
 
@@ -474,7 +499,11 @@ TEST_CORO(write_pipeline_test, max_requests_limit) {
         auto chunk = co_await make_chunk();
         auto req
           = std::make_unique<cloud_topics::l0::write_request<ss::manual_clock>>(
-            model::controller_ntp, min_epoch, std::move(chunk), timeout);
+            model::controller_ntp,
+            test_topic_id,
+            min_epoch,
+            std::move(chunk),
+            timeout);
         requests.push_back(std::move(req));
     }
 

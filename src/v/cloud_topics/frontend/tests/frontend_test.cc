@@ -51,6 +51,7 @@ public:
       (ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>),
       execute_write,
       (model::ntp,
+       model::topic_id,
        cluster_epoch,
        staged_write,
        model::timeout_clock::time_point),
@@ -141,7 +142,7 @@ TEST_F(frontend_fixture, test_replicate_epoch) {
       .WillOnce(Return(ss::as_ready_future(stage_result{})))
       .WillOnce(Return(ss::as_ready_future(stage_result{})))
       .WillOnce(Return(ss::as_ready_future(stage_result{})));
-    EXPECT_CALL(*_data_plane, execute_write(_, _, _, _))
+    EXPECT_CALL(*_data_plane, execute_write(_, _, _, _, _))
       .WillOnce(Return(make_extent_fut(model::offset(0), cluster_epoch(1))))
       .WillOnce(Return(make_extent_fut(model::offset(1), cluster_epoch(2))))
       .WillOnce(Return(make_extent_fut(model::offset(2), cluster_epoch(0))));

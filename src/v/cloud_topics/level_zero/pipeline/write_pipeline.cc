@@ -69,6 +69,7 @@ template<class Clock>
 ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
 write_pipeline<Clock>::write_and_debounce(
   model::ntp ntp,
+  model::topic_id topic_id,
   cluster_epoch min_epoch,
   chunked_vector<model::record_batch> batches,
   Clock::time_point timeout) {
@@ -77,7 +78,7 @@ write_pipeline<Clock>::write_and_debounce(
         co_return std::unexpected(staged.error());
     }
     co_return co_await execute_write(
-      std::move(ntp), min_epoch, std::move(staged.value()), timeout);
+      std::move(ntp), topic_id, min_epoch, std::move(staged.value()), timeout);
 }
 
 template<class Clock>
@@ -106,6 +107,7 @@ template<class Clock>
 ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
 write_pipeline<Clock>::execute_write(
   model::ntp ntp,
+  model::topic_id topic_id,
   cluster_epoch min_epoch,
   prepared_data prepped,
   Clock::time_point timeout) {
@@ -121,7 +123,11 @@ write_pipeline<Clock>::execute_write(
     auto err_probe = ss::defer([this] { _probe.register_request_error(); });
     _bytes_total += sz;
     l0::write_request<Clock> request(
-      std::move(ntp), min_epoch, std::move(prepped.data_chunk), timeout);
+      std::move(ntp),
+      topic_id,
+      min_epoch,
+      std::move(prepped.data_chunk),
+      timeout);
     auto stage_cleanup = ss::defer([this, &request] {
         transfer_stage_bytes(
           request.stage, unassigned_pipeline_stage, request.size_bytes());

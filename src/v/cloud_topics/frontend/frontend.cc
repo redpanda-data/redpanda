@@ -549,6 +549,7 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     }
     auto upload_fut = co_await ss::coroutine::as_future(api->execute_write(
       ntp,
+      tidp.topic_id,
       min_epoch,
       std::move(staged),
       model::timeout_clock::now() + timeout));
@@ -715,6 +716,7 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
     }
     auto res = co_await _data_plane->execute_write(
       ntp(),
+      topic_id_partition().topic_id,
       min_epoch,
       std::move(staged.value()),
       model::timeout_clock::now()

@@ -34,6 +34,7 @@ using namespace std::chrono_literals;
 using namespace cloud_topics;
 
 static cloud_topics::cluster_epoch min_epoch{3840};
+static model::topic_id test_topic_id = model::topic_id::create();
 static const model::topic_namespace
   test_topic(model::kafka_namespace, model::topic("tapioca"));
 static const model::ntp
@@ -229,7 +230,7 @@ TEST_F(L0ObjectSizeDistFixture, ThreeToOne) {
           return seastar::async([&] {
               auto data = std::move(batches[seastar::this_shard_id()]);
               p.write_and_debounce(
-                 test_ntp0, min_epoch, std::move(data), deadline)
+                 test_ntp0, test_topic_id, min_epoch, std::move(data), deadline)
                 .discard_result()
                 .get();
           });

@@ -22,11 +22,15 @@ using namespace cloud_topics::l0;
 
 namespace {
 
-model::ntp make_ntp(int partition) {
-    return model::ntp(
-      model::ns("kafka"),
-      model::topic("test-topic"),
-      model::partition_id(partition));
+// Create a stable topic_id for testing (not random so tests are deterministic)
+model::topic_id test_topic_id() {
+    static model::topic_id id = model::topic_id::create();
+    return id;
+}
+
+model::topic_id_partition make_tp(int partition) {
+    return model::topic_id_partition(
+      test_topic_id(), model::partition_id(partition));
 }
 
 // Helper to serialize a footer and append size suffix (matching aggregator
@@ -58,7 +62,7 @@ TEST(L0FooterTest, EmptyFooter) {
 
 TEST(L0FooterTest, SinglePartition) {
     footer f;
-    f.partitions[make_ntp(0)] = {
+    f.partitions[make_tp(0)] = {
       .file_position = 0,
       .length = 1024,
     };
@@ -70,7 +74,7 @@ TEST(L0FooterTest, SinglePartition) {
     EXPECT_EQ(deserialized.partitions.size(), 1);
     EXPECT_EQ(f, deserialized);
 
-    auto it = deserialized.partitions.find(make_ntp(0));
+    auto it = deserialized.partitions.find(make_tp(0));
     EXPECT_TRUE(it != deserialized.partitions.end());
     if (it != deserialized.partitions.end()) {
         EXPECT_EQ(it->second.file_position, 0);
@@ -80,9 +84,9 @@ TEST(L0FooterTest, SinglePartition) {
 
 TEST(L0FooterTest, MultiplePartitions) {
     footer f;
-    f.partitions[make_ntp(0)] = {.file_position = 0, .length = 1024};
-    f.partitions[make_ntp(1)] = {.file_position = 1024, .length = 2048};
-    f.partitions[make_ntp(2)] = {.file_position = 3072, .length = 512};
+    f.partitions[make_tp(0)] = {.file_position = 0, .length = 1024};
+    f.partitions[make_tp(1)] = {.file_position = 1024, .length = 2048};
+    f.partitions[make_tp(2)] = {.file_position = 3072, .length = 512};
 
     // Serialize and deserialize
     iobuf buf = serde::to_iobuf(f.copy());
@@ -92,21 +96,21 @@ TEST(L0FooterTest, MultiplePartitions) {
     EXPECT_EQ(f, deserialized);
 
     // Verify each partition
-    auto it0 = deserialized.partitions.find(make_ntp(0));
+    auto it0 = deserialized.partitions.find(make_tp(0));
     EXPECT_TRUE(it0 != deserialized.partitions.end());
     if (it0 != deserialized.partitions.end()) {
         EXPECT_EQ(it0->second.file_position, 0);
         EXPECT_EQ(it0->second.length, 1024);
     }
 
-    auto it1 = deserialized.partitions.find(make_ntp(1));
+    auto it1 = deserialized.partitions.find(make_tp(1));
     EXPECT_TRUE(it1 != deserialized.partitions.end());
     if (it1 != deserialized.partitions.end()) {
         EXPECT_EQ(it1->second.file_position, 1024);
         EXPECT_EQ(it1->second.length, 2048);
     }
 
-    auto it2 = deserialized.partitions.find(make_ntp(2));
+    auto it2 = deserialized.partitions.find(make_tp(2));
     EXPECT_TRUE(it2 != deserialized.partitions.end());
     if (it2 != deserialized.partitions.end()) {
         EXPECT_EQ(it2->second.file_position, 3072);
@@ -116,8 +120,8 @@ TEST(L0FooterTest, MultiplePartitions) {
 
 TEST(L0FooterTest, CopyMethod) {
     footer f;
-    f.partitions[make_ntp(0)] = {.file_position = 100, .length = 200};
-    f.partitions[make_ntp(1)] = {.file_position = 300, .length = 400};
+    f.partitions[make_tp(0)] = {.file_position = 100, .length = 200};
+    f.partitions[make_tp(1)] = {.file_position = 300, .length = 400};
 
     auto copy = f.copy();
 
@@ -127,8 +131,8 @@ TEST(L0FooterTest, CopyMethod) {
 
 TEST(L0FooterTest, ReadFromTail_CompleteFooter) {
     footer f;
-    f.partitions[make_ntp(0)] = {.file_position = 0, .length = 1024};
-    f.partitions[make_ntp(1)] = {.file_position = 1024, .length = 2048};
+    f.partitions[make_tp(0)] = {.file_position = 0, .length = 1024};
+    f.partitions[make_tp(1)] = {.file_position = 1024, .length = 2048};
 
     // Serialize with size suffix
     auto buf = serialize_footer_with_size(f);
@@ -146,7 +150,7 @@ TEST(L0FooterTest, ReadFromTail_CompleteFooter) {
 
 TEST(L0FooterTest, ReadFromTail_PartialFooter) {
     footer f;
-    f.partitions[make_ntp(0)] = {.file_position = 0, .length = 1024};
+    f.partitions[make_tp(0)] = {.file_position = 0, .length = 1024};
 
     // Serialize with size suffix
     auto buf = serialize_footer_with_size(f);
@@ -192,18 +196,14 @@ TEST(L0FooterTest, PartitionInfoEquality) {
 TEST(L0FooterTest, DifferentTopicIds) {
     footer f;
 
-    // Create NTPs with different namespaces
-    model::ntp ntp1(
-      model::ns("kafka"),
-      model::topic("test"),
-      model::partition_id(0));
-    model::ntp ntp2(
-      model::ns("internal"),
-      model::topic("test"),
-      model::partition_id(0));
+    // Create topic_id_partitions with different topic IDs
+    auto topic_id1 = model::topic_id::create();
+    auto topic_id2 = model::topic_id::create();
+    model::topic_id_partition tp1(topic_id1, model::partition_id(0));
+    model::topic_id_partition tp2(topic_id2, model::partition_id(0));
 
-    f.partitions[ntp1] = {.file_position = 0, .length = 100};
-    f.partitions[ntp2] = {.file_position = 100, .length = 200};
+    f.partitions[tp1] = {.file_position = 0, .length = 100};
+    f.partitions[tp2] = {.file_position = 100, .length = 200};
 
     // Serialize and deserialize
     iobuf buf = serde::to_iobuf(f.copy());
@@ -211,16 +211,16 @@ TEST(L0FooterTest, DifferentTopicIds) {
 
     EXPECT_EQ(deserialized.partitions.size(), 2);
     EXPECT_TRUE(
-      deserialized.partitions.find(ntp1) != deserialized.partitions.end());
+      deserialized.partitions.find(tp1) != deserialized.partitions.end());
     EXPECT_TRUE(
-      deserialized.partitions.find(ntp2) != deserialized.partitions.end());
+      deserialized.partitions.find(tp2) != deserialized.partitions.end());
 }
 
 TEST(L0FooterTest, LargePositionValues) {
     footer f;
     // Test with large position values that might cause issues with incorrect
     // serialization
-    f.partitions[make_ntp(0)] = {
+    f.partitions[make_tp(0)] = {
       .file_position = std::numeric_limits<size_t>::max() / 2,
       .length = std::numeric_limits<size_t>::max() / 4,
     };
@@ -230,7 +230,7 @@ TEST(L0FooterTest, LargePositionValues) {
     auto deserialized = serde::from_iobuf<footer>(std::move(buf));
 
     EXPECT_EQ(f, deserialized);
-    auto it = deserialized.partitions.find(make_ntp(0));
+    auto it = deserialized.partitions.find(make_tp(0));
     EXPECT_TRUE(it != deserialized.partitions.end());
     if (it != deserialized.partitions.end()) {
         EXPECT_EQ(

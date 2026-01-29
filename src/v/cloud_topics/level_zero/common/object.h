@@ -24,18 +24,19 @@ namespace cloud_topics::l0 {
 // L0 Object File Format:
 // =====================
 //
-// An L0 object consists of multiple NTPs' data written sequentially,
+// An L0 object consists of multiple partitions' data written sequentially,
 // followed by a footer with partition location data.
 //
 // Structure:
-// [NTP 1 Data][NTP 2 Data]...[Footer][Footer Size]
+// [Partition 1 Data][Partition 2 Data]...[Footer][Footer Size]
 //
 // Components:
-// 1. NTP Data: Serialized record batches for each partition, written
-//    contiguously. Data for each NTP is grouped together.
+// 1. Partition Data: Serialized record batches for each partition, written
+//    contiguously. Data for each partition is grouped together.
 //
 // 2. Footer: Serde-serialized footer struct containing:
-//    - A map from model::ntp to partition_info (file_position, length)
+//    - A map from model::topic_id_partition (UUID + partition_id) to
+//      partition_info (file_position, length)
 //    - Uses serde::checksum_envelope for integrity verification
 //
 // 3. Footer Size: Final 4 bytes containing uint32_t size of the footer data
@@ -43,25 +44,26 @@ namespace cloud_topics::l0 {
 //
 // clang-format on
 
-// This struct defines the footer for level zero objects. It maps each NTP
-// to its location within the object, enabling efficient partition data lookup.
+// This struct defines the footer for level zero objects. It maps each
+// topic_id_partition to its location within the object, enabling efficient
+// partition data lookup.
 struct footer
   : serde::checksum_envelope<footer, serde::version<0>, serde::version<0>> {
-    // Information about each NTP region in the object.
+    // Information about each partition region in the object.
     struct partition_info
       : serde::envelope<partition_info, serde::version<0>, serde::version<0>> {
-        // The byte offset in the object where this NTP's data starts.
+        // The byte offset in the object where this partition's data starts.
         size_t file_position = 0;
-        // The total size of this NTP's data in bytes.
+        // The total size of this partition's data in bytes.
         size_t length = 0;
 
         auto serde_fields() { return std::tie(file_position, length); }
         bool operator==(const partition_info&) const = default;
     };
 
-    // Maps NTP to the location of its data in the object.
+    // Maps topic_id_partition to the location of its data in the object.
     // Using btree_map for deterministic iteration order.
-    absl::btree_map<model::ntp, partition_info> partitions;
+    absl::btree_map<model::topic_id_partition, partition_info> partitions;
 
     footer copy() const;
 

@@ -151,13 +151,14 @@ public:
     ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
     execute_write(
       model::ntp ntp,
+      model::topic_id topic_id,
       cluster_epoch min_epoch,
       staged_write reservation,
       model::timeout_clock::time_point deadline) override {
         auto staged = std::unique_ptr<staged_pipeline_write>(
           static_cast<staged_pipeline_write*>(reservation.staged.release()));
         co_return co_await _write_pipeline.local().execute_write(
-          std::move(ntp), min_epoch, std::move(staged->data), deadline);
+          std::move(ntp), topic_id, min_epoch, std::move(staged->data), deadline);
     }
 
     ss::future<result<chunked_vector<model::record_batch>>> materialize(

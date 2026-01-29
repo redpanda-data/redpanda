@@ -58,6 +58,7 @@ public:
     ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
     write_and_debounce(
       model::ntp ntp,
+      model::topic_id topic_id,
       cluster_epoch min_epoch,
       chunked_vector<model::record_batch> batches,
       Clock::time_point timeout);
@@ -73,6 +74,7 @@ public:
     ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
     execute_write(
       model::ntp ntp,
+      model::topic_id topic_id,
       cluster_epoch min_epoch,
       prepared_data prepped,
       Clock::time_point timeout);
