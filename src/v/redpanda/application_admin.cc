@@ -107,7 +107,10 @@ void application::configure_admin_server(model::node_id node_id) {
                   node_id,
                   create_client(),
                   cloud_topics_app->get_level_zero_gc(),
-                  &controller->get_members_table()));
+                  &controller->get_members_table(),
+                  &controller->get_partition_manager(),
+                  &controller->get_partition_leaders(),
+                  &controller->get_shard_table()));
           }
           s.add_service(
             std::make_unique<

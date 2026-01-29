@@ -12,6 +12,9 @@
 
 #include "base/vassert.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
+#include "cluster/partition_leaders_table.h"
+#include "cluster/partition_manager.h"
+#include "cluster/shard_table.h"
 #include "model/fundamental.h"
 #include "serde/protobuf/rpc.h"
 #include "ssx/sformat.h"
@@ -48,11 +51,17 @@ level_zero_gc_service_impl::level_zero_gc_service_impl(
   model::node_id self,
   admin::proxy::client pc,
   ss::sharded<cloud_topics::level_zero_gc>* gc,
-  ss::sharded<cluster::members_table>* mt)
+  ss::sharded<cluster::members_table>* mt,
+  ss::sharded<cluster::partition_manager>* pm,
+  ss::sharded<cluster::partition_leaders_table>* pl,
+  ss::sharded<cluster::shard_table>* st)
   : _self(self)
   , _proxy_client(std::move(pc))
   , _gc(gc)
-  , _members_table(mt) {}
+  , _members_table(mt)
+  , _partition_manager(pm)
+  , _partition_leaders(pl)
+  , _shard_table(st) {}
 
 seastar::future<proto::admin::level_zero_gc::get_status_response>
 level_zero_gc_service_impl::get_status(
