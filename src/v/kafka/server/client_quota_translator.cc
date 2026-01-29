@@ -251,39 +251,50 @@ client_quota_value client_quota_translator::get_client_quota_value(
           return client_quota_value{
             std::nullopt, client_quota_rule::not_applicable};
       },
-      [this, &accessor](const k_user& u) -> client_quota_value {
-          auto exact_match_key = entity_key{entity_key::user_match{u}};
-          auto exact_match_quota = _quota_store.local().get_quota(
-            exact_match_key);
-          if (exact_match_quota && accessor(*exact_match_quota)) {
-              return client_quota_value{
-                accessor(*exact_match_quota), client_quota_rule::kafka_user};
+      [&get_quota](const k_user& u) -> client_quota_value {
+          // Exact user
+          {
+              auto match_key = entity_key{entity_key::user_match{u}};
+              auto quota = get_quota(match_key);
+              if (quota) {
+                  return client_quota_value{
+                    quota, client_quota_rule::kafka_user};
+              }
           }
 
-          static const auto default_user_key = entity_key{
-            entity_key::user_default_match{}};
-          auto default_quota = _quota_store.local().get_quota(default_user_key);
-          if (default_quota && accessor(*default_quota)) {
-              return client_quota_value{
-                accessor(*default_quota),
-                client_quota_rule::kafka_user_default};
+          // Default user
+          {
+              auto match_key = entity_key{entity_key::user_default_match{}};
+              auto quota = get_quota(match_key);
+              if (quota.has_value()) {
+                  return client_quota_value{
+                    quota, client_quota_rule::kafka_user_default};
+              }
           }
 
           return client_quota_value{
             std::nullopt, client_quota_rule::not_applicable};
       },
       [&get_quota](const k_client_id& k) -> client_quota_value {
-          auto match_key = entity_key{entity_key::client_id_match{k}};
-          if (auto quota = get_quota(match_key); quota.has_value()) {
-              return client_quota_value{
-                quota, client_quota_rule::kafka_client_id};
+          // Exact client id
+          {
+              auto match_key = entity_key{entity_key::client_id_match{k}};
+              auto quota = get_quota(match_key);
+              if (quota.has_value()) {
+                  return client_quota_value{
+                    quota, client_quota_rule::kafka_client_id};
+              }
           }
 
-          static const auto default_client_key = entity_key{
-            entity_key::client_id_default_match{}};
-          if (auto quota = get_quota((default_client_key)); quota.has_value()) {
-              return client_quota_value{
-                quota, client_quota_rule::kafka_client_default};
+          // Default client id
+          {
+              auto match_key = entity_key{
+                entity_key::client_id_default_match{}};
+              auto quota = get_quota(match_key);
+              if (quota.has_value()) {
+                  return client_quota_value{
+                    quota, client_quota_rule::kafka_client_default};
+              }
           }
 
           return client_quota_value{
@@ -291,7 +302,8 @@ client_quota_value client_quota_translator::get_client_quota_value(
       },
       [&get_quota](const k_group_name& k) -> client_quota_value {
           auto match_key = entity_key{entity_key::client_id_prefix_match{k}};
-          if (auto quota = get_quota(match_key); quota.has_value()) {
+          auto quota = get_quota(match_key);
+          if (quota.has_value()) {
               return client_quota_value{
                 quota, client_quota_rule::kafka_client_prefix};
           }
