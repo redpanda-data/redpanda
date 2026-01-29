@@ -204,4 +204,16 @@ l0::producer_queue& ctp_stm_api::producer_queue() {
     return _stm->producer_queue();
 }
 
+ss::future<std::expected<cluster_epoch, ctp_stm_api_errc>>
+ctp_stm_api::get_current_epoch(ss::abort_source* as) noexcept {
+    auto epoch_fut = co_await ss::coroutine::as_future(
+      _stm->_cluster_services->current_epoch(as));
+    if (epoch_fut.failed()) {
+        auto e = epoch_fut.get_exception();
+        vlog(_log.warn, "Failed to get cluster epoch: {}", e);
+        co_return std::unexpected{ctp_stm_api_errc::failure};
+    }
+    co_return epoch_fut.get();
+}
+
 }; // namespace cloud_topics

@@ -103,6 +103,10 @@ public:
 
     l0::producer_queue& producer_queue();
 
+    /// Fetch the current cluster epoch from cluster_services.
+    ss::future<std::expected<cluster_epoch, ctp_stm_api_errc>>
+    get_current_epoch(ss::abort_source*) noexcept;
+
 private:
     /// Replicate a record batch and wait for it to be applied to the ctp_stm.
     /// Returns the offset at which the batch was applied.
