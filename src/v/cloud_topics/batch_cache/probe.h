@@ -23,24 +23,56 @@
 
 namespace cloud_topics {
 
+/// Probe for tracking batch cache statistics.
+/// Tracks materialized cache (record batches with offsets) and hydrated cache
+/// (raw L0 object data) separately for observability.
 class batch_cache_probe {
 public:
     explicit batch_cache_probe(bool disable_metrics);
 
-    void register_put(uint64_t bytes) { _put_bytes += bytes; }
-    void register_get(uint64_t bytes) {
-        _get_bytes += bytes;
-        _hits++;
+    // Materialized cache operations (record batches with offsets)
+    void register_materialized_put(uint64_t bytes) {
+        _materialized_put_bytes += bytes;
     }
-    void register_miss() { _misses++; }
+    void register_materialized_get(uint64_t bytes) {
+        _materialized_get_bytes += bytes;
+        _materialized_hits++;
+    }
+    void register_materialized_miss() { _materialized_misses++; }
+
+    // Hydrated cache operations (raw L0 object data)
+    void register_hydrated_put(uint64_t bytes) { _hydrated_put_bytes += bytes; }
+    void register_hydrated_get(uint64_t bytes) {
+        _hydrated_get_bytes += bytes;
+        _hydrated_hits++;
+    }
+    void register_hydrated_miss() { _hydrated_misses++; }
+
+    // Accessors for testing
+    uint64_t materialized_hits() const { return _materialized_hits; }
+    uint64_t materialized_misses() const { return _materialized_misses; }
+    uint64_t materialized_put_bytes() const { return _materialized_put_bytes; }
+    uint64_t materialized_get_bytes() const { return _materialized_get_bytes; }
+
+    uint64_t hydrated_hits() const { return _hydrated_hits; }
+    uint64_t hydrated_misses() const { return _hydrated_misses; }
+    uint64_t hydrated_put_bytes() const { return _hydrated_put_bytes; }
+    uint64_t hydrated_get_bytes() const { return _hydrated_get_bytes; }
 
 private:
     void setup_internal_metrics(bool disable);
 
-    uint64_t _put_bytes{0};
-    uint64_t _get_bytes{0};
-    uint64_t _misses{0};
-    uint64_t _hits{0};
+    // Materialized cache stats (record batches)
+    uint64_t _materialized_put_bytes{0};
+    uint64_t _materialized_get_bytes{0};
+    uint64_t _materialized_misses{0};
+    uint64_t _materialized_hits{0};
+
+    // Hydrated cache stats (raw L0 object data)
+    uint64_t _hydrated_put_bytes{0};
+    uint64_t _hydrated_get_bytes{0};
+    uint64_t _hydrated_misses{0};
+    uint64_t _hydrated_hits{0};
 
     metrics::internal_metric_groups _metrics;
 };
