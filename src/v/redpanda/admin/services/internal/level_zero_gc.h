@@ -71,6 +71,11 @@ public:
       serde::pb::rpc::context,
       proto::admin::level_zero_gc::pause_request) override;
 
+    seastar::future<proto::admin::level_zero_gc::advance_epoch_response>
+      advance_epoch(
+        serde::pb::rpc::context,
+        proto::admin::level_zero_gc::advance_epoch_request) override;
+
 private:
     using apply_local = ss::bool_class<struct apply_local_tag>;
     using apply_remote = ss::bool_class<struct apply_remote_tag>;

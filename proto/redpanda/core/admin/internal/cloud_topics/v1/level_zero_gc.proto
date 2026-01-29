@@ -45,6 +45,13 @@ service LevelZeroGcService {
             authz: SUPERUSER
         };
     }
+
+    // Advance a cloud topic partition to the current cluster epoch.
+    rpc AdvanceEpoch(AdvanceEpochRequest) returns (AdvanceEpochResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 // Request to query GC worker status.
@@ -107,6 +114,31 @@ message PauseResult {
     int32 node_id = 1;
     // Set if the node could not be reached or returned an error.
     optional string error = 3;
+}
+
+// Request to advance a partition to the current cluster epoch.
+message AdvanceEpochRequest {
+    common.v1.TopicPartition partition = 1;
+}
+
+// Response containing epoch state or an error.
+message AdvanceEpochResponse {
+    oneof result {
+        EpochInfo epoch = 1;
+        string error = 2;
+    };
+}
+
+// Epoch state snapshot for a cloud topic partition.
+message EpochInfo {
+    // Largest epoch no longer referenced by the partition.
+    int64 estimated_inactive_epoch = 1;
+    // Highest epoch applied to the partition STM.
+    int64 max_applied_epoch = 2;
+    // Log offset of the last reconciled record.
+    int64 last_reconciled_log_offset = 3;
+    // Log offset at which max_applied_epoch was set.
+    int64 current_epoch_window_offset = 4;
 }
 
 // GC worker lifecycle states.
