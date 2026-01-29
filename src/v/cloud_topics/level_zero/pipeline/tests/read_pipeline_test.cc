@@ -23,6 +23,9 @@
 
 using namespace std::chrono_literals;
 
+static const model::topic_id_partition
+  test_tidp(model::topic_id::create(), model::partition_id(0));
+
 namespace cloud_topics::l0 {
 struct read_pipeline_accessor {
     // Returns true if the read request is in the `_pending` collection
@@ -88,6 +91,7 @@ TEST_CORO(read_pipeline_test, interleaving_stages_bug) {
         auto req
           = std::make_unique<cloud_topics::l0::read_request<ss::manual_clock>>(
             model::controller_ntp,
+            test_tidp,
             std::move(query),
             timeout,
             &pipeline.get_root_rtc());
@@ -154,6 +158,7 @@ TEST_CORO(read_pipeline_test, oversized_request) {
     auto req1
       = std::make_unique<cloud_topics::l0::read_request<ss::manual_clock>>(
         model::controller_ntp,
+        test_tidp,
         std::move(query1),
         timeout,
         &pipeline.get_root_rtc());
@@ -165,6 +170,7 @@ TEST_CORO(read_pipeline_test, oversized_request) {
     auto req2
       = std::make_unique<cloud_topics::l0::read_request<ss::manual_clock>>(
         model::controller_ntp,
+        test_tidp,
         std::move(query2),
         timeout,
         &pipeline.get_root_rtc());
@@ -222,6 +228,7 @@ TEST_CORO(read_pipeline_test, multiple_requests_within_limit) {
         auto req
           = std::make_unique<cloud_topics::l0::read_request<ss::manual_clock>>(
             model::controller_ntp,
+            test_tidp,
             std::move(query),
             timeout,
             &pipeline.get_root_rtc());

@@ -50,6 +50,8 @@ struct read_request : ss::weakly_referencable<read_request<Clock>> {
     using timestamp_t = Clock::time_point;
     /// Target NTP
     model::ntp ntp;
+    /// Target topic_id_partition for cache operations (uses topic UUID)
+    model::topic_id_partition tidp;
     /// Log reader config or timequery config
     dataplane_query query;
     /// Timestamp of the data ingestion
@@ -79,6 +81,7 @@ struct read_request : ss::weakly_referencable<read_request<Clock>> {
 
     /// C-tor
     /// \param ntp is a target NTP
+    /// \param tidp is a target topic_id_partition (for cache operations)
     /// \param query is either a reader that contains a bunch of
     ///        placeholder/overlay values
     /// \param read_quota contains semaphore units that represent
@@ -87,6 +90,7 @@ struct read_request : ss::weakly_referencable<read_request<Clock>> {
     /// \param stage is a current pipeline stage (unassigned by default)
     read_request(
       model::ntp ntp,
+      model::topic_id_partition tidp,
       dataplane_query query,
       timestamp_t timeout,
       basic_retry_chain_node<Clock>* root,

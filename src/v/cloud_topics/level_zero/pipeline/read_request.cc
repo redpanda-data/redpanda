@@ -21,11 +21,13 @@ namespace cloud_topics::l0 {
 template<class Clock>
 read_request<Clock>::read_request(
   model::ntp ntp,
+  model::topic_id_partition tidp,
   dataplane_query query,
   timestamp_t timeout,
   basic_retry_chain_node<Clock>* root_rtc,
   pipeline_stage stage)
   : ntp(std::move(ntp))
+  , tidp(std::move(tidp))
   , query(std::move(query))
   , ingestion_time(Clock::now())
   , expiration_time(timeout)

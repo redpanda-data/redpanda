@@ -66,6 +66,7 @@ template<class Clock>
 ss::future<std::expected<dataplane_query_result, std::error_code>>
 read_pipeline<Clock>::make_reader(
   model::ntp ntp,
+  model::topic_id_partition tidp,
   dataplane_query query,
   timestamp_t timeout,
   model::opt_abort_source_t caller_as) {
@@ -130,7 +131,12 @@ read_pipeline<Clock>::make_reader(
     auto stage = this->first_stage();
 
     l0::read_request<Clock> request(
-      std::move(ntp), std::move(query), timeout, &this->get_root_rtc(), stage);
+      std::move(ntp),
+      std::move(tidp),
+      std::move(query),
+      timeout,
+      &this->get_root_rtc(),
+      stage);
 
     vlog(
       request.rtc_logger.trace,

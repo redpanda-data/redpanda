@@ -50,6 +50,7 @@ public:
     ss::future<std::expected<dataplane_query_result, std::error_code>>
     make_reader(
       model::ntp ntp,
+      model::topic_id_partition tidp,
       dataplane_query query,
       timestamp_t timeout,
       model::opt_abort_source_t as = std::nullopt);
