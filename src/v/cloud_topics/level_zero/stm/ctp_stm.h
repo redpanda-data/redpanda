@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_topics/cluster_services.h"
 #include "cloud_topics/level_zero/common/producer_queue.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_state.h"
 #include "cloud_topics/level_zero/stm/types.h"
@@ -64,7 +65,10 @@ public:
     ss::future<> start() override;
     ss::future<> stop() override;
 
-    ctp_stm(ss::logger&, raft::consensus*);
+    ctp_stm(
+      ss::logger&,
+      raft::consensus*,
+      cloud_topics::cluster_services* cluster_services = nullptr);
 
     const model::ntp& ntp() const noexcept;
 
@@ -138,6 +142,8 @@ private:
     /// When the new epoch is applied we need to acquire a write lock.
     /// Otherwise, we need to acquire a read lock.
     ss::semaphore _lock;
+
+    cloud_topics::cluster_services* _cluster_services;
     // We only need one updater for the state's epoch at a time - the updater
     // still needs to obtain write lock units from `_lock`, but we can prevent
     // pessimizing with multiple waiters on write lock units by having a

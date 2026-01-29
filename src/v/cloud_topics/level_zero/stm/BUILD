@@ -118,6 +118,7 @@ redpanda_cc_library(
     deps = [
         ":ctp_stm_state",
         ":types",
+        "//src/v/cloud_topics:cluster_services_interface",
         "//src/v/cloud_topics/level_zero/common:producer_queue",
         "//src/v/raft",
         "//src/v/ssx:mutex",
@@ -167,5 +168,8 @@ redpanda_cc_library(
         "//src/v/cloud_topics:logger",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/v/cluster:state_machine_registry"],
+    deps = [
+        "//src/v/cloud_topics:cluster_services_interface",
+        "//src/v/cluster:state_machine_registry",
+    ],
 )

@@ -10,18 +10,23 @@
 
 #pragma once
 
+#include "cloud_topics/cluster_services.h"
 #include "cluster/state_machine_registry.h"
 
 namespace cloud_topics::l0 {
 
 class ctp_stm_factory : public cluster::state_machine_factory {
 public:
+    explicit ctp_stm_factory(cloud_topics::cluster_services*);
     bool is_applicable_for(const storage::ntp_config& ntp_cfg) const final;
 
     void create(
       raft::state_machine_manager_builder& builder,
       raft::consensus* raft,
       const cluster::stm_instance_config& cfg) final;
+
+private:
+    cloud_topics::cluster_services* _cluster_services;
 };
 
 } // namespace cloud_topics::l0

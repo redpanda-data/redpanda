@@ -15,6 +15,10 @@
 
 namespace cloud_topics::l0 {
 
+ctp_stm_factory::ctp_stm_factory(
+  cloud_topics::cluster_services* cluster_services)
+  : _cluster_services(cluster_services) {}
+
 bool ctp_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
     return ntp_cfg.cloud_topic_enabled();
@@ -25,7 +29,7 @@ void ctp_stm_factory::create(
   raft::consensus* raft,
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<cloud_topics::ctp_stm>(
-      cloud_topics::cd_log, raft);
+      cloud_topics::cd_log, raft, _cluster_services);
     raft->log()->stm_manager()->add_stm(stm);
 }
 

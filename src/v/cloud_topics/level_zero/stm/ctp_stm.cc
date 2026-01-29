@@ -71,9 +71,13 @@ private:
 };
 } // namespace
 
-ctp_stm::ctp_stm(ss::logger& logger, raft::consensus* raft)
+ctp_stm::ctp_stm(
+  ss::logger& logger,
+  raft::consensus* raft,
+  cloud_topics::cluster_services* cluster_services)
   : raft::persisted_stm<>(name, logger, raft)
-  , _lock(ss::semaphore::max_counter()) {}
+  , _lock(ss::semaphore::max_counter())
+  , _cluster_services(cluster_services) {}
 
 ss::future<> ctp_stm::start() {
     ssx::spawn_with_gate(_gate, [this] { return prefix_truncate_below_lro(); });
