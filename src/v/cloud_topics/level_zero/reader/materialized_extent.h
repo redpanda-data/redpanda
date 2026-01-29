@@ -10,17 +10,13 @@
 
 #pragma once
 
-#include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/remote.h"
+#include "cloud_topics/batch_cache/hydrated_cache_api.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 
-#include <seastar/core/file.hh>
-#include <seastar/core/fstream.hh>
-#include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/coroutine/as_future.hh>
 
 using namespace std::chrono_literals;
 
@@ -44,12 +40,14 @@ struct materialized_extent {
 /// Fetch data referenced by the placeholder batch and the content of the
 /// ctp_placeholder.
 /// Return 'true' if the object was downloaded from the cloud storage.
-/// Otherwise, if the object was populated from the cache, return 'false'.
+/// Otherwise, if the object was populated from the memory cache, return
+/// 'false'.
 ss::future<result<bool>> materialize(
+  const model::topic_id_partition& tidp,
   materialized_extent* extent,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* api,
-  cloud_io::basic_cache_service_api<>* cache,
+  partition_hydrated_cache_api* cache,
   basic_retry_chain_node<>* rtc,
   micro_probe* probe);
 

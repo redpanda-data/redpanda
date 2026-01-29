@@ -36,7 +36,7 @@ fetch_handler::fetch_handler(
   l0::read_pipeline<>::stage pipeline_stage,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* remote,
-  cloud_io::basic_cache_service_api<>* cache)
+  partition_hydrated_cache_api* cache)
   : _bucket(std::move(bucket))
   , _remote(remote)
   , _cache(cache)
@@ -108,10 +108,11 @@ ss::future<> fetch_handler::process_single_request(l0::read_request<>* req) {
 
         auto extent = co_await ss::coroutine::as_future(
           materialize_placeholders(
+            req->tidp,
             _bucket,
             std::move(meta),
             *_remote,
-            *_cache,
+            _cache,
             req->rtc,
             req->rtc_logger));
 

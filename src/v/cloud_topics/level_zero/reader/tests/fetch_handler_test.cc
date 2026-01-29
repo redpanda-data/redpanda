@@ -69,6 +69,7 @@ TEST_F_CORO(materialized_extent_fixture, l0_fetch_handler_test) {
     vlog(test_log.debug, "Make reader");
     auto reader = co_await pipeline.make_reader(
       ntp,
+      fixture_tidp,
       {.output_size_estimate = 1_MiB, .meta = std::move(underlying)},
       ss::lowres_clock::now() + 1s);
 
@@ -108,6 +109,7 @@ TEST_F_CORO(materialized_extent_fixture, l0_fetch_handler_timeout) {
     vlog(test_log.debug, "Make reader");
     auto reader = co_await pipeline.make_reader(
       ntp,
+      fixture_tidp,
       {.output_size_estimate = 1_MiB, .meta = std::move(underlying)},
       ss::lowres_clock::now() + 1s);
 

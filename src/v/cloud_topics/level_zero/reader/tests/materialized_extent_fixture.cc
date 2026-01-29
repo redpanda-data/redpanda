@@ -178,93 +178,98 @@ void materialized_extent_fixture::produce_placeholders(
       uploads.size());
 
     if (use_cache) {
-        // For cache reads, set up per-batch expectations for range reads
-        // Simplified event flow per batch:
-        // cache.is_cached() -> available
-        // cache.get_stream_range() -> payload for this batch's range
+        // For memory cache reads, pre-populate the cache with extent data
+        // Handle injected failures by setting appropriate failure modes
         for (auto&& info : batch_infos) {
             injected_failure failure = {};
             if (!injected_failures.empty()) {
                 failure = injected_failures.back();
                 injected_failures.pop();
             }
-            switch (failure.is_cached) {
-            case injected_is_cached_failure::none:
-                cache.expect_is_cached(
-                  info.path, cloud_io::cache_element_status::available);
-                break;
-            case injected_is_cached_failure::stall_then_ok:
-                cache.expect_is_cached(
-                  info.path,
-                  std::vector<cloud_io::cache_element_status>{
-                    cloud_io::cache_element_status::in_progress,
-                    cloud_io::cache_element_status::available});
-                break;
-            case injected_is_cached_failure::noop:
-                // The code is supposed to timeout before even
-                // invoking any methods.
-                continue;
-            case injected_is_cached_failure::stall_then_fail:
-                throw std::runtime_error("Not implemented");
-            case injected_is_cached_failure::throw_error:
-                cache.expect_is_cached_throws(
-                  info.path,
-                  std::make_exception_ptr(std::runtime_error("dummy")));
-                continue;
-            case injected_is_cached_failure::throw_shutdown:
-                cache.expect_is_cached_throws(
-                  info.path,
-                  std::make_exception_ptr(ss::gate_closed_exception()));
-                continue;
-            };
 
-            cloud_io::cache_item_stream s{
-              .body = make_iobuf_input_stream(std::move(info.data)),
-              .size = info.size,
-            };
+            // Extract object_id and byte_offset from the path
+            // The path is in format: level_zero/{epoch}/{name}
+            // We need to find the corresponding placeholder to get the id
+            cloud_topics::object_id id;
+            cloud_topics::first_byte_offset_t byte_offset{info.offset};
+
+            // Find the placeholder that corresponds to this batch info
+            for (const auto& p : placeholders) {
+                iobuf payload = p.copy().release_data();
+                iobuf_parser parser(std::move(payload));
+                auto record = model::parse_one_record_from_buffer(parser);
+                iobuf value = std::move(record).release_value();
+                auto placeholder
+                  = serde::from_iobuf<cloud_topics::ctp_placeholder>(
+                    std::move(value));
+                if (
+                  placeholder.offset() == info.offset
+                  && placeholder.size_bytes() == info.size) {
+                    id = placeholder.id;
+                    break;
+                }
+            }
+
+            // Handle is_cached failures (these map to has() behavior)
+            switch (failure.is_cached) {
+            case injected_is_cached_failure::noop:
+                // The code is supposed to timeout before invoking methods
+                continue;
+            case injected_is_cached_failure::throw_error:
+            case injected_is_cached_failure::throw_shutdown:
+                // For now, skip - the new API doesn't throw on has()
+                // These failures will need to be handled differently
+                continue;
+            default:
+                break;
+            }
+
+            // Handle cache_get failures
+            // For all cases, we need to populate the cache first so has()
+            // returns true
             switch (failure.cache_get) {
             case injected_cache_get_failure::none:
-                cache.expect_get_stream_range(
-                  info.path, info.offset, info.size, std::move(s));
+                // Pre-populate cache with the extent data
+                cache.add_data(
+                  fixture_tidp, id, byte_offset, std::move(info.data));
                 break;
             case injected_cache_get_failure::return_error:
-                cache.expect_get_stream_range(
-                  info.path, info.offset, info.size, std::nullopt);
+                // Pre-populate cache so has() returns true, then set failure
+                cache.add_data(
+                  fixture_tidp, id, byte_offset, std::move(info.data));
+                cache.set_get_failure(
+                  hydrated_cache_mock::get_failure::return_nullopt);
                 break;
             case injected_cache_get_failure::throw_error:
-                cache.expect_get_stream_range_throws(
-                  info.path,
-                  info.offset,
-                  info.size,
-                  std::make_exception_ptr(std::runtime_error("dummy")));
+                // Pre-populate cache so has() returns true, then set failure
+                cache.add_data(
+                  fixture_tidp, id, byte_offset, std::move(info.data));
+                cache.set_get_failure(
+                  hydrated_cache_mock::get_failure::throw_error);
                 break;
             case injected_cache_get_failure::throw_shutdown:
-                cache.expect_get_stream_range_throws(
-                  info.path,
-                  info.offset,
-                  info.size,
-                  std::make_exception_ptr(ss::gate_closed_exception()));
+                // Pre-populate cache so has() returns true, then set failure
+                cache.add_data(
+                  fixture_tidp, id, byte_offset, std::move(info.data));
+                cache.set_get_failure(
+                  hydrated_cache_mock::get_failure::throw_shutdown);
                 break;
-            };
+            }
         }
     }
 
     // For cloud storage reads (not cached), set up expectations per L0 object
     if (!use_cache) {
         for (auto&& kv : uploads) {
-            auto sz = kv.second.size_bytes();
             injected_failure failure = {};
             if (!injected_failures.empty()) {
                 failure = injected_failures.back();
                 injected_failures.pop();
             }
             // Simplified event flow:
-            // cache.is_cached() -> not_available
+            // cache.is_cached() -> false (no data in memory cache)
             // remote.download_object() -> payload
-            // cache.reserve_space() -> guard
-            // cache.put(payload, guard)
-            cache.expect_is_cached(
-              kv.first, cloud_io::cache_element_status::not_available);
+            // cache.put() -> store in memory cache
             switch (failure.cloud_get) {
             case injected_cloud_get_failure::none:
                 remote.expect_download_object(
@@ -301,35 +306,18 @@ void materialized_extent_fixture::produce_placeholders(
                   std::runtime_error("boo"));
                 continue;
             }
-            switch (failure.cache_rsv) {
-            case injected_cache_rsv_failure::none:
-                cache.expect_reserve_space(
-                  sz,
-                  1,
-                  cloud_io::basic_space_reservation_guard<ss::lowres_clock>(
-                    cache, 0, 0));
-                break;
-            case injected_cache_rsv_failure::throw_error:
-                cache.expect_reserve_space_throw(
-                  std::make_exception_ptr(std::runtime_error("boo")));
-                continue;
-            case injected_cache_rsv_failure::throw_shutdown:
-                cache.expect_reserve_space_throw(
-                  std::make_exception_ptr(ss::abort_requested_exception()));
-                continue;
-            }
+            // Memory cache put failures (if needed)
             switch (failure.cache_put) {
             case injected_cache_put_failure::none:
-                cache.expect_put(kv.first);
+                // No failure - put will succeed
                 break;
             case injected_cache_put_failure::throw_error:
-                cache.expect_put(
-                  kv.first, std::make_exception_ptr(std::runtime_error("boo")));
+                cache.set_put_failure(
+                  hydrated_cache_mock::put_failure::throw_error);
                 break;
             case injected_cache_put_failure::throw_shutdown:
-                cache.expect_put(
-                  kv.first,
-                  std::make_exception_ptr(ss::abort_requested_exception()));
+                cache.set_put_failure(
+                  hydrated_cache_mock::put_failure::throw_shutdown);
                 break;
             }
         }

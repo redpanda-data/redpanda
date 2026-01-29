@@ -50,10 +50,11 @@ TEST_F_CORO(materialized_extent_fixture, full_scan_test) {
     retry_chain_node rtc(as, 1s, 100ms);
     retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
     auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
+      fixture_tidp,
       cloud_storage_clients::bucket_name("test-bucket-name"),
       std::move(underlying),
       remote,
-      cache,
+      &cache,
       rtc,
       logger);
     ASSERT_EQ_CORO(actual.value().size(), expected.size());
@@ -99,10 +100,11 @@ ss::future<> test_aggregated_log_partial_scan(
     retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
 
     auto [actual, _] = co_await cloud_topics::l0::materialize_placeholders(
+      fx->fixture_tidp,
       cloud_storage_clients::bucket_name("test-bucket-name"),
       std::move(underlying),
       fx->remote,
-      fx->cache,
+      &fx->cache,
       rtc,
       logger);
 
@@ -130,10 +132,11 @@ TEST_F_CORO(materialized_extent_fixture, timeout_test) {
     retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
 
     auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
+      fixture_tidp,
       cloud_storage_clients::bucket_name("test-bucket-name"),
       std::move(underlying),
       remote,
-      cache,
+      &cache,
       rtc,
       logger);
 

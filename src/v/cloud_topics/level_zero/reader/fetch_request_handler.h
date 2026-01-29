@@ -11,8 +11,8 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/remote.h"
+#include "cloud_topics/batch_cache/hydrated_cache_api.h"
 #include "cloud_topics/level_zero/pipeline/read_pipeline.h"
 #include "model/fundamental.h"
 
@@ -33,7 +33,7 @@ public:
       l0::read_pipeline<>::stage,
       cloud_storage_clients::bucket_name,
       cloud_io::remote_api<>*,
-      cloud_io::basic_cache_service_api<>*);
+      partition_hydrated_cache_api*);
 
     ss::future<> start();
     ss::future<> stop();
@@ -49,7 +49,7 @@ private:
 
     cloud_storage_clients::bucket_name _bucket;
     cloud_io::remote_api<>* _remote;
-    cloud_io::basic_cache_service_api<>* _cache;
+    partition_hydrated_cache_api* _cache;
     retry_chain_node _rtc;
     retry_chain_logger _logger;
     ss::gate _gate;

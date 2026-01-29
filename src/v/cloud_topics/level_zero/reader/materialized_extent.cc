@@ -11,7 +11,6 @@
 #include "cloud_topics/level_zero/reader/materialized_extent.h"
 
 #include "bytes/iostream.h"
-#include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/io_result.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
@@ -22,8 +21,8 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/coroutine/as_future.hh>
 
-#include <chrono>
 #include <exception>
 
 namespace cloud_topics::l0 {
@@ -117,139 +116,59 @@ model::record_batch make_raft_data_batch(materialized_extent ext) {
     return batch;
 }
 
-ss::future<result<iobuf>> materialize_from_cache(
-  std::filesystem::path cache_file_name,
-  uint64_t offset,
-  uint64_t length,
-  cloud_io::basic_cache_service_api<>* cache,
-  micro_probe* probe);
-
-ss::future<result<iobuf>> materialize_from_cloud_storage(
-  std::filesystem::path cache_file_name,
-  cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<>* api,
-  cloud_io::basic_cache_service_api<>* cache,
-  basic_retry_chain_node<>* rtc,
-  micro_probe* probe);
-
 ss::future<result<bool>> materialize(
+  const model::topic_id_partition& tidp,
   materialized_extent* ext,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* api,
-  cloud_io::basic_cache_service_api<>* cache,
+  partition_hydrated_cache_api* cache,
   basic_retry_chain_node<>* rtc,
   micro_probe* probe) {
-    bool hydrated = false;
-    // This iobuf contains the record batch replaced by the placeholder. It
-    // might potentially contain data that belongs to other placeholder
-    // batches and in order to get the extent of the record batch
-    // placeholder we need to use byte offset and size.
-    iobuf L0_object_content;
+    // Check per-partition memory cache first
+    if (cache != nullptr) {
+        try {
+            if (cache->is_cached(
+                  tidp,
+                  ext->meta.id,
+                  ext->meta.first_byte_offset,
+                  ext->meta.byte_range_size)) {
+                probe->num_cache_reads++;
+                auto cached = cache->get(
+                  tidp,
+                  ext->meta.id,
+                  ext->meta.first_byte_offset,
+                  ext->meta.byte_range_size);
+                if (cached.has_value()) {
+                    probe->cache_read_bytes += cached->size_bytes();
+                    ext->object = std::move(*cached);
+                    // Data from memory cache is the extent slice, so offset is
+                    // 0
+                    ext->meta.first_byte_offset
+                      = cloud_topics::first_byte_offset_t{0};
+                    co_return false; // Indicates data came from cache
+                }
+                // is_cached() returned true but get() returned nullopt - this
+                // indicates a cache inconsistency (e.g., eviction between
+                // is_cached() and get())
+                co_return errc::cache_read_error;
+            }
+        } catch (const ss::abort_requested_exception&) {
+            co_return errc::shutting_down;
+        } catch (const ss::gate_closed_exception&) {
+            co_return errc::shutting_down;
+        } catch (const std::exception& e) {
+            vlog(
+              cd_log.error,
+              "Unexpected error reading from cache: {}",
+              e.what());
+            co_return errc::cache_read_error;
+        }
+    }
 
-    // 2. download object from S3
+    // Download from cloud storage
     auto cache_file_name = std::filesystem::path(
       object_path_factory::level_zero_path(ext->meta.id));
 
-    std::optional<cloud_io::cache_element_status> status = std::nullopt;
-    basic_retry_chain_node<> is_cached_rtc(retry_strategy::backoff, rtc);
-    retry_permit rp = is_cached_rtc.retry();
-    while (rp.is_allowed && !status.has_value()) {
-        auto is_cached_result
-          = result_from_ready_future<errc::cache_read_error>(
-            co_await ss::coroutine::as_future(
-              cache->is_cached(cache_file_name)));
-
-        if (!is_cached_result.has_value()) {
-            co_return is_cached_result.error();
-        }
-
-        switch (is_cached_result.value()) {
-        case cloud_io::cache_element_status::available:
-        case cloud_io::cache_element_status::not_available:
-            status = is_cached_result.value();
-            break;
-        case cloud_io::cache_element_status::in_progress:
-            // Another fiber is trying to put value into the cache.
-            // Wait until the operation is completed but stay within the
-            // time budget.
-            if (rp.abort_source != nullptr) {
-                co_await ss::sleep_abortable(rp.delay, *rp.abort_source);
-            } else {
-                co_await ss::sleep(rp.delay);
-            }
-            rp = is_cached_rtc.retry();
-            continue;
-        }
-    }
-
-    if (!rp.is_allowed) {
-        co_return errc::timeout;
-    }
-
-    if (status.value() == cloud_io::cache_element_status::available) {
-        auto res = co_await materialize_from_cache(
-          cache_file_name,
-          ext->meta.first_byte_offset(),
-          ext->meta.byte_range_size(),
-          cache,
-          probe);
-        if (!res.has_value()) {
-            co_return res.error();
-        }
-        ext->object = std::move(res.value());
-        // Object now contains just the extent range, so reset offset to 0
-        ext->meta.first_byte_offset = cloud_topics::first_byte_offset_t{0};
-        hydrated = true; // Indicates range read from cache
-    } else {
-        auto res = co_await materialize_from_cloud_storage(
-          cache_file_name, bucket, api, cache, rtc, probe);
-        if (!res.has_value()) {
-            co_return res.error();
-        }
-        ext->object = std::move(res.value());
-    }
-    co_return hydrated;
-}
-
-ss::future<result<iobuf>> materialize_from_cache(
-  std::filesystem::path cache_file_name,
-  uint64_t offset,
-  uint64_t length,
-  cloud_io::basic_cache_service_api<>* cache,
-  micro_probe* probe) {
-    iobuf result_buf;
-    probe->num_cache_reads++;
-    auto buffer_size = config::shard_local_cfg().storage_read_buffer_size();
-    // Disable readahead: we're reading a specific extent range where
-    // neighboring bytes belong to different partitions and won't be useful.
-    constexpr unsigned int read_ahead = 0;
-    auto fut = co_await ss::coroutine::as_future(cache->get_stream_range(
-      cache_file_name, offset, length, buffer_size, read_ahead));
-    auto sz_stream_result = result_from_ready_future<errc::cache_read_error>(
-      std::move(fut));
-    if (!sz_stream_result.has_value()) {
-        co_return sz_stream_result.error();
-    }
-    auto sz_stream = std::move(sz_stream_result.value());
-    if (!sz_stream.has_value()) {
-        co_return errc::cache_read_error;
-    }
-
-    auto target = make_iobuf_ref_output_stream(result_buf);
-    probe->cache_read_bytes += sz_stream->size;
-    co_await ss::copy(sz_stream->body, target);
-    co_await sz_stream->body.close();
-    co_return result_buf;
-}
-
-ss::future<result<iobuf>> materialize_from_cloud_storage(
-  std::filesystem::path cache_file_name,
-  cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<>* api,
-  cloud_io::basic_cache_service_api<>* cache,
-  basic_retry_chain_node<>* rtc,
-  micro_probe* probe) {
-    // Populate the cache
     iobuf payload;
     cloud_io::download_request req{
       .transfer_details = {
@@ -281,50 +200,49 @@ ss::future<result<iobuf>> materialize_from_cloud_storage(
         co_return conv(dl_result.value());
     }
 
-    // TODO: use circuit-breaker here, if the operation fails
-    // repeatedly it can be temporarily short-circuited to avoid
-    // burning cycles.
-    auto sr_guard = result_from_ready_future(
-      co_await ss::coroutine::as_future(
-        cache->reserve_space(payload.size_bytes(), 1)),
-      [](std::exception_ptr e) {
-          vlog(cd_log.error, "Failed to reserve space: {}", e);
-      });
+    // Extract the extent slice from the full object
+    auto extent_offset = ext->meta.first_byte_offset();
+    auto extent_size = ext->meta.byte_range_size();
 
-    // The failure to reserve space should only trigger an error
-    // if the cause of the error is a cluster shutdown. If the
-    // failure is caused by anything else we can still return
-    // data to the client. The effect of this is that the client
-    // will not retry the request and will not make things worse
-    // by increasing the load. And we do have data from the cloud
-    // storage at this point anyway.
-
-    if (sr_guard.has_value()) {
-        // TODO: use proper priority class
-        probe->num_cache_writes++;
-        auto buf_str = make_iobuf_input_stream(payload.share());
-        auto put_future = co_await ss::coroutine::as_future(
-          cache->put(cache_file_name, buf_str, sr_guard.value()));
-
-        if (put_future.failed()) {
-            auto e = put_future.get_exception();
-            if (ssx::is_shutdown_exception(e)) {
-                co_return errc::shutting_down;
-            }
-            vlog(
-              cd_log.warn,
-              "Failed to put L0 object into the cache: {}. The error will not "
-              "be "
-              "propagated to the client but Redpanda may use more resources.",
-              e);
-        } else {
-            probe->cache_write_bytes += payload.size_bytes();
-        }
-    } else if (sr_guard.error() == errc::shutting_down) {
-        co_return errc::shutting_down;
+    if (extent_offset + extent_size > payload.size_bytes()) {
+        vlog(
+          cd_log.error,
+          "Extent range [{}, {}) exceeds object size {}",
+          extent_offset,
+          extent_offset + extent_size,
+          payload.size_bytes());
+        co_return errc::download_failure;
     }
 
-    co_return std::move(payload);
+    // Extract the extent data
+    iobuf extent_data = payload.share(extent_offset, extent_size);
+
+    // Store extent in per-partition memory cache
+    // Note: put() may silently reject if epoch ordering is violated
+    if (cache != nullptr) {
+        try {
+            probe->num_cache_writes++;
+            probe->cache_write_bytes += extent_data.size_bytes();
+            cache->put(
+              tidp,
+              ext->meta.id,
+              ext->meta.first_byte_offset,
+              extent_data.copy());
+        } catch (const ss::abort_requested_exception&) {
+            co_return errc::shutting_down;
+        } catch (const ss::gate_closed_exception&) {
+            co_return errc::shutting_down;
+        } catch (const std::exception& e) {
+            // Log but don't fail - we have the data, just couldn't cache it
+            vlog(cd_log.warn, "Failed to cache extent: {}", e.what());
+        }
+    }
+
+    ext->object = std::move(extent_data);
+    // We extracted just the extent, so offset is now 0
+    ext->meta.first_byte_offset = cloud_topics::first_byte_offset_t{0};
+
+    co_return true; // Indicates data came from cloud storage
 }
 
 } // namespace cloud_topics::l0

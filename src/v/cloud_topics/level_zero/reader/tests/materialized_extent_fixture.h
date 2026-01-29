@@ -11,7 +11,7 @@
 #include "base/vlog.h"
 #include "bytes/bytes.h"
 #include "bytes/iostream.h"
-#include "cloud_io/basic_cache_service_api.h"
+#include "cloud_topics/batch_cache/hydrated_cache_api.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "cloud_topics/level_zero/reader/materialized_extent.h"
 #include "cloud_topics/level_zero/stm/placeholder.h"
@@ -127,5 +127,9 @@ public:
     chunked_vector<model::record_batch> partition;
     chunked_vector<model::record_batch> expected;
     remote_mock remote;
-    cache_mock cache;
+    hydrated_cache_mock cache;
+
+    /// Fixed tidp for test consistency across cache operations
+    model::topic_id_partition fixture_tidp{
+      model::topic_id::create(), model::partition_id{0}};
 };
