@@ -333,4 +333,112 @@ level_zero_gc_service_impl::advance_epoch(
       });
 }
 
+seastar::future<proto::admin::level_zero_gc::get_epoch_info_response>
+level_zero_gc_service_impl::get_epoch_info(
+  serde::pb::rpc::context ctx,
+  proto::admin::level_zero_gc::get_epoch_info_request req) {
+    using namespace proto::admin::level_zero_gc;
+    get_epoch_info_response response;
+
+    // Group partitions by leader node
+    absl::flat_hash_map<model::node_id, std::vector<model::ntp>> by_leader;
+    std::vector<std::pair<model::ntp, ss::sstring>> no_leader;
+
+    for (const auto& tp : req.get_partitions()) {
+        auto ntp = model::ntp{
+          model::kafka_namespace, tp.get_topic(), tp.get_partition()};
+        auto leader = _partition_leaders->local().get_leader(ntp);
+        if (leader.has_value()) {
+            by_leader[leader.value()].push_back(ntp);
+        } else {
+            no_leader.emplace_back(ntp, "No leader found");
+        }
+    }
+
+    // Handle partitions with no leader
+    for (auto& [ntp, err] : no_leader) {
+        auto& entry = response.get_epochs().emplace_back();
+        entry.get_partition().set_topic(ss::sstring(ntp.tp.topic()));
+        entry.get_partition().set_partition(ntp.tp.partition());
+        entry.set_error(std::move(err));
+    }
+
+    // Process local partitions (where we are the leader)
+    if (auto it = by_leader.find(_self); it != by_leader.end()) {
+        for (const auto& ntp : it->second) {
+            auto& entry = response.get_epochs().emplace_back();
+            entry.get_partition().set_topic(ss::sstring(ntp.tp.topic()));
+            entry.get_partition().set_partition(ntp.tp.partition());
+
+            auto shard = _shard_table->local().shard_for(ntp);
+            if (!shard.has_value()) {
+                entry.set_error("Partition not found on this node");
+                continue;
+            }
+
+            auto info = co_await _partition_manager->invoke_on(
+              shard.value(),
+              [ntp](cluster::partition_manager& pm)
+                -> std::optional<cloud_topics::frontend::epoch_info> {
+                  if (auto fe = try_make_ct_frontend(pm, ntp); fe.has_value()) {
+                      return fe.value()->get_epoch_info();
+                  }
+                  return std::nullopt;
+              });
+
+            if (!info.has_value()) {
+                entry.set_error("Failed to get epoch info from frontend");
+                continue;
+            }
+            entry.set_epoch_info(epoch_info_to_pb(info.value()));
+        }
+        by_leader.erase(it);
+    }
+
+    // Proxy to remote leaders (unless we've already been proxied)
+    if (!proxy::is_proxied(ctx)) {
+        for (const auto& [leader, ntps] : by_leader) {
+            get_epoch_info_request proxy_req;
+            for (const auto& ntp : ntps) {
+                auto& tp = proxy_req.get_partitions().emplace_back();
+                tp.set_topic(ss::sstring(ntp.tp.topic()));
+                tp.set_partition(ntp.tp.partition());
+            }
+
+            auto rsp_fut = co_await ss::coroutine::as_future(
+              _proxy_client
+                .make_client_for_node<level_zero_gc_service_client>(leader)
+                .get_epoch_info(ctx, std::move(proxy_req)));
+
+            if (rsp_fut.failed()) {
+                auto e = rsp_fut.get_exception();
+                for (const auto& ntp : ntps) {
+                    auto& entry = response.get_epochs().emplace_back();
+                    entry.get_partition().set_topic(
+                      ss::sstring(ntp.tp.topic()));
+                    entry.get_partition().set_partition(ntp.tp.partition());
+                    entry.set_error(ssx::sformat("RPC failed: {}", e));
+                }
+                continue;
+            }
+            auto rsp = std::move(rsp_fut).get();
+            response.get_epochs().reserve(rsp.get_epochs().size());
+            std::ranges::move(
+              rsp.get_epochs(), std::back_inserter(response.get_epochs()));
+        }
+    } else {
+        // Already proxied but we're not the leader - return errors
+        for (const auto& [leader, ntps] : by_leader) {
+            for (const auto& ntp : ntps) {
+                auto& entry = response.get_epochs().emplace_back();
+                entry.get_partition().set_topic(ss::sstring(ntp.tp.topic()));
+                entry.get_partition().set_partition(ntp.tp.partition());
+                entry.set_error("Not leader for partition");
+            }
+        }
+    }
+
+    co_return response;
+}
+
 } // namespace admin
