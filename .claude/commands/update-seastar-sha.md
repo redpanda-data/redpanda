@@ -36,29 +36,30 @@ Update the Seastar dependency in `bazel/repositories.bzl` to the latest commit f
    - Update `strip_prefix = "seastar-<NEW_SHA>"`
    - Update `url = "https://github.com/redpanda-data/seastar/archive/<NEW_SHA>.tar.gz"`
 
-6. **Run buildifier to format the file (this also updates MODULE.bazel.lock)**
+6. **Update the lockfile**
+   ```bash
+   bazel mod tidy
+   ```
+
+7. **Run buildifier to format the file**
    ```bash
    bazel run //tools:buildifier.fix
    ```
 
-7. **Build to verify the change**
+8. **Build to verify the change**
    ```bash
    bazel build //src/v/base
    ```
    - If the build fails, revert the changes and report the error to the user
    - Do not proceed with the PR if the build fails
 
-8. **Get the list of changes since the old SHA**
+9. **Get the list of changes since the old SHA**
    ```bash
-   gh api "repos/redpanda-data/seastar/compare/<OLD_SHA>...<NEW_SHA>" --jq '.commits[].commit.message' | head -1 | while read line; do echo "- $line"; done
-   ```
-   Or use:
-   ```bash
-   gh api "repos/redpanda-data/seastar/compare/<OLD_SHA>...<NEW_SHA>" --jq '.commits[] | "- " + (.commit.message | split("\n")[0])'
+   gh api "repos/redpanda-data/seastar/compare/<OLD_SHA>...<NEW_SHA>" --jq '.commits[] | .commit.message | split("\n")[0]'
    ```
    Store the list of oneline commit messages as `CHANGELOG`.
 
-9. **Create a branch and commit**
+10. **Create a branch and commit**
    - Create branch: `seastar-update-<first 8 chars of NEW_SHA>`
    - Stage both `bazel/repositories.bzl` and `MODULE.bazel.lock`
    - Commit message should be multi-line:
@@ -69,7 +70,7 @@ Update the Seastar dependency in `bazel/repositories.bzl` to the latest commit f
      <CHANGELOG>
      ```
 
-10. **Open a PR**
+11. **Open a PR**
     Use `gh pr create` with:
     - Title: `bazel: update seastar to <first 8 chars of NEW_SHA>`
     - Body should include:
@@ -77,7 +78,7 @@ Update the Seastar dependency in `bazel/repositories.bzl` to the latest commit f
       - New SHA (first 12 chars)
       - Link to the commit comparison on GitHub
 
-11. **Report success**
+12. **Report success**
    - Print the old and new SHA
    - Print the PR URL
    - Print the GitHub comparison link: `https://github.com/redpanda-data/seastar/compare/<OLD_SHA>...<NEW_SHA>`
