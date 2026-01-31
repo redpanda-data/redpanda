@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_topics/level_one/metastore/metastore.h"
+#include "cloud_topics/types.h"
 #include "config/property.h"
 #include "model/fundamental.h"
 
@@ -99,7 +100,8 @@ public:
       l0_metadata_storage*,
       l1::metastore*,
       retention_configuration*,
-      config::binding<std::chrono::milliseconds> loop_interval);
+      config::binding<std::chrono::milliseconds> loop_interval,
+      config::binding<std::chrono::milliseconds> idle_partition_timeout);
     housekeeper(const housekeeper&) = delete;
     housekeeper(housekeeper&&) = delete;
     housekeeper& operator=(const housekeeper&) = delete;
@@ -118,6 +120,8 @@ public:
     // Public for testing.
     ss::future<> do_housekeeping();
 
+    ss::future<> do_bump_epoch();
+
 private:
     ss::future<> do_loop();
     ss::future<kafka::offset> do_bytes_retention(size_t size);
@@ -132,8 +136,12 @@ private:
     l1::metastore* _l1_metastore;
     retention_configuration* _config;
     config::binding<std::chrono::milliseconds> _loop_interval;
+    config::binding<std::chrono::milliseconds> _idle_partition_timeout;
     ss::gate _gate;
     ss::abort_source _as;
+
+    std::optional<cloud_topics::cluster_epoch> _last_epoch;
+    ss::lowres_clock::time_point _idle_wd_start;
 };
 
 } // namespace cloud_topics

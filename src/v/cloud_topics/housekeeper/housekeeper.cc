@@ -19,6 +19,8 @@
 #include <chrono>
 #include <exception>
 
+using namespace std::chrono_literals;
+
 namespace cloud_topics {
 
 housekeeper::housekeeper(
@@ -26,16 +28,19 @@ housekeeper::housekeeper(
   l0_metadata_storage* l0_metastore,
   l1::metastore* l1_metastore,
   retention_configuration* config,
-  config::binding<std::chrono::milliseconds> loop_interval)
+  config::binding<std::chrono::milliseconds> loop_interval,
+  config::binding<std::chrono::milliseconds> idle_partition_timeout)
   : _tidp(tidp)
   , _l0_metastore(l0_metastore)
   , _l1_metastore(l1_metastore)
   , _config(config)
-  , _loop_interval(std::move(loop_interval)) {}
+  , _loop_interval(std::move(loop_interval))
+  , _idle_partition_timeout(std::move(idle_partition_timeout)) {}
 
 ss::future<> housekeeper::start() {
     _gate = {};
     _as = {};
+    _idle_wd_start = ss::lowres_clock::now();
     ssx::repeat_until_gate_closed_or_aborted(
       _gate, _as, [this]() { return do_loop(); });
     return ss::now();
@@ -75,11 +80,66 @@ ss::future<> housekeeper::do_housekeeping() {
     co_await sync_start_offset();
 }
 
+ss::future<> housekeeper::do_bump_epoch() {
+    auto curr_partition_epoch = _l0_metastore->estimate_inactive_epoch(_tidp);
+
+    if (curr_partition_epoch != _last_epoch) {
+        vlog(
+          cd_log.debug,
+          "{}: Epoch made progress ({} -> {}), nothing to do.",
+          _tidp,
+          _last_epoch,
+          curr_partition_epoch);
+        _idle_wd_start = ss::lowres_clock::now();
+        _last_epoch = curr_partition_epoch;
+        co_return;
+    }
+
+    if (auto wd_elapsed = ss::lowres_clock::now() - _idle_wd_start;
+        wd_elapsed < _idle_partition_timeout()) {
+        vlog(
+          cd_log.debug,
+          "{}: Partition has been idle for {}ms. Wait for {}ms before "
+          "forced "
+          "advance.",
+          _tidp,
+          wd_elapsed / 1ms,
+          _idle_partition_timeout() / 1ms);
+        co_return;
+    }
+
+    vlog(
+      cd_log.debug,
+      "{}: Partition has been idle for longer than {}ms, force the "
+      "epoch "
+      "to "
+      "advance.",
+      _tidp,
+      _idle_partition_timeout() / 1ms);
+
+    auto new_epoch = co_await _l0_metastore->get_current_cluster_epoch(
+      _tidp, &_as);
+    if (!new_epoch.has_value()) {
+        co_return;
+    }
+    vlog(
+      cd_log.debug,
+      "{}: Advance epoch: {} -> {}",
+      _tidp,
+      curr_partition_epoch,
+      new_epoch);
+    co_await _l0_metastore->advance_epoch(_tidp, new_epoch.value(), &_as);
+    co_await _l0_metastore->sync_to_next_placeholder(_tidp, &_as);
+    _idle_wd_start = ss::lowres_clock::now();
+    _last_epoch = new_epoch;
+}
+
 ss::future<> housekeeper::do_loop() {
     simple_time_jitter<ss::lowres_clock> jitter(_loop_interval());
     co_await ss::sleep_abortable<ss::lowres_clock>(jitter.next_duration(), _as);
     try {
         co_await do_housekeeping();
+        co_await do_bump_epoch();
     } catch (...) {
         auto ex = std::current_exception();
         vlogl(
@@ -92,7 +152,6 @@ ss::future<> housekeeper::do_loop() {
 }
 
 namespace {
-
 void handle_error(l1::metastore::errc ec) {
     switch (ec) {
     case l1::metastore::errc::missing_ntp:
@@ -122,9 +181,9 @@ ss::future<kafka::offset> housekeeper::do_bytes_retention(size_t size) {
 
 ss::future<kafka::offset>
 housekeeper::do_time_retention(std::chrono::milliseconds duration) {
-    // It's important that we get the offsets before the timequery, as the data
-    // could change after the timequery, and this way we ensure we don't delete
-    // all the data.
+    // It's important that we get the offsets before the timequery, as the
+    // data could change after the timequery, and this way we ensure we
+    // don't delete all the data.
     auto offsets_result = co_await _l1_metastore->get_offsets(_tidp);
     if (!offsets_result.has_value()) {
         handle_error(offsets_result.error());
