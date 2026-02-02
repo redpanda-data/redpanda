@@ -205,7 +205,7 @@ struct extent_metadata
 struct get_compaction_info_reply
   : serde::envelope<
       get_compaction_info_reply,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     auto serde_fields() {
         return std::tie(
@@ -215,7 +215,8 @@ struct get_compaction_info_reply
           dirty_ratio,
           earliest_dirty_ts,
           compaction_epoch,
-          start_offset);
+          start_offset,
+          dirty_bytes);
     }
 
     errc ec;
@@ -225,6 +226,7 @@ struct get_compaction_info_reply
     std::optional<model::timestamp> earliest_dirty_ts;
     partition_state::compaction_epoch_t compaction_epoch;
     kafka::offset start_offset;
+    size_t dirty_bytes{0};
 };
 struct get_compaction_info_request
   : serde::envelope<

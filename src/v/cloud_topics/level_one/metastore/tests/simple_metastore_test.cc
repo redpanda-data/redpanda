@@ -1532,6 +1532,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
     auto compaction_info = m.get_compaction_info(to_collect).get();
     ASSERT_TRUE(compaction_info.has_value());
     ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 1.0);
+    ASSERT_EQ(compaction_info->dirty_bytes, 198);
     ASSERT_EQ(compaction_info->start_offset, 0_o);
 
     // Clean range is now [0, 9]. Only one extent still has dirty offsets.
@@ -1551,6 +1552,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
     compaction_info = m.get_compaction_info(to_collect).get();
     ASSERT_TRUE(compaction_info.has_value());
     ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 0.5);
+    ASSERT_EQ(compaction_info->dirty_bytes, 99);
     ASSERT_EQ(compaction_info->start_offset, 0_o);
 
     // Clean range is now [0, 19], the entire log is clean.
@@ -1570,6 +1572,7 @@ TEST(SimpleMetastoreTest, TestDirtyRatio) {
     compaction_info = m.get_compaction_info(to_collect).get();
     ASSERT_TRUE(compaction_info.has_value());
     ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 0.0);
+    ASSERT_EQ(compaction_info->dirty_bytes, 0);
     ASSERT_EQ(compaction_info->start_offset, 0_o);
 }
 

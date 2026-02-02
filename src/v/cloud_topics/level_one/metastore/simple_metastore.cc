@@ -586,7 +586,8 @@ simple_metastore::get_compaction_offsets(
     return resp;
 }
 
-std::expected<double, metastore::errc> simple_metastore::get_dirty_ratio(
+std::expected<simple_metastore::dirty_stats, metastore::errc>
+simple_metastore::get_dirty_stats(
   const state& state, const model::topic_id_partition& tp) {
     auto prt_ref = state.partition_state(tp);
 
@@ -599,14 +600,12 @@ std::expected<double, metastore::errc> simple_metastore::get_dirty_ratio(
 
     const auto& compaction_state = prt.compaction_state;
 
-    if (!compaction_state.has_value()) {
-        return 1.0;
-    }
-
     // Compute
     size_t total_size{0};
     size_t dirty_size{0};
-    const auto& cleaned_ranges = compaction_state->cleaned_ranges;
+    const auto& cleaned_ranges = compaction_state.has_value()
+                                   ? compaction_state->cleaned_ranges
+                                   : offset_interval_set{};
     for (const auto& extent : prt.extents) {
         total_size += extent.len;
         auto b = extent.base_offset;
@@ -620,9 +619,10 @@ std::expected<double, metastore::errc> simple_metastore::get_dirty_ratio(
         }
     }
 
-    return total_size == 0 ? 0.0
-                           : static_cast<double>(dirty_size)
-                               / static_cast<double>(total_size);
+    double ratio = total_size == 0 ? 0.0
+                                   : static_cast<double>(dirty_size)
+                                       / static_cast<double>(total_size);
+    return dirty_stats{.ratio = ratio, .bytes = dirty_size};
 }
 
 std::expected<std::optional<model::timestamp>, metastore::errc>
@@ -694,9 +694,9 @@ simple_metastore::get_compaction_info(
   const state& state,
   const model::topic_id_partition& tidp,
   model::timestamp ts) {
-    auto dirty_ratio = get_dirty_ratio(state, tidp);
-    if (!dirty_ratio.has_value()) {
-        return std::unexpected(dirty_ratio.error());
+    auto dirty_stats = get_dirty_stats(state, tidp);
+    if (!dirty_stats.has_value()) {
+        return std::unexpected(dirty_stats.error());
     }
 
     auto earliest_dirty_ts = get_earliest_dirty_ts(state, tidp);
@@ -720,11 +720,12 @@ simple_metastore::get_compaction_info(
     }
 
     return compaction_info_response{
-      .dirty_ratio = dirty_ratio.value(),
+      .dirty_ratio = dirty_stats.value().ratio,
       .earliest_dirty_ts = earliest_dirty_ts.value(),
       .offsets_response = std::move(compact_offsets).value(),
       .compaction_epoch = compaction_epoch.value(),
-      .start_offset = log_offsets.value().start_offset};
+      .start_offset = log_offsets.value().start_offset,
+      .dirty_bytes = dirty_stats.value().bytes};
 }
 
 ss::future<std::expected<metastore::compaction_info_map, metastore::errc>>

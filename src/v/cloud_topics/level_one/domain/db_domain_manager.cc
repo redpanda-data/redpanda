@@ -611,6 +611,7 @@ db_domain_manager::do_get_compaction_info(
       .earliest_dirty_ts = earliest_dirty_ts,
       .compaction_epoch = metadata.compaction_epoch,
       .start_offset = start_offset,
+      .dirty_bytes = dirty_size,
     };
 }
 

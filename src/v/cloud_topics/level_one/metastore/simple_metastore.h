@@ -146,8 +146,12 @@ private:
     static std::expected<compaction_offsets_response, errc>
     get_compaction_offsets(
       const state&, const model::topic_id_partition&, model::timestamp);
-    static std::expected<double, errc>
-    get_dirty_ratio(const state&, const model::topic_id_partition&);
+    struct dirty_stats {
+        double ratio;
+        size_t bytes;
+    };
+    static std::expected<dirty_stats, errc>
+    get_dirty_stats(const state&, const model::topic_id_partition&);
     static std::expected<std::optional<model::timestamp>, errc>
     get_earliest_dirty_ts(const state&, const model::topic_id_partition&);
     static std::expected<compaction_epoch, errc>

@@ -371,17 +371,20 @@ public:
         // The log's current start_offset. Can be expected to be == 0 for
         // `compact` only topics, might be > 0 for `compact,delete` topics.
         kafka::offset start_offset;
+        // The total size of dirty data in bytes.
+        size_t dirty_bytes{0};
 
         fmt::iterator format_to(fmt::iterator it) const {
             return fmt::format_to(
               it,
               "{{dirty_ratio:{}, earliest_dirty_ts:{}, offsets_response:{}, "
-              "compaction_epoch:{}, start_offset:{}}}",
+              "compaction_epoch:{}, start_offset:{}, dirty_bytes:{}}}",
               dirty_ratio,
               earliest_dirty_ts,
               offsets_response,
               compaction_epoch,
-              start_offset);
+              start_offset,
+              dirty_bytes);
         }
     };
 

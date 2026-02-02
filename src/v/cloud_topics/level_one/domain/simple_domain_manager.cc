@@ -371,7 +371,8 @@ rpc::get_compaction_info_reply simple_domain_manager::do_get_compaction_info(
       .earliest_dirty_ts = get_res->earliest_dirty_ts,
       .compaction_epoch
       = partition_state::compaction_epoch_t{get_res->compaction_epoch()},
-      .start_offset = get_res->start_offset};
+      .start_offset = get_res->start_offset,
+      .dirty_bytes = get_res->dirty_bytes};
 }
 
 ss::future<rpc::get_compaction_info_reply>

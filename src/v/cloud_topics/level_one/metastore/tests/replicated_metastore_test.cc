@@ -400,6 +400,7 @@ TEST_P(ReplicatedMetastoreTest, TestBasicAdd) {
           cmp_info->offsets_response.dirty_ranges.to_vec(),
           testing::ElementsAre(MatchesRange(o{0}, o{999})));
         EXPECT_FLOAT_EQ(cmp_info->dirty_ratio, 1.0);
+        EXPECT_EQ(cmp_info->dirty_bytes, 500);
         EXPECT_TRUE(cmp_info->earliest_dirty_ts.has_value());
         EXPECT_EQ(cmp_info->compaction_epoch, metastore::compaction_epoch{0});
         EXPECT_EQ(cmp_info->start_offset, o{0});
@@ -492,6 +493,7 @@ TEST_P(ReplicatedMetastoreTest, TestBasicCompact) {
         EXPECT_TRUE(cmp_info->offsets_response.dirty_ranges.empty())
           << fmt::format("{} is not cleaned", tp);
         EXPECT_FLOAT_EQ(cmp_info->dirty_ratio, 0.0);
+        EXPECT_EQ(cmp_info->dirty_bytes, 0);
         EXPECT_TRUE(!cmp_info->earliest_dirty_ts.has_value());
         EXPECT_EQ(cmp_info->compaction_epoch, metastore::compaction_epoch{1});
         EXPECT_EQ(cmp_info->start_offset, o{0});
@@ -931,6 +933,7 @@ TEST_P(ReplicatedMetastoreTest, TestGetCompactionInfos) {
         for (const auto& [log, info] : compaction_infos_res.value()) {
             ASSERT_TRUE(info.has_value());
             ASSERT_DOUBLE_EQ(info->dirty_ratio, 1.0);
+            ASSERT_EQ(info->dirty_bytes, 500);
             ASSERT_EQ(info->compaction_epoch, metastore::compaction_epoch{0});
             ASSERT_EQ(info->start_offset, o{0});
         }
@@ -960,6 +963,7 @@ TEST_P(ReplicatedMetastoreTest, TestGetCompactionInfos) {
         for (const auto& [log, info] : compaction_infos_res.value()) {
             ASSERT_TRUE(info.has_value());
             ASSERT_DOUBLE_EQ(info->dirty_ratio, 0.0);
+            ASSERT_EQ(info->dirty_bytes, 0);
             ASSERT_EQ(info->compaction_epoch, metastore::compaction_epoch{1});
             ASSERT_EQ(info->start_offset, o{0});
         }
