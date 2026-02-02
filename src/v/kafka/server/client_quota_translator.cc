@@ -18,6 +18,7 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <optional>
+#include <utility>
 
 namespace kafka {
 
@@ -37,16 +38,6 @@ get_part(const absl::flat_hash_set<entity_key::part_t>& parts) {
     return std::make_optional(std::get<Match>(it->part));
 };
 
-template<typename K>
-tracker_key make_tracker_key(const std::string_view k_name) {
-    return tracker_key{std::in_place_type<K>, k_name};
-}
-template<typename K1, typename K2>
-tracker_key make_tracker_key(
-  const std::string_view k1_name, const std::string_view k2_name) {
-    return tracker_key{
-      std::in_place_type<std::pair<K1, K2>>, std::make_pair(k1_name, k2_name)};
-}
 } // namespace
 std::ostream& operator<<(std::ostream& os, const tracker_key& k) {
     ss::visit(
@@ -131,6 +122,95 @@ std::ostream& operator<<(std::ostream& os, client_quota_rule r) {
         return os << "kafka_user_client_prefix";
     case client_quota_rule::kafka_user_client_id:
         return os << "kafka_user_client_id";
+    }
+}
+
+// TODO: move to nameless namespace
+static entity_key make_entity_key(
+  const client_quota_rule r,
+  std::string_view user,
+  std::string_view client_id) {
+    switch (r) {
+    case client_quota_rule::not_applicable:
+        vassert(
+          false, "make_entity_key should not be called on not_applicable");
+    case client_quota_rule::kafka_client_default:
+        return entity_key{entity_key::client_id_default_match{}};
+    case client_quota_rule::kafka_client_prefix:
+        // TODO:
+        throw std::runtime_error("Not implemented yet");
+    case client_quota_rule::kafka_client_id:
+        return entity_key{entity_key::client_id_match{client_id}};
+    case client_quota_rule::kafka_user_default:
+        return entity_key{entity_key::user_default_match{}};
+    case client_quota_rule::kafka_user_default_client_default:
+        return entity_key{
+          entity_key::user_default_match{},
+          entity_key::client_id_default_match{}};
+    case client_quota_rule::kafka_user_default_client_prefix:
+        // TODO:
+        throw std::runtime_error("Not implemented yet");
+    case client_quota_rule::kafka_user_default_client_id:
+        return entity_key{
+          entity_key::user_default_match{},
+          entity_key::client_id_match{client_id}};
+    case client_quota_rule::kafka_user:
+        return entity_key{entity_key::user_match{user}};
+    case client_quota_rule::kafka_user_client_default:
+        return entity_key{
+          entity_key::user_match{user}, entity_key::client_id_default_match{}};
+    case client_quota_rule::kafka_user_client_prefix:
+        // TODO:
+        throw std::runtime_error("Not implemented yet");
+    case client_quota_rule::kafka_user_client_id:
+        return entity_key{
+          entity_key::user_match{user}, entity_key::client_id_match{client_id}};
+    }
+}
+
+// TODO: move to nameless namespace
+static tracker_key make_tracker_key(
+  const client_quota_rule r,
+  std::string_view user,
+  // This is either the client name or the group name
+  std::string_view client_id) {
+    switch (r) {
+    case client_quota_rule::not_applicable:
+        return tracker_key{std::in_place_type<k_not_applicable>};
+    case client_quota_rule::kafka_client_default:
+        return tracker_key{std::in_place_type<k_client_id>, client_id};
+    case client_quota_rule::kafka_client_prefix:
+        return tracker_key{std::in_place_type<k_group_name>, client_id};
+    case client_quota_rule::kafka_client_id:
+        return tracker_key{std::in_place_type<k_client_id>, client_id};
+    case client_quota_rule::kafka_user_default:
+        return tracker_key{std::in_place_type<k_user>, user};
+    case client_quota_rule::kafka_user_default_client_default:
+        return tracker_key{
+          std::in_place_type<std::pair<k_user, k_client_id>>,
+          std::make_pair(user, client_id)};
+    case client_quota_rule::kafka_user_default_client_prefix:
+        return tracker_key{
+          std::in_place_type<std::pair<k_user, k_group_name>>,
+          std::make_pair(user, client_id)};
+    case client_quota_rule::kafka_user_default_client_id:
+        return tracker_key{
+          std::in_place_type<std::pair<k_user, k_client_id>>,
+          std::make_pair(user, client_id)};
+    case client_quota_rule::kafka_user:
+        return tracker_key{std::in_place_type<k_user>, user};
+    case client_quota_rule::kafka_user_client_default:
+        return tracker_key{
+          std::in_place_type<std::pair<k_user, k_client_id>>,
+          std::make_pair(user, client_id)};
+    case client_quota_rule::kafka_user_client_prefix:
+        return tracker_key{
+          std::in_place_type<std::pair<k_user, k_group_name>>,
+          std::make_pair(user, client_id)};
+    case client_quota_rule::kafka_user_client_id:
+        return tracker_key{
+          std::in_place_type<std::pair<k_user, k_client_id>>,
+          std::make_pair(user, client_id)};
     }
 }
 
@@ -300,7 +380,8 @@ client_quota_value client_quota_translator::get_client_quota_value(
             std::nullopt, client_quota_rule::not_applicable};
       },
       [&get_quota](const k_group_name& k) -> client_quota_value {
-          const auto match_key = entity_key{entity_key::client_id_prefix_match{k}};
+          const auto match_key = entity_key{
+            entity_key::client_id_prefix_match{k}};
           const auto quota = get_quota(match_key);
           if (quota.has_value()) {
               return client_quota_value{
@@ -347,10 +428,11 @@ tracker_key client_quota_translator::find_quota_key(
 
     /// config/user/<user>/client-id/<client-id>
     {
-        const entity_key key{
-          entity_key::user_match{user}, entity_key::client_id_match{client_id}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_user_client_id, user, client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_user, k_client_id>(user, client_id);
+            return make_tracker_key(
+              client_quota_rule::kafka_user_client_id, user, client_id);
         }
     }
 
@@ -375,35 +457,40 @@ tracker_key client_quota_translator::find_quota_key(
                 continue;
             }
 
-            return make_tracker_key<k_user, k_group_name>(
-              user, client_prefix->value);
+            return make_tracker_key(
+              client_quota_rule::kafka_user_client_prefix,
+              user,
+              client_prefix->value);
         }
     }
 
     /// config/user/<user>/client-id/<default>
     {
-        const entity_key key{
-          entity_key::user_match{user}, entity_key::client_id_default_match{}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_user_client_default, user, client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_user, k_client_id>(user, client_id);
+            return make_tracker_key(
+              client_quota_rule::kafka_user_client_default, user, client_id);
         }
     }
 
     /// config/user/<user>
     {
-        const entity_key key{entity_key::user_match{user}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_user, user, client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_user>(user);
+            return make_tracker_key(
+              client_quota_rule::kafka_user, user, client_id);
         }
     }
 
     /// config/user/<default>/client-id/<client-id>
     {
-        const entity_key key{
-          entity_key::user_default_match{},
-          entity_key::client_id_match{client_id}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_user_default_client_id, user, client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_user, k_client_id>(user, client_id);
+            return make_tracker_key(
+              client_quota_rule::kafka_user_default_client_id, user, client_id);
         }
     }
 
@@ -422,34 +509,44 @@ tracker_key client_quota_translator::find_quota_key(
                 continue;
             }
 
-            return make_tracker_key<k_user, k_group_name>(
-              user, client_prefix_match->value);
+            return make_tracker_key(
+              client_quota_rule::kafka_user_default_client_prefix,
+              user,
+              client_prefix_match->value);
         }
     }
 
     /// config/user/<default>/client-id/<default>
     {
-        const entity_key key{
-          entity_key::user_default_match{},
-          entity_key::client_id_default_match{}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_user_default_client_default,
+          user,
+          client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_user, k_client_id>(user, client_id);
+            return make_tracker_key(
+              client_quota_rule::kafka_user_default_client_default,
+              user,
+              client_id);
         }
     }
 
     /// config/user/<default>
     {
-        const entity_key key{entity_key::user_default_match{}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_user_default, user, client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_user>(user);
+            return make_tracker_key(
+              client_quota_rule::kafka_user_default, user, client_id);
         }
     }
 
     /// config/client-id/<client-id>
     {
-        const entity_key key{entity_key::client_id_match{client_id}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_client_id, user, client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_client_id>(client_id);
+            return make_tracker_key(
+              client_quota_rule::kafka_client_id, user, client_id);
         }
     }
 
@@ -463,16 +560,21 @@ tracker_key client_quota_translator::find_quota_key(
                 continue;
             }
 
-            return make_tracker_key<k_group_name>(client_prefix_match->value);
+            return make_tracker_key(
+              client_quota_rule::kafka_client_prefix,
+              user,
+              client_prefix_match->value);
         }
     }
 
     // Default quotas configured through the Kafka API
     /// config/client-id/<default>
     {
-        const entity_key key{entity_key::client_id_default_match{}};
+        const entity_key key = make_entity_key(
+          client_quota_rule::kafka_client_default, user, client_id);
         if (has_quota(key)) {
-            return make_tracker_key<k_client_id>(client_id);
+            return make_tracker_key(
+              client_quota_rule::kafka_client_default, user, client_id);
         }
     }
 
