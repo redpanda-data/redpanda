@@ -332,8 +332,9 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
     }
 
     batch_builder rb(write_at);
-    auto sub_key = sub.is_default_context() ? std::optional<context_subject>{}
-                                            : std::make_optional(sub);
+    auto sub_key = sub.is_default_context_only()
+                     ? std::optional<context_subject>{}
+                     : std::make_optional(sub);
     rb(
       config_key{.seq{write_at}, .node{_node_id}, .sub{sub_key}},
       config_value{.compat = compat, .sub{sub_key}});
@@ -457,7 +458,7 @@ ss::future<std::optional<bool>> seq_writer::do_write_mode(
     }
 
     batch_builder rb(write_at);
-    auto sub_key = ctx_sub.is_default_context()
+    auto sub_key = ctx_sub.is_default_context_only()
                      ? std::optional<context_subject>{}
                      : std::make_optional(ctx_sub);
 

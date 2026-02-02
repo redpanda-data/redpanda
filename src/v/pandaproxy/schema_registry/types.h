@@ -200,9 +200,11 @@ struct context_subject {
 
     /// Retrurns true if this represents the default context with an empty
     /// subject.
-    bool is_default_context() const {
+    bool is_default_context_only() const {
         return is_context_only() && ctx == default_context;
     }
+
+    bool is_non_default_context() const { return ctx != default_context; }
 
     context ctx;
     subject sub;
