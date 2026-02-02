@@ -45,13 +45,15 @@ TEST_F(ContextSubjectTest, FromString) {
       context_subject::from_string(":.ctx:a:b:c"),
       (context_subject{context{".ctx"}, subject{"a:b:c"}}));
 
-    // Invalid qualified syntax falls back to unqualified
+    // Invalid qualified syntax (no dot after colon) falls back to unqualified
     EXPECT_EQ(
       context_subject::from_string(":no-dot"),
       (context_subject{default_context, subject{":no-dot"}}));
+
+    // Context-only form without trailing colon: ":.ctx" (empty subject)
     EXPECT_EQ(
       context_subject::from_string(":.no-second-colon"),
-      (context_subject{default_context, subject{":.no-second-colon"}}));
+      (context_subject{context{".no-second-colon"}, subject{""}}));
 }
 
 TEST_F(ContextSubjectTest, ToStringAndRoundTrip) {

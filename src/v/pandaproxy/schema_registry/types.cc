@@ -94,12 +94,16 @@ context_subject context_subject::from_string(std::string_view input) {
         // Find the second colon that separates context from subject
         auto second_colon = input.find(':', 2);
 
-        if (second_colon != std::string_view::npos) {
-            auto ctx_str = input.substr(1, second_colon - 1);
-            auto sub_str = input.substr(second_colon + 1);
-
-            return context_subject{context{ctx_str}, subject{sub_str}};
+        if (second_colon == std::string_view::npos) {
+            // No second colon, so only context is provided
+            return context_subject{context{input.substr(1)}, subject{}};
         }
+
+        // Both context and subject are provided
+        auto ctx_str = input.substr(1, second_colon - 1);
+        auto sub_str = input.substr(second_colon + 1);
+
+        return context_subject{context{ctx_str}, subject{sub_str}};
     }
 
     // Default case: unqualified subject or invalid qualified syntax
