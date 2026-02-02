@@ -137,12 +137,17 @@ ctp_stm_api::advance_reconciled_offset(
     if (lro <= get_last_reconciled_offset()) {
         co_return std::monostate{};
     }
-    vlog(_log.debug, "Replicating ctp_stm_cmd::advance_reconciled_offset");
+
+    auto lrlo = _stm->_raft->log()->to_log_offset(kafka::offset_cast(lro));
+
+    vlog(
+      _log.debug,
+      "Replicating ctp_stm_cmd::advance_reconciled_offset{{lro:{} lrlo:{}}}",
+      lro,
+      lrlo);
 
     storage::record_batch_builder builder(
       model::record_batch_type::ctp_stm_command, model::offset(0));
-
-    auto lrlo = _stm->_raft->log()->to_log_offset(kafka::offset_cast(lro));
     builder.add_raw_kv(
       serde::to_iobuf(advance_reconciled_offset_cmd::key),
       serde::to_iobuf(advance_reconciled_offset_cmd(lro, lrlo)));
