@@ -37,6 +37,11 @@ ctp_stm_state::estimate_min_epoch() const noexcept {
     return _min_epoch_lower_bound;
 }
 
+std::optional<model::offset>
+ctp_stm_state::current_epoch_window_offset() const noexcept {
+    return _current_epoch_window_offset;
+}
+
 std::optional<cluster_epoch>
 ctp_stm_state::get_previous_applied_epoch() const noexcept {
     return _previous_applied_epoch;

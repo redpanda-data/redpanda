@@ -168,6 +168,11 @@ ctp_stm_api::estimate_inactive_epoch() const noexcept {
     return _stm->estimate_inactive_epoch();
 }
 
+std::optional<model::offset>
+ctp_stm_api::get_epoch_window_offset() const noexcept {
+    return _stm->state().current_epoch_window_offset();
+}
+
 ss::future<bool> ctp_stm_api::sync_in_term(
   model::timeout_clock::time_point deadline, ss::abort_source& as) {
     vlog(_log.debug, "Syncing ctp_stm in term {}", _stm->_raft->term());

@@ -90,6 +90,9 @@ public:
     /// \note This value might be stale.
     std::optional<cluster_epoch> estimate_min_epoch() const noexcept;
 
+    /// Log offset of the current max_applied_epoch
+    std::optional<model::offset> current_epoch_window_offset() const noexcept;
+
     /// Return true if the epoch can be replicated
     bool epoch_in_window(cluster_epoch epoch) const noexcept;
     /// Return true if the epoch is above the current window

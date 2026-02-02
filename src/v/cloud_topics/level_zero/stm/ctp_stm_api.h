@@ -79,6 +79,9 @@ public:
     /// make forward progress.
     std::optional<cluster_epoch> estimate_inactive_epoch() const noexcept;
 
+    /// Return the log offset at which the current max applied epoch was set.
+    std::optional<model::offset> get_epoch_window_offset() const noexcept;
+
     /// Sync STM state with the log.
     ///
     /// Normal STM sync call only guaranteed that the in-memory state is
