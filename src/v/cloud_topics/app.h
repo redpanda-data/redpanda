@@ -78,6 +78,11 @@ public:
     l1::compaction_scheduler* get_compaction_scheduler();
     ss::sharded<level_zero_gc>* get_level_zero_gc();
 
+    // Returns the cloud topics compaction backlog in bytes per shard.
+    // This is the total backlog divided by the number of shards.
+    // Returns 0 if the compaction scheduler is not initialized.
+    int64_t compaction_backlog() const noexcept;
+
     // TODO: add 'get_control_plane_api' etc
 
 private:

@@ -239,4 +239,9 @@ l1::compaction_scheduler* app::get_compaction_scheduler() {
 
 ss::sharded<level_zero_gc>* app::get_level_zero_gc() { return &l0_gc; }
 
+int64_t app::compaction_backlog() const noexcept {
+    return compaction_scheduler ? compaction_scheduler->compaction_backlog()
+                                : 0;
+}
+
 } // namespace cloud_topics

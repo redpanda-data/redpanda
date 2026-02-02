@@ -65,6 +65,12 @@ public:
     // Returns `true` iff the provided `tidp` is managed by this scheduler.
     bool is_managed(const model::ntp&) const noexcept;
 
+    // Returns the size of the compaction backlog in bytes. This is the total
+    // backlog of logs in the `queued` state with `info_and_ts` accessible
+    // divided by the number of shards, since cloud compaction work can be
+    // distributed to any shard.
+    int64_t compaction_backlog() const noexcept;
+
     // Pushes a new `tidp` to be managed by this scheduler to the list of
     // `tidp`s. It is the caller's responsibility to ensure the partition is
     // not already managed by this scheduler.

@@ -21,6 +21,8 @@
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/smp.hh>
+
 namespace cloud_topics::l1 {
 
 compaction_scheduler::compaction_scheduler(
@@ -78,6 +80,19 @@ bool compaction_scheduler::is_managed(const model::ntp& ntp) const noexcept {
     auto& tidp = it->second;
 
     return _logs.contains(tidp);
+}
+
+int64_t compaction_scheduler::compaction_backlog() const noexcept {
+    int64_t total = 0;
+    for (const auto& log_ptr : _logs) {
+        if (
+          log_ptr->state == log_compaction_meta::log_state::queued
+          && log_ptr->info_and_ts.has_value()) {
+            total += static_cast<int64_t>(
+              log_ptr->info_and_ts->info.dirty_bytes);
+        }
+    }
+    return total / static_cast<int64_t>(ss::smp::count);
 }
 
 void compaction_scheduler::manage_partition(
