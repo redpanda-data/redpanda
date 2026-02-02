@@ -16,6 +16,7 @@
 #include "cloud_topics/level_one/compaction/worker.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
 #include "model/fundamental.h"
+#include "resource_mgmt/cpu_scheduling.h"
 #include "ssx/future-util.h"
 
 namespace cloud_topics::l1 {
@@ -40,7 +41,8 @@ ss::future<> worker_manager::start() {
       ss::sharded_parameter([this] { return &_io->local(); }),
       ss::sharded_parameter([this] { return &_metastore->local(); }),
       ss::sharded_parameter([this] { return &_committer->local(); }),
-      ss::sharded_parameter([this] { return &_metadata_cache->local(); }));
+      ss::sharded_parameter([this] { return &_metadata_cache->local(); }),
+      scheduling_groups::instance().compaction_sg());
     co_await _workers.invoke_on_all(&compaction_worker::start);
 }
 

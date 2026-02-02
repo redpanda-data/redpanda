@@ -28,7 +28,12 @@ class WorkerManagerTestFixture : public seastar_test {
 public:
     ss::future<> start_workers(l1::worker_manager& manager) {
         co_await manager._workers.start(
-          &manager, nullptr, nullptr, nullptr, nullptr);
+          &manager,
+          nullptr,
+          nullptr,
+          nullptr,
+          nullptr,
+          ss::default_scheduling_group());
         co_await manager._workers.invoke_on_all(&l1::compaction_worker::start);
     }
 

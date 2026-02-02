@@ -21,6 +21,8 @@
 #include "config/property.h"
 #include "ssx/work_queue.h"
 
+#include <seastar/core/scheduling.hh>
+
 class WorkerManagerTestFixture;
 
 namespace cloud_topics::l1 {
@@ -44,7 +46,8 @@ public:
       io*,
       metastore*,
       compaction_committer*,
-      cluster::metadata_cache*);
+      cluster::metadata_cache*,
+      ss::scheduling_group);
 
     // Launches background loop.
     ss::future<> start();
@@ -195,6 +198,8 @@ private:
     compaction_committer* _committer;
 
     cluster::metadata_cache* _metadata_cache;
+
+    ss::scheduling_group _compaction_sg;
 
     compaction_worker_probe _probe;
 };

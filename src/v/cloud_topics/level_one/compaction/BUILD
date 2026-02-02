@@ -108,6 +108,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
+        "//src/v/resource_mgmt:cpu_scheduling",
         "//src/v/resource_mgmt:memory_groups",
         "//src/v/ssx:future_util",
         "//src/v/ssx:work_queue",

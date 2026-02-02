@@ -32,7 +32,8 @@ compaction_worker::compaction_worker(
   io* io,
   metastore* metastore,
   compaction_committer* committer,
-  cluster::metadata_cache* metadata_cache)
+  cluster::metadata_cache* metadata_cache,
+  ss::scheduling_group sg)
   : _worker_update_queue([](const std::exception_ptr& ex) {
       vlog(
         compaction_log.error,
@@ -45,7 +46,8 @@ compaction_worker::compaction_worker(
   , _io(io)
   , _metastore(metastore)
   , _committer(committer)
-  , _metadata_cache(metadata_cache) {
+  , _metadata_cache(metadata_cache)
+  , _compaction_sg(sg) {
     _poll_interval.watch([this]() { _worker_cv.signal(); });
 }
 
@@ -79,8 +81,10 @@ void compaction_worker::start_work_loop() {
     vassert(
       !_work_fut.has_value(),
       "Cannot set value of _work_fut when it already has a value.");
-    _work_fut = ssx::spawn_with_gate_then(
-      _gate, [this]() { return work_loop(); });
+    _work_fut = ssx::spawn_with_gate_then(_gate, [this]() {
+        return ss::with_scheduling_group(
+          _compaction_sg, [this]() { return work_loop(); });
+    });
 }
 
 ss::future<> compaction_worker::work_loop() {
