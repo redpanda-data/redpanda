@@ -1049,6 +1049,10 @@ void application::wire_up_redpanda_services(
       ss::sharded_parameter(
         [sg = scheduling_groups::instance().compaction_sg(), fs_avail] {
             return compaction_controller_config(sg, fs_avail);
-        }))
+        }),
+      cloud_topics_app ? storage::backlog_fn([app = cloud_topics_app.get()] {
+          return app->compaction_backlog();
+      })
+                       : storage::backlog_fn(nullptr))
       .get();
 }

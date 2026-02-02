@@ -16,23 +16,35 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <functional>
+
 namespace storage {
 
+using backlog_fn = std::function<int64_t()>;
+
 struct compaction_backlog_sampler : public backlog_controller::sampler {
-    explicit compaction_backlog_sampler(ss::sharded<api>& api)
-      : _api(api) {}
+    compaction_backlog_sampler(
+      ss::sharded<api>& api, backlog_fn cloud_topics_backlog = nullptr)
+      : _api(api)
+      , _cloud_topics_backlog(std::move(cloud_topics_backlog)) {}
 
     ss::future<int64_t> sample_backlog() final;
 
 private:
     ss::sharded<api>& _api;
+    // Returns the cloud topics compaction backlog in bytes.
+    // Called on shard 0 where the cloud compaction scheduler runs.
+    backlog_fn _cloud_topics_backlog;
 };
 /**
  * PID controller to controll compaction scheduling and IO shares
  */
 class compaction_controller {
 public:
-    compaction_controller(ss::sharded<api>&, backlog_controller_config);
+    compaction_controller(
+      ss::sharded<api>&,
+      backlog_controller_config,
+      backlog_fn cloud_topics_backlog = nullptr);
 
     ss::future<> start() { return _ctrl.start(); }
     ss::future<> stop() { return _ctrl.stop(); }
