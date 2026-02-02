@@ -74,6 +74,12 @@ public:
       model::timeout_clock::time_point deadline,
       ss::abort_source& as);
 
+    /// Advance LRLO past any advance_epoch batches between current LRO and the
+    /// next placeholder, allowing min_epoch_lower_bound to update.
+    ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+    sync_to_next_placeholder(
+      model::timeout_clock::time_point deadline, ss::abort_source& as);
+
     kafka::offset get_start_offset() const;
 
     /// Return the inactive epoch which is no longer referenced by this ctp_stm.

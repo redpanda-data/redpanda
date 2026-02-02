@@ -81,6 +81,55 @@ ctp_stm_api::replicated_apply(
 }
 
 ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+ctp_stm_api::sync_to_next_placeholder(
+  model::timeout_clock::time_point deadline, ss::abort_source& as) {
+    kafka::offset curr_lro = get_last_reconciled_offset();
+    model::offset curr_lrlo = get_last_reconciled_log_offset();
+
+    // there might be an advance_epoch batch somewhere beyond LRO, as yet
+    // unreconciled, so we advance the LRLO as far as we safely can (i.e. up to
+    // the offset just before the next unreconciled placeholder batch). as a
+    // result, a previously applied epoch should make its way into the
+    // min_epoch_lower_bound, the estimate for inactive epoch.
+    model::offset max_safe_lrlo = model::prev_offset(
+      _stm->_raft->log()->to_log_offset(
+        kafka::offset_cast(kafka::next_offset(curr_lro))));
+
+    if (max_safe_lrlo <= curr_lrlo) {
+        vlog(
+          _log.debug,
+          "{}: No non-data batches between curr_lro {} and the next "
+          "placeholder batch. Nothing to do.",
+          _stm->ntp(),
+          curr_lro);
+        co_return std::monostate{};
+    }
+
+    vlog(
+      _log.debug,
+      "Replicating ctp_stm_cmd::advance_reconciled_offset to advance "
+      "LRLO {} -> {}",
+      curr_lrlo,
+      max_safe_lrlo);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::ctp_stm_command, model::offset{0});
+
+    builder.add_raw_kv(
+      serde::to_iobuf(advance_reconciled_offset_cmd::key),
+      serde::to_iobuf(advance_reconciled_offset_cmd(curr_lro, max_safe_lrlo)));
+
+    auto batch = std::move(builder).build();
+    auto apply_result = co_await replicated_apply(
+      std::move(batch), deadline, as);
+    if (!apply_result.has_value()) {
+        co_return std::unexpected{apply_result.error()};
+    }
+
+    co_return std::monostate{};
+}
+
+ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
 ctp_stm_api::advance_reconciled_offset(
   kafka::offset lro,
   model::timeout_clock::time_point deadline,
