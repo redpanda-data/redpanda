@@ -19,6 +19,8 @@
 #include <seastar/core/shard_id.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <boost/container/static_vector.hpp>
+
 #include <optional>
 #include <utility>
 
@@ -451,7 +453,9 @@ tracker_key client_quota_translator::find_quota_key(
         return match_quota && checker(*match_quota);
     };
 
-    const auto rules = std::to_array<client_quota_rule>({
+    // Rules in this list have to be in order of high-to-low specificity.
+    // This is the order they will be traversed in the following loop.
+    constexpr auto all_rules = std::to_array<client_quota_rule>({
       client_quota_rule::kafka_user_client_id,
       client_quota_rule::kafka_user_client_prefix,
       client_quota_rule::kafka_user_client_default,
@@ -465,7 +469,20 @@ tracker_key client_quota_translator::find_quota_key(
       client_quota_rule::kafka_client_default,
     });
 
-    for (const auto rule : rules) {
+    const auto& counters = quota_store.get_rules_counters();
+    boost::container::static_vector<client_quota_rule, all_rules.size()>
+      active_rules;
+
+    for (const auto rule : all_rules) {
+        const auto n_rules
+          = counters[static_cast<std::underlying_type_t<client_quota_rule>>(
+            rule)];
+        if (n_rules > 0) {
+            active_rules.push_back(rule);
+        }
+    }
+
+    for (const auto rule : active_rules) {
         switch (rule) {
         case client_quota_rule::kafka_user_client_id:
         case client_quota_rule::kafka_user_client_default:

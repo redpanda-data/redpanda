@@ -11,14 +11,82 @@
 
 #include "client_quota_serde.h"
 
+#include <type_traits>
+
 namespace cluster::client_quota {
+
+namespace {
+template<typename T>
+bool has_part(const entity_key& key) {
+    return std::ranges::any_of(key.parts, [](const auto& part) {
+        return std::holds_alternative<T>(part.part);
+    });
+};
+
+rule get_rule(const entity_key& key) {
+    const bool has_user = has_part<entity_key::part::user_match>(key);
+    const bool has_user_default
+      = has_part<entity_key::part::user_default_match>(key);
+    const bool has_client_id = has_part<entity_key::part::client_id_match>(key);
+    const bool has_client_prefix
+      = has_part<entity_key::part::client_id_prefix_match>(key);
+    const bool has_client_default
+      = has_part<entity_key::part::client_id_default_match>(key);
+
+    if (has_user) {
+        if (has_client_id) {
+            return rule::kafka_user_client_id;
+        }
+        if (has_client_prefix) {
+            return rule::kafka_user_client_prefix;
+        }
+        if (has_client_default) {
+            return rule::kafka_user_client_default;
+        }
+        return rule::kafka_user;
+    }
+
+    if (has_user_default) {
+        if (has_client_id) {
+            return rule::kafka_user_default_client_id;
+        }
+        if (has_client_prefix) {
+            return rule::kafka_user_default_client_prefix;
+        }
+        if (has_client_default) {
+            return rule::kafka_user_default_client_default;
+        }
+        return rule::kafka_user_default;
+    }
+
+    if (has_client_id) {
+        return rule::kafka_client_id;
+    }
+    if (has_client_prefix) {
+        return rule::kafka_client_prefix;
+    }
+    if (has_client_default) {
+        return rule::kafka_client_default;
+    }
+
+    return rule::not_applicable;
+}
+} // namespace
 
 void store::set_quota(
   const entity_key& key, const entity_value& value, bool trigger_notify) {
     if (!value.is_empty()) {
-        _quotas.insert_or_assign(key, value);
+        const auto [_, inserted] = _quotas.insert_or_assign(key, value);
+        if (inserted) {
+            ++_rules_counters[static_cast<std::underlying_type_t<rule>>(
+              get_rule(key))];
+        }
     } else {
-        _quotas.erase(key);
+        auto n_erased = _quotas.erase(key);
+        if (n_erased != 0) {
+            --_rules_counters[static_cast<std::underlying_type_t<rule>>(
+              get_rule(key))];
+        }
     }
 
     if (trigger_notify) {
@@ -27,7 +95,11 @@ void store::set_quota(
 }
 
 void store::remove_quota(const entity_key& key) {
-    _quotas.erase(key);
+    auto n_erased = _quotas.erase(key);
+    if (n_erased != 0) {
+        --_rules_counters[static_cast<std::underlying_type_t<rule>>(
+          get_rule(key))];
+    }
     notify_watchers();
 }
 
@@ -53,13 +125,18 @@ store::container_type::size_type store::size() const { return _quotas.size(); }
 void store::clear() {
     _quotas.clear();
     notify_watchers();
+
+    for (size_t& counter : _rules_counters) {
+        counter = 0;
+    }
 }
 
 const store::container_type& store::all_quotas() const { return _quotas; }
 
 void store::apply_delta(const alter_delta_cmd_data& data) {
     for (auto& [key, value] : data.ops) {
-        auto& q = _quotas[key];
+        auto it = _quotas.find(key);
+        entity_value q = it == _quotas.end() ? entity_value{} : it->second;
         for (const auto& entry : value.entries) {
             auto& entity = [&]() -> auto& {
                 switch (entry.type) {

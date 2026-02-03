@@ -10,6 +10,7 @@
 
 #include "absl/container/node_hash_map.h"
 #include "cluster/client_quota_serde.h"
+#include "cluster/client_quota_types.h"
 #include "cluster/controller_snapshot.h"
 #include "container/chunked_vector.h"
 
@@ -25,6 +26,7 @@ public:
     using range_callback_type
       = std::function<bool(const std::pair<entity_key, entity_value>&)>;
     using on_change_callback_type = std::function<void()>;
+    using rules_array = std::array<size_t, all_client_quota_rules.size()>;
 
     /// Constructs an empty store
     store() = default;
@@ -59,6 +61,9 @@ public:
 
     /// Returns a copy of all the client quotas in the store
     const container_type& all_quotas() const;
+
+    /// Returns the counters of each rule active in the store
+    const rules_array& get_rules_counters() const { return _rules_counters; }
 
     /// Applies the given alter controller command to the store
     void apply_delta(const alter_delta_cmd_data&);
@@ -155,6 +160,7 @@ private:
 
     container_type _quotas;
     std::vector<on_change_callback_type> _on_change_watchers;
+    rules_array _rules_counters{};
 };
 
 } // namespace cluster::client_quota
