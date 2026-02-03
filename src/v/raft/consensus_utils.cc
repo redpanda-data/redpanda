@@ -366,8 +366,9 @@ ss::future<> create_raft_state_for_pre_existing_partition(
   model::offset min_rp_offset,
   model::offset max_rp_offset,
   model::term_id last_included_term,
-  std::vector<raft::vnode> initial_nodes,
-  model::offset_delta log_start_delta) {
+  std::vector<raft::vnode> initial_voters,
+  model::offset_delta log_start_delta,
+  std::vector<raft::vnode> initial_learners) {
     // Prepare Raft state in kvstore
     vlog(
       raftlog.debug,
@@ -383,7 +384,9 @@ ss::future<> create_raft_state_for_pre_existing_partition(
 
     // Prepare Raft snapshot
     raft::group_configuration group_config(
-      std::move(initial_nodes), ntp_cfg.get_revision());
+      std::move(initial_voters),
+      std::move(initial_learners),
+      ntp_cfg.get_revision());
     raft::snapshot_metadata meta = {
       // `last_included_index` should be the last offset included in
       // this fake snapshot. That's why we set it to be the first offest
@@ -434,8 +437,9 @@ ss::future<> bootstrap_pre_existing_partition(
   model::offset min_rp_offset,
   model::offset max_rp_offset,
   model::term_id last_included_term,
-  std::vector<raft::vnode> initial_nodes,
-  ss::lw_shared_ptr<storage::offset_translator_state> ot_state) {
+  std::vector<raft::vnode> initial_voters,
+  ss::lw_shared_ptr<storage::offset_translator_state> ot_state,
+  std::vector<raft::vnode> initial_learners) {
     co_await create_offset_translator_state_for_pre_existing_partition(
       api, ntp_cfg, group, min_rp_offset, max_rp_offset, ot_state);
     co_await create_storage_state_for_pre_existing_partition(
@@ -447,8 +451,9 @@ ss::future<> bootstrap_pre_existing_partition(
       min_rp_offset,
       max_rp_offset,
       last_included_term,
-      initial_nodes,
-      model::offset_delta{ot_state->delta(min_rp_offset)});
+      std::move(initial_voters),
+      model::offset_delta{ot_state->delta(min_rp_offset)},
+      std::move(initial_learners));
 }
 
 } // namespace raft::details

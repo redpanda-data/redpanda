@@ -75,7 +75,8 @@ public:
       const std::vector<raft::vnode>& nodes,
       ss::shared_ptr<storage::log> log,
       with_learner_recovery_throttle enable_learner_recovery_throttle,
-      keep_snapshotted_log = keep_snapshotted_log::no);
+      keep_snapshotted_log = keep_snapshotted_log::no,
+      std::vector<raft::vnode> learners = {});
 
     ss::future<xshard_transfer_state>
       shutdown(ss::lw_shared_ptr<raft::consensus>);
