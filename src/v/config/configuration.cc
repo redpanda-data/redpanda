@@ -4680,6 +4680,14 @@ configuration::configuration()
       "when no progress is being made or errors are occurring.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1min)
+  , cloud_topics_idle_partition_timeout(
+      *this,
+      "cloud_topics_idle_partition_timeout",
+      "Timeout for checking whether idle partitions need epoch advancement. "
+      "When a partition has no activity for this duration, the housekeeper "
+      "will check if the epoch needs to be advanced.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10min)
   , cloud_topics_parallel_fetch_enabled(
       *this,
       "cloud_topics_parallel_fetch_enabled",
