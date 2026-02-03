@@ -58,13 +58,14 @@ public:
 
         auto metric_defs = std::vector<ss::metrics::metric_definition>{};
         metric_defs.reserve(
-          all_client_quota_types.size() * all_client_quota_rules.size() * 2);
+          all_client_quota_types.size()
+          * cluster::client_quota::all_client_quota_rules.size() * 2);
 
         auto rule_label = metrics::make_namespaced_label("quota_rule");
         auto quota_type_label = metrics::make_namespaced_label("quota_type");
 
         for (auto quota_type : all_client_quota_types) {
-            for (auto rule : all_client_quota_rules) {
+            for (auto rule : cluster::client_quota::all_client_quota_rules) {
                 metric_defs.emplace_back(
                   sm::make_histogram(
                     "client_quota_throttle_time",
@@ -140,11 +141,13 @@ private:
     }
 
     // Assume the enums values are in sequence: [0, all_*.size())
-    static_assert(static_cast<size_t>(all_client_quota_rules[0]) == 0);
+    static_assert(
+      static_cast<size_t>(cluster::client_quota::all_client_quota_rules[0])
+      == 0);
     static_assert(static_cast<size_t>(all_client_quota_types[0]) == 0);
     using metrics_container_t = std::array<
       std::array<granular_metrics, all_client_quota_types.size()>,
-      all_client_quota_rules.size()>;
+      cluster::client_quota::all_client_quota_rules.size()>;
 
     metrics::internal_metric_groups _internal_metrics;
     metrics::public_metric_groups _public_metrics;

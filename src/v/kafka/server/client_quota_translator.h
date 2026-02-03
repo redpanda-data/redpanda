@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "cluster/client_quota_types.h"
 #include "cluster/fwd.h"
 #include "utils/named_type.h"
 
@@ -87,38 +88,7 @@ struct client_quota_request_ctx {
 
 std::ostream& operator<<(std::ostream&, const client_quota_request_ctx&);
 
-/// client_quota_rule is used for reporting metrics to show which type of rule
-/// is being used for limiting clients
-enum class client_quota_rule {
-    not_applicable,
-    kafka_client_default,
-    kafka_client_prefix,
-    kafka_client_id,
-    kafka_user_default,
-    kafka_user_default_client_default,
-    kafka_user_default_client_prefix,
-    kafka_user_default_client_id,
-    kafka_user,
-    kafka_user_client_default,
-    kafka_user_client_prefix,
-    kafka_user_client_id
-};
-
-inline constexpr std::array all_client_quota_rules = {
-  client_quota_rule::not_applicable,
-  client_quota_rule::kafka_client_default,
-  client_quota_rule::kafka_client_prefix,
-  client_quota_rule::kafka_client_id,
-  client_quota_rule::kafka_user_default,
-  client_quota_rule::kafka_user_default_client_default,
-  client_quota_rule::kafka_user_default_client_prefix,
-  client_quota_rule::kafka_user_default_client_id,
-  client_quota_rule::kafka_user,
-  client_quota_rule::kafka_user_client_default,
-  client_quota_rule::kafka_user_client_prefix,
-  client_quota_rule::kafka_user_client_id};
-
-std::ostream& operator<<(std::ostream&, client_quota_rule);
+using client_quota_rule = cluster::client_quota::rule;
 
 struct client_quota_value {
     std::optional<uint64_t> limit;
