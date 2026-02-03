@@ -1130,6 +1130,14 @@ ss::future<> remote_segment::hydrate_chunk(chunk_start_offset_t start_offset) {
     _ts_probe.on_chunks_hydration(1);
 }
 
+ss::future<> remote_segment::prefetch_first_chunk() {
+    if (!is_legacy_mode_engaged() && _chunks_api.has_value()) {
+        return _chunks_api->hydrate_chunk(chunk_start_offset_t{0})
+          .discard_result();
+    }
+    return ss::now();
+}
+
 ss::future<ss::file>
 remote_segment::materialize_chunk(chunk_start_offset_t chunk_start) {
     auto res = co_await _cache.get(get_path_to_chunk(chunk_start));
