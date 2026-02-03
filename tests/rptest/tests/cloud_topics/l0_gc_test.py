@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import json
-from typing import TypeAlias, cast
+from typing import Any, TypeAlias, cast
 
 
 from rptest.clients.admin.v2 import Admin, l0_gc_pb, ntp_pb
@@ -34,13 +34,14 @@ from rptest.util import expect_exception
 
 
 class CloudTopicsL0GCTestBase(RedpandaTest):
-    def __init__(self, test_context: TestContext):
+    def __init__(self, test_context: TestContext, extra_conf: dict[str, Any] = {}):
         self.test_context = test_context
         si_settings = SISettings(
             test_context=test_context,
             cloud_storage_max_connections=10,
             cloud_storage_enable_remote_read=False,
             cloud_storage_enable_remote_write=False,
+            cloud_storage_housekeeping_interval_ms=1000,
             fast_uploads=True,
         )
         extra_rp_conf = {
@@ -52,7 +53,9 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             "cloud_topics_short_term_gc_minimum_object_age": 10000,
             "cloud_topics_short_term_gc_interval": 2000,
             "cloud_topics_short_term_gc_backoff_interval": 10000,
+            "cloud_topics_idle_partition_timeout": 1000,
         }
+        extra_rp_conf.update(extra_conf)
         super().__init__(
             test_context=test_context,
             extra_rp_conf=extra_rp_conf,
@@ -112,6 +115,32 @@ class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
             retry_on_exc=True,
         )
 
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_idle_housekeeping(self, cloud_storage_type: CloudStorageType):
+        self.topics = [
+            TopicSpec(partition_count=2),
+            TopicSpec(
+                # more partitions to show per-partition epoch bump
+                partition_count=4
+            ),
+        ]
+        self.create_topics(self.topics)
+        self.logger.debug(
+            "Produce to only one topic, so only the housekeeping loop can progress the max collectible epoch"
+        )
+        self.produce_some(topics=[self.topics[0].name])
+
+        self.logger.debug(
+            f"GC should still make progress because the housekeeping loop kicks in and bumps the epoch on each {self.topics[1].name} partition"
+        )
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=5,
+            retry_on_exc=True,
+        )
+
 
 GcStatus: TypeAlias = l0_gc_pb.Status
 StatusReport: TypeAlias = dict[int, dict[int, GcStatus] | str]
@@ -123,6 +152,14 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
     """
     Integration: Admin API rpcs for starting and stopping level zero garbage collection.
     """
+
+    def __init__(self, test_context: TestContext):
+        # more realistic idle partition timeout so that we can observe the
+        # effect of manually bumping a specific partition's epoch via Admin rpc
+        extra_conf = {
+            "cloud_topics_idle_partition_timeout": 10 * 60 * 60 * 1000,
+        }
+        super().__init__(test_context=test_context, extra_conf=extra_conf)
 
     @property
     def l0_gc_client(self):
