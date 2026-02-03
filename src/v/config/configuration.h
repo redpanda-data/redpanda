@@ -571,6 +571,7 @@ struct configuration final : public config_store {
     enum_property<model::cloud_storage_chunk_eviction_strategy>
       cloud_storage_chunk_eviction_strategy;
     property<uint16_t> cloud_storage_chunk_prefetch;
+    property<uint16_t> cloud_storage_prefetch_segments_max;
     bounded_property<uint32_t> cloud_storage_cache_num_buckets;
     bounded_property<std::optional<double>, numeric_bounds>
       cloud_storage_cache_trim_threshold_percent_size;
