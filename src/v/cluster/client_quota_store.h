@@ -76,6 +76,64 @@ public:
             });
       };
 
+    static constexpr auto
+    prefix_group_filter(std::string_view user, std::string_view client_id) {
+        return [user,
+                client_id](const std::pair<entity_key, entity_value>& kv) {
+            return std::ranges::any_of(
+                     kv.first.parts,
+                     [client_id](const entity_key::part_t& key_part) {
+                         return ss::visit(
+                           key_part.part,
+                           [client_id](
+                             const entity_key::part::client_id_prefix_match&
+                               prefix_match) {
+                               return client_id.starts_with(prefix_match.value);
+                           },
+                           [](const auto&) { return false; });
+                     })
+                   && std::ranges::any_of(
+                     kv.first.parts,
+                     [user](const entity_key::part_t& key_part) {
+                         return ss::visit(
+                           key_part.part,
+                           [user](
+                             const entity_key::part::user_match& user_match) {
+                               return user == user_match.value;
+                           },
+                           [](const auto&) { return false; });
+                     });
+        };
+    }
+
+    struct default_user_tag {};
+    static constexpr auto
+    prefix_group_filter(default_user_tag, std::string_view client_id) {
+        return [client_id](const std::pair<entity_key, entity_value>& kv) {
+            return std::ranges::any_of(
+                     kv.first.parts,
+                     [client_id](const entity_key::part_t& key_part) {
+                         return ss::visit(
+                           key_part.part,
+                           [client_id](
+                             const entity_key::part::client_id_prefix_match&
+                               prefix_match) {
+                               return client_id.starts_with(prefix_match.value);
+                           },
+                           [](const auto&) { return false; });
+                     })
+                   && std::ranges::any_of(
+                     kv.first.parts, [](const entity_key::part_t& key_part) {
+                         return ss::visit(
+                           key_part.part,
+                           [](const entity_key::part::user_default_match&) {
+                               return true;
+                           },
+                           [](const auto&) { return false; });
+                     });
+        };
+    }
+
     static constexpr auto prefix_group_filter(std::string_view client_id) {
         return [client_id](const std::pair<entity_key, entity_value>& kv) {
             return std::ranges::any_of(
