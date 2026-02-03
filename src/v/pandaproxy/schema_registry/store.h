@@ -200,6 +200,26 @@ public:
         return res;
     }
 
+    ///\brief Return a list of subjects for a specific context.
+    chunked_vector<context_subject> get_subjects(
+      const context& ctx, include_deleted inc_del) const {
+        chunked_vector<context_subject> res;
+        for (const auto& ctx_sub : _subjects) {
+            if (ctx_sub.first.ctx != ctx) {
+                continue;
+            }
+            if (inc_del || !ctx_sub.second.deleted) {
+                auto has_version = std::ranges::any_of(
+                  ctx_sub.second.versions,
+                  [inc_del](const auto& v) { return inc_del || !v.deleted; });
+                if (has_version) {
+                    res.push_back(ctx_sub.first);
+                }
+            }
+        }
+        return res;
+    }
+
     ///\brief Return if there are subjects.
     bool has_subjects(const context& ctx, include_deleted inc_del) const {
         return std::ranges::any_of(_subjects, [inc_del, &ctx](const auto& sub) {

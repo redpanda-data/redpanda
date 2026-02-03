@@ -9,6 +9,7 @@
 
 #include "handlers.h"
 
+#include "base/vassert.h"
 #include "bytes/iobuf_parser.h"
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
@@ -154,91 +155,162 @@ to_non_context_schema_ids(const chunked_vector<context_schema_id>& ids) {
            | std::ranges::to<chunked_vector<schema_id>>();
 }
 
-ss::future<std::optional<schema_definition>> try_get_schema_definition(
-  const server::request_t& rq,
-  std::optional<request_auth_result>& auth_result,
-  schema_id id,
-  context_subject ctx_sub) {
-    const context& ctx = ctx_sub.ctx().empty() ? default_context : ctx_sub.ctx;
-    const subject& sub = ctx_sub.sub;
-    context_schema_id ctx_id{ctx, id};
+// ss::future<std::optional<schema_definition>> try_get_schema_definition(
+//   const server::request_t& rq,
+//   std::optional<request_auth_result>& auth_result,
+//   schema_id id,
+//   context_subject ctx_sub) {
+//     const context& ctx = ctx_sub.ctx().empty() ? default_context : ctx_sub.ctx;
+//     const subject& sub = ctx_sub.sub;
+//     context_schema_id ctx_id{ctx, id};
 
-    auto schema_subjects
-      = co_await rq.service().schema_store().get_schema_subjects(
-        ctx_id, include_deleted::yes);
+//     auto schema_subjects
+//       = co_await rq.service().schema_store().get_schema_subjects(
+//         ctx_id, include_deleted::yes);
 
-    if (!sub().empty()) {
-        // If a subject is provided, ensure the schema ID is associated with it
-        if (std::ranges::contains(schema_subjects, ctx_sub)) {
-            // The schema ID is associated with the given subject in the
-            // given context.
-            schema_subjects = {ctx_sub};
-        } else {
-            // The schema ID is not associated with the given subject in the
-            // given context.
-            schema_subjects = {};
+//     if (!sub().empty()) {
+//         // If a subject is provided, ensure the schema ID is associated with it
+//         if (std::ranges::contains(schema_subjects, ctx_sub)) {
+//             // The schema ID is associated with the given subject in the
+//             // given context.
+//             schema_subjects = {ctx_sub};
+//         } else {
+//             // The schema ID is not associated with the given subject in the
+//             // given context.
+//             schema_subjects = {};
+//         }
+//     }
+
+//     // Ensure requester is authorized to access at least one of the subjects
+//     // associated with the schema ID in the given context.
+//     enterprise::handle_get_schemas_ids_id_authz(
+//       rq, auth_result, schema_subjects);
+
+//     if (schema_subjects.empty()) {
+//         // The schema ID is not associated with any subject that the requester
+//         // is authorized to access.
+//         co_return std::nullopt;
+//     }
+
+//     // Here, the schema ID is verified to be associated with a subject in the
+//     // given context that the requester is authorized to access.
+//     co_return co_await rq.service().schema_store().maybe_get_schema_definition(
+//       ctx_id);
+// }
+
+// /// Resolve a schema definition, searching across contexts if needed.
+// /// First tries the given context and subject. If a subject is provided, we're
+// /// in the default context, and the schema is not found, then searches other
+// /// contexts for the schema ID with that subject. Falls back to searching the
+// /// default context without subject restriction if still not found.
+// ss::future<std::optional<schema_definition>> resolve_schema_across_contexts(
+//   const server::request_t& rq,
+//   std::optional<request_auth_result>& auth_result,
+//   schema_id id,
+//   context_subject ctx_sub) {
+//     // Try to get schema definition with given context and subject
+//     auto schema_def = co_await try_get_schema_definition(
+//       rq, auth_result, id, ctx_sub);
+//     if (
+//       ctx_sub.sub().empty() || ctx_sub.is_non_default_context()
+//       || schema_def.has_value()) {
+//         // Either no subject provided, or non-default context, or schema found
+//         co_return schema_def;
+//     }
+
+//     // Here, subject is NOT empty and we're in the default context (either
+//     // implicitly or explicitly). We did not find the schema with the given
+//     // subject in the default context, so search other contexts for the schema
+//     // ID with the given subject.
+//     auto contexts
+//       = co_await rq.service().schema_store().get_materialized_contexts();
+//     for (const auto& ctx : contexts) {
+//         if (ctx == default_context) {
+//             // Already checked default context
+//             continue;
+//         }
+//         schema_def = co_await try_get_schema_definition(
+//           rq, auth_result, id, {ctx, ctx_sub.sub});
+//         if (schema_def) {
+//             co_return schema_def;
+//         }
+//     }
+
+//     // Here, schema ID not found under any context with the given subject.
+//     // Try searching in the default context without subject restriction.
+//     co_return co_await try_get_schema_definition(
+//       rq, auth_result, id, {ctx_sub.ctx, subject{}});
+// }
+
+/// Resolve a schema ID in a simple way, without searching across contexts.
+/// This function assumes that either the context is not the default context,
+/// or if it is the default context, then the subject is empty.
+ss::future<context_schema_id> resolve_schema_id_simple(
+    const server::request_t& rq,
+    std::optional<request_auth_result> auth_result,
+    schema_id id,
+    context_subject ctx_sub) {
+        vassert(ctx_sub.ctx != default_context || ctx_sub.sub().empty(),
+                "resolve_schema_id_simple cannot be called with default context and "
+                "non-empty subject");
+
+        const context_schema_id ctx_id{ctx_sub.ctx, id};
+        auto schema_subjects = co_await rq.service().schema_store().get_schema_subjects(ctx_id, include_deleted::yes);
+        // If a subject is provided, filter the schema_subjects to only that subject (if it exists)
+        if (!ctx_sub.sub().empty()) {
+            schema_subjects = std::ranges::contains(schema_subjects, ctx_sub)
+                ? decltype(schema_subjects){ctx_sub}
+                : decltype(schema_subjects){};
         }
-    }
 
-    // Ensure requester is authorized to access at least one of the subjects
-    // associated with the schema ID in the given context.
-    enterprise::handle_get_schemas_ids_id_authz(
-      rq, auth_result, schema_subjects);
+        // Ensure requester is authorized to access at least one of the subjects
+        // associated with the schema ID in the given context.
+        enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, schema_subjects);
 
-    if (schema_subjects.empty()) {
-        // The schema ID is not associated with any subject that the requester
-        // is authorized to access.
-        co_return std::nullopt;
-    }
+        if (schema_subjects.empty()) {
+            // The schema ID is not associated with any subject in this context, or if the requester
+            // provided a ctx_sub.sub, the schema is not associated with that subject.
+            throw as_exception(not_found(id));
+        }
 
-    // Here, the schema ID is verified to be associated with a subject in the
-    // given context that the requester is authorized to access.
-    co_return co_await rq.service().schema_store().maybe_get_schema_definition(
-      ctx_id);
+        co_return ctx_id;
 }
 
-/// Resolve a schema definition, searching across contexts if needed.
-/// First tries the given context and subject. If a subject is provided, we're
-/// in the default context, and the schema is not found, then searches other
-/// contexts for the schema ID with that subject. Falls back to searching the
-/// default context without subject restriction if still not found.
-ss::future<std::optional<schema_definition>> resolve_schema_across_contexts(
-  const server::request_t& rq,
-  std::optional<request_auth_result>& auth_result,
-  schema_id id,
-  context_subject ctx_sub) {
-    // Try to get schema definition with given context and subject
-    auto schema_def = co_await try_get_schema_definition(
-      rq, auth_result, id, ctx_sub);
-    if (
-      ctx_sub.sub().empty() || ctx_sub.is_non_default_context()
-      || schema_def.has_value()) {
-        // Either no subject provided, or non-default context, or schema found
-        co_return schema_def;
-    }
-
-    // Here, subject is NOT empty and we're in the default context (either
-    // implicitly or explicitly). We did not find the schema with the given
-    // subject in the default context, so search other contexts for the schema
-    // ID with the given subject.
-    auto contexts
-      = co_await rq.service().schema_store().get_materialized_contexts();
-    for (const auto& ctx : contexts) {
-        if (ctx == default_context) {
-            // Already checked default context
-            continue;
+ss::future<context_schema_id> resolve_schema_id_extended(
+    const server::request_t& rq,
+    std::optional<request_auth_result> auth_result,
+    schema_id id,
+    subject subject) {
+        vassert(!subject().empty(),
+                "resolve_schema_id_extended should only be called with a non-empty subject");
+        
+        // First, try default context with the provided subject
+        if (context_subject ctx_sub{default_context, subject}; co_await rq.service().schema_store().has_version(ctx_sub, id, include_deleted::yes)) {
+            enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, {ctx_sub});
+            co_return context_schema_id{default_context, id};
         }
-        schema_def = co_await try_get_schema_definition(
-          rq, auth_result, id, {ctx, ctx_sub.sub});
-        if (schema_def) {
-            co_return schema_def;
-        }
-    }
 
-    // Here, schema ID not found under any context with the given subject.
-    // Try searching in the default context without subject restriction.
-    co_return co_await try_get_schema_definition(
-      rq, auth_result, id, {ctx_sub.ctx, subject{}});
+        // Next, try other contexts with the provided subject
+        auto contexts = co_await rq.service().schema_store().get_materialized_contexts();
+        for (const auto& ctx : contexts | std::views::filter([](const auto& c) { 
+            return c != default_context; 
+        })) {
+            if (context_subject ctx_sub{ctx, subject}; co_await rq.service().schema_store().has_version(ctx_sub, id, include_deleted::yes)) {
+                enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, {ctx_sub});
+                co_return context_schema_id{ctx, id};
+            }
+        }
+
+        // Finally, try default context without subject restriction
+        auto default_ctx_subjects = co_await rq.service().schema_store().get_subjects(default_context, include_deleted::yes);
+        enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, default_ctx_subjects);
+        if (!default_ctx_subjects.empty()) {
+            co_return context_schema_id{default_context, id};
+        }
+
+        // Schema ID not found in any context with the provided subject, nor in default context without subject restriction
+        enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, {});
+        throw as_exception(not_found(id));
 }
 
 } // namespace
@@ -582,21 +654,16 @@ ss::future<server::reply_t> get_schemas_ids_id(
 
     auto ctx_sub = context_subject::from_string(subject_param);
 
-    auto maybe_def = co_await resolve_schema_across_contexts(
-      rq, auth_result, id, ctx_sub);
+    auto ctx_id = co_await (ctx_sub.ctx == default_context && !ctx_sub.sub().empty()
+      ? resolve_schema_id_extended(rq, auth_result, id, ctx_sub.sub)
+      : resolve_schema_id_simple(rq, auth_result, id, ctx_sub));
 
-    if (!maybe_def) {
-        throw as_exception(not_found(id));
-    }
-
-    auto def = co_await rq.service().schema_store().format_schema(
-      std::move(*maybe_def), format);
-
-    auto resp = ppj::rjson_serialize_iobuf(
-      get_schemas_ids_id_response{.definition{std::move(def)}});
-    log_response(*rq.req, resp);
-    rp.rep->write_body("json", ppj::as_body_writer(std::move(resp)));
-    co_return rp;
+    auto def = co_await rq.service().schema_store().get_schema_definition(ctx_id, format);
+        auto resp = ppj::rjson_serialize_iobuf(
+        get_schemas_ids_id_response{.definition{std::move(def)}});
+        log_response(*rq.req, resp);
+        rp.rep->write_body("json", ppj::as_body_writer(std::move(resp)));
+        co_return rp;
 }
 
 ss::future<server::reply_t>

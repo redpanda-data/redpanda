@@ -435,6 +435,20 @@ ss::future<chunked_vector<context_subject>> sharded_store::get_subjects(
     co_return co_await _store.map_reduce0(map, subjects{}, reduce);
 }
 
+ss::future<chunked_vector<context_subject>>
+sharded_store::get_subjects(context ctx, include_deleted inc_del) {
+    using subjects = chunked_vector<context_subject>;
+    auto map = [ctx, inc_del](store& s) {
+        return s.get_subjects(ctx, inc_del);
+    };
+    auto reduce = [](subjects acc, subjects subs) {
+        acc.reserve(acc.size() + subs.size());
+        std::move(subs.begin(), subs.end(), std::back_inserter(acc));
+        return acc;
+    };
+    co_return co_await _store.map_reduce0(map, subjects{}, reduce);
+}
+
 ss::future<bool>
 sharded_store::has_subjects(context ctx, include_deleted inc_del) {
     auto map = [ctx, inc_del](store& s) {

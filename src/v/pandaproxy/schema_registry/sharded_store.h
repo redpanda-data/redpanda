@@ -108,6 +108,10 @@ public:
       include_deleted inc_del,
       std::optional<ss::sstring> subject_prefix = std::nullopt);
 
+    ///\brief Return a list of subjects for a specific context.
+    ss::future<chunked_vector<context_subject>>
+    get_subjects(context ctx, include_deleted inc_del);
+
     ///\brief Return whether there are any subjects.
     ss::future<bool> has_subjects(context ctx, include_deleted inc_del);
 
