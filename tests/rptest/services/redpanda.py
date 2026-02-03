@@ -4806,6 +4806,12 @@ class RedpandaService(Service, RedpandaServiceABC):
                     metrics[key],
                     current + int(sum(s.value for s in ms.samples)),
                 )
+        except ValueError as e:
+            # CORE-15466: ValueError from prometheus_client parser indicates
+            # malformed metrics output from Redpanda - this is a bug, don't
+            # swallow it
+            self.logger.warning(f"ValueError while getting metrics on shutdown - {e}")
+            raise
         except Exception as e:
             self.logger.warning(f"Cannot check metrics on shutdown - {e}")
 
