@@ -4890,6 +4890,8 @@ admin_server::restart_service_handler(std::unique_ptr<ss::http::request> req) {
 
     vlog(
       adminlog.info, "Restart redpanda service: {}", to_string_view(*service));
-    co_await restart_redpanda_service(*service);
+    co_await container().invoke_on(0, [service](admin_server& server) {
+        return server.restart_redpanda_service(*service);
+    });
     co_return ss::json::json_return_type(ss::json::json_void());
 }
