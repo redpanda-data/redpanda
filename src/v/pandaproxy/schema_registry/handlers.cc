@@ -158,7 +158,7 @@ to_non_context_schema_ids(const chunked_vector<context_schema_id>& ids) {
 /// Resolve a schema ID within a single context, optionally filtering by subject.
 ss::future<context_schema_id> resolve_schema_id_simple(
     const server::request_t& rq,
-    std::optional<request_auth_result> auth_result,
+    std::optional<request_auth_result>& auth_result,
     schema_id id,
     context_subject ctx_sub) {
         vassert(ctx_sub.ctx != default_context || ctx_sub.sub().empty(),
@@ -195,7 +195,7 @@ ss::future<context_schema_id> resolve_schema_id_simple(
 /// 3. Default context without subject restriction
 ss::future<context_schema_id> resolve_schema_id_extended(
     const server::request_t& rq,
-    std::optional<request_auth_result> auth_result,
+    std::optional<request_auth_result>& auth_result,
     schema_id id,
     subject subject) {
         vassert(!subject().empty(),
