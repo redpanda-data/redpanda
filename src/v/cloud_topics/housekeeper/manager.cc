@@ -64,6 +64,59 @@ public:
         return lowest_pinned.value();
     }
 
+    std::optional<cloud_topics::cluster_epoch> estimate_inactive_epoch(
+      const model::topic_id_partition& tidp) noexcept override {
+        try {
+            return get_api(tidp).estimate_inactive_epoch();
+        } catch (...) {
+            auto ex = std::current_exception();
+            vlog(cd_log.warn, "Error collecting inactive epoch... {}", ex);
+            return std::nullopt;
+        }
+    }
+    ss::future<std::optional<cloud_topics::cluster_epoch>>
+    get_current_cluster_epoch(
+      const model::topic_id_partition& tidp,
+      ss::abort_source* as) noexcept override {
+        auto res = co_await get_api(tidp).get_current_epoch(as);
+        if (!res.has_value()) {
+            co_return std::nullopt;
+        }
+        co_return res.value();
+    }
+
+    ss::future<> advance_epoch(
+      const model::topic_id_partition& tidp,
+      cloud_topics::cluster_epoch epoch,
+      ss::abort_source* as) noexcept override {
+        try {
+            auto res = co_await get_api(tidp).advance_epoch(
+              epoch, model::timeout_clock::now() + 5s, *as);
+            if (!res.has_value()) {
+                throw std::runtime_error(fmt::format("{}", res.error()));
+            }
+        } catch (...) {
+            auto ex = std::current_exception();
+            vlog(cd_log.warn, "Error advancing epoch: {}", ex);
+        }
+    }
+
+    ss::future<> sync_to_next_placeholder(
+      const model::topic_id_partition& tidp,
+      ss::abort_source* as) noexcept override {
+        try {
+            auto res = co_await get_api(tidp).sync_to_next_placeholder(
+              model::timeout_clock::now() + 5s, *as);
+            if (!res.has_value()) {
+                throw std::runtime_error(fmt::format("{}", res.error()));
+            }
+        } catch (...) {
+            auto ex = std::current_exception();
+            vlog(cd_log.warn, "Error advancing LRLO to epoch window: {}", ex);
+        }
+        co_return;
+    }
+
 private:
     ctp_stm_api get_api(const model::topic_id_partition& tidp) {
         auto& state = _state->at(tidp);

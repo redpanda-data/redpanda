@@ -59,6 +59,24 @@ public:
         virtual kafka::offset
         get_max_allowed_start_offset(const model::topic_id_partition&)
           = 0;
+
+        virtual std::optional<cloud_topics::cluster_epoch>
+        estimate_inactive_epoch(const model::topic_id_partition&) noexcept = 0;
+
+        virtual ss::future<std::optional<cloud_topics::cluster_epoch>>
+        get_current_cluster_epoch(
+          const model::topic_id_partition&, ss::abort_source*) noexcept
+          = 0;
+
+        virtual ss::future<> advance_epoch(
+          const model::topic_id_partition& tidp,
+          cloud_topics::cluster_epoch,
+          ss::abort_source*) noexcept
+          = 0;
+
+        virtual ss::future<> sync_to_next_placeholder(
+          const model::topic_id_partition& tidp, ss::abort_source*) noexcept
+          = 0;
     };
 
     // A wrapper around a source of configuration for a give topic id +

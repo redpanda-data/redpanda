@@ -60,14 +60,80 @@ public:
         return _max_allowed_start_offset;
     }
 
+    std::optional<cloud_topics::cluster_epoch> estimate_inactive_epoch(
+      const model::topic_id_partition&) noexcept override {
+        return _estimated_inactive_epoch;
+    }
+
+    ss::future<std::optional<cloud_topics::cluster_epoch>>
+    get_current_cluster_epoch(
+      const model::topic_id_partition&, ss::abort_source*) noexcept override {
+        co_return _current_cluster_epoch;
+    }
+
+    ss::future<> advance_epoch(
+      const model::topic_id_partition& tidp,
+      cloud_topics::cluster_epoch epoch,
+      ss::abort_source*) noexcept override {
+        if (tidp == _tidp) {
+            _advance_epoch_calls.push_back(epoch);
+        }
+        co_return;
+    }
+
+    ss::future<> sync_to_next_placeholder(
+      const model::topic_id_partition& tidp,
+      ss::abort_source*) noexcept override {
+        if (tidp == _tidp) {
+            ++_sync_to_next_placeholder_calls;
+        }
+        co_return;
+    }
+
     void set_max_allowed_start_offset(kafka::offset offset) {
         _max_allowed_start_offset = offset;
+    }
+
+    // Setters for epoch-related test configuration
+    void set_estimated_inactive_epoch(
+      std::optional<cloud_topics::cluster_epoch> epoch) {
+        _estimated_inactive_epoch = epoch;
+    }
+
+    void set_current_cluster_epoch(
+      std::optional<cloud_topics::cluster_epoch> epoch) {
+        _current_cluster_epoch = epoch;
+    }
+
+    // Accessors for verifying calls
+    const std::vector<cloud_topics::cluster_epoch>&
+    advance_epoch_calls() const {
+        return _advance_epoch_calls;
+    }
+
+    size_t sync_to_next_placeholder_calls() const {
+        return _sync_to_next_placeholder_calls;
+    }
+
+    void reset_call_tracking() {
+        _advance_epoch_calls.clear();
+        _sync_to_next_placeholder_calls = 0;
     }
 
 private:
     model::topic_id_partition _tidp;
     kafka::offset _start_offset;
     kafka::offset _max_allowed_start_offset;
+
+    // Epoch-related state
+    std::optional<cloud_topics::cluster_epoch> _estimated_inactive_epoch
+      = cloud_topics::cluster_epoch::min();
+    std::optional<cloud_topics::cluster_epoch> _current_cluster_epoch
+      = cloud_topics::cluster_epoch{1};
+
+    // Call tracking
+    std::vector<cloud_topics::cluster_epoch> _advance_epoch_calls;
+    size_t _sync_to_next_placeholder_calls{0};
 };
 
 struct simple_retention_config {

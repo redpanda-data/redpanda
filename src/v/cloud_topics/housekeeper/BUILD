@@ -9,6 +9,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_one/metastore",
         "//src/v/config",
         "//src/v/model",
