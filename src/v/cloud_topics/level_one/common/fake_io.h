@@ -23,6 +23,9 @@ public:
     ss::future<std::expected<std::unique_ptr<staging>, errc>>
     create_tmp_file() override;
 
+    ss::future<std::expected<std::unique_ptr<staging>, errc>>
+    create_memory_staging() override;
+
     ss::future<std::expected<void, errc>>
     put_object(object_id, staging*, ss::abort_source*) override;
 

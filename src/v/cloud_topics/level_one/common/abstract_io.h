@@ -74,6 +74,12 @@ public:
     virtual ss::future<std::expected<std::unique_ptr<staging>, errc>>
     create_tmp_file() = 0;
 
+    // Create an in-memory staging area for data to be uploaded to object
+    // storage. Use this when you want to avoid disk I/O for staging, but
+    // be mindful of how much memory is being allocated.
+    virtual ss::future<std::expected<std::unique_ptr<staging>, errc>>
+    create_memory_staging() = 0;
+
     // Upload staged data to object storage.
     virtual ss::future<std::expected<void, errc>>
     put_object(object_id, staging*, ss::abort_source*) = 0;

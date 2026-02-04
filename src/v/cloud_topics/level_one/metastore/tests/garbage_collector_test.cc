@@ -181,6 +181,11 @@ public:
         return underlying_->create_tmp_file();
     }
 
+    ss::future<std::expected<std::unique_ptr<staging>, errc>>
+    create_memory_staging() override {
+        return underlying_->create_memory_staging();
+    }
+
     ss::future<std::expected<void, errc>>
     put_object(object_id id, staging* stg, ss::abort_source* as) override {
         return underlying_->put_object(id, stg, as);

@@ -125,6 +125,11 @@ public:
         co_return co_await l1::fake_io::create_tmp_file();
     }
 
+    ss::future<std::expected<std::unique_ptr<l1::staging>, l1::io::errc>>
+    create_memory_staging() override {
+        return create_tmp_file();
+    }
+
     ss::future<std::expected<void, l1::io::errc>> put_object(
       l1::object_id oid, l1::staging* stg, ss::abort_source* as) override {
         if (_fail_put_object) {

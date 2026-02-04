@@ -59,6 +59,11 @@ fake_io::create_tmp_file() {
     co_return stg;
 }
 
+ss::future<std::expected<std::unique_ptr<staging>, io::errc>>
+fake_io::create_memory_staging() {
+    return create_tmp_file();
+}
+
 ss::future<std::expected<void, io::errc>>
 fake_io::put_object(object_id oid, staging* stg, ss::abort_source*) {
     auto stream = co_await io::read_staging(stg);

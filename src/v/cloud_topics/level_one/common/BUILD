@@ -95,6 +95,7 @@ redpanda_cc_library(
         ":abstract_io",
         ":object_id",
         ":object_utils",
+        "//src/v/bytes:iostream",
         "//src/v/cloud_io:cache",
         "//src/v/cloud_io:io_result",
         "//src/v/cloud_io:remote",

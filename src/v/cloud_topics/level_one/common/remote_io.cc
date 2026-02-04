@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_one/common/remote_io.h"
 
+#include "bytes/iostream.h"
 #include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/client.h"
@@ -70,6 +71,41 @@ private:
     std::filesystem::path _path;
 };
 
+// In-memory staging implementation.
+class memory_staging : public staging {
+public:
+    memory_staging() = default;
+    memory_staging(const memory_staging&) = delete;
+    memory_staging(memory_staging&&) = delete;
+    memory_staging& operator=(const memory_staging&) = delete;
+    memory_staging& operator=(memory_staging&&) = delete;
+    ~memory_staging() override {
+        vassert(_removed, "staging must be removed before destruction");
+    }
+
+    ss::future<size_t> size() override {
+        vassert(!_removed, "cannot get size of removed staging");
+        co_return _data.size_bytes();
+    }
+    ss::future<ss::output_stream<char>> output_stream() override {
+        vassert(!_removed, "cannot get output stream of removed staging");
+        co_return make_iobuf_ref_output_stream(_data);
+    }
+    ss::future<> remove() override {
+        _removed = true;
+        _data.clear();
+        co_return;
+    }
+    ss::future<ss::input_stream<char>> input_stream() override {
+        vassert(!_removed, "cannot get input stream of removed staging");
+        co_return make_iobuf_input_stream(_data.share(0, _data.size_bytes()));
+    }
+
+private:
+    bool _removed = false;
+    iobuf _data;
+};
+
 // TODO: deduplicate, expose from cloud storage
 struct one_time_stream_provider : public stream_provider {
     explicit one_time_stream_provider(ss::input_stream<char> s)
@@ -104,6 +140,11 @@ ss::future<std::expected<std::unique_ptr<staging>, io::errc>>
 remote_io::create_tmp_file() {
     co_return std::make_unique<staging_file>(
       _staging_dir / fmt::format("{}.tmp", uuid_t::create()));
+}
+
+ss::future<std::expected<std::unique_ptr<staging>, io::errc>>
+remote_io::create_memory_staging() {
+    co_return std::make_unique<memory_staging>();
 }
 
 ss::future<std::expected<void, io::errc>>
