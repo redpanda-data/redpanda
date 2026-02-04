@@ -8937,10 +8937,6 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
 
     def setUp(self):
         super().setUp()
-        self._init_users()
-        self.redpanda.set_cluster_config(
-            {"schema_registry_enable_authorization": "True"}
-        )
         self._setup_test_schemas()
 
     @cluster(num_nodes=1)

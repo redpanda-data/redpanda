@@ -9,7 +9,6 @@
 
 #include "handlers.h"
 
-#include "base/vassert.h"
 #include "bytes/iobuf_parser.h"
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
@@ -161,14 +160,26 @@ ss::future<context_schema_id> resolve_schema_id_simple(
     std::optional<request_auth_result>& auth_result,
     schema_id id,
     context_subject ctx_sub) {
-        vassert(ctx_sub.ctx != default_context || ctx_sub.sub().empty(),
-                "resolve_schema_id_simple cannot be called with default context and "
-                "non-empty subject");
+        if (ctx_sub.ctx == default_context && !ctx_sub.sub().empty()) {
+            vlog(srlog.error,
+                 "resolve_schema_id_simple cannot be called with default context "
+                 "and non-empty subject");
+            throw exception(error_code::internal_server_error);
+        }
+
+        vlog(srlog.debug,
+             "Resolving schema ID {} in context '{}'{}",
+             id,
+             ctx_sub.ctx,
+             ctx_sub.sub().empty() ? "" : ss::sstring{", subject '"} + ctx_sub.sub() + "'" );
 
         const context_schema_id ctx_id{ctx_sub.ctx, id};
         auto schema_subjects = co_await rq.service().schema_store().get_schema_subjects(ctx_id, include_deleted::yes);
         // If a subject is provided, filter the schema_subjects to only that subject (if it exists)
         if (!ctx_sub.sub().empty()) {
+            vlog(srlog.debug,
+                 "Filtering schema subjects for subject '{}'",
+                 ctx_sub.sub());
             schema_subjects = std::ranges::contains(schema_subjects, ctx_sub)
                 ? decltype(schema_subjects){ctx_sub}
                 : decltype(schema_subjects){};
@@ -181,8 +192,19 @@ ss::future<context_schema_id> resolve_schema_id_simple(
         if (schema_subjects.empty()) {
             // The schema ID is not associated with any subject in this context, or if the requester
             // provided a ctx_sub.sub, the schema is not associated with that subject.
+            vlog(srlog.debug,
+                 "Schema ID {} not found in context '{}'{}",
+                 id,
+                 ctx_sub.ctx,
+                 ctx_sub.sub().empty() ? "" : ss::sstring{", subject '"} + ctx_sub.sub() + "'" );
             throw as_exception(not_found(id));
         }
+
+        vlog(srlog.debug,
+             "Schema ID {} resolved in context '{}'{}",
+             id,
+             ctx_sub.ctx,
+             ctx_sub.sub().empty() ? "" : ss::sstring{", subject '"} + ctx_sub.sub() + "'" );
 
         co_return ctx_id;
 }
@@ -198,12 +220,18 @@ ss::future<context_schema_id> resolve_schema_id_extended(
     std::optional<request_auth_result>& auth_result,
     schema_id id,
     subject subject) {
-        vassert(!subject().empty(),
-                "resolve_schema_id_extended should only be called with a non-empty subject");
+        if (subject().empty()) {
+            vlog(srlog.error,
+                 "resolve_schema_id_extended should only be called with non-empty subject");
+            throw exception(error_code::internal_server_error);
+        }
+
+        vlog(srlog.debug, "Performing an extended search to resolve schema ID {} for subject '{}'.", id, subject());
         
         // First, try default context with the provided subject
         if (context_subject ctx_sub{default_context, subject}; co_await rq.service().schema_store().has_version(ctx_sub, id, include_deleted::yes)) {
-            enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, {ctx_sub});
+            vlog(srlog.debug, "Schema ID {} found in default context with subject '{}'", id, subject());
+            enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, {std::move(ctx_sub)});
             co_return context_schema_id{default_context, id};
         }
 
@@ -213,6 +241,7 @@ ss::future<context_schema_id> resolve_schema_id_extended(
             return c != default_context; 
         })) {
             if (context_subject ctx_sub{ctx, subject}; co_await rq.service().schema_store().has_version(ctx_sub, id, include_deleted::yes)) {
+                vlog(srlog.debug, "Schema ID {} found in context '{}' with subject '{}'", id, ctx, subject());
                 enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, {ctx_sub});
                 co_return context_schema_id{ctx, id};
             }
@@ -222,10 +251,11 @@ ss::future<context_schema_id> resolve_schema_id_extended(
         auto default_ctx_subjects = co_await rq.service().schema_store().get_subjects(default_context, include_deleted::yes);
         enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, default_ctx_subjects);
         if (!default_ctx_subjects.empty()) {
+            vlog(srlog.debug, "Schema ID {} found in default context without subject restriction", id);
             co_return context_schema_id{default_context, id};
         }
 
-        // Schema ID not found in any context with the provided subject, nor in default context without subject restriction
+        vlog(srlog.debug, "Schema ID {} not found in any context with subject '{}' or in default context without subject restriction", id, subject());
         enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, {});
         throw as_exception(not_found(id));
 }
@@ -576,11 +606,11 @@ ss::future<server::reply_t> get_schemas_ids_id(
       : resolve_schema_id_simple(rq, auth_result, id, ctx_sub));
 
     auto def = co_await rq.service().schema_store().get_schema_definition(ctx_id, format);
-        auto resp = ppj::rjson_serialize_iobuf(
-        get_schemas_ids_id_response{.definition{std::move(def)}});
-        log_response(*rq.req, resp);
-        rp.rep->write_body("json", ppj::as_body_writer(std::move(resp)));
-        co_return rp;
+    auto resp = ppj::rjson_serialize_iobuf(
+      get_schemas_ids_id_response{.definition{std::move(def)}});
+    log_response(*rq.req, resp);
+    rp.rep->write_body("json", ppj::as_body_writer(std::move(resp)));
+    co_return rp;
 }
 
 ss::future<server::reply_t>
