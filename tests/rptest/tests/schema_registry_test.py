@@ -9305,3 +9305,212 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryAclAuthzTestBase):
             self.redpanda.set_cluster_config(
                 {"schema_registry_enable_authorization": True}
             )
+
+
+class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
+    """
+    Authorization tests for context-qualified subject functionality.
+
+    These tests verify that Schema Registry correctly enforces ACL authorization
+    when using context-qualified subjects and the subject query parameter.
+    """
+
+    def __init__(self, context: TestContext, **kwargs: Any):
+        super().__init__(
+            context,
+            extra_rp_conf={"schema_registry_enable_qualified_subjects": True},
+            **kwargs,
+        )
+
+    def _setup_test_schemas(self):
+        """Create schemas used by all authorization tests."""
+        schema_data = json.dumps({"schema": schema1_def})
+        schema_data_2 = json.dumps({"schema": schema2_def})
+
+        # sub1 and sub2 in default context share the same schema
+        result = self.sr_client.post_subjects_subject_versions(
+            "sub1", data=schema_data, auth=self.super_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.schema_id_default_ctx = result.json()["id"]
+
+        result = self.sr_client.post_subjects_subject_versions(
+            "sub2", data=schema_data, auth=self.super_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["id"], self.schema_id_default_ctx)
+
+        # :.ctx1:sub1 also has the same schema
+        result = self.sr_client.post_subjects_subject_versions(
+            ":.ctx1:sub1", data=schema_data, auth=self.super_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.schema_id_ctx1 = result.json()["id"]
+
+        # :.ctx1:sub2 also has the same schema
+        result = self.sr_client.post_subjects_subject_versions(
+            ":.ctx1:sub2", data=schema_data, auth=self.super_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["id"], self.schema_id_ctx1)
+
+        # :.ctx1:unique-sub has a different schema (only exists in ctx1)
+        result = self.sr_client.post_subjects_subject_versions(
+            ":.ctx1:unique-sub", data=schema_data_2, auth=self.super_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.unique_id_ctx1 = result.json()["id"]
+
+    def setUp(self):
+        super().setUp()
+        self._setup_test_schemas()
+
+    @cluster(num_nodes=1)
+    def test_subject_param_with_authorized_subject(self):
+        """
+        GET /schemas/ids/{id}?subject=sub1 succeeds when user has READ on sub1.
+        """
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "READ"))
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_default_ctx, subject="sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema1_def)
+
+    @cluster(num_nodes=1)
+    def test_subject_param_unauthorized_despite_other_subject_access(self):
+        """
+        GET /schemas/ids/{id}?subject=sub2 fails when user only has READ on sub1,
+        even though both subjects reference the same schema.
+        Authorization checks only the specified subject.
+        """
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "READ"))
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_default_ctx, subject="sub2", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_default_ctx, subject="sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema1_def)
+
+    @cluster(num_nodes=1)
+    def test_context_qualified_subject_with_matching_acl(self):
+        """
+        GET /schemas/ids/{id}?subject=:.ctx1:sub1 succeeds when user has READ
+        on the context-qualified subject :.ctx1:sub1.
+        """
+        self._post_acl(self._create_acl(":.ctx1:sub1", "SUBJECT", "LITERAL", "READ"))
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_ctx1, subject=":.ctx1:sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema1_def)
+
+    @cluster(num_nodes=1)
+    def test_context_qualified_subject_without_acl_on_that_context(self):
+        """
+        GET /schemas/ids/{id}?subject=:.ctx1:sub2 fails when user has READ on
+        sub1 (default context) but not on :.ctx1:sub2.
+        """
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "READ"))
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_ctx1, subject=":.ctx1:sub2", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+    @cluster(num_nodes=1)
+    def test_cross_context_search_finds_subject_in_non_default_context(self):
+        """
+        GET /schemas/ids/{id}?subject=unique-sub succeeds when the subject only
+        exists in ctx1 as :.ctx1:unique-sub and user has READ on :.ctx1:unique-sub.
+        Cross-context search finds the subject in the non-default context.
+        """
+        self._post_acl(
+            self._create_acl(":.ctx1:unique-sub", "SUBJECT", "LITERAL", "READ")
+        )
+        result = self.sr_client.get_schemas_ids_id(
+            self.unique_id_ctx1, subject="unique-sub", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema2_def)
+
+    @cluster(num_nodes=1)
+    def test_cross_context_search_no_auth_on_found_context(self):
+        """
+        GET /schemas/ids/{id}?subject=unique-sub fails when the subject is found
+        via cross-context search in ctx1 but user has DENY on :.ctx1:unique-sub.
+        """
+        self._post_acl(
+            self._create_acl(":.ctx1:unique-sub", "SUBJECT", "LITERAL", "READ", "DENY")
+        )
+        result = self.sr_client.get_schemas_ids_id(
+            self.unique_id_ctx1, subject="unique-sub", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+    @cluster(num_nodes=1)
+    def test_context_only_param_with_auth_on_ctx_subject(self):
+        """
+        GET /schemas/ids/{id}?subject=:.ctx1: succeeds when user has READ on
+        at least one subject in ctx1 (:.ctx1:sub1).
+        Context-only param checks all subjects in that context.
+        """
+        self._post_acl(self._create_acl(":.ctx1:sub1", "SUBJECT", "LITERAL", "READ"))
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_ctx1, subject=":.ctx1:", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema1_def)
+
+    @cluster(num_nodes=1)
+    def test_context_only_param_without_auth_on_any_ctx_subject(self):
+        """
+        GET /schemas/ids/{id}?subject=:.ctx1: fails when user has no READ
+        permission on any subject in ctx1.
+        """
+        # Only grant access to default context subject, not ctx1
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "READ"))
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_ctx1, subject=":.ctx1:", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+    @cluster(num_nodes=1)
+    def test_prefix_acl_covers_context_qualified_subject(self):
+        """
+        GET /schemas/ids/{id}?subject=:.ctx1:sub1 succeeds when user has a
+        PREFIX ACL on :.ctx1: which covers all subjects in that context.
+        """
+        self._post_acl(self._create_acl(":.ctx1:", "SUBJECT", "PREFIXED", "READ"))
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_ctx1, subject=":.ctx1:sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema1_def)
+
+        result = self.sr_client.get_schemas_ids_id(
+            self.schema_id_ctx1, subject=":.ctx1:sub2", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema1_def)
+
+        result = self.sr_client.get_schemas_ids_id(
+            self.unique_id_ctx1, subject=":.ctx1:unique-sub", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json()["schema"], schema2_def)
+
+    @cluster(num_nodes=1)
+    def test_nonexistent_schema_id_returns_403_not_404(self):
+        """
+        GET /schemas/ids/{id}?subject=sub1 returns 403 (not 404) for non-existent
+        schema ID when user lacks authorization. This prevents information leakage
+        about whether a schema ID exists.
+        """
+        result = self.sr_client.get_schemas_ids_id(
+            99999, subject="sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
