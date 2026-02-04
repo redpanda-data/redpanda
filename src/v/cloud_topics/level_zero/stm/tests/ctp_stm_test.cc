@@ -861,3 +861,199 @@ TEST_F_CORO(
       << "This indicates the bug where in-memory _max_seen_epoch "
       << "is stale after regaining leadership.";
 }
+
+// Test for the combined advance_epoch + sync_to_next_placeholder functionality.
+// This is the primary use case: enabling GC progress on idle partitions by
+// recording the current epoch and advancing LRLO past the advance_epoch batch.
+
+TEST_F_CORO(ctp_stm_fixture, test_advance_epoch_and_sync_to_next_placeholder) {
+    // This test verifies the combined behavior of advance_epoch() followed by
+    // sync_to_next_placeholder(). This combination is used by the housekeeper
+    // to enable GC progress on idle partitions (no new data writes).
+    //
+    // The key behavior:
+    // 1. advance_epoch() replicates an advance_epoch_cmd batch, updating the
+    //    epoch window
+    // 2. sync_to_next_placeholder() advances LRLO past that batch
+    // 3. This allows estimate_inactive_epoch() to return a more recent value
+    //    because min_epoch_lower_bound is updated when LRLO >= epoch_window_offset
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    // Establish initial epoch 5 via placeholder
+    auto b1 = make_record_batch(ct::cluster_epoch{5}, model::offset{0}, 0);
+    co_await replicate_record_batch(leader, std::move(b1));
+    ASSERT_EQ_CORO(leader_api.get_max_epoch().value(), ct::cluster_epoch{5});
+
+    // Reconcile the placeholder (simulate reconciler work)
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{0}, model::no_timeout, as);
+
+    // Record LRLO before the advance_epoch + sync combo
+    auto lrlo_before = leader_api.get_last_reconciled_log_offset();
+
+    // Advance epoch to 10 - this creates an advance_epoch batch in the log
+    auto advance_1 = co_await leader_api.advance_epoch(
+      ct::cluster_epoch{10}, model::no_timeout, as);
+    ASSERT_TRUE_CORO(advance_1.has_value());
+    ASSERT_EQ_CORO(leader_api.get_max_epoch().value(), ct::cluster_epoch{10});
+
+    // At this point:
+    // - max_applied_epoch = 10
+    // - previous_applied_epoch = 5
+    // - epoch_window_offset = log offset of the advance_epoch batch
+    // - LRLO is still at the placeholder batch offset (before epoch_window_offset)
+    // - estimate_inactive_epoch = previous_applied_epoch - 1 = 4
+
+    auto estimate_before_sync = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(estimate_before_sync.has_value());
+    ASSERT_EQ_CORO(estimate_before_sync.value(), ct::cluster_epoch{4});
+
+    // LRO should still be at kafka offset 0 (no new data)
+    ASSERT_EQ_CORO(leader_api.get_last_reconciled_offset(), kafka::offset{0});
+
+    // Now call sync_to_next_placeholder to advance LRLO past the advance_epoch
+    // batch
+    auto sync_result = co_await leader_api.sync_to_next_placeholder(
+      model::no_timeout, as);
+    ASSERT_TRUE_CORO(sync_result.has_value());
+
+    // LRLO should have advanced past the advance_epoch batch
+    auto lrlo_after_sync = leader_api.get_last_reconciled_log_offset();
+    ASSERT_GT_CORO(lrlo_after_sync, lrlo_before)
+      << "sync_to_next_placeholder should advance LRLO past advance_epoch "
+         "batch";
+
+    // LRO should remain unchanged (no new kafka data)
+    ASSERT_EQ_CORO(leader_api.get_last_reconciled_offset(), kafka::offset{0});
+
+    // At this point, LRLO >= epoch_window_offset, so min_epoch_lower_bound
+    // should be updated to previous_applied_epoch (5). But since the epoch
+    // window is [5, 10], estimate_inactive_epoch = 4 (previous - 1).
+    auto estimate_after_sync = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(estimate_after_sync.has_value());
+    ASSERT_EQ_CORO(estimate_after_sync.value(), ct::cluster_epoch{4});
+
+    // Now advance epoch again to 15. This will:
+    // - Set max_applied_epoch = 15
+    // - Set previous_applied_epoch = 10
+    // - Set new epoch_window_offset (let's call it Y)
+    auto advance_2 = co_await leader_api.advance_epoch(
+      ct::cluster_epoch{15}, model::no_timeout, as);
+    ASSERT_TRUE_CORO(advance_2.has_value());
+    ASSERT_EQ_CORO(leader_api.get_max_epoch().value(), ct::cluster_epoch{15});
+
+    // Right after advance_epoch (but before sync), estimate is still 4
+    // because _min_epoch_lower_bound hasn't been updated yet - LRLO is still
+    // at the previous epoch_window_offset, not past the new one (Y)
+    auto estimate_before_sync_2 = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(estimate_before_sync_2.has_value());
+    ASSERT_EQ_CORO(estimate_before_sync_2.value(), ct::cluster_epoch{4});
+
+    // Call sync_to_next_placeholder again to advance LRLO past Y
+    auto sync_result_2 = co_await leader_api.sync_to_next_placeholder(
+      model::no_timeout, as);
+    ASSERT_TRUE_CORO(sync_result_2.has_value());
+
+    // LRLO should have advanced further
+    ASSERT_GT_CORO(
+      leader_api.get_last_reconciled_log_offset(), lrlo_after_sync);
+
+    // NOW estimate_inactive_epoch should be 9 because:
+    // - LRLO >= epoch_window_offset (Y)
+    // - So _min_epoch_lower_bound was updated to _previous_applied_epoch (10)
+    // - estimate = _min_epoch_lower_bound - 1 = 9
+    auto estimate_final = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(estimate_final.has_value());
+    ASSERT_EQ_CORO(estimate_final.value(), ct::cluster_epoch{9});
+
+    // Key invariant: estimate progressed from 4 -> 9 through the
+    // advance_epoch + sync_to_next_placeholder pattern, without any new data
+    ASSERT_GT_CORO(estimate_final.value(), estimate_before_sync.value())
+      << "estimate_inactive_epoch should have progressed from 4 to 9";
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, test_sync_to_next_placeholder_stops_at_unreconciled_data) {
+    // This test verifies that sync_to_next_placeholder() correctly stops at
+    // unreconciled placeholder batches. This is important for safety: if we
+    // think a partition is idle but it actually has unreconciled data, we must
+    // not advance LRLO past that data.
+    //
+    // Scenario:
+    // 1. Establish epoch 5 via placeholder, reconcile it
+    // 2. Produce another placeholder batch (epoch 5) but DON'T reconcile it
+    // 3. Call advance_epoch(10)
+    // 4. Call sync_to_next_placeholder
+    // 5. Verify LRLO stopped before the unreconciled placeholder
+    // 6. Verify estimate_inactive_epoch didn't advance
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    // Step 1: Establish initial epoch 5 via placeholder and reconcile it
+    auto b1 = make_record_batch(ct::cluster_epoch{5}, model::offset{0}, 0);
+    co_await replicate_record_batch(leader, std::move(b1));
+    ASSERT_EQ_CORO(leader_api.get_max_epoch().value(), ct::cluster_epoch{5});
+
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{0}, model::no_timeout, as);
+
+    // Step 2: Produce another placeholder batch with epoch 5, but DON'T
+    // reconcile it. This simulates a partition that received new data.
+    auto b2 = make_record_batch(ct::cluster_epoch{5}, model::offset{1}, 1);
+    co_await replicate_record_batch(leader, std::move(b2));
+
+    // LRO is still at kafka offset 0 (only first batch reconciled)
+    ASSERT_EQ_CORO(leader_api.get_last_reconciled_offset(), kafka::offset{0});
+
+    // Step 3: Call advance_epoch(10) - this creates an advance_epoch batch
+    // The log now looks like:
+    //   [placeholder epoch=5 (reconciled)] [placeholder epoch=5 (unreconciled)]
+    //   [advance_epoch epoch=10]
+    auto advance_result = co_await leader_api.advance_epoch(
+      ct::cluster_epoch{10}, model::no_timeout, as);
+    ASSERT_TRUE_CORO(advance_result.has_value());
+    ASSERT_EQ_CORO(leader_api.get_max_epoch().value(), ct::cluster_epoch{10});
+
+    // Estimate before sync should be 4 (previous_applied - 1 = 5 - 1)
+    auto estimate_before_sync = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(estimate_before_sync.has_value());
+    ASSERT_EQ_CORO(estimate_before_sync.value(), ct::cluster_epoch{4});
+
+    // Step 4: Call sync_to_next_placeholder
+    // This should advance LRLO only up to the log offset just before the
+    // unreconciled placeholder, NOT past it.
+    auto sync_result = co_await leader_api.sync_to_next_placeholder(
+      model::no_timeout, as);
+    ASSERT_TRUE_CORO(sync_result.has_value());
+
+    // Step 5: Verify the key invariants
+    // LRLO may have advanced to non-data batches (like the
+    // advance_reconciled_offset_cmd from step 1), but it must stop before
+    // the unreconciled placeholder. The important thing is that LRO (kafka
+    // offset) stays at 0 - the unreconciled kafka data was NOT marked as
+    // reconciled.
+    ASSERT_EQ_CORO(leader_api.get_last_reconciled_offset(), kafka::offset{0})
+      << "LRO should NOT advance past unreconciled kafka data";
+
+    // Step 6: Verify estimate_inactive_epoch didn't advance
+    // The epoch_window_offset (set by advance_epoch) is AFTER the unreconciled
+    // placeholder. Since LRLO can't pass the unreconciled placeholder, it
+    // can't reach the epoch_window_offset, so _min_epoch_lower_bound isn't
+    // updated.
+    auto estimate_after_sync = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(estimate_after_sync.has_value());
+    ASSERT_EQ_CORO(estimate_after_sync.value(), ct::cluster_epoch{4})
+      << "estimate should NOT advance when there's unreconciled data";
+
+    // Key invariant: the estimate remained unchanged because the partition
+    // wasn't actually idle - it had unreconciled data that blocked LRLO from
+    // reaching the epoch_window_offset
+    ASSERT_EQ_CORO(estimate_after_sync.value(), estimate_before_sync.value());
+}
