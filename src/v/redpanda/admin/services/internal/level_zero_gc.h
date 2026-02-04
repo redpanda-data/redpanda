@@ -19,6 +19,10 @@
 
 #include <seastar/core/sharded.hh>
 
+namespace cloud_topics {
+class frontend;
+}
+
 namespace admin {
 
 namespace level_zero_gc::detail {

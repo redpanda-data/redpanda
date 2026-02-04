@@ -11,7 +11,9 @@
 #include "redpanda/admin/services/internal/level_zero_gc.h"
 
 #include "base/vassert.h"
+#include "cloud_topics/frontend/frontend.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
+#include "cloud_topics/state_accessors.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -191,5 +193,30 @@ level_zero_gc_service_impl::pause(
 
     co_return response;
 }
+
+namespace {
+
+std::expected<std::unique_ptr<cloud_topics::frontend>, ss::sstring>
+try_make_ct_frontend(cluster::partition_manager& pm, const model::ntp& ntp) {
+    auto partition = pm.get(ntp);
+    if (partition == nullptr) {
+        return std::unexpected{ssx::sformat(
+          "try_make_ct_frontend: TopicPartition {} not found", ntp.tp)};
+    }
+    if (!partition->get_ntp_config().cloud_topic_enabled()) {
+        return std::unexpected{ssx::sformat(
+          "try_make_ct_frontend: TopicPartition {} is not a cloud topic",
+          ntp.tp)};
+    }
+    auto ct_state = partition->get_cloud_topics_state();
+    if (ct_state == nullptr || !ct_state->local_is_initialized()) {
+        return std::unexpected{ssx::sformat(
+          "try_make_ct_frontend: Cloud topics subsystem is not initialized")};
+    }
+    return std::make_unique<cloud_topics::frontend>(
+      partition, ct_state->local().get_data_plane());
+}
+
+} // namespace
 
 } // namespace admin
