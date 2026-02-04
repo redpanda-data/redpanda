@@ -71,6 +71,7 @@ public:
     get_partition_reader_units(model::opt_abort_source_t as);
 
     ss::future<segment_units> get_segment_units(model::opt_abort_source_t as);
+    std::optional<segment_units> try_get_segment_units();
 
     materialized_manifest_cache& get_materialized_manifest_cache();
 
@@ -119,6 +120,10 @@ private:
     /// Synchronous scan of segments for eviction, reads+modifies _materialized
     /// and writes victims to _eviction_list
     void trim_segments(std::optional<size_t>);
+
+    /// Triggers a segment trim if the free memory units is less than the
+    /// provided parameter.
+    void maybe_trim_segments(ssize_t);
 
     // List of segments to offload, accumulated during trim_segments
     using offload_list_t
