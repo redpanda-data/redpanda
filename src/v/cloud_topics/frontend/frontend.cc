@@ -1031,6 +1031,19 @@ frontend::get_current_epoch() noexcept {
     co_return new_epoch.value();
 }
 
+frontend::epoch_info frontend::get_epoch_info() const {
+    return epoch_info{
+      .estimated_inactive_epoch
+      = _ctp_stm_api->estimate_inactive_epoch().value_or(cluster_epoch::min()),
+      .max_applied_epoch = _ctp_stm_api->get_max_epoch().value_or(
+        cluster_epoch::min()),
+      .last_reconciled_log_offset
+      = _ctp_stm_api->get_last_reconciled_log_offset(),
+      .current_epoch_window_offset
+      = _ctp_stm_api->get_epoch_window_offset().value_or(model::offset{}),
+    };
+}
+
 fmt::iterator
 frontend::coarse_grained_timequery_result::format_to(fmt::iterator it) const {
     return fmt::format_to(

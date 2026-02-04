@@ -155,6 +155,18 @@ public:
     ss::future<std::expected<cloud_topics::cluster_epoch, frontend_errc>>
     get_current_epoch() noexcept;
 
+    /// Epoch state snapshot returned by advance_epoch.
+    struct epoch_info {
+        cluster_epoch estimated_inactive_epoch;
+        cluster_epoch max_applied_epoch;
+        model::offset last_reconciled_log_offset;
+        model::offset current_epoch_window_offset;
+        friend auto operator<=>(const epoch_info&, const epoch_info&) = default;
+    };
+
+    /// Return current epoch state.
+    epoch_info get_epoch_info() const;
+
 private:
     // All timequeries work by first getting a coarse grained timequery result
     // from metadata indexes, then getting an exact answer using the datapath.
