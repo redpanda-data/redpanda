@@ -8720,44 +8720,12 @@ class GetStatusReady(ACLTestEndpoint):
         return {"name": "", "type": "registry"}
 
 
-class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
+class SchemaRegistryAclAuthzTestBase(SchemaRegistryEndpoints):
     """
-    Verify that schema registry endpoints are protected by the correct ACL resource and operation.
+    Base class providing shared ACL test infrastructure (setup, helpers) without test methods.
     """
 
-    ENDPOINTS = [
-        GetConfigEndpoint,
-        PutConfigEndpoint,
-        GetConfigSubjectEndpoint,
-        PutConfigSubjectEndpoint,
-        DeleteConfigSubject,
-        GetMode,
-        PutMode,
-        GetModeSubject,
-        PutModeSubject,
-        DeleteModeSubject,
-        PostSubjectVersions,
-        GetSchemasIdsIdVersions,
-        GetSchemasIdsIdSubjects,
-        GetSubjectVersions,
-        PostSubject,
-        GetSubjectVersionsVersion,
-        GetSubjectVersionsVersionSchema,
-        GetSubjectVersionsVersionReferencedBy,
-        DeleteSubject,
-        DeleteSubjectVersion,
-        CompatibilitySubjectVersion,
-        # Tested separately:
-        # GET_SCHEMAS_TYPES             - no ACLs required
-        # SCHEMA_REGISTRY_STATUS_READY  - no ACLs required
-        # GET_SCHEMAS_IDS_ID            - custom ACL handling
-        # GET_SUBJECTS                  - custom ACL handling
-        # GET_SECURITY_ACLS             - kafka cluster ACL required
-        # POST_SECURITY_ACLS            - kafka cluster ACL required
-        # DELETE_SECURITY_ACLS          - kafka cluster ACL required
-    ]
-
-    def __init__(self, context):
+    def __init__(self, context, extra_rp_conf: dict | None = None, **kwargs):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = "sasl"
@@ -8766,11 +8734,13 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         schema_registry_config.authn_method = "http_basic"
         schema_registry_config.mode_mutability = True
 
-        super(SchemaRegistryAclAuthzTest, self).__init__(
+        super().__init__(
             context,
             security=security,
             num_brokers=1,
             schema_registry_config=schema_registry_config,
+            extra_rp_conf=extra_rp_conf,
+            **kwargs,
         )
 
         superuser = self.redpanda.SUPERUSER_CREDENTIALS
@@ -8857,6 +8827,44 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         self.redpanda.set_cluster_config(
             {"schema_registry_enable_authorization": "True"}
         )
+
+
+class SchemaRegistryAclAuthzTest(SchemaRegistryAclAuthzTestBase):
+    """
+    Verify that schema registry endpoints are protected by the correct ACL resource and operation.
+    """
+
+    ENDPOINTS = [
+        GetConfigEndpoint,
+        PutConfigEndpoint,
+        GetConfigSubjectEndpoint,
+        PutConfigSubjectEndpoint,
+        DeleteConfigSubject,
+        GetMode,
+        PutMode,
+        GetModeSubject,
+        PutModeSubject,
+        DeleteModeSubject,
+        PostSubjectVersions,
+        GetSchemasIdsIdVersions,
+        GetSchemasIdsIdSubjects,
+        GetSubjectVersions,
+        PostSubject,
+        GetSubjectVersionsVersion,
+        GetSubjectVersionsVersionSchema,
+        GetSubjectVersionsVersionReferencedBy,
+        DeleteSubject,
+        DeleteSubjectVersion,
+        CompatibilitySubjectVersion,
+        # Tested separately:
+        # GET_SCHEMAS_TYPES             - no ACLs required
+        # SCHEMA_REGISTRY_STATUS_READY  - no ACLs required
+        # GET_SCHEMAS_IDS_ID            - custom ACL handling
+        # GET_SUBJECTS                  - custom ACL handling
+        # GET_SECURITY_ACLS             - kafka cluster ACL required
+        # POST_SECURITY_ACLS            - kafka cluster ACL required
+        # DELETE_SECURITY_ACLS          - kafka cluster ACL required
+    ]
 
     def _get_endpoint_by_name(self, name: str) -> ACLTestEndpoint:
         for endpoint in self.ENDPOINTS:
