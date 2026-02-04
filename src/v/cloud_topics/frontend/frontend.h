@@ -13,6 +13,7 @@
 #include "cloud_topics/frontend/errc.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/log_reader_config.h"
+#include "cloud_topics/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
@@ -149,6 +150,10 @@ public:
     size_t estimate_size_between(kafka::offset, kafka::offset) const;
 
     ss::future<std::error_code> linearizable_barrier();
+
+    /// Get the current cluster epoch
+    ss::future<std::expected<cloud_topics::cluster_epoch, frontend_errc>>
+    get_current_epoch() noexcept;
 
 private:
     // All timequeries work by first getting a coarse grained timequery result
