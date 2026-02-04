@@ -8897,21 +8897,6 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
             **kwargs,
         )
 
-    def _clear_user_acls(self):
-        """Clear all ACLs for the test user to ensure test isolation."""
-        # Get all current ACLs
-        resp = self.sr_client.get_security_acls(auth=self.super_auth)
-        if resp.status_code == 200:
-            acls = resp.json()
-            # Filter to only ACLs for our test user
-            user_acls = [
-                acl
-                for acl in acls
-                if acl.get("principal") == f"User:{self.user.username}"
-            ]
-            if user_acls:
-                self.sr_client.delete_security_acls(user_acls, auth=self.super_auth)
-
     def _setup_test_schemas(self):
         """Create schemas used by all authorization tests."""
         schema_data = json.dumps({"schema": schema1_def})
@@ -8957,7 +8942,6 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
             {"schema_registry_enable_authorization": "True"}
         )
         self._setup_test_schemas()
-        # self._clear_user_acls()
 
     @cluster(num_nodes=1)
     def test_subject_param_with_authorized_subject(self):
@@ -9081,7 +9065,6 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
         schema ID when user lacks authorization. This prevents information leakage
         about whether a schema ID exists.
         """
-        self._post_acl(self._create_acl("*", "SUBJECT", "LITERAL", "READ", "DENY"))
         result = self.sr_client.get_schemas_ids_id(
             99999, subject="sub1", auth=self.user_auth
         )
