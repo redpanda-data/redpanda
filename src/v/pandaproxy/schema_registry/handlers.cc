@@ -155,96 +155,7 @@ to_non_context_schema_ids(const chunked_vector<context_schema_id>& ids) {
            | std::ranges::to<chunked_vector<schema_id>>();
 }
 
-// ss::future<std::optional<schema_definition>> try_get_schema_definition(
-//   const server::request_t& rq,
-//   std::optional<request_auth_result>& auth_result,
-//   schema_id id,
-//   context_subject ctx_sub) {
-//     const context& ctx = ctx_sub.ctx().empty() ? default_context : ctx_sub.ctx;
-//     const subject& sub = ctx_sub.sub;
-//     context_schema_id ctx_id{ctx, id};
-
-//     auto schema_subjects
-//       = co_await rq.service().schema_store().get_schema_subjects(
-//         ctx_id, include_deleted::yes);
-
-//     if (!sub().empty()) {
-//         // If a subject is provided, ensure the schema ID is associated with it
-//         if (std::ranges::contains(schema_subjects, ctx_sub)) {
-//             // The schema ID is associated with the given subject in the
-//             // given context.
-//             schema_subjects = {ctx_sub};
-//         } else {
-//             // The schema ID is not associated with the given subject in the
-//             // given context.
-//             schema_subjects = {};
-//         }
-//     }
-
-//     // Ensure requester is authorized to access at least one of the subjects
-//     // associated with the schema ID in the given context.
-//     enterprise::handle_get_schemas_ids_id_authz(
-//       rq, auth_result, schema_subjects);
-
-//     if (schema_subjects.empty()) {
-//         // The schema ID is not associated with any subject that the requester
-//         // is authorized to access.
-//         co_return std::nullopt;
-//     }
-
-//     // Here, the schema ID is verified to be associated with a subject in the
-//     // given context that the requester is authorized to access.
-//     co_return co_await rq.service().schema_store().maybe_get_schema_definition(
-//       ctx_id);
-// }
-
-// /// Resolve a schema definition, searching across contexts if needed.
-// /// First tries the given context and subject. If a subject is provided, we're
-// /// in the default context, and the schema is not found, then searches other
-// /// contexts for the schema ID with that subject. Falls back to searching the
-// /// default context without subject restriction if still not found.
-// ss::future<std::optional<schema_definition>> resolve_schema_across_contexts(
-//   const server::request_t& rq,
-//   std::optional<request_auth_result>& auth_result,
-//   schema_id id,
-//   context_subject ctx_sub) {
-//     // Try to get schema definition with given context and subject
-//     auto schema_def = co_await try_get_schema_definition(
-//       rq, auth_result, id, ctx_sub);
-//     if (
-//       ctx_sub.sub().empty() || ctx_sub.is_non_default_context()
-//       || schema_def.has_value()) {
-//         // Either no subject provided, or non-default context, or schema found
-//         co_return schema_def;
-//     }
-
-//     // Here, subject is NOT empty and we're in the default context (either
-//     // implicitly or explicitly). We did not find the schema with the given
-//     // subject in the default context, so search other contexts for the schema
-//     // ID with the given subject.
-//     auto contexts
-//       = co_await rq.service().schema_store().get_materialized_contexts();
-//     for (const auto& ctx : contexts) {
-//         if (ctx == default_context) {
-//             // Already checked default context
-//             continue;
-//         }
-//         schema_def = co_await try_get_schema_definition(
-//           rq, auth_result, id, {ctx, ctx_sub.sub});
-//         if (schema_def) {
-//             co_return schema_def;
-//         }
-//     }
-
-//     // Here, schema ID not found under any context with the given subject.
-//     // Try searching in the default context without subject restriction.
-//     co_return co_await try_get_schema_definition(
-//       rq, auth_result, id, {ctx_sub.ctx, subject{}});
-// }
-
-/// Resolve a schema ID in a simple way, without searching across contexts.
-/// This function assumes that either the context is not the default context,
-/// or if it is the default context, then the subject is empty.
+/// Resolve a schema ID within a single context, optionally filtering by subject.
 ss::future<context_schema_id> resolve_schema_id_simple(
     const server::request_t& rq,
     std::optional<request_auth_result> auth_result,
@@ -276,6 +187,12 @@ ss::future<context_schema_id> resolve_schema_id_simple(
         co_return ctx_id;
 }
 
+/// Resolve a schema ID by searching across contexts and subjects. This function
+/// assumes that the subject is non-empty.
+/// The search order is:
+/// 1. Default context with provided subject
+/// 2. Other contexts with provided subject
+/// 3. Default context without subject restriction
 ss::future<context_schema_id> resolve_schema_id_extended(
     const server::request_t& rq,
     std::optional<request_auth_result> auth_result,
