@@ -71,7 +71,7 @@ reconciler::reconciler(
       config::shard_local_cfg()
         .cloud_topics_reconciliation_slowdown_blend.bind(),
       config::shard_local_cfg()
-        .cloud_topics_reconciliation_max_object_size.bind())
+        .cloud_topics_reconciliation_max_object_size.value())
   , _reconciler_sg(reconciler_sg) {}
 
 ss::future<> reconciler::start() {
@@ -500,8 +500,8 @@ ss::future<std::expected<reconciler::builder_context, reconcile_error>>
 reconciler::make_context() {
     builder_context ctx;
 
-    // Create staging area.
-    auto staging_result = co_await _l1_io->create_tmp_file();
+    // Create in-memory staging area.
+    auto staging_result = co_await _l1_io->create_memory_staging();
     if (!staging_result.has_value()) {
         co_return std::unexpected(
           reconcile_error(
@@ -524,8 +524,8 @@ reconciler::make_context() {
     auto output_stream = stream_fut.get();
     ctx.builder = l1::object_builder::create(
       std::move(output_stream), l1::object_builder::options{});
-    ctx.size_budget
-      = config::shard_local_cfg().cloud_topics_reconciliation_max_object_size();
+    ctx.size_budget = config::shard_local_cfg()
+                        .cloud_topics_reconciliation_max_object_size.value();
 
     co_return ctx;
 }

@@ -44,7 +44,7 @@ adaptive_interval make_test_scheduler(
       config::mock_binding<double>(target_fill),
       config::mock_binding<double>(speedup_blend),
       config::mock_binding<double>(slowdown_blend),
-      config::mock_binding<size_t>(max_object_size)};
+      max_object_size};
 }
 
 double interval_ms(const adaptive_interval& scheduler) {

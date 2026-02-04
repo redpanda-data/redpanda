@@ -43,7 +43,7 @@ public:
       config::binding<double> target_fill_ratio,
       config::binding<double> speedup_blend,
       config::binding<double> slowdown_blend,
-      config::binding<size_t> max_object_size);
+      size_t max_object_size);
 
     /**
      * Update the interval based on the result of a reconciliation round.
@@ -64,7 +64,7 @@ private:
     config::binding<double> _target_fill_ratio;
     config::binding<double> _speedup_blend;
     config::binding<double> _slowdown_blend;
-    config::binding<size_t> _max_object_size;
+    size_t _max_object_size;
 
     ss::lowres_clock::duration _current_interval;
 };

@@ -86,9 +86,9 @@ private:
     ss::future<> scheduling_loop();
 
 private:
-    // Pointer to sharded `remote_io` held by `app`. Used by the `worker_manager`
-    // for writing to local files and by the `committer` for writing to cloud
-    // storage.
+    // Pointer to sharded `remote_io` held by `app`. Used by the
+    // `worker_manager` for writing to local files and by the `committer` for
+    // writing to cloud storage.
     ss::sharded<remote_io>* _io;
 
     // Pointer to metastore.

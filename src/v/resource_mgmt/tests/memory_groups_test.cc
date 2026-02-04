@@ -39,6 +39,7 @@ public:
     static constexpr size_t user_wasm_reservation = 20_MiB;
     static constexpr size_t user_compaction_reservation = 20_MiB;
     static constexpr size_t user_cloud_topics_compaction_reservation = 20_MiB;
+    static constexpr size_t user_cloud_topics_reconciler_reservation = 20_MiB;
 
     bool compaction_enabled() const { return std::get<0>(GetParam()); }
     bool wasm_enabled() const { return std::get<1>(GetParam()); }
@@ -63,6 +64,11 @@ TEST_P(MemoryGroupSharesTest, DividesSharesCorrectly) {
     total_available_memory -= user_cloud_topics_compaction_reservation;
     cloud_topics_compaction_memory_reservation ct_compaction_reservation{
       .max_bytes = user_cloud_topics_compaction_reservation};
+
+    total_available_memory -= user_cloud_topics_reconciler_reservation;
+    cloud_topics_reconciler_memory_reservation ct_reconciler_reservation{
+      .max_bytes = user_cloud_topics_reconciler_reservation};
+
     partitions_memory_reservation partitions{.max_limit_pct = 20};
     total_available_memory -= partitions.reserved_bytes(total_system_memory);
 
@@ -70,6 +76,7 @@ TEST_P(MemoryGroupSharesTest, DividesSharesCorrectly) {
       total_system_memory,
       reservation,
       ct_compaction_reservation,
+      ct_reconciler_reservation,
       wasm_enabled(),
       datalake_enabled(),
       cloud_topics_enabled(),
@@ -129,6 +136,9 @@ TEST_P(MemoryGroupSharesTest, DividesSharesCorrectly) {
     EXPECT_EQ(
       groups.cloud_topics_compaction_reserved_memory(),
       user_cloud_topics_compaction_reservation);
+    EXPECT_EQ(
+      groups.cloud_topics_reconciler_reserved_memory(),
+      user_cloud_topics_reconciler_reservation);
     EXPECT_LE(
       groups.data_transforms_max_memory() + groups.chunk_cache_max_memory()
         + groups.kafka_total_memory() + groups.recovery_max_memory()
@@ -151,6 +161,7 @@ TEST(MemoryGroups, CompactionMemoryBytes) {
             .max_limit_pct = double(pct),
           },
           /*cloud_topics_compaction_memory_reservation=*/{},
+          /*cloud_topics_reconciler_memory_reservation=*/{},
           /*wasm_enabled=*/false,
           /*datalake_enabled=*/false,
           /*cloud_topics_enabled=*/false,
@@ -169,6 +180,7 @@ TEST(MemoryGroups, CompactionMemoryBytes) {
             .max_limit_pct = double(pct),
           },
           /*cloud_topics_compaction_memory_reservation=*/{},
+          /*cloud_topics_reconciler_memory_reservation=*/{},
           /*wasm_enabled=*/false,
           /*datalake_enabled=*/false,
           /*cloud_topics_enabled=*/false,

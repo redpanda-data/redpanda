@@ -49,6 +49,23 @@ struct cloud_topics_compaction_memory_reservation {
     size_t reserved_bytes() const { return max_bytes; }
 };
 
+/**
+ * Configurations to reserve memory for cloud topics reconciler staging.
+ */
+struct cloud_topics_reconciler_memory_reservation {
+    /**
+     * Computes the reconciler memory to reserve, based on configs and amount
+     * of reservable memory.
+     */
+    size_t reserved_bytes(size_t total_memory) const;
+
+    // Maximum amount of memory in bytes to reserve for reconciler staging.
+    size_t max_bytes{0};
+
+    // Limit on reconciler memory expressed as percent of total system memory.
+    double max_limit_pct{100.0};
+};
+
 namespace testing {
 class system_memory_groups_accessor;
 }
@@ -66,6 +83,7 @@ public:
       size_t total_available_memory,
       compaction_memory_reservation compaction,
       cloud_topics_compaction_memory_reservation cloud_topics_compaction,
+      cloud_topics_reconciler_memory_reservation cloud_topics_reconciler,
       bool wasm_enabled,
       bool datalake_enabled,
       bool cloud_topics_enabled,
@@ -109,6 +127,10 @@ public:
         return _cloud_topics_compaction_reserved_memory;
     }
 
+    size_t cloud_topics_reconciler_reserved_memory() const {
+        return _cloud_topics_reconciler_reserved_memory;
+    }
+
     size_t datalake_max_memory() const;
 
     size_t cloud_topics_memory() const;
@@ -136,6 +158,7 @@ private:
 
     size_t _compaction_reserved_memory;
     size_t _cloud_topics_compaction_reserved_memory;
+    size_t _cloud_topics_reconciler_reserved_memory;
     size_t _partitions_reserved_memory;
     size_t _total_system_memory;
     bool _wasm_enabled;

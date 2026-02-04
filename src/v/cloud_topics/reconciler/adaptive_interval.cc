@@ -20,17 +20,17 @@ adaptive_interval::adaptive_interval(
   config::binding<double> target_fill_ratio,
   config::binding<double> speedup_blend,
   config::binding<double> slowdown_blend,
-  config::binding<size_t> max_object_size)
+  size_t max_object_size)
   : _min_interval(std::move(min_interval))
   , _max_interval(std::move(max_interval))
   , _target_fill_ratio(std::move(target_fill_ratio))
   , _speedup_blend(std::move(speedup_blend))
   , _slowdown_blend(std::move(slowdown_blend))
-  , _max_object_size(std::move(max_object_size))
+  , _max_object_size(max_object_size)
   , _current_interval(_min_interval()) {}
 
 void adaptive_interval::adapt(size_t max_bytes_produced) {
-    auto target_object_size = static_cast<double>(_max_object_size())
+    auto target_object_size = static_cast<double>(_max_object_size)
                               * _target_fill_ratio();
 
     // Compute ideal interval based on how far off we were from target.

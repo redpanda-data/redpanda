@@ -4555,8 +4555,10 @@ configuration::configuration()
       "cloud_topics_reconciliation_max_object_size",
       "Maximum size in bytes for L1 objects produced by the reconciler. "
       "With the default target fill ratio of 0.8, this gives an effective "
-      "target object size of 64 MiB.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "target object size of 64 MiB. Also determines the memory required by "
+      "each shard for reconciliation, and therefore requires a restart to "
+      "change.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       80_MiB)
   , cloud_topics_compaction_max_object_size(
       *this,
