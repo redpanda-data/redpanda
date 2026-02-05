@@ -1013,6 +1013,19 @@ class SchemaRegistryRedpandaClient:
             "GET", f"schemas/ids/{id}{query_string}", headers=headers, **kwargs
         )
 
+    def get_schemas_ids_id_schema(
+        self, id, format=None, subject=None, headers=HTTP_GET_HEADERS, **kwargs
+    ):
+        params = []
+        if format is not None:
+            params.append(f"format={format}")
+        if subject is not None:
+            params.append(f"subject={subject}")
+        query_string = f"?{'&'.join(params)}" if params else ""
+        return self.request(
+            "GET", f"schemas/ids/{id}/schema{query_string}", headers=headers, **kwargs
+        )
+
     def get_schemas_ids_id_versions(self, id, headers=HTTP_GET_HEADERS, **kwargs):
         return self.request(
             "GET", f"schemas/ids/{id}/versions", headers=headers, **kwargs
@@ -5704,6 +5717,41 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
         # ctx1_only_id (ID 3) only exists in ctx1, not in default context (which only has IDs 1-2)
         result = self.sr_client.get_schemas_ids_id(id=ctx1_only_id)
         assert result.status_code == requests.codes.not_found
+
+    @cluster(num_nodes=1)
+    def test_get_schema_by_id_schema_endpoint(self):
+        """Test GET /schemas/ids/{id}/schema returns the same schema as GET /schemas/ids/{id}["schema"]."""
+
+        # Register a schema
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="test-sub", data=json.dumps({"schema": schema1_def})
+        )
+        assert result.status_code == requests.codes.ok
+        schema_id = result.json()["id"]
+
+        # Verify /schema endpoint returns raw schema matching the nested ["schema"] field
+        result_full = self.sr_client.get_schemas_ids_id(id=schema_id)
+        result_schema = self.sr_client.get_schemas_ids_id_schema(id=schema_id)
+
+        assert result_full.status_code == requests.codes.ok
+        assert result_schema.status_code == requests.codes.ok
+        assert result_schema.json() == json.loads(result_full.json()["schema"])
+
+        # Test with subject parameter as well
+        result_full = self.sr_client.get_schemas_ids_id(
+            id=schema_id, subject="test-sub"
+        )
+        result_schema = self.sr_client.get_schemas_ids_id_schema(
+            id=schema_id, subject="test-sub"
+        )
+
+        assert result_full.status_code == requests.codes.ok
+        assert result_schema.status_code == requests.codes.ok
+        assert result_schema.json() == json.loads(result_full.json()["schema"])
+
+        # Test error case - schema not found
+        result_schema = self.sr_client.get_schemas_ids_id_schema(id=99999)
+        assert result_schema.status_code == requests.codes.not_found
 
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
