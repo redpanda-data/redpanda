@@ -274,12 +274,17 @@ redpanda_cc_library(
     hdrs = [
         "state_update_utils.h",
     ],
+    implementation_deps = [
+        "//src/v/cloud_topics:logger",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":offset_interval_set",
         ":state",
+        "//src/v/base",
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
+        "//src/v/utils:to_string",
     ],
 )
 

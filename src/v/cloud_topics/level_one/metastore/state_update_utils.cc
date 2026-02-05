@@ -9,6 +9,10 @@
  */
 #include "cloud_topics/level_one/metastore/state_update_utils.h"
 
+#include "base/format_to.h"
+#include "cloud_topics/logger.h"
+#include "utils/to_string.h"
+
 namespace cloud_topics::l1 {
 
 std::expected<contiguous_intervals_by_tidp_t, ss::sstring>
@@ -38,6 +42,7 @@ contiguous_intervals_for_extents(
                 current_base = extent.base_offset;
                 current_last = extent.last_offset;
             } else {
+                vlog(cd_log.error, "BROKEN UPDATE WITH EXTENTS: {}", extents);
                 return std::unexpected(
                   fmt::format(
                     "Input object breaks partition {} offset ordering: "
