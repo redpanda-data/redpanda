@@ -70,6 +70,11 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id(
   ctx_server<service>::reply_t rp,
   std::optional<request_auth_result> auth_result);
 
+ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_schema(
+  ctx_server<service>::request_t rq,
+  ctx_server<service>::reply_t rp,
+  std::optional<request_auth_result> auth_result);
+
 ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_versions(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
