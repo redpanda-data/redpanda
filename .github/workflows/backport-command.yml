@@ -27,7 +27,7 @@ jobs:
       target_milestone: ${{ steps.get_backport_type.outputs.target_milestone }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.RP_AWS_CRED_REGION }}
@@ -68,7 +68,7 @@ jobs:
     env:
       BACKPORT_BRANCH: ${{ needs.backport-type.outputs.backport_branch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.RP_AWS_CRED_REGION }}
@@ -119,7 +119,7 @@ jobs:
         run: |
           backport_commits=$(gh api "repos/$TARGET_FULL_REPO/pulls/$BACKPORT_PR_NUMBER/commits" --paginate --jq '[.[].sha[0:10]]|join(" ")')
           echo "backport_commits=$backport_commits" >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: needs.backport-type.outputs.commented_on == 'pr'
         with:
           repository: ${{ steps.user.outputs.username }}/${{ steps.user.outputs.repo }}

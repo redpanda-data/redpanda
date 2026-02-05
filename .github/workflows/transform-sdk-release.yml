@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
         with:
           go-version: 1.22
@@ -49,7 +49,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Rust
         run: rustup update stable --no-self-update && rustup default stable
       - uses: aws-actions/configure-aws-credentials@v4
@@ -81,7 +81,7 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.RP_AWS_CRED_REGION }}

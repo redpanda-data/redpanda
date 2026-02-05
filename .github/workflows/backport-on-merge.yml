@@ -14,7 +14,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Find the PR associated with this push, if there is one.
       - uses: jwalton/gh-find-current-pr@v1
         id: findPr
