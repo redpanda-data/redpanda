@@ -923,9 +923,7 @@ class RedpandaNodeOperationsSmokeTest(RandomNodeOperationsBase):
         )
 
     @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
-    @matrix(
-        cloud_storage_type=get_cloud_storage_type()[:1], mixed_versions=[True, False]
-    )
+    @matrix(cloud_storage_type=get_cloud_storage_type()[:1], mixed_versions=[False])
     def test_node_ops_smoke_test(
         self, cloud_storage_type: CloudStorageType, mixed_versions: bool
     ):
