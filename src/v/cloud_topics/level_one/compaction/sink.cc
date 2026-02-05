@@ -112,6 +112,7 @@ compaction_sink::initialize(compaction::sliding_window_reducer::source& src) {
 
     auto& new_cleaned_ranges = ct_src._new_cleaned_ranges;
     new_cleaned_ranges.shrink_to_fit();
+    std::ranges::reverse(new_cleaned_ranges);
     _new_cleaned_ranges = std::move(new_cleaned_ranges);
 
     vlog(
