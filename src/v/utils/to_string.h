@@ -128,6 +128,21 @@ std::ostream& operator<<(std::ostream& o, const absl::btree_set<K>& s) {
     return o;
 }
 
+template<typename K>
+std::ostream& operator<<(std::ostream& o, const absl::btree_multiset<K>& s) {
+    o << "{";
+    bool first = true;
+    for (const auto& k : s) {
+        if (!first) {
+            o << ", ";
+        }
+        o << k;
+        first = false;
+    }
+    o << "}";
+    return o;
+}
+
 } // namespace absl
 
 template<>
