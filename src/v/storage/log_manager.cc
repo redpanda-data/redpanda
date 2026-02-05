@@ -328,10 +328,6 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         auto housekeeping_lock_holder
           = co_await current_log.housekeeping_lock.get_units();
 
-        if (!current_log.link.is_linked()) {
-            continue;
-        }
-
         // Set up timer-based preemption: if compaction exceeds the configured
         // timeout and a priority partition needs compaction, abort so priority
         // partitions can be serviced. If no priority partition needs
@@ -513,14 +509,8 @@ ss::future<> log_manager::gc_loop() {
 
                 auto housekeeping_lock_holder
                   = co_await log_meta.housekeeping_lock.get_units();
-                if (!log_meta.link.is_linked()) {
-                    continue;
-                }
 
                 co_await log_meta.handle->apply_segment_ms();
-                if (!log_meta.link.is_linked()) {
-                    continue;
-                }
 
                 auto ntp = log_meta.handle->config().ntp();
                 auto usage = co_await log_meta.handle->disk_usage(
@@ -605,10 +595,6 @@ ss::future<> log_manager::apply_segment_ms_to_logs(compaction_list_type& logs) {
         // log->apply_segment_ms() with gc fibre.
         auto housekeeping_lock_holder
           = co_await current_log.housekeeping_lock.get_units();
-
-        if (!current_log.link.is_linked()) {
-            continue;
-        }
 
         // NOTE: apply_segment_ms holds _compaction_housekeeping_gate, that
         // prevents the removal of the parent object. this makes awaiting
@@ -724,10 +710,6 @@ log_manager::priority_housekeeping_scan(model::timestamp collection_threshold) {
         auto housekeeping_lock_holder
           = co_await current_log.housekeeping_lock.get_units();
 
-        if (!current_log.link.is_linked()) {
-            continue;
-        }
-
         co_await do_housekeeping(current_log, collection_threshold);
     }
 }
@@ -736,10 +718,6 @@ ss::future<> log_manager::do_housekeeping(
   log_housekeeping_meta& meta,
   model::timestamp collection_threshold,
   model::opt_abort_source_t preempt_source) {
-    if (!meta.link.is_linked()) {
-        co_return;
-    }
-
     auto ntp = meta.handle->config().ntp();
     auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(ntp);
 
