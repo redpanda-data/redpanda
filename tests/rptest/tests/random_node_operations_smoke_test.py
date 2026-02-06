@@ -918,6 +918,7 @@ class RedpandaNodeOperationsSmokeTest(RandomNodeOperationsBase):
                     "cloud_topics": "debug",
                     "cloud_topics-compaction": "debug",
                     "offset_translator": "trace",
+                    "lsm": "trace",
                 },
             ),
         )
