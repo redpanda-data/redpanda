@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+: "${CHECKOUT_PATH:?Provide a local path to the ci-failure-crawler repo}"
+
+pushd "$CHECKOUT_PATH"
+if [ ! -d "./venv" ]; then
+  python3 -m venv venv
+fi
+source venv/bin/activate
+python crawler.py "$@"
+popd
