@@ -270,6 +270,13 @@ ss::future<ss::stop_iteration> compaction_source::deduplication_iteration(
     if (extent.last_offset > _max_compactible_offset) {
         // We have iterated to an extent we cannot compact, stop compaction
         // here.
+        vlog(
+          compaction_log.debug,
+          "Extent offset range ({}~{}) spans above max compactible offset "
+          "({}), stopping deduplication iteration here.",
+          extent.base_offset,
+          extent.last_offset,
+          _max_compactible_offset);
         co_return ss::stop_iteration::yes;
     }
 
