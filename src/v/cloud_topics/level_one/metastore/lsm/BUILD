@@ -242,6 +242,27 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "db_debug",
+    srcs = [
+        "db_debug.cc",
+    ],
+    hdrs = [
+        "db_debug.h",
+    ],
+    implementation_deps = [
+        ":keys",
+        ":values",
+        "//src/v/cloud_topics:logger",
+        "//src/v/serde",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/lsm",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "garbage_collector",
     srcs = [
         "garbage_collector.cc",
