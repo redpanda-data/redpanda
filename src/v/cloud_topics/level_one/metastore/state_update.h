@@ -113,6 +113,15 @@ struct compaction_state_update
             return std::tie(base_offset, last_offset, has_tombstones);
         }
 
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it,
+              "{{base={}, last={}, tombstones={}}}",
+              base_offset,
+              last_offset,
+              has_tombstones);
+        }
+
         kafka::offset base_offset;
         kafka::offset last_offset;
 
@@ -126,6 +135,18 @@ struct compaction_state_update
           cleaned_at,
           expected_compaction_epoch);
     }
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        return fmt::format_to(
+          it,
+          "{{cleaned_at={}, expected_epoch={}, new_cleaned=[{}], "
+          "removed_tombstones={}}}",
+          cleaned_at,
+          expected_compaction_epoch,
+          fmt::join(new_cleaned_ranges, ", "),
+          removed_tombstones_ranges);
+    }
+
     // The cleaned ranges for this compaction, if any. Ranges may or may not
     // have tombstones.
     chunked_vector<cleaned_range> new_cleaned_ranges;

@@ -10,6 +10,7 @@
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
 
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/metastore/lsm/db_debug.h"
 #include "cloud_topics/level_one/metastore/lsm/garbage_collector.h"
 #include "cloud_topics/level_one/metastore/lsm/keys.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
@@ -218,6 +219,7 @@ db_domain_manager::replace_objects(rpc::replace_objects_request req) {
         const auto& p = tp.partition;
         req_compaction_updates[t][p] = std::move(update);
     }
+    vlog(cd_log.debug, "Compaction updates: {}", req_compaction_updates);
     auto update = replace_objects_db_update{
       .new_objects = std::move(req.new_objects),
       .compaction_updates = std::move(req_compaction_updates),
@@ -228,7 +230,9 @@ db_domain_manager::replace_objects(rpc::replace_objects_request req) {
           .ec = gl_res.error(),
         };
     }
-    auto reader = state_reader(db_->db().create_snapshot());
+    auto snap = db_->db().create_snapshot();
+    co_await dump_partition_state(snap);
+    auto reader = state_reader(std::move(snap));
     chunked_vector<write_batch_row> rows;
     auto build_res = co_await update.build_rows(reader, rows);
     if (!build_res.has_value()) {
@@ -243,6 +247,8 @@ db_domain_manager::replace_objects(rpc::replace_objects_request req) {
           .ec = apply_res.error(),
         };
     }
+    auto post_snap = db_->db().create_snapshot();
+    co_await dump_partition_state(post_snap);
     co_return rpc::replace_objects_reply{
       .ec = rpc::errc::ok,
     };

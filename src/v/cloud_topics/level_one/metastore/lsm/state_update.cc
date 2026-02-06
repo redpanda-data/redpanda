@@ -12,6 +12,7 @@
 #include "cloud_topics/level_one/metastore/lsm/keys.h"
 #include "cloud_topics/level_one/metastore/lsm/values.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
+#include "cloud_topics/logger.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -607,6 +608,17 @@ replace_objects_db_update::build_rows(
         co_return std::unexpected(std::move(new_extents_res.error()));
     }
 
+    for (const auto& [tidp, extents] : new_extents_by_tp) {
+        vlog(
+          cd_log.debug,
+          "replace_objects: new extents for {}: count={}",
+          tidp,
+          extents.size());
+        for (const auto& e : extents) {
+            vlog(cd_log.debug, "replace_objects:   {}", e);
+        }
+    }
+
     // Calculate contiguous intervals and validate that they align with
     // appropriate extents.
     auto contiguous_intervals_res = contiguous_intervals_for_extents(
@@ -616,6 +628,16 @@ replace_objects_db_update::build_rows(
           invalid_input, std::move(contiguous_intervals_res.error())));
     }
     const auto& contiguous_intervals_by_tp = contiguous_intervals_res.value();
+    for (const auto& [tidp, intervals] : contiguous_intervals_by_tp) {
+        for (const auto& iv : intervals) {
+            vlog(
+              cd_log.debug,
+              "replace_objects: contiguous interval for {}: [{}, {}]",
+              tidp,
+              iv.base_offset,
+              iv.last_offset);
+        }
+    }
     chunked_hash_map<object_id, size_t> old_extent_sizes_by_oid;
     chunked_hash_map<model::topic_id_partition, chunked_vector<ss::sstring>>
       extent_keys_to_delete;
@@ -715,6 +737,28 @@ replace_objects_db_update::build_rows(
                 }
             }
         }
+    }
+
+    for (const auto& [tidp, keys] : extent_keys_to_delete) {
+        for (const auto& key : keys) {
+            auto ek = extent_row_key::decode(key);
+            vlog(
+              cd_log.debug,
+              "replace_objects: deleting extent for {}: base={}",
+              tidp,
+              ek ? ek->base_offset : kafka::offset{-1});
+        }
+    }
+    for (const auto& [tidp, meta] : updated_metadata) {
+        vlog(
+          cd_log.debug,
+          "replace_objects: updated metadata for {}: start={}, next={}, "
+          "size={}, compaction_epoch={}",
+          tidp,
+          meta.start_offset,
+          meta.next_offset,
+          meta.size,
+          meta.compaction_epoch);
     }
 
     // Generate the rows.

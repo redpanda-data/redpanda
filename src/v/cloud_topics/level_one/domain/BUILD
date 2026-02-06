@@ -79,6 +79,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/metastore/lsm:db_debug",
         "//src/v/cloud_topics/level_one/metastore/lsm:garbage_collector",
         "//src/v/cloud_topics/level_one/metastore/lsm:keys",
         "//src/v/cloud_topics/level_one/metastore/lsm:state_reader",
