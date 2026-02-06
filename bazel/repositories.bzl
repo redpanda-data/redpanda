@@ -92,9 +92,9 @@ def data_dependency():
     http_archive(
         name = "libprotobuf_mutator",
         build_file = "//bazel/thirdparty:libprotobuf-mutator.BUILD",
-        integrity = "sha256-KWUbFgNpDJtAO6Kr0eTo1v6iczEOta72jSle9oivFhg=",
-        strip_prefix = "libprotobuf-mutator-b922c8ab9004ef9944982e4f165e2747b13223fa",
-        url = "https://github.com/google/libprotobuf-mutator/archive/b922c8ab9004ef9944982e4f165e2747b13223fa.zip",
+        sha256 = "0847a2ee65552a92643131e934b50164e8b79fadc7be24b180a1c8d6dbb05952",
+        strip_prefix = "libprotobuf-mutator-dc4ced337a9fb4047e2dc727268fbac55ca82f73",
+        url = "https://github.com/google/libprotobuf-mutator/archive/dc4ced337a9fb4047e2dc727268fbac55ca82f73.zip",
     )
 
     http_archive(

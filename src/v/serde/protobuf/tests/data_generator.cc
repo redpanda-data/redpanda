@@ -50,7 +50,7 @@ protobuf_generator::generate_protobuf_message_impl(
             i += (num_fields - 1);
 
             if (
-              _config.randomize_optional_fields && field_d->is_optional()
+              _config.randomize_optional_fields && !field_d->is_required()
               && random_generators::get_int(0, 1) == 1) {
                 continue;
             }
@@ -111,7 +111,7 @@ protobuf_generator::generate_protobuf_message_impl(
             }
         } else {
             if (
-              _config.randomize_optional_fields && field_d->is_optional()
+              _config.randomize_optional_fields && !field_d->is_required()
               && random_generators::get_int(0, 1) == 1) {
                 continue;
             }
@@ -156,7 +156,7 @@ protobuf_generator::generate_protobuf_message_impl(
             } break;
             case fdns::CPPTYPE_MESSAGE: {
                 if (
-                  field_d->is_optional()
+                  !field_d->is_required()
                   && level >= _config.max_nesting_level) {
                     break;
                 }

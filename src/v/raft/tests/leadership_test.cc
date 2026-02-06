@@ -95,7 +95,7 @@ TEST_F(
     wait_for_committed_offset(node(new_leader_id).raft()->dirty_offset(), 10s)
       .get();
 
-    assert_leadership_stable(new_leader_id);
+    ASSERT_TRUE(assert_leadership_stable(new_leader_id));
 }
 
 TEST_F(
@@ -120,5 +120,5 @@ TEST_F(
     add_node(leader_id, model::revision_id{0});
     node(leader_id).init_and_start(all_vnodes()).get();
     leader_id = wait_for_leader(10s).get();
-    assert_leadership_stable(leader_id);
+    ASSERT_TRUE(assert_leadership_stable(leader_id));
 }
