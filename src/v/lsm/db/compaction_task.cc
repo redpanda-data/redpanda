@@ -147,6 +147,14 @@ ss::future<ss::lw_shared_ptr<version_edit>> do_run_compaction_task(
             // NOLINTNEXTLINE(*branch-clone*)
             if (last_seqno_for_key <= state.smallest_snapshot) {
                 // Hidden by a newer entry for the same user key
+                vlog(
+                  log.trace,
+                  "dropping hidden entry key={} seqno={} "
+                  "last_seqno_for_key={} smallest_snapshot={}",
+                  key.decode(),
+                  key_seqno,
+                  last_seqno_for_key,
+                  state.smallest_snapshot);
                 drop = true;
             } else if (
               key.is_tombstone() && key_seqno <= state.smallest_snapshot
@@ -159,6 +167,15 @@ ss::future<ss::lw_shared_ptr<version_edit>> do_run_compaction_task(
                 // next few iterations of this loop (by rule (A) above).
                 // Therefore this deletion marker is obsolete and can be
                 // dropped.
+                vlog(
+                  log.trace,
+                  "dropping tombstone key={} seqno={} "
+                  "smallest_snapshot={} input_level={} output_level={}",
+                  key.decode(),
+                  key_seqno,
+                  state.smallest_snapshot,
+                  input_level,
+                  output_level);
                 drop = true;
             }
             last_seqno_for_key = key_seqno;
