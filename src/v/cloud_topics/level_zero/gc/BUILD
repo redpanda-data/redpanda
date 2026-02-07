@@ -45,3 +45,25 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "epoch_barrier_coordinator",
+    srcs = [
+        "epoch_barrier_coordinator.cc",
+    ],
+    hdrs = [
+        "epoch_barrier_coordinator.h",
+    ],
+    implementation_deps = [
+        "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cluster",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_topics:types",
+        "//src/v/rpc",
+        "@seastar",
+    ],
+)

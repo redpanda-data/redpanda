@@ -85,6 +85,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/frontend_reader:__pkg__",
         "//src/v/cloud_topics/level_one/frontend_reader/tests:__pkg__",
         "//src/v/cloud_topics/level_zero/frontend_reader:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc:__pkg__",
         "//src/v/cloud_topics/reconciler:__pkg__",
         "//src/v/kafka/data:__pkg__",
         "//src/v/redpanda:__pkg__",
