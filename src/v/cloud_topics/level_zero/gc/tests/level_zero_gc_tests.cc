@@ -517,7 +517,9 @@ public:
     std::unique_ptr<epoch_source_type> epoch_source;
 
     // shortcut accessors
-    auto max_gc() { return epoch_source->max_gc_eligible_epoch(nullptr).get(); }
+    auto max_gc() {
+        return epoch_source->max_barrier_candidate_epoch(nullptr).get();
+    }
     auto& snapshot() { return get_partitions_value; }
     auto& partition_epochs() { return get_partitions_max_gc_epoch_value; }
 };

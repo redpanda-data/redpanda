@@ -336,7 +336,8 @@ private:
 };
 
 seastar::future<std::expected<std::optional<cluster_epoch>, std::string>>
-level_zero_gc::epoch_source::max_gc_eligible_epoch(seastar::abort_source* as) {
+level_zero_gc::epoch_source::max_barrier_candidate_epoch(
+  seastar::abort_source* as) {
     /*
      * First retrieve a consistent snapshot of cloud topic partitions. This
      * establishes a set of partitions from which we must obtain an epoch
