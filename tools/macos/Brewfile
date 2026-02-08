@@ -1,0 +1,111 @@
+# Brewfile for Redpanda macOS Development
+#
+# Install all dependencies for building Redpanda on macOS with:
+#   brew bundle --file=tools/macos/Brewfile
+#
+# Or from this directory:
+#   cd tools/macos && brew bundle
+
+# Core Build Tools
+# ===============================================================================
+
+# Bazelisk - Bazel version manager (required)
+brew "bazelisk"
+
+# LLVM - Compiler toolchain for cross-compilation
+brew "llvm@20"
+
+# Build Essentials
+# ===============================================================================
+
+# GNU Autotools - Required for building foreign dependencies (ragel, openssl, etc.)
+brew "autoconf"
+brew "automake"
+brew "libtool"
+
+# pkg-config - Helper tool for compiling applications and libraries
+brew "pkg-config"
+
+# CMake - Cross-platform build system generator
+brew "cmake"
+
+# Ninja - Small build system with a focus on speed
+brew "ninja"
+
+# GNU Make - Build automation tool
+brew "make"
+
+# Compression & Archiving
+# ===============================================================================
+
+# zstd - Zstandard compression
+brew "zstd"
+
+# xz - General-purpose data compression
+brew "xz"
+
+# Version Control & Development
+# ===============================================================================
+
+# Git - Distributed version control (usually already installed)
+brew "git"
+
+# GitHub CLI - GitHub's official command line tool
+brew "gh"
+
+# Optional: Development Utilities
+# ===============================================================================
+
+# ccache - Compiler cache for faster rebuilds (optional but recommended)
+brew "ccache"
+
+# jq - JSON processor for parsing build outputs
+brew "jq"
+
+# htop - Interactive process viewer
+brew "htop"
+
+# Optional: Testing & Debugging Tools
+# ===============================================================================
+
+# Docker - For running Linux binaries and integration tests
+cask "docker" unless system "which docker"
+
+# Optional: Lima - Linux virtual machines (alternative to Docker)
+# brew "lima"
+
+# Text Processing & Development
+# ===============================================================================
+
+# GNU sed - Stream editor (GNU version, not BSD)
+brew "gnu-sed"
+
+# GNU grep - Search tool (GNU version)
+brew "grep"
+
+# ripgrep - Fast recursive grep alternative
+brew "ripgrep"
+
+# Optional: Performance & Analysis
+# ===============================================================================
+
+# hyperfine - Command-line benchmarking tool
+# brew "hyperfine"
+
+# valgrind - Memory debugging tool (may not work on Apple Silicon)
+# brew "valgrind" unless Hardware::CPU.arm?
+
+# Notes
+# ===============================================================================
+#
+# Essential tools (must install):
+#   - bazelisk, llvm@20, autoconf, automake, libtool, cmake, ninja, zstd
+#
+# After installing, run the setup script:
+#   ./bazel/toolchain/setup-macos-toolchain.sh
+#
+# To update all tools:
+#   brew bundle --file=tools/macos/Brewfile --no-lock
+#
+# To check what's installed:
+#   brew bundle check --file=tools/macos/Brewfile
