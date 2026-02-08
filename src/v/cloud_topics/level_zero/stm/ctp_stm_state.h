@@ -118,6 +118,15 @@ public:
     /// Access the size estimator directly (for testing and metrics).
     const size_estimator& get_size_estimator() const noexcept;
 
+    /// Estimate the epoch eligible for barrier-based GC.
+    ///
+    /// Unlike estimate_inactive_epoch() which uses the conservative
+    /// _previous_applied_epoch, this returns _max_applied_epoch, so
+    /// there is no implied safety guarantee - there may still be
+    /// requests in flight carrying this epoch.
+    std::optional<cluster_epoch>
+    estimate_barrier_eligible_epoch() const noexcept;
+
     /// Advance LRO and it's translated log offset counterpart.
     void advance_last_reconciled_offset(
       kafka::offset new_last_reconciled_offset,

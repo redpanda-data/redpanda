@@ -99,6 +99,12 @@ public:
     /// Return inactive epoch of the CTP
     std::optional<cluster_epoch> estimate_inactive_epoch() const noexcept;
 
+    /// Return the barrier-eligible epoch estimate.
+    /// This is less conservative than estimate_inactive_epoch() and is
+    /// safe when combined with the epoch barrier protocol.
+    std::optional<cluster_epoch>
+    estimate_barrier_eligible_epoch() const noexcept;
+
     /// Sync with the STM
     ///
     /// \brief The method is syncing the STM  to minimize races.

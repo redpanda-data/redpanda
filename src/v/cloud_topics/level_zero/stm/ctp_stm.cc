@@ -212,6 +212,11 @@ std::optional<cluster_epoch> ctp_stm::estimate_inactive_epoch() const noexcept {
     return _state.estimate_inactive_epoch();
 }
 
+std::optional<cluster_epoch>
+ctp_stm::estimate_barrier_eligible_epoch() const noexcept {
+    return _state.estimate_barrier_eligible_epoch();
+}
+
 ss::future<std::optional<cluster_epoch>> ctp_stm::get_inactive_epoch() {
     auto holder = _gate.hold();
     // Consume the first epoch from the partition starting from

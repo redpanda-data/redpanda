@@ -96,6 +96,11 @@ ctp_stm_state::estimate_inactive_epoch() const noexcept {
     return estimate_min_epoch().transform(prev_cluster_epoch);
 }
 
+std::optional<cluster_epoch>
+ctp_stm_state::estimate_barrier_eligible_epoch() const noexcept {
+    return _max_applied_epoch;
+}
+
 void ctp_stm_state::advance_epoch(cluster_epoch epoch, model::offset offset) {
     // Register new epoch
     if (epoch > _max_applied_epoch.value_or(cluster_epoch::min())) {
