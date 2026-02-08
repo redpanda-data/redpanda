@@ -285,6 +285,15 @@ public:
          * L0 objects with epochs <= the return value may be deleted. An
          * expected return value of std::nullopt is not an error, but rather
          * indicates that no GC eligible epoch could yet be determined.
+         *
+         * Implementations typically read the safe epoch from the local
+         * epoch_barrier_coordinator, which is the authoritative result of
+         * the barrier protocol.
+         */
+        virtual seastar::future<
+          std::expected<std::optional<cluster_epoch>, std::string>>
+        max_gc_eligible_epoch(seastar::abort_source*) = 0;
+
         /*
          * Candidate epoch derived from health-report data. This is the
          * value fed into the barrier protocol; it has NOT yet been through

@@ -428,6 +428,14 @@ public:
       , topic_table_(topic_table)
       , coordinator_(coordinator) {}
 
+    seastar::future<std::expected<std::optional<cluster_epoch>, std::string>>
+    max_gc_eligible_epoch(seastar::abort_source*) override {
+        if (coordinator_) {
+            co_return coordinator_->safe_epoch();
+        }
+        co_return std::nullopt;
+    }
+
     seastar::future<std::expected<partitions_snapshot, std::string>>
     get_partitions(seastar::abort_source* as) override {
         const auto& topic_table = topic_table_->local();
