@@ -1,0 +1,141 @@
+name: macOS Cross-Compilation Build
+
+# This workflow validates that Redpanda can be built on macOS
+# with cross-compilation to Linux targets.
+#
+# Note: This workflow is disabled by default and can be enabled
+# once the macOS toolchains are built and uploaded.
+
+on:
+  workflow_dispatch:  # Manual trigger only
+  # Uncomment below to enable on PRs:
+  # pull_request:
+  #   paths:
+  #     - 'src/**'
+  #     - 'bazel/**'
+  #     - 'MODULE.bazel'
+  #     - '.bazelrc'
+  # push:
+  #   branches:
+  #     - dev
+
+jobs:
+  build-macos-arm64:
+    name: Build on macOS Apple Silicon
+    runs-on: macos-14  # Apple Silicon runner
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Bazelisk
+        run: |
+          brew install bazelisk
+          bazel --version
+
+      - name: Install system dependencies
+        run: |
+          # Install dependencies required by install-deps.sh
+          # Note: Some Linux-specific dependencies may not be needed on macOS
+          # This may need adjustment based on actual requirements
+          brew install zstd
+
+      - name: Build Linux x86_64 binary
+        run: |
+          bazel build --config=macos-linux //:redpanda
+
+      - name: Verify binary format (x86_64)
+        run: |
+          file bazel-bin/src/v/redpanda/redpanda
+          file bazel-bin/src/v/redpanda/redpanda | grep -q "ELF 64-bit"
+          file bazel-bin/src/v/redpanda/redpanda | grep -q "x86-64"
+
+      - name: Build Linux ARM64 binary
+        run: |
+          bazel build --config=macos-linux-arm64 //:redpanda
+
+      - name: Verify binary format (ARM64)
+        run: |
+          file bazel-bin/src/v/redpanda/redpanda
+          file bazel-bin/src/v/redpanda/redpanda | grep -q "ELF 64-bit"
+          file bazel-bin/src/v/redpanda/redpanda | grep -q "aarch64"
+
+      - name: Build rpk CLI
+        run: |
+          bazel build --config=macos-linux //:rpk
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: redpanda-macos-arm64-linux-binaries
+          path: |
+            bazel-bin/src/v/redpanda/redpanda
+            bazel-bin/rpk/rpk
+          retention-days: 7
+
+  build-macos-intel:
+    name: Build on macOS Intel
+    runs-on: macos-13  # Intel runner
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Bazelisk
+        run: |
+          brew install bazelisk
+          bazel --version
+
+      - name: Install system dependencies
+        run: |
+          brew install zstd
+
+      - name: Build Linux x86_64 binary
+        run: |
+          bazel build --config=macos-linux //:redpanda
+
+      - name: Verify binary format
+        run: |
+          file bazel-bin/src/v/redpanda/redpanda
+          file bazel-bin/src/v/redpanda/redpanda | grep -q "ELF 64-bit"
+          file bazel-bin/src/v/redpanda/redpanda | grep -q "x86-64"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: redpanda-macos-intel-linux-binaries
+          path: bazel-bin/src/v/redpanda/redpanda
+          retention-days: 7
+
+  test-linux-execution:
+    name: Test Linux Binary Execution
+    needs: [build-macos-arm64]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: redpanda-macos-arm64-linux-binaries
+
+      - name: Make binary executable
+        run: chmod +x redpanda
+
+      - name: Verify binary
+        run: |
+          file redpanda
+          ldd redpanda
+
+      - name: Test binary execution
+        run: |
+          ./redpanda --version
+          ./redpanda --help
+
+      - name: Check dependencies
+        run: |
+          # Verify that the binary uses expected system libraries
+          ldd redpanda | grep -q "libc.so"
+          ldd redpanda | grep -q "libstdc++.so" || ldd redpanda | grep -q "libc++.so"

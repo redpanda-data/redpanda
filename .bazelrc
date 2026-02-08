@@ -313,4 +313,24 @@ test:lldb --strategy=TestRunner=local
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 
+# ====================================
+# macOS to Linux Cross-Compilation
+# ====================================
+
+# Cross-compile from macOS to Linux x86_64 (default)
+# Use --cpu to specify target architecture instead of --platforms
+build:macos-linux --cpu=k8  # k8 = x86_64 Linux
+build:macos-linux --host_cpu=darwin_arm64
+
+# Cross-compile from macOS to Linux aarch64
+build:macos-linux-arm64 --cpu=aarch64  # aarch64 Linux
+build:macos-linux-arm64 --host_cpu=darwin_arm64
+
+# Convenience alias: Release build for Linux from macOS
+build:macos-release --config=macos-linux
+build:macos-release --config=release
+
+# Note: Bazel automatically detects macOS as the execution platform.
+# The local compiler (Homebrew LLVM) is configured via user.bazelrc.
+
 try-import %workspace%/user.bazelrc

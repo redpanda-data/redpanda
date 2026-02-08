@@ -158,6 +158,10 @@ COMPILERS = {
                 "build_date": "2025-11-14",
                 "sha": "616e3f50b1f03b61ec712f4f28fa67668d60ae3edccea8508065a3f49dbbb24a",
             },
+            # Note: macOS cross-compilation to Linux is supported using local toolchains.
+            # For macOS development, use Homebrew LLVM or system clang:
+            #   Run: ./bazel/toolchain/setup-macos-toolchain.sh
+            # See: docs/BUILDING_ON_MACOS.md for details
         },
         "version": "20.1.8",
     },
@@ -171,6 +175,9 @@ COMPILERS = {
                 "build_date": "2025-11-25",
                 "sha": "b3aa9cb72c2e46bd1cc3f17f3772b37a424e54f796253961382163eab2f4a9c0",
             },
+            # Note: macOS cross-compilation to Linux is supported using local toolchains.
+            # For macOS development, use Homebrew LLVM or system clang.
+            # See: docs/BUILDING_ON_MACOS.md for details
         },
         "version": "21.1.6",
     },
@@ -201,6 +208,8 @@ COMPILERS = {
                     "x86_64",
                 ]
             },
+            # Note: For macOS cross-compilation, use local Homebrew LLVM or system clang
+            # via user.bazelrc. See docs/BUILDING_ON_MACOS.md for setup instructions.
         ),
         llvm.sysroot(
             name = "{version}_llvm_toolchain".format(version = major_version),
