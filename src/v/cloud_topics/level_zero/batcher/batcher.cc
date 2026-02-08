@@ -24,12 +24,14 @@
 #include "utils/human.h"
 
 #include <seastar/core/condition-variable.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <chrono>
 #include <exception>
 #include <limits>
 #include <variant>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -361,6 +363,26 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
               });
         }
     }
+}
+
+template<class Clock>
+std::unique_ptr<inflight_write_token> batcher<Clock>::track_write() {
+    auto token = std::make_unique<inflight_write_token>();
+    _inflight_writes.push_back(*token);
+    return token;
+}
+
+template<class Clock>
+ss::future<> batcher<Clock>::drain_writes() {
+    inflight_write_list draining;
+    draining.swap(_inflight_writes);
+
+    std::vector<ss::future<>> futs;
+    for (auto& token : draining) {
+        futs.push_back(token.done.get_future());
+    }
+
+    co_await ss::when_all_succeed(futs.begin(), futs.end());
 }
 
 template class batcher<ss::lowres_clock>;

@@ -10,12 +10,12 @@
 
 #pragma once
 
-#include "absl/container/btree_map.h"
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "bytes/iobuf.h"
 #include "cloud_topics/cluster_services.h"
+#include "cloud_topics/inflight_write_token.h"
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
 #include "cloud_topics/level_zero/common/level_zero_probe.h"
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
@@ -125,5 +125,15 @@ private:
 
     // Limit the number of concurrent background fibers running run_once
     ssx::named_semaphore<Clock> _upload_sem;
+
+    inflight_write_list _inflight_writes;
+
+public:
+    /// Create a token linked to this shard's tracking list.
+    std::unique_ptr<inflight_write_token> track_write();
+
+    /// Atomically detach the current list and wait for all tokens to
+    /// complete.
+    ss::future<> drain_writes();
 };
 } // namespace cloud_topics::l0
