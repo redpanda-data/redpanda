@@ -112,6 +112,14 @@ public:
     MOCK_METHOD(ss::future<>, start, (), (override));
 
     MOCK_METHOD(ss::future<>, stop, (), (override));
+
+    MOCK_METHOD(
+      std::unique_ptr<cloud_topics::inflight_write_token>,
+      track_inflight_write,
+      (),
+      (override));
+
+    MOCK_METHOD(ss::future<>, drain_inflight_writes, (), (override));
 };
 
 auto make_extent_fut(model::offset o, cluster_epoch epoch) {

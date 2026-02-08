@@ -120,6 +120,11 @@ public:
       model::offset last_known,
       model::timeout_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> as) = 0;
+
+    /// Create an in-flight write token linked to the shard-local tracking
+    /// list. The caller must set token->done when the write lifecycle
+    /// completes.
+    virtual std::unique_ptr<inflight_write_token> track_inflight_write() = 0;
 };
 
 } // namespace cloud_topics

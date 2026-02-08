@@ -35,6 +35,7 @@ namespace cloud_topics {
 
 class cluster_services;
 class data_plane_api;
+class inflight_write_tracker;
 
 ss::future<std::unique_ptr<data_plane_api>> make_data_plane(
   ss::sstring logger_name,
@@ -43,6 +44,7 @@ ss::future<std::unique_ptr<data_plane_api>> make_data_plane(
   cloud_storage_clients::bucket_name bucket,
   seastar::sharded<storage::api>* log_manager,
   seastar::sharded<cluster::cluster_epoch_service<ss::lowres_clock>>*
-    cluster_services);
+    cluster_services,
+  inflight_write_tracker* tracker);
 
 } // namespace cloud_topics

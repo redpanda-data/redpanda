@@ -69,7 +69,8 @@ ss::future<> app::construct(
       cloud_cache,
       bucket,
       storage,
-      &controller->get_cluster_epoch_generator());
+      &controller->get_cluster_epoch_generator(),
+      tracker.get());
 
     // Touch the L1 staging directory before L1 i/o starts.
     co_await ss::recursive_touch_directory(

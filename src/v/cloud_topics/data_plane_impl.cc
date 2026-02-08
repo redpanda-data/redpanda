@@ -15,6 +15,7 @@
 #include "cloud_topics/batch_cache/batch_cache.h"
 #include "cloud_topics/cluster_services.h"
 #include "cloud_topics/data_plane_api.h"
+#include "cloud_topics/inflight_write_tracker.h"
 #include "cloud_topics/level_zero/batcher/batcher.h"
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
 #include "cloud_topics/level_zero/pipeline/read_pipeline.h"
@@ -53,7 +54,9 @@ public:
       cloud_storage_clients::bucket_name bucket,
       seastar::sharded<storage::api>* storage_api,
       seastar::sharded<cluster::cluster_epoch_service<ss::lowres_clock>>*
-        cluster_services) {
+        cluster_services,
+      inflight_write_tracker* tracker) {
+        _tracker = tracker;
         co_await construct_service(
           _cluster_services, std::ref(*cluster_services));
 
@@ -133,7 +136,6 @@ public:
           [](auto& p) { return p.shutdown(); });
         co_await ss::async(
           [this] { ssx::sharded_service_container::shutdown(); });
-        co_return;
     }
 
     ss::future<std::expected<staged_write, std::error_code>>
@@ -240,7 +242,12 @@ public:
         co_await _cluster_services.local().invalidate_epoch_below(epoch);
     }
 
+    std::unique_ptr<inflight_write_token> track_inflight_write() override {
+        return _tracker->track();
+    }
+
 private:
+    inflight_write_tracker* _tracker{nullptr};
     ss::sharded<l0::cluster_services> _cluster_services;
     // Write path
     ss::sharded<l0::write_pipeline<>> _write_pipeline;
@@ -263,14 +270,16 @@ ss::future<std::unique_ptr<data_plane_api>> make_data_plane(
   ss::sharded<cloud_io::cache>* cache,
   cloud_storage_clients::bucket_name bucket,
   ss::sharded<storage::api>* log_manager,
-  seastar::sharded<cluster::cluster_epoch_service<>>* cluster_services) {
+  seastar::sharded<cluster::cluster_epoch_service<>>* cluster_services,
+  inflight_write_tracker* tracker) {
     auto p = std::make_unique<impl>(std::move(logger_name));
     co_await p->construct(
       remote,
       cache,
       std::move(bucket),
       log_manager,
-      std::ref(cluster_services));
+      std::ref(cluster_services),
+      tracker);
     co_return std::move(p);
 }
 
