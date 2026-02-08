@@ -31,6 +31,7 @@ redpanda_cc_library(
         "level_zero_gc.h",
     ],
     implementation_deps = [
+        ":epoch_barrier_coordinator",
         "//src/v/base",
         "//src/v/cloud_io:remote",
         "//src/v/cloud_topics:logger",

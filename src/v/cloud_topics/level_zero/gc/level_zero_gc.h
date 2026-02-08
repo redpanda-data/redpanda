@@ -35,6 +35,10 @@ class topic_table;
 class members_table;
 } // namespace cluster
 
+namespace cloud_topics::l0::gc {
+class epoch_barrier_coordinator;
+} // namespace cloud_topics::l0::gc
+
 namespace cloud_topics {
 
 /*
@@ -377,7 +381,8 @@ public:
       seastar::sharded<cluster::health_monitor_frontend>*,
       seastar::sharded<cluster::controller_stm>*,
       seastar::sharded<cluster::topic_table>*,
-      seastar::sharded<cluster::members_table>*);
+      seastar::sharded<cluster::members_table>*,
+      l0::gc::epoch_barrier_coordinator*);
 
     ~level_zero_gc();
 
