@@ -1,4 +1,10 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
+load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
+
+package(default_visibility = [
+    ":__subpackages__",
+    "//src/v/cloud_topics:__pkg__",
+])
 
 redpanda_cc_library(
     name = "level_zero_gc_probe",
@@ -47,6 +53,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "rpc_types",
+    hdrs = [
+        "rpc_types.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_topics:types",
+        "//src/v/rpc",
+        "//src/v/serde",
+        "//src/v/serde:enum",
+    ],
+)
+
+redpanda_cc_rpc_library(
+    name = "generated_epoch_barrier_rpc",
+    src = "rpc.json",
+    deps = [
+        ":rpc_types",
+    ],
+)
+
+redpanda_cc_library(
     name = "epoch_barrier_coordinator",
     srcs = [
         "epoch_barrier_coordinator.cc",
@@ -63,6 +91,27 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/cloud_topics:types",
+        "//src/v/rpc",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "epoch_barrier_service",
+    srcs = [
+        "service.cc",
+    ],
+    hdrs = [
+        "service.h",
+    ],
+    implementation_deps = [
+        ":epoch_barrier_coordinator",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":generated_epoch_barrier_rpc",
+        ":rpc_types",
+        "//src/v/base",
         "//src/v/rpc",
         "@seastar",
     ],

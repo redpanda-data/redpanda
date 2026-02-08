@@ -34,6 +34,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/metastore:leader_router",
         "//src/v/cloud_topics/level_one/metastore:simple_stm",
         "//src/v/cloud_topics/level_one/metastore/lsm:stm",
+        "//src/v/cloud_topics/level_zero/gc:epoch_barrier_service",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_factory",
         "//src/v/cloud_topics/read_replica:stm",
         "//src/v/cluster",
