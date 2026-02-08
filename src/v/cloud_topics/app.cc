@@ -17,6 +17,7 @@
 #include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/metastore/flush_loop.h"
 #include "cloud_topics/level_one/metastore/topic_purger.h"
+#include "cloud_topics/level_zero/gc/epoch_barrier_coordinator.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/manager/manager.h"
@@ -171,6 +172,11 @@ ss::future<> app::construct(
           &controller->get_members_table());
     }
 
+    co_await construct_service(
+      epoch_barrier_coordinator,
+      std::ref(controller->get_cluster_epoch_generator()),
+      std::ref(*data_plane));
+
     co_await construct_service(housekeeper_manager, ss::sharded_parameter([&] {
                                    return &replicated_metastore.local();
                                }));
@@ -218,6 +224,11 @@ ss::future<> app::start() {
     if (l0_gc.local_is_initialized()) {
         co_await l0_gc.invoke_on_all(&level_zero_gc::start);
     }
+
+    co_await l0_gc.invoke_on_all(&level_zero_gc::start);
+    co_await epoch_barrier_coordinator.invoke_on_all(
+      &l0::gc::epoch_barrier_coordinator::start);
+
     if (flush_loop_manager.local_is_initialized()) {
         co_await flush_loop_manager.invoke_on_all(
           &l1::flush_loop_manager::start);
@@ -415,6 +426,11 @@ ss::sharded<level_zero_gc>* app::get_level_zero_gc() { return &l0_gc; }
 
 cluster_services& app::get_local_cluster_services() {
     return std::ref(cluster_services.local());
+}
+
+ss::sharded<l0::gc::epoch_barrier_coordinator>*
+app::get_epoch_barrier_coordinator() {
+    return &epoch_barrier_coordinator;
 }
 
 } // namespace cloud_topics
