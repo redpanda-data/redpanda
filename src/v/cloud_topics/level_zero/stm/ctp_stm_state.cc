@@ -96,6 +96,11 @@ ctp_stm_state::estimate_inactive_epoch() const noexcept {
     return estimate_min_epoch().transform(prev_cluster_epoch);
 }
 
+std::optional<cluster_epoch>
+ctp_stm_state::estimate_barrier_eligible_epoch() const noexcept {
+    return _max_applied_epoch;
+}
+
 void ctp_stm_state::advance_epoch(cluster_epoch epoch, model::offset offset) {
     // Register new epoch
     if (epoch > _max_applied_epoch.value_or(cluster_epoch::min())) {
@@ -104,6 +109,7 @@ void ctp_stm_state::advance_epoch(cluster_epoch epoch, model::offset offset) {
         if (!_min_epoch_lower_bound.has_value()) {
             // First epoch applied to the STM
             _min_epoch_lower_bound = epoch;
+            _barrier_epoch_estimate = epoch;
         }
         // Move the sliding window
         _previous_applied_epoch = _max_applied_epoch.value_or(epoch);
@@ -122,6 +128,10 @@ void ctp_stm_state::advance_last_reconciled_offset(
         // epoch window value so we can use previous epoch as
         // the new min_applied_epoch
         _min_epoch_lower_bound = _previous_applied_epoch;
+        // For barrier-based GC, we can use _max_applied_epoch because
+        // the barrier protocol guarantees no new data will arrive at
+        // epoch <= the barrier candidate.
+        _barrier_epoch_estimate = _max_applied_epoch;
     }
     _last_reconciled_offset = std::max(
       _last_reconciled_offset.value_or(kafka::offset{}),
@@ -178,7 +188,8 @@ fmt::iterator ctp_stm_state::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
       "{{seen_window=[{}, {}], applied_window=[{}, {}], "
-      "epoch_window_offset={}, min_epoch_lower_bound={}, lro={}, lrlo={}, "
+      "epoch_window_offset={}, min_epoch_lower_bound={}, "
+      "barrier_epoch_estimate={}, lro={}, lrlo={}, "
       "start_offset={}}}",
       _previous_seen_epoch,
       _max_seen_epoch,
@@ -186,6 +197,7 @@ fmt::iterator ctp_stm_state::format_to(fmt::iterator it) const {
       _max_applied_epoch,
       _current_epoch_window_offset,
       _min_epoch_lower_bound,
+      _barrier_epoch_estimate,
       _last_reconciled_offset,
       _last_reconciled_log_offset,
       _start_offset);
