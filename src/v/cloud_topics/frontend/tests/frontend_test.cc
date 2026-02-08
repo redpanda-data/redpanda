@@ -106,6 +106,12 @@ public:
     MOCK_METHOD(ss::future<>, start, (), (override));
 
     MOCK_METHOD(ss::future<>, stop, (), (override));
+
+    MOCK_METHOD(
+      std::optional<cloud_topics::cluster_epoch>,
+      min_inflight_epoch,
+      (),
+      (const override));
 };
 
 auto make_extent_fut(model::offset o, cluster_epoch epoch) {
