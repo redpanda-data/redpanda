@@ -45,6 +45,7 @@ class topic_manifest_upload_manager;
 
 namespace l0::gc {
 class epoch_barrier_coordinator;
+class epoch_barrier_manager;
 } // namespace l0::gc
 
 namespace l1 {
@@ -120,6 +121,7 @@ private:
     ss::sharded<cloud_topics_manager> manager;
     ss::sharded<level_zero_gc> l0_gc;
     ss::sharded<l0::gc::epoch_barrier_coordinator> epoch_barrier_coordinator;
+    ss::sharded<l0::gc::epoch_barrier_manager> epoch_barrier_mgr;
     ss::sharded<housekeeper_manager> housekeeper_manager;
     ss::sharded<topic_manifest_upload_manager> topic_manifest_upload_mgr;
     std::unique_ptr<l1::compaction_scheduler> compaction_scheduler;
