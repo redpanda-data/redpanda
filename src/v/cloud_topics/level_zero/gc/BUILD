@@ -97,6 +97,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "epoch_barrier_manager",
+    srcs = [
+        "epoch_barrier_manager.cc",
+    ],
+    hdrs = [
+        "epoch_barrier_manager.h",
+    ],
+    implementation_deps = [
+        ":epoch_barrier_coordinator",
+        ":generated_epoch_barrier_rpc",
+        ":level_zero_gc",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cluster",
+        "//src/v/rpc",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:semaphore",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rpc_types",
+        "//src/v/base",
+        "//src/v/cloud_topics:types",
+        "//src/v/model",
+        "//src/v/ssx:actor",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "epoch_barrier_service",
     srcs = [
         "service.cc",
