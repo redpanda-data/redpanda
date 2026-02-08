@@ -48,7 +48,9 @@ redpanda_cc_library(
         "//src/v/cloud_topics:object_utils",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/cloud_topics/level_zero/pipeline:serializer",
+        "//src/v/container:chunked_vector",
         "//src/v/ssx:sformat",
+        "//src/v/ssx:when_all",
         "//src/v/utils:human",
     ],
     deps = [
@@ -68,7 +70,6 @@ redpanda_cc_library(
         "//src/v/ssx:semaphore",
         "//src/v/utils:retry_chain_node",
         "//src/v/utils:uuid",
-        "@abseil-cpp//absl/container:btree",
         "@seastar",
     ],
 )

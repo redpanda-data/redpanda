@@ -20,7 +20,9 @@
 #include "cloud_topics/object_utils.h"
 #include "cloud_topics/types.h"
 #include "config/configuration.h"
+#include "container/chunked_vector.h"
 #include "ssx/sformat.h"
+#include "ssx/when_all.h"
 #include "utils/human.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -361,6 +363,24 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
               });
         }
     }
+}
+
+template<class Clock>
+std::unique_ptr<inflight_write_token> batcher<Clock>::track_write() {
+    auto token = std::make_unique<inflight_write_token>();
+    _inflight_writes.push_back(*token);
+    return token;
+}
+
+template<class Clock>
+ss::future<> batcher<Clock>::drain_writes() {
+    inflight_write_list draining;
+    draining.swap(_inflight_writes);
+
+    co_await ssx::when_all_succeed(
+      std::views::transform(
+        draining, [](auto& t) { return t.done.get_future(); })
+      | std::ranges::to<chunked_vector<ss::future<>>>());
 }
 
 template class batcher<ss::lowres_clock>;
