@@ -730,6 +730,14 @@ level_zero_gc::level_zero_gc(
         config::shard_local_cfg()
           .cloud_topics_gc_health_check_interval.bind())) {}
 
+std::unique_ptr<level_zero_gc::epoch_source> level_zero_gc::make_epoch_source(
+  seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
+  seastar::sharded<cluster::controller_stm>* controller_stm,
+  seastar::sharded<cluster::topic_table>* topic_table) {
+    return std::make_unique<epoch_source_impl>(
+      health_monitor, controller_stm, topic_table);
+}
+
 level_zero_gc::~level_zero_gc() = default;
 
 seastar::future<> level_zero_gc::start() {

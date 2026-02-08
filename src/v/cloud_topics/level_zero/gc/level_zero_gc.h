@@ -348,6 +348,13 @@ public:
         virtual seastar::future<> stop() { return seastar::now(); }
     };
 
+    /// Create a default epoch_source implementation. Used by the epoch
+    /// barrier manager to query the same epoch information as the GC.
+    static std::unique_ptr<epoch_source> make_epoch_source(
+      seastar::sharded<cluster::health_monitor_frontend>*,
+      seastar::sharded<cluster::controller_stm>*,
+      seastar::sharded<cluster::topic_table>*);
+
 public:
     /*
      * Construct with the given storage and epoch providers. This interface is
