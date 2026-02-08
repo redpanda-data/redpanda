@@ -236,6 +236,14 @@ public:
         }
         co_return epoch_fut.get();
     }
+    std::unique_ptr<inflight_write_token> track_inflight_write() override {
+        return _batcher.local().track_write();
+    }
+
+    ss::future<> drain_inflight_writes() override {
+        co_await _batcher.invoke_on_all(
+          [](auto& b) { return b.drain_writes(); });
+    }
 
 private:
     ss::sharded<l0::cluster_services> _cluster_services;

@@ -75,6 +75,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/container:chunked_vector",
         "//src/v/model",
