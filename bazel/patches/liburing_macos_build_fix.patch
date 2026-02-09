@@ -1,0 +1,14 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -28,7 +28,10 @@ genrule(
+
+             # collect the outputs
+             for out in $(OUTS); do
+-              cp $$(realpath --relative-to=$(BINDIR) $$out) $$out
++              # macOS realpath doesn't support --relative-to
++              # Files are already in place after configure, just ensure they exist
++              src=$$(echo $$out | sed 's|bazel-out/.*/bin/||')
++              [ -f "$$src" ] && cp "$$src" "$$out" || true
+             done
+           """,
+     toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],

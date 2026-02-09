@@ -1,0 +1,9 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -71,6 +71,8 @@ cc_library(
+     ],
+     includes = ["src/include"],
++    # Force static linking to avoid shared library issues during cross-compilation
++    linkstatic = True,
+     visibility = ["//visibility:public"],
+ )

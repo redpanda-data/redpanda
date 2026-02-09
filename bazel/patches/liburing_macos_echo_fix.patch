@@ -1,12 +1,13 @@
---- a/BUILD.bazel
-+++ b/BUILD.bazel
-@@ -17,6 +17,9 @@ genrule(
-         "src/include/liburing/io_uring_version.h",
-     ],
-     cmd = """
-+            # Use bash for echo -e support on macOS (env echo -e doesn't work with /bin/sh)
-+            export SHELL=/bin/bash
-+
-             export CC=$(CC) CXX=$(CC)++
-
-             # switch to the package dir to execute "configure" right there
+--- a/configure
++++ b/configure
+@@ -470,8 +470,8 @@ print_config "CXX" "$cxx"
+ # Reset MAKEFLAGS
+ MAKEFLAGS=
+ MAKE_PRINT_VARS="include Makefile.common\nprint-%: ; @echo \$(\$*)\n"
+-VERSION_MAJOR=$(env echo -e "$MAKE_PRINT_VARS" | make -s --no-print-directory -f - print-VERSION_MAJOR)
+-VERSION_MINOR=$(env echo -e "$MAKE_PRINT_VARS" | make -s --no-print-directory -f - print-VERSION_MINOR)
++VERSION_MAJOR=$(printf "%b" "$MAKE_PRINT_VARS" | make -s --no-print-directory -f - print-VERSION_MAJOR)
++VERSION_MINOR=$(printf "%b" "$MAKE_PRINT_VARS" | make -s --no-print-directory -f - print-VERSION_MINOR)
+ io_uring_version_h="src/include/liburing/io_uring_version.h"
+ cat > $io_uring_version_h << EOF
+ /* SPDX-License-Identifier: MIT */
