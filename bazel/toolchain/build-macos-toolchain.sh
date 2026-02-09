@@ -51,7 +51,88 @@ cmake -G Ninja \
 echo "Building LLVM (this will take 1-2 hours)..."
 ninja -C build install
 
-# Create tarball
+# ====================================
+# Phase 2: Cross-compile libc++ for Linux targets
+# ====================================
+echo ""
+echo "=========================================="
+echo "Phase 2: Cross-compiling libc++ for Linux"
+echo "=========================================="
+
+# Download Linux sysroots for cross-compilation
+echo "Downloading Linux x86_64 sysroot..."
+SYSROOT_X86_URL="https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-19.1.7/sysroot-ubuntu-22.04-x86_64-2025-02-24.tar.zst"
+curl -L -o "${OUTPUT_DIR}/linux-sysroot-x86_64.tar.zst" "${SYSROOT_X86_URL}"
+mkdir -p "${OUTPUT_DIR}/sysroot-x86_64"
+tar -xf "${OUTPUT_DIR}/linux-sysroot-x86_64.tar.zst" -C "${OUTPUT_DIR}/sysroot-x86_64"
+
+echo "Downloading Linux aarch64 sysroot..."
+SYSROOT_ARM_URL="https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-19.1.7/sysroot-ubuntu-22.04-aarch64-2025-02-27.tar.zst"
+curl -L -o "${OUTPUT_DIR}/linux-sysroot-aarch64.tar.zst" "${SYSROOT_ARM_URL}"
+mkdir -p "${OUTPUT_DIR}/sysroot-aarch64"
+tar -xf "${OUTPUT_DIR}/linux-sysroot-aarch64.tar.zst" -C "${OUTPUT_DIR}/sysroot-aarch64"
+
+# Cross-compile libc++ for Linux x86_64
+echo ""
+echo "Building libc++ for Linux x86_64..."
+cmake -G Ninja \
+    -S runtimes -B build-linux-x86_64 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}/lib/x86_64-unknown-linux-gnu" \
+    -DCMAKE_CROSSCOMPILING=ON \
+    -DCMAKE_SYSTEM_NAME=Linux \
+    -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+    -DCMAKE_C_COMPILER="${INSTALL_PREFIX}/bin/clang" \
+    -DCMAKE_CXX_COMPILER="${INSTALL_PREFIX}/bin/clang++" \
+    -DCMAKE_C_COMPILER_TARGET=x86_64-unknown-linux-gnu \
+    -DCMAKE_CXX_COMPILER_TARGET=x86_64-unknown-linux-gnu \
+    -DCMAKE_SYSROOT="${OUTPUT_DIR}/sysroot-x86_64" \
+    -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
+    -DLIBCXX_CXX_ABI=libcxxabi \
+    -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=ON \
+    -DLIBCXX_ENABLE_SHARED=OFF \
+    -DLIBCXX_ENABLE_STATIC=ON \
+    -DLIBCXXABI_ENABLE_SHARED=OFF \
+    -DLIBCXXABI_ENABLE_STATIC=ON \
+    -DLIBCXX_USE_COMPILER_RT=OFF
+
+ninja -C build-linux-x86_64 cxx cxxabi
+ninja -C build-linux-x86_64 install-cxx install-cxxabi
+
+# Cross-compile libc++ for Linux aarch64
+echo ""
+echo "Building libc++ for Linux aarch64..."
+cmake -G Ninja \
+    -S runtimes -B build-linux-aarch64 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}/lib/aarch64-unknown-linux-gnu" \
+    -DCMAKE_CROSSCOMPILING=ON \
+    -DCMAKE_SYSTEM_NAME=Linux \
+    -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+    -DCMAKE_C_COMPILER="${INSTALL_PREFIX}/bin/clang" \
+    -DCMAKE_CXX_COMPILER="${INSTALL_PREFIX}/bin/clang++" \
+    -DCMAKE_C_COMPILER_TARGET=aarch64-unknown-linux-gnu \
+    -DCMAKE_CXX_COMPILER_TARGET=aarch64-unknown-linux-gnu \
+    -DCMAKE_SYSROOT="${OUTPUT_DIR}/sysroot-aarch64" \
+    -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
+    -DLIBCXX_CXX_ABI=libcxxabi \
+    -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=ON \
+    -DLIBCXX_ENABLE_SHARED=OFF \
+    -DLIBCXX_ENABLE_STATIC=ON \
+    -DLIBCXXABI_ENABLE_SHARED=OFF \
+    -DLIBCXXABI_ENABLE_STATIC=ON \
+    -DLIBCXX_USE_COMPILER_RT=OFF
+
+ninja -C build-linux-aarch64 cxx cxxabi
+ninja -C build-linux-aarch64 install-cxx install-cxxabi
+
+echo ""
+echo "Verifying cross-compiled libraries..."
+ls -lh "${INSTALL_PREFIX}/lib/x86_64-unknown-linux-gnu/"
+ls -lh "${INSTALL_PREFIX}/lib/aarch64-unknown-linux-gnu/"
+
+# Create tarball (now includes Linux libc++ libraries)
+echo ""
 echo "Creating tarball: ${OUTPUT_FILE}"
 cd "${OUTPUT_DIR}"
 tar -cf - -C "${INSTALL_PREFIX}" . | zstd -19 -T0 -o "${OUTPUT_FILE}"
