@@ -232,6 +232,53 @@ COMPILERS = {
 ]
 
 # ====================================
+# macOS Cross-Compilation Toolchain
+# ====================================
+# For macOS hosts, use locally-built LLVM toolchain that enables
+# cross-compilation to Linux with hermetic sysroots
+
+# macOS ARM64 toolchain (for Apple Silicon Macs)
+llvm.toolchain(
+    name = "macos_toolchain",
+    compile_flags = COMPILE_FLAGS,
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_version = "20.1.8",
+    sha256 = {
+        "darwin-aarch64": "340f15b69b57c7fab2795612d7931a1ad8c46a394af32f73a115b1c953fbe92e",
+    },
+    urls = {
+        # For testing: using local file URL
+        # TODO: Upload to GitHub releases and use https:// URL
+        "darwin-aarch64": ["file:///tmp/llvm-build/llvm-20.1.8-darwin-aarch64-2026-02-09.tar.zst"],
+    },
+    strip_prefix = {
+        "darwin-aarch64": "",
+    },
+)
+
+# Attach Linux sysroots for cross-compilation
+llvm.sysroot(
+    name = "macos_toolchain",
+    label = "@x86_64_sysroot//:sysroot",
+    targets = ["linux-x86_64"],
+)
+
+llvm.sysroot(
+    name = "macos_toolchain",
+    label = "@aarch64_sysroot//:sysroot",
+    targets = ["linux-aarch64"],
+)
+
+use_repo(llvm, "macos_toolchain")
+use_repo(llvm, "macos_toolchain_llvm")
+
+# Register with lower priority than Linux native toolchains
+register_toolchains(
+    "@macos_toolchain//:all",
+    dev_dependency = True,
+)
+
+# ====================================
 # Go Toolchain
 # ====================================
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk", dev_dependency = True)
