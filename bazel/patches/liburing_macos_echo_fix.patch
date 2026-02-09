@@ -1,0 +1,12 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -17,6 +17,9 @@ genrule(
+         "src/include/liburing/io_uring_version.h",
+     ],
+     cmd = """
++            # Use bash for echo -e support on macOS (env echo -e doesn't work with /bin/sh)
++            export SHELL=/bin/bash
++
+             export CC=$(CC) CXX=$(CC)++
+
+             # switch to the package dir to execute "configure" right there

@@ -1,4 +1,4 @@
 exports_files([
-    "liburing_linux_only.patch",
+    "liburing_macos_echo_fix.patch",
     "zlib_static_darwin.patch",
 ])

@@ -1,0 +1,15 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -14,10 +14,11 @@ genrule(
+         "liburing.spec",
+     ],
+     outs = [
+         "config-host.h",
+         "src/include/liburing/compat.h",
+         "src/include/liburing/io_uring_version.h",
+     ],
+     cmd = """
++            # Use Linux target arch for kernel version detection
+             export CC=$(CC) CXX=$(CC)++
+
+             # switch to the package dir to execute "configure" right there
