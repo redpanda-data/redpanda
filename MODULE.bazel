@@ -140,10 +140,12 @@ COMPILE_FLAGS = {
     "linux-aarch64": [
         "--target=aarch64-unknown-linux-gnu",
         "-march=armv8-a+crc+crypto",
+        "-stdlib=libc++",  # Need libc++ headers for Linux targets
     ] + COMMON_COMPILE_FLAGS,
     "linux-x86_64": [
         "--target=x86_64-unknown-linux-gnu",
         "-march=westmere",
+        "-stdlib=libc++",  # Need libc++ headers for Linux targets
     ] + COMMON_COMPILE_FLAGS,
 }
 
@@ -192,7 +194,12 @@ COMPILERS = {
             llvm_version = compiler["version"],
             # Use libc++ (LLVM's C++ stdlib) instead of libstdc++ (GNU's C++ stdlib)
             # Using "libc++" instead of "builtin-libc++" to avoid explicit libstdc++ link
-            stdlib = {"": "libc++"},
+            # Platform-specific: only apply static libc++ linking to Linux targets
+            # Darwin/macOS exec tools use system libc++ (no -l:libc++.a flags)
+            stdlib = {
+                "linux-x86_64": "libc++",
+                "linux-aarch64": "libc++",
+            },
             sha256 = {
                 "linux-" + arch: compiler["tars"][arch]["sha"]
                 for arch in [
@@ -246,13 +253,10 @@ llvm.toolchain(
     compile_flags = COMPILE_FLAGS,
     cxx_standard = {"": CXX_STANDARD},
     llvm_version = "20.1.8",
-    # Use libc++ for Linux cross-compilation targets only
-    # macOS exec tools use system libc++ (dynamic, not static)
-    stdlib = {
-        "linux-x86_64": "libc++",
-        "linux-aarch64": "libc++",
-    },
-    # Add link flags to find Linux-compiled libc++ for cross-compilation
+    # No stdlib configuration - let toolchain use defaults based on is_xcompile
+    # For cross-compilation (darwin->linux), toolchain will use stdc++ from sysroot
+    # For native builds (darwin->darwin), toolchain will use system libc++
+    # Add library search paths for cross-compiled libc++ (not used with stdc++)
     link_flags = {
         "linux-x86_64": ["-L/tmp/llvm-build/lib/x86_64-unknown-linux-gnu"],
         "linux-aarch64": ["-L/tmp/llvm-build/lib/aarch64-unknown-linux-gnu"],
