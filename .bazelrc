@@ -318,7 +318,8 @@ test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 # ====================================
 
 # Cross-compile from macOS to Linux x86_64 (default)
-# Use --cpu to specify target architecture instead of --platforms
+# Use --cpu to specify target architecture
+# Bazel will automatically select the configured LLVM toolchain with Linux sysroot
 build:macos-linux --cpu=k8  # k8 = x86_64 Linux
 build:macos-linux --host_cpu=darwin_arm64
 

@@ -38,7 +38,7 @@ cmake -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" \
     -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;lld" \
-    -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;compiler-rt" \
+    -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind;compiler-rt" \
     -DLLVM_TARGETS_TO_BUILD="X86;AArch64" \
     -DLLVM_ENABLE_LIBCXX=ON \
     -DLLVM_ENABLE_LTO=Thin \
