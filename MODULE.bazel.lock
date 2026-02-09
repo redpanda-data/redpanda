@@ -4459,7 +4459,7 @@
     "@@toolchains_llvm+//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "c1HwgmsVfl3HQfJp5j/lYNFyGkE5EiG6RookiyKG0oM=",
-        "usagesDigest": "4lOEBICJrzvMAy03AOkVwx0K0HW2AbWceXASWZNBtKo=",
+        "usagesDigest": "d0SxlosBIAJlDjcmDJCqagkv3EodXklQbUxxMOiiu30=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -4713,7 +4713,11 @@
               "exec_os": "",
               "extra_exec_compatible_with": {},
               "extra_target_compatible_with": {},
-              "link_flags": {},
+              "link_flags": {
+                "linux-x86_64": [
+                  "-L/tmp/llvm-build/lib/x86_64-unknown-linux-gnu"
+                ]
+              },
               "link_libs": {},
               "llvm_versions": {
                 "": "20.1.8"
