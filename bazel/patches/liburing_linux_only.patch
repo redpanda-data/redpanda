@@ -1,21 +1,23 @@
 --- a/BUILD.bazel
 +++ b/BUILD.bazel
-@@ -7,6 +7,7 @@
- # is not much we can do about that. We can't really bring the kernel headers
- # into BCR as they correspond to the host kernel. The good news is that the
- # resulting library is portable due to the compatibility layer at compile
+@@ -9,6 +9,7 @@
  # time.
  genrule(
      name = "generate_headers",
 +    target_compatible_with = ["@platforms//os:linux"],
-@@ -45,6 +46,7 @@
+     srcs = [
+         "Makefile.common",
+         "liburing.spec",
+@@ -37,6 +38,7 @@ genrule(
+
  cc_library(
      name = "uring",
 +    target_compatible_with = ["@platforms//os:linux"],
      srcs = [
-         "src/queue.c",
-         "src/register.c",
-@@ -84,6 +86,7 @@
+         "config-host.h",
+         "src/include/liburing/compat.h",
+@@ -70,6 +72,7 @@ cc_library(
+
  alias(
      name = "liburing",
 +    target_compatible_with = ["@platforms//os:linux"],
