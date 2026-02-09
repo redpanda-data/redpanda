@@ -430,8 +430,10 @@ crate.from_cargo(
         # Linux platforms (target)
         "aarch64-unknown-linux-gnu",
         "x86_64-unknown-linux-gnu",
-        # NOTE: macOS platforms removed to fix C/C++ platform targeting
-        # Wasmtime build tools will need to be built for Linux and run in container
+        # macOS platforms (exec/host) - needed for cross-compilation
+        # Wasmtime and other build tools need to run on macOS during builds
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
     ],
 )
 crate.annotation(
