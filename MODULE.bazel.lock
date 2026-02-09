@@ -4459,7 +4459,7 @@
     "@@toolchains_llvm+//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "c1HwgmsVfl3HQfJp5j/lYNFyGkE5EiG6RookiyKG0oM=",
-        "usagesDigest": "1+Klv2LFT4J3fFutOqHX5adgGx2aoDV2vT2E9U5yBJ0=",
+        "usagesDigest": "4lOEBICJrzvMAy03AOkVwx0K0HW2AbWceXASWZNBtKo=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -4543,7 +4543,7 @@
               "opt_compile_flags": {},
               "opt_link_flags": {},
               "stdlib": {
-                "": "builtin-libc++"
+                "": "libc++"
               },
               "target_settings": {},
               "unfiltered_compile_flags": {},
@@ -4633,7 +4633,7 @@
               "opt_compile_flags": {},
               "opt_link_flags": {},
               "stdlib": {
-                "": "builtin-libc++"
+                "": "libc++"
               },
               "target_settings": {},
               "unfiltered_compile_flags": {},
@@ -4721,7 +4721,7 @@
               "opt_compile_flags": {},
               "opt_link_flags": {},
               "stdlib": {
-                "": "builtin-libc++"
+                "": "libc++"
               },
               "target_settings": {},
               "unfiltered_compile_flags": {},
