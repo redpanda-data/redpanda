@@ -12,11 +12,10 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "container/chunked_circular_buffer.h"
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
 #include "storage/record_batch_builder.h"
-
-#include <seastar/core/circular_buffer.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -123,8 +122,8 @@ private:
     model::compression _c;
     storage::record_batch_builder _builder;
     // TODO(Ben): Maybe these should be a queue for backpressure
-    ss::circular_buffer<client_context> _client_reqs;
-    ss::circular_buffer<broker_context> _broker_reqs;
+    chunked_circular_buffer<client_context> _client_reqs;
+    chunked_circular_buffer<broker_context> _broker_reqs;
 };
 
 } // namespace kafka::client
