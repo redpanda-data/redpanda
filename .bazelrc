@@ -3,10 +3,8 @@ common --extra_toolchains=@current_llvm_toolchain//:all
 
 common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
-build --linkopt --unwindlib=libgcc
-# Note: stdlib=libc++ is configured in MODULE.bazel for all toolchains
-# The global linkopt was causing exec tools on macOS to fail with "library ':libc++.a' not found"
-# because macOS uses dynamic libc++ (.dylib), not static (.a)
+# Removed global --linkopt --unwindlib=libgcc - may be triggering libc++ static linking
+# Note: stdlib configuration in MODULE.bazel for toolchains
 
 common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
@@ -327,12 +325,14 @@ test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 # ====================================
 
 # Cross-compile from macOS to Linux x86_64 (default)
-# MUST set --platforms to force target platform to Linux
+# Set target platform to Linux and exec platform to macOS
 build:macos-linux --platforms=//bazel/platforms:linux_x86_64
 build:macos-linux --host_platform=//bazel/platforms:macos_aarch64
+# Use macOS-specific toolchain for cross-compilation
+build:macos-linux --extra_toolchains=@macos_toolchain//:all
 # Add Linux-compiled libc++ library directory for cross-compilation
 build:macos-linux --linkopt=-L/tmp/llvm-build/lib/x86_64-unknown-linux-gnu
-# Note: stdlib=libc++ is configured in MODULE.bazel for the toolchains
+# Note: toolchain will use stdc++ from sysroot for cross-compilation
 
 # Cross-compile from macOS to Linux aarch64
 build:macos-linux-arm64 --platforms=//bazel/platforms:linux_aarch64

@@ -4459,7 +4459,7 @@
     "@@toolchains_llvm+//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "c1HwgmsVfl3HQfJp5j/lYNFyGkE5EiG6RookiyKG0oM=",
-        "usagesDigest": "d0SxlosBIAJlDjcmDJCqagkv3EodXklQbUxxMOiiu30=",
+        "usagesDigest": "LzOiHRYoogifye6eTL3tDj6waH5jWZWQ47dzwZCbzd8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -4502,6 +4502,7 @@
                 "linux-aarch64": [
                   "--target=aarch64-unknown-linux-gnu",
                   "-march=armv8-a+crc+crypto",
+                  "-stdlib=libc++",
                   "-U_FORTIFY_SOURCE",
                   "-fstack-protector",
                   "-fno-omit-frame-pointer",
@@ -4513,6 +4514,7 @@
                 "linux-x86_64": [
                   "--target=x86_64-unknown-linux-gnu",
                   "-march=westmere",
+                  "-stdlib=libc++",
                   "-U_FORTIFY_SOURCE",
                   "-fstack-protector",
                   "-fno-omit-frame-pointer",
@@ -4543,7 +4545,8 @@
               "opt_compile_flags": {},
               "opt_link_flags": {},
               "stdlib": {
-                "": "libc++"
+                "linux-x86_64": "libc++",
+                "linux-aarch64": "libc++"
               },
               "target_settings": {},
               "unfiltered_compile_flags": {},
@@ -4592,6 +4595,7 @@
                 "linux-aarch64": [
                   "--target=aarch64-unknown-linux-gnu",
                   "-march=armv8-a+crc+crypto",
+                  "-stdlib=libc++",
                   "-U_FORTIFY_SOURCE",
                   "-fstack-protector",
                   "-fno-omit-frame-pointer",
@@ -4603,6 +4607,7 @@
                 "linux-x86_64": [
                   "--target=x86_64-unknown-linux-gnu",
                   "-march=westmere",
+                  "-stdlib=libc++",
                   "-U_FORTIFY_SOURCE",
                   "-fstack-protector",
                   "-fno-omit-frame-pointer",
@@ -4633,7 +4638,8 @@
               "opt_compile_flags": {},
               "opt_link_flags": {},
               "stdlib": {
-                "": "libc++"
+                "linux-x86_64": "libc++",
+                "linux-aarch64": "libc++"
               },
               "target_settings": {},
               "unfiltered_compile_flags": {},
@@ -4680,6 +4686,7 @@
                 "linux-aarch64": [
                   "--target=aarch64-unknown-linux-gnu",
                   "-march=armv8-a+crc+crypto",
+                  "-stdlib=libc++",
                   "-U_FORTIFY_SOURCE",
                   "-fstack-protector",
                   "-fno-omit-frame-pointer",
@@ -4691,6 +4698,7 @@
                 "linux-x86_64": [
                   "--target=x86_64-unknown-linux-gnu",
                   "-march=westmere",
+                  "-stdlib=libc++",
                   "-U_FORTIFY_SOURCE",
                   "-fstack-protector",
                   "-fno-omit-frame-pointer",
@@ -4716,6 +4724,9 @@
               "link_flags": {
                 "linux-x86_64": [
                   "-L/tmp/llvm-build/lib/x86_64-unknown-linux-gnu"
+                ],
+                "linux-aarch64": [
+                  "-L/tmp/llvm-build/lib/aarch64-unknown-linux-gnu"
                 ]
               },
               "link_libs": {},
@@ -4725,7 +4736,10 @@
               "opt_compile_flags": {},
               "opt_link_flags": {},
               "stdlib": {
-                "": "libc++"
+                "linux-x86_64": "libc++",
+                "linux-aarch64": "libc++",
+                "darwin-aarch64": "builtin-libc++",
+                "darwin-x86_64": "builtin-libc++"
               },
               "target_settings": {},
               "unfiltered_compile_flags": {},

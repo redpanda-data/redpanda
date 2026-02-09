@@ -1,0 +1,14 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -119,6 +119,11 @@ cc_library(
+         "@platforms//os:windows": ["_CRT_NONSTDC_NO_WARNINGS"],
+         "//conditions:default": [],
+     }),
++    # Force static linking on darwin to avoid System library linking issues
++    linkstatic = select({
++        "@platforms//os:macos": True,
++        "//conditions:default": False,
++    }),
+     visibility = ["//visibility:public"],
+ )
+
