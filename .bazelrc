@@ -5,8 +5,6 @@ common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
-# Force use of libc++ for compilation (needed for cross-compilation)
-build --cxxopt=-stdlib=libc++ --host_cxxopt=-stdlib=libc++
 
 common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
@@ -323,6 +321,8 @@ test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 # MUST set --platforms to force target platform to Linux
 build:macos-linux --platforms=//bazel/platforms:linux_x86_64
 build:macos-linux --host_platform=//bazel/platforms:macos_aarch64
+# Force use of libc++ for target compilation only (not exec/host tools)
+build:macos-linux --cxxopt=-stdlib=libc++
 # Add LLVM toolchain lib directory to library search path for libc++
 build:macos-linux --linkopt=-Lexternal/toolchains_llvm++llvm+current_llvm_toolchain_llvm/lib
 
