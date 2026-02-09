@@ -31,7 +31,6 @@ single_version_override(
     patches = [
         "//bazel/patches:liburing_macos_echo_fix.patch",
         "//bazel/patches:liburing_macos_build_fix.patch",
-        "//bazel/patches:liburing_static_linking.patch",
     ],
 )
 bazel_dep(name = "lz4", version = "1.9.4")
