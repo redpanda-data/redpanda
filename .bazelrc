@@ -321,10 +321,8 @@ test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 # MUST set --platforms to force target platform to Linux
 build:macos-linux --platforms=//bazel/platforms:linux_x86_64
 build:macos-linux --host_platform=//bazel/platforms:macos_aarch64
-# Force use of libc++ for target compilation only (not exec/host tools)
-build:macos-linux --cxxopt=-stdlib=libc++
-# Add LLVM toolchain lib directory to library search path for libc++
-build:macos-linux --linkopt=-Lexternal/toolchains_llvm++llvm+current_llvm_toolchain_llvm/lib
+# Note: stdlib=libc++ is configured in MODULE.bazel for the toolchains
+# The toolchain handles finding and linking libc++ automatically
 
 # Cross-compile from macOS to Linux aarch64
 build:macos-linux-arm64 --platforms=//bazel/platforms:linux_aarch64
