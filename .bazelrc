@@ -5,6 +5,8 @@ common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
+# Force use of libc++ for compilation (needed for cross-compilation)
+build --cxxopt=-stdlib=libc++ --host_cxxopt=-stdlib=libc++
 
 common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
@@ -320,11 +322,11 @@ test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 # Cross-compile from macOS to Linux x86_64 (default)
 # MUST set --platforms to force target platform to Linux
 build:macos-linux --platforms=//bazel/platforms:linux_x86_64
-build:macos-linux --host_platform=@platforms//host:host
+build:macos-linux --host_platform=//bazel/platforms:macos_aarch64
 
 # Cross-compile from macOS to Linux aarch64
 build:macos-linux-arm64 --platforms=//bazel/platforms:linux_aarch64
-build:macos-linux-arm64 --host_platform=@platforms//host:host
+build:macos-linux-arm64 --host_platform=//bazel/platforms:macos_aarch64
 
 # Convenience alias: Release build for Linux from macOS
 build:macos-release --config=macos-linux

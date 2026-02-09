@@ -190,6 +190,9 @@ COMPILERS = {
             compile_flags = COMPILE_FLAGS,
             cxx_standard = {"": CXX_STANDARD},
             llvm_version = compiler["version"],
+            # Use libc++ (LLVM's C++ stdlib) instead of libstdc++ (GNU's C++ stdlib)
+            # This ensures we use the C++ stdlib bundled with the LLVM toolchain
+            stdlib = {"": "builtin-libc++"},
             sha256 = {
                 "linux-" + arch: compiler["tars"][arch]["sha"]
                 for arch in [
@@ -243,6 +246,8 @@ llvm.toolchain(
     compile_flags = COMPILE_FLAGS,
     cxx_standard = {"": CXX_STANDARD},
     llvm_version = "20.1.8",
+    # Use libc++ (LLVM's C++ stdlib) for consistency across platforms
+    stdlib = {"": "builtin-libc++"},
     sha256 = {
         "darwin-aarch64": "340f15b69b57c7fab2795612d7931a1ad8c46a394af32f73a115b1c953fbe92e",
     },
