@@ -4,7 +4,9 @@ common --extra_toolchains=@current_llvm_toolchain//:all
 common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
-build --linkopt -stdlib=libc++
+# Note: stdlib=libc++ is configured in MODULE.bazel for all toolchains
+# The global linkopt was causing exec tools on macOS to fail with "library ':libc++.a' not found"
+# because macOS uses dynamic libc++ (.dylib), not static (.a)
 
 common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
