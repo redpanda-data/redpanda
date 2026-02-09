@@ -38,23 +38,14 @@ jobs:
             --max-turns 30
             --disallowed-tools "WebFetch,WebSearch"
             --allowed-tools "
+              mcp__github__add_issue_comment,
               mcp__github_inline_comment__create_inline_comment,
               mcp__github_ci__get_ci_status,
               mcp__github_ci__get_workflow_run_details,
               mcp__github_ci__download_job_log,
-              Bash(gh issue *),
-              Bash(gh pr *),
-              Bash(gh search *)"
+              Bash(gh pr diff *),
+              Bash(gh pr view *)"
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            WORKFLOW RUN URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Please review this pull request with a focus on:
-              - Code quality and best practices
-              - Potential bugs or issues
-              - Security implications
-              - Performance considerations
-
-            Provide detailed feedback using inline comments for specific issues.
-            Include a link to workflow run URL in the final review comment.
+            PR_NUMBER: ${{ github.event.pull_request.number }}
+            Review the PR. The code of the PR is already checked out. Use `gh pr view` to get details about the PR. Use `gh pr diff` to get diff of the PR. Focus on code quality, potential bugs, and performance issues. Suggest improvements where appropriate. Use the `mcp__github_inline_comment__create_inline_comment` tool for line-specific issues. Use the `mcp__github__add_issue_comment` tool for final review comment on PR.
