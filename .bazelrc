@@ -24,6 +24,13 @@ build:gofips --@rules_go//go/config:pure=false
 # https://github.com/bazel-contrib/toolchains_llvm/pull/445#issuecomment-2605443516
 build --copt=-ffile-compilation-dir=. --host_copt=-ffile-compilation-dir=.
 
+# Fix for LLVM 20+ with C++23: disable C++ modules, use Clang modules instead
+# Issue: LLVM 20's C++23 support tries to use C++ modules which Bazel doesn't fully support
+# This causes "module 'crosstool' is needed" errors for exec tools on macOS
+# See: https://github.com/bazel-contrib/toolchains_llvm/issues/334
+build --cxxopt=-Xclang --cxxopt=-fno-cxx-modules
+build --host_cxxopt=-Xclang --host_cxxopt=-fno-cxx-modules
+
 build:system-clang --extra_toolchains=@local_config_cc_toolchains//:all
 build:system-clang --action_env=BAZEL_COMPILER=clang
 build:system-clang --cxxopt=-std=c++23 --host_cxxopt=-std=c++23
