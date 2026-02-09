@@ -254,10 +254,12 @@ llvm.toolchain(
     cxx_standard = {"": CXX_STANDARD},
     llvm_version = "20.1.8",
     # Use libc++ for Linux cross-compilation targets
-    # macOS exec tools use system default (no explicit stdlib needed)
+    # Use builtin-libc++ for macOS exec tools (system libc++, dynamic linking)
     stdlib = {
         "linux-x86_64": "libc++",
         "linux-aarch64": "libc++",
+        "darwin-aarch64": "builtin-libc++",
+        "darwin-x86_64": "builtin-libc++",
     },
     # Add library search paths for cross-compiled libc++
     link_flags = {
