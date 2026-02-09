@@ -253,10 +253,13 @@ llvm.toolchain(
     compile_flags = COMPILE_FLAGS,
     cxx_standard = {"": CXX_STANDARD},
     llvm_version = "20.1.8",
-    # No stdlib configuration - let toolchain use defaults based on is_xcompile
-    # For cross-compilation (darwin->linux), toolchain will use stdc++ from sysroot
-    # For native builds (darwin->darwin), toolchain will use system libc++
-    # Add library search paths for cross-compiled libc++ (not used with stdc++)
+    # Use libc++ for Linux cross-compilation targets
+    # macOS exec tools use system default (no explicit stdlib needed)
+    stdlib = {
+        "linux-x86_64": "libc++",
+        "linux-aarch64": "libc++",
+    },
+    # Add library search paths for cross-compiled libc++
     link_flags = {
         "linux-x86_64": ["-L/tmp/llvm-build/lib/x86_64-unknown-linux-gnu"],
         "linux-aarch64": ["-L/tmp/llvm-build/lib/aarch64-unknown-linux-gnu"],
