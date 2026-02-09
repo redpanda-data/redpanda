@@ -4459,7 +4459,7 @@
     "@@toolchains_llvm+//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "c1HwgmsVfl3HQfJp5j/lYNFyGkE5EiG6RookiyKG0oM=",
-        "usagesDigest": "ofgqYptPbO6Mkm2K+z+BIAIMZnmrVOZUEWUIo3g1fgk=",
+        "usagesDigest": "VOyHkPHx1PmaAavzJJ9I2ahrIJIZhO6IqQVSjI+wKo8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -4640,12 +4640,12 @@
               }
             }
           },
-          "macos_local_toolchain_llvm": {
+          "macos_toolchain_llvm": {
             "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%llvm",
             "attributes": {
               "alternative_llvm_sources": [],
               "auth_patterns": {},
-              "distribution": "LLVM_DISTRIBUTION",
+              "distribution": "auto",
               "exec_arch": "",
               "exec_os": "",
               "extra_llvm_distributions": {},
@@ -4654,12 +4654,20 @@
               "llvm_version": "20.1.8",
               "llvm_versions": {},
               "netrc": "",
-              "sha256": {},
-              "strip_prefix": {},
-              "urls": {}
+              "sha256": {
+                "darwin-aarch64": "340f15b69b57c7fab2795612d7931a1ad8c46a394af32f73a115b1c953fbe92e"
+              },
+              "strip_prefix": {
+                "darwin-aarch64": ""
+              },
+              "urls": {
+                "darwin-aarch64": [
+                  "file:///tmp/llvm-build/llvm-20.1.8-darwin-aarch64-2026-02-09.tar.zst"
+                ]
+              }
             }
           },
-          "macos_local_toolchain": {
+          "macos_toolchain": {
             "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%toolchain",
             "attributes": {
               "absolute_paths": false,
@@ -4708,11 +4716,7 @@
               },
               "opt_compile_flags": {},
               "opt_link_flags": {},
-              "stdlib": {
-                "": "builtin-libc++",
-                "linux-x86_64": "stdc++",
-                "linux-aarch64": "stdc++"
-              },
+              "stdlib": {},
               "target_settings": {},
               "unfiltered_compile_flags": {},
               "toolchain_roots": {},
