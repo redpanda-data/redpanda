@@ -248,6 +248,10 @@ llvm.toolchain(
     llvm_version = "20.1.8",
     # Use libc++ (LLVM's C++ stdlib) for consistency across platforms
     stdlib = {"": "libc++"},
+    # Add link flags to find Linux-compiled libc++ for cross-compilation
+    link_flags = {
+        "linux-x86_64": ["-L/tmp/llvm-build/lib/x86_64-unknown-linux-gnu"],
+    },
     sha256 = {
         "darwin-aarch64": "340f15b69b57c7fab2795612d7931a1ad8c46a394af32f73a115b1c953fbe92e",
     },
