@@ -43,6 +43,8 @@ filegroup(
 
 configure_make(
     name = "openssl_foreign_cc",
+    # Only build for Linux target - avoid cross-compilation issues on darwin exec
+    target_compatible_with = ["@platforms//os:linux"],
     # These don't get make variables expanded, so use the injected environment variable.
     args = [
         "-j$OPENSSL_BUILD_JOBS",

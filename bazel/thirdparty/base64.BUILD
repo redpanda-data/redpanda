@@ -21,6 +21,8 @@ common_cache_entries = {
 
 cmake(
     name = "base64",
+    # Only build for Linux target - avoid cross-compilation issues on darwin exec
+    target_compatible_with = ["@platforms//os:linux"],
     cache_entries = common_cache_entries | select({
         "@platforms//cpu:x86_64": {
             "BASE64_WITH_SSSE3": "ON",
