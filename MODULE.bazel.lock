@@ -4459,7 +4459,7 @@
     "@@toolchains_llvm+//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "c1HwgmsVfl3HQfJp5j/lYNFyGkE5EiG6RookiyKG0oM=",
-        "usagesDigest": "OXxJAxR1mn/Pqehud4kY2dgNEDreduIrM+5001WyCKE=",
+        "usagesDigest": "VOyHkPHx1PmaAavzJJ9I2ahrIJIZhO6IqQVSjI+wKo8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -4627,6 +4627,92 @@
               "link_libs": {},
               "llvm_versions": {
                 "": "21.1.6"
+              },
+              "opt_compile_flags": {},
+              "opt_link_flags": {},
+              "stdlib": {},
+              "target_settings": {},
+              "unfiltered_compile_flags": {},
+              "toolchain_roots": {},
+              "sysroot": {
+                "linux-x86_64": "'@@+non_module_dependencies+x86_64_sysroot//:sysroot'",
+                "linux-aarch64": "'@@+non_module_dependencies+aarch64_sysroot//:sysroot'"
+              }
+            }
+          },
+          "macos_toolchain_llvm": {
+            "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%llvm",
+            "attributes": {
+              "alternative_llvm_sources": [],
+              "auth_patterns": {},
+              "distribution": "auto",
+              "exec_arch": "",
+              "exec_os": "",
+              "extra_llvm_distributions": {},
+              "libclang_rt": {},
+              "llvm_mirror": "",
+              "llvm_version": "20.1.8",
+              "llvm_versions": {},
+              "netrc": "",
+              "sha256": {
+                "darwin-aarch64": "340f15b69b57c7fab2795612d7931a1ad8c46a394af32f73a115b1c953fbe92e"
+              },
+              "strip_prefix": {
+                "darwin-aarch64": ""
+              },
+              "urls": {
+                "darwin-aarch64": [
+                  "file:///tmp/llvm-build/llvm-20.1.8-darwin-aarch64-2026-02-09.tar.zst"
+                ]
+              }
+            }
+          },
+          "macos_toolchain": {
+            "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%toolchain",
+            "attributes": {
+              "absolute_paths": false,
+              "archive_flags": {},
+              "compile_flags": {
+                "linux-aarch64": [
+                  "--target=aarch64-unknown-linux-gnu",
+                  "-march=armv8-a+crc+crypto",
+                  "-U_FORTIFY_SOURCE",
+                  "-fstack-protector",
+                  "-fno-omit-frame-pointer",
+                  "-fcolor-diagnostics",
+                  "-Wall",
+                  "-Wthread-safety",
+                  "-Wself-assign"
+                ],
+                "linux-x86_64": [
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-march=westmere",
+                  "-U_FORTIFY_SOURCE",
+                  "-fstack-protector",
+                  "-fno-omit-frame-pointer",
+                  "-fcolor-diagnostics",
+                  "-Wall",
+                  "-Wthread-safety",
+                  "-Wself-assign"
+                ]
+              },
+              "conly_flags": {},
+              "coverage_compile_flags": {},
+              "coverage_link_flags": {},
+              "cxx_builtin_include_directories": {},
+              "cxx_flags": {},
+              "cxx_standard": {
+                "": "c++23"
+              },
+              "dbg_compile_flags": {},
+              "exec_arch": "",
+              "exec_os": "",
+              "extra_exec_compatible_with": {},
+              "extra_target_compatible_with": {},
+              "link_flags": {},
+              "link_libs": {},
+              "llvm_versions": {
+                "": "20.1.8"
               },
               "opt_compile_flags": {},
               "opt_link_flags": {},

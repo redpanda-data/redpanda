@@ -29,16 +29,18 @@ This affects Bazel's global platform resolution, causing some targets to default
 **Next**: Test with local file:// URL, then configure MODULE.bazel
 
 ### Phase 2: Create Proper Toolchain Configuration
-**Status**: PENDING
+**Status**: ATTEMPTED - Toolchain registered but not working
 
-**Option A**: Use built LLVM toolchain
-- Upload tarball to GitHub releases
-- Configure MODULE.bazel to download it
-- Attach Linux sysroots
+**Option A**: Use built LLVM toolchain ❌
+- ✅ Built and packaged LLVM 20.1.8
+- ✅ Registered in MODULE.bazel with file:// URL
+- ✅ Attached Linux sysroots
+- ❌ **RESULT**: Still compiling with `--target=aarch64-apple-macosx`
 
-**Option B**: Use Homebrew LLVM (simpler)
-- Configure toolchain to use /opt/homebrew/opt/llvm@20
-- Ensure it uses Linux sysroots for cross-compilation
+**Root Issue**: Toolchain is registered but Bazel still selects wrong target platform.
+The `--cpu=k8` flag alone doesn't force Linux target platform selection.
+
+**Need**: Explicit platform configuration or platform transition rules
 
 ### Phase 3: Test and Iterate
 **Status**: PENDING
