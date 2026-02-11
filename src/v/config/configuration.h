@@ -803,6 +803,11 @@ public:
     property<size_t> cloud_topics_l1_indexing_interval;
     property<std::chrono::milliseconds> cloud_topics_compaction_interval_ms;
     bounded_property<uint64_t> cloud_topics_compaction_key_map_memory;
+    property<double> cloud_topics_leveling_object_size_threshold;
+    property<double> cloud_topics_leveling_removed_data_threshold;
+    property<double> cloud_topics_min_levelable_ratio;
+    property<std::chrono::milliseconds> cloud_topics_leveling_interval_ms;
+    bounded_property<size_t> cloud_topics_concurrent_maintenance_ops;
     property<std::chrono::milliseconds>
       cloud_topics_long_term_garbage_collection_interval;
     property<std::chrono::milliseconds> cloud_topics_long_term_flush_interval;

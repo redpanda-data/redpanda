@@ -4708,6 +4708,48 @@ configuration::configuration()
        .visibility = visibility::tunable},
       128_MiB,
       {.min = 16_MiB, .max = 100_GiB})
+  , cloud_topics_leveling_object_size_threshold(
+      *this,
+      "cloud_topics_leveling_object_size_threshold",
+      "An L1 object smaller than this fraction of "
+      "cloud_topics_reconciliation_max_object_size is considered suboptimal "
+      "and eligible for leveling. Valid values are (0.0, 1.0].",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.5,
+      validate_0_to_1_ratio)
+  , cloud_topics_leveling_removed_data_threshold(
+      *this,
+      "cloud_topics_leveling_removed_data_threshold",
+      "An L1 object with this fraction or more of its data removed (e.g. from "
+      "prefix truncation) is considered suboptimal and eligible for leveling. "
+      "Valid values are (0.0, 1.0].",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.8,
+      validate_0_to_1_ratio)
+  , cloud_topics_min_levelable_ratio(
+      *this,
+      "cloud_topics_min_levelable_ratio",
+      "Minimum fraction of a cloud topic log's data that must be in "
+      "suboptimal L1 objects before leveling is triggered. Valid values are "
+      "[0.0, 1.0].",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.5,
+      validate_0_to_1_ratio)
+  , cloud_topics_leveling_interval_ms(
+      *this,
+      "cloud_topics_leveling_interval_ms",
+      "How often to trigger background leveling for cloud topics.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30min)
+  , cloud_topics_concurrent_maintenance_ops(
+      *this,
+      "cloud_topics_concurrent_maintenance_ops",
+      "Maximum number of concurrent leveling operations per worker shard. "
+      "Increasing this can improve throughput for workloads with many small "
+      "leveling jobs.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1,
+      {.min = 1})
   , cloud_topics_long_term_garbage_collection_interval(
       *this,
       "cloud_topics_long_term_garbage_collection_interval",

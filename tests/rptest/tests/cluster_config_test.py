@@ -791,6 +791,9 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 "cloud_topics_reconciliation_target_fill_ratio",
                 "cloud_topics_reconciliation_speedup_blend",
                 "cloud_topics_reconciliation_slowdown_blend",
+                "cloud_topics_leveling_object_size_threshold",
+                "cloud_topics_leveling_removed_data_threshold",
+                "cloud_topics_min_levelable_ratio",
             ):
                 # Doubling the default puts it out of the valid range.
                 # Do this instead.
