@@ -86,6 +86,12 @@ public:
     ss::future<rpc::get_compaction_infos_reply>
       get_compaction_infos(rpc::get_compaction_infos_request) override;
 
+    ss::future<rpc::get_leveling_info_reply>
+      get_leveling_info(rpc::get_leveling_info_request) override;
+
+    ss::future<rpc::get_leveling_infos_reply>
+      get_leveling_infos(rpc::get_leveling_infos_request) override;
+
     ss::future<rpc::get_extent_metadata_reply>
       get_extent_metadata(rpc::get_extent_metadata_request) override;
 
@@ -224,6 +230,9 @@ private:
     do_remove_topics(const entity_locks&, chunked_vector<model::topic_id>);
 
     ss::future<> expire_preregistered_objects(chunked_vector<object_id>);
+
+    ss::future<rpc::get_leveling_info_reply> do_get_leveling_info(
+      const gate_read_lock&, state_reader&, rpc::get_leveling_info_request);
 
     ss::gate gate_;
     ss::abort_source as_;

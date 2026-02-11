@@ -786,6 +786,66 @@ simple_metastore::get_compaction_infos(
     co_return infos;
 }
 
+ss::future<std::expected<metastore::leveling_info_response, metastore::errc>>
+simple_metastore::get_leveling_info(const leveling_info_spec& spec) {
+    co_return get_leveling_info(state_, spec);
+}
+
+std::expected<metastore::leveling_info_response, metastore::errc>
+simple_metastore::get_leveling_info(
+  const state& state, const leveling_info_spec& spec) {
+    auto prt_ref = state.partition_state(spec.tidp);
+    if (!prt_ref.has_value()) {
+        return std::unexpected(errc::missing_ntp);
+    }
+
+    const auto& prt = prt_ref->get();
+
+    leveling_info_response resp;
+    size_t total_size = 0;
+    size_t levelable_size = 0;
+    for (const auto& ext : prt.extents) {
+        if (ext.base_offset < prt.start_offset) {
+            continue;
+        }
+
+        auto obj_it = state.objects.find(ext.oid);
+        if (obj_it == state.objects.end()) {
+            continue;
+        }
+
+        const auto& obj = obj_it->second;
+        total_size += ext.len;
+
+        bool undersized = obj.object_size < spec.min_acceptable_object_size;
+        bool fragmented = obj.total_data_size > 0
+                          && static_cast<double>(obj.removed_data_size)
+                                 / static_cast<double>(obj.total_data_size)
+                               >= spec.removed_data_threshold;
+
+        if (undersized || fragmented) {
+            resp.leveling_ranges.insert(ext.base_offset, ext.last_offset);
+            levelable_size += ext.len;
+        }
+    }
+
+    resp.levelable_ratio = total_size == 0
+                             ? 0.0
+                             : static_cast<double>(levelable_size)
+                                 / static_cast<double>(total_size);
+    return resp;
+}
+
+ss::future<std::expected<metastore::leveling_info_map, metastore::errc>>
+simple_metastore::get_leveling_infos(
+  const chunked_vector<leveling_info_spec>& specs) {
+    leveling_info_map infos;
+    for (const auto& spec : specs) {
+        infos.emplace(spec.tidp, co_await get_leveling_info(spec));
+    }
+    co_return infos;
+}
+
 ss::future<std::expected<metastore::extent_metadata_response, metastore::errc>>
 simple_metastore::get_extent_metadata_forwards(
   const model::topic_id_partition& tp,

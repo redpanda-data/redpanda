@@ -450,6 +450,42 @@ public:
         size_t object_size{0};
     };
 
+    // Leveling info for delete topics. Identifies offset ranges that are in
+    // suboptimally-built L1 objects and should be rewritten.
+    struct leveling_info_spec {
+        model::topic_id_partition tidp;
+        // An L1 object smaller than this size is considered suboptimal.
+        size_t min_acceptable_object_size;
+        // An L1 object with this fraction or more of removed data is
+        // considered suboptimal.
+        double removed_data_threshold;
+    };
+
+    struct leveling_info_response {
+        // Offset ranges that should be rewritten.
+        offset_interval_set leveling_ranges;
+        // The ratio of data in suboptimal objects to total data.
+        double levelable_ratio{0.0};
+
+        fmt::iterator format_to(fmt::iterator it) const {
+            return fmt::format_to(
+              it,
+              "{{leveling_ranges:{}, levelable_ratio:{}}}",
+              leveling_ranges,
+              levelable_ratio);
+        }
+    };
+
+    virtual ss::future<std::expected<leveling_info_response, errc>>
+    get_leveling_info(const leveling_info_spec&) = 0;
+
+    using leveling_info_map = chunked_hash_map<
+      model::topic_id_partition,
+      std::expected<leveling_info_response, errc>>;
+
+    virtual ss::future<std::expected<leveling_info_map, errc>>
+    get_leveling_infos(const chunked_vector<leveling_info_spec>&) = 0;
+
     struct extent_metadata {
         kafka::offset base_offset;
         kafka::offset last_offset;

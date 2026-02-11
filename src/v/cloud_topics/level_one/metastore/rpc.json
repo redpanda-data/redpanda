@@ -71,6 +71,16 @@
             "output_type": "get_compaction_infos_reply"
         },
         {
+            "name": "get_leveling_info",
+            "input_type": "get_leveling_info_request",
+            "output_type": "get_leveling_info_reply"
+        },
+        {
+            "name": "get_leveling_infos",
+            "input_type": "get_leveling_infos_request",
+            "output_type": "get_leveling_infos_reply"
+        },
+        {
             "name": "get_extent_metadata",
             "input_type": "get_extent_metadata_request",
             "output_type": "get_extent_metadata_reply"

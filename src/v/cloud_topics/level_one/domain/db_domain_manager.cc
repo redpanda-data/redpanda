@@ -1311,6 +1311,126 @@ db_domain_manager::get_compaction_infos(rpc::get_compaction_infos_request req) {
       .responses = std::move(compaction_infos)};
 }
 
+ss::future<rpc::get_leveling_info_reply>
+db_domain_manager::do_get_leveling_info(
+  const gate_read_lock&,
+  state_reader& reader,
+  rpc::get_leveling_info_request req) {
+    // Get metadata for start_offset.
+    auto metadata_res = co_await reader.get_metadata(req.tp);
+    if (!metadata_res.has_value()) {
+        co_return rpc::get_leveling_info_reply{
+          .ec = log_and_convert(
+            metadata_res.error(), "Error getting metadata: "),
+        };
+    }
+    if (!metadata_res.value().has_value()) {
+        co_return rpc::get_leveling_info_reply{
+          .ec = rpc::errc::missing_ntp,
+        };
+    }
+    const auto& metadata = **metadata_res;
+    const auto start_offset = metadata.start_offset;
+
+    offset_interval_set leveling_ranges;
+    size_t total_size = 0;
+    size_t levelable_size = 0;
+
+    auto extents_res = co_await reader.get_inclusive_extents(
+      req.tp, std::nullopt, std::nullopt);
+    if (!extents_res.has_value()) {
+        co_return rpc::get_leveling_info_reply{
+          .ec = log_and_convert(extents_res.error(), "Error getting extents: "),
+        };
+    }
+    if (extents_res.value().has_value()) {
+        auto gen = (*extents_res)->get_rows();
+        while (auto row_opt = co_await gen()) {
+            const auto& row = row_opt->get();
+            if (!row.has_value()) {
+                co_return rpc::get_leveling_info_reply{
+                  .ec = log_and_convert(
+                    row.error(), "Error iterating through extents: "),
+                };
+            }
+            const auto& extent = *row;
+            auto key = extent_row_key::decode(extent.key);
+            auto base = key->base_offset;
+            if (base < start_offset) {
+                continue;
+            }
+
+            total_size += extent.val.len;
+
+            auto obj_res = co_await reader.get_object(extent.val.oid);
+            if (!obj_res.has_value()) {
+                co_return rpc::get_leveling_info_reply{
+                  .ec = log_and_convert(
+                    obj_res.error(), "Error getting object: "),
+                };
+            }
+            if (!obj_res->has_value()) {
+                continue;
+            }
+            const auto& obj = **obj_res;
+
+            bool undersized = obj.object_size < req.min_acceptable_object_size;
+            bool fragmented = obj.total_data_size > 0
+                              && static_cast<double>(obj.removed_data_size)
+                                     / static_cast<double>(obj.total_data_size)
+                                   >= req.removed_data_threshold;
+
+            if (undersized || fragmented) {
+                leveling_ranges.insert(base, extent.val.last_offset);
+                levelable_size += extent.val.len;
+            }
+        }
+    }
+
+    double levelable_ratio = total_size == 0
+                               ? 0.0
+                               : static_cast<double>(levelable_size)
+                                   / static_cast<double>(total_size);
+
+    co_return rpc::get_leveling_info_reply{
+      .ec = rpc::errc::ok,
+      .leveling_ranges = std::move(leveling_ranges),
+      .levelable_ratio = levelable_ratio,
+    };
+}
+
+ss::future<rpc::get_leveling_info_reply>
+db_domain_manager::get_leveling_info(rpc::get_leveling_info_request req) {
+    auto gl_res = co_await gate_and_open_reads();
+    if (!gl_res.has_value()) {
+        co_return rpc::get_leveling_info_reply{.ec = gl_res.error()};
+    }
+    auto reader = state_reader(db_->db().create_snapshot());
+    co_return co_await do_get_leveling_info(gl_res.value(), reader, req);
+}
+
+ss::future<rpc::get_leveling_infos_reply>
+db_domain_manager::get_leveling_infos(rpc::get_leveling_infos_request req) {
+    auto gl_res = co_await gate_and_open_reads();
+    if (!gl_res.has_value()) {
+        co_return rpc::get_leveling_infos_reply{
+          .ec = gl_res.error(),
+        };
+    }
+
+    auto reader = state_reader(db_->db().create_snapshot());
+    chunked_hash_map<model::topic_id_partition, rpc::get_leveling_info_reply>
+      leveling_infos;
+    for (auto& log_req : req.logs) {
+        auto log_info = co_await do_get_leveling_info(
+          gl_res.value(), reader, log_req);
+        leveling_infos.insert_or_assign(log_req.tp, std::move(log_info));
+    }
+
+    co_return rpc::get_leveling_infos_reply{
+      .responses = std::move(leveling_infos)};
+}
+
 ss::future<rpc::get_extent_metadata_reply>
 db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
     auto gl_res = co_await gate_and_open_reads();

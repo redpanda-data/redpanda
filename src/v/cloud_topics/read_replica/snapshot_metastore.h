@@ -79,6 +79,12 @@ public:
     ss::future<std::expected<compaction_info_map, errc>>
     get_compaction_infos(const chunked_vector<compaction_info_spec>&) override;
 
+    ss::future<std::expected<leveling_info_response, errc>>
+    get_leveling_info(const leveling_info_spec&) override;
+
+    ss::future<std::expected<leveling_info_map, errc>>
+    get_leveling_infos(const chunked_vector<leveling_info_spec>&) override;
+
     ss::future<std::expected<extent_metadata_response, errc>>
     get_extent_metadata_forwards(
       const model::topic_id_partition&,

@@ -114,6 +114,12 @@ public:
     ss::future<std::expected<compaction_info_map, errc>>
     get_compaction_infos(const chunked_vector<compaction_info_spec>&) override;
 
+    ss::future<std::expected<leveling_info_response, errc>>
+    get_leveling_info(const leveling_info_spec&) override;
+
+    ss::future<std::expected<leveling_info_map, errc>>
+    get_leveling_infos(const chunked_vector<leveling_info_spec>&) override;
+
     ss::future<std::expected<extent_metadata_response, errc>>
     get_extent_metadata_forwards(
       const model::topic_id_partition&,
@@ -164,6 +170,8 @@ private:
     get_compaction_epoch(const state&, const model::topic_id_partition&);
     static std::expected<compaction_info_response, errc> get_compaction_info(
       const state&, const model::topic_id_partition&, model::timestamp);
+    static std::expected<leveling_info_response, errc>
+    get_leveling_info(const state&, const leveling_info_spec&);
     static std::expected<kafka::offset, errc> get_end_offset_for_term(
       const state&, const model::topic_id_partition&, model::term_id);
     static std::expected<model::term_id, errc> get_term_for_offset(

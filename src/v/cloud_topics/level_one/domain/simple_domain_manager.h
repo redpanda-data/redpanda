@@ -69,6 +69,12 @@ public:
     ss::future<rpc::get_compaction_infos_reply>
       get_compaction_infos(rpc::get_compaction_infos_request) override;
 
+    ss::future<rpc::get_leveling_info_reply>
+      get_leveling_info(rpc::get_leveling_info_request) override;
+
+    ss::future<rpc::get_leveling_infos_reply>
+      get_leveling_infos(rpc::get_leveling_infos_request) override;
+
     ss::future<rpc::get_extent_metadata_reply>
       get_extent_metadata(rpc::get_extent_metadata_request) override;
 
@@ -103,6 +109,9 @@ private:
 
     rpc::get_compaction_info_reply
     do_get_compaction_info(const state&, rpc::get_compaction_info_request);
+
+    rpc::get_leveling_info_reply
+    do_get_leveling_info(const state&, rpc::get_leveling_info_request);
 
     config::binding<std::chrono::milliseconds> gc_interval_;
     // This semaphore is used as a way to signal a change to

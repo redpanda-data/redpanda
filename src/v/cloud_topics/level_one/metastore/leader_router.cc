@@ -171,6 +171,28 @@ ss::future<rpc::get_compaction_infos_reply> do_get_compaction_infos(
     co_return co_await domain_mgr->get_compaction_infos(std::move(req));
 }
 
+ss::future<rpc::get_leveling_info_reply> do_get_leveling_info(
+  domain_supervisor& domain_supervisor,
+  const model::ntp& ntp,
+  rpc::get_leveling_info_request req) {
+    auto domain_mgr = domain_supervisor.get(ntp);
+    if (!domain_mgr) {
+        co_return rpc::get_leveling_info_reply{.ec = rpc::errc::not_leader};
+    }
+    co_return co_await domain_mgr->get_leveling_info(std::move(req));
+}
+
+ss::future<rpc::get_leveling_infos_reply> do_get_leveling_infos(
+  domain_supervisor& domain_supervisor,
+  const model::ntp& ntp,
+  rpc::get_leveling_infos_request req) {
+    auto domain_mgr = domain_supervisor.get(ntp);
+    if (!domain_mgr) {
+        co_return rpc::get_leveling_infos_reply{.ec = rpc::errc::not_leader};
+    }
+    co_return co_await domain_mgr->get_leveling_infos(std::move(req));
+}
+
 ss::future<rpc::get_extent_metadata_reply> do_get_extent_metadata(
   domain_supervisor& domain_supervisor,
   const model::ntp& ntp,
@@ -760,6 +782,48 @@ ss::future<rpc::get_compaction_infos_reply> leader_router::get_compaction_infos(
     co_return co_await process<
       &leader_router::get_compaction_infos_locally,
       &client::get_compaction_infos>(std::move(request), bool(local_only_exec));
+}
+
+ss::future<rpc::get_leveling_info_reply>
+leader_router::get_leveling_info_locally(
+  rpc::get_leveling_info_request request,
+  const model::ntp& metastore_ntp,
+  ss::shard_id shard) {
+    co_return co_await container().invoke_on(
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
+          return do_get_leveling_info(
+            *(fe._domain_supervisor), metastore_ntp, std::move(req));
+      });
+}
+
+ss::future<rpc::get_leveling_info_reply> leader_router::get_leveling_info(
+  rpc::get_leveling_info_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &leader_router::get_leveling_info_locally,
+      &client::get_leveling_info>(std::move(request), bool(local_only_exec));
+}
+
+ss::future<rpc::get_leveling_infos_reply>
+leader_router::get_leveling_infos_locally(
+  rpc::get_leveling_infos_request request,
+  const model::ntp& metastore_ntp,
+  ss::shard_id shard) {
+    co_return co_await container().invoke_on(
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
+          return do_get_leveling_infos(
+            *(fe._domain_supervisor), metastore_ntp, std::move(req));
+      });
+}
+
+ss::future<rpc::get_leveling_infos_reply> leader_router::get_leveling_infos(
+  rpc::get_leveling_infos_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &leader_router::get_leveling_infos_locally,
+      &client::get_leveling_infos>(std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_extent_metadata_reply>

@@ -243,6 +243,18 @@ snapshot_metastore::get_compaction_infos(
 }
 
 ss::future<
+  std::expected<l1::metastore::leveling_info_response, l1::metastore::errc>>
+snapshot_metastore::get_leveling_info(const leveling_info_spec&) {
+    co_return std::unexpected(errc::invalid_request);
+}
+
+ss::future<std::expected<l1::metastore::leveling_info_map, l1::metastore::errc>>
+snapshot_metastore::get_leveling_infos(
+  const chunked_vector<leveling_info_spec>&) {
+    co_return std::unexpected(errc::invalid_request);
+}
+
+ss::future<
   std::expected<l1::metastore::extent_metadata_response, l1::metastore::errc>>
 snapshot_metastore::get_extent_metadata_forwards(
   const model::topic_id_partition& tidp,
