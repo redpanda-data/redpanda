@@ -79,6 +79,14 @@ public:
           std::move(log));
     }
 
+    void invalidate_cache(kafka::offset up_to) override {
+        _last_cache_evict = up_to;
+    }
+
+    std::optional<kafka::offset> last_cache_evict() const {
+        return _last_cache_evict;
+    }
+
     void fail_set_lro(bool fail) { _fail_set_lro = fail; }
     void fail_make_reader(bool fail) { _fail_make_reader = fail; }
 
@@ -87,6 +95,7 @@ private:
     chunked_vector<model::record_batch> _source_log;
     bool _fail_set_lro = false;
     bool _fail_make_reader = false;
+    std::optional<kafka::offset> _last_cache_evict;
 };
 
 class unreliable_metastore : public l1::simple_metastore {

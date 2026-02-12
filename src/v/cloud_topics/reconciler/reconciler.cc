@@ -794,6 +794,7 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
             auto result = co_await commit.source->set_last_reconciled_offset(
               lro, _as);
             if (result.has_value()) {
+                commit.source->invalidate_cache(lro);
                 vlog(
                   lg.debug,
                   "successfully bumped LRO for {} (tidp: {}) to {}",

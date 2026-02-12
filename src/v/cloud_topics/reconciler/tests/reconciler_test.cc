@@ -576,3 +576,61 @@ TEST_F(ReconcilerTest, OffsetAndTimestampTracking) {
     EXPECT_FALSE(obj_beyond_ts.has_value());
     EXPECT_EQ(obj_beyond_ts.error(), l1::metastore::errc::out_of_range);
 }
+
+TEST_F(ReconcilerTest, CacheEvictedAfterReconciliation) {
+    auto src = add_source();
+    src->add_batch({.count = 10});
+    src->add_batch({.count = 10});
+
+    EXPECT_FALSE(src->last_cache_evict().has_value());
+
+    reconcile();
+
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{19});
+    // invalidate_cache should have been called with the LRO
+    EXPECT_THAT(src->last_cache_evict(), Optional(kafka::offset{19}));
+}
+
+TEST_F(ReconcilerTest, CacheEvictedMultipleRounds) {
+    auto src = add_source();
+    src->add_batch({.count = 10});
+
+    reconcile();
+
+    EXPECT_THAT(src->last_cache_evict(), Optional(kafka::offset{9}));
+
+    src->add_batch({.count = 10});
+
+    reconcile();
+
+    // After the second round, the eviction offset should advance.
+    EXPECT_THAT(src->last_cache_evict(), Optional(kafka::offset{19}));
+}
+
+TEST_F(ReconcilerTest, CacheNotEvictedOnLROFailure) {
+    auto src = add_source();
+    src->add_batch({.count = 10});
+    src->fail_set_lro(true);
+
+    reconcile();
+
+    // When set_last_reconciled_offset fails, invalidate_cache should not
+    // be called.
+    EXPECT_FALSE(src->last_cache_evict().has_value());
+}
+
+TEST_F(ReconcilerTest, CacheEvictedPerSourceIndependently) {
+    const model::topic tp{"tapioca"};
+    const model::topic_id tid = model::topic_id::create();
+
+    auto src1 = add_source(tp, tid);
+    auto src2 = add_source(tp, tid);
+
+    src1->add_batch({.count = 10});
+    src2->add_batch({.count = 20});
+
+    reconcile();
+
+    EXPECT_THAT(src1->last_cache_evict(), Optional(kafka::offset{9}));
+    EXPECT_THAT(src2->last_cache_evict(), Optional(kafka::offset{19}));
+}

@@ -80,6 +80,9 @@ public:
     virtual ss::future<model::record_batch_reader>
       make_reader(reader_config) = 0;
 
+    // Invalidate cached batches up to the given offset.
+    virtual void invalidate_cache(kafka::offset) = 0;
+
 private:
     model::ntp _ntp;
     model::topic_id_partition _tidp;

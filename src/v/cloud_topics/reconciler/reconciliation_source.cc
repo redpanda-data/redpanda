@@ -57,6 +57,7 @@ public:
       data_plane_api* dp_api,
       ss::lw_shared_ptr<cluster::partition> partition)
       : source(std::move(ntp), tidp)
+      , _dp_api(dp_api)
       , _fe(ss::make_lw_shared<frontend>(partition, dp_api))
       , _partition(std::move(partition)) {}
 
@@ -135,7 +136,12 @@ public:
             std::move(tracker), std::move(reader.reader)));
     }
 
+    void invalidate_cache(kafka::offset up_to) override {
+        _dp_api->cache_evict(topic_id_partition(), kafka::offset_cast(up_to));
+    }
+
 private:
+    data_plane_api* _dp_api;
     ss::lw_shared_ptr<frontend> _fe;
     ss::lw_shared_ptr<cluster::partition> _partition;
 };
