@@ -390,3 +390,90 @@ TEST_F(batch_cache_test_fixture, test_add_dirty_seq) {
 
     index.mark_clean(model::offset(28));
 }
+
+TEST_F(batch_cache_test_fixture, evict_up_to_empty) {
+    storage::batch_cache_index index(cache);
+    // Should be a no-op on an empty index.
+    index.evict_up_to(model::offset(100));
+    EXPECT_TRUE(index.empty());
+}
+
+TEST_F(batch_cache_test_fixture, evict_up_to_all) {
+    storage::batch_cache_index index(cache);
+
+    // [0:9][10:19][20:29]
+    index.put(make_batch(10, model::offset(0)), is_dirty_entry::no);
+    index.put(make_batch(10, model::offset(10)), is_dirty_entry::no);
+    index.put(make_batch(10, model::offset(20)), is_dirty_entry::no);
+
+    index.evict_up_to(model::offset(100));
+    EXPECT_TRUE(index.empty());
+    EXPECT_FALSE(index.get(model::offset(0)));
+    EXPECT_FALSE(index.get(model::offset(10)));
+    EXPECT_FALSE(index.get(model::offset(20)));
+}
+
+TEST_F(batch_cache_test_fixture, evict_up_to_none) {
+    storage::batch_cache_index index(cache);
+
+    // [10:19]
+    index.put(make_batch(10, model::offset(10)), is_dirty_entry::no);
+
+    // Offset before any entry — nothing evicted.
+    index.evict_up_to(model::offset(5));
+    EXPECT_FALSE(index.empty());
+    EXPECT_TRUE(index.get(model::offset(10)));
+}
+
+TEST_F(batch_cache_test_fixture, evict_up_to_partial) {
+    storage::batch_cache_index index(cache);
+
+    // Use large batches (>32KiB) so each gets its own range, avoiding
+    // shared-range invalidation of the surviving entry.
+    auto big = make_random_batch(33_KiB, model::offset(0));
+    auto big2 = make_random_batch(33_KiB, model::offset(10));
+    auto big3 = make_random_batch(33_KiB, model::offset(20));
+
+    index.put(big, is_dirty_entry::no);
+    index.put(big2, is_dirty_entry::no);
+    index.put(big3, is_dirty_entry::no);
+
+    // Evict entries with base_offset <= 10 (entries at 0 and 10).
+    index.evict_up_to(model::offset(10));
+
+    EXPECT_FALSE(index.get(model::offset(0)));
+    EXPECT_FALSE(index.get(model::offset(10)));
+    EXPECT_TRUE(index.get(model::offset(20)));
+}
+
+TEST_F(batch_cache_test_fixture, evict_up_to_exact_boundary) {
+    storage::batch_cache_index index(cache);
+
+    auto big = make_random_batch(33_KiB, model::offset(10));
+    auto big2 = make_random_batch(33_KiB, model::offset(20));
+
+    index.put(big, is_dirty_entry::no);
+    index.put(big2, is_dirty_entry::no);
+
+    // Evict exactly up to the first entry's base_offset.
+    index.evict_up_to(model::offset(10));
+
+    EXPECT_FALSE(index.get(model::offset(10)));
+    EXPECT_TRUE(index.get(model::offset(20)));
+}
+
+TEST_F(batch_cache_test_fixture, evict_up_to_between_entries) {
+    storage::batch_cache_index index(cache);
+
+    auto big = make_random_batch(33_KiB, model::offset(10));
+    auto big2 = make_random_batch(33_KiB, model::offset(30));
+
+    index.put(big, is_dirty_entry::no);
+    index.put(big2, is_dirty_entry::no);
+
+    // Offset falls in the gap between entries — only entry at 10 is evicted.
+    index.evict_up_to(model::offset(20));
+
+    EXPECT_FALSE(index.get(model::offset(10)));
+    EXPECT_TRUE(index.get(model::offset(30)));
+}

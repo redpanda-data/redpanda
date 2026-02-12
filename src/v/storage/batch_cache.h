@@ -598,6 +598,11 @@ public:
     void truncate(model::offset offset);
 
     /**
+     * Evicts all entries with base_offset <= the given offset.
+     */
+    void evict_up_to(model::offset offset);
+
+    /**
      * Marks the offsets as clean up to and including the specified offset.
      * \param up_to_inclusive The offset, inclusive, up to which the cache
      *                        should be marked as clean.

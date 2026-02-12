@@ -451,6 +451,21 @@ void batch_cache_index::truncate(model::offset offset) {
     }
 }
 
+void batch_cache_index::evict_up_to(model::offset offset) {
+    lock_guard lk(*this);
+
+    vassert(
+      _dirty_tracker.clean(),
+      "evict_up_to() with dirty data in the index ({}).",
+      *this);
+
+    auto end = _index.upper_bound(offset);
+    std::for_each(_index.begin(), end, [this](index_type::value_type& e) {
+        _cache->evict(std::move(e.second.range()));
+    });
+    _index.erase(_index.begin(), end);
+}
+
 void batch_cache_index::mark_clean(model::offset up_to_inclusive) {
     lock_guard lk(*this);
 
