@@ -517,7 +517,8 @@ ss::future<reset_topic_state_reply> frontend::reset_topic_state_locally(
             ->sync_reset_topic_state(
               request.topic,
               request.topic_revision,
-              request.reset_all_partitions)
+              request.reset_all_partitions,
+              std::move(request.partition_overrides))
             .then([](auto result) {
                 reset_topic_state_reply resp{};
                 if (result.has_error()) {

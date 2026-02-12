@@ -10,7 +10,9 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "datalake/coordinator/partition_state_override.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "iceberg/manifest_entry.h"
@@ -127,9 +129,12 @@ struct reset_topic_state_update
     model::topic topic;
     model::revision_id topic_revision;
     bool reset_all_partitions{false};
+    chunked_hash_map<model::partition_id, partition_state_override>
+      partition_overrides;
 
     auto serde_fields() {
-        return std::tie(topic, topic_revision, reset_all_partitions);
+        return std::tie(
+          topic, topic_revision, reset_all_partitions, partition_overrides);
     }
 
     checked<void, stm_update_error> can_apply(const topics_state&);

@@ -1802,7 +1802,9 @@ class DatalakeCoordinatorResetTest(RedpandaTest):
         )
         return resp.state.topic_states[self.topic_name]
 
-    def _reset_coordinator_state(self, reset_all_partitions: bool):
+    def _reset_coordinator_state(
+        self, reset_all_partitions: bool, partition_overrides=None
+    ):
         dl_pb = admin_v2.datalake_pb
         admin = admin_v2.Admin(self.redpanda)
         rev = self._get_topic_state().revision
@@ -1811,6 +1813,7 @@ class DatalakeCoordinatorResetTest(RedpandaTest):
                 topic_name=self.topic_name,
                 revision=rev,
                 reset_all_partitions=reset_all_partitions,
+                partition_overrides=partition_overrides,
             )
         )
 
@@ -1872,3 +1875,23 @@ class DatalakeCoordinatorResetTest(RedpandaTest):
                 assert not ps.HasField("last_committed"), (
                     f"Partition {pid} has unexpected last_committed"
                 )
+
+            dl_pb = admin_v2.datalake_pb
+
+            # Reset with per-partition last_committed overrides.
+            expected = {0: 5, 2: 7}
+            self._reset_coordinator_state(
+                reset_all_partitions=False,
+                partition_overrides={
+                    pid: dl_pb.PartitionStateOverride(last_committed=off)
+                    for pid, off in expected.items()
+                },
+            )
+
+            ts = self._get_topic_state()
+            for pid, off in expected.items():
+                ps = ts.partition_states[pid]
+                assert ps.last_committed == off, (
+                    f"Partition {pid}: expected {off}, got {ps.last_committed}"
+                )
+            assert not ts.partition_states[1].HasField("last_committed")

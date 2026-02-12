@@ -122,7 +122,9 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":state_test_utils",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/datalake/coordinator:partition_state_override",
         "//src/v/datalake/coordinator:state",
         "//src/v/datalake/coordinator:state_update",
         "//src/v/datalake/coordinator:translated_offset_range",

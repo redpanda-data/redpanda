@@ -140,6 +140,7 @@ operator<<(std::ostream& o, const get_topic_state_request& request) {
       request.topics_filter);
     return o;
 }
+
 std::ostream&
 operator<<(std::ostream& o, const reset_topic_state_reply& reply) {
     fmt::print(o, "{{errc: {}}}", reply.errc);

@@ -889,7 +889,9 @@ ss::future<checked<void, coordinator::errc>>
 coordinator::sync_reset_topic_state(
   model::topic topic,
   model::revision_id topic_revision,
-  bool reset_all_partitions) {
+  bool reset_all_partitions,
+  chunked_hash_map<model::partition_id, partition_state_override>
+    partition_overrides) {
     auto gate = maybe_gate();
     if (gate.has_error()) {
         co_return gate.error();
@@ -905,6 +907,7 @@ coordinator::sync_reset_topic_state(
       .topic = topic,
       .topic_revision = topic_revision,
       .reset_all_partitions = reset_all_partitions,
+      .partition_overrides = std::move(partition_overrides),
     };
     auto check_res = update.can_apply(stm_->state());
     if (check_res.has_error()) {

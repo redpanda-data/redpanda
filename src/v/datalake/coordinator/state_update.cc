@@ -324,6 +324,13 @@ reset_topic_state_update::apply(topics_state& state) {
     if (reset_all_partitions) {
         t_state.pid_to_pending_files.clear();
     }
+    for (auto& [pid, po] : partition_overrides) {
+        auto& ps = t_state.pid_to_pending_files[pid];
+        ps.pending_entries.clear();
+        if (po.last_committed.has_value()) {
+            ps.last_committed = po.last_committed.value();
+        }
+    }
     return outcome::success();
 }
 
@@ -368,10 +375,12 @@ std::ostream& operator<<(std::ostream& o, const topic_lifecycle_update& u) {
 std::ostream& operator<<(std::ostream& o, const reset_topic_state_update& u) {
     fmt::print(
       o,
-      "{{topic: {}, revision: {}, reset_all_partitions: {}}}",
+      "{{topic: {}, revision: {}, reset_all_partitions: {}, "
+      "partition_overrides: {} entries}}",
       u.topic,
       u.topic_revision,
-      u.reset_all_partitions);
+      u.reset_all_partitions,
+      u.partition_overrides.size());
     return o;
 }
 

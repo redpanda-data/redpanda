@@ -9,7 +9,9 @@
  */
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "datalake/coordinator/partition_state_override.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/errors.h"
@@ -407,6 +409,8 @@ struct reset_topic_state_request
     model::topic topic;
     model::revision_id topic_revision;
     bool reset_all_partitions{false};
+    chunked_hash_map<model::partition_id, partition_state_override>
+      partition_overrides;
 
     reset_topic_state_request() = default;
 
@@ -414,11 +418,15 @@ struct reset_topic_state_request
       model::partition_id coordinator_partition,
       model::topic topic,
       model::revision_id topic_revision,
-      bool reset_all_partitions = false)
+      bool reset_all_partitions = false,
+      chunked_hash_map<model::partition_id, partition_state_override>
+        partition_overrides
+      = {})
       : coordinator_partition(coordinator_partition)
       , topic(std::move(topic))
       , topic_revision(topic_revision)
-      , reset_all_partitions(reset_all_partitions) {}
+      , reset_all_partitions(reset_all_partitions)
+      , partition_overrides(std::move(partition_overrides)) {}
 
     model::partition_id get_coordinator_partition() const {
         return coordinator_partition;
@@ -429,17 +437,22 @@ struct reset_topic_state_request
         fmt::print(
           o,
           "{{coordinator_partition: {}, topic: {}, topic_revision: {}, "
-          "reset_all_partitions: {}}}",
+          "reset_all_partitions: {}, partition_overrides: {} entries}}",
           req.coordinator_partition,
           req.topic,
           req.topic_revision,
-          req.reset_all_partitions);
+          req.reset_all_partitions,
+          req.partition_overrides.size());
         return o;
     }
 
     auto serde_fields() {
         return std::tie(
-          coordinator_partition, topic, topic_revision, reset_all_partitions);
+          coordinator_partition,
+          topic,
+          topic_revision,
+          reset_all_partitions,
+          partition_overrides);
     }
 };
 

@@ -12,8 +12,10 @@
 #include "absl/hash/hash.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "datalake/coordinator/file_committer.h"
+#include "datalake/coordinator/partition_state_override.h"
 #include "datalake/coordinator/snapshot_remover.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/fwd.h"
@@ -92,7 +94,9 @@ public:
     ss::future<checked<void, errc>> sync_reset_topic_state(
       model::topic topic,
       model::revision_id topic_rev,
-      bool reset_all_partitions);
+      bool reset_all_partitions,
+      chunked_hash_map<model::partition_id, partition_state_override>
+        partition_overrides);
 
     void notify_leadership(std::optional<model::node_id>);
 

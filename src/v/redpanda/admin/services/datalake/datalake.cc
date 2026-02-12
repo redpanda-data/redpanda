@@ -216,12 +216,25 @@ datalake_service_impl::coordinator_reset_topic_state(
 
     model::revision_id topic_revision{req.get_revision()};
 
+    chunked_hash_map<
+      model::partition_id,
+      datalake::coordinator::partition_state_override>
+      partition_overrides;
+    for (const auto& [pid, po] : req.get_partition_overrides()) {
+        datalake::coordinator::partition_state_override o;
+        if (po.has_last_committed()) {
+            o.last_committed = kafka::offset{po.get_last_committed()};
+        }
+        partition_overrides.emplace(model::partition_id{pid}, std::move(o));
+    }
+
     auto fe_res = co_await _coordinator_fe->local().reset_topic_state(
       datalake::coordinator::reset_topic_state_request(
         partition_opt.value(),
         topic,
         topic_revision,
-        req.get_reset_all_partitions()));
+        req.get_reset_all_partitions(),
+        std::move(partition_overrides)));
     if (fe_res.errc != datalake::coordinator::errc::ok) {
         throw serde::pb::rpc::internal_exception(
           fmt::format(
