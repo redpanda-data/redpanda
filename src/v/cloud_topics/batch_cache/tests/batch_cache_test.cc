@@ -177,3 +177,98 @@ TEST_F(batch_cache_test_fixture, test_batch_cache_topic_recreation) {
       retrieved1_again->header().record_count,
       retrieved2->header().record_count);
 }
+
+// Create a single-record batch whose record is large enough (> 32KiB
+// range_size) so each batch gets its own range in the cache. This prevents
+// small-batch coalescing from invalidating unrelated entries when a shared
+// range is evicted.
+model::record_batch make_large_batch(model::offset o) {
+    model::test::record_batch_spec spec{
+      .offset = o,
+      .allow_compression = false,
+      .count = 1,
+      .record_sizes = {{33_KiB}},
+    };
+    return model::test::make_random_batch(spec);
+}
+
+TEST_F(batch_cache_test_fixture, test_evict_up_to_removes_matching_entries) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    auto batch0 = make_large_batch(model::offset(0));
+    auto batch1 = make_large_batch(model::offset(1));
+    auto batch2 = make_large_batch(model::offset(2));
+    _cache.put(tidp, batch0);
+    _cache.put(tidp, batch1);
+    _cache.put(tidp, batch2);
+
+    // All three should be retrievable
+    ASSERT_TRUE(_cache.get(tidp, model::offset(0)).has_value());
+    ASSERT_TRUE(_cache.get(tidp, model::offset(1)).has_value());
+    ASSERT_TRUE(_cache.get(tidp, model::offset(2)).has_value());
+
+    // Evict up to offset 1 (removes batches at 0 and 1)
+    _cache.evict_up_to(tidp, model::offset(1));
+
+    ASSERT_FALSE(_cache.get(tidp, model::offset(0)).has_value());
+    ASSERT_FALSE(_cache.get(tidp, model::offset(1)).has_value());
+    ASSERT_TRUE(_cache.get(tidp, model::offset(2)).has_value());
+}
+
+TEST_F(batch_cache_test_fixture, test_evict_up_to_all_entries) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    auto batch0 = make_large_batch(model::offset(0));
+    auto batch1 = make_large_batch(model::offset(1));
+    _cache.put(tidp, batch0);
+    _cache.put(tidp, batch1);
+
+    // Evict up to an offset beyond all entries
+    _cache.evict_up_to(tidp, model::offset(100));
+
+    ASSERT_FALSE(_cache.get(tidp, model::offset(0)).has_value());
+    ASSERT_FALSE(_cache.get(tidp, model::offset(1)).has_value());
+}
+
+TEST_F(batch_cache_test_fixture, test_evict_up_to_no_entries) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    auto batch0 = make_large_batch(model::offset(5));
+    _cache.put(tidp, batch0);
+
+    // Evict up to offset before any entry - nothing should be removed
+    _cache.evict_up_to(tidp, model::offset(3));
+
+    ASSERT_TRUE(_cache.get(tidp, model::offset(5)).has_value());
+}
+
+TEST_F(batch_cache_test_fixture, test_evict_up_to_nonexistent_tidp) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    // Evicting from a tidp that was never inserted should be a no-op
+    _cache.evict_up_to(tidp, model::offset(100));
+
+    ASSERT_FALSE(contains_tidp(tidp));
+}
+
+TEST_F(batch_cache_test_fixture, test_evict_up_to_does_not_affect_other_tidps) {
+    auto tidp1 = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+    auto tidp2 = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(1)};
+
+    auto batch1 = make_large_batch(model::offset(0));
+    auto batch2 = make_large_batch(model::offset(0));
+    _cache.put(tidp1, batch1);
+    _cache.put(tidp2, batch2);
+
+    // Evict from tidp1 only
+    _cache.evict_up_to(tidp1, model::offset(100));
+
+    ASSERT_FALSE(_cache.get(tidp1, model::offset(0)).has_value());
+    ASSERT_TRUE(_cache.get(tidp2, model::offset(0)).has_value());
+}

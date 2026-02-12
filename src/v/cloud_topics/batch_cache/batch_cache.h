@@ -64,6 +64,9 @@ public:
     std::optional<model::record_batch>
     get(const model::topic_id_partition& tidp, model::offset o);
 
+    // Evict all cached entries for the partition with base_offset <= o.
+    void evict_up_to(const model::topic_id_partition& tidp, model::offset o);
+
 private:
     // Remove dead index entries
     ss::future<> cleanup_index_entries();

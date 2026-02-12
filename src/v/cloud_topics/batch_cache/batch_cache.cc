@@ -107,6 +107,17 @@ batch_cache::get(const model::topic_id_partition& tidp, model::offset o) {
     return std::nullopt;
 }
 
+void batch_cache::evict_up_to(
+  const model::topic_id_partition& tidp, model::offset o) {
+    if (_lm == nullptr) {
+        return;
+    }
+    _gate.check();
+    if (auto it = _index.find(tidp); it != _index.end()) {
+        it->second->evict_up_to(o);
+    }
+}
+
 ss::future<> batch_cache::cleanup_index_entries() {
     // NOTE: the memory is reclaimed asynchronously.  In some cases
     // the index may no longer reference any live entries.  If this
