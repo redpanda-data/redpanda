@@ -94,6 +94,11 @@ public:
     /// Retrieve materialized record batch from cache
     virtual std::optional<model::record_batch>
     cache_get(const model::topic_id_partition&, model::offset o) = 0;
+
+    /// Evict cached entries with base_offset <= up_to
+    virtual void
+    cache_evict(const model::topic_id_partition&, model::offset up_to)
+      = 0;
 };
 
 } // namespace cloud_topics

@@ -203,6 +203,11 @@ public:
         return _batch_cache.local().get(tidp, o);
     }
 
+    void cache_evict(
+      const model::topic_id_partition& tidp, model::offset up_to) final {
+        _batch_cache.local().evict_up_to(tidp, up_to);
+    }
+
     size_t materialize_max_bytes() const final {
         return _read_pipeline.local().memory_quota_capacity();
     }
