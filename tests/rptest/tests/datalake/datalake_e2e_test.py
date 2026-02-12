@@ -12,7 +12,7 @@ import random
 import re
 import time
 from random import randint
-from typing import Callable, Any
+from typing import Any, Callable
 
 from confluent_kafka import Producer, avro
 from confluent_kafka.avro import AvroProducer
@@ -20,10 +20,12 @@ from ducktape.mark import ignore, matrix
 from ducktape.utils.util import wait_until
 from google import protobuf
 from google.protobuf import json_format as pb_json_format
-from google.protobuf import text_format as pb_text_format
 from google.protobuf import message_factory
+from google.protobuf import text_format as pb_text_format
 
+from rptest.clients.admin import v2 as admin_v2
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
@@ -1770,3 +1772,103 @@ class DatalakeCustomNamespaceTest(RedpandaTest):
                 msg_count=count,
                 namespace=self.test_namespace,
             )
+
+
+class DatalakeCoordinatorResetTest(RedpandaTest):
+    def __init__(self, test_ctx, *args, **kwargs):
+        super().__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            *args,
+            **kwargs,
+        )
+        self.test_ctx = test_ctx
+        self.topic_name = "test"
+
+    def setUp(self):
+        """Redpanda will be started by DatalakeServices."""
+        pass
+
+    def _get_topic_state(self):
+        dl_pb = admin_v2.datalake_pb
+        admin = admin_v2.Admin(self.redpanda)
+        resp = admin.datalake().get_coordinator_state(
+            dl_pb.GetCoordinatorStateRequest()
+        )
+        return resp.state.topic_states[self.topic_name]
+
+    def _reset_coordinator_state(self, reset_all_partitions: bool):
+        dl_pb = admin_v2.datalake_pb
+        admin = admin_v2.Admin(self.redpanda)
+        rev = self._get_topic_state().revision
+        admin.datalake().coordinator_reset_topic_state(
+            dl_pb.CoordinatorResetTopicStateRequest(
+                topic_name=self.topic_name,
+                revision=rev,
+                reset_all_partitions=reset_all_partitions,
+            )
+        )
+
+    def _count_pending_entries(self):
+        ts = self._get_topic_state()
+        return sum(len(ps.pending_entries) for ps in ts.partition_states.values())
+
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_coordinator_reset(self, cloud_storage_type, catalog_type):
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=catalog_type,
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                self.topic_name,
+                partitions=3,
+                config={
+                    TopicSpec.PROPERTY_ICEBERG_PARTITION_SPEC: "()",
+                },
+            )
+            dl.produce_to_topic(self.topic_name, msg_size=1024, msg_count=10)
+            dl.wait_for_translation(self.topic_name, msg_count=10)
+
+            # Increase the commit interval to accumulate pending commits.
+            self.redpanda.set_cluster_config(
+                {"iceberg_catalog_commit_interval_ms": 100000}
+            )
+            # Sleep twice the original commit interval to ensure we will be
+            # waiting on the new interval.
+            time.sleep(10)
+
+            dl.produce_to_topic(self.topic_name, msg_size=1024, msg_count=10)
+
+            wait_until(
+                lambda: self._count_pending_entries() > 0,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="Expected pending entries to be present after producing records",
+            )
+
+            self._reset_coordinator_state(reset_all_partitions=False)
+            assert self._count_pending_entries() > 0, (
+                "Expected pending entries to still be present after no-op reset"
+            )
+
+            self._reset_coordinator_state(reset_all_partitions=True)
+            assert self._count_pending_entries() == 0, (
+                "Expected pending entries to be cleared after coordinator reset"
+            )
+
+            # After a plain reset, no partition should have last_committed.
+            for pid, ps in self._get_topic_state().partition_states.items():
+                assert not ps.HasField("last_committed"), (
+                    f"Partition {pid} has unexpected last_committed"
+                )

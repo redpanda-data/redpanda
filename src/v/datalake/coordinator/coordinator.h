@@ -89,6 +89,11 @@ public:
     ss::future<checked<chunked_hash_map<model::topic, topic_state>, errc>>
     sync_get_topic_state(chunked_vector<model::topic> topics);
 
+    ss::future<checked<void, errc>> sync_reset_topic_state(
+      model::topic topic,
+      model::revision_id topic_rev,
+      bool reset_all_partitions);
+
     void notify_leadership(std::optional<model::node_id>);
 
     bool leader_loop_running() const { return term_as_.has_value(); }

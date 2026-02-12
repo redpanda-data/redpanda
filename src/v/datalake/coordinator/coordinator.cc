@@ -885,6 +885,53 @@ coordinator::sync_get_topic_state(chunked_vector<model::topic> topics_filter) {
     co_return result;
 }
 
+ss::future<checked<void, coordinator::errc>>
+coordinator::sync_reset_topic_state(
+  model::topic topic,
+  model::revision_id topic_revision,
+  bool reset_all_partitions) {
+    auto gate = maybe_gate();
+    if (gate.has_error()) {
+        co_return gate.error();
+    }
+
+    vlog(datalake_log.debug, "Resetting coordinator state for topic {}", topic);
+    auto sync_res = co_await stm_->sync(10s);
+    if (sync_res.has_error()) {
+        co_return convert_stm_errc(sync_res.error());
+    }
+
+    reset_topic_state_update update{
+      .topic = topic,
+      .topic_revision = topic_revision,
+      .reset_all_partitions = reset_all_partitions,
+    };
+    auto check_res = update.can_apply(stm_->state());
+    if (check_res.has_error()) {
+        vlog(
+          datalake_log.debug,
+          "Rejecting reset topic state request for {}: {}",
+          topic,
+          check_res.error());
+        co_return errc::stm_apply_error;
+    }
+    storage::record_batch_builder builder(
+      model::record_batch_type::datalake_coordinator, model::offset{0});
+    builder.add_raw_kv(
+      serde::to_iobuf(reset_topic_state_update::key),
+      serde::to_iobuf(std::move(update)));
+
+    auto repl_res = co_await stm_->replicate_and_wait(
+      sync_res.value(), std::move(builder).build(), as_);
+    if (repl_res.has_error()) {
+        auto e = convert_stm_errc(repl_res.error());
+        vlog(datalake_log.warn, "Replication failed {}", e);
+        co_return e;
+    }
+
+    co_return outcome::success();
+}
+
 ss::sstring coordinator::get_effective_default_partition_spec(
   const std::optional<ss::sstring>& partition_spec) const {
     const auto& cfg = config::shard_local_cfg();

@@ -28,6 +28,11 @@ public:
         serde::pb::rpc::context,
         proto::admin::get_coordinator_state_request) override;
 
+    ss::future<proto::admin::coordinator_reset_topic_state_response>
+      coordinator_reset_topic_state(
+        serde::pb::rpc::context,
+        proto::admin::coordinator_reset_topic_state_request) override;
+
 private:
     admin::proxy::client _proxy_client;
 

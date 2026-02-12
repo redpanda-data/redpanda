@@ -382,4 +382,65 @@ struct get_topic_state_request
     }
 };
 
+struct reset_topic_state_reply
+  : serde::envelope<
+      reset_topic_state_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    reset_topic_state_reply() = default;
+    explicit reset_topic_state_reply(errc err)
+      : errc(err) {}
+    friend std::ostream&
+    operator<<(std::ostream&, const reset_topic_state_reply&);
+    errc errc;
+    auto serde_fields() { return std::tie(errc); }
+};
+
+struct reset_topic_state_request
+  : serde::envelope<
+      reset_topic_state_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = reset_topic_state_reply;
+
+    model::partition_id coordinator_partition;
+    model::topic topic;
+    model::revision_id topic_revision;
+    bool reset_all_partitions{false};
+
+    reset_topic_state_request() = default;
+
+    explicit reset_topic_state_request(
+      model::partition_id coordinator_partition,
+      model::topic topic,
+      model::revision_id topic_revision,
+      bool reset_all_partitions = false)
+      : coordinator_partition(coordinator_partition)
+      , topic(std::move(topic))
+      , topic_revision(topic_revision)
+      , reset_all_partitions(reset_all_partitions) {}
+
+    model::partition_id get_coordinator_partition() const {
+        return coordinator_partition;
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const reset_topic_state_request& req) {
+        fmt::print(
+          o,
+          "{{coordinator_partition: {}, topic: {}, topic_revision: {}, "
+          "reset_all_partitions: {}}}",
+          req.coordinator_partition,
+          req.topic,
+          req.topic_revision,
+          req.reset_all_partitions);
+        return o;
+    }
+
+    auto serde_fields() {
+        return std::tie(
+          coordinator_partition, topic, topic_revision, reset_all_partitions);
+    }
+};
+
 } // namespace datalake::coordinator

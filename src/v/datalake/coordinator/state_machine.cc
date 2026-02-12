@@ -133,6 +133,13 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
             maybe_log_update_error(_log, key, o, res);
             continue;
         }
+        case update_key::reset_topic_state: {
+            auto update = serde::read<reset_topic_state_update>(val_p);
+            vlog(_log.debug, "Applying {} from offset {}: {}", key, o, update);
+            auto res = update.apply(state_);
+            maybe_log_update_error(_log, key, o, res);
+            continue;
+        }
         }
         vlog(
           _log.error,

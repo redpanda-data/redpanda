@@ -39,6 +39,9 @@ public:
     ss::future<get_topic_state_reply> get_topic_state(
       get_topic_state_request, ::rpc::streaming_context&) override;
 
+    ss::future<reset_topic_state_reply> reset_topic_state(
+      reset_topic_state_request, ::rpc::streaming_context&) override;
+
 private:
     ss::sharded<frontend>* _frontend;
 };

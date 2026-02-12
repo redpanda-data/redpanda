@@ -49,6 +49,21 @@ class DatalakeServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    def call_coordinator_reset_topic_state(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse]:
+        """Low-level method to call CoordinatorResetTopicState, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.datalake.v1.DatalakeService/CoordinatorResetTopicState'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse, extra_headers, timeout_seconds)
+
+    def coordinator_reset_topic_state(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse:
+        response = self.call_coordinator_reset_topic_state(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 class AsyncDatalakeServiceClient:
 
     def __init__(self, base_url: str, http_client: aiohttp.ClientSession, protocol: ConnectProtocol=ConnectProtocol.CONNECT_PROTOBUF):
@@ -70,14 +85,33 @@ class AsyncDatalakeServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    async def call_coordinator_reset_topic_state(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse]:
+        """Low-level method to call CoordinatorResetTopicState, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.datalake.v1.DatalakeService/CoordinatorResetTopicState'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse, extra_headers, timeout_seconds)
+
+    async def coordinator_reset_topic_state(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse:
+        response = await self.call_coordinator_reset_topic_state(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 @typing.runtime_checkable
 class DatalakeServiceProtocol(typing.Protocol):
 
     def get_coordinator_state(self, req: ClientRequest[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.GetCoordinatorStateRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.GetCoordinatorStateResponse]:
+        ...
+
+    def coordinator_reset_topic_state(self, req: ClientRequest[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse]:
         ...
 DATALAKE_SERVICE_PATH_PREFIX = '/redpanda.core.admin.internal.datalake.v1.DatalakeService'
 
 def wsgi_datalake_service(implementation: DatalakeServiceProtocol) -> WSGIApplication:
     app = ConnectWSGI()
     app.register_unary_rpc('/redpanda.core.admin.internal.datalake.v1.DatalakeService/GetCoordinatorState', implementation.get_coordinator_state, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.GetCoordinatorStateRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.datalake.v1.DatalakeService/CoordinatorResetTopicState', implementation.coordinator_reset_topic_state, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest)
     return app

@@ -86,6 +86,31 @@ class GetCoordinatorStateResponse(google.protobuf.message.Message):
 Global___GetCoordinatorStateResponse: typing_extensions.TypeAlias = GetCoordinatorStateResponse
 
 @typing.final
+class CoordinatorResetTopicStateRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPIC_NAME_FIELD_NUMBER: builtins.int
+    REVISION_FIELD_NUMBER: builtins.int
+    RESET_ALL_PARTITIONS_FIELD_NUMBER: builtins.int
+    topic_name: builtins.str
+    revision: builtins.int
+    reset_all_partitions: builtins.bool
+
+    def __init__(self, *, topic_name: builtins.str=..., revision: builtins.int=..., reset_all_partitions: builtins.bool=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['reset_all_partitions', b'reset_all_partitions', 'revision', b'revision', 'topic_name', b'topic_name']) -> None:
+        ...
+Global___CoordinatorResetTopicStateRequest: typing_extensions.TypeAlias = CoordinatorResetTopicStateRequest
+
+@typing.final
+class CoordinatorResetTopicStateResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    def __init__(self) -> None:
+        ...
+Global___CoordinatorResetTopicStateResponse: typing_extensions.TypeAlias = CoordinatorResetTopicStateResponse
+
+@typing.final
 class CoordinatorState(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 

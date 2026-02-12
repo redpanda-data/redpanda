@@ -42,6 +42,7 @@ class TopicSpec:
     PROPERTY_DELETE_RETENTION_MS = "delete.retention.ms"
     PROPERTY_ICEBERG_INVALID_RECORD_ACTION = "redpanda.iceberg.invalid.record.action"
     PROPERTY_ICEBERG_TARGET_LAG_MS = "redpanda.iceberg.target.lag.ms"
+    PROPERTY_ICEBERG_PARTITION_SPEC = "redpanda.iceberg.partition.spec"
     PROPERTY_MIN_CLEANABLE_DIRTY_RATIO = "min.cleanable.dirty.ratio"
     PROPERTY_MIN_COMPACTION_LAG_MS = "min.compaction.lag.ms"
     PROPERTY_MAX_COMPACTION_LAG_MS = "max.compaction.lag.ms"

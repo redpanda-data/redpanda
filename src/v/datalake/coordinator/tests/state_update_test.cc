@@ -314,3 +314,64 @@ TEST(StateUpdateTest, TestLifecycle) {
       apply_lc_transition(state, rev3, topic_state::lifecycle_state_t::closed)
         .has_value());
 }
+
+TEST(StateUpdateTest, TestResetTopicState) {
+    topics_state state;
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_error());
+
+    auto res = add_files_update::build(
+                 state, tp, rev, make_pending_files({{0, 100}}))
+                 .value()
+                 .apply(state, model::offset{});
+    ASSERT_FALSE(res.has_error());
+    ASSERT_NO_FATAL_FAILURE(
+      check_partition(state, tp, std::nullopt, {{0, 100}}));
+
+    // Reset with reset_all_partitions clears pending files.
+    reset_topic_state_update update{
+      .topic = topic,
+      .topic_revision = rev,
+      .reset_all_partitions = true,
+    };
+    ASSERT_FALSE(update.apply(state).has_error());
+    auto ps = state.partition_state(tp);
+    ASSERT_FALSE(ps.has_value());
+
+    // Reset with wrong revision fails.
+    reset_topic_state_update bad_rev{
+      .topic = topic,
+      .topic_revision = model::revision_id{999},
+    };
+    ASSERT_TRUE(bad_rev.apply(state).has_error());
+
+    // Reset on nonexistent topic is a no-op.
+    reset_topic_state_update missing{
+      .topic = model::topic{"no_such_topic"},
+      .topic_revision = rev,
+    };
+    ASSERT_FALSE(missing.apply(state).has_error());
+}
+
+TEST(StateUpdateTest, TestResetNoOp) {
+    topics_state state;
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_error());
+
+    auto res = add_files_update::build(
+                 state, tp, rev, make_pending_files({{0, 100}}))
+                 .value()
+                 .apply(state, model::offset{});
+    ASSERT_FALSE(res.has_error());
+
+    // reset_all_partitions=false (default), no overrides: state is unchanged.
+    reset_topic_state_update update{
+      .topic = topic,
+      .topic_revision = rev,
+    };
+    ASSERT_FALSE(update.apply(state).has_error());
+    ASSERT_NO_FATAL_FAILURE(
+      check_partition(state, tp, std::nullopt, {{0, 100}}));
+}
