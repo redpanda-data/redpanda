@@ -12,6 +12,7 @@
 #include "cloud_storage/types.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/errc.h"
+#include "cloud_topics/inflight_write_token.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
@@ -585,6 +586,10 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
   chunked_vector<model::record_batch> cache_batches,
   raft::replicate_options opts) {
     const auto& ntp = partition->ntp();
+
+    auto token = api->track_inflight_write();
+    auto on_write_exit = ss::defer([&token] { token->done.set_value(); });
+
     // The default errc that will cause the client to retry the operation
     constexpr auto default_errc = raft::errc::timeout;
     /*
@@ -779,6 +784,9 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
       "Unexpected invalid min epoch {} for {}",
       min_epoch,
       ntp());
+
+    auto token = _data_plane->track_inflight_write();
+    auto on_write_exit = ss::defer([&token] { token->done.set_value(); });
 
     auto staged = co_await _data_plane->stage_write(std::move(batches));
     if (!staged.has_value()) {

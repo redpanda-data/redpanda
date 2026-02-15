@@ -24,6 +24,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/cloud_storage:types",
+        "//src/v/cloud_topics:inflight_write_token",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:topic_id_partition",
         "//src/v/cloud_topics/level_one/metastore",
