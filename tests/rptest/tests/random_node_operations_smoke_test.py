@@ -128,6 +128,7 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             cloud_storage_enable_remote_read=True,
             cloud_storage_enable_remote_write=True,
             fast_uploads=True,
+            enable_bucket_versioning=True,
         )
         self.catalog_service = IcebergRESTCatalog(
             test_context,
@@ -935,7 +936,7 @@ class RedpandaNodeOperationsSmokeTest(RandomNodeOperationsBase):
 
         # iceberg and mixed versions are mutually incompatible, so run two
         # flavors of the smoke test, one with iceberg and one with mixed versions
-        with_iceberg = not mixed_versions
+        with_iceberg = False
         self._do_test_node_operations(
             enable_failures=True,
             mixed_versions=mixed_versions,

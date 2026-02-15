@@ -637,6 +637,7 @@ class SISettings:
         before_call_headers: Callable[[], dict[str, str]] | None = None,
         skip_end_of_test_scrubbing: bool = False,
         addressing_style: S3AddressingStyle = S3AddressingStyle.PATH,
+        enable_bucket_versioning: bool = False,
     ) -> None:
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
@@ -761,6 +762,7 @@ class SISettings:
         # tests. Should figure out how to re-enable it, or consider using
         # redpanda's built-in scrubbing capabilities.
         self.skip_end_of_test_scrubbing = skip_end_of_test_scrubbing
+        self.enable_bucket_versioning = enable_bucket_versioning
 
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
@@ -4057,6 +4059,16 @@ class RedpandaService(Service, RedpandaServiceABC):
                 self.si_settings.cloud_storage_bucket
             )
 
+        # Enable versioning so that deleted/overwritten objects are retained.
+        # This allows collecting all SST files that ever existed during a test,
+        # even if compaction or GC removed them before the test completed.
+        if self.si_settings.enable_bucket_versioning and isinstance(
+            self.cloud_storage_client, S3Client
+        ):
+            self.cloud_storage_client.enable_bucket_versioning(
+                self.si_settings.cloud_storage_bucket
+            )
+
         # If the test has requested to use a bucket cleanup policy then we
         # attempt to create one which will remove everything from the bucket
         # after one day.
@@ -4141,9 +4153,23 @@ class RedpandaService(Service, RedpandaServiceABC):
             f"missing bucket : {self.si_settings.cloud_storage_bucket}"
         )
         t = time.time()
-        self.cloud_storage_client.empty_and_delete_bucket(
-            self.si_settings.cloud_storage_bucket, parallel=self.dedicated_nodes
-        )
+
+        # Versioned buckets require deleting all object versions and delete
+        # markers before the bucket itself can be removed.
+        if self.si_settings.enable_bucket_versioning and isinstance(
+            self.cloud_storage_client, S3Client
+        ):
+            self.cloud_storage_client.empty_versioned_bucket(
+                self.si_settings.cloud_storage_bucket
+            )
+            self.cloud_storage_client.delete_bucket(
+                self.si_settings.cloud_storage_bucket
+            )
+        else:
+            self.cloud_storage_client.empty_and_delete_bucket(
+                self.si_settings.cloud_storage_bucket,
+                parallel=self.dedicated_nodes,
+            )
 
         self.logger.info(
             f"Emptying and deleting bucket {self.si_settings.cloud_storage_bucket} took {time.time() - t}s"
@@ -4480,17 +4506,38 @@ class RedpandaService(Service, RedpandaServiceABC):
         key_dump_limit = 10000
         manifest_dump_limit = 128
 
-        self.logger.info(
-            f"Gathering cloud storage diagnostics in bucket {self.si_settings.cloud_storage_bucket}"
+        bucket = self.si_settings.cloud_storage_bucket
+        use_versioned_listing = (
+            self.si_settings.enable_bucket_versioning
+            and self.si_settings.cloud_storage_type == CloudStorageType.S3
         )
 
-        manifests_to_dump: list[str] = []
-        for o in self.cloud_storage_client.list_objects(
-            self.si_settings.cloud_storage_bucket
-        ):
-            key = o.key
+        self.logger.info(
+            f"Gathering cloud storage diagnostics in bucket {bucket}"
+            f" (versioned={use_versioned_listing})"
+        )
+
+        # When versioning is enabled, list all versions so we capture objects
+        # that were deleted by compaction/GC during the test run.  Each entry
+        # is a (key, version_id) tuple so we can fetch the exact version.
+        client = self.cloud_storage_client
+        if use_versioned_listing and isinstance(client, S3Client):
+            versioned_iter = client.list_object_versions(bucket)
+            object_list: list[tuple[str, int, str | None]] = [
+                (o.key, o.content_length, o.version_id) for o in versioned_iter
+            ]
+        else:
+            object_list = [
+                (o.key, o.content_length, None) for o in client.list_objects(bucket)
+            ]
+
+        # (key, version_id|None) tuples
+        manifests_to_dump: list[tuple[str, str | None]] = []
+        segments_to_dump: list[tuple[str, str | None]] = []
+        segment_dump_limit = 10000
+        for key, content_length, version_id in object_list:
             if key_dump_limit > 0:
-                self.logger.info(f"  {key} {o.content_length}")
+                self.logger.info(f"  {key} {content_length}")
                 key_dump_limit -= 1
 
             # Gather manifest.json and topic_manifest.json files
@@ -4499,10 +4546,26 @@ class RedpandaService(Service, RedpandaServiceABC):
                 or "manifest.bin" in key
                 and manifest_dump_limit > 0
             ):
-                manifests_to_dump.append(key)
+                manifests_to_dump.append((key, version_id))
                 manifest_dump_limit -= 1
 
-            if manifest_dump_limit == 0 and key_dump_limit == 0:
+            # Gather segment/SST files (everything that is not a manifest,
+            # index, or lifecycle marker).
+            elif (
+                segment_dump_limit > 0
+                and not key.endswith(".tx")
+                and not key.endswith(".index")
+                and "lifecycle" not in key
+                and "cluster_metadata" not in key
+            ):
+                segments_to_dump.append((key, version_id))
+                segment_dump_limit -= 1
+
+            if (
+                manifest_dump_limit == 0
+                and key_dump_limit == 0
+                and segment_dump_limit == 0
+            ):
                 break
 
         service_dir = os.path.join(
@@ -4513,16 +4576,21 @@ class RedpandaService(Service, RedpandaServiceABC):
         if not os.path.isdir(service_dir):
             mkdir_p(service_dir)
 
+        def _fetch_object(key: str, version_id: str | None) -> bytes:
+            if version_id is not None and isinstance(client, S3Client):
+                return client.get_object_data_by_version(bucket, key, version_id)
+            return client.get_object_data(bucket, key)
+
         archive_basename = "cloud_diagnostics.zip"
         archive_path = os.path.join(service_dir, archive_basename)
 
         with zipfile.ZipFile(archive_path, mode="w") as archive:
-            for m in manifests_to_dump:
+            for m, vid in manifests_to_dump:
                 self.logger.info(f"Fetching manifest {m}")
-                body = self.cloud_storage_client.get_object_data(
-                    self.si_settings.cloud_storage_bucket, m
-                )
+                body = _fetch_object(m, vid)
                 filename = m.replace("/", "_")
+                if vid is not None:
+                    filename = f"{filename}__{vid}"
 
                 with archive.open(filename, "w") as outstr:
                     outstr.write(body)
@@ -4544,6 +4612,34 @@ class RedpandaService(Service, RedpandaServiceABC):
                         )
                         with archive.open(json_filename, "w") as outstr:
                             outstr.write(json_bytes.encode())
+
+        # Write segment/SST files to a separate archive to keep diagnostics
+        # manageable and to avoid inflating the manifest archive.
+        if segments_to_dump:
+            segments_archive_path = os.path.join(service_dir, "cloud_segments.zip")
+            self.logger.info(
+                f"Collecting {len(segments_to_dump)} segment/SST files"
+                f" into {segments_archive_path}"
+            )
+            with zipfile.ZipFile(
+                segments_archive_path,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as archive:
+                for s, vid in segments_to_dump:
+                    try:
+                        body = _fetch_object(s, vid)
+                    except Exception as e:
+                        # Object may have been physically purged or the
+                        # version expired; log and continue.
+                        self.logger.warning(f"Failed to fetch segment {s}: {e}")
+                        continue
+                    filename = s.replace("/", "_")
+                    if vid is not None:
+                        filename = f"{filename}__{vid}"
+                    with archive.open(filename, "w") as outstr:
+                        outstr.write(body)
+            self.logger.info(f"Segment collection complete: {segments_archive_path}")
 
     def raise_on_storage_usage_inconsistency(self):
         def tracked(fstat: tuple[pathlib.Path, int]):

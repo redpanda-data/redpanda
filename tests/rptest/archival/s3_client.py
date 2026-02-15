@@ -28,6 +28,14 @@ class ObjectMetadata(NamedTuple):
     content_length: int
 
 
+class VersionedObjectMetadata(NamedTuple):
+    key: str
+    bucket: str
+    etag: str
+    content_length: int
+    version_id: str
+
+
 class S3AddressingStyle(str, Enum):
     VIRTUAL = "virtual"
     PATH = "path"
@@ -244,7 +252,7 @@ class S3Client:
         assert len(failed_deletions) == 0
         self.delete_bucket(name)
 
-    def delete_bucket(self, name):
+    def delete_bucket(self, name: str):
         self.logger.info(f"Deleting bucket {name}...")
         try:
             self._cli.delete_bucket(Bucket=name)
@@ -569,6 +577,127 @@ class S3Client:
         except Exception as ex:
             self.logger.error(f"Error listing buckets: {ex}")
             raise
+
+    def enable_bucket_versioning(self, bucket: str):
+        """Enable versioning on an S3 bucket.
+
+        When versioning is enabled, objects that are deleted or overwritten
+        retain their previous versions.  This is useful for capturing all
+        SST files that ever existed in tiered storage, even if they were
+        later removed by compaction or GC during a test run.
+        """
+        self.logger.info(f"Enabling versioning on bucket {bucket}")
+        self._cli.put_bucket_versioning(
+            Bucket=bucket,
+            VersioningConfiguration={"Status": "Enabled"},
+        )
+
+    @retry_on_slowdown()
+    def _list_object_versions(
+        self,
+        *,
+        bucket,
+        key_marker=None,
+        version_id_marker=None,
+        limit=1000,
+        prefix=None,
+    ):
+        try:
+            kwargs = dict(Bucket=bucket, MaxKeys=limit, Prefix=prefix if prefix else "")
+            if key_marker is not None:
+                kwargs["KeyMarker"] = key_marker
+                if version_id_marker is not None:
+                    kwargs["VersionIdMarker"] = version_id_marker
+            return self._cli.list_object_versions(**kwargs)
+        except ClientError as err:
+            self.logger.debug(f"error response listing versions {bucket}: {err}")
+            if err.response["Error"]["Code"] == "SlowDown":
+                raise SlowDown()
+            else:
+                raise
+
+    def list_object_versions(
+        self,
+        bucket: str,
+        prefix: str | None = None,
+    ) -> Iterator[VersionedObjectMetadata]:
+        """List all object versions in a bucket, including non-current
+        (deleted/overwritten) versions.
+
+        Yields VersionedObjectMetadata for every version that ever existed.
+        Each entry includes the version_id needed to download that specific
+        version.
+        """
+        key_marker = None
+        version_id_marker = None
+        truncated = True
+        while truncated:
+            res = self._list_object_versions(
+                bucket=bucket,
+                key_marker=key_marker,
+                version_id_marker=version_id_marker,
+                limit=100,
+                prefix=prefix,
+            )
+            truncated = bool(res.get("IsTruncated", False))
+            key_marker = res.get("NextKeyMarker")
+            version_id_marker = res.get("NextVersionIdMarker")
+
+            for item in res.get("Versions", []):
+                yield VersionedObjectMetadata(
+                    bucket=bucket,
+                    key=item["Key"],
+                    etag=item["ETag"][1:-1],
+                    content_length=item["Size"],
+                    version_id=item["VersionId"],
+                )
+
+    def get_object_data_by_version(
+        self, bucket: str, key: str, version_id: str
+    ) -> bytes:
+        """Download a specific version of an object."""
+        resp = self._cli.get_object(Bucket=bucket, Key=key, VersionId=version_id)
+        return resp["Body"].read()
+
+    def empty_versioned_bucket(self, bucket: str):
+        """Delete all object versions and delete markers from a
+        versioned bucket so it can be deleted."""
+        self.logger.info(f"Emptying all versions from versioned bucket {bucket}")
+        key_marker = None
+        version_id_marker = None
+        truncated = True
+        while truncated:
+            res = self._list_object_versions(
+                bucket=bucket,
+                key_marker=key_marker,
+                version_id_marker=version_id_marker,
+                limit=1000,
+            )
+            truncated = bool(res.get("IsTruncated", False))
+            key_marker = res.get("NextKeyMarker")
+            version_id_marker = res.get("NextVersionIdMarker")
+
+            objects_to_delete = []
+            for item in res.get("Versions", []):
+                objects_to_delete.append(
+                    {
+                        "Key": item["Key"],
+                        "VersionId": item["VersionId"],
+                    }
+                )
+            for item in res.get("DeleteMarkers", []):
+                objects_to_delete.append(
+                    {
+                        "Key": item["Key"],
+                        "VersionId": item["VersionId"],
+                    }
+                )
+
+            if objects_to_delete:
+                self._cli.delete_objects(
+                    Bucket=bucket,
+                    Delete={"Objects": objects_to_delete},
+                )
 
     def create_expiration_policy(self, bucket: str, days: int):
         if self._is_gcs:
