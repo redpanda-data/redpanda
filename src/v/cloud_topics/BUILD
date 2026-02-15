@@ -58,6 +58,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "inflight_write_token",
+    hdrs = ["inflight_write_token.h"],
+    visibility = [
+        "//src/v/cloud_topics/frontend:__pkg__",
+        "//src/v/cloud_topics/frontend/tests:__pkg__",
+        "//src/v/cloud_topics/level_zero/batcher:__pkg__",
+        "//src/v/cloud_topics/level_zero/batcher/tests:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc:__pkg__",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:intrusive",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "data_plane_api",
     hdrs = [
         "data_plane_api.h",
