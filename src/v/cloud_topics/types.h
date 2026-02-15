@@ -11,11 +11,13 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "container/intrusive_list_helpers.h"
 #include "random/generators.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <fmt/core.h>
@@ -76,6 +78,14 @@ enum class ctp_stm_object_ownership {
 
 using allow_materialization_failure
   = ss::bool_class<struct allow_materialization_failure_tag>;
+
+struct inflight_write_token {
+    ss::promise<> done;
+    intrusive_list_hook _hook;
+};
+
+using inflight_write_list
+  = intrusive_list<inflight_write_token, &inflight_write_token::_hook>;
 
 } // namespace cloud_topics
 

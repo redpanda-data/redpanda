@@ -48,6 +48,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/base",
+        "//src/v/container:intrusive",
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/utils:named_type",
