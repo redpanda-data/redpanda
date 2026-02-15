@@ -141,6 +141,13 @@ public:
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
         _data_plane = ss::make_shared<mock_api>();
+        ON_CALL(*_data_plane, track_inflight_write()).WillByDefault([] {
+            auto token = std::make_unique<cloud_topics::inflight_write_token>();
+            return token;
+        });
+        ON_CALL(*_data_plane, drain_inflight_writes()).WillByDefault([] {
+            return ss::now();
+        });
     }
 
     scoped_config test_local_cfg;
@@ -169,6 +176,7 @@ TEST_F(frontend_fixture, test_replicate_epoch) {
     ON_CALL(*_data_plane, cache_put_ordered(_, _))
       .WillByDefault([](const auto&, auto) {});
     EXPECT_CALL(*_data_plane, cache_put_ordered(_, _)).Times(2);
+
     using stage_result = std::expected<staged_write, std::error_code>;
     EXPECT_CALL(*_data_plane, stage_write(_))
       .WillOnce(Return(ss::as_ready_future(stage_result{})))
