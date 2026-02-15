@@ -587,6 +587,10 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
   chunked_vector<model::record_batch> cache_batches,
   raft::replicate_options opts) {
     const auto& ntp = partition->ntp();
+
+    auto token = api->track_inflight_write();
+    auto on_write_exit = ss::defer([&token] { token->done.set_value(); });
+
     // The default errc that will cause the client to retry the operation
     constexpr auto default_errc = raft::errc::timeout;
     auto timeout = opts.timeout.value_or(0ms);
@@ -832,6 +836,9 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
       "Unexpected invalid min epoch {} for {}",
       min_epoch,
       ntp());
+
+    auto token = _data_plane->track_inflight_write();
+    auto on_write_exit = ss::defer([&token] { token->done.set_value(); });
 
     auto staged = co_await _data_plane->stage_write(std::move(batches));
     if (!staged.has_value()) {
