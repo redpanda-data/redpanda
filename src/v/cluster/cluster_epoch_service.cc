@@ -85,6 +85,12 @@ public:
         }
     }
 
+    void force_epoch_update() {
+        if (_raft0->is_leader()) {
+            do_force_epoch();
+        }
+    }
+
     // Shutdown this state, stopping the service loop if it's running.
     //
     // Must be called before destruction.
@@ -128,6 +134,23 @@ private:
             return std::exchange(_loop, std::nullopt)
               .or_else([]() { return std::make_optional(ss::now()); })
               .value();
+        });
+    }
+
+    void do_force_epoch() noexcept {
+        _queue.submit([this] {
+            _abort_source.request_abort();
+            return std::exchange(_loop, ss::now())
+              .or_else([]() { return std::make_optional(ss::now()); })
+              .value()
+              .then([this] {
+                  _abort_source = {};
+                  return update_epoch();
+              })
+              .finally([this] {
+                  _abort_source = {};
+                  _loop = service_loop();
+              });
         });
     }
 
@@ -336,6 +359,19 @@ ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
               // Force this to be a blocking update so we don't get another
               // sequence violation from the async update.
               s._epoch_updated_time = Clock::time_point::min();
+          }
+      });
+}
+
+template<typename Clock>
+ss::future<> cluster_epoch_service<Clock>::force_epoch_update(int64_t) {
+    auto holder = _gate.hold();
+    co_return co_await this->container().invoke_on_all(
+      [](cluster_epoch_service<Clock>& s) {
+          s._gate.check();
+          // TODO: conditional on current cached value
+          if (s._shard0_state) {
+              s._shard0_state->force_epoch_update();
           }
       });
 }
