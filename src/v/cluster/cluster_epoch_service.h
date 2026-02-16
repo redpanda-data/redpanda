@@ -83,6 +83,8 @@ public:
     ss::future<>
     invalidate_epoch_cache(int64_t epoch_causing_monotonicity_violation);
 
+    ss::future<> force_epoch_update(int64_t current);
+
     // Returns the current epoch (with caching) for the cluster.
     //
     // May be called on any shard.
