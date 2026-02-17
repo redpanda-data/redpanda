@@ -31,3 +31,42 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "epoch_barrier_coordinator_test",
+    timeout = "short",
+    srcs = [
+        "epoch_barrier_coordinator_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/level_zero/gc:epoch_barrier_coordinator",
+        "//src/v/cluster",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "epoch_barrier_coordinator_mt_test",
+    timeout = "short",
+    srcs = [
+        "epoch_barrier_coordinator_mt_test.cc",
+    ],
+    cpu = 3,
+    deps = [
+        "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/level_zero/gc:epoch_barrier_coordinator",
+        "//src/v/cluster",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
