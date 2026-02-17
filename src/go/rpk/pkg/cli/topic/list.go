@@ -112,9 +112,10 @@ func executeTopicList(adm *kadm.Client, topics []string, re bool) (kadm.TopicDet
 }
 
 type summarizedList struct {
-	Name       string `json:"name" yaml:"name"`
-	Partitions int    `json:"partitions" yaml:"partitions"`
-	Replicas   int    `json:"replicas" yaml:"replicas"`
+	Name       string  `json:"name" yaml:"name"`
+	ID         topicID `json:"id" yaml:"id"`
+	Partitions int     `json:"partitions" yaml:"partitions"`
+	Replicas   int     `json:"replicas" yaml:"replicas"`
 }
 
 func summarizedListView(internal bool, topics kadm.TopicDetails) (resp []summarizedList) {
@@ -125,12 +126,13 @@ func summarizedListView(internal bool, topics kadm.TopicDetails) (resp []summari
 		}
 		s := summarizedList{
 			Name:       topic.Topic,
+			ID:         topicID(topic.ID),
 			Partitions: len(topic.Partitions),
 			Replicas:   topic.Partitions.NumReplicas(),
 		}
 		resp = append(resp, s)
 	}
-	return
+	return resp
 }
 
 func printSummarizedListView(f config.OutFormatter, topics []summarizedList, w io.Writer) {
@@ -140,15 +142,16 @@ func printSummarizedListView(f config.OutFormatter, topics []summarizedList, w i
 		return
 	}
 
-	tw := out.NewTableTo(w, "NAME", "PARTITIONS", "REPLICAS")
+	tw := out.NewTableTo(w, "NAME", "TOPIC-ID", "PARTITIONS", "REPLICAS")
 	defer tw.Flush()
 	for _, topic := range topics {
-		tw.Print(topic.Name, topic.Partitions, topic.Replicas)
+		tw.Print(topic.Name, topic.ID, topic.Partitions, topic.Replicas)
 	}
 }
 
 type detailedListTopic struct {
 	Name          string                  `json:"name" yaml:"name"`
+	ID            topicID                 `json:"id" yaml:"id"`
 	Partitions    int                     `json:"partitions" yaml:"partitions"`
 	Replicas      int                     `json:"replicas" yaml:"replicas"`
 	PartitionList []detailedListPartition `json:"partition_list" yaml:"partition_list"`
@@ -161,7 +164,7 @@ type detailedListTopic struct {
 type detailedListPartition struct {
 	Partition       int32   `json:"partition" yaml:"partition"`
 	Leader          int32   `json:"leader" yaml:"leader"`
-	Epoch           int32   `json:"epoch,omitempty" yaml:"epoch"`
+	Epoch           int32   `json:"epoch,omitempty" yaml:"epoch,omitempty"`
 	Replicas        []int32 `json:"replicas" yaml:"replicas"`
 	OfflineReplicas []int32 `json:"offline_replicas" yaml:"offline_replicas"`
 	LoadError       string  `json:"load_error" yaml:"load_error"`
@@ -175,6 +178,7 @@ func detailedListView(internal bool, topics kadm.TopicDetails) (resp []detailedL
 		}
 		d := detailedListTopic{
 			Name:       topic.Topic,
+			ID:         topicID(topic.ID),
 			Partitions: len(topic.Partitions),
 			isInternal: topic.IsInternal,
 		}
@@ -202,7 +206,7 @@ func detailedListView(internal bool, topics kadm.TopicDetails) (resp []detailedL
 		}
 		resp = append(resp, d)
 	}
-	return
+	return resp
 }
 
 func printDetailedListView(f config.OutFormatter, topics []detailedListTopic, w io.Writer) {
@@ -219,7 +223,11 @@ func printDetailedListView(f config.OutFormatter, topics []detailedListTopic, w 
 		} else {
 			topicName = topic.Name
 		}
-		fmt.Fprintf(w, "%s, %d partitions, %d replicas\n", topicName, topic.Partitions, topic.Replicas)
+		var idStr string
+		if topic.ID != (topicID{}) {
+			idStr = topic.ID.String() + ", "
+		}
+		fmt.Fprintf(w, "%s, %s%d partitions, %d replicas\n", topicName, idStr, topic.Partitions, topic.Replicas)
 		headers := []string{"", "partition", "leader"}
 		if topic.isEpoch {
 			headers = append(headers, "epoch")

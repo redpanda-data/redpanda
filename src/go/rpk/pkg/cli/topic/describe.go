@@ -11,6 +11,7 @@ package topic
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -188,6 +189,11 @@ func printDescribedTopics(summary, configs, partitions bool, topics []describedT
 			tw := out.NewTabWriter()
 			defer tw.Flush()
 			tw.PrintColumn("NAME", topic.Summary.Name)
+			// Topic ID does not exist in older versions of RP & Kafka
+			// so it is possible this field is empty
+			if topic.Summary.ID != (topicID{}) {
+				tw.PrintColumn("TOPIC-ID", topic.Summary.ID)
+			}
 			if topic.Summary.Internal {
 				tw.PrintColumn("INTERNAL", topic.Summary.Internal)
 			}
@@ -217,6 +223,45 @@ func printDescribedTopics(summary, configs, partitions bool, topics []describedT
 	}
 }
 
+// topicID was added in KIP 516.
+type topicID [16]byte
+
+// MarshalText, MarshalJSON, MarshalYAML are used to encode the topicID
+// into a base64 encoding, before the output is provided to the user.
+//
+// If topicID does not exist, due to older versions
+// of Kafka or RP then it will return null or empty string, depending
+// on the output form.
+func (t topicID) MarshalText() ([]byte, error) {
+	if t == (topicID{}) {
+		return []byte(""), nil
+	}
+	encodedStr := base64.RawURLEncoding.EncodeToString(t[:])
+	return []byte(encodedStr), nil
+}
+
+func (t topicID) String() string {
+	text, _ := t.MarshalText()
+	return string(text)
+}
+
+func (t topicID) MarshalJSON() ([]byte, error) {
+	if t == (topicID{}) {
+		return []byte("null"), nil
+	}
+	encodedStr := base64.RawURLEncoding.EncodeToString(t[:])
+	return []byte(fmt.Sprintf(`"%s"`, encodedStr)), nil
+}
+
+// MarshalYAML implements the yaml.Marshaler interface.
+func (t topicID) MarshalYAML() ([]byte, error) {
+	if t == (topicID{}) {
+		return nil, nil
+	}
+	encodedStr := base64.RawURLEncoding.EncodeToString(t[:])
+	return []byte(encodedStr), nil
+}
+
 type describedTopic struct {
 	Summary    describeTopicSummary     `json:"summary" yaml:"summary"`
 	Configs    []describeTopicConfig    `json:"configs" yaml:"configs"`
@@ -226,16 +271,18 @@ type describedTopic struct {
 }
 
 type describeTopicSummary struct {
-	Name       string `json:"name" yaml:"name"`
-	Internal   bool   `json:"internal" yaml:"internal"`
-	Partitions int    `json:"partitions" yaml:"partitions"`
-	Replicas   int    `json:"replicas" yaml:"replicas"`
-	Error      string `json:"error" yaml:"error"`
+	Name       string  `json:"name" yaml:"name"`
+	ID         topicID `json:"id" yaml:"id"`
+	Internal   bool    `json:"internal" yaml:"internal"`
+	Partitions int     `json:"partitions" yaml:"partitions"`
+	Replicas   int     `json:"replicas" yaml:"replicas"`
+	Error      string  `json:"error" yaml:"error"`
 }
 
 func buildDescribeTopicSummary(topic kmsg.MetadataResponseTopic) describeTopicSummary {
 	resp := describeTopicSummary{
 		Name:       *topic.Topic,
+		ID:         topic.TopicID,
 		Internal:   topic.IsInternal,
 		Partitions: len(topic.Partitions),
 	}
@@ -443,7 +490,7 @@ func getDescribeUsed(partitions []kmsg.MetadataResponseTopicPartition, offsets [
 			u.Stable = true
 		}
 	}
-	return
+	return u
 }
 
 type startStableEndOffset struct {

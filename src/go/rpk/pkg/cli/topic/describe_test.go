@@ -224,6 +224,7 @@ func TestPartitionHeaderAndRow(t *testing.T) {
 func TestGetDescribeUsed(t *testing.T) {
 	testCases := []struct {
 		name       string
+		id         topicID
 		partitions []kmsg.MetadataResponseTopicPartition
 		offsets    []startStableEndOffset
 		expected   uses
@@ -303,6 +304,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "test-topic",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 3,
 						Replicas:   2,
@@ -317,7 +319,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: `[{"summary":{"name":"test-topic","internal":false,"partitions":3,"replicas":2,"error":""},"configs":[{"key":"retention.ms","value":"604800000","source":"DEFAULT_CONFIG"}],"partitions":[{"partition":0,"leader":1,"epoch":0,"replicas":[1,2],"log_start_offset":0,"high_watermark":0},{"partition":1,"leader":2,"epoch":0,"replicas":[2,1],"log_start_offset":0,"high_watermark":0},{"partition":2,"leader":1,"epoch":0,"replicas":[1,2],"log_start_offset":0,"high_watermark":0}]}]`,
+			expectedOutput: `[{"summary":{"name":"test-topic","id":"9HrBC1jMQ3KlZw4CssPUeQ","internal":false,"partitions":3,"replicas":2,"error":""},"configs":[{"key":"retention.ms","value":"604800000","source":"DEFAULT_CONFIG"}],"partitions":[{"partition":0,"leader":1,"epoch":0,"replicas":[1,2],"log_start_offset":0,"high_watermark":0},{"partition":1,"leader":2,"epoch":0,"replicas":[2,1],"log_start_offset":0,"high_watermark":0},{"partition":2,"leader":1,"epoch":0,"replicas":[1,2],"log_start_offset":0,"high_watermark":0}]}]`,
 			expectedReturn: true,
 		},
 		{
@@ -327,6 +329,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "topic1",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 2,
 						Replicas:   2,
@@ -342,6 +345,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "topic2",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   true,
 						Partitions: 1,
 						Replicas:   3,
@@ -354,7 +358,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: `[{"summary":{"name":"topic1","internal":false,"partitions":2,"replicas":2,"error":""},"configs":[{"key":"retention.ms","value":"86400000","source":"DYNAMIC_TOPIC_CONFIG"}],"partitions":[{"partition":0,"leader":1,"epoch":0,"replicas":[1,2],"log_start_offset":0,"high_watermark":0},{"partition":1,"leader":2,"epoch":0,"replicas":[2,1],"log_start_offset":0,"high_watermark":0}]},{"summary":{"name":"topic2","internal":true,"partitions":1,"replicas":3,"error":""},"configs":[{"key":"cleanup.policy","value":"compact","source":"STATIC_BROKER_CONFIG"}],"partitions":[{"partition":0,"leader":3,"epoch":0,"replicas":[1,2,3],"log_start_offset":0,"high_watermark":0}]}]`,
+			expectedOutput: `[{"summary":{"name":"topic1","id":"9HrBC1jMQ3KlZw4CssPUeQ","internal":false,"partitions":2,"replicas":2,"error":""},"configs":[{"key":"retention.ms","value":"86400000","source":"DYNAMIC_TOPIC_CONFIG"}],"partitions":[{"partition":0,"leader":1,"epoch":0,"replicas":[1,2],"log_start_offset":0,"high_watermark":0},{"partition":1,"leader":2,"epoch":0,"replicas":[2,1],"log_start_offset":0,"high_watermark":0}]},{"summary":{"name":"topic2","id":"9HrBC1jMQ3KlZw4CssPUeQ","internal":true,"partitions":1,"replicas":3,"error":""},"configs":[{"key":"cleanup.policy","value":"compact","source":"STATIC_BROKER_CONFIG"}],"partitions":[{"partition":0,"leader":3,"epoch":0,"replicas":[1,2,3],"log_start_offset":0,"high_watermark":0}]}]`,
 			expectedReturn: true,
 		},
 		{
@@ -364,6 +368,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "error-topic-1",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 0,
 						Replicas:   0,
@@ -375,6 +380,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "partial-error-topic",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 2,
 						Replicas:   3,
@@ -406,6 +412,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "normal-topic",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 1,
 						Replicas:   1,
@@ -428,6 +435,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					"summary": {
 						"name": "error-topic-1",
+                        "id": "9HrBC1jMQ3KlZw4CssPUeQ",
 						"internal": false,
 						"partitions": 0,
 						"replicas": 0,
@@ -439,6 +447,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					"summary": {
 						"name": "partial-error-topic",
+                        "id": "9HrBC1jMQ3KlZw4CssPUeQ",
 						"internal": false,
 						"partitions": 2,
 						"replicas": 3,
@@ -476,6 +485,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					"summary": {
 						"name": "normal-topic",
+                        "id": "9HrBC1jMQ3KlZw4CssPUeQ",
 						"internal": false,
 						"partitions": 1,
 						"replicas": 1,
@@ -509,6 +519,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "test-topic",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 1,
 						Replicas:   1,
@@ -523,6 +534,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 			},
 			expectedOutput: `- summary:
     name: test-topic
+    id: 9HrBC1jMQ3KlZw4CssPUeQ
     internal: false
     partitions: 1
     replicas: 1
@@ -548,6 +560,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "error-topic",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 0,
 						Replicas:   0,
@@ -557,6 +570,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 			},
 			expectedOutput: `- summary:
     name: error-topic
+    id: 9HrBC1jMQ3KlZw4CssPUeQ
     internal: false
     partitions: 0
     replicas: 0
@@ -572,6 +586,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "test-topic",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 1,
 						Replicas:   1,
@@ -631,6 +646,7 @@ func TestPrintDescribedTopics(t *testing.T) {
 				{
 					Summary: describeTopicSummary{
 						Name:       "test-topic",
+						ID:         topicID{0xf4, 0x7a, 0xc1, 0x0b, 0x58, 0xcc, 0x43, 0x72, 0xa5, 0x67, 0x0e, 0x02, 0xb2, 0xc3, 0xd4, 0x79},
 						Internal:   false,
 						Partitions: 2,
 						Replicas:   3,
@@ -647,6 +663,7 @@ func TestPrintDescribedTopics(t *testing.T) {
 			expectedOutput: `SUMMARY
 =======
 NAME        test-topic
+TOPIC-ID    9HrBC1jMQ3KlZw4CssPUeQ
 PARTITIONS  2
 REPLICAS    3
 

@@ -662,12 +662,23 @@ class RpkTool:
 
         def topic_line(line):
             parts = line.split()
+            # If TOPIC-ID is present, we have 4 columns. We normalize to 3
+            # columns [NAME, PARTITIONS, REPLICAS] to maintain compatibility
+            # with existing tests that index into the result.
+            if len(parts) == 4:
+                parts = [parts[0], parts[2], parts[3]]
             assert len(parts) == 3
             return parts[0] if not detailed else parts
 
         lines = output.splitlines()
         for i, line in enumerate(lines):
-            if line.split() == ["NAME", "PARTITIONS", "REPLICAS"]:
+            header = line.split()
+            if header == ["NAME", "PARTITIONS", "REPLICAS"] or header == [
+                "NAME",
+                "TOPIC-ID",
+                "PARTITIONS",
+                "REPLICAS",
+            ]:
                 return map(topic_line, lines[i + 1 :])
 
         assert False, "Unexpected output format"
