@@ -283,3 +283,4 @@ bazel_cc_flags.json
 
 # claude local settings
 **/.claude/settings.local.json
+.claude/skills
