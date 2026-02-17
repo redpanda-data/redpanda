@@ -86,12 +86,16 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cloud_topics:data_plane_api",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cluster",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/cloud_topics:types",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
         "//src/v/rpc",
         "@seastar",
     ],

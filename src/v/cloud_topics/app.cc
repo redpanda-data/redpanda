@@ -164,7 +164,12 @@ ss::future<> app::construct(
     co_await construct_service(
       epoch_barrier_coordinator,
       std::ref(controller->get_cluster_epoch_generator()),
-      std::ref(*data_plane));
+      std::ref(*data_plane),
+      ss::sharded_parameter([&controller] {
+          return l0::gc::epoch_barrier_coordinator::
+            make_default_partition_source(
+              controller->get_partition_manager().local());
+      }));
 
     co_await construct_service(
       epoch_barrier_mgr,
