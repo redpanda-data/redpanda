@@ -28,6 +28,7 @@ go_library(
         "//src/go/rpk/pkg/serde",
         "//src/go/rpk/pkg/utils",
         "@com_github_docker_go_units//:go-units",
+        "@com_github_google_uuid//:uuid",
         "@com_github_hashicorp_go_multierror//:go-multierror",
         "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
         "@com_github_redpanda_data_common_go_rpsr//:rpsr",
@@ -57,6 +58,7 @@ go_test(
     embed = [":topic"],
     deps = [
         "//src/go/rpk/pkg/config",
+        "@com_github_google_uuid//:uuid",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_stretchr_testify//assert",
