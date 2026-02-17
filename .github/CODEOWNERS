@@ -17,7 +17,7 @@ licenses           @emaxerrno
 #
 # crypto
 #
-/src/v/crypto              @michael-redpanda
+/src/v/crypto              @redpanda-data/core-enterprise
 
 #
 # rpk
