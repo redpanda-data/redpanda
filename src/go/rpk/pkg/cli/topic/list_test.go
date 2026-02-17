@@ -3,7 +3,9 @@ package topic
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -85,8 +87,8 @@ func TestSummarizedListView(t *testing.T) {
 	s := summarizedListView(false, topics)
 
 	cases := []testCase{
-		Text(`NAME        PARTITIONS  REPLICAS
-test-topic  2           3
+		Text(`NAME        TOPIC-ID  PARTITIONS  REPLICAS
+test-topic            2           3
 `),
 		JSON(t, s),
 		YAML(t, s),
@@ -127,9 +129,9 @@ func TestSummarizedListViewWithInternal(t *testing.T) {
 	s := summarizedListView(true, topics)
 
 	cases := []testCase{
-		Text(`NAME            PARTITIONS  REPLICAS
-internal-topic  1           1
-test-topic      2           3
+		Text(`NAME            TOPIC-ID  PARTITIONS  REPLICAS
+internal-topic            1           1
+test-topic                2           3
 `),
 		JSON(t, s),
 		YAML(t, s),
@@ -181,7 +183,7 @@ func TestEmptyTopicList(t *testing.T) {
 		printSummarizedListView(f, s, b)
 		switch format {
 		case "text":
-			require.Equal(t, "NAME  PARTITIONS  REPLICAS\n", b.String())
+			require.Equal(t, "NAME  TOPIC-ID  PARTITIONS  REPLICAS\n", b.String())
 		case "json":
 			require.Equal(t, "[]\n", b.String())
 		case "yaml":
@@ -280,6 +282,25 @@ func captureOutput(f func()) string {
 	return buf.String()
 }
 
+// UnmarshalJSON read string and turn into topicID
+func (t *topicID) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "null" || s == "" {
+		return nil
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return fmt.Errorf("failed to decode topicID from base64: %w", err)
+	}
+	if len(decoded) != 16 {
+		return fmt.Errorf("decoded topicID has incorrect length: got %d, want 16", len(decoded))
+	}
+
+	copy(t[:], decoded)
+	return nil
+}
+
 func TestTopicListCommand_Basic(t *testing.T) {
 	cmd, _ := setupTestCommand(t, "topic1", "topic2", "topic3")
 
@@ -293,59 +314,65 @@ func TestTopicListCommand_Basic(t *testing.T) {
 	err := json.Unmarshal([]byte(output), &topics)
 	require.NoError(t, err)
 
-	expectedTopics := []summarizedList{
-		{Name: "topic1", Partitions: 1, Replicas: 1},
-		{Name: "topic2", Partitions: 1, Replicas: 1},
-		{Name: "topic3", Partitions: 1, Replicas: 1},
+	// Since topicID is randomly generated
+	// it won't be possible to hardcode an exact
+	// match, so instead, just verify
+	// one was created.
+	actuals := make(map[string]summarizedList)
+	for _, topic := range topics {
+		actuals[topic.Name] = topic
 	}
 
-	require.Equal(t, expectedTopics, topics)
+	expectedNames := []string{"topic1", "topic2", "topic3"}
+	for _, name := range expectedNames {
+		actual, ok := actuals[name]
+		require.True(t, ok, "topic %q not found", name)
+
+		// Make sure TopicID exists.
+		require.NotEqual(t, topicID{}, actual.ID, "topic %q has a nil ID", name)
+
+		// Check predictable fields.
+		require.Equal(t, 1, actual.Partitions)
+		require.Equal(t, 1, actual.Replicas)
+	}
 }
 
 func TestTopicListCommand_RegexFiltering(t *testing.T) {
 	tests := []struct {
-		name         string
-		topics       []string
-		regexPattern string
-		expected     []summarizedList
+		name          string
+		topics        []string
+		regexPattern  string
+		expectedNames []string
 	}{
 		{
-			name:         "match single pattern",
-			topics:       []string{"user-events", "user-login", "system-metrics", "system-logs"},
-			regexPattern: "user-.*",
-			expected: []summarizedList{
-				{Name: "user-events", Partitions: 1, Replicas: 1},
-				{Name: "user-login", Partitions: 1, Replicas: 1},
-			},
+			name:          "match single pattern",
+			topics:        []string{"user-events", "user-login", "system-metrics", "system-logs"},
+			regexPattern:  "user-.*",
+			expectedNames: []string{"user-events", "user-login"},
 		},
 		{
-			name:         "match all with wildcard",
-			topics:       []string{"topic1", "topic2"},
-			regexPattern: ".*",
-			expected: []summarizedList{
-				{Name: "topic1", Partitions: 1, Replicas: 1},
-				{Name: "topic2", Partitions: 1, Replicas: 1},
-			},
+			name:          "match all with wildcard",
+			topics:        []string{"topic1", "topic2"},
+			regexPattern:  ".*",
+			expectedNames: []string{"topic1", "topic2"},
 		},
 		{
-			name:         "exact match",
-			topics:       []string{"exact-topic", "exact-topic-2", "other"},
-			regexPattern: "exact-topic",
-			expected: []summarizedList{
-				{Name: "exact-topic", Partitions: 1, Replicas: 1},
-			},
+			name:          "exact match",
+			topics:        []string{"exact-topic", "exact-topic-2", "other"},
+			regexPattern:  "exact-topic",
+			expectedNames: []string{"exact-topic"},
 		},
 		{
-			name:         "no match returns empty",
-			topics:       []string{"topic1", "topic2", "topic3"},
-			regexPattern: "nonexistent-.*",
-			expected:     []summarizedList{},
+			name:          "no match returns empty",
+			topics:        []string{"topic1", "topic2", "topic3"},
+			regexPattern:  "nonexistent-.*",
+			expectedNames: []string{},
 		},
 		{
-			name:         "partial match fails due to incorrect regex",
-			topics:       []string{"user-events", "events-user"},
-			regexPattern: "events",
-			expected:     []summarizedList{},
+			name:          "partial match fails due to incorrect regex",
+			topics:        []string{"user-events", "events-user"},
+			regexPattern:  "events",
+			expectedNames: []string{},
 		},
 	}
 
@@ -353,19 +380,33 @@ func TestTopicListCommand_RegexFiltering(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd, _ := setupTestCommand(t, tt.topics...)
 
-			// Execute list command with regex and JSON format
 			cmd.SetArgs([]string{"list", "--regex", tt.regexPattern, "--format=json"})
 			output := captureOutput(func() {
 				cmd.Execute()
 			})
 
-			// Parse JSON output
-			var topics []summarizedList
-			err := json.Unmarshal([]byte(output), &topics)
+			var actualTopics []summarizedList
+			err := json.Unmarshal([]byte(output), &actualTopics)
 			require.NoError(t, err)
 
-			// Compare full structure
-			require.Equal(t, tt.expected, topics)
+			require.Len(t, actualTopics, len(tt.expectedNames))
+
+			actualsByName := make(map[string]summarizedList)
+			for _, topic := range actualTopics {
+				actualsByName[topic.Name] = topic
+			}
+
+			for _, expectedName := range tt.expectedNames {
+				actual, ok := actualsByName[expectedName]
+				require.True(t, ok, "expected topic %q not found in results", expectedName)
+
+				// Make sure UUID was created.
+				require.NotEqual(t, topicID{}, actual.ID, "topic %q has a nil ID", actual.Name)
+
+				// Check predicted fields.
+				require.Equal(t, 1, actual.Partitions, "topic %q has wrong partition count", actual.Name)
+				require.Equal(t, 1, actual.Replicas, "topic %q has wrong replica count", actual.Name)
+			}
 		})
 	}
 }
