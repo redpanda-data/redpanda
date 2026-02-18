@@ -48,4 +48,10 @@ struct validation_args {
 ss::future<std::optional<error_code_and_msg>>
 validate_batch(const validation_args&);
 
+namespace testing {
+
+std::optional<error_code_and_msg>
+validate_batch_header_strict(const model::record_batch&, const model::ntp&);
+
+} // namespace testing
 } // namespace kafka
