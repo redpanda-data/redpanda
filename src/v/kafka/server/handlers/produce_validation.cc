@@ -207,7 +207,8 @@ validate_records_and_compute_max_timestamp(
   std::chrono::milliseconds message_timestamp_after_max_ms,
   kafka::kafka_probe& probe,
   const model::ntp& ntp,
-  bool is_strict_validation = false) {
+  bool is_strict_validation = false,
+  bool is_compacted = false) {
     std::optional<error_code_and_msg> res;
     int64_t max_timestamp = -1;
     int32_t expected_offset = 0;
@@ -227,6 +228,17 @@ validate_records_and_compute_max_timestamp(
                   expected_offset,
                   ntp,
                   r.offset_delta(),
+                  expected_offset)};
+              return ss::stop_iteration::yes;
+          }
+
+          if (is_compacted && r.key_length() < 0) [[unlikely]] {
+              res = error_code_and_msg{
+                .err = error_code::invalid_record,
+                .msg = ssx::sformat(
+                  "Compacted partition {} requires a key for all "
+                  "records, but record at offset {} has a null key",
+                  ntp,
                   expected_offset)};
               return ss::stop_iteration::yes;
           }
@@ -378,7 +390,8 @@ std::optional<error_code_and_msg> validate_batch(
   std::chrono::milliseconds message_timestamp_after_max_ms,
   kafka::kafka_probe& probe,
   const model::ntp& ntp,
-  std::optional<std::string_view> client_id) {
+  std::optional<std::string_view> client_id,
+  bool is_compacted) {
     std::optional<error_code_and_msg> res{std::nullopt};
     const auto broker_time = model::timestamp::now();
     const auto has_iterable_batch = iterable_batch_ref.has_value();
@@ -516,6 +529,7 @@ std::optional<error_code_and_msg> validate_batch(
         //    a batch will have a `max_timestamp` set in `strict` mode.
         // 3. Check record timestamps.
         // 4. Validate record offset monotonicity.
+        // 5. Reject null keys for compacted topics.
 
         dassert(
           has_iterable_batch,
@@ -537,7 +551,8 @@ std::optional<error_code_and_msg> validate_batch(
           message_timestamp_after_max_ms,
           probe,
           ntp,
-          true);
+          true,
+          is_compacted);
 
         if (!max_ts_res.has_value()) {
             return max_ts_res.error();
@@ -593,7 +608,8 @@ validate_batch(const validation_args& args) {
       args.message_timestamp_after_max_ms,
       args.probe,
       args.ntp,
-      args.client_id);
+      args.client_id,
+      args.is_compacted);
 }
 
 namespace testing {
@@ -601,6 +617,22 @@ namespace testing {
 std::optional<error_code_and_msg> validate_batch_header_strict(
   const model::record_batch& batch, const model::ntp& ntp) {
     return ::kafka::validate_batch_header_strict(batch, ntp);
+}
+
+std::expected<model::timestamp, error_code_and_msg> validate_records_strict(
+  model::record_batch& batch, const model::ntp& ntp, bool is_compacted) {
+    kafka::kafka_probe probe;
+    return ::kafka::validate_records_and_compute_max_timestamp(
+      batch,
+      batch,
+      model::timestamp::now(),
+      model::timestamp_type::create_time,
+      std::chrono::milliseconds::max(),
+      std::chrono::milliseconds::max(),
+      probe,
+      ntp,
+      true,
+      is_compacted);
 }
 
 } // namespace testing

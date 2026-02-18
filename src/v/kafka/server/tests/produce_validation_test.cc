@@ -37,6 +37,24 @@ model::record_batch make_batch_mutate_header(
     return batch;
 }
 
+model::record_batch make_batch_with_null_keys(int num_records = 3) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (int i = 0; i < num_records; ++i) {
+        builder.add_raw_kv(std::nullopt, iobuf::from("value"));
+    }
+    return std::move(builder).build();
+}
+
+model::record_batch make_batch_with_keys(int num_records = 3) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (int i = 0; i < num_records; ++i) {
+        builder.add_raw_kv(iobuf::from("key"), iobuf::from("value"));
+    }
+    return std::move(builder).build();
+}
+
 } // namespace
 
 class ValidateBatchHeaderStrictTest : public ::testing::Test {};
@@ -104,4 +122,25 @@ TEST_F(ValidateBatchHeaderStrictTest, AcceptValidBatch) {
     auto batch = make_batch();
     auto res = kafka::testing::validate_batch_header_strict(batch, test_ntp);
     EXPECT_FALSE(res.has_value());
+}
+
+class ValidateRecordsStrictTest : public ::testing::Test {};
+
+TEST_F(ValidateRecordsStrictTest, RejectNullKeysForCompactedTopic) {
+    auto batch = make_batch_with_null_keys();
+    auto res = kafka::testing::validate_records_strict(batch, test_ntp, true);
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error().err, kafka::error_code::invalid_record);
+}
+
+TEST_F(ValidateRecordsStrictTest, AcceptNullKeysForNonCompactedTopic) {
+    auto batch = make_batch_with_null_keys();
+    auto res = kafka::testing::validate_records_strict(batch, test_ntp, false);
+    EXPECT_TRUE(res.has_value());
+}
+
+TEST_F(ValidateRecordsStrictTest, AcceptKeysForCompactedTopic) {
+    auto batch = make_batch_with_keys();
+    auto res = kafka::testing::validate_records_strict(batch, test_ntp, true);
+    EXPECT_TRUE(res.has_value());
 }
