@@ -303,6 +303,10 @@ private:
     ss::abort_source _as;
     reconciler_probe _probe;
     ss::scheduling_group _reconciler_sg;
+    // Captured at construction so that changing the config at runtime
+    // does not take effect without a restart (and without bumping the
+    // corresponding memory reservation).
+    size_t _upload_part_size;
 };
 
 } // namespace cloud_topics::reconciler

@@ -64,7 +64,9 @@ reconciler<Clock>::reconciler(
   l1::io* l1_io, l1::metastore* metastore, ss::scheduling_group reconciler_sg)
   : _l1_io(l1_io)
   , _metastore(metastore)
-  , _reconciler_sg(reconciler_sg) {}
+  , _reconciler_sg(reconciler_sg)
+  , _upload_part_size(
+      config::shard_local_cfg().cloud_topics_upload_part_size()) {}
 
 template<class Clock>
 reconciler<Clock>::topic_scheduler_state::topic_scheduler_state(
@@ -628,7 +630,7 @@ reconciler<Clock>::make_context(const l1::object_id& oid) {
 
     // Initiate multipart upload.
     auto upload_result = co_await _l1_io->create_multipart_upload(
-      oid, cloud_storage_clients::multipart_upload::min_part_size, &_as);
+      oid, _upload_part_size, &_as);
     if (!upload_result.has_value()) {
         co_return std::unexpected(
           reconcile_error(

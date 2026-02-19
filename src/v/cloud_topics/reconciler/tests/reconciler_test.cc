@@ -426,9 +426,9 @@ TEST_F(ReconcilerTest, IOMultipartCompleteFailure) {
 TEST_F(ReconcilerTest, IOMultipartPartUploadFailure) {
     auto src = add_source();
 
-    // Need >5MiB to trigger an intermediate part upload (min_part_size is
-    // 5MiB). 100 uncompressed batches of 64KiB records ≈ 6.4MiB.
-    constexpr auto batch_count = 100;
+    // Need >16MiB (default part size) to trigger an intermediate part upload.
+    // 260 uncompressed batches of 64KiB records ≈ 16.6MiB.
+    constexpr auto batch_count = 260;
     constexpr auto record_count = 1;
     constexpr auto record_size = 64_KiB;
     for (size_t i = 0; i < batch_count; ++i) {
