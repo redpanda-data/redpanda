@@ -41,6 +41,7 @@ setup(
         "proto-plus==1.22.3",
         "rsa==4.9",
         "python-keycloak@git+https://github.com/redpanda-data/python-keycloak.git@10b822cb0320c54dbf5bf4fd00435afb1487415d",
+        "setuptools==80.10.2",  # the last one that has pgk_resources, which is silently required by outdated versions of other packages such as keycloak
         "z3-solver==4.12.2",
         "hypothesis==6.82",
         "jsonschema==4.10.0",
