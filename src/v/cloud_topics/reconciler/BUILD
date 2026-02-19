@@ -93,6 +93,7 @@ redpanda_cc_library(
         "//src/v/model",
         "//src/v/random:generators",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:semaphore",
         "//src/v/utils:retry_chain_node",
         "@abseil-cpp//absl/container:btree",
         "@seastar",

@@ -12,6 +12,7 @@
 
 #include "base/source_location.h"
 #include "base/vlog.h"
+#include "cloud_topics/types.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/frontend.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
@@ -28,6 +29,7 @@
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -65,8 +67,10 @@ reconciler<Clock>::reconciler(
   : _l1_io(l1_io)
   , _metastore(metastore)
   , _reconciler_sg(reconciler_sg)
-  , _upload_part_size(
-      config::shard_local_cfg().cloud_topics_upload_part_size()) {}
+  , _upload_part_size(config::shard_local_cfg().cloud_topics_upload_part_size())
+  , _reconciliation_sem(
+      config::shard_local_cfg().cloud_topics_reconciliation_parallelism(),
+      "reconciler/parallelism") {}
 
 template<class Clock>
 reconciler<Clock>::topic_scheduler_state::topic_scheduler_state(
@@ -351,19 +355,32 @@ ss::future<> reconciler<Clock>::reconcile() {
         co_return;
     }
 
-    // Reconcile each due topic and update its scheduler.
-    for (auto& topic_sources : due_topics) {
-        auto topic_id = topic_sources.front()->topic_id_partition().topic_id;
-        auto bytes = co_await reconcile_source_set(std::move(topic_sources));
+    // Reconcile due topics concurrently. Total parallel objects is bounded
+    // by the semaphore. The concurrency bound here is set to ensure we can
+    // saturate that bound without potentially launching a future for every
+    // due topic.
+    auto parallelism
+      = config::shard_local_cfg().cloud_topics_reconciliation_parallelism();
+    auto max_concurrent_topics = (parallelism + default_num_l1_domains - 1)
+                                 / default_num_l1_domains;
+    co_await ss::max_concurrent_for_each(
+      std::make_move_iterator(due_topics.begin()),
+      std::make_move_iterator(due_topics.end()),
+      max_concurrent_topics,
+      [this, now](
+        this auto,
+        chunked_vector<ss::shared_ptr<source>> topic_sources) -> ss::future<> {
+          auto topic_id = topic_sources.front()->topic_id_partition().topic_id;
+          auto bytes = co_await reconcile_source_set(std::move(topic_sources));
 
-        // Update the topic's scheduler state. Adapt based on max object size
-        // produced. Note that we slow down if there's nothing to reconcile or
-        // if all objects failed. This is a sort of retry with backoff
-        // mechanism.
-        auto& scheduler_state = get_or_create_topic_scheduler(topic_id);
-        scheduler_state.scheduler.adapt(bytes);
-        scheduler_state.last_reconciled = now;
-    }
+          // Update the topic's scheduler state. Adapt based on max object
+          // size produced. Note that we slow down if there's nothing to
+          // reconcile or if all objects failed. This is a sort of retry
+          // with backoff mechanism.
+          auto& scheduler_state = get_or_create_topic_scheduler(topic_id);
+          scheduler_state.scheduler.adapt(bytes);
+          scheduler_state.last_reconciled = now;
+      });
 }
 
 template<class Clock>
@@ -437,7 +454,8 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
         oid_to_sources[oid.value()].push_back(src);
     }
 
-    // Process sources by their object in parallel.
+    // Process sources by their object (one per domain) in parallel,
+    // bounded by the semaphore.
     chunked_vector<l1::object_id> oids;
     chunked_vector<
       ss::future<std::expected<built_object_metadata, reconcile_error>>>
@@ -446,9 +464,14 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
     futures.reserve(oid_to_sources.size());
     for (const auto& [oid, srcs] : oid_to_sources) {
         oids.push_back(oid);
-        futures.push_back(reconcile_sources(oid, srcs));
+        futures.push_back(
+          ss::get_units(_reconciliation_sem, 1)
+            .then([this, &oid, &srcs](auto units) {
+                return reconcile_sources(oid, srcs).finally(
+                  [units = std::move(units)] {});
+            }));
     }
-    // Unbounded concurrency because #futures = #domains, which is small (3).
+    // NB: `futures` has size at most 3.
     auto results = co_await ss::when_all(futures.begin(), futures.end());
 
     // Process results.

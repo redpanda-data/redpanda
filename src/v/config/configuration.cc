@@ -4609,6 +4609,14 @@ configuration::configuration()
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       16_MiB,
       {.min = 5_MiB, .max = 128_MiB})
+  , cloud_topics_reconciliation_parallelism(
+      *this,
+      "cloud_topics_reconciliation_parallelism",
+      "Maximum number, per shard, of concurrent objects built by "
+      "reconciliation",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      8,
+      {.min = size_t{1}, .max = size_t{64}})
   , cloud_topics_compaction_max_object_size(
       *this,
       "cloud_topics_compaction_max_object_size",

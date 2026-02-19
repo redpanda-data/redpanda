@@ -25,6 +25,7 @@ redpanda_cc_library(
         ":db_domain_manager",
         ":simple_domain_manager",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cloud_topics/level_one/metastore/lsm:stm",
         "//src/v/cluster",

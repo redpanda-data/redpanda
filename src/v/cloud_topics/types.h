@@ -65,6 +65,9 @@ struct object_id
     static constexpr prefix_t prefix_max = 999;
 };
 
+/// Default number of L1 metastore domains (partitions).
+constexpr size_t default_num_l1_domains = 3;
+
 /// Type of ownership
 enum class ctp_stm_object_ownership {
     exclusive = 0,
