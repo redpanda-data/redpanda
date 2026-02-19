@@ -18,7 +18,7 @@ redpanda_cc_gtest(
     timeout = "short",
     srcs = ["audit_log_test.cc"],
     cpu = 1,
-    memory = "256MiB",
+    memory = "512MiB",
     deps = [
         ":utils",
         "//src/v/base",

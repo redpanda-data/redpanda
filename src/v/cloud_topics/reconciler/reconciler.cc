@@ -12,7 +12,6 @@
 
 #include "base/source_location.h"
 #include "base/vlog.h"
-#include "cloud_topics/types.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/frontend.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
@@ -23,6 +22,7 @@
 #include "cloud_topics/log_reader_config.h"
 #include "cloud_topics/reconciler/reconciliation_consumer.h"
 #include "cloud_topics/reconciler/reconciliation_source.h"
+#include "cloud_topics/types.h"
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"

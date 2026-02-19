@@ -81,6 +81,7 @@ system_memory_groups::system_memory_groups(
   size_t total_available_memory,
   compaction_memory_reservation compaction,
   cloud_topics_compaction_memory_reservation cloud_topics_compaction,
+  cloud_topics_reconciler_memory_reservation cloud_topics_reconciler,
   bool wasm_enabled,
   bool datalake_enabled,
   bool cloud_topics_enabled,
@@ -89,11 +90,14 @@ system_memory_groups::system_memory_groups(
       compaction.reserved_bytes(total_available_memory))
   , _cloud_topics_compaction_reserved_memory(
       cloud_topics_compaction.reserved_bytes())
+  , _cloud_topics_reconciler_reserved_memory(
+      cloud_topics_reconciler.reserved_bytes())
   , _partitions_reserved_memory(
       partitions.reserved_bytes(total_available_memory))
   , _total_system_memory(
       total_available_memory - _compaction_reserved_memory
-      - _cloud_topics_compaction_reserved_memory - _partitions_reserved_memory)
+      - _cloud_topics_compaction_reserved_memory
+      - _cloud_topics_reconciler_reserved_memory - _partitions_reserved_memory)
   , _wasm_enabled(wasm_enabled)
   , _datalake_enabled(datalake_enabled)
   , _cloud_topics_enabled(cloud_topics_enabled) {}
@@ -176,7 +180,8 @@ void system_memory_groups::log_memory_group_allocations(seastar::logger& log) {
       "total memory minus pre-share reservations: {}, chunk cache: {}, kafka: "
       "{}, rpc: {}, recovery: {}, "
       "tiered storage: {}, admin: {}, data transforms: {}, compaction: {}, "
-      "cloud topics compaction: {}, datalake: {}, partitions: {}",
+      "cloud topics compaction: {}, cloud topics reconciler: {}, "
+      "datalake: {}, partitions: {}",
       human::bytes(ss::memory::stats().total_memory()),
       human::bytes(total_memory()),
       human::bytes(chunk_cache_max_memory()),
@@ -188,6 +193,7 @@ void system_memory_groups::log_memory_group_allocations(seastar::logger& log) {
       human::bytes(data_transforms_max_memory()),
       human::bytes(compaction_reserved_memory()),
       human::bytes(cloud_topics_compaction_reserved_memory()),
+      human::bytes(cloud_topics_reconciler_reserved_memory()),
       human::bytes(datalake_max_memory()),
       human::bytes(partitions_max_memory()));
 }
@@ -218,12 +224,16 @@ system_memory_groups& memory_groups() {
     }
     cloud_topics_compaction_memory_reservation cloud_topics_compaction{
       .max_bytes = cfg.cloud_topics_compaction_key_map_memory.value()};
+    cloud_topics_reconciler_memory_reservation cloud_topics_reconciler{
+      .max_bytes = cfg.cloud_topics_upload_part_size()
+                   * cfg.cloud_topics_reconciliation_parallelism()};
     partitions_memory_reservation partitions{
       .max_limit_pct = cfg.topic_partitions_memory_allocation_percent()};
     groups.emplace(
       total,
       compaction,
       cloud_topics_compaction,
+      cloud_topics_reconciler,
       wasm,
       datalake_enabled(),
       cloud_topics_enabled(),
