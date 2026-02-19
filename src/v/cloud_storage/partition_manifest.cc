@@ -2764,11 +2764,25 @@ void partition_manifest::process_anomalies(
 
         if (meta.committed_offset >= get_start_offset()) {
             // The segment might have been missing because it was merged with
-            // something else. If the offset range doesn't match a segment
-            // exactly, discard the anomaly. Only segments from the STM
-            // manifest may be merged/reuploaded.
-            return !segment_with_offset_range_exists(
-              meta.base_offset, meta.committed_offset);
+            // something else or replaced by a compacted reupload. Only
+            // segments from the STM manifest may be merged/reuploaded.
+            auto iter = find(meta.base_offset);
+            if (
+              iter == end()
+              || iter->committed_offset != meta.committed_offset) {
+                // Offset range no longer matches any segment in the
+                // manifest (merged or reuploaded with different
+                // boundaries). Discard the anomaly.
+                return true;
+            }
+            // The offset range still exists. Verify the current segment
+            // is the same one reported as missing, not a replacement
+            // (e.g., a compacted reupload with the same offset range but
+            // different size/term). If a different segment now covers
+            // the range, the old one being absent from cloud storage is
+            // expected.
+            return generate_remote_segment_name(*iter)
+                   != generate_remote_segment_name(meta);
         } else {
             // Segment belongs to the archive. No reuploads are done here.
             return false;
@@ -2785,10 +2799,18 @@ void partition_manifest::process_anomalies(
           }
 
           if (anomaly_meta.at.committed_offset >= get_start_offset()) {
-              // Similarly to the missing segment case, if the boundaries of the
-              // segment where the anomaly was detected changed, drop it.
-              return !segment_with_offset_range_exists(
-                anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
+              // Similarly to the missing segment case, if the boundaries
+              // of the segment where the anomaly was detected changed or
+              // the segment was replaced (e.g., compacted reupload),
+              // drop the anomaly.
+              auto iter = find(anomaly_meta.at.base_offset);
+              if (
+                iter == end()
+                || iter->committed_offset != anomaly_meta.at.committed_offset) {
+                  return true;
+              }
+              return generate_remote_segment_name(*iter)
+                     != generate_remote_segment_name(anomaly_meta.at);
           } else {
               return false;
           }
