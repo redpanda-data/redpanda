@@ -1,4 +1,4 @@
-from ubuntu:noble
+from ubuntu:24.04
 
 run apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
