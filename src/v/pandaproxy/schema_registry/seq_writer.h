@@ -223,6 +223,15 @@ private:
     /// Shard 0 only: Serialize write operations.
     ssx::semaphore _write_sem{1, "pproxy/schema-write"};
 
+    /// Shard 0 only: cached version list for delete_subject_impermanent
+    /// retries. Protected by _write_sem. Tagged with subject so stale
+    /// entries from a previous delete of a different subject are ignored.
+    struct delete_version_cache {
+        context_subject sub;
+        chunked_vector<schema_version> versions;
+    };
+    std::optional<delete_version_cache> _delete_versions_cache;
+
     // ======================
     // End of Shard 0 state
 };
