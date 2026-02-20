@@ -348,6 +348,7 @@ ss::future<server::reply_t> get_config_subject(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub, true);
     auto fallback = parse::query_param<std::optional<default_to_global>>(
                       *rq.req, "defaultToGlobal")
                       .value_or(default_to_global::no);
@@ -416,6 +417,7 @@ ss::future<server::reply_t> put_config_subject(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub, true);
 
     enterprise::handle_config_mode_authz(
       rq,
@@ -443,6 +445,7 @@ ss::future<server::reply_t> delete_config_subject(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub, true);
 
     enterprise::handle_config_mode_authz(
       rq,
@@ -522,6 +525,7 @@ ss::future<server::reply_t> get_mode_subject(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub, true);
     auto fallback = parse::query_param<std::optional<default_to_global>>(
                       *rq.req, "defaultToGlobal")
                       .value_or(default_to_global::no);
@@ -559,6 +563,7 @@ ss::future<server::reply_t> put_mode_subject(
                  .value_or(force::no);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub, true);
 
     enterprise::handle_config_mode_authz(
       rq,
@@ -586,6 +591,7 @@ ss::future<server::reply_t> delete_mode_subject(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub, true);
 
     enterprise::handle_config_mode_authz(
       rq,
@@ -648,6 +654,9 @@ ss::future<server::reply_t> get_schemas_ids_id(
                            .value_or("");
 
     auto ctx_sub = context_subject::from_string(subject_param);
+    if (!subject_param.empty()) {
+        validate_context_subject(ctx_sub);
+    }
 
     auto result = co_await resolve_schema_id(
       rq.service().schema_store(), id, ctx_sub);
@@ -685,6 +694,9 @@ ss::future<server::reply_t> get_schemas_ids_id_schema(
                            .value_or("");
 
     auto ctx_sub = context_subject::from_string(subject_param);
+    if (!subject_param.empty()) {
+        validate_context_subject(ctx_sub);
+    }
 
     auto result = co_await resolve_schema_id(
       rq.service().schema_store(), id, ctx_sub);
@@ -720,6 +732,9 @@ get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
                            .value_or("");
 
     auto ctx_sub = context_subject::from_string(subject_param);
+    if (!subject_param.empty()) {
+        validate_context_subject(ctx_sub);
+    }
 
     auto result = co_await resolve_schema_id(
       rq.service().schema_store(), id, ctx_sub);
@@ -755,6 +770,9 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
                            .value_or("");
 
     auto ctx_sub = context_subject::from_string(subject_param);
+    if (!subject_param.empty()) {
+        validate_context_subject(ctx_sub);
+    }
 
     auto result = co_await resolve_schema_id(
       rq.service().schema_store(), id, ctx_sub);
@@ -821,6 +839,7 @@ get_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
         .value_or(include_deleted::no)};
@@ -842,6 +861,7 @@ post_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
         .value_or(include_deleted::no)};
@@ -904,6 +924,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     const auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     const auto norm{
       parse::query_param<std::optional<normalize>>(*rq.req, "normalize")
         .value_or(normalize::no)};
@@ -1049,6 +1070,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
@@ -1088,6 +1110,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
@@ -1117,6 +1140,7 @@ get_subject_versions_version_referenced_by(
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
 
     co_await rq.service().writer().read_sync();
@@ -1136,6 +1160,7 @@ delete_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto permanent{
       parse::query_param<std::optional<permanent_delete>>(*rq.req, "permanent")
         .value_or(permanent_delete::no)};
@@ -1161,6 +1186,7 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto permanent{
       parse::query_param<std::optional<permanent_delete>>(*rq.req, "permanent")
@@ -1213,6 +1239,7 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
+    validate_context_subject(ctx_sub);
     auto is_verbose{
       parse::query_param<std::optional<verbose>>(*rq.req, "verbose")
         .value_or(verbose::no)};

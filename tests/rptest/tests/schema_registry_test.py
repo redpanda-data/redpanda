@@ -6748,6 +6748,55 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
         result = self.sr_client.delete_subject(subject=base_subject)
         self.assert_equal(result.status_code, requests.codes.ok)
 
+    @cluster(num_nodes=1)
+    def test_reserved_subject_names_rejected(self):
+        """
+        Verify that __GLOBAL and __EMPTY are rejected as subject names,
+        and that .__GLOBAL context is rejected on regular endpoints but
+        allowed on config/mode endpoints.
+        """
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # __GLOBAL as subject name is rejected (register)
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="__GLOBAL", data=schema_data
+        )
+        self.assert_equal(result.status_code, 422)
+        self.assert_equal(result.json()["error_code"], 42208)
+
+        # __EMPTY as subject name is rejected (register)
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="__EMPTY", data=schema_data
+        )
+        self.assert_equal(result.status_code, 422)
+        self.assert_equal(result.json()["error_code"], 42208)
+
+        # __GLOBAL as subject name is rejected (get versions)
+        result = self.sr_client.get_subjects_subject_versions(
+            subject="__GLOBAL"
+        )
+        self.assert_equal(result.status_code, 422)
+        self.assert_equal(result.json()["error_code"], 42208)
+
+        # .__GLOBAL context is rejected on regular endpoints
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=":.__GLOBAL:my-subject", data=schema_data
+        )
+        self.assert_equal(result.status_code, 422)
+        self.assert_equal(result.json()["error_code"], 42208)
+
+        # .__GLOBAL context is allowed on config endpoints
+        result = self.sr_client.get_config_subject(
+            subject=":.__GLOBAL:", fallback=True
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # .__GLOBAL context is allowed on mode endpoints
+        result = self.sr_client.get_mode_subject(
+            subject=":.__GLOBAL:", fallback=True
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
