@@ -216,6 +216,7 @@ redpanda_cc_btest(
         ":utils",
         "//src/v/model",
         "//src/v/pandaproxy/schema_registry:core",
+        "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@seastar",

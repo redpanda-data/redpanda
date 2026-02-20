@@ -584,13 +584,16 @@ seq_writer::do_delete_subject_impermanent(
   context_subject sub, model::offset write_at) {
     co_await check_mutable(sub.ctx, sub.sub);
 
+    // On retry after a write collision the subject may already be
+    // soft-deleted (by the winning writer). Return the version list
+    // including deleted, since after a subject-level soft delete all
+    // versions are marked deleted.
+    if (co_await _store.is_subject_deleted(sub)) {
+        co_return co_await _store.get_versions(sub, include_deleted::yes);
+    }
+
     // Grab the versions before they're gone.
     auto versions = co_await _store.get_versions(sub, include_deleted::no);
-
-    // Inspect the subject to see if its already deleted
-    if (co_await _store.is_subject_deleted(sub)) {
-        co_return std::make_optional(std::move(versions));
-    }
 
     // Check that the subject is not referenced
     if (co_await _store.is_referenced(sub, std::nullopt)) {

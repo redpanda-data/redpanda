@@ -299,3 +299,138 @@ SEASTAR_THREAD_TEST_CASE(test_writes_disabled) {
           return e.code() == pps::error_code::writes_disabled;
       });
 }
+
+/// Transport that simulates a write collision during soft delete.
+///
+/// Every write to the _schemas topic is tagged with the offset the writer
+/// expects to land at. If another node writes first, the offset doesn't
+/// match — a "write collision" — and the operation retries. Before
+/// retrying, read_sync() catches up on the topic, consuming the winning
+/// writer's record into the store.
+///
+/// This transport drives that sequence:
+///   1. Initial read_sync(): HWM=1, _loaded_offset already 0 → no-op
+///   2. First produce (the delete): returns wrong offset → collision
+///   3. Retry read_sync(): HWM=2, consumes the competing delete batch
+///   4. Retry attempt: subject already deleted → returns versions including
+///      deletes without re-issuing produce
+class colliding_transport final : public pps::transport {
+public:
+    explicit colliding_transport(
+      pps::context_subject sub, model::offset collision_offset)
+      : _collision_offset(collision_offset) {
+        // Build the competing writer's delete batch at the collision offset.
+        storage::record_batch_builder rb{
+          model::record_batch_type::raft_data, collision_offset};
+        rb.add_raw_kv(
+          to_json_iobuf(
+            pps::delete_subject_key{
+              .seq{collision_offset}, .node{model::node_id{99}}, .sub{sub}}),
+          to_json_iobuf(pps::delete_subject_value{.sub{sub}}));
+        _competing_batch = std::move(rb).build();
+    }
+
+    ss::future<> stop() final { return ss::now(); }
+    ss::future<cluster::errc> create_topic(
+      model::topic_namespace_view,
+      int32_t,
+      cluster::topic_properties,
+      int16_t) final {
+        throw std::runtime_error(
+          "colliding_transport::create_topic not implemented");
+    }
+
+    ss::future<pps::produce_result> produce(model::record_batch) override {
+        ++_produce_calls;
+        if (_produce_calls == 1) {
+            // Collision: return an offset that doesn't match write_at.
+            co_return pps::produce_result{
+              .base_offset = _collision_offset + model::offset{1}};
+        }
+        // The retry should never produce — it finds the subject
+        // already deleted and returns the version list via
+        // include_deleted::yes.
+        throw std::runtime_error("unexpected second produce call");
+    }
+
+    ss::future<model::offset> get_high_watermark() override {
+        if (_produce_calls == 0) {
+            // Before collision: only the schema record at offset 0.
+            co_return model::offset{1};
+        }
+        // After collision: schema at 0, competing delete at 1.
+        co_return model::offset{2};
+    }
+
+    ss::future<> consume_range(
+      model::offset start,
+      model::offset end,
+      ss::noncopyable_function<ss::future<ss::stop_iteration>(
+        model::record_batch)> consumer) override {
+        if (
+          _competing_batch.has_value() && start <= _collision_offset
+          && _collision_offset < end) {
+            co_await consumer(std::move(*_competing_batch));
+            _competing_batch.reset();
+        }
+    }
+
+    int produce_calls() const { return _produce_calls; }
+
+private:
+    std::optional<model::record_batch> _competing_batch;
+    model::offset _collision_offset;
+    int _produce_calls{0};
+};
+
+SEASTAR_THREAD_TEST_CASE(test_delete_subject_write_collision_retry) {
+    pps::enable_qualified_subjects::set_local(true);
+    auto reset_flag = ss::defer(
+      [] { pps::enable_qualified_subjects::reset_local(); });
+
+    // Store setup: insert a schema so there's something to delete.
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    const auto version = pps::schema_version{1};
+    store
+      .upsert(
+        pps::seq_marker{
+          .seq = model::offset{0},
+          .node = model::node_id{0},
+          .version = version,
+          .key_type = pps::seq_marker_key_type::schema},
+        pps::subject_schema{subject0, int_def0.share()},
+        id0,
+        version,
+        pps::is_deleted::no)
+      .get();
+
+    // The competing delete will land at offset 1 (the next available).
+    colliding_transport transport(subject0, model::offset{1});
+
+    ss::sharded<pps::seq_writer> seq;
+    seq
+      .start(
+        model::node_id{0},
+        ss::default_smp_service_group(),
+        std::ref(transport),
+        std::reference_wrapper(store),
+        ss::sharded_parameter(
+          [] { return std::make_unique<sequence_state_checker_test>(); }))
+      .get();
+    auto stop_seq = ss::defer([&seq]() { seq.stop().get(); });
+
+    // Advance _loaded_offset past the schema record.
+    seq.local().advance_offset(model::offset{0}).get();
+
+    // First produce collides. The retry's read_sync consumes the
+    // competing delete batch, finds the subject already soft-deleted,
+    // and returns the version list via include_deleted::yes.
+    auto versions = seq.local().delete_subject_impermanent(subject0).get();
+
+    BOOST_REQUIRE_EQUAL(versions.size(), 1);
+    BOOST_CHECK_EQUAL(versions[0], version);
+    BOOST_CHECK_EQUAL(transport.produce_calls(), 1);
+}
