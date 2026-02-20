@@ -11,6 +11,7 @@
 
 #include "types.h"
 
+#include "errors.h"
 #include "util.h"
 #include "utils/to_string.h"
 
@@ -153,6 +154,20 @@ fmt::iterator context_subject_reference::format_to(fmt::iterator it) const {
         return fmt::format_to(it, ":{}:{}", sub.ctx, sub.sub);
     }
     return fmt::format_to(it, "{}", sub);
+}
+
+void validate_context_subject(
+  const context_subject& ctx_sub, bool is_config_or_mode) {
+    static constexpr std::string_view global_context_name = ".__GLOBAL";
+    static constexpr std::string_view global_subject_name = "__GLOBAL";
+    static constexpr std::string_view empty_subject_name = "__EMPTY";
+
+    if (
+      ctx_sub.sub() == global_subject_name
+      || ctx_sub.sub() == empty_subject_name
+      || (!is_config_or_mode && ctx_sub.ctx() == global_context_name)) {
+        throw as_exception(subject_invalid(ctx_sub.to_string()));
+    }
 }
 
 } // namespace pandaproxy::schema_registry

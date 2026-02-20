@@ -164,6 +164,8 @@ struct reply_error_category final : std::error_category {
             return "One or more references exist to the schema";
         case reply_error_code::subject_version_schema_id_already_exists:
             return "Schema already registered with another id";
+        case reply_error_code::subject_invalid:
+            return "The specified subject is not valid";
         case reply_error_code::context_not_empty:
             return "The specified context is not empty";
         case reply_error_code::write_collision:

@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <gtest/gtest.h>
@@ -108,6 +110,94 @@ TEST_F(ContextSubjectTest, FlagOffUnqualifiedUsesDefaultContext) {
 
     EXPECT_EQ(ctx_sub.ctx, default_context);
     EXPECT_EQ(ctx_sub.sub(), "plain-topic");
+}
+
+TEST_F(ContextSubjectTest, ValidateSubjectRejectsReservedNames) {
+    // __GLOBAL as subject is always rejected, regardless of context or mode
+    EXPECT_THROW(
+      validate_context_subject({default_context, subject{"__GLOBAL"}}),
+      exception);
+    EXPECT_THROW(
+      validate_context_subject({default_context, subject{"__GLOBAL"}}, true),
+      exception);
+    EXPECT_THROW(
+      validate_context_subject({context{".myctx"}, subject{"__GLOBAL"}}),
+      exception);
+
+    // __EMPTY as subject is always rejected
+    EXPECT_THROW(
+      validate_context_subject({default_context, subject{"__EMPTY"}}),
+      exception);
+    EXPECT_THROW(
+      validate_context_subject({default_context, subject{"__EMPTY"}}, true),
+      exception);
+    EXPECT_THROW(
+      validate_context_subject({context{".myctx"}, subject{"__EMPTY"}}),
+      exception);
+
+    // .__GLOBAL context is rejected on regular endpoints (with or without
+    // subject)
+    EXPECT_THROW(
+      validate_context_subject({context{".__GLOBAL"}, subject{"some-subject"}}),
+      exception);
+    EXPECT_THROW(
+      validate_context_subject({context{".__GLOBAL"}, subject{""}}), exception);
+
+    // Verify the error code
+    try {
+        validate_context_subject({default_context, subject{"__GLOBAL"}});
+        FAIL() << "Expected exception";
+    } catch (const exception& e) {
+        EXPECT_EQ(e.code(), error_code::subject_invalid);
+    }
+}
+
+TEST_F(ContextSubjectTest, ValidateSubjectAllowsValidNames) {
+    // Normal subjects
+    EXPECT_NO_THROW(
+      validate_context_subject({default_context, subject{"my-topic"}}));
+    EXPECT_NO_THROW(
+      validate_context_subject({context{".staging"}, subject{"my-topic"}}));
+    EXPECT_NO_THROW(validate_context_subject(
+      {default_context, subject{"some.subject.name"}}));
+
+    // Empty subject (context-only form) is not "__EMPTY"
+    EXPECT_NO_THROW(validate_context_subject({context{".myctx"}, subject{""}}));
+    EXPECT_NO_THROW(validate_context_subject({default_context, subject{""}}));
+
+    // Substrings of reserved names are valid
+    EXPECT_NO_THROW(
+      validate_context_subject({default_context, subject{"__GLOBAL_stuff"}}));
+    EXPECT_NO_THROW(
+      validate_context_subject({default_context, subject{"prefix__EMPTY"}}));
+    EXPECT_NO_THROW(
+      validate_context_subject({default_context, subject{"my__GLOBAL"}}));
+
+    // Case-sensitive: lowercase variants are valid
+    EXPECT_NO_THROW(
+      validate_context_subject({default_context, subject{"__global"}}));
+    EXPECT_NO_THROW(
+      validate_context_subject({default_context, subject{"__empty"}}));
+    EXPECT_NO_THROW(
+      validate_context_subject({default_context, subject{"__Global"}}));
+}
+
+TEST_F(ContextSubjectTest, ValidateSubjectConfigModeFlag) {
+    // .__GLOBAL context is allowed on config/mode endpoints
+    EXPECT_NO_THROW(validate_context_subject(
+      {context{".__GLOBAL"}, subject{"some-subject"}}, true));
+    EXPECT_NO_THROW(
+      validate_context_subject({context{".__GLOBAL"}, subject{""}}, true));
+
+    // But reserved subject names are still rejected even on config/mode
+    EXPECT_THROW(
+      validate_context_subject(
+        {context{".__GLOBAL"}, subject{"__GLOBAL"}}, true),
+      exception);
+    EXPECT_THROW(
+      validate_context_subject(
+        {context{".__GLOBAL"}, subject{"__EMPTY"}}, true),
+      exception);
 }
 
 class ContextSubjectReferenceTest : public ::testing::Test {

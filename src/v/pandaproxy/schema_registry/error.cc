@@ -94,6 +94,8 @@ struct error_category final : std::error_category {
             return "Writes to Schema Registry are disabled";
         case error_code::context_not_empty:
             return "The specified context is not empty";
+        case error_code::subject_invalid:
+            return "The specified subject is not valid";
         }
         return "(unrecognized error)";
     }
@@ -160,6 +162,8 @@ struct error_category final : std::error_category {
             return reply_error_code::precondition_failed; // 412
         case error_code::context_not_empty:
             return reply_error_code::context_not_empty; // 42211
+        case error_code::subject_invalid:
+            return reply_error_code::subject_invalid; // 42208
         }
         return {};
     }

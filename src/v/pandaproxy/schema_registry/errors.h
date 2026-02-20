@@ -234,6 +234,12 @@ inline error_info writes_disabled() {
       error_code::writes_disabled, "Writes to Schema Registry are disabled"};
 }
 
+inline error_info subject_invalid(std::string_view subject) {
+    return error_info{
+      error_code::subject_invalid,
+      fmt::format("The specified subject '{}' is not valid.", subject)};
+}
+
 inline error_info context_not_empty(const context& ctx) {
     return error_info{
       error_code::context_not_empty,

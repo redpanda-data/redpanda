@@ -229,6 +229,13 @@ struct context_subject {
 
 inline const context_subject invalid_subject{default_context, subject{""}};
 
+/// Validate that a context_subject does not use reserved names (__GLOBAL,
+/// __EMPTY). Throws exception with error_code::subject_invalid if invalid.
+/// \param is_config_or_mode If true, allows .__GLOBAL context (used by
+///   config/mode endpoints).
+void validate_context_subject(
+  const context_subject& ctx_sub, bool is_config_or_mode = false);
+
 /// A reference subject that may be qualified or unqualified.
 /// Unqualified references are resolved relative to a parent schema's context.
 struct context_subject_reference {
