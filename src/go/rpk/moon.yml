@@ -1,0 +1,24 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+type: 'application'
+language: 'go'
+platform: 'system'
+
+fileGroups:
+  sources: ['**/*.go', 'go.mod', 'go.sum']
+
+tasks:
+  build:
+    command: 'go build -o bin/rpk ./cmd/rpk'
+    inputs: ['@group(sources)']
+    outputs: ['bin/rpk']
+
+  test:
+    command: 'go test ./...'
+    inputs: ['@group(sources)']
+
+  lint:
+    command: 'golangci-lint run --timeout 8m'
+    inputs: ['@group(sources)', '.golangci.yml']
+
+  fmt:
+    command: 'gofumpt -w -lang=1.23 .'

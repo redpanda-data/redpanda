@@ -1,0 +1,30 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+type: 'tool'
+language: 'other'
+
+tasks:
+  build:
+    deps: ['rp:build', 'rpk:build']
+
+  test:
+    deps: ['rp:test', 'rpk:test']
+
+  lint:
+    deps: ['rp:lint', 'rpk:lint']
+
+  # Full bootstrap (for fresh machines)
+  bootstrap:
+    command: './scripts/bootstrap.sh'
+    local: true
+
+  # Environment check
+  check-env:
+    script: |
+      echo "Checking development environment..." &&
+      (command -v moon || (echo "moon not found" && exit 1)) &&
+      (command -v go || (echo "go not found" && exit 1)) &&
+      (command -v uv || (echo "uv not found" && exit 1)) &&
+      (command -v cargo || (echo "cargo not found" && exit 1)) &&
+      (command -v bazel || (echo "bazel not found" && exit 1)) &&
+      echo "Environment OK!"
+    local: true

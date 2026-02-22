@@ -1,0 +1,9 @@
+$schema: 'https://moonrepo.dev/schemas/toolchain.json'
+
+rust:
+  version: '1.75.0'
+
+python:
+  packageManager: 'uv'
+  uv:
+    version: '0.5.26'
