@@ -18,6 +18,38 @@
 
 using namespace std::literals;
 
+/// Minimal stub that registers as an archival STM so that cloud retention
+/// guards in disk_log_impl treat the partition as having a functioning
+/// archival subsystem. Returns offset::max() from
+/// max_removable_local_log_offset() so it imposes no eviction constraint
+/// (same as the real archival_metadata_stm in the uploads_paused+gaps_allowed
+/// case).
+struct archival_stm_stub : storage::snapshotable_stm {
+    storage::stm_type type() override { return storage::stm_type::archival; }
+    ss::future<> ensure_local_snapshot_exists(model::offset) override {
+        co_return;
+    }
+    void write_local_snapshot_in_background() override {}
+    model::offset max_removable_local_log_offset() override {
+        return model::offset::max();
+    }
+    std::optional<kafka::offset> lowest_pinned_data_offset() const override {
+        return std::nullopt;
+    }
+    model::offset last_locally_snapshotted_offset() const override {
+        return model::offset{};
+    }
+    model::offset last_applied() const override { return model::offset{}; }
+    const ss::sstring& name() override {
+        static ss::sstring n{"archival_stm_stub"};
+        return n;
+    }
+    ss::future<chunked_vector<model::tx_range>>
+    aborted_tx_ranges(model::offset, model::offset) override {
+        co_return chunked_vector<model::tx_range>{};
+    }
+};
+
 class gc_fixture : public ::testing::Test {
 public:
     storage::disk_log_builder builder;
@@ -391,6 +423,11 @@ TEST_F(gc_fixture, retention_by_time_with_remote_write) {
         storage::disk_log_builder::should_flush_after::yes,
         log_creation_time);
 
+    // Register a stub archival STM so that local retention overrides are
+    // applied. In production, cloud topics always have an archival STM.
+    auto stm = ss::make_shared<archival_stm_stub>();
+    builder.get_log()->stm_manager()->add_stm(stm);
+
     // Try to garbage collet the segments. None should get collected
     // because we are currently using the default local target retention.
     builder | storage::garbage_collect(model::timestamp{1}, std::nullopt);
@@ -535,6 +572,72 @@ TEST_F(gc_fixture, cloud_retention_blocked_without_archival_stm) {
         std::make_optional<size_t>(std::numeric_limits<size_t>::max()))
       .get();
     EXPECT_EQ(log->segment_count(), 3);
+
+    builder.stop().get();
+}
+
+TEST_F(gc_fixture, strict_local_retention_blocked_without_archival_stm) {
+    // When strict local retention is enabled but no archival STM exists,
+    // the aggressive local retention overrides must NOT be applied. This
+    // prevents data loss in the scenario where cloud_storage_enabled is
+    // toggled on at runtime without a restart: is_cloud_retention_active()
+    // returns true, strict mode would apply aggressive local retention, but
+    // nothing has been uploaded to cloud yet.
+    using namespace std::chrono_literals;
+    auto batch_age = std::chrono::duration_cast<std::chrono::milliseconds>(1h);
+
+    config::shard_local_cfg().get("cloud_storage_enabled").set_value(true);
+    config::shard_local_cfg().get("retention_local_strict").set_value(true);
+    auto reset_cfg = ss::defer([] {
+        config::shard_local_cfg().get("cloud_storage_enabled").reset();
+        config::shard_local_cfg().get("retention_local_strict").reset();
+    });
+
+    storage::ntp_config ntp_cfg{
+      storage::log_builder_ntp(), builder.get_log_config().base_dir};
+
+    storage::ntp_config::default_overrides overrides;
+    overrides.shadow_indexing_mode = model::shadow_indexing_mode::full;
+    overrides.storage_mode = model::redpanda_storage_mode::tiered;
+    // Aggressive local retention: evict everything immediately.
+    overrides.retention_local_target_ms = tristate<std::chrono::milliseconds>{
+      0ms};
+    ntp_cfg.set_overrides(overrides);
+
+    auto log_creation_time = model::timestamp{
+      model::timestamp::now().value() - batch_age.count()};
+
+    builder | storage::start(std::move(ntp_cfg)) | storage::add_segment(0)
+      | storage::add_random_batch(
+        0,
+        100,
+        storage::maybe_compress_batches::yes,
+        model::record_batch_type::raft_data,
+        storage::append_config(),
+        storage::disk_log_builder::should_flush_after::yes,
+        log_creation_time)
+      | storage::add_segment(100)
+      | storage::add_random_batch(
+        100,
+        100,
+        storage::maybe_compress_batches::yes,
+        model::record_batch_type::raft_data,
+        storage::append_config(),
+        storage::disk_log_builder::should_flush_after::yes,
+        log_creation_time);
+
+    auto log = builder.get_log();
+    ASSERT_EQ(log->segment_count(), 2);
+    ASSERT_FALSE(log->stm_manager()->has_archival_stm());
+
+    // GC with strict local retention + 0ms target — without the guard, this
+    // would evict all segments. With the guard, the local retention override
+    // is skipped and regular Kafka retention applies instead.
+    builder | storage::garbage_collect(model::timestamp{1}, std::nullopt);
+
+    // Segments must survive: the aggressive local retention override was
+    // blocked because no archival STM is registered.
+    EXPECT_EQ(log->segment_count(), 2);
 
     builder.stop().get();
 }

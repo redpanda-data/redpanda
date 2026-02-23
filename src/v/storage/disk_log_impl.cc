@@ -1265,6 +1265,26 @@ disk_log_impl::maybe_apply_local_storage_overrides(gc_config cfg) const {
         return cfg;
     }
 
+    /*
+     * If cloud retention is active but no archival STM is registered, it
+     * means cloud_storage_enabled was toggled on at runtime without a
+     * restart. The archival subsystem (and its STM) requires a restart to
+     * be instantiated. Applying aggressive local retention overrides
+     * without the archival STM would evict data that has never been
+     * uploaded to tiered storage, causing permanent data loss. Fall back
+     * to regular Kafka retention until the node is restarted.
+     */
+    if (!stm_manager()->has_archival_stm()) {
+        vlog(
+          gclog.warn,
+          "[{}] Skipping local retention override because no archival STM "
+          "is registered. A restart is likely required to initialize the "
+          "archival subsystem. Falling back to standard retention: {}",
+          config().ntp(),
+          cfg);
+        return cfg;
+    }
+
     cfg = apply_local_storage_overrides(cfg);
 
     vlog(

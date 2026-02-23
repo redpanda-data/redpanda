@@ -160,6 +160,9 @@ public:
     ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
         return _stm_manager;
     }
+    ss::lw_shared_ptr<const storage::stm_manager> stm_manager() const {
+        return _stm_manager;
+    }
 
     virtual size_t size_bytes() const = 0;
     // Byte size of the log for all segments after offset 'o'
