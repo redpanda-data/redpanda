@@ -228,6 +228,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "produce_validation_test",
+    timeout = "short",
+    srcs = [
+        "produce_validation_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "consumer_group_recovery_test",
     timeout = "short",
     srcs = [

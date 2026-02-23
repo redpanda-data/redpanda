@@ -117,19 +117,21 @@ void check_parse_record_metadata(bool fully_parse) {
     auto b = model::test::make_random_batch(
       model::offset(0), num_records, false);
 
-    std::vector<std::pair<int64_t, int32_t>> expected;
+    std::vector<std::tuple<int64_t, int32_t, int32_t>> expected;
     auto it = model::record_batch_iterator::create(b);
     while (it.has_next()) {
         auto r = it.next();
-        expected.emplace_back(r.timestamp_delta(), r.offset_delta());
+        expected.emplace_back(
+          r.timestamp_delta(), r.offset_delta(), r.key_size());
     }
     ASSERT_EQ(expected.size(), num_records);
 
     auto parser = iobuf_const_parser(b.data());
     for (int i = 0; i < num_records; ++i) {
         auto r = model::parse_record_metadata_from_buffer(parser, fully_parse);
-        EXPECT_EQ(r.timestamp_delta(), expected[i].first);
-        EXPECT_EQ(r.offset_delta(), expected[i].second);
+        EXPECT_EQ(r.timestamp_delta(), std::get<0>(expected[i]));
+        EXPECT_EQ(r.offset_delta(), std::get<1>(expected[i]));
+        EXPECT_EQ(r.key_length(), std::get<2>(expected[i]));
     }
     EXPECT_EQ(parser.bytes_left(), 0);
 }

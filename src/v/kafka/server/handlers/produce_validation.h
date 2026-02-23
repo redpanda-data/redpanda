@@ -42,10 +42,20 @@ struct validation_args {
     kafka::kafka_probe& probe;
     const model::ntp& ntp;
     std::optional<std::string_view> client_id;
+    bool is_compacted;
 };
 
 // Entry point for batch validation.
 ss::future<std::optional<error_code_and_msg>>
 validate_batch(const validation_args&);
 
+namespace testing {
+
+std::optional<error_code_and_msg>
+validate_batch_header_strict(const model::record_batch&, const model::ntp&);
+
+std::expected<model::timestamp, error_code_and_msg> validate_records_strict(
+  model::record_batch&, const model::ntp&, bool is_compacted);
+
+} // namespace testing
 } // namespace kafka

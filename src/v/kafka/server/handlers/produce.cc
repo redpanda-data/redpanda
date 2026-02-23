@@ -218,6 +218,7 @@ struct ntp_produce_request {
     model::timestamp_type timestamp_type;
     std::chrono::milliseconds message_timestamp_before_max_ms;
     std::chrono::milliseconds message_timestamp_after_max_ms;
+    bool is_compacted;
 };
 
 ss::future<produce_response::partition> do_produce_topic_partition(
@@ -232,7 +233,8 @@ ss::future<produce_response::partition> do_produce_topic_partition(
        .message_timestamp_after_max_ms = req.message_timestamp_after_max_ms,
        .probe = octx.rctx.probe(),
        .ntp = req.ntp,
-       .client_id = octx.rctx.header().client_id});
+       .client_id = octx.rctx.header().client_id,
+       .is_compacted = req.is_compacted});
 
     if (validate_batch_res.has_value()) {
         co_return finalize_request_with_error_code(
@@ -373,6 +375,7 @@ struct topic_configuration_context {
     std::chrono::milliseconds message_timestamp_before_max_ms;
     std::chrono::milliseconds message_timestamp_after_max_ms;
     const cluster::topic_properties* properties;
+    bool is_compacted;
 };
 
 /**
@@ -405,6 +408,7 @@ partition_produce_stages produce_topic_partition(
         = cfg_ctx.message_timestamp_before_max_ms,
         .message_timestamp_after_max_ms
         = cfg_ctx.message_timestamp_after_max_ms,
+        .is_compacted = cfg_ctx.is_compacted,
       },
       std::move(dispatch));
     return partition_produce_stages{
@@ -493,6 +497,9 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         octx.rctx.metadata_cache()
           .get_default_message_timestamp_after_max_ms()),
       .properties = &topic_cfg.properties,
+      .is_compacted = model::is_compaction_enabled(
+        topic_cfg.properties.cleanup_policy_bitflags.value_or(
+          octx.rctx.metadata_cache().get_default_cleanup_policy_bitflags())),
     };
 
     std::vector<ss::future<produce_response::partition>> partitions_produced;
@@ -636,6 +643,9 @@ partition_produce_stages produce_single_partition(
         octx.rctx.metadata_cache()
           .get_default_message_timestamp_after_max_ms()),
       .properties = &topic_cfg.properties,
+      .is_compacted = model::is_compaction_enabled(
+        topic_cfg.properties.cleanup_policy_bitflags.value_or(
+          octx.rctx.metadata_cache().get_default_cleanup_policy_bitflags())),
     };
     return produce_topic_partition(octx, topic, part, cfg_ctx);
 }

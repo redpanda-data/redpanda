@@ -137,29 +137,35 @@ private:
 };
 
 /// \brief A lightweight view of a record's metadata fields (attributes,
-/// timestamp_delta, offset_delta) without key, value, or headers.
+/// timestamp_delta, offset_delta, key_length) without key data, value, or
+/// headers.
 class record_metadata {
 public:
     record_metadata(
       int32_t size_bytes,
       record_attributes attributes,
       int64_t timestamp_delta,
-      int32_t offset_delta) noexcept
+      int32_t offset_delta,
+      int32_t key_length) noexcept
       : _size_bytes(size_bytes)
       , _attributes(attributes)
       , _timestamp_delta(timestamp_delta)
-      , _offset_delta(offset_delta) {}
+      , _offset_delta(offset_delta)
+      , _key_length(key_length) {}
 
     int32_t size_bytes() const { return _size_bytes; }
     record_attributes attributes() const { return _attributes; }
     int64_t timestamp_delta() const { return _timestamp_delta; }
     int32_t offset_delta() const { return _offset_delta; }
+    // A return of -1 indicates a null key.
+    int32_t key_length() const { return _key_length; }
 
 private:
     int32_t _size_bytes;
     record_attributes _attributes;
     int64_t _timestamp_delta;
     int32_t _offset_delta;
+    int32_t _key_length;
 };
 
 /// \brief

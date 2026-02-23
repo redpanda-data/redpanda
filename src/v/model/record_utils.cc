@@ -263,9 +263,10 @@ model::record_metadata parse_record_metadata_from_buffer(
     auto [record_size, attr] = parse_record_meta_from_buffer(p);
     auto [timestamp_delta, tv] = p.read_varlong();
     auto [offset_delta, ov] = p.read_varlong();
+    auto [key_length, kv] = p.read_varlong();
 
     if (!fully_parse_record) {
-        auto total_bytes_read = 1 + tv + ov;
+        auto total_bytes_read = 1 + tv + ov + kv;
         if (record_size <= total_bytes_read) [[unlikely]] {
             throw std::out_of_range(
               fmt::format(
@@ -275,8 +276,7 @@ model::record_metadata parse_record_metadata_from_buffer(
         }
         p.skip(record_size - total_bytes_read);
     } else {
-        auto start = p.bytes_consumed() - (tv + ov);
-        auto [key_length, kv] = p.read_varlong();
+        auto start = p.bytes_consumed() - (tv + ov + kv);
         if (key_length > record_size) [[unlikely]] {
             throw std::out_of_range(
               fmt::format(
@@ -332,6 +332,7 @@ model::record_metadata parse_record_metadata_from_buffer(
       model::record_attributes(attr),
       static_cast<int64_t>(timestamp_delta),
       static_cast<int32_t>(offset_delta),
+      static_cast<int32_t>(key_length),
     };
 }
 

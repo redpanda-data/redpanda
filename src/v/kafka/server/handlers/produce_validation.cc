@@ -207,12 +207,42 @@ validate_records_and_compute_max_timestamp(
   std::chrono::milliseconds message_timestamp_after_max_ms,
   kafka::kafka_probe& probe,
   const model::ntp& ntp,
-  bool is_strict_validation = false) {
+  bool is_strict_validation = false,
+  bool is_compacted = false) {
     std::optional<error_code_and_msg> res;
     int64_t max_timestamp = -1;
+    int32_t expected_offset = 0;
     auto iterable_res = iterate_over_records(
       iterable_batch_ref,
       [&](model::record_metadata r) mutable {
+          // Note: this is not a hard failure in Apache Kafka. Rather it'll
+          // re-write the batch to remove this inconsistency. We don't re-write
+          // batches so treating it as a hard-failure seems reasonable.
+          if (is_strict_validation && r.offset_delta() != expected_offset++)
+            [[unlikely]] {
+              res = error_code_and_msg{
+                .err = error_code::invalid_record,
+                .msg = ssx::sformat(
+                  "Record at index {} in batch for partition {} has "
+                  "offset_delta {}, expected {}",
+                  expected_offset,
+                  ntp,
+                  r.offset_delta(),
+                  expected_offset)};
+              return ss::stop_iteration::yes;
+          }
+
+          if (is_compacted && r.key_length() < 0) [[unlikely]] {
+              res = error_code_and_msg{
+                .err = error_code::invalid_record,
+                .msg = ssx::sformat(
+                  "Compacted partition {} requires a key for all "
+                  "records, but record at offset {} has a null key",
+                  ntp,
+                  expected_offset)};
+              return ss::stop_iteration::yes;
+          }
+
           auto timestamp = model::timestamp{
             b.header().first_timestamp() + r.timestamp_delta()};
           auto offset = b.base_offset() + model::offset_delta(r.offset_delta());
@@ -271,6 +301,82 @@ bool should_decompress(
     }
 }
 
+std::optional<error_code_and_msg> validate_batch_header_strict(
+  const model::record_batch& batch, const model::ntp& ntp) {
+    const auto& hdr = batch.header();
+
+    if (hdr.base_offset != model::offset(0)) [[unlikely]] {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Batch for partition {} has non-zero base_offset: {}",
+            ntp,
+            hdr.base_offset)};
+    }
+
+    if (hdr.record_count <= 0) [[unlikely]] {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Batch for partition {} has invalid record count: {}",
+            ntp,
+            hdr.record_count)};
+    }
+
+    if (hdr.last_offset_delta < 0) [[unlikely]] {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Batch for partition {} has invalid last_offset_delta: {}",
+            ntp,
+            hdr.last_offset_delta)};
+    }
+
+    if (hdr.last_offset_delta + 1 != hdr.record_count) [[unlikely]] {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Batch for partition {} has inconsistent offset range "
+            "(last_offset_delta={}) and record count ({})",
+            ntp,
+            hdr.last_offset_delta,
+            hdr.record_count)};
+    }
+
+    if (hdr.attrs.is_control()) [[unlikely]] {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Clients are not allowed to write control records in "
+            "partition {}",
+            ntp)};
+    }
+
+    if (hdr.attrs.timestamp_type() == model::timestamp_type::append_time)
+      [[unlikely]] {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Batch for partition {} has invalid timestamp type "
+            "LOG_APPEND_TIME set by producer",
+            ntp)};
+    }
+
+    if (hdr.producer_id >= 0 && hdr.base_sequence < 0) [[unlikely]] {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Batch for partition {} with producer_id {} has an invalid "
+            "sequence number: {}",
+            ntp,
+            hdr.producer_id,
+            hdr.base_sequence),
+        };
+    }
+
+    return std::nullopt;
+}
+
 // `iterable_batch_ref` is guaranteed to be a iterable, decompressed version of
 // `batch` if it has a value. Modifications to the underlying data should/can
 // only be made on `batch`.
@@ -284,7 +390,8 @@ std::optional<error_code_and_msg> validate_batch(
   std::chrono::milliseconds message_timestamp_after_max_ms,
   kafka::kafka_probe& probe,
   const model::ntp& ntp,
-  std::optional<std::string_view> client_id) {
+  std::optional<std::string_view> client_id,
+  bool is_compacted) {
     std::optional<error_code_and_msg> res{std::nullopt};
     const auto broker_time = model::timestamp::now();
     const auto has_iterable_batch = iterable_batch_ref.has_value();
@@ -416,16 +523,22 @@ std::optional<error_code_and_msg> validate_batch(
     }
     case mode::strict: {
         // The following checks are performed in `strict` mode:
-        // 1. Iterate over records and set max_timestamp. It is guaranteed that
-        // a batch will have a `max_timestamp` set in `strict` mode.
-        // 2. Check record timestamps.
-        // TODO: validate offsets, control batches, versioning, etc.
-        // See checks present here:
-        // github.com/apache/kafka/blob/trunk/storage/src/main/java/org/apache/kafka/storage/internals/log/LogValidator.java#L438
+        // 1. Validate batch header fields (offsets, record count, control
+        //    batch, timestamp type).
+        // 2. Iterate over records and set max_timestamp. It is guaranteed that
+        //    a batch will have a `max_timestamp` set in `strict` mode.
+        // 3. Check record timestamps.
+        // 4. Validate record offset monotonicity.
+        // 5. Reject null keys for compacted topics.
 
         dassert(
           has_iterable_batch,
           "Batch must be iterable in kafka_produce_batch_validation::strict.");
+
+        res = validate_batch_header_strict(batch, ntp);
+        if (res.has_value()) {
+            return res;
+        }
 
         // Validate records and compute max timestamp in one pass.
         std::optional<model::timestamp> max_ts{std::nullopt};
@@ -438,7 +551,8 @@ std::optional<error_code_and_msg> validate_batch(
           message_timestamp_after_max_ms,
           probe,
           ntp,
-          true);
+          true,
+          is_compacted);
 
         if (!max_ts_res.has_value()) {
             return max_ts_res.error();
@@ -494,7 +608,33 @@ validate_batch(const validation_args& args) {
       args.message_timestamp_after_max_ms,
       args.probe,
       args.ntp,
-      args.client_id);
+      args.client_id,
+      args.is_compacted);
 }
+
+namespace testing {
+
+std::optional<error_code_and_msg> validate_batch_header_strict(
+  const model::record_batch& batch, const model::ntp& ntp) {
+    return ::kafka::validate_batch_header_strict(batch, ntp);
+}
+
+std::expected<model::timestamp, error_code_and_msg> validate_records_strict(
+  model::record_batch& batch, const model::ntp& ntp, bool is_compacted) {
+    kafka::kafka_probe probe;
+    return ::kafka::validate_records_and_compute_max_timestamp(
+      batch,
+      batch,
+      model::timestamp::now(),
+      model::timestamp_type::create_time,
+      std::chrono::milliseconds::max(),
+      std::chrono::milliseconds::max(),
+      probe,
+      ntp,
+      true,
+      is_compacted);
+}
+
+} // namespace testing
 
 } // namespace kafka
