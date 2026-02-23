@@ -4302,6 +4302,13 @@ void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
           config().ntp());
         return;
     }
+    if (config().is_compaction_only()) {
+        vlog(
+          stlog.debug,
+          "Ignoring request to set GC offset for compaction-only partition {}",
+          config().ntp());
+        return;
+    }
     _cloud_gc_offset = offset;
 }
 
@@ -4341,6 +4348,14 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
         vlog(
           stlog.debug,
           "Reporting no reclaimable space for exempt partition {}",
+          config().ntp());
+        co_return res;
+    }
+
+    if (config().is_compaction_only()) {
+        vlog(
+          stlog.debug,
+          "Reporting no reclaimable space for compaction-only partition {}",
           config().ntp());
         co_return res;
     }

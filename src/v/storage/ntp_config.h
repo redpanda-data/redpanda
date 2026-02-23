@@ -188,6 +188,14 @@ public:
         return model::is_deletion_enabled(cleanup_policy());
     }
 
+    /// If compaction is enabled but deletion is not (compaction-only topic).
+    /// Such topics should retain all local data indefinitely.
+    bool is_compaction_only() const {
+        const auto policy = cleanup_policy();
+        return model::is_compaction_enabled(policy)
+               && !model::is_deletion_enabled(policy);
+    }
+
     ss::sstring work_directory() const {
         return ssx::sformat("{}/{}_{}", _base_dir, _ntp.path(), _revision_id);
     }
