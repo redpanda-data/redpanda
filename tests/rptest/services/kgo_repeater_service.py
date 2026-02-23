@@ -137,6 +137,8 @@ class KgoRepeaterService(Service):
             f"-group {self.group_name} -remote -remote-port {self._remote_ports[node]} "
         )
 
+        cmd += " -debug"
+
         if self.sasl_options is not None:
             cmd += f" -username {self.sasl_options.username} -password {self.sasl_options.password}"
 
@@ -192,7 +194,7 @@ class KgoRepeaterService(Service):
 
         wait_until(
             lambda: self._is_ready(node),
-            timeout_sec=10,
+            timeout_sec=30,
             backoff_sec=0.5,
             err_msg=f"Timed out waiting for status endpoint {self.who_am_i()} to be available",
         )

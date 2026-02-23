@@ -289,15 +289,16 @@ ss::future<> reconciler<Clock>::reconciliation_loop() {
         try {
             co_await reconcile();
         } catch (...) {
-            const auto is_shutdown = ssx::is_shutdown_exception(
-              std::current_exception());
+            auto ex = std::current_exception();
+            const auto is_shutdown = ssx::is_shutdown_exception(ex);
             vlogl(
               lg,
               is_shutdown ? ss::log_level::debug : ss::log_level::info,
               "Recoverable error during reconciliation: {}",
-              std::current_exception());
+              ex);
         }
     }
+    vlog(lg.debug, "Reconciliation loop exiting");
 }
 
 template<class Clock>
