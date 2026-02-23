@@ -40,7 +40,8 @@ using jitter_percents = named_type<int, struct jitter_percents_tag>;
 enum class stm_type : int8_t {
     user_topic_transactional = 0,
     non_transactional = 1,
-    consumer_offsets_transactional = 2
+    consumer_offsets_transactional = 2,
+    archival = 3,
 };
 
 class snapshotable_stm {
@@ -133,6 +134,9 @@ public:
             vassert(!_tx_stm, "Multiple transactional stms not allowed.");
             _tx_stm = stm;
         }
+        if (stm->type() == stm_type::archival) {
+            _has_archival_stm = true;
+        }
         _stms.push_back(stm);
     }
 
@@ -191,6 +195,12 @@ public:
         return _tx_stm;
     }
 
+    /// Returns true if an archival STM has been registered. When cloud
+    /// retention is active but no archival STM is present, eviction must be
+    /// blocked because there is no safety clamp to prevent removal of data
+    /// that has not been uploaded to tiered storage.
+    bool has_archival_stm() const { return _has_archival_stm; }
+
     /**
      * Returns the offset of the last snapshot taken by the transactional state
      * machine. if no transactional stm is registered, returns max offset.
@@ -201,6 +211,7 @@ public:
 
 private:
     ss::shared_ptr<snapshotable_stm> _tx_stm;
+    bool _has_archival_stm{false};
     std::vector<ss::shared_ptr<snapshotable_stm>> _stms;
     model::offset _max_tombstone_remove_offset{};
     model::offset _max_tx_end_remove_offset{};

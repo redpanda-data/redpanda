@@ -130,6 +130,7 @@ class archival_metadata_stm final : public raft::persisted_stm<> {
 
 public:
     static constexpr std::string_view name = "archival_metadata_stm";
+    storage::stm_type type() override { return storage::stm_type::archival; }
     friend class command_batch_builder;
 
     explicit archival_metadata_stm(

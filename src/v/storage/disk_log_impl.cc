@@ -4302,6 +4302,15 @@ void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
           config().ntp());
         return;
     }
+    if (!stm_manager()->has_archival_stm()) {
+        vlog(
+          stlog.warn,
+          "Ignoring request to set GC offset on cloud partition {} because "
+          "no archival STM is registered. A restart is likely required to "
+          "initialize the archival subsystem.",
+          config().ntp());
+        return;
+    }
     _cloud_gc_offset = offset;
 }
 
@@ -4366,6 +4375,25 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
      * for a cloud-backed topic the max collecible offset is the threshold below
      * which data has been uploaded and can safely be removed from local disk.
      */
+    /*
+     * If cloud retention is active but no archival STM is registered, it means
+     * cloud_storage_enabled was false at startup (so the archival_metadata_stm
+     * was never created) but was later changed to true at runtime. The config
+     * value propagates live but the STM requires a restart to be instantiated.
+     * Without the archival STM there is no safety clamp to prevent eviction of
+     * data that has not yet been uploaded to tiered storage, so refuse to
+     * report any reclaimable offsets to avoid data loss.
+     */
+    if (!stm_manager()->has_archival_stm()) {
+        vlog(
+          stlog.warn,
+          "Refusing to report reclaimable offsets for cloud partition {} "
+          "because no archival STM is registered. A restart is likely "
+          "required to initialize the archival subsystem.",
+          config().ntp());
+        co_return res;
+    }
+
     const auto max_removable = stm_manager()->max_removable_local_log_offset();
 
     /*

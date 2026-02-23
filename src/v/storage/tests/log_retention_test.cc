@@ -473,3 +473,68 @@ TEST_F(gc_fixture, non_collectible_disk_usage_test) {
 
     builder | storage::stop();
 }
+
+// Regression test for a data-loss scenario: when cloud_storage_enabled is
+// toggled from false to true at runtime (without a restart), the config value
+// propagates live and is_cloud_retention_active() starts returning true.
+// However the archival_metadata_stm is only created at startup, so with no
+// restart it is missing. Without a guard, get_reclaimable_offsets() would
+// report all segments as reclaimable (max_removable = offset::max()) and the
+// disk space manager would evict data that has not been uploaded to the cloud.
+TEST_F(gc_fixture, cloud_retention_blocked_without_archival_stm) {
+    // Enable cloud storage and configure the topic for tiered storage so that
+    // is_cloud_retention_active() returns true.
+    config::shard_local_cfg().get("cloud_storage_enabled").set_value(true);
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().get("cloud_storage_enabled").reset(); });
+
+    storage::ntp_config ntp_cfg{
+      storage::log_builder_ntp(), builder.get_log_config().base_dir};
+
+    storage::ntp_config::default_overrides overrides;
+    overrides.shadow_indexing_mode = model::shadow_indexing_mode::full;
+    overrides.storage_mode = model::redpanda_storage_mode::tiered;
+    overrides.retention_local_target_bytes = tristate<size_t>{1};
+    ntp_cfg.set_overrides(overrides);
+
+    builder.start(std::move(ntp_cfg)).get();
+
+    // Add some data across multiple segments.
+    builder | storage::add_segment(0)
+      | storage::add_random_batch(0, 10, storage::maybe_compress_batches::no)
+      | storage::add_segment(10)
+      | storage::add_random_batch(10, 10, storage::maybe_compress_batches::no)
+      | storage::add_segment(20)
+      | storage::add_random_batch(20, 10, storage::maybe_compress_batches::no);
+
+    auto log = builder.get_log();
+    ASSERT_EQ(log->segment_count(), 3);
+
+    // No archival STM was registered (simulating the startup-without-cloud
+    // followed by live config change scenario).
+    ASSERT_FALSE(log->stm_manager()->has_archival_stm());
+
+    // get_reclaimable_offsets must return empty — no segments should be
+    // reported as reclaimable when there is no archival STM to provide a
+    // safety bound.
+    storage::gc_config gc_cfg{model::timestamp::min(), std::nullopt};
+    auto reclaimable = log->get_reclaimable_offsets(gc_cfg).get();
+    EXPECT_TRUE(reclaimable.effective_local_retention.empty());
+    EXPECT_TRUE(reclaimable.low_space_non_hinted.empty());
+    EXPECT_TRUE(reclaimable.low_space_hinted.empty());
+    EXPECT_TRUE(reclaimable.active_segment.empty());
+    EXPECT_FALSE(reclaimable.force_roll.has_value());
+
+    // set_cloud_gc_offset must also be rejected.
+    log->set_cloud_gc_offset(model::offset{0});
+
+    // Run GC — segments must survive because the cloud GC offset was rejected.
+    builder
+      .gc(
+        model::timestamp(1),
+        std::make_optional<size_t>(std::numeric_limits<size_t>::max()))
+      .get();
+    EXPECT_EQ(log->segment_count(), 3);
+
+    builder.stop().get();
+}
