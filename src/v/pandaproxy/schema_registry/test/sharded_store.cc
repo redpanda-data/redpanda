@@ -117,6 +117,43 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat) {
       store.get_compatibility(subject0, fallback).get() == global_expected);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat_fallback) {
+    // A Subject should fallback to the current global setting
+    pps::seq_marker dummy_marker;
+    auto fallback = pps::default_to_global::yes;
+    const pps::schema_version ver1{1};
+
+    pps::compatibility_level expected{pps::compatibility_level::backward};
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    store
+      .upsert(
+        pps::seq_marker{
+          .seq=std::nullopt,
+          .node=std::nullopt,
+          .version=ver1,
+          .key_type=pps::seq_marker_key_type::schema},
+        pps::subject_schema{subject0, string_def0.share()},
+        pps::schema_id{1},
+        ver1,
+        pps::is_deleted::no)
+      .get();
+
+    BOOST_REQUIRE(
+      store.get_compatibility(subject0, fallback).get() == expected);
+
+    expected = pps::compatibility_level::forward;
+    BOOST_REQUIRE(
+      store
+        .set_compatibility(dummy_marker, pps::default_context, expected)
+        .get()
+      == true);
+    BOOST_REQUIRE(
+      store.get_compatibility(subject0, fallback).get() == expected);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     pps::sharded_store store;
     store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();

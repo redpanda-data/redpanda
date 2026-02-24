@@ -453,23 +453,6 @@ BOOST_AUTO_TEST_CASE(test_store_get_subjects) {
     BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::yes).size(), 0);
 }
 
-BOOST_AUTO_TEST_CASE(test_store_subject_compat_fallback) {
-    // A Subject should fallback to the current global setting
-    pps::seq_marker dummy_marker;
-    auto fallback = pps::default_to_global::yes;
-
-    pps::compatibility_level expected{pps::compatibility_level::backward};
-    pps::store s;
-    s.insert({subject0, string_def0.share()});
-    BOOST_REQUIRE(s.get_compatibility(subject0, fallback).value() == expected);
-
-    expected = pps::compatibility_level::forward;
-    BOOST_REQUIRE(
-      s.set_compatibility(dummy_marker, pps::default_context, expected).value()
-      == true);
-    BOOST_REQUIRE(s.get_compatibility(subject0, fallback).value() == expected);
-}
-
 BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
     // Setting and getting a compatibility for a non-existant subject should
     // fail
