@@ -67,7 +67,8 @@ void application::wire_up_runtime_services(
           *_schema_reg_config,
           &metadata_cache,
           std::reference_wrapper(controller),
-          std::ref(audit_mgr));
+          std::ref(audit_mgr),
+          &_kafka_data_rpc_client);
     }
 
     if (wasm_data_transforms_enabled()) {

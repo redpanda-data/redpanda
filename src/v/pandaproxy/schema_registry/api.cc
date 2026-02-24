@@ -13,6 +13,7 @@
 #include "cluster/controller.h"
 #include "config/configuration.h"
 #include "kafka/client/configuration.h"
+#include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/deps.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -57,7 +58,8 @@ api::api(
   configuration& cfg,
   ss::sharded<cluster::metadata_cache>* metadata_cache,
   std::unique_ptr<cluster::controller>& c,
-  ss::sharded<security::audit::audit_log_manager>& audit_mgr) noexcept
+  ss::sharded<security::audit::audit_log_manager>& audit_mgr,
+  ss::sharded<kafka::data::rpc::client>* rpc_client) noexcept
   : _node_id{node_id}
   , _sg{sg}
   , _max_memory{max_memory}
@@ -65,6 +67,7 @@ api::api(
   , _cfg{cfg}
   , _metadata_cache(metadata_cache)
   , _controller(c)
+  , _rpc_client(rpc_client)
   , _audit_mgr(audit_mgr) {}
 
 api::~api() noexcept = default;
