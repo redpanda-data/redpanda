@@ -700,6 +700,10 @@ reconciler<Clock>::build_object(
         }
     }
     metas.shrink_to_fit();
+    if (metas.empty()) {
+        co_return std::unexpected(reconcile_error(
+          "No metadata built when reconciling {} partitions", sources.size()));
+    }
 
     auto obj_info = co_await ctx.builder->finish().finally(
       [&ctx] { return ctx.close_builder(); });
