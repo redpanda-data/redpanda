@@ -108,6 +108,27 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "rpc_transport",
+    srcs = [
+        "rpc_transport.cc",
+    ],
+    hdrs = [
+        "rpc_transport.h",
+    ],
+    implementation_deps = [
+        ":exceptions",
+        "//src/v/kafka/protocol",
+        "//src/v/model",
+        "@seastar",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":transport",
+        "//src/v/kafka/data/rpc",
+    ],
+)
+
+redpanda_cc_library(
     name = "core",
     srcs = [
         "avro.cc",
