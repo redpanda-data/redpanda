@@ -369,6 +369,7 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> audit_excluded_principals;
     enum_property<audit_failure_policy> audit_failure_policy;
     property<bool> audit_use_rpc;
+    property<bool> schema_registry_use_rpc;
 
     // Archival storage
     enterprise<property<bool>> cloud_storage_enabled;
