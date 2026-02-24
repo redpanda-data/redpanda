@@ -79,23 +79,17 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     auto fixture = pandaproxy::schema_registry::test_utils::store_fixture{};
     auto& s = fixture.store();
 
-    // This kafka client will not be used by the sequencer
+    // This transport will not be used by the sequencer
     // (which itself is only instantiated to receive consume_to_store's
-    //  offset updates), is just needed for constructor;
-    ss::sharded<kafka::client::client> dummy_kafka_client;
-    dummy_kafka_client
-      .start(
-        to_yaml(kafka::client::configuration{}, config::redact_secrets::no))
-      .get();
-    auto stop_kafka_client = ss::defer(
-      [&dummy_kafka_client]() { dummy_kafka_client.stop().get(); });
+    //  offset updates), is just needed for constructor.
+    noop_transport dummy_transport;
 
     ss::sharded<pps::seq_writer> seq;
     seq
       .start(
         model::node_id{0},
         ss::default_smp_service_group(),
-        std::reference_wrapper(dummy_kafka_client),
+        std::ref(dummy_transport),
         std::reference_wrapper(s),
         ss::sharded_parameter(
           [] { return std::make_unique<sequence_state_checker_test>(); }))

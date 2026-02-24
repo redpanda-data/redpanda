@@ -11,7 +11,6 @@
 
 #include "base/vassert.h"
 #include "base/vlog.h"
-#include "kafka/client/client_fetch_batch_reader.h"
 #include "model/namespace.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
@@ -19,6 +18,7 @@
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "pandaproxy/schema_registry/transport.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "storage/record_batch_builder.h"
 
@@ -106,17 +106,7 @@ struct batch_builder : public storage::record_batch_builder {
 /// a REST API endpoint that requires global knowledge of latest
 /// data (i.e. any listings)
 ss::future<> seq_writer::read_sync() {
-    auto offsets = co_await _client.local().list_offsets(
-      model::schema_registry_internal_tp);
-    if (
-      offsets.data.topics.size() != 1
-      || offsets.data.topics[0].partitions.size() != 1) {
-        throw kafka::exception(
-          kafka::error_code::unknown_server_error,
-          "Malformed ListOffsets Kafka response for internal topic");
-    }
-
-    auto max_offset = offsets.data.topics[0].partitions[0].offset;
+    auto max_offset = co_await _transport->get_high_watermark();
     co_await wait_for(max_offset - model::offset{1});
     co_await _store.process_marked_schemas();
 }
@@ -145,14 +135,10 @@ ss::future<> seq_writer::wait_for(model::offset offset) {
                     "wait_for dirty!  Reading {}..{}",
                     seq._loaded_offset,
                     offset);
-
-                  return kafka::client::make_client_fetch_batch_reader(
-                           seq._client.local(),
-                           model::schema_registry_internal_tp,
-                           seq._loaded_offset + model::offset{1},
-                           offset + model::offset{1})
-                    .consume(
-                      consume_to_store{seq._store, seq}, model::no_timeout);
+                  return seq._transport->consume_range(
+                    seq._loaded_offset + model::offset{1},
+                    offset + model::offset{1},
+                    consume_to_store{seq._store, seq});
               } else {
                   vlog(srlog.trace, "wait_for clean (offset  {})", offset);
                   return ss::make_ready_future<>();
@@ -174,29 +160,25 @@ ss::future<bool> seq_writer::produce_and_apply(
       write_at.value_or(batch.base_offset()) == batch.base_offset(),
       "Set the base_offset to the expected write_at");
 
-    kafka::partition_produce_response res
-      = co_await _client.local().produce_record_batch(
-        model::schema_registry_internal_tp, batch.copy());
+    auto result = co_await _transport->produce(batch.copy());
 
-    if (res.error_code != kafka::error_code::none) {
-        throw kafka::exception(res.error_code, res.error_message.value_or(""));
-    }
-
-    auto success = write_at.value_or(res.base_offset) == res.base_offset;
+    auto success = write_at.value_or(result.base_offset) == result.base_offset;
     if (success) {
         vlog(
-          srlog.debug, "seq_writer: Successful write at {}", res.base_offset);
+          srlog.debug,
+          "seq_writer: Successful write at {}",
+          result.base_offset);
         co_await consume_to_store(_store, *this)(std::move(batch));
         co_await _store.process_marked_schemas();
     } else {
         vlog(
           srlog.debug,
           "seq_writer: Failed write at {} (wrote at {})",
-          write_at,
-          res.base_offset);
+          write_at.value_or(model::offset{-1}),
+          result.base_offset);
     }
     co_return success;
-};
+}
 
 ss::future<> seq_writer::advance_offset(model::offset offset) {
     auto remote = [offset](seq_writer& s) { s.advance_offset_inner(offset); };
