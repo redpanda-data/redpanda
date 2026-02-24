@@ -79,6 +79,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "kafka_client_transport",
+    srcs = [
+        "kafka_client_transport.cc",
+    ],
+    hdrs = [
+        "kafka_client_transport.h",
+    ],
+    implementation_deps = [
+        ":exceptions",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/kafka/client:config_utils",
+        "//src/v/kafka/client:exceptions",
+        "//src/v/kafka/protocol:create_topics",
+        "//src/v/kafka/server:topic_config_utils",
+        "//src/v/model",
+        "//src/v/pandaproxy:logger",
+        "//src/v/security",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":transport",
+        "//src/v/kafka/client",
+        "//src/v/kafka/client:configuration",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "core",
     srcs = [
         "avro.cc",
