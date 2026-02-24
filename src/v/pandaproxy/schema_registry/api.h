@@ -17,10 +17,14 @@
 #include "kafka/data/rpc/fwd.h"
 #include "model/metadata.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "pandaproxy/schema_registry/kafka_client_transport.h"
+#include "pandaproxy/schema_registry/rpc_transport.h"
 #include "security/fwd.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+
+#include <variant>
 
 namespace YAML {
 class Node;
@@ -77,8 +81,11 @@ private:
 
     ss::sharded<kafka::client::client> _client;
     ss::sharded<kafka::data::rpc::client>* _rpc_client;
-    ss::sharded<kafka_client_transport> _transport;
-
+    std::variant<
+      std::monostate,
+      ss::sharded<rpc_transport>,
+      ss::sharded<kafka_client_transport>>
+      _transport;
     std::unique_ptr<pandaproxy::schema_registry::sharded_store> _store;
     ss::sharded<schema_id_validation_probe> _schema_id_validation_probe;
     ss::sharded<schema_id_cache> _schema_id_cache;

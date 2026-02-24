@@ -211,7 +211,9 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":kafka_client_transport",
         ":rjson",
+        ":rpc_transport",
         ":subject_name_strategy",
         ":transport",
         ":types",
@@ -219,6 +221,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/config:startup_config",
         "//src/v/kafka/client",
+        "//src/v/kafka/data/rpc",
         "//src/v/pandaproxy:json",
         "//src/v/random:time_jitter",
         "@boost//:multi_index",
@@ -260,7 +263,6 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":core",
-        ":kafka_client_transport",
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/cluster",
@@ -268,10 +270,10 @@ redpanda_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/container:json",
+        "//src/v/features",
         "//src/v/json",
         "//src/v/kafka/client",
         "//src/v/kafka/client:configuration",
-        "//src/v/kafka/data/rpc",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:create_topics",
         "//src/v/kafka/protocol:list_offset",
@@ -305,12 +307,15 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":kafka_client_transport",
         ":rjson",
+        ":rpc_transport",
         ":subject_name_strategy",
         ":transport",
         ":types",
         "//src/v/config:startup_config",
         "//src/v/kafka/client",
+        "//src/v/kafka/data/rpc",
     ],
 )
 
@@ -337,6 +342,8 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":kafka_client_transport",
+        ":rpc_transport",
         ":server",
         ":transport",
         "//src/v/config:startup_config",

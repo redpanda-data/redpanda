@@ -12,6 +12,7 @@
 #include "cluster/cluster_link/frontend.h"
 #include "cluster/controller.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "kafka/client/configuration.h"
 #include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/deps.h"
@@ -89,20 +90,68 @@ ss::future<> api::start() {
         return config::shard_local_cfg()
           .kafka_schema_id_validation_cache_capacity.bind();
     }));
-    co_await _client.start(
-      config::to_yaml(_client_cfg, config::redact_secrets::no),
-      [this](std::exception_ptr ex) {
-          return _transport.local().mitigate_error(ex);
-      });
-    co_await _transport.start(
-      std::ref(_client),
-      config::to_yaml(_client_cfg, config::redact_secrets::no),
-      std::ref(_controller));
+    // Determine transport mode: RPC or kafka::client
+    const bool use_rpc = [this] {
+        if (!config::shard_local_cfg().schema_registry_use_rpc()) {
+            return false;
+        }
+        if (!_rpc_client) {
+            vlog(
+              srlog.warn,
+              "schema_registry_use_rpc enabled but RPC client not available. "
+              "Falling back to Kafka client.");
+            return false;
+        }
+        const bool rpc_available
+          = _controller->get_feature_table().local().get_active_version()
+            >= features::to_cluster_version(features::release_version::v26_1_1);
+        if (!rpc_available) {
+            vlog(
+              srlog.warn,
+              "schema_registry_use_rpc enabled but cluster version too old. "
+              "Falling back to Kafka client. RPC mode will be available "
+              "on the next restart after all brokers are upgraded.");
+            return false;
+        }
+        return true;
+    }();
+
+    if (use_rpc) {
+        vlog(srlog.info, "Schema registry in RPC mode");
+        auto& t = _transport.emplace<ss::sharded<rpc_transport>>();
+        co_await t.start(ss::sharded_parameter([this] {
+            return std::ref(_rpc_client->local());
+        }));
+    } else {
+        vlog(srlog.info, "Schema registry in Kafka client mode");
+        co_await _client.start(
+          config::to_yaml(_client_cfg, config::redact_secrets::no),
+          [this](std::exception_ptr ex) {
+              return ss::visit(
+                _transport,
+                [eptr = ex](std::monostate) {
+                    return ss::make_exception_future<>(eptr);
+                },
+                [eptr = ex](auto& t) {
+                    return t.local().mitigate_error(eptr);
+                });
+          });
+        auto& t = _transport.emplace<ss::sharded<kafka_client_transport>>();
+        co_await t.start(
+          std::ref(_client),
+          config::to_yaml(_client_cfg, config::redact_secrets::no),
+          std::ref(_controller));
+    }
+
     co_await _sequencer.start(
       _node_id,
       _sg,
-      ss::sharded_parameter(
-        [this]() -> transport* { return &_transport.local(); }),
+      ss::sharded_parameter([this]() -> transport* {
+          return ss::visit(
+            _transport,
+            [](std::monostate) -> transport* { return nullptr; },
+            [](auto& t) -> transport* { return &t.local(); });
+      }),
       std::ref(*_store),
       ss::sharded_parameter([this] {
           return std::make_unique<sequence_state_checker_impl>(_controller);
@@ -111,8 +160,12 @@ ss::future<> api::start() {
       config::to_yaml(_cfg, config::redact_secrets::no),
       _sg,
       _max_memory,
-      ss::sharded_parameter(
-        [this]() -> transport* { return &_transport.local(); }),
+      ss::sharded_parameter([this]() -> transport* {
+          return ss::visit(
+            _transport,
+            [](std::monostate) -> transport* { return nullptr; },
+            [](auto& t) -> transport* { return &t.local(); });
+      }),
       std::ref(*_store),
       std::ref(_sequencer),
       ss::sharded_parameter([this]() {
@@ -154,11 +207,21 @@ ss::future<> api::stop() {
         // Reset gate to support api restart
         _metrics_gate = ss::gate{};
     }
-    co_await _client.invoke_on_all(&kafka::client::client::stop);
+    const bool kafka_mode
+      = std::holds_alternative<ss::sharded<kafka_client_transport>>(_transport);
+    if (kafka_mode) {
+        co_await _client.invoke_on_all(&kafka::client::client::stop);
+    }
     co_await _service.stop();
     co_await _sequencer.stop();
-    co_await _transport.stop();
-    co_await _client.stop();
+    co_await ss::visit(
+      _transport,
+      [](std::monostate) { return ss::now(); },
+      [](auto& t) { return t.stop(); });
+    _transport.emplace<std::monostate>();
+    if (kafka_mode) {
+        co_await _client.stop();
+    }
     co_await _schema_id_cache.stop();
     co_await _schema_id_validation_probe.stop();
     if (_store) {
