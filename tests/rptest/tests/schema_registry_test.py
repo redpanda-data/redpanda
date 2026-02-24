@@ -5109,15 +5109,24 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
 
     These tests verify that Schema Registry correctly handles context-qualified
     subjects (e.g., ":.ctx:subject") for isolation, references, config, and mode.
+
+    Uses the Kafka client transport. The RPC variant is
+    SchemaRegistryContextRpcTransportTest.
     """
 
     def __init__(self, context: TestContext, **kwargs: Any):
         schema_registry_config = SchemaRegistryConfig()
         schema_registry_config.mode_mutability = True
+        extra_rp_conf = {
+            "schema_registry_enable_qualified_subjects": True,
+            "schema_registry_use_rpc": False,
+        }
+        if "extra_rp_conf" in kwargs:
+            extra_rp_conf.update(kwargs.pop("extra_rp_conf"))
         super().__init__(
             context,
             schema_registry_config=schema_registry_config,
-            extra_rp_conf={"schema_registry_enable_qualified_subjects": True},
+            extra_rp_conf=extra_rp_conf,
             **kwargs,
         )
 
@@ -6820,12 +6829,28 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             self.assert_not_equal(result.status_code, 422)
 
 
+class SchemaRegistryContextRpcTransportTest(SchemaRegistryContextTest):
+    """
+    RPC transport variant of SchemaRegistryContextTest.
+    """
+
+    def __init__(self, context: TestContext, **kwargs: Any):
+        super().__init__(
+            context,
+            extra_rp_conf={"schema_registry_use_rpc": True},
+            **kwargs,
+        )
+
+
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
     Test schema registry against a redpanda cluster with HTTP Basic Auth enabled.
+
+    Uses the Kafka client transport. The RPC variant is
+    SchemaRegistryBasicAuthRpcTransportTest.
     """
 
-    def __init__(self, context):
+    def __init__(self, context, **kwargs):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = "sasl"
@@ -6834,8 +6859,16 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         schema_registry_config.authn_method = "http_basic"
         schema_registry_config.mode_mutability = True
 
+        extra_rp_conf = {"schema_registry_use_rpc": False}
+        if "extra_rp_conf" in kwargs:
+            extra_rp_conf.update(kwargs.pop("extra_rp_conf"))
+
         super(SchemaRegistryBasicAuthTest, self).__init__(
-            context, security=security, schema_registry_config=schema_registry_config
+            context,
+            security=security,
+            schema_registry_config=schema_registry_config,
+            extra_rp_conf=extra_rp_conf,
+            **kwargs,
         )
 
         superuser = self.redpanda.SUPERUSER_CREDENTIALS
@@ -7615,15 +7648,31 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         )
 
 
+class SchemaRegistryBasicAuthRpcTransportTest(SchemaRegistryBasicAuthTest):
+    """
+    RPC transport variant of SchemaRegistryBasicAuthTest.
+    """
+
+    def __init__(self, context, **kwargs):
+        super().__init__(
+            context,
+            extra_rp_conf={"schema_registry_use_rpc": True},
+            **kwargs,
+        )
+
+
 class SchemaRegistryTest(SchemaRegistryTestMethods):
     """
     Test schema registry against a redpanda cluster without auth.
 
-    This derived class inherits all the tests from SchemaRegistryTestMethods.
+    Uses the Kafka client transport. The RPC transport variant is
+    SchemaRegistryRpcTransportTest.
     """
 
     def __init__(self, context):
-        super(SchemaRegistryTest, self).__init__(context)
+        super(SchemaRegistryTest, self).__init__(
+            context, extra_rp_conf={"schema_registry_use_rpc": False}
+        )
 
     @cluster(num_nodes=3)
     def test_nodejs_serde_client(self):
@@ -7636,6 +7685,20 @@ class SchemaRegistryTest(SchemaRegistryTestMethods):
         exit_code = self.redpanda.nodes[0].account.ssh(cmd)
         assert exit_code == 0, (
             "expected exit code 0 from nodejs serde client, got {exit_code}"
+        )
+
+
+class SchemaRegistryRpcTransportTest(SchemaRegistryTestMethods):
+    """
+    Test schema registry using the internal RPC transport instead of the
+    Kafka client transport.
+
+    This derived class inherits all the tests from SchemaRegistryTestMethods.
+    """
+
+    def __init__(self, context):
+        super(SchemaRegistryRpcTransportTest, self).__init__(
+            context, extra_rp_conf={"schema_registry_use_rpc": True}
         )
 
 
@@ -10427,12 +10490,21 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
 
     These tests verify that Schema Registry correctly enforces ACL authorization
     when using context-qualified subjects and the subject query parameter.
+
+    Uses the Kafka client transport. The RPC variant is
+    SchemaRegistryContextAuthzRpcTransportTest.
     """
 
     def __init__(self, context: TestContext, **kwargs: Any):
+        extra_rp_conf = {
+            "schema_registry_enable_qualified_subjects": True,
+            "schema_registry_use_rpc": False,
+        }
+        if "extra_rp_conf" in kwargs:
+            extra_rp_conf.update(kwargs.pop("extra_rp_conf"))
         super().__init__(
             context,
-            extra_rp_conf={"schema_registry_enable_qualified_subjects": True},
+            extra_rp_conf=extra_rp_conf,
             **kwargs,
         )
 
@@ -10617,3 +10689,16 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
             99999, subject="sub1", auth=self.user_auth
         )
         self.assert_equal(result.status_code, 403)
+
+
+class SchemaRegistryContextAuthzRpcTransportTest(SchemaRegistryContextAuthzTest):
+    """
+    RPC transport variant of SchemaRegistryContextAuthzTest.
+    """
+
+    def __init__(self, context: TestContext, **kwargs: Any):
+        super().__init__(
+            context,
+            extra_rp_conf={"schema_registry_use_rpc": True},
+            **kwargs,
+        )
