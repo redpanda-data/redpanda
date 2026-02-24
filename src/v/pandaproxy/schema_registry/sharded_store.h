@@ -12,6 +12,7 @@
 #pragma once
 
 #include "container/chunked_vector.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -25,6 +26,9 @@ class store;
 /// subject or schema_id
 class sharded_store final : public schema_getter {
 public:
+    static constexpr auto default_top_level_compat
+      = compatibility_level::backward;
+
     explicit sharded_store() = default;
     ~sharded_store() override = default;
     ss::future<> start(is_mutable mut, ss::smp_service_group sg);
@@ -179,12 +183,14 @@ public:
     ss::future<chunked_vector<seq_marker>>
     get_context_mode_written_at(context ctx);
 
-    ///\brief Get the compatibility level of a context.
-    ss::future<compatibility_level> get_compatibility(context ctx);
+    ///\brief Get the compatibility level for a context, or fallback to global.
+    ss::future<compatibility_level> get_compatibility(
+      context ctx, default_to_global fallback = default_to_global::no);
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
-    ss::future<compatibility_level>
-    get_compatibility(context_subject sub, default_to_global fallback);
+    ss::future<compatibility_level> get_compatibility(
+      context_subject sub, default_to_global fallback = default_to_global::no);
+
     ///\brief Set the compatibility level of a context.
     ss::future<bool> set_compatibility(
       seq_marker marker, context ctx, compatibility_level compatibility);
@@ -255,6 +261,11 @@ private:
       schema_version version,
       schema_id id,
       is_deleted deleted);
+
+    ss::future<result<compatibility_level>> _get_compatibility(context ctx);
+
+    ss::future<result<compatibility_level>>
+    _get_compatibility(context_subject sub);
 
     ss::future<schema_id> project_schema_id(context ctx);
 

@@ -38,13 +38,15 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_global_compat) {
       store.get_compatibility(pps::default_context).get() == expected);
 
     // duplicate should return false
-    BOOST_REQUIRE(store.clear_compatibility(pps::default_context).get() == false);
+    BOOST_REQUIRE(
+      store.clear_compatibility(pps::default_context).get() == false);
     BOOST_REQUIRE(
       store.get_compatibility(pps::default_context).get() == expected);
 
     expected = pps::compatibility_level::full_transitive;
     BOOST_REQUIRE(
-      store.set_compatibility(dummy_marker, pps::default_context, expected).get()
+      store.set_compatibility(dummy_marker, pps::default_context, expected)
+        .get()
       == true);
     BOOST_REQUIRE(
       store.get_compatibility(pps::default_context).get() == expected);
@@ -76,10 +78,10 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat) {
     store
       .upsert(
         pps::seq_marker{
-          .seq=std::nullopt,
-          .node=std::nullopt,
-          .version=ver1,
-          .key_type=pps::seq_marker_key_type::schema},
+          .seq = std::nullopt,
+          .node = std::nullopt,
+          .version = ver1,
+          .key_type = pps::seq_marker_key_type::schema},
         pps::subject_schema{subject0, string_def0.share()},
         pps::schema_id{1},
         ver1,
@@ -131,10 +133,10 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat_fallback) {
     store
       .upsert(
         pps::seq_marker{
-          .seq=std::nullopt,
-          .node=std::nullopt,
-          .version=ver1,
-          .key_type=pps::seq_marker_key_type::schema},
+          .seq = std::nullopt,
+          .node = std::nullopt,
+          .version = ver1,
+          .key_type = pps::seq_marker_key_type::schema},
         pps::subject_schema{subject0, string_def0.share()},
         pps::schema_id{1},
         ver1,
@@ -146,8 +148,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat_fallback) {
 
     expected = pps::compatibility_level::forward;
     BOOST_REQUIRE(
-      store
-        .set_compatibility(dummy_marker, pps::default_context, expected)
+      store.set_compatibility(dummy_marker, pps::default_context, expected)
         .get()
       == true);
     BOOST_REQUIRE(
@@ -184,13 +185,14 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config) {
     pps::sharded_store store;
     store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store]() { store.stop().get(); });
+    auto fallback = pps::default_to_global::yes;
 
     // Default config is backward compatibility
     BOOST_REQUIRE(
-      store.get_compatibility(pps::default_context).get()
+      store.get_compatibility(pps::default_context, fallback).get()
       == pps::compatibility_level::backward);
     BOOST_REQUIRE(
-      store.get_compatibility(test_ctx).get()
+      store.get_compatibility(test_ctx, fallback).get()
       == pps::compatibility_level::backward);
 
     // Set config on default context
@@ -200,29 +202,28 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config) {
           dummy_marker, pps::default_context, pps::compatibility_level::full)
         .get());
     BOOST_REQUIRE(
-      store.get_compatibility(pps::default_context).get()
+      store.get_compatibility(pps::default_context, fallback).get()
       == pps::compatibility_level::full);
     BOOST_REQUIRE(
-      store.get_compatibility(test_ctx).get()
+      store.get_compatibility(test_ctx, fallback).get()
       == pps::compatibility_level::backward);
 
     // Set different config on test context
+    BOOST_REQUIRE(store
+                    .set_compatibility(
+                      dummy_marker, test_ctx, pps::compatibility_level::none)
+                    .get());
     BOOST_REQUIRE(
-      store
-        .set_compatibility(
-          dummy_marker, test_ctx, pps::compatibility_level::none)
-        .get());
-    BOOST_REQUIRE(
-      store.get_compatibility(pps::default_context).get()
+      store.get_compatibility(pps::default_context, fallback).get()
       == pps::compatibility_level::full);
     BOOST_REQUIRE(
-      store.get_compatibility(test_ctx).get()
+      store.get_compatibility(test_ctx, fallback).get()
       == pps::compatibility_level::none);
 
     // Clear config returns to default
     BOOST_REQUIRE(store.clear_compatibility(test_ctx).get());
     BOOST_REQUIRE(
-      store.get_compatibility(test_ctx).get()
+      store.get_compatibility(test_ctx, fallback).get()
       == pps::compatibility_level::backward);
 }
 
@@ -251,9 +252,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config_written_at) {
 
     // Set compatibility on test context, verify marker is tracked
     BOOST_REQUIRE(
-      store
-        .set_compatibility(
-          marker1, test_ctx, pps::compatibility_level::full)
+      store.set_compatibility(marker1, test_ctx, pps::compatibility_level::full)
         .get());
     markers = store.get_context_config_written_at(test_ctx).get();
     BOOST_REQUIRE_EQUAL(markers.size(), 1);
@@ -261,9 +260,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config_written_at) {
 
     // Set compatibility again, second marker is added
     BOOST_REQUIRE(
-      store
-        .set_compatibility(
-          marker2, test_ctx, pps::compatibility_level::none)
+      store.set_compatibility(marker2, test_ctx, pps::compatibility_level::none)
         .get());
     markers = store.get_context_config_written_at(test_ctx).get();
     BOOST_REQUIRE_EQUAL(markers.size(), 2);
@@ -271,8 +268,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config_written_at) {
     BOOST_REQUIRE_EQUAL(markers[1], marker2);
 
     // Default context should still have no markers
-    markers
-      = store.get_context_config_written_at(pps::default_context).get();
+    markers = store.get_context_config_written_at(pps::default_context).get();
     BOOST_REQUIRE(markers.empty());
 
     // Clear compatibility clears all markers

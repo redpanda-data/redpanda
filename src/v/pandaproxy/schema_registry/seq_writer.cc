@@ -318,12 +318,8 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
     try {
         // Check for no-op case
         compatibility_level existing;
-        if (!sub.is_context_only()) {
-            existing = co_await _store.get_compatibility(
-              sub, default_to_global::no);
-        } else {
-            existing = co_await _store.get_compatibility(sub.ctx);
-        }
+        existing = co_await _store.get_compatibility(
+          sub, default_to_global::no);
         if (existing == compat) {
             co_return false;
         }
@@ -362,11 +358,7 @@ seq_writer::do_delete_config(context_subject ctx_sub) {
     co_await check_mutable(ctx_sub.ctx, sub_opt);
 
     try {
-        if (ctx_sub.is_context_only()) {
-            co_await _store.get_compatibility(ctx_sub.ctx);
-        } else {
-            co_await _store.get_compatibility(ctx_sub, default_to_global::no);
-        }
+        co_await _store.get_compatibility(ctx_sub, default_to_global::no);
 
     } catch (const exception&) {
         // subject config already blank

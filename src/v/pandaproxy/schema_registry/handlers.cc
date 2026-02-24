@@ -318,7 +318,7 @@ get_config(server::request_t rq, server::reply_t rp) {
     co_await rq.service().writer().read_sync();
 
     auto res = co_await rq.service().schema_store().get_compatibility(
-      default_context);
+      default_context, default_to_global::no);
 
     auto resp = ppj::rjson_serialize_iobuf(get_config_req_rep{.compat = res});
     log_response(*rq.req, resp);
@@ -363,14 +363,8 @@ ss::future<server::reply_t> get_config_subject(
     // Ensure we see latest writes
     co_await rq.service().writer().read_sync();
 
-    compatibility_level res;
-    if (ctx_sub.is_context_only()) {
-        res = co_await rq.service().schema_store().get_compatibility(
-          ctx_sub.ctx);
-    } else {
-        res = co_await rq.service().schema_store().get_compatibility(
-          ctx_sub, fallback);
-    }
+    auto res = co_await rq.service().schema_store().get_compatibility(
+      ctx_sub, fallback);
 
     auto resp = ppj::rjson_serialize_iobuf(get_config_req_rep{.compat = res});
     log_response(*rq.req, resp);
@@ -463,13 +457,8 @@ ss::future<server::reply_t> delete_config_subject(
 
     compatibility_level lvl{};
     try {
-        if (ctx_sub.is_context_only()) {
-            lvl = co_await rq.service().schema_store().get_compatibility(
-              ctx_sub.ctx);
-        } else {
-            lvl = co_await rq.service().schema_store().get_compatibility(
-              ctx_sub, default_to_global::no);
-        }
+        lvl = co_await rq.service().schema_store().get_compatibility(
+          ctx_sub, default_to_global::no);
     } catch (const exception& e) {
         if (e.code() == error_code::compatibility_not_found) {
             throw as_exception(not_found(ctx_sub));

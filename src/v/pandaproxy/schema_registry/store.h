@@ -624,32 +624,39 @@ public:
         return it->second._mode_written_at.copy();
     }
 
-    ///\brief Get the compatibility level of a context.
+    ///\brief Get the compatibility level of a context if it exists.
     result<compatibility_level> get_compatibility(const context& ctx) const {
         auto it = _context_stores.find(ctx);
         if (
-          it == _context_stores.end()
-          || !it->second._compatibility.has_value()) {
-            return compatibility_level::backward;
+          it != _context_stores.end()
+          && it->second._compatibility.has_value()) {
+            return it->second._compatibility.value();
         }
-        return *it->second._compatibility;
+        return compatibility_not_found(ctx);
     }
 
-    ///\brief Get the compatibility level for a subject, or fallback to global.
-    result<compatibility_level> get_compatibility(
-      const context_subject& sub, default_to_global fallback) const {
+    ///\brief Get the compatibility level for a subject if it exists.
+    result<compatibility_level>
+    get_compatibility(const context_subject& sub) const {
         auto sub_it_res = get_subject_iter(sub, include_deleted::no);
         if (sub_it_res.has_error()) {
-            return compatibility_not_found(sub);
+            vlog(
+              srlog.debug,
+              "Subject {} not found when getting compatibility",
+              sub);
+            return not_found(sub);
         }
         auto sub_it = std::move(sub_it_res).assume_value();
         auto compat = sub_it->second.compatibility;
-        if (compat) {
-            return compat.value();
-        } else if (fallback) {
-            return get_compatibility(sub.ctx);
+        if (!compat.has_value()) {
+            vlog(
+              srlog.debug,
+              "Subject {} does not have subject-level compatibility configured",
+              sub);
+            return compatibility_not_found(sub);
         }
-        return compatibility_not_found(sub);
+
+        return compat.value();
     }
 
     ///\brief Set the compatibility level of a context.
