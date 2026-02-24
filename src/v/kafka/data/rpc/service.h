@@ -48,6 +48,7 @@ private:
     ss::future<kafka_topic_data_result>
       produce(kafka_topic_data, model::timeout_clock::duration);
 
+    /// Returns the last_offset (kafka space) of the replicated data.
     ss::future<result<model::offset, cluster::errc>> produce(
       model::any_ntp auto,
       ss::chunked_fifo<model::record_batch>,

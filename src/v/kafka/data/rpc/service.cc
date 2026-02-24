@@ -247,9 +247,21 @@ local_service::consume(
 ss::future<kafka_topic_data_result> local_service::produce(
   kafka_topic_data data, model::timeout_clock::duration timeout) {
     auto ktp = model::ktp(data.tp.topic, data.tp.partition);
+    // Count records before moving batches — needed to convert the
+    // last_offset returned by replicate() into a base_offset.
+    // Same arithmetic as kafka/server/handlers/produce.cc.
+    int32_t total_records = 0;
+    for (const auto& b : data.batches) {
+        total_records += b.record_count();
+    }
     auto result = co_await produce(ktp, std::move(data.batches), timeout);
-    auto ec = result.has_error() ? result.error() : cluster::errc::success;
-    co_return kafka_topic_data_result(data.tp, ec);
+    if (result.has_error()) {
+        co_return kafka_topic_data_result(data.tp, result.error());
+    }
+    auto last_offset = result.value();
+    auto base_offset = model::offset{last_offset() - (total_records - 1)};
+    co_return kafka_topic_data_result(
+      data.tp, cluster::errc::success, base_offset, last_offset);
 }
 
 ss::future<result<model::offset, cluster::errc>> local_service::produce(

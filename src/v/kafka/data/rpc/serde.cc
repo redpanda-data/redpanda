@@ -57,7 +57,19 @@ fmt::iterator produce_request::format_to(fmt::iterator it) const {
 }
 
 fmt::iterator kafka_topic_data_result::format_to(fmt::iterator it) const {
-    return fmt::format_to(it, "{{ tp: {}, err: {} }}", tp, err);
+    fmt::format_to(it, "{{ tp: {}, err: {}, base_offset: ", tp, err);
+    if (base_offset) {
+        fmt::format_to(it, "{}", *base_offset);
+    } else {
+        fmt::format_to(it, "nullopt");
+    }
+    fmt::format_to(it, ", last_offset: ");
+    if (last_offset) {
+        fmt::format_to(it, "{}", *last_offset);
+    } else {
+        fmt::format_to(it, "nullopt");
+    }
+    return fmt::format_to(it, " }}");
 }
 
 fmt::iterator produce_reply::format_to(fmt::iterator it) const {
