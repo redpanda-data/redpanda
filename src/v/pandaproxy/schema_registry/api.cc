@@ -98,7 +98,8 @@ ss::future<> api::start() {
     co_await _sequencer.start(
       _node_id,
       _sg,
-      std::ref(_client),
+      ss::sharded_parameter(
+        [this]() -> transport* { return &_transport.local(); }),
       std::ref(*_store),
       ss::sharded_parameter([this] {
           return std::make_unique<sequence_state_checker_impl>(_controller);
