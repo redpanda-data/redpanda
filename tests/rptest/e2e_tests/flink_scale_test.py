@@ -10,26 +10,44 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from ducktape.mark import parametrize
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+from ducktape.mark import matrix
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.e2e_tests.workload_manager import WorkloadManager
 from rptest.services.cluster import cluster
 from rptest.services.flink import FlinkService
-from rptest.services.redpanda import MetricSamples, MetricsEndpoint
+from rptest.services.redpanda import (
+    MetricSamples,
+    MetricsEndpoint,
+    SISettings,
+    CLOUD_TOPICS_CONFIG_STR,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
 
 
 class FlinkScaleTests(RedpandaTest):
     def __init__(self, test_context, *args, **kwargs):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+        extra_rp_conf = {
+            CLOUD_TOPICS_CONFIG_STR: True,
+            "enable_cluster_metadata_upload_loop": False,
+        }
         # Init parent
-        super(FlinkScaleTests, self).__init__(test_context)
+        super(FlinkScaleTests, self).__init__(
+            test_context,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
+        )
         self.test_context = test_context
 
         # Prepare client
-        self.kafkacli = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         # Prepare Workloads
         self.workload_manager = WorkloadManager(self.logger)
@@ -158,7 +176,20 @@ class FlinkScaleTests(RedpandaTest):
             total_commit_requests += metric_per_node[h]["total"]
         return total_commit_requests, metric_per_node
 
-    def _create_topic_swarm(self, flinks, total_workloads, topics_per_workload):
+    def _create_topic(self, spec, cloud_topic=False):
+        config = {"cleanup.policy": "delete"}
+        if cloud_topic:
+            config[TopicSpec.PROPERTY_STORAGE_MODE] = TopicSpec.STORAGE_MODE_CLOUD
+        self.rpk.create_topic(
+            topic=spec.name,
+            partitions=spec.partition_count,
+            replicas=spec.replication_factor,
+            config=config,
+        )
+
+    def _create_topic_swarm(
+        self, flinks, total_workloads, topics_per_workload, cloud_topic=False
+    ):
         # Prepare topic specs
         self.topic_specs = []
         for flink in flinks:
@@ -167,7 +198,8 @@ class FlinkScaleTests(RedpandaTest):
                 for idx_t in range(topics_per_workload):
                     self.topic_specs.append(
                         TopicSpec(
-                            name=f"flink-{hostname}-{idx_w}-{idx_t}", partition_count=1
+                            name=f"flink-{hostname}-{idx_w}-{idx_t}",
+                            partition_count=1,
                         )
                     )
 
@@ -176,7 +208,10 @@ class FlinkScaleTests(RedpandaTest):
         _start = time.time()
         # Use ThreadPoolExecutor to create topics
         with ThreadPoolExecutor(max_workers=15) as executor:
-            executor.map(self.kafkacli.create_topic, self.topic_specs)
+            executor.map(
+                lambda spec: self._create_topic(spec, cloud_topic),
+                self.topic_specs,
+            )
         elapsed = time.time() - _start
         tps = len(self.topic_specs) / elapsed
         self.logger.debug(
@@ -187,9 +222,8 @@ class FlinkScaleTests(RedpandaTest):
 
     @skip_debug_mode
     @cluster(num_nodes=4)
-    @parametrize(unique_topics=True)
-    @parametrize(unique_topics=False)
-    def test_transactions_scale_single_node(self, unique_topics):
+    @matrix(unique_topics=[True, False], cloud_topic=[True, False])
+    def test_transactions_scale_single_node(self, unique_topics, cloud_topic):
         """
         Test uses same workload with different modes to produce
         and consume/process given number of transactions
@@ -218,11 +252,13 @@ class FlinkScaleTests(RedpandaTest):
         flink.start()
 
         if unique_topics:
-            self._create_topic_swarm([flink], total_workloads, 1)
+            self._create_topic_swarm(
+                [flink], total_workloads, 1, cloud_topic=cloud_topic
+            )
         else:
             hostname = flink.hostname
             spec = TopicSpec(name=f"flink-{hostname}-0-0", partition_count=8)
-            self.kafkacli.create_topic(spec)
+            self._create_topic(spec, cloud_topic=cloud_topic)
             self.topic_specs.append(spec)
 
         # Load python workload to target node
@@ -318,7 +354,8 @@ class FlinkScaleTests(RedpandaTest):
 
     @skip_debug_mode
     @cluster(num_nodes=8)
-    def test_transactions_scale_swarm(self):
+    @matrix(cloud_topic=[True, False])
+    def test_transactions_scale_swarm(self, cloud_topic):
         """
         Test uses same workload with different modes to produce
         and consume/process given number of transactions
@@ -378,7 +415,9 @@ class FlinkScaleTests(RedpandaTest):
             target_total_events = 1 * 1024 * 1024
 
         # Create topics
-        self._create_topic_swarm(flinks, workloads_per_node, topics_per_workload)
+        self._create_topic_swarm(
+            flinks, workloads_per_node, topics_per_workload, cloud_topic=cloud_topic
+        )
 
         # Load python workload to target node
         # TODO: Add workload config management

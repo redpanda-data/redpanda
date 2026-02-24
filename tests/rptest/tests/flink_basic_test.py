@@ -11,21 +11,39 @@ import io
 import os
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.e2e_tests.workload_manager import WorkloadManager
 from rptest.services.cluster import cluster
 from rptest.services.flink import FlinkService
+from rptest.services.redpanda import SISettings, CLOUD_TOPICS_CONFIG_STR
 from rptest.tests.redpanda_test import RedpandaTest
 
 
 class FlinkBasicTests(RedpandaTest):
     def __init__(self, test_context, *args, **kwargs):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+        extra_rp_conf = {
+            CLOUD_TOPICS_CONFIG_STR: True,
+            "enable_cluster_metadata_upload_loop": False,
+        }
+
         # Init parent
-        super(FlinkBasicTests, self).__init__(test_context, log_level="trace")
+        super(FlinkBasicTests, self).__init__(
+            test_context,
+            log_level="trace",
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
+        )
 
         # Prepare FlinkService
         self.topic_name = "flink_workload_topic"
@@ -36,12 +54,26 @@ class FlinkBasicTests(RedpandaTest):
             self.redpanda.get_node_memory_mb(),
         )
         # Prepare client
-        self.kafkacli = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         # Prepare Workloads
         self.workload_manager = WorkloadManager(self.logger)
 
         return
+
+    def setUp(self):
+        self.redpanda.start()
+
+    def _create_initial_topics(self, cloud_topic=False):
+        config = {"cleanup.policy": "delete"}
+        if cloud_topic:
+            config[TopicSpec.PROPERTY_STORAGE_MODE] = TopicSpec.STORAGE_MODE_CLOUD
+        for topic in self.topics:
+            self.rpk.create_topic(
+                topic=topic.name,
+                partitions=topic.partition_count,
+                replicas=topic.replication_factor,
+                config=config,
+            )
 
     def _run_workloads(self, workloads, config, wait_timeout=900):
         """
@@ -123,11 +155,14 @@ class FlinkBasicTests(RedpandaTest):
         return values
 
     @cluster(num_nodes=4)
-    def test_basic_workload(self):
+    @matrix(cloud_topic=[True, False])
+    def test_basic_workload(self, cloud_topic):
         """
         Test starts produce workload and then consume
         No checks for message counts, just job success
         """
+
+        self._create_initial_topics(cloud_topic=cloud_topic)
 
         # Start Flink
         self.flink.start()
@@ -171,11 +206,14 @@ class FlinkBasicTests(RedpandaTest):
         return
 
     @cluster(num_nodes=4)
-    def test_transaction_workload(self):
+    @matrix(cloud_topic=[True, False])
+    def test_transaction_workload(self, cloud_topic):
         """
         Test uses same workload with different modes to produce
         and consume/process given number of transactions
         """
+
+        self._create_initial_topics(cloud_topic=cloud_topic)
 
         def get_max_data_index(data_path, node):
             # Max index and target column
