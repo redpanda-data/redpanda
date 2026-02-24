@@ -201,6 +201,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/pandaproxy/schema_registry:core",
+        "//src/v/pandaproxy/schema_registry:transport",
     ],
 )
 
