@@ -12,6 +12,7 @@
 #include "resource_mgmt/memory_groups.h"
 
 #include "base/seastarx.h"
+#include "base/vassert.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "utils/human.h"
@@ -94,10 +95,24 @@ system_memory_groups::system_memory_groups(
       cloud_topics_reconciler.reserved_bytes())
   , _partitions_reserved_memory(
       partitions.reserved_bytes(total_available_memory))
-  , _total_system_memory(
-      total_available_memory - _compaction_reserved_memory
-      - _cloud_topics_compaction_reserved_memory
-      - _cloud_topics_reconciler_reserved_memory - _partitions_reserved_memory)
+  , _total_system_memory([&] {
+      size_t total_reserved = _compaction_reserved_memory
+                              + _cloud_topics_compaction_reserved_memory
+                              + _cloud_topics_reconciler_reserved_memory
+                              + _partitions_reserved_memory;
+      vassert(
+        total_available_memory >= total_reserved,
+        "Memory reservations ({}) exceed available memory ({}): "
+        "compaction={}, cloud_topics_compaction={}, "
+        "cloud_topics_reconciler={}, partitions={}",
+        total_reserved,
+        total_available_memory,
+        _compaction_reserved_memory,
+        _cloud_topics_compaction_reserved_memory,
+        _cloud_topics_reconciler_reserved_memory,
+        _partitions_reserved_memory);
+      return total_available_memory - total_reserved;
+  }())
   , _wasm_enabled(wasm_enabled)
   , _datalake_enabled(datalake_enabled)
   , _cloud_topics_enabled(cloud_topics_enabled) {}
