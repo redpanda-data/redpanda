@@ -14,6 +14,7 @@
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/test/compatibility_protobuf.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/util.h"
 
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
@@ -22,6 +23,32 @@
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_global_compat) {
+    // Setting and retrieving global compatibility should be allowed multiple
+    // times
+
+    pps::seq_marker dummy_marker;
+    pps::compatibility_level expected{pps::compatibility_level::backward};
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    BOOST_REQUIRE(
+      store.get_compatibility(pps::default_context).get() == expected);
+
+    // duplicate should return false
+    BOOST_REQUIRE(store.clear_compatibility(pps::default_context).get() == false);
+    BOOST_REQUIRE(
+      store.get_compatibility(pps::default_context).get() == expected);
+
+    expected = pps::compatibility_level::full_transitive;
+    BOOST_REQUIRE(
+      store.set_compatibility(dummy_marker, pps::default_context, expected).get()
+      == true);
+    BOOST_REQUIRE(
+      store.get_compatibility(pps::default_context).get() == expected);
+}
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     pps::sharded_store store;

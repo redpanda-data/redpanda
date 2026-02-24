@@ -453,29 +453,6 @@ BOOST_AUTO_TEST_CASE(test_store_get_subjects) {
     BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::yes).size(), 0);
 }
 
-BOOST_AUTO_TEST_CASE(test_store_global_compat) {
-    // Setting the retrieving global compatibility should be allowed multiple
-    // times
-
-    pps::seq_marker dummy_marker;
-    pps::compatibility_level expected{pps::compatibility_level::backward};
-    pps::store s;
-    BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
-
-    // duplicate should return false
-    BOOST_REQUIRE(s.clear_compatibility(pps::default_context).value() == false);
-    BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
-
-    expected = pps::compatibility_level::full_transitive;
-    BOOST_REQUIRE(
-      s.set_compatibility(dummy_marker, pps::default_context, expected).value()
-      == true);
-    BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
-}
-
 BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     // Setting the retrieving a subject compatibility should be allowed multiple
     // times
