@@ -226,6 +226,61 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config) {
       == pps::compatibility_level::backward);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config_written_at) {
+    // Test that config (compatibility) write markers are tracked correctly
+    auto test_ctx = pps::context{".test"};
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    // Initially no write markers
+    auto markers = store.get_context_config_written_at(test_ctx).get();
+    BOOST_REQUIRE(markers.empty());
+
+    // Create distinct markers
+    auto marker1 = pps::seq_marker{
+      .seq = model::offset{10},
+      .node = model::node_id{1},
+      .version = pps::schema_version{0},
+      .key_type = pps::seq_marker_key_type::config};
+    auto marker2 = pps::seq_marker{
+      .seq = model::offset{20},
+      .node = model::node_id{1},
+      .version = pps::schema_version{0},
+      .key_type = pps::seq_marker_key_type::config};
+
+    // Set compatibility on test context, verify marker is tracked
+    BOOST_REQUIRE(
+      store
+        .set_compatibility(
+          marker1, test_ctx, pps::compatibility_level::full)
+        .get());
+    markers = store.get_context_config_written_at(test_ctx).get();
+    BOOST_REQUIRE_EQUAL(markers.size(), 1);
+    BOOST_REQUIRE_EQUAL(markers[0], marker1);
+
+    // Set compatibility again, second marker is added
+    BOOST_REQUIRE(
+      store
+        .set_compatibility(
+          marker2, test_ctx, pps::compatibility_level::none)
+        .get());
+    markers = store.get_context_config_written_at(test_ctx).get();
+    BOOST_REQUIRE_EQUAL(markers.size(), 2);
+    BOOST_REQUIRE_EQUAL(markers[0], marker1);
+    BOOST_REQUIRE_EQUAL(markers[1], marker2);
+
+    // Default context should still have no markers
+    markers
+      = store.get_context_config_written_at(pps::default_context).get();
+    BOOST_REQUIRE(markers.empty());
+
+    // Clear compatibility clears all markers
+    BOOST_REQUIRE(store.clear_compatibility(test_ctx).get());
+    markers = store.get_context_config_written_at(test_ctx).get();
+    BOOST_REQUIRE(markers.empty());
+}
+
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     pps::sharded_store store;
     store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
