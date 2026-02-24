@@ -825,49 +825,6 @@ BOOST_AUTO_TEST_CASE(test_store_context_mode_written_at) {
     BOOST_REQUIRE(markers.empty());
 }
 
-BOOST_AUTO_TEST_CASE(test_store_context_config) {
-    // Test setting and getting compatibility (config) at the context level
-    auto test_ctx = pps::context{".test"};
-    pps::seq_marker dummy_marker;
-    auto s = pps::store{pps::is_mutable::yes};
-
-    // Default config is backward compatibility
-    BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
-      == pps::compatibility_level::backward);
-    BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
-      == pps::compatibility_level::backward);
-
-    // Set config on default context
-    BOOST_REQUIRE(
-      s.set_compatibility(
-         dummy_marker, pps::default_context, pps::compatibility_level::full)
-        .value());
-    BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
-      == pps::compatibility_level::full);
-    BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
-      == pps::compatibility_level::backward);
-
-    // Set different config on test context
-    BOOST_REQUIRE(s.set_compatibility(
-                     dummy_marker, test_ctx, pps::compatibility_level::none)
-                    .value());
-    BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
-      == pps::compatibility_level::full);
-    BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value() == pps::compatibility_level::none);
-
-    // Clear config returns to default
-    BOOST_REQUIRE(s.clear_compatibility(test_ctx).value());
-    BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
-      == pps::compatibility_level::backward);
-}
-
 BOOST_AUTO_TEST_CASE(test_store_context_config_written_at) {
     // Test that config (compatibility) write markers are tracked correctly
     auto test_ctx = pps::context{".test"};

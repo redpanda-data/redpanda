@@ -177,6 +177,55 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_invalid_subject_compat) {
       store.set_compatibility(dummy_marker, subject0, expected).get());
 }
 
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config) {
+    // Test setting and getting compatibility (config) at the context level
+    auto test_ctx = pps::context{".test"};
+    pps::seq_marker dummy_marker;
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    // Default config is backward compatibility
+    BOOST_REQUIRE(
+      store.get_compatibility(pps::default_context).get()
+      == pps::compatibility_level::backward);
+    BOOST_REQUIRE(
+      store.get_compatibility(test_ctx).get()
+      == pps::compatibility_level::backward);
+
+    // Set config on default context
+    BOOST_REQUIRE(
+      store
+        .set_compatibility(
+          dummy_marker, pps::default_context, pps::compatibility_level::full)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(pps::default_context).get()
+      == pps::compatibility_level::full);
+    BOOST_REQUIRE(
+      store.get_compatibility(test_ctx).get()
+      == pps::compatibility_level::backward);
+
+    // Set different config on test context
+    BOOST_REQUIRE(
+      store
+        .set_compatibility(
+          dummy_marker, test_ctx, pps::compatibility_level::none)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(pps::default_context).get()
+      == pps::compatibility_level::full);
+    BOOST_REQUIRE(
+      store.get_compatibility(test_ctx).get()
+      == pps::compatibility_level::none);
+
+    // Clear config returns to default
+    BOOST_REQUIRE(store.clear_compatibility(test_ctx).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(test_ctx).get()
+      == pps::compatibility_level::backward);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     pps::sharded_store store;
     store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
