@@ -241,6 +241,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":core",
+        ":kafka_client_transport",
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/cluster",
@@ -250,9 +251,7 @@ redpanda_cc_library(
         "//src/v/container:json",
         "//src/v/json",
         "//src/v/kafka/client",
-        "//src/v/kafka/client:config_utils",
         "//src/v/kafka/client:configuration",
-        "//src/v/kafka/client:exceptions",
         "//src/v/kafka/data/rpc",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:create_topics",
@@ -289,6 +288,7 @@ redpanda_cc_library(
         ":config",
         ":rjson",
         ":subject_name_strategy",
+        ":transport",
         ":types",
         "//src/v/config:startup_config",
         "//src/v/kafka/client",
@@ -319,6 +319,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":server",
+        ":transport",
         "//src/v/config:startup_config",
         "//src/v/pandaproxy:core",
     ],
