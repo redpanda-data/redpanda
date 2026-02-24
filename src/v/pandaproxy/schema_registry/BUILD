@@ -67,6 +67,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "transport",
+    hdrs = [
+        "transport.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cluster:errc",
+        "//src/v/cluster:topic_configuration",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "core",
     srcs = [
         "avro.cc",
