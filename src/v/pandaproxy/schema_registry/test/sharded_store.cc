@@ -573,6 +573,390 @@ SEASTAR_THREAD_TEST_CASE(
       == store.default_top_level_compat);
 }
 
+// Scenario Dc
+// Verifies the full fallback chain for a subject ("sub") in the default
+// context when fallback is enabled (default_to_global::yes).
+//
+// This is the most complete fallback test — it exercises all four tiers:
+//   subject config → default_context config → global_context config →
+//   hard-coded default
+//
+// Steps (building up the chain, then tearing it down):
+//
+// 1. Initially, nothing is set.
+//    get_compatibility falls through everything to default_top_level_compat.
+//
+// 2. Set global_context compatibility (full).
+//    get_compatibility resolves to global_context value.
+//
+// 3. Set default_context compatibility (forward).
+//    get_compatibility resolves to default_context value, shadowing global.
+//
+// 4. Set subject-level compatibility (none).
+//    get_compatibility resolves to subject value, shadowing both contexts.
+//
+// 5. Clear subject config.
+//    get_compatibility falls back to default_context value (forward).
+//
+// 6. Clear default_context config.
+//    get_compatibility falls back to global_context value (full).
+//
+// 7. Clear global_context config.
+//    get_compatibility falls back to hard-coded default_top_level_compat.
+//
+// This confirms the complete four-tier priority chain: each layer
+// correctly shadows those below it, and clearing a layer reveals
+// the next one down.
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_subject_default_context_config_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto subject = pps::subject{"sub"};
+    auto ctx = pps::default_context;
+    auto ctx_sub = pps::context_subject{ctx, subject};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+
+    auto expected1 = pps::compatibility_level::full;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, pps::global_context, expected1)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    auto expected2 = pps::compatibility_level::forward;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, pps::default_context, expected2)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected2);
+
+    auto expected3 = pps::compatibility_level::none;
+    BOOST_REQUIRE(
+      store.set_compatibility(dummy_marker, ctx_sub, expected3).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected3);
+
+    BOOST_REQUIRE(store.clear_compatibility(dummy_marker, ctx_sub).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected2);
+
+    BOOST_REQUIRE(
+      // TODO: Replace with single clear_compatibility(context_subject) overload
+      store.clear_compatibility(pps::default_context).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    BOOST_REQUIRE(
+      // TODO: Replace with single clear_compatibility(context_subject) overload
+      store.clear_compatibility(pps::global_context).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+}
+
+// Scenario Dd
+// Verifies the fallback chain for context-level compatibility in a
+// non-default context (".ctx", subject="") when fallback is enabled
+// (default_to_global::yes).
+//
+// Non-default contexts skip the default_context layer and fall back
+// directly to global_context. The resolution order is:
+//   context config → global_context config → hard-coded default
+//
+// Steps (build up, then tear down):
+//
+// 1. Initially, nothing is set.
+//    get_compatibility falls through to default_top_level_compat.
+//
+// 2. Set global_context compatibility (full).
+//    get_compatibility resolves to global_context value.
+//
+// 3. Set context-level compatibility on ".ctx" (forward).
+//    get_compatibility resolves to the context's own value, shadowing global.
+//
+// 4. Clear ".ctx" config.
+//    get_compatibility falls back to global_context value (full).
+//
+// 5. Clear global_context config.
+//    get_compatibility falls back to hard-coded default_top_level_compat.
+//
+// This confirms that non-default contexts with fallback enabled have a
+// three-tier chain (context → global → default), notably skipping the
+// default_context layer that default-context lookups include.
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_nondefault_context_config_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto ctx = pps::context{".ctx"};
+    auto ctx_sub = pps::context_subject{ctx, pps::subject{""}};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+
+    auto expected1 = pps::compatibility_level::full;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, pps::global_context, expected1)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    auto expected2 = pps::compatibility_level::forward;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, ctx, expected2)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected2);
+
+    // TODO: Replace with single clear_compatibility(context_subject) overload
+    BOOST_REQUIRE(store.clear_compatibility(ctx).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    BOOST_REQUIRE(
+      // TODO: Replace with single clear_compatibility(context_subject) overload
+      store.clear_compatibility(pps::global_context).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+}
+
+// Scenario De
+// Verifies the full fallback chain for a subject ("subject") in a
+// non-default context (".ctx") when fallback is enabled
+// (default_to_global::yes).
+//
+// This is the most complete fallback test for non-default contexts.
+// The resolution order is:
+//   subject config → context config → global_context config → hard-coded
+//   default
+//
+// Note: unlike the default context equivalent, there is no default_context
+// layer — non-default contexts skip it and fall back directly to global.
+//
+// Steps (build up, then tear down):
+//
+// 1. Initially, nothing is set.
+//    get_compatibility falls through everything to default_top_level_compat.
+//
+// 2. Set global_context compatibility (full).
+//    get_compatibility resolves to global_context value.
+//
+// 3. Set context-level compatibility on ".ctx" (forward).
+//    get_compatibility resolves to context value, shadowing global.
+//
+// 4. Set subject-level compatibility (none).
+//    get_compatibility resolves to subject value, shadowing both.
+//
+// 5. Clear subject config.
+//    get_compatibility falls back to context value (forward).
+//
+// 6. Clear ".ctx" config.
+//    get_compatibility falls back to global_context value (full).
+//
+// 7. Clear global_context config.
+//    get_compatibility falls back to hard-coded default_top_level_compat.
+//
+// This confirms the complete four-tier chain for non-default contexts:
+// subject → context → global → hard-coded default, with each layer
+// correctly shadowing those below and revealing the next on removal.
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_subject_nondefault_context_config_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto ctx = pps::context{".ctx"};
+    auto ctx_sub = pps::context_subject{ctx, pps::subject{"subject"}};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+
+    auto expected1 = pps::compatibility_level::full;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, pps::global_context, expected1)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    auto expected2 = pps::compatibility_level::forward;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, ctx, expected2)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected2);
+
+    auto expected3 = pps::compatibility_level::none;
+    BOOST_REQUIRE(
+      store.set_compatibility(dummy_marker, ctx_sub, expected3).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected3);
+
+    BOOST_REQUIRE(store.clear_compatibility(dummy_marker, ctx_sub).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected2);
+
+    // TODO: Replace with single clear_compatibility(context_subject) overload
+    BOOST_REQUIRE(store.clear_compatibility(ctx).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    BOOST_REQUIRE(
+      // TODO: Replace with single clear_compatibility(context_subject) overload
+      store.clear_compatibility(pps::global_context).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+}
+
+// Scenario Df
+// Verifies context-level compatibility for the global context (subject="")
+// when fallback is enabled (default_to_global::yes).
+//
+// Since the global context is already the top of the fallback hierarchy,
+// enabling fallback has no additional effect — the behavior is identical
+// to the no_fallback variant. Resolution is:
+//   global_context config → hard-coded default
+//
+// Steps:
+// 1. Initially, no config is set.
+//    get_compatibility returns default_top_level_compat.
+//
+// 2. Set global_context compatibility (full).
+//    get_compatibility returns the explicitly set value.
+//
+// 3. Clear global_context config.
+//    get_compatibility reverts to default_top_level_compat.
+//
+// This confirms that the fallback flag is a no-op for the global context
+// itself — there is nothing above it to fall back to, so the result is
+// the same regardless of the default_to_global setting.
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_global_context_config_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto ctx = pps::global_context;
+    auto ctx_sub = pps::context_subject{ctx, pps::subject{""}};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+
+    auto expected = pps::compatibility_level::full;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, pps::global_context, expected)
+        .get());
+    BOOST_REQUIRE(store.get_compatibility(ctx_sub, fallback).get() == expected);
+
+    BOOST_REQUIRE(
+      // TODO: Replace with single clear_compatibility(context_subject) overload
+      store.clear_compatibility(pps::global_context).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+}
+
+// Scenario Dg
+// Verifies the fallback chain for a subject ("subject") in the global
+// context when fallback is enabled (default_to_global::yes).
+//
+// Subjects in the global context have a three-tier resolution:
+//   subject config → global_context config → hard-coded default
+//
+// Since we're already in the global context, there is no intermediate
+// context layer to traverse — fallback goes straight from subject to
+// global-level config.
+//
+// Steps (build up, then tear down):
+//
+// 1. Initially, nothing is set.
+//    get_compatibility falls through to default_top_level_compat.
+//
+// 2. Set global_context compatibility (full).
+//    get_compatibility resolves to global_context value.
+//
+// 3. Set subject-level compatibility (forward).
+//    get_compatibility resolves to subject value, shadowing global.
+//
+// 4. Clear subject config.
+//    get_compatibility falls back to global_context value (full).
+//
+// 5. Clear global_context config.
+//    get_compatibility falls back to hard-coded default_top_level_compat.
+//
+// This confirms the three-tier chain for subjects in the global context.
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_global_context_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto ctx = pps::global_context;
+    auto ctx_sub = pps::context_subject{ctx, pps::subject{"subject"}};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+
+    auto expected1 = pps::compatibility_level::full;
+    BOOST_REQUIRE(
+      store
+        // TODO: Replace with single set_compatibility(context_subject) overload
+        .set_compatibility(dummy_marker, pps::global_context, expected1)
+        .get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    auto expected2 = pps::compatibility_level::forward;
+    BOOST_REQUIRE(
+      store.set_compatibility(dummy_marker, ctx_sub, expected2).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected2);
+
+    BOOST_REQUIRE(store.clear_compatibility(dummy_marker, ctx_sub).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get() == expected1);
+
+    BOOST_REQUIRE(
+      // TODO: Replace with single clear_compatibility(context_subject) overload
+      store.clear_compatibility(pps::global_context).get());
+    BOOST_REQUIRE(
+      store.get_compatibility(ctx_sub, fallback).get()
+      == store.default_top_level_compat);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config_written_at) {
     // Test that config (compatibility) write markers are tracked correctly
     auto test_ctx = pps::context{".test"};
