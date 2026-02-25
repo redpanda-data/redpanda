@@ -64,7 +64,6 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat) {
 
     pps::seq_marker dummy_marker;
     auto fallback = pps::default_to_global::yes;
-    const pps::schema_version ver1{1};
 
     pps::compatibility_level global_expected{
       pps::compatibility_level::backward};
@@ -74,19 +73,6 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat) {
 
     BOOST_REQUIRE(
       store.get_compatibility(pps::default_context).get() == global_expected);
-
-    store
-      .upsert(
-        pps::seq_marker{
-          .seq = std::nullopt,
-          .node = std::nullopt,
-          .version = ver1,
-          .key_type = pps::seq_marker_key_type::schema},
-        pps::subject_schema{subject0, string_def0.share()},
-        pps::schema_id{1},
-        ver1,
-        pps::is_deleted::no)
-      .get();
 
     auto sub_expected = pps::compatibility_level::backward;
     BOOST_REQUIRE(
@@ -123,25 +109,11 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat_fallback) {
     // A Subject should fallback to the current global setting
     pps::seq_marker dummy_marker;
     auto fallback = pps::default_to_global::yes;
-    const pps::schema_version ver1{1};
 
     pps::compatibility_level expected{pps::compatibility_level::backward};
     pps::sharded_store store;
     store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store]() { store.stop().get(); });
-
-    store
-      .upsert(
-        pps::seq_marker{
-          .seq = std::nullopt,
-          .node = std::nullopt,
-          .version = ver1,
-          .key_type = pps::seq_marker_key_type::schema},
-        pps::subject_schema{subject0, string_def0.share()},
-        pps::schema_id{1},
-        ver1,
-        pps::is_deleted::no)
-      .get();
 
     BOOST_REQUIRE(
       store.get_compatibility(subject0, fallback).get() == expected);
@@ -153,29 +125,6 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_compat_fallback) {
       == true);
     BOOST_REQUIRE(
       store.get_compatibility(subject0, fallback).get() == expected);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_sharded_store_invalid_subject_compat) {
-    // Setting and getting a compatibility for a non-existent subject should
-    // fail
-    auto fallback = pps::default_to_global::yes;
-
-    pps::seq_marker dummy_marker;
-    pps::compatibility_level expected{pps::compatibility_level::backward};
-    pps::sharded_store store;
-    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
-    auto stop_store = ss::defer([&store]() { store.stop().get(); });
-
-    BOOST_REQUIRE_EXCEPTION(
-      store.get_compatibility(subject0, fallback).get(),
-      pps::exception,
-      [](const pps::exception& e) {
-          return e.code() == pps::error_code::compatibility_not_found;
-      });
-
-    expected = pps::compatibility_level::backward;
-    BOOST_REQUIRE(
-      store.set_compatibility(dummy_marker, subject0, expected).get());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_context_config) {

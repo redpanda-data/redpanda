@@ -709,13 +709,6 @@ ss::future<compatibility_level> sharded_store::get_compatibility(
             co_return res.value();
         }
 
-        if (
-          res.has_error() && res.error().code() == error_code::subject_not_found
-          && sub.ctx != global_context) {
-            // Edge case:
-            throw as_exception(compatibility_not_found(sub));
-        }
-
         if (!fallback) {
             co_return sub.ctx == global_context
               // Scenario Cg
