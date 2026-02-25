@@ -162,6 +162,7 @@ using subject = named_type<ss::sstring, struct subject_tag>;
 /// separation, and so on. By default, schemas are stored under the "." context.
 using context = named_type<ss::sstring, struct context_tag>;
 inline const context default_context{"."};
+inline const context global_context{".__GLOBAL"};
 
 /// Whether qualified subject parsing is enabled. Captured at SR startup.
 using enable_qualified_subjects

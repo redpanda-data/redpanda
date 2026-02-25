@@ -676,16 +676,25 @@ sharded_store::_get_compatibility(context_subject sub) {
 
 ss::future<compatibility_level>
 sharded_store::get_compatibility(context ctx, default_to_global fallback) {
-    if (auto res = co_await _get_compatibility(ctx); res.has_value()) {
-        co_return res.value();
+    if (ctx != global_context) {
+        if (auto res = co_await _get_compatibility(ctx); res.has_value()) {
+            co_return res.value();
+        }
+
+        if (!fallback) {
+            co_return ctx == default_context || ctx() == ""
+              // Scenarios A, Ca, Cb
+              ? default_top_level_compat
+              // Scenario Cd
+              : throw as_exception(compatibility_not_found(ctx));
+        }
     }
 
-    if (!fallback) {
-        co_return ctx == default_context || ctx() == ""
-          // Scenarios A, Ca, Cb
-          ? default_top_level_compat
-          // Scenario Cd
-          : throw as_exception(compatibility_not_found(ctx));
+    // If the context doesn't have a compatibility level and we're allowed to
+    // fallback, then check the global context's compatibility level.
+    if (auto res = co_await _get_compatibility(global_context);
+        res.has_value()) {
+        co_return res.value();
     }
 
     // Scenarios B, Cf, Da, Db, Dc, Dd, De, Df, Dg
@@ -701,14 +710,18 @@ ss::future<compatibility_level> sharded_store::get_compatibility(
         }
 
         if (
-          res.has_error()
-          && res.error().code() == error_code::subject_not_found) {
+          res.has_error() && res.error().code() == error_code::subject_not_found
+          && sub.ctx != global_context) {
             // Edge case:
             throw as_exception(compatibility_not_found(sub));
         }
 
         if (!fallback) {
-            throw as_exception(compatibility_not_found(sub));
+            co_return sub.ctx == global_context
+              // Scenario Cg
+              ? default_top_level_compat
+              // Scenarios Cc & Ce
+              : throw as_exception(compatibility_not_found(sub));
         }
     }
     // If the subject is context-only, or if the subject doesn't have a
