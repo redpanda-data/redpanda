@@ -1164,7 +1164,7 @@ class LoggingConfig:
     # assumed it was always supported/does not require special handling.
     LOGGER_GENESIS: dict[str, RedpandaVersionTriple] = {
         "datalake": (24, 3, 1),
-        "cloud_topics_compaction": (26, 1, 1),
+        "cloud_topics_maintenance": (26, 1, 1),
     }
 
     def __init__(self, default_level: str, logger_levels: dict[str, str] = {}) -> None:

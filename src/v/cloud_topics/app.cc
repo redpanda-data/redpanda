@@ -14,7 +14,7 @@
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/data_plane_impl.h"
 #include "cloud_topics/housekeeper/manager.h"
-#include "cloud_topics/level_one/compaction/scheduler.h"
+#include "cloud_topics/level_one/maintenance/scheduler.h"
 #include "cloud_topics/level_one/metastore/flush_loop.h"
 #include "cloud_topics/level_one/metastore/topic_purger.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
@@ -176,8 +176,8 @@ ss::future<> app::construct(
       topic_manifest_upload_mgr, std::ref(*remote), bucket);
 
     construct_single_service(
-      compaction_scheduler,
-      l1::compaction_cluster_state{
+      maintenance_scheduler,
+      l1::maintenance_cluster_state{
         .self = self,
         .leaders_table = leaders_table,
         .topic_table = &controller->get_topics_state(),
@@ -211,7 +211,7 @@ ss::future<> app::start() {
     co_await housekeeper_manager.invoke_on_all(&housekeeper_manager::start);
     co_await topic_manifest_upload_mgr.invoke_on_all(
       &topic_manifest_upload_manager::start);
-    co_await compaction_scheduler->start();
+    co_await maintenance_scheduler->start();
     if (l0_gc.local_is_initialized()) {
         co_await l0_gc.invoke_on_all(&level_zero_gc::start);
     }
@@ -403,8 +403,8 @@ ss::sharded<l1::replicated_metastore>* app::get_sharded_replicated_metastore() {
     return &replicated_metastore;
 }
 
-l1::compaction_scheduler* app::get_compaction_scheduler() {
-    return compaction_scheduler.get();
+l1::maintenance_scheduler* app::get_maintenance_scheduler() {
+    return maintenance_scheduler.get();
 }
 
 ss::sharded<level_zero_gc>* app::get_level_zero_gc() { return &l0_gc; }

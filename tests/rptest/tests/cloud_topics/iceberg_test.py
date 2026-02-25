@@ -184,7 +184,7 @@ class EndToEndCloudTopicsIcebergCompactionTest(EndToEndCloudTopicsIcebergTestBas
                 assert self.redpanda
                 return (
                     self.redpanda.metric_sum(
-                        metric_name="vectorized_cloud_topics_compaction_scheduler_log_compactions_total",
+                        metric_name="vectorized_cloud_topics_maintenance_scheduler_log_compactions",
                         metrics_endpoint=MetricsEndpoint.METRICS,
                         expect_metric=True,
                     )

@@ -11,10 +11,10 @@
 #pragma once
 
 #include "cloud_topics/level_one/common/file_io.h"
-#include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 #include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
+#include "cloud_topics/level_one/maintenance/scheduler.h"
 #include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
@@ -88,7 +88,7 @@ public:
     ss::sharded<l1::domain_supervisor>* get_sharded_l1_domain_supervisor();
     ss::sharded<reconciler::reconciler<>>* get_reconciler();
     ss::sharded<l1::replicated_metastore>* get_sharded_replicated_metastore();
-    l1::compaction_scheduler* get_compaction_scheduler();
+    l1::maintenance_scheduler* get_maintenance_scheduler();
     ss::sharded<level_zero_gc_t<ss::lowres_clock>>* get_level_zero_gc();
     cluster_services& get_local_cluster_services();
 
@@ -116,7 +116,7 @@ private:
     ss::sharded<level_zero_gc_t<ss::lowres_clock>> l0_gc;
     ss::sharded<housekeeper_manager> housekeeper_manager;
     ss::sharded<topic_manifest_upload_manager> topic_manifest_upload_mgr;
-    std::unique_ptr<l1::compaction_scheduler> compaction_scheduler;
+    std::unique_ptr<l1::maintenance_scheduler> maintenance_scheduler;
     ss::sharded<l0::cluster_services> cluster_services;
 
     // Read replica components
