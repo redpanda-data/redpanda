@@ -122,7 +122,7 @@ class EndToEndCloudTopicsBase(EndToEndTest):
                 config=config,
             )
 
-    def wait_until_reconciled(self, topic: str, partition: int):
+    def wait_until_reconciled(self, topic: str, partition: int, timeout_sec: int = 60):
         def get_offsets():
             last_record: int | None = None
             output = self.rpk.consume(
@@ -155,16 +155,20 @@ class EndToEndCloudTopicsBase(EndToEndTest):
 
         wait_until(
             condition=is_reconciled,
-            timeout_sec=60,
+            timeout_sec=timeout_sec,
             backoff_sec=5,
             err_msg=message,
             retry_on_exc=True,
         )
 
-    def wait_until_all_reconciled(self, topics: Iterable[TopicSpec] | None = None):
+    def wait_until_all_reconciled(
+        self, topics: Iterable[TopicSpec] | None = None, timeout_sec: int = 60
+    ):
         for topic in topics or self.topics:
             for partition in range(topic.partition_count):
-                self.wait_until_reconciled(topic=topic.name, partition=partition)
+                self.wait_until_reconciled(
+                    topic=topic.name, partition=partition, timeout_sec=timeout_sec
+                )
 
 
 class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
@@ -439,6 +443,134 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
         assert cstatus.validator.invalid_reads == 0
         assert cstatus.validator.out_of_scope_invalid_reads == 0
         self.wait_until_all_reconciled(self.topics)
+
+
+class EndToEndCloudTopicsLevelingTest(EndToEndCloudTopicsBase):
+    """Cloud topics end-to-end test for leveling (rewriting suboptimal L1 objects)."""
+
+    topics = (
+        TopicSpec(
+            name=EndToEndCloudTopicsBase.s3_topic_name,
+            partition_count=1,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_DELETE,
+        ),
+    )
+    kgo_producer: KgoVerifierProducer
+    kgo_consumer: KgoVerifierSeqConsumer
+
+    def __init__(self, test_context):
+        extra_rp_conf = {
+            # Start with small max object size to produce small L1 objects
+            "cloud_topics_reconciliation_max_object_size": 1024**2,  # 1 MiB
+            # Aggressive leveling scheduling
+            "cloud_topics_leveling_interval_ms": 4000,
+            # Level when any data is in suboptimal objects
+            "cloud_topics_min_levelable_ratio": 0.0,
+            # Objects below 50% of max size are suboptimal (default)
+            "cloud_topics_leveling_object_size_threshold": 0.5,
+        }
+        super(EndToEndCloudTopicsLevelingTest, self).__init__(
+            test_context,
+            extra_rp_conf,
+        )
+        self.msg_size = 4096
+        self.msg_count = 5000
+
+    def _metric_sum(self, metric_name):
+        assert self.redpanda
+        return self.redpanda.metric_sum(
+            metric_name=metric_name,
+            metrics_endpoint=MetricsEndpoint.METRICS,
+            expect_metric=True,
+        )
+
+    def get_log_levelings(self):
+        return self._metric_sum(
+            "vectorized_cloud_topics_maintenance_scheduler_log_levelings"
+        )
+
+    def get_managed_logs(self):
+        return self._metric_sum(
+            "vectorized_cloud_topics_maintenance_scheduler_managed_log_count"
+        )
+
+    def produce(self):
+        assert self.redpanda
+        assert self.topic
+        try:
+            self.kgo_producer = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                msg_size=self.msg_size,
+                msg_count=self.msg_count,
+                tolerate_failed_produce=True,
+            )
+            self.kgo_producer.start()
+            self.kgo_producer.wait()
+        finally:
+            self.kgo_producer.stop()
+
+    def consume(self):
+        assert self.redpanda
+        assert self.topic
+        traffic_node = self.kgo_producer.nodes[0]
+        try:
+            self.kgo_consumer = KgoVerifierSeqConsumer(
+                self.test_context,
+                self.redpanda,
+                self.topic,
+                self.msg_size,
+                loop=False,
+                nodes=[traffic_node],
+            )
+            self.kgo_consumer.start(clean=False)
+            self.kgo_consumer.wait()
+        finally:
+            self.kgo_consumer.stop()
+
+    @cluster(num_nodes=4)
+    def test_leveling(self):
+        wait_until(
+            lambda: self.get_managed_logs() > 0,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="Did not see management of leveling-enabled CTPs.",
+        )
+
+        # Produce ~20 MiB of data, creating ~20 small L1 objects at 1 MiB max
+        self.produce()
+
+        # Wait for all data to be reconciled into the metastore.
+        # The small max object size (1 MiB) means many more reconciliation
+        # cycles are needed, so use a longer timeout than the default.
+        self.wait_until_all_reconciled(timeout_sec=120)
+
+        # Raise the max object size so existing objects become suboptimal
+        self.rpk.cluster_config_set(
+            "cloud_topics_reconciliation_max_object_size",
+            83886080,  # 80 MiB
+        )
+
+        # Wait for leveling to rewrite the small objects
+        wait_until(
+            lambda: self.get_log_levelings() > 0,
+            timeout_sec=360,
+            backoff_sec=1,
+            err_msg="Did not see leveling of managed CTPs.",
+        )
+
+        # Consume all data and verify no loss, reorder, or corruption
+        self.consume()
+
+        cstatus = self.kgo_consumer.consumer_status
+        assert cstatus.validator.invalid_reads == 0, (
+            f"Got {cstatus.validator.invalid_reads} invalid reads after leveling"
+        )
+        assert cstatus.validator.valid_reads == self.msg_count, (
+            f"Expected {self.msg_count} valid reads, got {cstatus.validator.valid_reads}"
+        )
 
 
 class EndToEndCloudTopicsCompactionTest(EndToEndCloudTopicsBase):
