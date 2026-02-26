@@ -853,8 +853,9 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
     }
 
     auto last = _segments.back();
+    // Get the size of the last segment collected _before_ acquiring read locks
+    // because upload size accounting has already taken place at this point.
     auto last_size_bytes = last->size_bytes();
-    auto last_unsealed = last->has_appender();
 
     // Take the locks before opening any readers on the segments.
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
@@ -876,6 +877,8 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
       _segments.end(),
       std::back_inserter(current_gen),
       [](const auto& seg) { return seg->get_generation_id()(); });
+
+    auto last_unsealed = last->has_appender();
 
     // special case: skip the generation check iff
     //   - the last segment in the list was NOT closed AND
