@@ -33,6 +33,13 @@ struct compaction_info_and_timestamp {
     kafka::offset max_compactible_offset;
 };
 
+// Contains leveling information collected from the metastore and the time at
+// which it was obtained.
+struct leveling_info_and_timestamp {
+    metastore::leveling_info_response info;
+    model::timestamp collected_at;
+};
+
 struct log_maintenance_meta {
     log_maintenance_meta(model::topic_id_partition tidp, model::ntp ntp)
       : tidp(std::move(tidp))
@@ -41,19 +48,26 @@ struct log_maintenance_meta {
     model::topic_id_partition tidp;
     model::ntp ntp;
     // Whether this log is:
-    // 1. `idle` (not yet queued for compaction)
-    // 2. `queued` (present in the scheduler's `log_maintenance_queue`)
-    // 3. `inflight` (currently undergoing a compaction on a worker shard)
+    // 1. `idle` (not yet queued for maintenance)
+    // 2. `queued` (present in a `log_maintenance_queue`)
+    // 3. `inflight` (currently undergoing maintenance on a worker shard)
     enum class log_state { idle, queued, inflight } state{log_state::idle};
     // If set, this is cached compaction metadata obtained from the metastore at
     // the `collected_at` time. Guaranteed to have a value if `state == queued`
-    // or `state == inflight`.
-    std::optional<compaction_info_and_timestamp> info_and_ts{std::nullopt};
+    // or `state == inflight` and this is a compaction job.
+    std::optional<compaction_info_and_timestamp> compaction_info_and_ts{
+      std::nullopt};
+    // If set, this is cached leveling metadata obtained from the metastore.
+    // Guaranteed to have a value if `state == queued` or `state == inflight`
+    // and this is a leveling job.
+    std::optional<leveling_info_and_timestamp> leveling_info_and_ts{
+      std::nullopt};
     // If set, this is the shard on which the log is currently undergoing an
-    // inflight compaction. Guaranteed to have a value if `state == inflight`.
+    // inflight maintenance job. Guaranteed to have a value if
+    // `state == inflight`.
     std::optional<ss::shard_id> inflight_shard{std::nullopt};
     intrusive_list_hook link;
-    // If `true`, we have been able to sample compaction info from the
+    // If `true`, we have been able to sample maintenance info from the
     // `metastore` previously.
     bool has_seen_reconciled_data{false};
 };
@@ -112,16 +126,20 @@ using log_maintenance_queue = std::priority_queue<
   chunked_vector<log_maintenance_meta_ptr>,
   cmp_t>;
 
+// Typed aliases for clarity at call sites.
+using log_compaction_queue = log_maintenance_queue;
+using log_leveling_queue = log_maintenance_queue;
+
 enum class maintenance_job_state {
-    // No compaction job is currently inflight.
+    // No maintenance job is currently inflight.
     idle,
-    // A compaction job is currently inflight.
+    // A maintenance job is currently inflight.
     running,
-    // A graceful stop has been requested of an inflight compaction job.
+    // A graceful stop has been requested of an inflight maintenance job.
     // The user should try to commit as much useful data as possible while still
     // shutting down in a prompt manner.
     soft_stop,
-    // A forceful stop has been requested of an inflight compaction job.
+    // A forceful stop has been requested of an inflight maintenance job.
     // The user should abandon any work and shutdown immediately.
     hard_stop
 };

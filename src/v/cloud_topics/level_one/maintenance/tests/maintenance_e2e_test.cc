@@ -27,12 +27,12 @@ static const cluster::topic_properties compact_topic_props = [] {
     return props;
 }();
 
-class CompactionFixture
+class MaintenanceFixture
   : public s3_imposter_fixture
   , public redpanda_thread_fixture
   , public ::testing::Test {
 public:
-    CompactionFixture()
+    MaintenanceFixture()
       : redpanda_thread_fixture(init_cloud_topics_tag{}, httpd_port_number()) {
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
@@ -48,7 +48,7 @@ public:
     }
 };
 
-TEST_F(CompactionFixture, ManageAndDeleteCompactedTopic) {
+TEST_F(MaintenanceFixture, ManageAndDeleteCompactedTopic) {
     // Creating a `compact`-enabled cloud topic should make it appear as managed
     // in the scheduler.
     const model::topic topic_name("tapioca");
@@ -66,71 +66,40 @@ TEST_F(CompactionFixture, ManageAndDeleteCompactedTopic) {
         {model::topic_namespace{ntp.ns, ntp.tp.topic}}, model::no_timeout)
       .get();
 
-    // Deleting a managed `compact`-enabled cloud topic should make it unmanaged
-    // in the scheduler.
+    // Deleting a managed cloud topic should make it unmanaged in the scheduler.
     RPTEST_REQUIRE_EVENTUALLY(
       10s, [&] { return !maintenance_scheduler->is_managed(ntp); });
 }
 
-TEST_F(CompactionFixture, AlterAndManageUncompactedTopic) {
-    // Enabling `compact` cleanup policy on an existing cloud topic should make
-    // it managed in the scheduler.
+TEST_F(MaintenanceFixture, ManageCloudTopicWithoutCompaction) {
+    // A cloud topic without compaction enabled should still be managed by the
+    // scheduler, since it is eligible for leveling.
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, 0);
     create_cloud_topic(ntp, cluster::topic_properties{}).get();
 
     auto* ct_app = app.cloud_topics_app.get();
     auto* maintenance_scheduler = ct_app->get_maintenance_scheduler();
-    ASSERT_FALSE(maintenance_scheduler->is_managed(ntp));
-
-    auto property_update = cluster::incremental_topic_updates{};
-    property_update.cleanup_policy_bitflags.op
-      = cluster::incremental_update_operation::set;
-    property_update.cleanup_policy_bitflags.value
-      = model::cleanup_policy_bitflags::compaction;
-    auto custom_update = cluster::incremental_topic_custom_updates{};
-    auto update = cluster::topic_properties_update_vector{
-      cluster::topic_properties_update{
-        model::topic_namespace(ntp.ns, ntp.tp.topic),
-        std::move(property_update),
-        std::move(custom_update)}};
-
-    app.controller->get_topics_frontend()
-      .local()
-      .update_topic_properties(std::move(update), model::no_timeout)
-      .get();
-
     RPTEST_REQUIRE_EVENTUALLY(
       10s, [&] { return maintenance_scheduler->is_managed(ntp); });
 }
 
-TEST_F(CompactionFixture, ManageAndAlterCompactedTopic) {
-    // Disabling `compact` cleanup policy on a managed cloud topic should make
-    // it unmanaged in the scheduler.
+TEST_F(MaintenanceFixture, ManageAndDeleteUncompactedTopic) {
+    // Deleting an uncompacted cloud topic (managed for leveling) should make it
+    // unmanaged in the scheduler.
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, 0);
-    create_cloud_topic(ntp, compact_topic_props).get();
+    create_cloud_topic(ntp, cluster::topic_properties{}).get();
 
     auto* ct_app = app.cloud_topics_app.get();
     auto* maintenance_scheduler = ct_app->get_maintenance_scheduler();
     RPTEST_REQUIRE_EVENTUALLY(
       10s, [&] { return maintenance_scheduler->is_managed(ntp); });
 
-    auto property_update = cluster::incremental_topic_updates{};
-    property_update.cleanup_policy_bitflags.op
-      = cluster::incremental_update_operation::set;
-    property_update.cleanup_policy_bitflags.value
-      = model::cleanup_policy_bitflags::deletion;
-    auto custom_update = cluster::incremental_topic_custom_updates{};
-    auto update = cluster::topic_properties_update_vector{
-      cluster::topic_properties_update{
-        model::topic_namespace(ntp.ns, ntp.tp.topic),
-        std::move(property_update),
-        std::move(custom_update)}};
-
     app.controller->get_topics_frontend()
       .local()
-      .update_topic_properties(std::move(update), model::no_timeout)
+      .delete_topics(
+        {model::topic_namespace{ntp.ns, ntp.tp.topic}}, model::no_timeout)
       .get();
 
     RPTEST_REQUIRE_EVENTUALLY(

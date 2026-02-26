@@ -8,9 +8,9 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/maintenance/log_info_collector.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
-#include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cluster/topic_configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -22,9 +22,14 @@ using namespace cloud_topics;
 
 class LogInfoCollectorTestFixture : public l1::l1_reader_fixture {};
 
-// A fake topic config provider which always returns a value.
+// A fake topic config provider which always returns a compacted topic.
 class fake_cfg_provider : public l1::topic_cfg_provider {
 public:
+    fake_cfg_provider() {
+        _cfg.properties.cleanup_policy_bitflags
+          = model::cleanup_policy_bitflags::compaction;
+    }
+
     std::optional<std::reference_wrapper<const cluster::topic_configuration>>
     get_topic_cfg(model::topic_namespace_view) const final {
         return _cfg;
@@ -57,7 +62,7 @@ TEST_F(LogInfoCollectorTestFixture, TestInfoCollector) {
 
     std::vector<tidp_batches_t> tidp_batches;
     l1::log_set_t logs;
-    l1::log_maintenance_queue cached_metadata(
+    l1::log_compaction_queue cached_metadata(
       [](
         const l1::log_maintenance_meta_ptr& a,
         const l1::log_maintenance_meta_ptr& b) { return a->ntp < b->ntp; });
@@ -72,14 +77,15 @@ TEST_F(LogInfoCollectorTestFixture, TestInfoCollector) {
     }
 
     make_l1_objects(std::move(tidp_batches)).get();
-    log_info_collector.collect_info_for_logs(logs, logs_list, cached_metadata)
+    log_info_collector.collect_compaction_info(logs, logs_list, cached_metadata)
       .get();
     ASSERT_EQ(cached_metadata.size(), num_topics);
     while (!cached_metadata.empty()) {
         auto sample = cached_metadata.top();
         cached_metadata.pop();
-        ASSERT_TRUE(sample->info_and_ts.has_value());
-        ASSERT_FLOAT_EQ(sample->info_and_ts->info.dirty_ratio, 1.0);
-        ASSERT_TRUE(sample->info_and_ts->info.earliest_dirty_ts.has_value());
+        ASSERT_TRUE(sample->compaction_info_and_ts.has_value());
+        ASSERT_FLOAT_EQ(sample->compaction_info_and_ts->info.dirty_ratio, 1.0);
+        ASSERT_TRUE(
+          sample->compaction_info_and_ts->info.earliest_dirty_ts.has_value());
     }
 }

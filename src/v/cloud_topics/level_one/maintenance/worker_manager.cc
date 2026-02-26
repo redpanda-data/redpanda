@@ -11,9 +11,9 @@
 #include "cloud_topics/level_one/maintenance/worker_manager.h"
 
 #include "cloud_topics/level_one/common/file_io.h"
+#include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cloud_topics/level_one/maintenance/worker.h"
-#include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "ssx/future-util.h"
@@ -21,13 +21,15 @@
 namespace cloud_topics::l1 {
 
 worker_manager::worker_manager(
-  log_maintenance_queue& work_queue,
+  log_compaction_queue& compaction_queue,
+  log_leveling_queue& leveling_queue,
   ss::sharded<file_io>* io,
   ss::sharded<replicated_metastore>* metastore,
   ss::sharded<cluster::metadata_cache>* metadata_cache,
   maintenance_scheduler_probe& probe,
   ss::sharded<level_one_reader_probe>* l1_reader_probe)
-  : _work_queue(work_queue)
+  : _compaction_queue(compaction_queue)
+  , _leveling_queue(leveling_queue)
   , _io(io)
   , _metastore(metastore)
   , _metadata_cache(metadata_cache)
@@ -51,19 +53,20 @@ ss::future<> worker_manager::stop() {
 }
 
 std::optional<foreign_log_maintenance_meta_ptr>
-worker_manager::try_acquire_work(ss::shard_id shard) {
+worker_manager::try_acquire_from(
+  log_maintenance_queue& queue, ss::shard_id shard) {
     vassert(
       ss::this_shard_id() == worker_manager_shard,
-      "Expected calls to worker_manager::try_acquire_work() to always "
+      "Expected calls to worker_manager::try_acquire_*_work() to always "
       "execute on shard {}",
       worker_manager_shard);
 
-    if (_work_queue.empty()) {
+    if (queue.empty()) {
         return std::nullopt;
     }
 
-    auto log = _work_queue.top();
-    _work_queue.pop();
+    auto log = queue.top();
+    queue.pop();
 
     if (!log) {
         return std::nullopt;
@@ -81,6 +84,16 @@ worker_manager::try_acquire_work(ss::shard_id shard) {
     return ss::make_foreign(log);
 }
 
+std::optional<foreign_log_maintenance_meta_ptr>
+worker_manager::try_acquire_compaction_work(ss::shard_id shard) {
+    return try_acquire_from(_compaction_queue, shard);
+}
+
+std::optional<foreign_log_maintenance_meta_ptr>
+worker_manager::try_acquire_leveling_work(ss::shard_id shard) {
+    return try_acquire_from(_leveling_queue, shard);
+}
+
 void worker_manager::complete_work(log_maintenance_meta* log) {
     vassert(
       ss::this_shard_id() == worker_manager_shard,
@@ -91,14 +104,20 @@ void worker_manager::complete_work(log_maintenance_meta* log) {
     dassert(
       log->state == log_maintenance_meta::log_state::inflight,
       "Expected log state to be inflight when completing work");
+    bool was_compaction = log->compaction_info_and_ts.has_value();
     log->state = log_maintenance_meta::log_state::idle;
     log->inflight_shard.reset();
-    log->info_and_ts.reset();
+    log->compaction_info_and_ts.reset();
+    log->leveling_info_and_ts.reset();
 
-    _probe.log_compacted();
+    if (was_compaction) {
+        _probe.log_compacted();
+    } else {
+        _probe.log_leveled();
+    }
 }
 
-void worker_manager::request_stop_compaction(log_maintenance_meta_ptr log) {
+void worker_manager::request_stop_maintenance(log_maintenance_meta_ptr log) {
     if (!log) {
         return;
     }
@@ -110,17 +129,25 @@ void worker_manager::request_stop_compaction(log_maintenance_meta_ptr log) {
 
     auto shard = shard_opt.value();
 
-    ssx::spawn_with_gate(_gate, [this, shard]() {
-        return _workers.invoke_on(shard, [](maintenance_worker& worker) {
-            return worker.terminate_current_job();
-        });
+    auto ntp = log->ntp;
+    ssx::spawn_with_gate(_gate, [this, shard, ntp = std::move(ntp)]() mutable {
+        return _workers.invoke_on(
+          shard, [ntp = std::move(ntp)](maintenance_worker& worker) {
+              worker.terminate_current_job(ntp);
+          });
     });
 }
 
-ss::future<> worker_manager::alert_workers() {
+ss::future<> worker_manager::alert_compaction() {
     auto guard = _gate.hold();
     co_await _workers.invoke_on_all(
-      [](maintenance_worker& worker) { worker.alert_worker(); });
+      [](maintenance_worker& worker) { worker.alert_compaction(); });
+}
+
+ss::future<> worker_manager::alert_leveling() {
+    auto guard = _gate.hold();
+    co_await _workers.invoke_on_all(
+      [](maintenance_worker& worker) { worker.alert_leveling(); });
 }
 
 ss::future<> worker_manager::pause_worker(ss::shard_id worker) {
@@ -131,8 +158,9 @@ ss::future<> worker_manager::pause_worker(ss::shard_id worker) {
 
 ss::future<> worker_manager::resume_worker(ss::shard_id worker) {
     auto guard = _gate.hold();
-    co_await _workers.invoke_on(
-      worker, [](maintenance_worker& worker) { return worker.resume_worker(); });
+    co_await _workers.invoke_on(worker, [](maintenance_worker& worker) {
+        return worker.resume_worker();
+    });
 }
 
 } // namespace cloud_topics::l1

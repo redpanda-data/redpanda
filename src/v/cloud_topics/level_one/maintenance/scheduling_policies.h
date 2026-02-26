@@ -13,8 +13,6 @@
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "model/fundamental.h"
 
-#include <iterator>
-
 namespace cloud_topics::l1 {
 
 class scheduling_policy {
@@ -26,47 +24,43 @@ public:
     scheduling_policy& operator=(scheduling_policy&&) noexcept = default;
     virtual ~scheduling_policy() = default;
 
-    virtual cmp_t get_comparator() const noexcept = 0;
+    virtual cmp_t get_compaction_comparator() const noexcept = 0;
+    virtual cmp_t get_leveling_comparator() const noexcept = 0;
 };
 
-// Compacts partitions from highest dirty ratio (the ratio of unclean bytes in
-// the log to the total log size) to lowest.
-class dirty_ratio_scheduling_policy : public scheduling_policy {
+// Schedules compaction jobs from highest dirty ratio to lowest, and leveling
+// jobs from highest levelable ratio to lowest.
+class maintenance_ratio_scheduling_policy : public scheduling_policy {
 public:
-    cmp_t get_comparator() const noexcept final;
+    cmp_t get_compaction_comparator() const noexcept final;
+    cmp_t get_leveling_comparator() const noexcept final;
 
 private:
-    struct sort_policy {
+    struct compaction_sort_policy {
         static bool operator()(
           const log_maintenance_meta_ptr& a,
           const log_maintenance_meta_ptr& b) noexcept {
             vassert(
-              a->info_and_ts.has_value() && b->info_and_ts.has_value(),
-              "Sorting policy applied to logs without info_and_ts assigned- "
-              "concurrency issue?");
-            return a->info_and_ts->info.dirty_ratio
-                   > b->info_and_ts->info.dirty_ratio;
+              a->compaction_info_and_ts.has_value()
+                && b->compaction_info_and_ts.has_value(),
+              "Sorting policy applied to logs without "
+              "compaction_info_and_ts assigned- concurrency issue?");
+            return a->compaction_info_and_ts->info.dirty_ratio
+                   > b->compaction_info_and_ts->info.dirty_ratio;
         }
     };
-};
 
-// Compacts partitions from highest compaction lag (the oldest timestamp of
-// the first uncompacted record) to lowest.
-class compaction_lag_scheduling_policy : public scheduling_policy {
-public:
-    cmp_t get_comparator() const noexcept final;
-
-private:
-    struct sort_policy {
+    struct leveling_sort_policy {
         static bool operator()(
           const log_maintenance_meta_ptr& a,
           const log_maintenance_meta_ptr& b) noexcept {
             vassert(
-              a->info_and_ts.has_value() && b->info_and_ts.has_value(),
-              "Sorting policy applied to logs without info_and_ts assigned- "
-              "concurrency issue?");
-            return a->info_and_ts->info.earliest_dirty_ts
-                   < b->info_and_ts->info.earliest_dirty_ts;
+              a->leveling_info_and_ts.has_value()
+                && b->leveling_info_and_ts.has_value(),
+              "Sorting policy applied to logs without "
+              "leveling_info_and_ts assigned- concurrency issue?");
+            return a->leveling_info_and_ts->info.levelable_ratio
+                   > b->leveling_info_and_ts->info.levelable_ratio;
         }
     };
 };

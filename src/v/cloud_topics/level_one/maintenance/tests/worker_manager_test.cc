@@ -46,15 +46,18 @@ public:
     work_fut_has_value(l1::worker_manager& manager, ss::shard_id shard) {
         return manager._workers.invoke_on(
           shard, [](l1::maintenance_worker& worker) {
-              return worker._work_fut.has_value();
+              return worker._compaction_work_fut.has_value()
+                     && worker._leveling_work_fut.has_value();
           });
     }
 };
 
 TEST_F(WorkerManagerTestFixture, PauseAndResumeWorkers) {
     l1::maintenance_scheduler_probe probe;
-    l1::log_maintenance_queue pq;
-    l1::worker_manager manager(pq, nullptr, nullptr, nullptr, probe, nullptr);
+    l1::log_compaction_queue cpq;
+    l1::log_leveling_queue lpq;
+    l1::worker_manager manager(
+      cpq, lpq, nullptr, nullptr, nullptr, probe, nullptr);
     start_workers(manager).get();
     auto stop_manager = ss::defer([&manager] { manager.stop().get(); });
     using worker_state = l1::maintenance_worker::worker_state;
@@ -83,9 +86,11 @@ TEST_F(WorkerManagerTestFixture, AcquireWork) {
     };
 
     l1::maintenance_scheduler_probe probe;
-    l1::log_maintenance_queue pq(std::move(cmp_func));
+    l1::log_compaction_queue cpq(std::move(cmp_func));
+    l1::log_leveling_queue lpq;
     l1::log_list_t list;
-    l1::worker_manager manager(pq, nullptr, nullptr, nullptr, probe, nullptr);
+    l1::worker_manager manager(
+      cpq, lpq, nullptr, nullptr, nullptr, probe, nullptr);
     auto stop_manager = ss::defer([&manager] { manager.stop().get(); });
 
     const auto test_ntp = model::ntp(
@@ -97,9 +102,9 @@ TEST_F(WorkerManagerTestFixture, AcquireWork) {
     list.push_back(*meta);
     using state = l1::log_maintenance_meta::log_state;
     meta->state = state::queued;
-    pq.emplace(meta);
+    cpq.emplace(meta);
 
-    auto work_opt = manager.try_acquire_work(ss::this_shard_id());
+    auto work_opt = manager.try_acquire_compaction_work(ss::this_shard_id());
     ASSERT_TRUE(work_opt.has_value());
     ASSERT_EQ(work_opt.value()->ntp, test_ntp);
     ASSERT_EQ(work_opt.value()->tidp, test_tidp);

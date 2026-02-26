@@ -13,6 +13,8 @@
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/maintenance/compaction/compaction_sink.h"
 #include "cloud_topics/level_one/maintenance/compaction/compaction_source.h"
+#include "cloud_topics/level_one/maintenance/leveling/leveling_sink.h"
+#include "cloud_topics/level_one/maintenance/leveling/leveling_source.h"
 #include "cloud_topics/level_one/maintenance/logger.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cloud_topics/level_one/maintenance/worker_manager.h"
@@ -41,35 +43,46 @@ maintenance_worker::maintenance_worker(
         "Unexpected compaction worker update queue error: {}",
         ex);
   })
-  , _poll_interval(
+  , _compaction_poll_interval(
       config::shard_local_cfg().cloud_topics_compaction_interval_ms.bind())
-  , _upload_part_size(config::shard_local_cfg().cloud_topics_upload_part_size())
+  , _leveling_poll_interval(
+      config::shard_local_cfg().cloud_topics_leveling_interval_ms.bind())
+  , _max_concurrent_leveling_ops(
+      config::shard_local_cfg().cloud_topics_concurrent_maintenance_ops.bind())
+  , _leveling_sem(_max_concurrent_leveling_ops(), "l1/leveling")
   , _worker_manager(worker_manager)
   , _io(io)
   , _metastore(metastore)
   , _metadata_cache(metadata_cache)
   , _compaction_sg(compaction_sg)
   , _l1_reader_probe(l1_reader_probe) {
-    _poll_interval.watch([this]() { _worker_cv.signal(); });
+    _compaction_poll_interval.watch([this]() { _compaction_cv.signal(); });
+    _leveling_poll_interval.watch([this]() { _leveling_cv.signal(); });
+    _max_concurrent_leveling_ops.watch(
+      [this]() { _leveling_sem.set_capacity(_max_concurrent_leveling_ops()); });
 }
 
 ss::future<> maintenance_worker::start() {
     _probe.setup_metrics();
-    start_work_loop();
+    start_compaction_loop();
+    start_leveling_loop();
     co_return;
 }
 
 ss::future<> maintenance_worker::stop() {
-    terminate_current_job();
+    terminate_all_jobs();
     _worker_state = worker_state::stopped;
     _as.request_abort();
-    _worker_cv.broken();
+    _compaction_cv.broken();
+    _leveling_cv.broken();
+    _leveling_sem.broken();
 
     co_await _worker_update_queue.shutdown();
 
     auto close_fut = _gate.close();
 
-    co_await clear_work_fut();
+    co_await clear_compaction_fut();
+    co_await clear_leveling_fut();
 
     if (_map) {
         co_await _map->initialize(0);
@@ -79,47 +92,56 @@ ss::future<> maintenance_worker::stop() {
     co_await std::move(close_fut);
 }
 
-void maintenance_worker::start_work_loop() {
+void maintenance_worker::start_compaction_loop() {
     vassert(
-      !_work_fut.has_value(),
-      "Cannot set value of _work_fut when it already has a value.");
-    _work_fut = ssx::spawn_with_gate_then(_gate, [this]() {
+      !_compaction_work_fut.has_value(),
+      "Cannot set value of _compaction_work_fut when it already has a value.");
+    _compaction_work_fut = ssx::spawn_with_gate_then(_gate, [this]() {
         return ss::with_scheduling_group(
-          _compaction_sg, [this]() { return work_loop(); });
+          _compaction_sg, [this]() { return compaction_work_loop(); });
     });
 }
 
-ss::future<> maintenance_worker::work_loop() {
+void maintenance_worker::start_leveling_loop() {
+    vassert(
+      !_leveling_work_fut.has_value(),
+      "Cannot set value of _leveling_work_fut when it already has a value.");
+    _leveling_work_fut = ssx::spawn_with_gate_then(_gate, [this]() {
+        return ss::with_scheduling_group(
+          _compaction_sg, [this]() { return leveling_work_loop(); });
+    });
+}
+
+ss::future<> maintenance_worker::compaction_work_loop() {
     while (is_active()) {
-        auto poll_interval = _poll_interval();
+        auto poll_interval = _compaction_poll_interval();
         try {
-            co_await _worker_cv.wait(_poll_interval());
+            co_await _compaction_cv.wait(_compaction_poll_interval());
         } catch (const ss::condition_variable_timed_out&) {
             // Fall through
         }
 
-        if (poll_interval != _poll_interval()) {
-            // Cluster config was changed while waiting.
+        if (poll_interval != _compaction_poll_interval()) {
             continue;
         }
 
         while (is_active()) {
-            auto maybe_work = co_await try_acquire_work_from_manager();
+            auto maybe_work
+              = co_await try_acquire_compaction_work_from_manager();
 
             if (!maybe_work.has_value()) {
                 break;
             }
 
             auto work = std::move(maybe_work).value();
-
             auto tidp = work->tidp;
 
-            auto compact_fut = co_await ss::coroutine::as_future(
+            auto job_fut = co_await ss::coroutine::as_future(
               compact_log(work.get()));
             co_await complete_work_on_manager(std::move(work));
 
-            if (compact_fut.failed()) {
-                auto eptr = compact_fut.get_exception();
+            if (job_fut.failed()) {
+                auto eptr = job_fut.get_exception();
                 auto log_lvl = ssx::is_shutdown_exception(eptr)
                                  ? ss::log_level::debug
                                  : ss::log_level::warn;
@@ -134,10 +156,89 @@ ss::future<> maintenance_worker::work_loop() {
     }
 }
 
-ss::future<> maintenance_worker::clear_work_fut() {
-    if (_work_fut.has_value()) {
-        co_await std::move(_work_fut).value();
-        _work_fut.reset();
+ss::future<> maintenance_worker::leveling_work_loop() {
+    while (is_active()) {
+        auto poll_interval = _leveling_poll_interval();
+        try {
+            co_await _leveling_cv.wait(_leveling_poll_interval());
+        } catch (const ss::condition_variable_timed_out&) {
+            // Fall through
+        }
+
+        if (poll_interval != _leveling_poll_interval()) {
+            continue;
+        }
+
+        // Spawn concurrent leveling fibers up to the semaphore limit.
+        while (is_active()) {
+            auto units = co_await _leveling_sem.get_units(1);
+
+            auto maybe_work = co_await try_acquire_leveling_work_from_manager();
+
+            if (!maybe_work.has_value()) {
+                break;
+            }
+
+            auto work = std::move(maybe_work).value();
+
+            auto ctx_it = _leveling_jobs.emplace(
+              _leveling_jobs.end(), maintenance_job_state::idle, work->ntp);
+
+            // Fire-and-forget within the gate; the semaphore controls
+            // concurrency and the gate ensures cleanup on stop.
+            ssx::spawn_with_gate(
+              _gate,
+              [this, ctx_it, work = std::move(work), units = std::move(units)](
+                this auto) -> ss::future<> {
+                  auto tidp = work->tidp;
+
+                  auto job_fut = co_await ss::coroutine::as_future(
+                    level_log(work.get(), *ctx_it));
+                  co_await complete_work_on_manager(std::move(work));
+
+                  if (job_fut.failed()) {
+                      auto eptr = job_fut.get_exception();
+                      auto log_lvl = ssx::is_shutdown_exception(eptr)
+                                       ? ss::log_level::debug
+                                       : ss::log_level::warn;
+                      vlogl(
+                        maintenance_log,
+                        log_lvl,
+                        "Caught exception {} while leveling CTP {}.",
+                        eptr,
+                        tidp);
+                  }
+
+                  _leveling_jobs.erase(ctx_it);
+                  _leveling_cv.signal();
+              });
+        }
+    }
+}
+
+ss::future<> maintenance_worker::clear_compaction_fut() {
+    if (_compaction_work_fut.has_value()) {
+        co_await std::move(_compaction_work_fut).value();
+        _compaction_work_fut.reset();
+    }
+}
+
+ss::future<> maintenance_worker::clear_leveling_fut() {
+    if (_leveling_work_fut.has_value()) {
+        co_await std::move(_leveling_work_fut).value();
+        _leveling_work_fut.reset();
+    }
+
+    // Wait for all inflight leveling fibers to complete. The fibers
+    // erase from _leveling_jobs and signal _leveling_cv on completion.
+    // During stop(), the CV is broken and the gate close drains fibers,
+    // so we only actively wait when the CV is still usable (pause path).
+    try {
+        while (!_leveling_jobs.empty()) {
+            co_await _leveling_cv.wait();
+        }
+    } catch (const ss::broken_condition_variable&) {
+        // During stop(), fibers will be drained by gate close.
     }
 }
 
@@ -149,9 +250,9 @@ ss::future<> maintenance_worker::compact_log(log_maintenance_meta* log) {
     // If there was a concurrent race with a request to cancel/stop an inflight
     // compaction, early return after resetting state to `idle`.
     if (
-      _job_state == maintenance_job_state::soft_stop
-      || _job_state == maintenance_job_state::hard_stop) {
-        _job_state = maintenance_job_state::idle;
+      _compaction_job_state == maintenance_job_state::soft_stop
+      || _compaction_job_state == maintenance_job_state::hard_stop) {
+        _compaction_job_state = maintenance_job_state::idle;
         co_return;
     }
 
@@ -166,7 +267,7 @@ ss::future<> maintenance_worker::compact_log(log_maintenance_meta* log) {
     auto tidp = log->tidp;
     auto ntp = log->ntp;
 
-    if (!log->info_and_ts.has_value()) {
+    if (!log->compaction_info_and_ts.has_value()) {
         vlog(
           maintenance_log.error,
           "Log {} in compaction process did not have metastore information "
@@ -177,16 +278,20 @@ ss::future<> maintenance_worker::compact_log(log_maintenance_meta* log) {
 
     vlog(maintenance_log.info, "Compacting CTP {}", tidp);
 
-    _job_state = maintenance_job_state::running;
-    _inflight_ntp = ntp;
+    _compaction_job_state = maintenance_job_state::running;
+    _compaction_inflight_ntp = ntp;
 
     auto compaction_offsets = metastore::compaction_offsets_response{
-      .dirty_ranges = log->info_and_ts->info.offsets_response.dirty_ranges,
+      .dirty_ranges
+      = log->compaction_info_and_ts->info.offsets_response.dirty_ranges,
       .removable_tombstone_ranges
-      = log->info_and_ts->info.offsets_response.removable_tombstone_ranges};
-    auto expected_compaction_epoch = log->info_and_ts->info.compaction_epoch;
-    auto start_offset = log->info_and_ts->info.start_offset;
-    auto max_compactible_offset = log->info_and_ts->max_compactible_offset;
+      = log->compaction_info_and_ts->info.offsets_response
+          .removable_tombstone_ranges};
+    auto expected_compaction_epoch
+      = log->compaction_info_and_ts->info.compaction_epoch;
+    auto start_offset = log->compaction_info_and_ts->info.start_offset;
+    auto max_compactible_offset
+      = log->compaction_info_and_ts->max_compactible_offset;
 
     // Lazy initialization of offset map.
     if (!_map) {
@@ -225,7 +330,7 @@ ss::future<> maintenance_worker::compact_log(log_maintenance_meta* log) {
       _metastore,
       _io,
       _as,
-      _job_state,
+      _compaction_job_state,
       _probe,
       _l1_reader_probe);
     auto sink = std::make_unique<compaction_sink>(
@@ -238,7 +343,6 @@ ss::future<> maintenance_worker::compact_log(log_maintenance_meta* log) {
       _metastore,
       _as,
       config::shard_local_cfg().cloud_topics_compaction_max_object_size.bind(),
-      _upload_part_size,
       l1::object_builder::options{
         .indexing_interval
         = config::shard_local_cfg().cloud_topics_l1_indexing_interval(),
@@ -269,16 +373,109 @@ ss::future<> maintenance_worker::compact_log(log_maintenance_meta* log) {
         vlog(maintenance_log.info, "Finished compacting CTP {}", tidp);
     }
 
-    _job_state = maintenance_job_state::idle;
-    _inflight_ntp.reset();
+    _compaction_job_state = maintenance_job_state::idle;
+    _compaction_inflight_ntp.reset();
+}
+
+ss::future<> maintenance_worker::level_log(
+  log_maintenance_meta* log, leveling_job_ctx& ctx) {
+    if (!is_active()) {
+        co_return;
+    }
+
+    if (
+      ctx.state == maintenance_job_state::soft_stop
+      || ctx.state == maintenance_job_state::hard_stop) {
+        ctx.state = maintenance_job_state::idle;
+        co_return;
+    }
+
+    if (!log) {
+        co_return;
+    }
+
+    if (!log->link.is_linked()) {
+        co_return;
+    }
+
+    auto tidp = log->tidp;
+    auto ntp = log->ntp;
+
+    if (!log->leveling_info_and_ts.has_value()) {
+        vlog(
+          maintenance_log.error,
+          "Log {} in leveling process did not have metastore leveling "
+          "information set. Concurrency issue?",
+          tidp);
+        co_return;
+    }
+
+    vlog(maintenance_log.info, "Leveling CTP {}", tidp);
+
+    ctx.state = maintenance_job_state::running;
+    ctx.ntp = ntp;
+
+    auto leveling_ranges
+      = log->leveling_info_and_ts->info.leveling_ranges.to_vec();
+
+    auto src = std::make_unique<leveling_source>(
+      std::move(ntp),
+      tidp,
+      std::move(leveling_ranges),
+      _metastore,
+      _io,
+      _as,
+      ctx.state,
+      _probe);
+    auto sink = std::make_unique<leveling_sink>(
+      tidp,
+      _io,
+      _metastore,
+      _as,
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_max_object_size.bind());
+    auto reducer = compaction::sliding_window_reducer(
+      std::move(src), std::move(sink));
+
+    auto m = _probe.auto_compaction_measurement();
+
+    auto level_fut = co_await ss::coroutine::as_future(
+      std::move(reducer).run());
+
+    if (level_fut.failed()) {
+        auto eptr = level_fut.get_exception();
+        auto log_lvl = ssx::is_shutdown_exception(eptr) ? ss::log_level::debug
+                                                        : ss::log_level::warn;
+        vlogl(
+          maintenance_log,
+          log_lvl,
+          "Caught exception {} while leveling CTP {}.",
+          eptr,
+          tidp);
+
+        m->cancel();
+    } else {
+        vlog(maintenance_log.info, "Finished leveling CTP {}", tidp);
+    }
+
+    ctx.state = maintenance_job_state::idle;
 }
 
 ss::future<std::optional<foreign_log_maintenance_meta_ptr>>
-maintenance_worker::try_acquire_work_from_manager() {
+maintenance_worker::try_acquire_compaction_work_from_manager() {
     co_return co_await ss::smp::submit_to(
       worker_manager::worker_manager_shard,
       [this, shard = ss::this_shard_id()]() {
-          return _worker_manager->try_acquire_work(shard);
+          return _worker_manager->try_acquire_compaction_work(shard);
+      });
+}
+
+ss::future<std::optional<foreign_log_maintenance_meta_ptr>>
+maintenance_worker::try_acquire_leveling_work_from_manager() {
+    co_return co_await ss::smp::submit_to(
+      worker_manager::worker_manager_shard,
+      [this, shard = ss::this_shard_id()]() {
+          return _worker_manager->try_acquire_leveling_work(shard);
       });
 }
 
@@ -297,24 +494,76 @@ bool maintenance_worker::is_active() const {
            && _worker_state == worker_state::active;
 }
 
-void maintenance_worker::interrupt_current_job() {
-    if (_inflight_ntp.has_value()) {
+void maintenance_worker::interrupt_current_job(const model::ntp& ntp) {
+    if (_compaction_inflight_ntp == ntp) {
+        vlog(
+          maintenance_log.debug, "Interrupting compaction job for CTP {}", ntp);
+        _compaction_job_state = maintenance_job_state::soft_stop;
+    }
+
+    for (auto& ctx : _leveling_jobs) {
+        if (ctx.ntp == ntp) {
+            vlog(
+              maintenance_log.debug,
+              "Interrupting leveling job for CTP {}",
+              ntp);
+            ctx.state = maintenance_job_state::soft_stop;
+        }
+    }
+}
+
+void maintenance_worker::terminate_current_job(const model::ntp& ntp) {
+    if (_compaction_inflight_ntp == ntp) {
+        vlog(
+          maintenance_log.debug, "Terminating compaction job for CTP {}", ntp);
+        _compaction_job_state = maintenance_job_state::hard_stop;
+    }
+
+    for (auto& ctx : _leveling_jobs) {
+        if (ctx.ntp == ntp) {
+            vlog(
+              maintenance_log.debug,
+              "Terminating leveling job for CTP {}",
+              ntp);
+            ctx.state = maintenance_job_state::hard_stop;
+        }
+    }
+}
+
+void maintenance_worker::interrupt_all_jobs() {
+    if (_compaction_inflight_ntp.has_value()) {
         vlog(
           maintenance_log.debug,
           "Interrupting compaction job for CTP {}",
-          _inflight_ntp);
+          _compaction_inflight_ntp);
     }
-    _job_state = maintenance_job_state::soft_stop;
+    _compaction_job_state = maintenance_job_state::soft_stop;
+
+    for (auto& ctx : _leveling_jobs) {
+        vlog(
+          maintenance_log.debug,
+          "Interrupting leveling job for CTP {}",
+          ctx.ntp);
+        ctx.state = maintenance_job_state::soft_stop;
+    }
 }
 
-void maintenance_worker::terminate_current_job() {
-    if (_inflight_ntp.has_value()) {
+void maintenance_worker::terminate_all_jobs() {
+    if (_compaction_inflight_ntp.has_value()) {
         vlog(
           maintenance_log.debug,
           "Terminating compaction job for CTP {}",
-          _inflight_ntp);
+          _compaction_inflight_ntp);
     }
-    _job_state = maintenance_job_state::hard_stop;
+    _compaction_job_state = maintenance_job_state::hard_stop;
+
+    for (auto& ctx : _leveling_jobs) {
+        vlog(
+          maintenance_log.debug,
+          "Terminating leveling job for CTP {}",
+          ctx.ntp);
+        ctx.state = maintenance_job_state::hard_stop;
+    }
 }
 
 ss::future<> maintenance_worker::pause_worker() {
@@ -336,12 +585,14 @@ ss::future<> maintenance_worker::do_pause_worker() {
       "Pausing compaction worker on shard {}",
       ss::this_shard_id());
 
-    interrupt_current_job();
+    interrupt_all_jobs();
 
     _worker_state = worker_state::paused;
-    // Signal `_worker_cv` in case work_loop is currently waiting.
-    alert_worker();
-    co_await clear_work_fut();
+    // Signal both CVs so work loops observe is_active() == false and exit.
+    alert_compaction();
+    alert_leveling();
+    co_await clear_compaction_fut();
+    co_await clear_leveling_fut();
 
     vlog(
       maintenance_log.info,
@@ -363,16 +614,19 @@ ss::future<> maintenance_worker::do_resume_worker() {
         co_return;
     }
 
-    // Set state back to active and start a new background loop.
+    // Set state back to active and start new background loops.
     _worker_state = worker_state::active;
-    start_work_loop();
+    start_compaction_loop();
+    start_leveling_loop();
     vlog(
       maintenance_log.info,
       "Resumed compaction worker on shard {}",
       ss::this_shard_id());
 }
 
-void maintenance_worker::alert_worker() { _worker_cv.signal(); }
+void maintenance_worker::alert_compaction() { _compaction_cv.signal(); }
+
+void maintenance_worker::alert_leveling() { _leveling_cv.signal(); }
 
 ss::future<> maintenance_worker::initialize_map() {
     if (_map) {

@@ -237,9 +237,11 @@ TEST_F_CORO(
     co_await collector.stop();
 }
 
-/// Test that disabling compaction on a managed partition triggers unmanage.
+/// Test that disabling compaction on a managed cloud topic does NOT trigger
+/// unmanage, since the partition is still eligible for leveling.
 TEST_F_CORO(
-  log_collector_test_fixture, test_disable_compaction_unmanages_partition) {
+  log_collector_test_fixture,
+  test_disable_compaction_does_not_unmanage_cloud_topic) {
     auto tp = model::topic("test_topic_4");
     auto tp_id = model::topic_id::create();
     // Create a compacted cloud topic directly.
@@ -266,7 +268,6 @@ TEST_F_CORO(
 
     // Track unmanage calls.
     bool unmanage_called = false;
-    model::ntp unmanaged_ntp;
 
     // Track if the partition is managed.
     bool is_managed = true;
@@ -275,11 +276,7 @@ TEST_F_CORO(
       [&](
         const model::ntp&, const model::topic_id_partition&, std::string_view) {
       },
-      [&](model::ntp n, std::string_view) {
-          unmanage_called = true;
-          unmanaged_ntp = n;
-          is_managed = false;
-      },
+      [&](model::ntp, std::string_view) { unmanage_called = true; },
       [&](const model::ntp&) { return is_managed; },
       _self,
       &_leaders,
@@ -287,7 +284,7 @@ TEST_F_CORO(
 
     co_await collector.start();
 
-    // Disable compaction on the topic.
+    // Disable compaction on the topic (switch to deletion-only).
     cluster::incremental_topic_updates updates;
     updates.cleanup_policy_bitflags.op
       = cluster::incremental_update_operation::set;
@@ -298,9 +295,9 @@ TEST_F_CORO(
       model::topic_namespace(model::kafka_namespace, tp), std::move(updates));
     co_await _topics.local().apply(std::move(update_cmd), model::offset{1});
 
-    // unmanage_cb SHOULD have been called since compaction was disabled.
-    EXPECT_TRUE(unmanage_called);
-    EXPECT_EQ(unmanaged_ntp, ntp);
+    // The cloud topic is still eligible for maintenance (leveling), so
+    // unmanage should NOT have been called.
+    EXPECT_FALSE(unmanage_called);
 
     co_await collector.stop();
 }

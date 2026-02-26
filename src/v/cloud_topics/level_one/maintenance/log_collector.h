@@ -31,7 +31,7 @@ struct maintenance_cluster_state {
     ss::sharded<cluster::partition_manager>* partition_manager;
 };
 
-// Responsible for pushing CTPs/logs that require compaction to the
+// Responsible for pushing CTPs/logs that require maintenance to the
 // `maintenance_scheduler` for managing, as well as their removal. Provides a
 // very limited interface to the user- implementors require only adding
 // `start_collecting_logs()` and `stop_collecting_logs()` functions in their
@@ -41,8 +41,8 @@ public:
     virtual ~log_collector() noexcept = default;
 
     // Starts the `log_collector` by calling `manage_logs()`, allowing it to
-    // push CTPs that require compaction to the `maintenance_scheduler`, or
-    // remove CTPs that no longer require compaction from the
+    // push CTPs that require maintenance to the `maintenance_scheduler`, or
+    // remove CTPs that no longer require maintenance from the
     // `maintenance_scheduler`.
     ss::future<> start();
 

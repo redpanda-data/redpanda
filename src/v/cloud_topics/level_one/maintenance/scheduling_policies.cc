@@ -12,16 +12,18 @@
 
 namespace cloud_topics::l1 {
 
-cmp_t dirty_ratio_scheduling_policy::get_comparator() const noexcept {
-    return sort_policy{};
+cmp_t maintenance_ratio_scheduling_policy::get_compaction_comparator()
+  const noexcept {
+    return compaction_sort_policy{};
 }
 
-cmp_t compaction_lag_scheduling_policy::get_comparator() const noexcept {
-    return sort_policy{};
+cmp_t maintenance_ratio_scheduling_policy::get_leveling_comparator()
+  const noexcept {
+    return leveling_sort_policy{};
 }
 
 std::unique_ptr<scheduling_policy> make_default_scheduling_policy() {
-    return std::make_unique<dirty_ratio_scheduling_policy>();
+    return std::make_unique<maintenance_ratio_scheduling_policy>();
 }
 
 } // namespace cloud_topics::l1

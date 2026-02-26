@@ -8,11 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/maintenance/log_info_collector.h"
 #include "cloud_topics/level_one/maintenance/scheduler.h"
 #include "cloud_topics/level_one/maintenance/scheduling_policies.h"
 #include "cloud_topics/level_one/maintenance/worker_manager.h"
-#include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cluster/topic_configuration.h"
 #include "cluster/topic_properties.h"
 #include "container/chunked_hash_map.h"
@@ -23,6 +23,8 @@ public:
     get_topic_cfg(model::topic_namespace_view tp) const final {
         if (!_topic_metadata.contains(tp)) {
             cluster::topic_configuration cfg;
+            cfg.properties.cleanup_policy_bitflags
+              = model::cleanup_policy_bitflags::compaction;
             cfg.properties.min_cleanable_dirty_ratio = tristate<double>{0.0};
             _topic_metadata.emplace(tp, cfg);
         }

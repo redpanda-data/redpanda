@@ -82,25 +82,23 @@ void partition_leader_log_collector::on_ntp_change(
 
         auto& topic_cfg = topic_cfg_opt.value();
 
-        auto is_compacted_cloud_topic = topic_cfg.is_compacted()
-                                        && topic_cfg.is_cloud_topic();
+        auto is_eligible_cloud_topic = topic_cfg.is_cloud_topic();
         auto is_leader_for = _leaders->local().get_leader(ntp) == _self;
-        if (is_compacted_cloud_topic && is_leader_for && !is_managed) {
-            // This is likely an existing cloud topic which is now `compact`
-            // enabled. We should manage it iff this broker already hosts
-            // the partition leader.
+        if (is_eligible_cloud_topic && is_leader_for && !is_managed) {
+            // This is a cloud topic eligible for maintenance (compaction
+            // or leveling). We should manage it iff this broker already
+            // hosts the partition leader.
             auto tp_id = topic_cfg.tp_id;
             vassert(tp_id.has_value(), "Expected tp_id to have value.");
             auto tidp = model::topic_id_partition(
               tp_id.value(), ntp.tp.partition);
 
-            _manage_cb(ntp, tidp, "Enabled compaction");
+            _manage_cb(ntp, tidp, "Enabled maintenance");
         }
 
-        if (!is_compacted_cloud_topic && is_managed) {
-            // This is likely an existing cloud topic which is no longer
-            // `compact` enabled.
-            _unmanage_cb(ntp, "Disabled compaction");
+        if (!is_eligible_cloud_topic && is_managed) {
+            // This cloud topic is no longer eligible for maintenance.
+            _unmanage_cb(ntp, "Disabled maintenance");
         }
         return;
     }
@@ -123,10 +121,7 @@ void partition_leader_log_collector::on_leadership_change(
 
     auto& topic_cfg = topic_cfg_opt.value();
 
-    auto is_compacted_cloud_topic = topic_cfg.is_compacted()
-                                    && topic_cfg.is_cloud_topic();
-
-    if (!is_compacted_cloud_topic) {
+    if (!topic_cfg.is_cloud_topic()) {
         return;
     }
 

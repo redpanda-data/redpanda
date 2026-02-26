@@ -164,10 +164,10 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
-    name = "compaction_e2e_test",
+    name = "maintenance_e2e_test",
     timeout = "short",
     srcs = [
-        "compaction_e2e_test.cc",
+        "maintenance_e2e_test.cc",
     ],
     cpu = 1,
     deps = [

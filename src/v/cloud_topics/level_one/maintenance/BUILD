@@ -116,6 +116,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/common:file_io",
         "//src/v/cloud_topics/level_one/frontend_reader:level_one_reader_probe",
         "//src/v/cloud_topics/level_one/maintenance/compaction:compaction_source_and_sink",
+        "//src/v/cloud_topics/level_one/maintenance/leveling:leveling_source_and_sink",
         "//src/v/cloud_topics/level_one/metastore",
         "//src/v/cloud_topics/level_one/metastore:replicated_metastore",
         "//src/v/cluster",
@@ -132,6 +133,7 @@ redpanda_cc_library(
         "//src/v/resource_mgmt:memory_groups",
         "//src/v/ssx:future_util",
         "//src/v/ssx:work_queue",
+        "//src/v/utils:adjustable_semaphore",
         "@seastar",
     ],
 )
@@ -174,6 +176,7 @@ redpanda_cc_library(
         "log_info_collector.h",
     ],
     implementation_deps = [
+        "//src/v/base",
         "//src/v/cluster:shard_table",
         "//src/v/cluster:types",
         "//src/v/ssx:future_util",

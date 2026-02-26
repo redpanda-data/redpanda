@@ -32,17 +32,26 @@ void maintenance_scheduler_probe::setup_metrics() {
           "managed_log_count",
           [this] { return _log_count; },
           sm::description(
-            "Number of cloud topic logs managed by this compaction scheduler")),
+            "Number of cloud topic logs managed by the maintenance "
+            "scheduler")),
         sm::make_gauge(
           "compaction_queue_length",
           [this] { return _compaction_queue_length; },
-          sm::description(
-            "Length of the compaction queue for this compaction scheduler")),
-        sm::make_counter(
-          "log_compactions_total",
+          sm::description("Number of cloud topic logs queued for compaction")),
+        sm::make_gauge(
+          "leveling_queue_length",
+          [this] { return _leveling_queue_length; },
+          sm::description("Number of cloud topic logs queued for leveling")),
+        sm::make_gauge(
+          "log_compactions",
           [this] { return _log_compactions; },
           sm::description(
             "Number of compaction rounds performed across all shards")),
+        sm::make_gauge(
+          "log_levelings",
+          [this] { return _log_levelings; },
+          sm::description(
+            "Number of leveling rounds performed across all shards")),
       });
 }
 

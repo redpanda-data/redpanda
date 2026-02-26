@@ -74,8 +74,8 @@ private:
     ss::sharded<cluster::partition_manager>* _partition_manager;
 };
 
-// Responsible for issuing `get_compaction_info()` requests to the `metastore`
-// when attempting to schedule a round of compactions.
+// Responsible for issuing info requests to the `metastore` when attempting to
+// schedule rounds of compaction and leveling.
 class log_info_collector {
 public:
     log_info_collector(
@@ -83,34 +83,42 @@ public:
       std::unique_ptr<topic_cfg_provider>,
       std::unique_ptr<max_compactible_offset_provider>);
 
-    // Populates `info_and_ts` within `log_maintenance_meta`s from the provided
-    // `log_list_t` by collecting each log's compaction info from the metastore.
-    // It is not guaranteed that every log present in `log_list_t` will have its
-    // `info_and_ts` set e.g. due to concurrent removal or metastore errors.
-    // If a log already has `info_and_ts` set, it will not be collected again
-    // until an interval has elapsed and the current `info_and_ts` is determined
-    // stale. Additionally, logs that have an inflight compaction in process do
-    // not need to be collected. Logs that have their information collected and
-    // deemed eligible for compaction will also have their `lw_shared_ptr`
-    // copied into the `log_maintenance_queue` for future compaction.
+    /// Collects compaction info from the metastore for compacted logs and
+    /// pushes eligible logs to the compaction queue.
+    ss::future<> collect_compaction_info(
+      log_set_t&, log_list_t&, log_compaction_queue&) const;
+
+    /// Collects leveling info from the metastore for non-compacted logs and
+    /// pushes eligible logs to the leveling queue.
     ss::future<>
-    collect_info_for_logs(log_set_t&, log_list_t&, log_maintenance_queue&) const;
+    collect_leveling_info(log_set_t&, log_list_t&, log_leveling_queue&) const;
 
 private:
-    // Returns a container of `compaction_info_spec` to sample the metastore
-    // with based on the input `log_list_t`.
+    // Returns compaction specs for compacted logs in the input `log_list_t`.
     chunked_vector<metastore::compaction_info_spec>
-    get_logs_to_collect(log_list_t&, size_t, model::timestamp) const;
+    get_compaction_specs(log_list_t&, size_t, model::timestamp) const;
 
-    // Sets compaction info state within the input logs per the
-    // `compaction_info_map` collected from the metastore and pushes logs
-    // eligible for compaction to the provided `log_maintenance_queue`.
-    void populate_log_infos(
+    // Returns leveling specs for non-compacted logs in the input `log_list_t`.
+    chunked_vector<metastore::leveling_info_spec>
+    get_leveling_specs(log_list_t&, size_t, model::timestamp) const;
+
+    // Sets compaction info state within the input logs and pushes logs
+    // eligible for compaction to the provided queue.
+    void populate_compaction_infos(
       metastore::compaction_info_map&,
       log_set_t&,
       log_list_t&,
-      log_maintenance_queue&,
+      log_compaction_queue&,
       const chunked_hash_map<model::ntp, kafka::offset>&,
+      model::timestamp) const;
+
+    // Sets leveling info state within the input logs and pushes logs
+    // eligible for leveling to the provided queue.
+    void populate_leveling_infos(
+      metastore::leveling_info_map&,
+      log_set_t&,
+      log_list_t&,
+      log_leveling_queue&,
       model::timestamp) const;
 
     // Owned by `app`.

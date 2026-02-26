@@ -20,8 +20,11 @@
 #include "compaction/key_offset_map.h"
 #include "config/property.h"
 #include "ssx/work_queue.h"
+#include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/scheduling.hh>
+
+#include <list>
 
 class WorkerManagerTestFixture;
 
@@ -29,17 +32,17 @@ namespace cloud_topics::l1 {
 
 class worker_manager;
 
-// A per-shard worker that accepts compaction jobs and performs de-duplication
-// using a `sink`, `source`, and `reducer`.
-// Can be pre-empted to either cancel or stop a compaction job.
+// A per-shard worker that accepts maintenance jobs (compaction and leveling)
+// and performs the relevant work using a `sink`, `source`, and `reducer`.
+// Can be pre-empted to either cancel or stop an inflight job.
 class maintenance_worker {
 public:
     // Describes whether a worker on a given shard is `active` and available
-    // for compaction jobs, or `paused` and temporarily unavailable, or fully
+    // for maintenance jobs, or `paused` and temporarily unavailable, or fully
     // `stopped`.
     enum class worker_state { active, paused, stopped };
 
-    // io and metastore are passed to the compaction `source` and `sink`.
+    // io and metastore are passed to the `source` and `sink`.
     maintenance_worker(
       worker_manager*,
       io*,
@@ -51,31 +54,26 @@ public:
     // Launches background loop.
     ss::future<> start();
 
-    // Closes concurrency primitives and sets `_job_state` and `_worker_state`
-    // to `stopped` to indicate to a potential inflight compaction job that it
-    // should exit early before waiting on and clearing `_work_fut`.
+    // Closes concurrency primitives and sets job states and `_worker_state`
+    // to `stopped` to indicate to potential inflight jobs that they
+    // should exit early before waiting on and clearing work futures.
     ss::future<> stop();
 
-    // Sets `_state = maintenance_job_state::soft_stop`. This is a request to
-    // checkpoint any valuable progress from the inflight compaction job and
-    // finish at earliest convenience, e.g. when a worker shard is being
-    // pre-empted for various reasons. It is up to users/currently running
-    // compaction jobs to respect this flag.
-    //
-    // This function cancels the inflight compaction job but does not affect the
-    // worker state- the worker will continue to accept compaction jobs
-    // after this function is called.
-    void interrupt_current_job();
+    // Sets job state to `soft_stop` for the inflight job matching `ntp`.
+    // This is a request to checkpoint any valuable progress and finish at
+    // earliest convenience. Does not affect the worker state.
+    void interrupt_current_job(const model::ntp& ntp);
 
-    // Sets `_state = maintenance_job_state::hard_stop`, indicating the inflight
-    // compaction job should stop promptly and abandon any in progress work,
-    // e.g. during shutdown. It is up to users/currently running compaction jobs
-    // to respect this flag.
-    //
-    // This function stops the inflight compaction job but does not affect
-    // the worker state- the worker will continue to accept compaction jobs
-    // after this function is called.
-    void terminate_current_job();
+    // Sets job state to `hard_stop` for the inflight job matching `ntp`,
+    // indicating it should stop promptly and abandon any in progress work.
+    // Does not affect the worker state.
+    void terminate_current_job(const model::ntp& ntp);
+
+    // Interrupts all inflight compaction and leveling jobs (soft_stop).
+    void interrupt_all_jobs();
+
+    // Terminates all inflight compaction and leveling jobs (hard_stop).
+    void terminate_all_jobs();
 
     // Submits a `do_pause_worker()` job to the `_worker_update_queue`.
     ss::future<> pause_worker();
@@ -83,46 +81,60 @@ public:
     // Submits a `do_resume_worker()` job to the `_worker_update_queue`.
     ss::future<> resume_worker();
 
-    // Alert the worker that new work has become available by signalling
-    // `_worker_cv`.
-    void alert_worker();
+    void alert_compaction();
+    void alert_leveling();
 
 private:
-    // Kicks off a backgrounded loop held in `_work_fut` which waits for alerts
-    // and polls occasionally to perform compaction work.
-    void start_work_loop();
+    // Per-job context for a concurrent leveling fiber.
+    struct leveling_job_ctx {
+        maintenance_job_state state{maintenance_job_state::idle};
+        model::ntp ntp;
+    };
 
-    // The main compaction loop which waits for jobs to become available.
-    ss::future<> work_loop();
+    // Kicks off backgrounded compaction and leveling loops.
+    void start_compaction_loop();
+    void start_leveling_loop();
 
-    // Waits for `_work_fut`'s future to resolve and clears its value (if it has
-    // one). Leaves `_work_fut`'s value as `std::nullopt`.
-    ss::future<> clear_work_fut();
+    // The compaction work loop which waits for compaction jobs.
+    ss::future<> compaction_work_loop();
 
-    // Pauses the compaction worker by setting `_worker_state` to `paused` and
-    // waits for the backgrounded `_work_fut` to complete. `_work_fut` is left
-    // as `std::nullopt` as a result of this function- no new compaction jobs
-    // will be processed until the worker is resumed. If `_worker_state` is not
+    // The leveling work loop which waits for leveling jobs.
+    ss::future<> leveling_work_loop();
+
+    // Waits for the compaction/leveling future to resolve and clears its value.
+    ss::future<> clear_compaction_fut();
+    ss::future<> clear_leveling_fut();
+
+    // Pauses the worker by setting `_worker_state` to `paused` and waits for
+    // backgrounded work futures to complete. No new maintenance jobs will be
+    // processed until the worker is resumed. If `_worker_state` is not
     // `active`, this function is a no-op.
     ss::future<> do_pause_worker();
 
-    // Resumes the compaction worker by setting `_worker_state` to `active` and
-    // launches a new backgrounded job held in `_work_fut`, allowing this worker
-    // to process new compaction jobs. If `_worker_state` is not `paused`, this
-    // function is a no-op.
+    // Resumes the worker by setting `_worker_state` to `active` and relaunches
+    // backgrounded work loops, allowing this worker to process new maintenance
+    // jobs. If `_worker_state` is not `paused`, this function is a no-op.
     ss::future<> do_resume_worker();
 
     // Requests a compaction of the provided CTP and its `compaction_offsets`
     // as obtained from the `metastore`.
     ss::future<> compact_log(log_maintenance_meta*);
 
-    // Retrieves a job from the `_worker_manager`, if there is one available.
-    ss::future<std::optional<foreign_log_maintenance_meta_ptr>>
-    try_acquire_work_from_manager();
+    // Requests a leveling rewrite of the provided CTP using the leveling
+    // ranges obtained from the `metastore`.
+    ss::future<> level_log(log_maintenance_meta*, leveling_job_ctx&);
 
-    // After completing a compaction job, go back to the `worker_manager` shard
-    // to mark the work as "complete" (i.e reset the `meta->inflight` value to
-    // indicate there is no longer an in-process compaction occurring).
+    // Retrieves a compaction job from the `_worker_manager`, if available.
+    ss::future<std::optional<foreign_log_maintenance_meta_ptr>>
+    try_acquire_compaction_work_from_manager();
+
+    // Retrieves a leveling job from the `_worker_manager`, if available.
+    ss::future<std::optional<foreign_log_maintenance_meta_ptr>>
+    try_acquire_leveling_work_from_manager();
+
+    // After completing a maintenance job, go back to the `worker_manager` shard
+    // to mark the work as "complete" (i.e reset the inflight state to indicate
+    // there is no longer an in-process maintenance job occurring).
     ss::future<> complete_work_on_manager(foreign_log_maintenance_meta_ptr);
 
     // Performs lazy initialization of the `compaction::key_offset_map` using
@@ -137,33 +149,22 @@ private:
 private:
     friend class ::WorkerManagerTestFixture;
 
-    // The state of a potentially inflight compaction job (`idle`, `running`,
-    // `cancelled`, or `stopped`) on this worker. `idle` means no compaction job
-    // is currently running on this worker. `running` means a compaction job is
-    // inflight. `cancelled` means that the inflight compaction job on this
-    // worker has been requested to checkpoint its valuable progress and finish
-    // at earliest convenience (a graceful stop), whereas `stopped` means that
-    // the inflight compaction job running on this worker has been pre-empted to
-    // abandon all work and return as soon as possible. `cancelled`/`stopped` do
-    // not mean that the worker itself is stopped from running future compaction
-    // jobs.
-    maintenance_job_state _job_state{maintenance_job_state::idle};
+    // Job state for the compaction fiber.
+    maintenance_job_state _compaction_job_state{maintenance_job_state::idle};
 
     // The state of the worker, which is `active`, `paused`, or `stopped`.
-    // * A worker in an `active` state should have an active `_work_fut` value
-    //   which is accepting and completing compaction jobs.
-    // * A worker in a `paused` state has `_work_fut == std::nullopt` and is not
-    //   accepting compaction jobs.
-    // * A worker in a `stopped` state is in the process of shutting down and
-    //   therefore has its concurrency primitives closed and is not accepting
-    //   compaction jobs.
     worker_state _worker_state{worker_state::active};
 
-    std::optional<model::ntp> _inflight_ntp;
+    std::optional<model::ntp> _compaction_inflight_ntp;
 
-    // If set, this is the active background loop for taking jobs from the
-    // `_worker_manager` and compacting them.
-    std::optional<ss::future<>> _work_fut;
+    // Active leveling job contexts for preemption broadcast.
+    std::list<leveling_job_ctx> _leveling_jobs;
+
+    // Background loop for compaction work.
+    std::optional<ss::future<>> _compaction_work_fut;
+
+    // Background loop for leveling work (dispatcher).
+    std::optional<ss::future<>> _leveling_work_fut;
 
     // A queue which is used to linearize pause/resume requests of this worker.
     ssx::work_queue _worker_update_queue;
@@ -177,16 +178,23 @@ private:
 
     ss::abort_source _as;
 
-    // Used to alert worker that a job has become available, or when
-    // `cloud_topics_compaction_interval_ms` config changes.
-    ss::condition_variable _worker_cv;
+    // Used to alert compaction fiber that a job has become available.
+    ss::condition_variable _compaction_cv;
 
-    // The interval on which the worker polls for new work.
-    config::binding<std::chrono::milliseconds> _poll_interval;
+    // Used to alert leveling fiber that a job has become available.
+    ss::condition_variable _leveling_cv;
 
-    // Captured at construction so that changing the config at runtime does not
-    // take effect without a restart.
-    size_t _upload_part_size;
+    // The interval on which the worker polls for new compaction work.
+    config::binding<std::chrono::milliseconds> _compaction_poll_interval;
+
+    // The interval on which the worker polls for new leveling work.
+    config::binding<std::chrono::milliseconds> _leveling_poll_interval;
+
+    // Max concurrent leveling ops per worker shard.
+    config::binding<size_t> _max_concurrent_leveling_ops;
+
+    // Limits concurrent leveling fibers. Initialized from config.
+    adjustable_semaphore _leveling_sem;
 
     // Owned by `scheduler`.
     worker_manager* _worker_manager;
