@@ -49,6 +49,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/frontend_reader:reader",
         "//src/v/cloud_topics/level_one/maintenance:logger",
         "//src/v/cloud_topics/level_one/maintenance:meta",
+        "//src/v/cloud_topics/level_one/maintenance:object_sink",
         "//src/v/cloud_topics/level_one/maintenance:worker_probe",
         "//src/v/cloud_topics/level_one/metastore",
         "//src/v/cloud_topics/level_one/metastore:extent_metadata_reader",
