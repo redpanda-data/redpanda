@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import enum
+import json
+import os
 import signal
 import statistics
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Sequence, overload
 
 from ducktape.cluster.cluster import ClusterNode
@@ -143,6 +145,7 @@ class RdkafkaPerformanceService(Service):
     PROCESS_NAME = "rdkafka_performance"
     EXE = f"/opt/librdkafka/examples/{PROCESS_NAME}"
     LOG_PATH = f"/tmp/{PROCESS_NAME}.log"
+    RESULT_FILE_NAME = "result.json"
 
     logs: dict[str, dict[str, str | bool]] = {}
 
@@ -345,6 +348,16 @@ class RdkafkaPerformanceService(Service):
         node.account.remove(self.LOG_PATH, allow_fail=True)
         for client_idx in range(self._clients_per_node):
             node.account.remove(self._instance_log_path(client_idx), allow_fail=True)
+
+    def _result_file_path(self) -> str:
+        result_dir = TestContext.results_dir(self.context, self.context.test_index)
+        os.makedirs(result_dir, exist_ok=True)
+        return os.path.join(result_dir, self.RESULT_FILE_NAME)
+
+    def write_metrics_result(self, metrics: RdkafkaPerformanceMetrics) -> None:
+        with open(self._result_file_path(), "w", encoding="utf-8") as result_file:
+            json.dump(asdict(metrics), result_file, indent=2, sort_keys=True)
+            result_file.write("\n")
 
     def _metrics_for_node_instance(
         self, node: ClusterNode, log_path: str

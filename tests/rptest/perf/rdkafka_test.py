@@ -29,7 +29,7 @@ class RdkafkaPerf(RedpandaTest):
             *args, num_brokers=3, resource_settings=resource_settings, **kwargs
         )
 
-    def run_workload(self, spec: TopicSpec, msg_count: int, free: bool):
+    def run_workload(self, spec: TopicSpec, msg_count: int, write_metrics: bool):
         svc = RdkafkaPerformanceService(
             self.test_context,
             self.redpanda,
@@ -61,15 +61,17 @@ class RdkafkaPerf(RedpandaTest):
         )
         assert m.dr_err == 0, f"Unexpected delivery errors: {m.dr_err}"
 
-        svc.stop()
-        if free:
+        if write_metrics:
+            svc.write_metrics_result(m)
+        else:
+            svc.stop()
             svc.free()
 
     def run_warmup(self, spec: TopicSpec) -> None:
         start_time = time.time()
         iterations = 0
         while (time.time() - start_time) < 90:
-            self.run_workload(spec, 100000, free=True)
+            self.run_workload(spec, 100000, write_metrics=True)
             iterations += 1
         self.logger.info(f"Warmup complete after {iterations} iteration(s)")
 
@@ -80,4 +82,4 @@ class RdkafkaPerf(RedpandaTest):
 
         self.run_warmup(spec)
 
-        self.run_workload(spec, self.MSG_COUNT, free=False)
+        self.run_workload(spec, self.MSG_COUNT, write_metrics=True)
