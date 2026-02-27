@@ -235,6 +235,15 @@ public:
         return clamp_and_update(val);
     }
 
+    bool set_pending_value(YAML::Node n) override {
+        auto val = std::move(n.as<T>());
+        return clamp_and_update_pending(val);
+    }
+
+    void set_pending_value(std::any v) override {
+        property<T>::update_pending_value(std::any_cast<T>(std::move(v)));
+    }
+
     std::optional<std::string_view> example() const override {
         if (!_example.empty()) {
             return _example;
@@ -271,6 +280,21 @@ private:
             }
         } else {
             return property<T>::update_value(std::move(clamp_with_bounds(val)));
+        }
+    }
+
+    bool clamp_and_update_pending(T val) {
+        using outer_type = std::decay_t<T>;
+        if constexpr (reflection::is_std_optional<outer_type>) {
+            if (val.has_value()) {
+                return property<T>::update_pending_value(
+                  std::move(clamp_with_bounds(val.value())));
+            } else {
+                return property<T>::update_pending_value(std::move(val));
+            }
+        } else {
+            return property<T>::update_pending_value(
+              std::move(clamp_with_bounds(val)));
         }
     }
 

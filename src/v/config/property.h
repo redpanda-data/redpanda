@@ -105,6 +105,7 @@ public:
       : base_property(rhs)
       , _value(std::move(rhs._value))
       , _default(std::move(rhs._default))
+      , _pending_value(std::move(rhs._pending_value))
       , _validator(std::move(rhs._validator))
       , _bindings(std::move(rhs._bindings)) {
         for (auto& binding : _bindings) {
@@ -122,6 +123,16 @@ public:
 
     const value_type& value() const { return _value; }
 
+    /// Return the pending value if one exists, otherwise the active value.
+    /// Use this to check the user's configured intent (e.g. for enterprise
+    /// feature enforcement) rather than the currently active runtime value.
+    const value_type& configured_value() const {
+        if (_pending_value.has_value()) {
+            return *_pending_value;
+        }
+        return _value;
+    }
+
     const value_type& default_value() const { return _default; }
 
     std::string_view type_name() const override;
@@ -135,6 +146,10 @@ public:
     bool is_overriden() const { return is_required() || _value != _default; }
 
     bool is_default() const override { return _value == _default; }
+
+    bool is_default_pending() const override {
+        return configured_value() == _default;
+    }
 
     bool is_set() const override { return _is_set; }
 
@@ -186,6 +201,30 @@ public:
         return update_value(std::move(n.as<T>()));
     }
 
+    bool set_pending_value(YAML::Node n) override {
+        return update_pending_value(std::move(n.as<T>()));
+    }
+
+    void set_pending_value(std::any v) override {
+        update_pending_value(std::any_cast<value_type>(std::move(v)));
+    }
+
+    void set_pending_value_to_default() override {
+        auto v = default_value();
+        update_pending_value(std::move(v));
+    }
+
+    bool has_pending() const override {
+        return _pending_value.has_value() && *_pending_value != _value;
+    }
+
+    void promote_pending() override {
+        if (_pending_value.has_value()) {
+            auto v = std::move(_pending_value).value();
+            update_value(std::move(v));
+        }
+    }
+
     std::optional<validation_error> validate(const value_type& v) const {
         if (auto err = _validator(v); err) {
             return std::make_optional<validation_error>(name().data(), *err);
@@ -214,8 +253,9 @@ public:
     }
 
     base_property& operator=(const base_property& pr) override {
-        auto v = dynamic_cast<const property<value_type>&>(pr)._value;
-        update_value(std::move(v));
+        auto v
+          = dynamic_cast<const property<value_type>&>(pr).configured_value();
+        update_value(value_type{v});
         return *this;
     }
 
@@ -296,20 +336,43 @@ protected:
         // Set flag even if the value won't be updated. This is to mark that
         // someone tried to explicitly set this property
         _is_set = true;
+        // if there is an update pending either
+        //   - we are in the process of promoting it OR
+        //   - it is stale with respect to new_value
+        _pending_value.reset();
         if (new_value != _value) {
             // Update the main value first, in case one of the binding updates
             // throws.
             _value = std::move(new_value);
             notify_watchers(_value);
-
             return true;
         } else {
             return false;
         }
     }
 
+    bool update_pending_value(value_type&& new_value) {
+        vassert(
+          needs_restart(),
+          "set_pending_value called on property '{}' which does not require "
+          "restart",
+          name());
+        _is_set = true;
+        if (new_value != _value) {
+            _pending_value = std::move(new_value);
+            return true;
+        } else {
+            // new value matches current _active_ value of the property, so
+            // a) there's no need to cache anything
+            // b) anything previously cached is out of date
+            _pending_value.reset();
+            return false;
+        }
+    }
+
     value_type _value;
     value_type _default;
+    std::optional<value_type> _pending_value;
 
     // An alternative default that applies if the cluster's original logical
     // version is <= the defined version
@@ -799,6 +862,11 @@ public:
         return property<std::vector<T>>::update_value(std::move(value));
     }
 
+    bool set_pending_value(YAML::Node n) override {
+        auto value = decode_yaml(n);
+        return property<std::vector<T>>::update_pending_value(std::move(value));
+    }
+
     std::optional<validation_error>
     validate([[maybe_unused]] YAML::Node n) const override {
         std::vector<T> value = decode_yaml(n);
@@ -838,6 +906,12 @@ public:
         auto value = decode_yaml(n);
         return property<std::unordered_map<typename T::key_type, T>>::
           update_value(std::move(value));
+    }
+
+    bool set_pending_value(YAML::Node n) override {
+        auto value = decode_yaml(n);
+        return property<std::unordered_map<typename T::key_type, T>>::
+          update_pending_value(std::move(value));
     }
 
     std::optional<validation_error> validate(YAML::Node n) const override {
@@ -890,6 +964,15 @@ public:
     bool set_value(YAML::Node) override {
         vlog(configlog.warn, "{}", deprecated_property_log_line());
         return false;
+    }
+
+    bool set_pending_value(YAML::Node) override {
+        vlog(configlog.warn, "{}", deprecated_property_log_line());
+        return false;
+    }
+
+    void set_pending_value(std::any) override {
+        vlog(configlog.warn, "{}", deprecated_property_log_line());
     }
 };
 
@@ -991,9 +1074,19 @@ public:
         return update_value(n.as<std::chrono::milliseconds>());
     }
 
+    bool set_pending_value(YAML::Node n) final {
+        return update_pending_value_ms(n.as<std::chrono::milliseconds>());
+    }
+
+    void set_pending_value(std::any v) final {
+        update_pending_value_ms(
+          std::any_cast<std::optional<std::chrono::milliseconds>>(std::move(v))
+            .value_or(-1ms));
+    }
+
     void print(std::ostream& o) const final {
         vassert(!is_secret(), "{} must not be a secret", name());
-        o << name() << ":" << _value.value_or(-1ms);
+        o << name() << ":" << value().value_or(-1ms);
     }
 
     // serialize the value. the key is taken from the property name at the
@@ -1005,7 +1098,7 @@ public:
         // non-secret; if a secret retention duration is ever introduced,
         // redact it, but consider the implications on the JSON type.
         vassert(!is_secret(), "{} must not be a secret", name());
-        json::rjson_serialize(w, _value.value_or(-1ms));
+        json::rjson_serialize(w, value().value_or(-1ms));
     }
 
 private:
@@ -1014,6 +1107,14 @@ private:
             return property::update_value(std::nullopt);
         } else {
             return property::update_value(value);
+        }
+    }
+
+    bool update_pending_value_ms(std::chrono::milliseconds value) {
+        if (value < 0ms) {
+            return property::update_pending_value(std::nullopt);
+        } else {
+            return property::update_pending_value(value);
         }
     }
 };
@@ -1176,9 +1277,14 @@ public:
     }
 
     /**
-     * @brief Checks current value of property to see if it is restricted
+     * @brief Checks configured value of property to see if it is restricted.
+     * Uses configured_value() so that pending (needs_restart) values are also
+     * detected — a user configuring an enterprise feature should be subject
+     * to license enforcement even before restarting.
      */
-    bool is_restricted() const { return do_check_restricted(this->value()); }
+    bool is_restricted() const {
+        return do_check_restricted(this->configured_value());
+    }
 
     /**
      * @brief Returns the sanctioned value of this property

@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/bounded_property.h"
 #include "config/config_store.h"
 #include "json/document.h"
 #include "json/stringbuffer.h"
@@ -44,6 +45,7 @@ struct test_config : public config::config_store {
     config::property<ss::sstring> default_secret_string;
     config::property<ss::sstring> secret_string;
     config::property<bool> aliased_bool;
+    config::bounded_property<int, config::numeric_bounds> bounded_int;
 
     test_config()
       : optional_int(
@@ -113,7 +115,14 @@ struct test_config : public config::config_store {
           "aliased_bool",
           "Property with a compat alias",
           {.aliases = {"aliased_bool_legacy"}},
-          true) {}
+          true)
+      , bounded_int(
+          *this,
+          "bounded_int",
+          "Bounded integer property",
+          {},
+          50,
+          {.min = 0, .max = 100}) {}
 };
 
 struct noop_config : public config::config_store {};
@@ -628,4 +637,231 @@ aliased_bool_legacy: false
         auto noop_cfg = noop_config{};
         EXPECT_NO_THROW(noop_cfg.read_yaml(yaml_with_unknown_properties));
     }
+}
+
+TEST(ConfigStoreTest, PendingValueSuppressesActive) {
+    auto cfg = test_config();
+    // optional_int has needs_restart::yes (default metadata)
+    EXPECT_EQ(cfg.optional_int(), 100);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+
+    // Set a pending value via YAML
+    auto node = YAML::Load("42");
+    bool changed = cfg.optional_int.set_pending_value(node);
+    EXPECT_TRUE(changed);
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+
+    // Active value is unchanged
+    EXPECT_EQ(cfg.optional_int(), 100);
+}
+
+TEST(ConfigStoreTest, PendingValueSameAsActive) {
+    auto cfg = test_config();
+    EXPECT_EQ(cfg.optional_int(), 100);
+
+    // Set pending to same value as active
+    auto node = YAML::Load("100");
+    bool changed = cfg.optional_int.set_pending_value(node);
+    EXPECT_FALSE(changed);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, PendingValueMultipleUpdates) {
+    auto cfg = test_config();
+    EXPECT_EQ(cfg.optional_int(), 100);
+
+    auto node1 = YAML::Load("42");
+    cfg.optional_int.set_pending_value(node1);
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+    EXPECT_EQ(cfg.optional_int(), 100);
+
+    // Second pending update overwrites first
+    auto node2 = YAML::Load("99");
+    cfg.optional_int.set_pending_value(node2);
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+    EXPECT_EQ(cfg.optional_int(), 100);
+}
+
+TEST(ConfigStoreTest, ResetPendingToDefault) {
+    auto cfg = test_config();
+    // First change active value away from default
+    cfg.optional_int.set_value(YAML::Load("50"));
+    EXPECT_EQ(cfg.optional_int(), 50);
+
+    // Set a pending value
+    auto node = YAML::Load("42");
+    cfg.optional_int.set_pending_value(node);
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+
+    // Reset pending to default (100)
+    cfg.optional_int.set_pending_value_to_default();
+    // Pending is default (100), active is 50, so has_pending is true
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+    // Active value unchanged
+    EXPECT_EQ(cfg.optional_int(), 50);
+}
+
+TEST(ConfigStoreTest, ResetPendingWhenActiveIsDefault) {
+    auto cfg = test_config();
+    // Active is already default (100)
+    EXPECT_EQ(cfg.optional_int(), 100);
+
+    // Set a pending value
+    auto node = YAML::Load("42");
+    cfg.optional_int.set_pending_value(node);
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+
+    // Reset pending to default — matches active, so no pending
+    cfg.optional_int.set_pending_value_to_default();
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, SetPendingToDefaultThenPromote) {
+    auto cfg = test_config();
+
+    // Move active away from default
+    cfg.optional_int.set_value(YAML::Load("50"));
+    EXPECT_EQ(cfg.optional_int(), 50);
+
+    // Set a pending value, then reset pending to default
+    cfg.optional_int.set_pending_value(YAML::Load("42"));
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+    cfg.optional_int.set_pending_value_to_default();
+    // Pending is default (100), active is 50
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+
+    // Promote: active should become the default, not 50 or 42
+    cfg.optional_int.promote_pending();
+    EXPECT_EQ(cfg.optional_int(), 100);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, BoundedPropertyPendingValueClamped) {
+    auto cfg = test_config();
+    EXPECT_EQ(cfg.bounded_int(), 50);
+
+    // Pending value within bounds
+    cfg.bounded_int.set_pending_value(YAML::Load("75"));
+    EXPECT_TRUE(cfg.bounded_int.has_pending());
+    cfg.bounded_int.promote_pending();
+    EXPECT_EQ(cfg.bounded_int(), 75);
+
+    // Pending value exceeding upper bound is clamped to max (100)
+    cfg.bounded_int.set_pending_value(YAML::Load("200"));
+    EXPECT_TRUE(cfg.bounded_int.has_pending());
+    cfg.bounded_int.promote_pending();
+    EXPECT_EQ(cfg.bounded_int(), 100);
+
+    // Pending value below lower bound is clamped to min (0)
+    cfg.bounded_int.set_pending_value(YAML::Load("-5"));
+    EXPECT_TRUE(cfg.bounded_int.has_pending());
+    cfg.bounded_int.promote_pending();
+    EXPECT_EQ(cfg.bounded_int(), 0);
+}
+
+TEST(ConfigStoreTest, SetValueClearsPending) {
+    auto cfg = test_config();
+
+    // Set a pending value
+    auto node = YAML::Load("42");
+    cfg.optional_int.set_pending_value(node);
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+
+    // Now set_value (simulating startup replay) clears pending
+    cfg.optional_int.set_value(YAML::Load("42"));
+    EXPECT_EQ(cfg.optional_int(), 42);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, PendingValueViaStdAny) {
+    auto cfg = test_config();
+    EXPECT_EQ(cfg.optional_int(), 100);
+
+    cfg.optional_int.set_pending_value(std::make_any<int>(42));
+    EXPECT_EQ(cfg.optional_int(), 100);
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, PromotePendingToActive) {
+    auto cfg = test_config();
+    EXPECT_EQ(cfg.optional_int(), 100);
+
+    cfg.optional_int.set_pending_value(YAML::Load("42"));
+    EXPECT_EQ(cfg.optional_int(), 100); // still old active
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+
+    cfg.optional_int.promote_pending();
+    EXPECT_EQ(cfg.optional_int(), 42); // now promoted
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, PromotePendingNoOpWhenNoPending) {
+    auto cfg = test_config();
+    EXPECT_EQ(cfg.optional_int(), 100);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+
+    // promote_pending with nothing pending is a safe no-op
+    cfg.optional_int.promote_pending();
+    EXPECT_EQ(cfg.optional_int(), 100);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, PromotePendingSimulatesReplayFlow) {
+    // Simulates the startup flow: preload sets active via set_value,
+    // STM replay sets pending via set_pending_value, start() promotes.
+    auto cfg = test_config();
+
+    // Step 1: Preload from config cache (set_value)
+    cfg.optional_int.set_value(YAML::Load("50"));
+    EXPECT_EQ(cfg.optional_int(), 50);
+
+    // Step 2: STM replay sets pending (simulating apply_local)
+    cfg.optional_int.set_pending_value(YAML::Load("75"));
+    EXPECT_EQ(cfg.optional_int(), 50); // active unchanged during replay
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+
+    // Step 3: start() promotes pending to active
+    cfg.optional_int.promote_pending();
+    EXPECT_EQ(cfg.optional_int(), 75);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+}
+
+TEST(ConfigStoreTest, PromotePendingFreshCache) {
+    // When the config cache is fresh, replay's set_pending_value
+    // matches active, so has_pending() is false. promote is a no-op.
+    auto cfg = test_config();
+
+    // Preload from cache
+    cfg.optional_int.set_value(YAML::Load("50"));
+    EXPECT_EQ(cfg.optional_int(), 50);
+
+    // Replay sets same value as pending — no effective pending
+    cfg.optional_int.set_pending_value(YAML::Load("50"));
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+
+    // promote_pending is a no-op (pending matches active)
+    cfg.optional_int.promote_pending();
+    EXPECT_EQ(cfg.optional_int(), 50);
+}
+
+TEST(ConfigStoreTest, PromotePendingForEachProperty) {
+    // Simulates the promote_all_pending() pattern used in
+    // config_manager::start().
+    auto cfg = test_config();
+
+    cfg.optional_int.set_value(YAML::Load("50"));
+    cfg.optional_int.set_pending_value(YAML::Load("75"));
+    cfg.an_int64_t.set_pending_value(YAML::Load("999"));
+
+    // Promote all pending via for_each
+    cfg.for_each([](auto& p) {
+        if (p.has_pending()) {
+            p.promote_pending();
+        }
+    });
+
+    EXPECT_EQ(cfg.optional_int(), 75);
+    EXPECT_FALSE(cfg.optional_int.has_pending());
+    EXPECT_EQ(cfg.an_int64_t(), 999);
+    EXPECT_FALSE(cfg.an_int64_t.has_pending());
 }

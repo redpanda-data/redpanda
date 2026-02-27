@@ -64,6 +64,52 @@ using legacy_version = named_type<int64_t, struct legacy_version_tag>;
 
 std::string_view to_string_view(visibility v);
 
+/**
+ * Abstract interface for all configuration properties.
+ *
+ * Properties that have needs_restart::yes maintain two value slots: an active
+ * value used by the running system, and an optional pending value representing
+ * a user-submitted change that takes effect after restart. The configured_value
+ * (exposed via to_json with use_pending::yes) returns the pending value when
+ * present, otherwise the active value.
+ *
+ * Lifecycle of a needs_restart property:
+ *
+ *                         set_value(V1)
+ *                    (live-settable props only)
+ *   +----------+    ───────────────────────────>    +----------+
+ *   |  active  |                                    |  active  |
+ *   |   = V0   |                                    |   = V1   |
+ *   | pending  |                                    | pending  |
+ *   |   = {}   |                                    |   = {}   |
+ *   +----------+                                    +----------+
+ *        │
+ *        │ set_pending_value(V1)
+ *        v
+ *   +----------+    promote_pending()               +----------+
+ *   |  active  |    ─────────────────────────>      |  active  |
+ *   |   = V0   |       (on restart)                 |   = V1   |
+ *   | pending  |                                    | pending  |
+ *   |   = V1   |                                    |   = {}   |
+ *   +----------+                                    +----------+
+ *        │
+ *        │ set_pending_value_to_default()
+ *        v
+ *   +---------------+
+ *   |  active       |
+ *   |   = V0        |
+ *   | pending       |
+ *   |   = default() |
+ *   +---------------+
+ *
+ * Query methods in each state (when pending = V1, active = V0):
+ *
+ *   value()            -> V0   (always the active runtime value)
+ *   configured_value() -> V1   (pending if present, else active)
+ *   has_pending()      -> true
+ *   is_default()       -> V0 == default
+ *   is_default_pending() -> V1 == default
+ */
 class base_property {
 public:
     struct metadata {
@@ -112,10 +158,52 @@ public:
       json::Writer<json::StringBuffer>& w, redact_secrets redact) const = 0;
 
     virtual void print(std::ostream&) const = 0;
+
+    /// Set the active value from a YAML node. For needs_restart properties,
+    /// this immediately changes the runtime value; prefer set_pending_value
+    /// when the caller intends the change to take effect after restart.
+    /// Returns true if the value changed.
     virtual bool set_value(YAML::Node) = 0;
+
+    /// Set the active value from a type-erased std::any.
     virtual void set_value(std::any) = 0;
+
+    /// Reset the active value to its default.
     virtual void reset() = 0;
+
+    /// Stage a pending value from a YAML node. The pending value is not
+    /// visible to property::value() until promote_pending() is called
+    /// (typically on restart). Returns true if, after this call, a pending
+    /// value is staged that differs from the active value (i.e. if a restart is
+    /// required).
+    virtual bool set_pending_value(YAML::Node) = 0;
+
+    /// Stage a pending value from a type-erased std::any.
+    virtual void set_pending_value(std::any) = 0;
+
+    /// Set the pending value to the property's default. Unlike reset()
+    /// (which immediately changes the active value), this stages the default
+    /// as pending so it takes effect after restart.
+    virtual void set_pending_value_to_default() = 0;
+
+    /// Returns true if a pending value has been staged that differs from
+    /// the active value.
+    virtual bool has_pending() const = 0;
+
+    /// Promote the pending value to become the active value. After this
+    /// call, has_pending() returns false and value() reflects the
+    /// previously-pending value.
+    virtual void promote_pending() = 0;
+
+    /// Returns true if the active runtime value equals the default.
     virtual bool is_default() const = 0;
+
+    /// Returns true if the configured value (pending if present, otherwise
+    /// active) equals the default. Use this when filtering with
+    /// use_pending::yes to correctly exclude properties whose pending
+    /// value is the default.
+    virtual bool is_default_pending() const = 0;
+
     virtual bool is_set() const = 0;
     virtual bool is_hidden() const = 0;
 
@@ -161,6 +249,15 @@ public:
     virtual std::optional<validation_error>
       check_restricted(YAML::Node) const = 0;
 
+    /// Copy the configured value (pending if present, otherwise active)
+    /// from another property of the same type into this property's active
+    /// value. This is used when creating temporary config copies for
+    /// validation, ensuring the copy reflects the user's configured intent
+    /// rather than just the current runtime state.
+    ///
+    /// NB: This sets the active value directly (triggering watchers and
+    /// clearing any pending state on the target). Only safe on temporary
+    /// config objects — do not use on the live shard_local_cfg().
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
 

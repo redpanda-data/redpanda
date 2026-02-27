@@ -20,6 +20,7 @@ namespace {
 
 struct test_config : public config_store {
     enterprise<property<bool>> enterprise_bool;
+    enterprise<property<bool>> enterprise_bool_restart;
     enterprise<enum_property<ss::sstring>> enterprise_str_enum;
     enterprise<property<std::vector<ss::sstring>>> enterprise_str_vec;
     enterprise<property<std::optional<int>>> enterprise_opt_int;
@@ -35,6 +36,15 @@ struct test_config : public config_store {
           "enterprise_bool",
           "An enterprise-only bool config",
           meta{.needs_restart = needs_restart::no},
+          false,
+          property<bool>::noop_validator,
+          std::nullopt)
+      , enterprise_bool_restart(
+          *this,
+          true,
+          "enterprise_bool_restart",
+          "An enterprise-only bool config that requires restart",
+          meta{.needs_restart = needs_restart::yes},
           false,
           property<bool>::noop_validator,
           std::nullopt)
@@ -62,7 +72,7 @@ struct test_config : public config_store {
       , enterprise_enum(
           *this,
           std::vector<tls_version>{tls_version::v1_3},
-          "enterprise_str_enum",
+          "enterprise_enum",
           "An enterprise-only enum property",
           meta{.needs_restart = needs_restart::no},
           tls_version::v1_1,
@@ -154,6 +164,28 @@ TEST(EnterprisePropertyTest, TestIsRestricted) {
     EXPECT_FALSE(cfg.enterprise_sanctioned_int.is_restricted());
     cfg.enterprise_sanctioned_int.set_value(3);
     EXPECT_TRUE(cfg.enterprise_sanctioned_int.is_restricted());
+}
+
+TEST(EnterprisePropertyTest, TestIsRestrictedWithPendingValue) {
+    test_config cfg;
+
+    // Default (false) is not restricted
+    EXPECT_FALSE(cfg.enterprise_bool_restart.is_restricted());
+
+    // Set a pending value to the restricted value (true).
+    // is_restricted() should detect the pending value as restricted, even
+    // though the active value is still the unrestricted default.
+    cfg.enterprise_bool_restart.set_pending_value(YAML::Node(true));
+    EXPECT_FALSE(cfg.enterprise_bool_restart.value());
+    EXPECT_TRUE(cfg.enterprise_bool_restart.is_restricted());
+
+    // When active value is set (clearing pending), is_restricted() still works
+    cfg.enterprise_bool_restart.set_value(YAML::Node(true));
+    EXPECT_TRUE(cfg.enterprise_bool_restart.is_restricted());
+
+    // Pending value that is not restricted should not trigger
+    cfg.enterprise_bool_restart.set_pending_value(YAML::Node(false));
+    EXPECT_FALSE(cfg.enterprise_bool_restart.is_restricted());
 }
 
 TEST(EnterprisePropertyTest, TestSanctionedValue) {

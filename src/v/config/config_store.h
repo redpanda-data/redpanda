@@ -197,6 +197,18 @@ public:
         w.EndObject();
     }
 
+    /// Return names of properties that need a restart and have a pending
+    /// value that differs from the current live value.
+    std::vector<ss::sstring> properties_pending_restart() const {
+        std::vector<ss::sstring> result;
+        for (const auto& [name, prop] : _properties) {
+            if (prop->has_pending()) {
+                result.emplace_back(name);
+            }
+        }
+        return result;
+    }
+
     std::set<std::string_view> property_names() const {
         std::set<std::string_view> result;
         for (const auto& i : _properties) {
