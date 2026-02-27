@@ -853,8 +853,9 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
     }
 
     auto last = _segments.back();
+    // Get the size of the last segment collected _before_ acquiring read locks
+    // because upload size accounting has already taken place at this point.
     auto last_size_bytes = last->size_bytes();
-    auto last_unsealed = last->has_appender();
 
     // Take the locks before opening any readers on the segments.
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
@@ -877,26 +878,33 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
       std::back_inserter(current_gen),
       [](const auto& seg) { return seg->get_generation_id()(); });
 
+    auto last_unsealed = last->has_appender();
+
     // special case: skip the generation check iff
     //   - the last segment in the list was NOT closed AND
     //   - the last segment is the ONLY segment with gen ID difference
 
-    auto gen_id_diff_view = boost::irange(0ul, _segments.size())
-                            | std::views::filter([this, &current_gen](auto i) {
-                                  return _generations.at(i)
-                                         != current_gen.at(i);
-                              });
+    vassert(
+      _generations.size() == current_gen.size(),
+      "Cached generations should match size of accumulated segments ({} vs {})",
+      _generations.size(),
+      current_gen.size());
 
-    auto skip_gen_id_check = std::accumulate(
-      gen_id_diff_view.begin(),
-      gen_id_diff_view.end(),
-      last_unsealed && !gen_id_diff_view.empty(),
-      std::logical_and{});
+    auto gen_id_diffs = std::views::iota(0ul, _segments.size())
+                        | std::views::transform([&](auto i) -> int {
+                              return _generations.at(i) != current_gen.at(i);
+                          });
+    auto n_diffs = std::ranges::fold_left(gen_id_diffs, 0, std::plus<int>{});
+    auto skip_gen_id_check = last_unsealed && n_diffs == 1
+                             && _generations.back() != current_gen.back();
 
     // If the last collected segment is not closed,
-    if (!skip_gen_id_check && !gen_id_diff_view.empty()) {
+    if (!skip_gen_id_check && n_diffs > 0) {
         std::stringstream sstr;
-        for (auto i : gen_id_diff_view) {
+        for (auto i : std::views::iota(0ul, _segments.size())) {
+            if (_generations.at(i) == current_gen.at(i)) {
+                continue;
+            }
             // Segment was updated concurrently while we were waiting
             // for the locks.
             fmt::print(
@@ -911,8 +919,8 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
               _sizes.at(i),
               _segments.at(i)->size_bytes());
         }
-        // The segment was updated while we were waiting for the locks.
-        // It's a race condition so we should fail the upload and retry.
+        // One or more segments were updated while we were waiting for the
+        // locks. It's a race condition so we should fail the upload and retry.
         vlog(
           archival_log.info,
           "Segment generation mismatch for {}: {}",
