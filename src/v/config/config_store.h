@@ -125,6 +125,14 @@ public:
         }
     }
 
+    void promote_pending() {
+        for_each([](auto& p) {
+            if (p.has_pending()) {
+                p.promote_pending();
+            }
+        });
+    }
+
     /**
      *
      * @param filter optional callback for filtering out config properties.
