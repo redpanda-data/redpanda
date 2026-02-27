@@ -153,6 +153,13 @@
             "type": "string"
           },
           "description": "List of properties unknown to this node"
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of properties with pending changes awaiting restart on the node serving the request."
         }
       }
     },

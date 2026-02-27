@@ -2079,6 +2079,9 @@ void admin_server::register_cluster_config_routes() {
     register_route<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config_status,
       [this](std::unique_ptr<ss::http::request>) {
+          auto local_node = _controller->self();
+          auto local_pending
+            = config::shard_local_cfg().properties_pending_restart();
           auto& cfg = _controller->get_config_manager();
           return cfg
             .invoke_on(
@@ -2086,7 +2089,8 @@ void admin_server::register_cluster_config_routes() {
               [](cluster::config_manager& manager) {
                   return manager.get_projected_status();
               })
-            .then([](auto statuses) {
+            .then([local_node,
+                   local_pending = std::move(local_pending)](auto statuses) {
                 std::vector<
                   ss::httpd::cluster_config_json::cluster_config_status>
                   res;
@@ -2104,9 +2108,19 @@ void admin_server::register_cluster_config_routes() {
                     // is then cleared in the subsequent operator=).
                     rs.invalid.push(ss::sstring("hack"));
                     rs.unknown.push(ss::sstring("hack"));
+                    rs.pending.push(ss::sstring("hack"));
 
                     rs.invalid = s.second.invalid;
                     rs.unknown = s.second.unknown;
+
+                    if (s.first == local_node) {
+                        rs.pending = local_pending;
+                    } else {
+                        // TODO: Pending state is local-only: extending
+                        // config_status (on-wire type) is needed to
+                        // propagate pending info from remote nodes.
+                        rs.pending = std::vector<ss::sstring>{};
+                    }
                 }
 
                 return ss::json::json_return_type(res);
