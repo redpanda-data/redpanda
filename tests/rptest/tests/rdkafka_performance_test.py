@@ -38,11 +38,12 @@ class RdkafkaPerformanceSelfTest(RedpandaTest):
             topic=topic,
             msg_count=self.MSG_COUNT,
             msg_size=self.MSG_SIZE,
+            num_nodes=2,
         )
         producer.start()
         producer.wait(timeout_sec=60)
 
-        pm = producer.metrics(producer.nodes[0])
+        pm = producer.metrics()
 
         self.logger.debug(f"Rdkafka performance producer metrics: {pm}")
 
@@ -71,7 +72,7 @@ class RdkafkaPerformanceSelfTest(RedpandaTest):
         consumer.start()
         consumer.wait(timeout_sec=60)
 
-        cm = consumer.metrics(consumer.nodes[0])
+        cm = consumer.metrics()
 
         self.logger.debug(f"Rdkafka performance consumer metrics: {cm}")
 
@@ -80,10 +81,7 @@ class RdkafkaPerformanceSelfTest(RedpandaTest):
         )
         assert cm.rx_err == 0, f"Unexpected receive errors: {cm.rx_err}"
 
-        consumer.stop()
-        consumer.free()
-
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=4)
     def test_produce_consume(self) -> None:
         spec = TopicSpec(
             name="rdkafka_perf_test", partition_count=1, replication_factor=1
