@@ -45,7 +45,7 @@ redpanda_cc_btest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "config_store_test",
     timeout = "short",
     srcs = [
@@ -55,9 +55,9 @@ redpanda_cc_btest(
     deps = [
         "//src/v/config",
         "//src/v/json",
-        "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
         "@seastar",
-        "@seastar//:testing",
     ],
 )
 

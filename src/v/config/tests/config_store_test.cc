@@ -13,9 +13,9 @@
 #include "json/writer.h"
 
 #include <seastar/core/sstring.hh>
-#include <seastar/core/thread.hh>
-#include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/log.hh>
+
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <iostream>
@@ -189,88 +189,87 @@ struct convert<testing::custom_aggregate> {
 };
 } // namespace YAML
 
-SEASTAR_THREAD_TEST_CASE(read_minimal_valid_configuration) {
+TEST(ConfigStoreTest, ReadMinimalValidConfiguration) {
     auto cfg = test_config();
     auto errors = cfg.read_yaml(minimal_valid_configuration());
-    BOOST_TEST(errors.size() == 0);
+    EXPECT_EQ(errors.size(), 0);
 
-    BOOST_TEST(cfg.optional_int() == 100);
-    BOOST_TEST(cfg.required_string() == "test_value_1");
-    BOOST_TEST(cfg.an_int64_t() == 200);
-    BOOST_TEST(cfg.an_aggregate().string_value == "str");
-    BOOST_TEST(cfg.an_aggregate().int_value == 10);
-    BOOST_TEST(cfg.strings().at(0) == "first");
-    BOOST_TEST(cfg.strings().at(1) == "second");
-    BOOST_TEST(cfg.strings().at(2) == "third");
-    BOOST_TEST(cfg.nullable_int() == std::nullopt);
-};
+    EXPECT_EQ(cfg.optional_int(), 100);
+    EXPECT_EQ(cfg.required_string(), "test_value_1");
+    EXPECT_EQ(cfg.an_int64_t(), 200);
+    EXPECT_EQ(cfg.an_aggregate().string_value, "str");
+    EXPECT_EQ(cfg.an_aggregate().int_value, 10);
+    EXPECT_EQ(cfg.strings().at(0), "first");
+    EXPECT_EQ(cfg.strings().at(1), "second");
+    EXPECT_EQ(cfg.strings().at(2), "third");
+    EXPECT_EQ(cfg.nullable_int(), std::nullopt);
+}
 
-SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
+TEST(ConfigStoreTest, ReadValidConfiguration) {
     auto cfg = test_config();
     auto errors = cfg.read_yaml(valid_configuration());
-    BOOST_TEST(errors.size() == 0);
+    EXPECT_EQ(errors.size(), 0);
 
-    BOOST_TEST(cfg.optional_int() == 3);
-    BOOST_TEST(cfg.required_string() == "test_value_2");
-    BOOST_TEST(cfg.an_int64_t() == 55);
-    BOOST_TEST(cfg.an_aggregate().string_value == "some_value");
-    BOOST_TEST(cfg.an_aggregate().int_value == 88);
-    BOOST_TEST(cfg.strings().at(0) == "one");
-    BOOST_TEST(cfg.strings().at(1) == "two");
-    BOOST_TEST(cfg.strings().at(2) == "three");
-    BOOST_TEST(cfg.nullable_int() == std::make_optional(111));
-    BOOST_TEST(cfg.secret_string() == "actual_secret");
-    BOOST_TEST(cfg.aliased_bool() == false);
-};
+    EXPECT_EQ(cfg.optional_int(), 3);
+    EXPECT_EQ(cfg.required_string(), "test_value_2");
+    EXPECT_EQ(cfg.an_int64_t(), 55);
+    EXPECT_EQ(cfg.an_aggregate().string_value, "some_value");
+    EXPECT_EQ(cfg.an_aggregate().int_value, 88);
+    EXPECT_EQ(cfg.strings().at(0), "one");
+    EXPECT_EQ(cfg.strings().at(1), "two");
+    EXPECT_EQ(cfg.strings().at(2), "three");
+    EXPECT_EQ(cfg.nullable_int(), std::make_optional(111));
+    EXPECT_EQ(cfg.secret_string(), "actual_secret");
+    EXPECT_EQ(cfg.aliased_bool(), false);
+}
 
-SEASTAR_THREAD_TEST_CASE(update_property_value) {
+TEST(ConfigStoreTest, UpdatePropertyValue) {
     auto cfg = test_config();
     auto errors = cfg.read_yaml(minimal_valid_configuration());
-    BOOST_TEST(errors.size() == 0);
+    EXPECT_EQ(errors.size(), 0);
 
-    BOOST_TEST(cfg.required_string() == "test_value_1");
+    EXPECT_EQ(cfg.required_string(), "test_value_1");
     cfg.get("required_string").set_value(ss::sstring("new_string_value"));
-    BOOST_TEST(cfg.required_string() == "new_string_value");
-};
+    EXPECT_EQ(cfg.required_string(), "new_string_value");
+}
 
-SEASTAR_THREAD_TEST_CASE(track_set_state) {
+TEST(ConfigStoreTest, TrackSetState) {
     auto cfg = test_config();
 
-    BOOST_TEST(cfg.optional_int() == 100);
-    BOOST_TEST(cfg.optional_int.is_default() == true);
-    BOOST_TEST(cfg.optional_int.is_set() == false);
+    EXPECT_EQ(cfg.optional_int(), 100);
+    EXPECT_TRUE(cfg.optional_int.is_default());
+    EXPECT_FALSE(cfg.optional_int.is_set());
 
     // set to default value
     cfg.get("required_string").set_value(ss::sstring{});
-    BOOST_TEST(cfg.required_string.is_default() == true);
-    BOOST_TEST(cfg.required_string.is_set() == true);
+    EXPECT_TRUE(cfg.required_string.is_default());
+    EXPECT_TRUE(cfg.required_string.is_set());
 
     // set to non-default value
     cfg.get("an_int64_t").set_value(int64_t{100});
-    BOOST_TEST(cfg.an_int64_t.is_default() == false);
-    BOOST_TEST(cfg.an_int64_t.is_set() == true);
-};
-
-SEASTAR_THREAD_TEST_CASE(validate_valid_configuration) {
-    auto cfg = test_config();
-    auto errors = cfg.read_yaml(valid_configuration());
-    BOOST_TEST(errors.size() == 0);
+    EXPECT_FALSE(cfg.an_int64_t.is_default());
+    EXPECT_TRUE(cfg.an_int64_t.is_set());
 }
 
-SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
+TEST(ConfigStoreTest, ValidateValidConfiguration) {
     auto cfg = test_config();
     auto errors = cfg.read_yaml(valid_configuration());
-    BOOST_TEST(errors.size() == 0);
+    EXPECT_EQ(errors.size(), 0);
 }
 
-SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
+TEST(ConfigStoreTest, ValidateAnotherValidConfiguration) {
+    auto cfg = test_config();
+    auto errors = cfg.read_yaml(valid_configuration());
+    EXPECT_EQ(errors.size(), 0);
+}
+
+TEST(ConfigStoreTest, ConfigJsonSerialization) {
     const auto test_with_redaction = [](config::redact_secrets redact) {
         auto cfg = test_config();
         auto errors = cfg.read_yaml(valid_configuration());
-        BOOST_TEST(errors.size() == 0);
+        EXPECT_EQ(errors.size(), 0);
         lg.info("Config: {}", cfg);
         // json data
-        // TODO: get this to work with fmt.
         auto expected_result = redact == config::redact_secrets::yes
                                  ? "{"
                                    "\"strings\": [\"one\", \"two\", \"three\"],"
@@ -314,47 +313,45 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
         exp_doc.Parse(expected_result);
 
         // test equivalence
-        BOOST_TEST(res_doc["required_string"].IsString());
-        BOOST_TEST(
-          res_doc["required_string"].GetString()
-          == exp_doc["required_string"].GetString());
+        EXPECT_TRUE(res_doc["required_string"].IsString());
+        EXPECT_STREQ(
+          res_doc["required_string"].GetString(),
+          exp_doc["required_string"].GetString());
 
-        BOOST_TEST(res_doc["optional_int"].IsInt());
-        BOOST_TEST(
-          res_doc["optional_int"].GetInt() == exp_doc["optional_int"].GetInt());
+        EXPECT_TRUE(res_doc["optional_int"].IsInt());
+        EXPECT_EQ(
+          res_doc["optional_int"].GetInt(), exp_doc["optional_int"].GetInt());
 
-        BOOST_TEST(res_doc["an_int64_t"].IsInt64());
-        BOOST_TEST(
-          res_doc["an_int64_t"].GetInt64() == exp_doc["an_int64_t"].GetInt64());
+        EXPECT_TRUE(res_doc["an_int64_t"].IsInt64());
+        EXPECT_EQ(
+          res_doc["an_int64_t"].GetInt64(), exp_doc["an_int64_t"].GetInt64());
 
-        BOOST_TEST(res_doc["an_aggregate"].IsObject());
+        EXPECT_TRUE(res_doc["an_aggregate"].IsObject());
 
-        BOOST_TEST(res_doc["an_aggregate"]["int_value"].IsInt());
-        BOOST_TEST(
-          res_doc["an_aggregate"]["int_value"].GetInt()
-          == exp_doc["an_aggregate"]["int_value"].GetInt());
+        EXPECT_TRUE(res_doc["an_aggregate"]["int_value"].IsInt());
+        EXPECT_EQ(
+          res_doc["an_aggregate"]["int_value"].GetInt(),
+          exp_doc["an_aggregate"]["int_value"].GetInt());
 
-        BOOST_TEST(res_doc["an_aggregate"]["string_value"].IsString());
-        BOOST_TEST(
-          res_doc["an_aggregate"]["string_value"].GetString()
-          == exp_doc["an_aggregate"]["string_value"].GetString());
+        EXPECT_TRUE(res_doc["an_aggregate"]["string_value"].IsString());
+        EXPECT_STREQ(
+          res_doc["an_aggregate"]["string_value"].GetString(),
+          exp_doc["an_aggregate"]["string_value"].GetString());
 
-        BOOST_TEST(res_doc["strings"].IsArray());
+        EXPECT_TRUE(res_doc["strings"].IsArray());
 
-        BOOST_TEST(res_doc["nullable_int"].IsInt());
-        BOOST_TEST(
-          res_doc["nullable_int"].GetInt() == exp_doc["nullable_int"].GetInt());
-        BOOST_TEST(
-          res_doc["secret_string"].GetString()
-          == exp_doc["secret_string"].GetString());
+        EXPECT_TRUE(res_doc["nullable_int"].IsInt());
+        EXPECT_EQ(
+          res_doc["nullable_int"].GetInt(), exp_doc["nullable_int"].GetInt());
+        EXPECT_STREQ(
+          res_doc["secret_string"].GetString(),
+          exp_doc["secret_string"].GetString());
     };
     test_with_redaction(config::redact_secrets::yes);
     test_with_redaction(config::redact_secrets::no);
 }
 
-/// Test that unset std::optional options are decoded correctly
-/// when given as 'null', not just when absent.
-SEASTAR_THREAD_TEST_CASE(deserialize_explicit_null) {
+TEST(ConfigStoreTest, DeserializeExplicitNull) {
     auto with_null = YAML::Load(
       "required_string: test_value_1\n"
       "strings:\n"
@@ -365,103 +362,103 @@ SEASTAR_THREAD_TEST_CASE(deserialize_explicit_null) {
 
     auto cfg = test_config();
     auto errors = cfg.read_yaml(with_null);
-    BOOST_TEST(errors.size() == 0);
-    BOOST_TEST(cfg.nullable_int() == std::nullopt);
+    EXPECT_EQ(errors.size(), 0);
+    EXPECT_EQ(cfg.nullable_int(), std::nullopt);
 }
 
-SEASTAR_THREAD_TEST_CASE(property_metadata) {
+TEST(ConfigStoreTest, PropertyMetadata) {
     auto cfg = test_config();
-    BOOST_TEST(cfg.optional_int.type_name() == "integer");
-    BOOST_TEST(
-      config::to_string_view(cfg.optional_int.get_visibility()) == "tunable");
+    EXPECT_EQ(cfg.optional_int.type_name(), "integer");
+    EXPECT_EQ(
+      config::to_string_view(cfg.optional_int.get_visibility()), "tunable");
 
-    BOOST_TEST(cfg.boolean.is_nullable() == false);
-    BOOST_TEST(cfg.nullable_string.is_array() == false);
+    EXPECT_FALSE(cfg.boolean.is_nullable());
+    EXPECT_FALSE(cfg.nullable_string.is_array());
 
-    BOOST_TEST(cfg.required_string.type_name() == "string");
-    BOOST_TEST(cfg.required_string.is_array() == false);
-    BOOST_TEST(
-      config::to_string_view(cfg.required_string.get_visibility()) == "user");
+    EXPECT_EQ(cfg.required_string.type_name(), "string");
+    EXPECT_FALSE(cfg.required_string.is_array());
+    EXPECT_EQ(
+      config::to_string_view(cfg.required_string.get_visibility()), "user");
 
-    BOOST_TEST(cfg.boolean.is_nullable() == false);
+    EXPECT_FALSE(cfg.boolean.is_nullable());
 
-    BOOST_TEST(cfg.an_int64_t.type_name() == "integer");
-    BOOST_TEST(cfg.boolean.is_nullable() == false);
-    BOOST_TEST(cfg.nullable_string.is_array() == false);
+    EXPECT_EQ(cfg.an_int64_t.type_name(), "integer");
+    EXPECT_FALSE(cfg.boolean.is_nullable());
+    EXPECT_FALSE(cfg.nullable_string.is_array());
 
-    BOOST_TEST(cfg.an_aggregate.type_name() == "custom_aggregate");
-    BOOST_TEST(cfg.boolean.is_nullable() == false);
-    BOOST_TEST(cfg.nullable_string.is_array() == false);
+    EXPECT_EQ(cfg.an_aggregate.type_name(), "custom_aggregate");
+    EXPECT_FALSE(cfg.boolean.is_nullable());
+    EXPECT_FALSE(cfg.nullable_string.is_array());
 
-    BOOST_TEST(cfg.strings.type_name() == "string");
-    BOOST_TEST(cfg.strings.is_array() == true);
-    BOOST_TEST(cfg.strings.is_nullable() == false);
+    EXPECT_EQ(cfg.strings.type_name(), "string");
+    EXPECT_TRUE(cfg.strings.is_array());
+    EXPECT_FALSE(cfg.strings.is_nullable());
 
-    BOOST_TEST(cfg.nullable_string.type_name() == "string");
-    BOOST_TEST(cfg.nullable_string.is_nullable() == true);
-    BOOST_TEST(cfg.nullable_string.is_array() == false);
+    EXPECT_EQ(cfg.nullable_string.type_name(), "string");
+    EXPECT_TRUE(cfg.nullable_string.is_nullable());
+    EXPECT_FALSE(cfg.nullable_string.is_array());
 
-    BOOST_TEST(cfg.nullable_strings.type_name() == "string");
-    BOOST_TEST(cfg.nullable_strings.is_nullable() == true);
-    BOOST_TEST(cfg.nullable_strings.is_array() == true);
+    EXPECT_EQ(cfg.nullable_strings.type_name(), "string");
+    EXPECT_TRUE(cfg.nullable_strings.is_nullable());
+    EXPECT_TRUE(cfg.nullable_strings.is_array());
 
-    BOOST_TEST(cfg.nullable_int.type_name() == "integer");
-    BOOST_TEST(cfg.nullable_int.is_nullable() == true);
-    BOOST_TEST(cfg.nullable_int.is_array() == false);
+    EXPECT_EQ(cfg.nullable_int.type_name(), "integer");
+    EXPECT_TRUE(cfg.nullable_int.is_nullable());
+    EXPECT_FALSE(cfg.nullable_int.is_array());
 
-    BOOST_TEST(cfg.boolean.type_name() == "boolean");
-    BOOST_TEST(cfg.boolean.is_nullable() == false);
-    BOOST_TEST(cfg.boolean.is_array() == false);
+    EXPECT_EQ(cfg.boolean.type_name(), "boolean");
+    EXPECT_FALSE(cfg.boolean.is_nullable());
+    EXPECT_FALSE(cfg.boolean.is_array());
 
-    BOOST_TEST(cfg.seconds.type_name() == "integer");
-    BOOST_TEST(cfg.seconds.units_name() == "s");
-    BOOST_TEST(cfg.seconds.is_nullable() == false);
-    BOOST_TEST(cfg.seconds.is_array() == false);
+    EXPECT_EQ(cfg.seconds.type_name(), "integer");
+    EXPECT_EQ(cfg.seconds.units_name(), "s");
+    EXPECT_FALSE(cfg.seconds.is_nullable());
+    EXPECT_FALSE(cfg.seconds.is_array());
 
-    BOOST_TEST(cfg.optional_seconds.type_name() == "integer");
-    BOOST_TEST(cfg.optional_seconds.units_name() == "s");
-    BOOST_TEST(cfg.optional_seconds.is_nullable() == true);
-    BOOST_TEST(cfg.optional_seconds.is_array() == false);
+    EXPECT_EQ(cfg.optional_seconds.type_name(), "integer");
+    EXPECT_EQ(cfg.optional_seconds.units_name(), "s");
+    EXPECT_TRUE(cfg.optional_seconds.is_nullable());
+    EXPECT_FALSE(cfg.optional_seconds.is_array());
 
-    BOOST_TEST(cfg.milliseconds.type_name() == "integer");
-    BOOST_TEST(cfg.milliseconds.units_name() == "ms");
-    BOOST_TEST(cfg.milliseconds.is_nullable() == false);
-    BOOST_TEST(cfg.milliseconds.is_array() == false);
-};
+    EXPECT_EQ(cfg.milliseconds.type_name(), "integer");
+    EXPECT_EQ(cfg.milliseconds.units_name(), "ms");
+    EXPECT_FALSE(cfg.milliseconds.is_nullable());
+    EXPECT_FALSE(cfg.milliseconds.is_array());
+}
 
-SEASTAR_THREAD_TEST_CASE(property_bind) {
+TEST(ConfigStoreTest, PropertyBind) {
     auto cfg = test_config();
-    BOOST_TEST(cfg.boolean() == false);
+    EXPECT_FALSE(cfg.boolean());
     auto binding = cfg.boolean.bind();
-    BOOST_TEST(binding() == false);
+    EXPECT_FALSE(binding());
     cfg.boolean.set_value(true);
-    BOOST_TEST(cfg.boolean() == true);
-    BOOST_TEST(binding() == true);
+    EXPECT_TRUE(cfg.boolean());
+    EXPECT_TRUE(binding());
 
     int watch_count = 0;
 
-    BOOST_TEST(cfg.required_string() == cfg.required_string.default_value());
+    EXPECT_EQ(cfg.required_string(), cfg.required_string.default_value());
     auto str_binding = cfg.required_string.bind();
-    BOOST_TEST(str_binding() == cfg.required_string.default_value());
+    EXPECT_EQ(str_binding(), cfg.required_string.default_value());
     str_binding.watch([&watch_count]() { ++watch_count; });
 
     cfg.required_string.set_value(ss::sstring("newvalue"));
-    BOOST_TEST(cfg.required_string() == "newvalue");
-    BOOST_TEST(str_binding() == "newvalue");
-    BOOST_TEST(watch_count == 1);
+    EXPECT_EQ(cfg.required_string(), "newvalue");
+    EXPECT_EQ(str_binding(), "newvalue");
+    EXPECT_EQ(watch_count, 1);
 
     // Check that bindings are safe to use after move
     config::binding<ss::sstring> bind2 = std::move(str_binding);
     cfg.required_string.set_value(ss::sstring("newvalue2"));
-    BOOST_TEST(bind2() == "newvalue2");
-    BOOST_TEST(watch_count == 2);
+    EXPECT_EQ(bind2(), "newvalue2");
+    EXPECT_EQ(watch_count, 2);
 
     // Check that bindings are safe to use after copy
     config::binding<ss::sstring> bind3 = bind2;
     cfg.required_string.set_value(ss::sstring("newvalue3"));
-    BOOST_TEST(bind2() == "newvalue3");
-    BOOST_TEST(bind3() == "newvalue3");
-    BOOST_TEST(watch_count == 4);
+    EXPECT_EQ(bind2(), "newvalue3");
+    EXPECT_EQ(bind3(), "newvalue3");
+    EXPECT_EQ(watch_count, 4);
 
     // Check the bindings are bound to the moved-to properties, not to the
     // moved-from ones
@@ -469,31 +466,31 @@ SEASTAR_THREAD_TEST_CASE(property_bind) {
     cfg2.required_string.set_value(ss::sstring("newvalue4"));
     // NOLINTNEXTLINE
     cfg.required_string.set_value(ss::sstring("badvalue"));
-    BOOST_TEST(bind2() == "newvalue4");
-    BOOST_TEST(bind3() == "newvalue4");
-    BOOST_TEST(watch_count == 6);
+    EXPECT_EQ(bind2(), "newvalue4");
+    EXPECT_EQ(bind3(), "newvalue4");
+    EXPECT_EQ(watch_count, 6);
 
     // Check that the bindings are updated when the property is reset to its
     // default value.
     cfg2.required_string.reset();
-    BOOST_TEST(bind2() == "");
-    BOOST_TEST(bind3() == "");
-    BOOST_TEST(watch_count == 8);
+    EXPECT_EQ(bind2(), "");
+    EXPECT_EQ(bind3(), "");
+    EXPECT_EQ(watch_count, 8);
 }
 
-SEASTAR_THREAD_TEST_CASE(property_conversion_bind) {
+TEST(ConfigStoreTest, PropertyConversionBind) {
     auto cfg = test_config();
-    BOOST_TEST(cfg.boolean() == false);
+    EXPECT_FALSE(cfg.boolean());
     auto binding = cfg.boolean.bind<ss::sstring>(
       [](bool v) { return v ? "true" : "false"; });
-    BOOST_TEST(binding() == "false");
+    EXPECT_EQ(binding(), "false");
     cfg.boolean.set_value(true);
-    BOOST_TEST(cfg.boolean() == true);
-    BOOST_TEST(binding() == "true");
+    EXPECT_TRUE(cfg.boolean());
+    EXPECT_EQ(binding(), "true");
 
     int watch_count = 0;
 
-    BOOST_TEST(cfg.required_string() == cfg.required_string.default_value());
+    EXPECT_EQ(cfg.required_string(), cfg.required_string.default_value());
     auto str_binding = cfg.required_string.bind<std::string>(
       [](const ss::sstring& s) {
           return std::string(
@@ -503,23 +500,23 @@ SEASTAR_THREAD_TEST_CASE(property_conversion_bind) {
     str_binding.watch([&watch_count]() { ++watch_count; });
 
     cfg.required_string.set_value(ss::sstring("newvalue"));
-    BOOST_TEST(cfg.required_string() == "newvalue");
-    BOOST_TEST(str_binding() == "eulavwen");
-    BOOST_TEST(watch_count == 1);
+    EXPECT_EQ(cfg.required_string(), "newvalue");
+    EXPECT_EQ(str_binding(), "eulavwen");
+    EXPECT_EQ(watch_count, 1);
 
     // Check that bindings are safe to use after move
     config::conversion_binding<std::string, ss::sstring> bind2 = std::move(
       str_binding);
     cfg.required_string.set_value(ss::sstring("newvalue2"));
-    BOOST_TEST(bind2() == "2eulavwen");
-    BOOST_TEST(watch_count == 2);
+    EXPECT_EQ(bind2(), "2eulavwen");
+    EXPECT_EQ(watch_count, 2);
 
     // Check that bindings are safe to use after copy
     config::conversion_binding<std::string, ss::sstring> bind3 = bind2;
     cfg.required_string.set_value(ss::sstring("newvalue3"));
-    BOOST_TEST(bind2() == "3eulavwen");
-    BOOST_TEST(bind3() == "3eulavwen");
-    BOOST_TEST(watch_count == 4);
+    EXPECT_EQ(bind2(), "3eulavwen");
+    EXPECT_EQ(bind3(), "3eulavwen");
+    EXPECT_EQ(watch_count, 4);
 
     // Check the bindings are bound to the moved-to properties, not to the
     // moved-from ones
@@ -527,12 +524,12 @@ SEASTAR_THREAD_TEST_CASE(property_conversion_bind) {
     cfg2.required_string.set_value(ss::sstring("newvalue4"));
     // NOLINTNEXTLINE
     cfg.required_string.set_value(ss::sstring("badvalue"));
-    BOOST_TEST(bind2() == "4eulavwen");
-    BOOST_TEST(bind3() == "4eulavwen");
-    BOOST_TEST(watch_count == 6);
+    EXPECT_EQ(bind2(), "4eulavwen");
+    EXPECT_EQ(bind3(), "4eulavwen");
+    EXPECT_EQ(watch_count, 6);
 }
 
-SEASTAR_THREAD_TEST_CASE(property_bind_with_multiple_config_stores) {
+TEST(ConfigStoreTest, PropertyBindWithMultipleConfigStores) {
     // check that a copy of a configuration store, created for validating an
     // incoming value, does not propagate the value to the bindings to the
     // original configuration store
@@ -542,17 +539,16 @@ SEASTAR_THREAD_TEST_CASE(property_bind_with_multiple_config_stores) {
     // set a property to a defined value
     constexpr auto boolean_expected_value = false;
     cfg.boolean.set_value(boolean_expected_value);
-    // create a like it's done in the codebase
+    // create a binding like it's done in the codebase
     auto boolean_bind = cfg.boolean.bind();
     boolean_bind.watch([&] {
-        BOOST_TEST_CONTEXT("this watcher should not be called in this test") {
-            BOOST_CHECK_MESSAGE(false, "watcher called");
-            BOOST_CHECK_EQUAL(cfg.boolean.value(), boolean_expected_value);
-        }
+        ADD_FAILURE() << "watcher should not be called in this test";
+        EXPECT_EQ(cfg.boolean.value(), boolean_expected_value);
     });
 
-    BOOST_CHECK(cfg.boolean.value() == boolean_expected_value);
-    BOOST_TEST_CONTEXT("simulating patch_cluster_config") {
+    EXPECT_EQ(cfg.boolean.value(), boolean_expected_value);
+    {
+        SCOPED_TRACE("simulating patch_cluster_config");
         // tmp copy meant to validate an incoming value (see
         // admin/server.cc::patch_cluster_config)
         auto cfg_tmp = test_config();
@@ -562,27 +558,24 @@ SEASTAR_THREAD_TEST_CASE(property_bind_with_multiple_config_stores) {
             tmp_p = p;
         });
 
-        BOOST_CHECK(cfg_tmp.boolean.value() == boolean_expected_value);
+        EXPECT_EQ(cfg_tmp.boolean.value(), boolean_expected_value);
         auto anti_value = YAML::Load(
           fmt::format("{}", !boolean_expected_value));
         auto& boolean_prop = cfg_tmp.get("boolean");
-        BOOST_CHECK_MESSAGE(
-          boolean_prop.validate(anti_value) == std::nullopt,
-          "sanity check: the test should pass validation");
+        EXPECT_EQ(boolean_prop.validate(anti_value), std::nullopt)
+          << "sanity check: the test should pass validation";
 
-        // this is expected not to trigger the booload_bind watcher
+        // this is expected not to trigger the boolean_bind watcher
         boolean_prop.set_value(anti_value);
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(property_aliasing) {
+TEST(ConfigStoreTest, PropertyAliasing) {
     auto cfg = test_config();
 
     // Aliases should work when retrieving a property with get()
-    BOOST_TEST(cfg.get("aliased_bool").name() == "aliased_bool");
-    BOOST_TEST(cfg.get("aliased_bool_legacy").name() == "aliased_bool");
-
-    // Aliases should pass a contains() check
+    EXPECT_EQ(cfg.get("aliased_bool").name(), "aliased_bool");
+    EXPECT_EQ(cfg.get("aliased_bool_legacy").name(), "aliased_bool");
 
     // Aliases should not show up when iterating through properties
     bool seen_primary = false;
@@ -594,43 +587,45 @@ SEASTAR_THREAD_TEST_CASE(property_aliasing) {
             seen_secondary = true;
         }
     });
-    BOOST_TEST(seen_primary == true);
-    BOOST_TEST(seen_secondary == false);
+    EXPECT_TRUE(seen_primary);
+    EXPECT_FALSE(seen_secondary);
 
     // Aliases should not show up when getting the list of all properties
     auto property_names = cfg.property_names();
-    BOOST_TEST(property_names.contains("aliased_bool") == true);
-    BOOST_TEST(property_names.contains("aliased_bool_legacy") == false);
+    EXPECT_TRUE(property_names.contains("aliased_bool"));
+    EXPECT_FALSE(property_names.contains("aliased_bool_legacy"));
 
-    BOOST_TEST(cfg.property_names_and_aliases().contains("aliased_bool"));
+    EXPECT_TRUE(cfg.property_names_and_aliases().contains("aliased_bool"));
 }
 
-SEASTAR_THREAD_TEST_CASE(ignored_keys) {
+TEST(ConfigStoreTest, IgnoredKeys) {
     auto yaml_with_unknown_properties = YAML::Load(R"yaml(
 secret_string: terces
 aliased_bool_legacy: false
     )yaml");
 
-    BOOST_TEST_CONTEXT(
-      "smoke test: check that the properties are valid for test_config") {
+    {
+        SCOPED_TRACE(
+          "smoke test: check that the properties are valid for test_config");
         auto cfg = test_config{};
-        BOOST_CHECK_EQUAL(cfg.secret_string.value(), "");
-        BOOST_CHECK_EQUAL(cfg.aliased_bool.value(), true);
-        BOOST_REQUIRE_NO_THROW(cfg.read_yaml(yaml_with_unknown_properties));
-        BOOST_CHECK_EQUAL(cfg.secret_string.value(), "terces");
-        BOOST_CHECK_EQUAL(cfg.aliased_bool.value(), false);
+        EXPECT_EQ(cfg.secret_string.value(), "");
+        EXPECT_EQ(cfg.aliased_bool.value(), true);
+        EXPECT_NO_THROW(cfg.read_yaml(yaml_with_unknown_properties));
+        EXPECT_EQ(cfg.secret_string.value(), "terces");
+        EXPECT_EQ(cfg.aliased_bool.value(), false);
     }
-    BOOST_TEST_CONTEXT(
-      "if a key is managed by the config, it will be set and "
-      "the ignored_missing list does not matter") {
+    {
+        SCOPED_TRACE(
+          "if a key is managed by the config, it will be set and "
+          "the ignored_missing list does not matter");
         auto cfg = test_config{};
-        BOOST_REQUIRE_NO_THROW(cfg.read_yaml(yaml_with_unknown_properties));
-        BOOST_CHECK_EQUAL(cfg.secret_string.value(), "terces");
-        BOOST_CHECK_EQUAL(cfg.aliased_bool.value(), false);
+        EXPECT_NO_THROW(cfg.read_yaml(yaml_with_unknown_properties));
+        EXPECT_EQ(cfg.secret_string.value(), "terces");
+        EXPECT_EQ(cfg.aliased_bool.value(), false);
     }
-    BOOST_TEST_CONTEXT("an unknown key will not generate an exception") {
+    {
+        SCOPED_TRACE("an unknown key will not generate an exception");
         auto noop_cfg = noop_config{};
-        BOOST_REQUIRE_NO_THROW(
-          noop_cfg.read_yaml(yaml_with_unknown_properties));
+        EXPECT_NO_THROW(noop_cfg.read_yaml(yaml_with_unknown_properties));
     }
 }
