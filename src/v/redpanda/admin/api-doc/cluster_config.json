@@ -71,6 +71,14 @@
               "required": false,
               "allowMultiple": false,
               "description": "If false, only properties which have been changed from the default are included."
+            },
+            {
+              "name": "include_pending",
+              "in": "query",
+              "schema": {"type": "boolean"},
+              "required": false,
+              "allowMultiple": false,
+              "description": "If true (the default), properties with pending values (awaiting restart) report the pending value. If false, only the active runtime value is returned."
             }
           ],
           "responses": {
@@ -159,7 +167,7 @@
           "items": {
             "type": "string"
           },
-          "description": "List of properties with pending changes awaiting restart on the node serving the request."
+          "description": "List of properties with pending changes awaiting restart. Only populated for the node serving the request; for other nodes this list is empty."
         }
       }
     },

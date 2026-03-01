@@ -859,13 +859,16 @@ class Admin:
         node: MaybeNode = None,
         include_defaults: bool | None = None,
         key: str | None = None,
+        include_pending: bool | None = None,
     ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
         if key is not None:
-            kwargs = {"params": {"key": key}}
-        elif include_defaults is not None:
-            kwargs = {"params": {"include_defaults": include_defaults}}
-        else:
-            kwargs = {}
+            params["key"] = key
+        if include_defaults is not None:
+            params["include_defaults"] = include_defaults
+        if include_pending is not None:
+            params["include_pending"] = include_pending
+        kwargs = {"params": params} if params else {}
 
         return self._request("GET", "cluster_config", node=node, **kwargs).json()
 

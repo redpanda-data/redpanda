@@ -407,6 +407,55 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         check_restart_clears(self.admin, self.redpanda)
 
     @cluster(num_nodes=3)
+    def test_include_pending_query_param(self):
+        """
+        Verify the include_pending query parameter on GET /v1/cluster_config.
+
+        By default (include_pending=true), the API returns configured values
+        including any pending changes that haven't been applied via restart.
+        With include_pending=false, only active runtime values are returned.
+        After restart, both views should converge.
+        """
+        # kafka_qdc_idle_depth requires restart, default is 10
+        key = "kafka_qdc_idle_depth"
+        new_value = 77
+        default_value = self.admin.get_cluster_config()[key]
+        assert default_value != new_value
+
+        patch_result = self.admin.patch_cluster_config(upsert={key: new_value})
+        wait_for_version_status_sync(
+            self.admin, self.redpanda, patch_result["config_version"]
+        )
+
+        # Default behavior: pending value is visible immediately
+        assert self.admin.get_cluster_config()[key] == new_value
+
+        # include_pending=true: same as default
+        assert self.admin.get_cluster_config(include_pending=True)[key] == new_value
+
+        # include_pending=false: shows the active runtime value (still default)
+        assert (
+            self.admin.get_cluster_config(include_pending=False)[key] == default_value
+        )
+
+        # Same behavior with single-key query
+        assert (
+            self.admin.get_cluster_config(key=key, include_pending=False)[key]
+            == default_value
+        )
+        assert (
+            self.admin.get_cluster_config(key=key, include_pending=True)[key]
+            == new_value
+        )
+
+        # After restart, pending value is promoted to active
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # Both views now show the new value
+        assert self.admin.get_cluster_config()[key] == new_value
+        assert self.admin.get_cluster_config(include_pending=False)[key] == new_value
+
+    @cluster(num_nodes=3)
     def test_multistring_restart(self):
         """
         Reproduce an issue where the key we edit is saved correctly,

@@ -1556,12 +1556,20 @@ void admin_server::register_config_routes() {
               include_defaults = str_to_bool(include_defaults_str);
           }
 
+          auto pending = config::use_pending::yes;
+          auto include_pending_str = req.get_query_param("include_pending");
+          if (!include_pending_str.empty()) {
+              pending = str_to_bool(include_pending_str)
+                          ? config::use_pending::yes
+                          : config::use_pending::no;
+          }
+
           auto key_str = req.get_query_param("key");
           if (!key_str.empty()) {
               // Write a single key to json.
               try {
                   config::shard_local_cfg().to_json_single_key(
-                    writer, config::redact_secrets::yes, key_str);
+                    writer, config::redact_secrets::yes, key_str, pending);
               } catch (const std::out_of_range&) {
                   throw ss::httpd::bad_param_exception(
                     fmt::format("Unknown property {{{}}}", key_str));
@@ -1571,9 +1579,15 @@ void admin_server::register_config_routes() {
               config::shard_local_cfg().to_json(
                 writer,
                 config::redact_secrets::yes,
-                [include_defaults](config::base_property& p) {
-                    return include_defaults || !p.is_default();
-                });
+                [include_defaults, pending](config::base_property& p) {
+                    if (include_defaults) {
+                        return true;
+                    }
+                    return pending == config::use_pending::yes
+                             ? !p.is_default_pending()
+                             : !p.is_default();
+                },
+                pending);
           }
 
           reply.set_status(ss::http::reply::status_type::ok, buf.GetString());
