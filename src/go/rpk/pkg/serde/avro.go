@@ -11,10 +11,10 @@ package serde
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"github.com/hamba/avro/v2"
-	"github.com/linkedin/goavro/v2"
+	"github.com/twmb/avro"
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
@@ -22,14 +22,14 @@ import (
 // record using the specified schema. If the schema includes references, it
 // retrieves them using the supplied client. The generated function returns the
 // record encoded in the protobuf wire format.
-func newAvroEncoder(codec *goavro.Codec, schemaID int) (serdeFunc, error) {
+func newAvroEncoder(schema *avro.Schema, schemaID int) (serdeFunc, error) {
 	return func(record []byte) ([]byte, error) {
-		native, _, err := codec.NativeFromTextual(record)
-		if err != nil {
+		var native any
+		if err := json.Unmarshal(record, &native); err != nil {
 			return nil, fmt.Errorf("unable to parse record with the provided schema: %v", err)
 		}
 
-		binary, err := codec.BinaryFromNative(nil, native)
+		binary, err := schema.Encode(native)
 		if err != nil {
 			return nil, fmt.Errorf("unable to binary encode the record: %v", err)
 		}
@@ -47,66 +47,54 @@ func newAvroEncoder(codec *goavro.Codec, schemaID int) (serdeFunc, error) {
 // newAvroDecoder generates a deserializer function that decodes the given
 // avro-encoded record according to the schema. The generated function expects
 // the record bytes (without the wire format).
-func newAvroDecoder(codec *goavro.Codec) (serdeFunc, error) {
+func newAvroDecoder(schema *avro.Schema) (serdeFunc, error) {
 	return func(record []byte) ([]byte, error) {
-		native, _, err := codec.NativeFromBinary(record)
-		if err != nil {
+		var native any
+		if _, err := schema.Decode(record, &native); err != nil {
 			return nil, fmt.Errorf("unable to decode avro-encoded record: %v", err)
 		}
-
-		return codec.TextualFromNative(nil, native)
+		return json.Marshal(native)
 	}, nil
 }
 
-// generateAvroCodec will generate an AVRO codec, parsing the references if
-// there are any.
-func generateAvroCodec(ctx context.Context, cl *sr.Client, schema *sr.Schema) (*goavro.Codec, error) {
-	schemaStr := schema.Schema
-	if len(schema.References) > 0 {
-		err := parseAvroReferences(ctx, cl, schema)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse references: %v", err)
-		}
-
-		// We use hamba/avro to for the schema reference resolution.
-		refCodec, err := avro.Parse(schema.Schema)
+// generateAvroSchema parses the schema and its references, returning a
+// compiled schema that can be used for encoding and decoding.
+func generateAvroSchema(ctx context.Context, cl *sr.Client, schema *sr.Schema) (*avro.Schema, error) {
+	if len(schema.References) == 0 {
+		s, err := avro.Parse(schema.Schema)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse schema: %v", err)
 		}
-		schemaStr = refCodec.String()
+		return s, nil
 	}
-	codec, err := goavro.NewCodec(schemaStr)
+	cache := avro.NewSchemaCache()
+	if err := parseAvroReferences(ctx, cl, cache, schema); err != nil {
+		return nil, fmt.Errorf("unable to parse references: %v", err)
+	}
+	s, err := cache.Parse(schema.Schema)
 	if err != nil {
-		return nil, fmt.Errorf("unable to generate codec for the given schema: %v", err)
+		return nil, fmt.Errorf("unable to parse schema: %v", err)
 	}
-	return codec, nil
+	return s, nil
 }
 
-// parseAvroReferences uses hamba/avro Parse method to parse every reference. We
-// don't need to store the references since the library already cache these
-// schemas and use it later for handling references in the parent schema.
-func parseAvroReferences(ctx context.Context, cl *sr.Client, schema *sr.Schema) error {
-	if len(schema.References) == 0 {
-		_, err := avro.Parse(schema.Schema)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
+// parseAvroReferences recursively parses all schema references into the cache
+// so they are available when parsing the parent schema.
+func parseAvroReferences(ctx context.Context, cl *sr.Client, cache *avro.SchemaCache, schema *sr.Schema) error {
 	for _, ref := range schema.References {
 		r, err := cl.SchemaByVersion(ctx, ref.Subject, ref.Version)
 		if err != nil {
 			return err
 		}
 		refSchema := r.Schema
-		err = parseAvroReferences(ctx, cl, &refSchema)
-		if err != nil {
+		if len(refSchema.References) > 0 {
+			if err := parseAvroReferences(ctx, cl, cache, &refSchema); err != nil {
+				return fmt.Errorf("unable to parse schema with subject %q and version %v: %v", ref.Subject, ref.Version, err)
+			}
+		}
+		if _, err := cache.Parse(refSchema.Schema); err != nil {
 			return fmt.Errorf("unable to parse schema with subject %q and version %v: %v", ref.Subject, ref.Version, err)
 		}
-	}
-	_, err := avro.Parse(schema.Schema)
-	if err != nil {
-		return err
 	}
 	return nil
 }
