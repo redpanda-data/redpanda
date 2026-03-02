@@ -25,6 +25,7 @@ RUN echo "deb http://archive.debian.org/debian bullseye-backports main" > /etc/a
       pkg-config
 
 ARG LLVM_VERSION=21
+ARG LLVM_REF=release/${LLVM_VERSION}.x
 
 RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && /llvm.sh ${LLVM_VERSION} all
 
@@ -41,7 +42,7 @@ WORKDIR /src
 # Clone LLVM project (includes Clang, clang-tidy, clangd, and BOLT)
 # We use the latest version of the release branch to pick up fixes quicker rather than waiting for a full
 # release to happen
-RUN git clone --depth 1 --branch release/${LLVM_VERSION}.x https://github.com/llvm/llvm-project.git
+RUN git clone --depth 1 --branch ${LLVM_REF} https://github.com/llvm/llvm-project.git
 
 # LTO builds take a bunch of RAM, limit them to a low number by default
 ARG MAX_LINK_JOBS=4

@@ -16,6 +16,7 @@ def redpanda_copts():
     copts.append("-Wall")
     copts.append("-Wextra")
     copts.append("-Wno-missing-field-initializers")
+    copts.append("-Wno-switch")
     copts.append("-Wimplicit-fallthrough")
 
     # for fmt v9 so that we do not need to write fmt::formatter wrappers for

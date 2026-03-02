@@ -8,6 +8,9 @@ build --linkopt -stdlib=libc++
 
 common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
+# llvm 22.1.0
+common:clang-22 --extra_toolchains=@clang-22_llvm_toolchain//:all
+
 # Use Bash instead of system python for finding the hermetic interpreter
 # within Bazel due to the `python3` binary not being present on CI
 # (it has `python` version 3 but Bazel uses the `python3` executable).
