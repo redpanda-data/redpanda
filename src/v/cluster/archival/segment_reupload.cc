@@ -891,20 +891,17 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
       current_gen.size());
 
     auto gen_id_diffs = std::views::iota(0ul, _segments.size())
-                        | std::views::transform([&](auto i) -> int {
+                        | std::views::filter([&](auto i) -> bool {
                               return _generations.at(i) != current_gen.at(i);
-                          });
-    auto n_diffs = std::ranges::fold_left(gen_id_diffs, 0, std::plus<int>{});
-    auto skip_gen_id_check = last_unsealed && n_diffs == 1
+                          })
+                        | std::ranges::to<chunked_vector<size_t>>();
+    auto skip_gen_id_check = last_unsealed && gen_id_diffs.size() == 1
                              && _generations.back() != current_gen.back();
 
     // If the last collected segment is not closed,
-    if (!skip_gen_id_check && n_diffs > 0) {
+    if (!skip_gen_id_check && !gen_id_diffs.empty()) {
         std::stringstream sstr;
-        for (auto i : std::views::iota(0ul, _segments.size())) {
-            if (_generations.at(i) == current_gen.at(i)) {
-                continue;
-            }
+        for (auto i : gen_id_diffs) {
             // Segment was updated concurrently while we were waiting
             // for the locks.
             fmt::print(
