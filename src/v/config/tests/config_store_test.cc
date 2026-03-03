@@ -865,3 +865,142 @@ TEST(ConfigStoreTest, PromotePendingForEachProperty) {
     EXPECT_EQ(cfg.an_int64_t(), 999);
     EXPECT_FALSE(cfg.an_int64_t.has_pending());
 }
+
+TEST(ConfigStoreTest, ToJsonWithPendingValues) {
+    auto cfg = test_config();
+    auto errors = cfg.read_yaml(minimal_valid_configuration());
+    EXPECT_EQ(errors.size(), 0);
+
+    // optional_int has needs_restart::yes (default metadata), default=100
+    cfg.optional_int.set_pending_value(YAML::Load("42"));
+    EXPECT_TRUE(cfg.optional_int.has_pending());
+    EXPECT_EQ(cfg.optional_int(), 100);
+
+    // Default (use_pending::yes): serializes pending value
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json(w, config::redact_secrets::no);
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_EQ(doc["optional_int"].GetInt(), 42);
+    }
+
+    // Explicit use_pending::no: serializes active value
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json(
+          w, config::redact_secrets::no, std::nullopt, config::use_pending::no);
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_EQ(doc["optional_int"].GetInt(), 100);
+    }
+}
+
+TEST(ConfigStoreTest, ToJsonSecretWithPendingValues) {
+    auto cfg = test_config();
+    auto errors = cfg.read_yaml(minimal_valid_configuration());
+    EXPECT_EQ(errors.size(), 0);
+
+    // secret_string: secret, needs_restart::yes, default=""
+    // Active is default (empty), so not redacted even with redact=yes.
+    // Set a pending non-default value: should be redacted when pending=yes.
+    cfg.secret_string.set_pending_value(YAML::Load("hunter2"));
+    EXPECT_TRUE(cfg.secret_string.has_pending());
+
+    // Default (use_pending::yes) + redact: pending is non-default → redacted
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json_single_key(w, config::redact_secrets::yes, "secret_string");
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_STREQ(doc["secret_string"].GetString(), "[secret]");
+    }
+
+    // Default (use_pending::yes) + no redact: pending value shown in the clear
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json_single_key(w, config::redact_secrets::no, "secret_string");
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_STREQ(doc["secret_string"].GetString(), "hunter2");
+    }
+
+    // Explicit use_pending::no + redact: active is default → not redacted
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json_single_key(
+          w,
+          config::redact_secrets::yes,
+          "secret_string",
+          config::use_pending::no);
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_STREQ(doc["secret_string"].GetString(), "");
+    }
+
+    // Now set active to non-default, and pending back to default (reset).
+    // This simulates: secret was set, user resets it, awaiting restart.
+    cfg.secret_string.set_value(YAML::Load("hunter2"));
+    cfg.secret_string.set_pending_value_to_default();
+
+    // Default (use_pending::yes) + redact: pending is default → not redacted
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json_single_key(w, config::redact_secrets::yes, "secret_string");
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_STREQ(doc["secret_string"].GetString(), "");
+    }
+
+    // Explicit use_pending::no + redact: active is non-default → redacted
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json_single_key(
+          w,
+          config::redact_secrets::yes,
+          "secret_string",
+          config::use_pending::no);
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_STREQ(doc["secret_string"].GetString(), "[secret]");
+    }
+}
+
+TEST(ConfigStoreTest, ToJsonSingleKeyWithPendingValues) {
+    auto cfg = test_config();
+    auto errors = cfg.read_yaml(minimal_valid_configuration());
+    EXPECT_EQ(errors.size(), 0);
+
+    cfg.optional_int.set_pending_value(YAML::Load("42"));
+
+    // Default (use_pending::yes): serializes pending value
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json_single_key(w, config::redact_secrets::no, "optional_int");
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_EQ(doc["optional_int"].GetInt(), 42);
+    }
+
+    // Explicit use_pending::no: serializes active value
+    {
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        cfg.to_json_single_key(
+          w,
+          config::redact_secrets::no,
+          "optional_int",
+          config::use_pending::no);
+        json::Document doc;
+        doc.Parse(buf.GetString());
+        EXPECT_EQ(doc["optional_int"].GetInt(), 100);
+    }
+}

@@ -58,6 +58,10 @@ enum class odd_even_constraint {
     odd,
 };
 
+// Whether to use the pending (pre-restart) value instead of the active value
+// when serializing properties.
+using use_pending = ss::bool_class<struct use_pending_tag>;
+
 // This is equivalent to cluster::cluster_version, but defined here to
 // avoid a dependency between config/ and cluster/
 using legacy_version = named_type<int64_t, struct legacy_version_tag>;
@@ -151,11 +155,17 @@ public:
     }
     bool gets_restored() const { return bool(_meta.gets_restored); }
 
-    // this serializes the property value. a full configuration serialization is
-    // performed in config_store::to_json where the json object key is taken
-    // from the property name.
+    /// Serialize the property value to JSON. A full configuration
+    /// serialization is performed in config_store::to_json where the JSON
+    /// object key is taken from the property name.
+    ///
+    /// When \p pending is use_pending::yes (the default), properties that
+    /// have a pending value awaiting restart will serialize that pending
+    /// value. When use_pending::no, only the active runtime value is used.
     virtual void to_json(
-      json::Writer<json::StringBuffer>& w, redact_secrets redact) const = 0;
+      json::Writer<json::StringBuffer>& w,
+      redact_secrets redact,
+      use_pending pending = use_pending::yes) const = 0;
 
     virtual void print(std::ostream&) const = 0;
 

@@ -176,12 +176,17 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(json::Writer<json::StringBuffer>& w, redact_secrets redact)
-      const override {
-        if (is_secret() && !is_default() && redact == redact_secrets::yes) {
+    void to_json(
+      json::Writer<json::StringBuffer>& w,
+      redact_secrets redact,
+      use_pending pending = use_pending::yes) const override {
+        const auto& v = (pending == use_pending::yes) ? configured_value()
+                                                      : _value;
+        bool has_non_default = v != _default;
+        if (is_secret() && has_non_default && redact == redact_secrets::yes) {
             json::rjson_serialize(w, secret_placeholder);
         } else {
-            json::rjson_serialize(w, _value);
+            json::rjson_serialize(w, v);
         }
     }
 
@@ -1092,13 +1097,17 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void
-    to_json(json::Writer<json::StringBuffer>& w, redact_secrets) const final {
+    void to_json(
+      json::Writer<json::StringBuffer>& w,
+      redact_secrets,
+      use_pending pending = use_pending::yes) const final {
         // TODO: there's nothing forcing the retention duration to be a
         // non-secret; if a secret retention duration is ever introduced,
         // redact it, but consider the implications on the JSON type.
         vassert(!is_secret(), "{} must not be a secret", name());
-        json::rjson_serialize(w, value().value_or(-1ms));
+        const auto& v = (pending == use_pending::yes) ? configured_value()
+                                                      : value();
+        json::rjson_serialize(w, v.value_or(-1ms));
     }
 
 private:
