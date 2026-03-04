@@ -302,7 +302,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "KpoPHfz3cH8M0fTJ+YQYTm6QqMRtrMoIw1+4UUjQcfY=",
+        "bzlTransitiveDigest": "IlG6diwV0jQMUPkw8yUHR3dFbHoNZDCnRXun6k6ZNNg=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -446,9 +446,9 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:openssl.BUILD",
-              "sha256": "fa5a4143b8aae18be53ef2f3caf29a2e0747430b8bc74d32d88335b94ab63072",
-              "strip_prefix": "openssl-3.0.19",
-              "url": "https://github.com/openssl/openssl/releases/download/openssl-3.0.19/openssl-3.0.19.tar.gz"
+              "sha256": "b28c91532a8b65a1f983b4c28b7488174e4a01008e29ce8e69bd789f28bc2a89",
+              "strip_prefix": "openssl-3.5.5",
+              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/openssl-3.5.5.tar.gz"
             }
           },
           "openssl-fips": {
