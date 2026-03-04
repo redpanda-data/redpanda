@@ -251,10 +251,12 @@ make_remote_consumer_configuration(const model::connection_config& conn_cfg) {
     dc_configuration.partition_max_bytes
       = conn_cfg.get_fetch_partition_max_bytes();
 
+    const size_t partition_max_buffered
+      = 2 * conn_cfg.get_fetch_partition_max_bytes();
     return replication::mux_remote_consumer::configuration{
       .client_id = conn_cfg.client_id,
       .direct_consumer_configuration = dc_configuration,
-      .partition_max_buffered = max_buffered_bytes,
+      .partition_max_buffered = partition_max_buffered,
       .fetch_max_wait = max_wait_time,
     };
 }
