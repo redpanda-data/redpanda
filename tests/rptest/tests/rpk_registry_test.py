@@ -56,6 +56,7 @@ class RpkRegistryTest(RedpandaTest):
         super(RpkRegistryTest, self).__init__(
             test_context=ctx,
             schema_registry_config=schema_registry_config,
+            extra_rp_conf={"schema_registry_use_rpc": False},
             node_ready_timeout_s=60,
         )
         # SASL Config

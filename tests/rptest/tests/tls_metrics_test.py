@@ -95,7 +95,9 @@ class TLSMetricsTestBase(RedpandaTest):
     ]
 
     def __init__(self, *args, broker_faketime="-0d", client_faketime="-0d", **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            *args, extra_rp_conf={"schema_registry_use_rpc": False}, **kwargs
+        )
 
         self.broker_faketime = broker_faketime
         self.client_faketime = client_faketime

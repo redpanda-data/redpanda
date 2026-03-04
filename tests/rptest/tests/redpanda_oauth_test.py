@@ -150,6 +150,7 @@ class RedpandaOIDCTestBase(Test):
                 "oidc_token_audience": TOKEN_AUDIENCE,
                 "kafka_sasl_max_reauth_ms": sasl_max_reauth_ms,
                 "group_initial_rebalance_delay": 0,
+                "schema_registry_use_rpc": False,
             },
             security=security,
             pandaproxy_config=pandaproxy_config,

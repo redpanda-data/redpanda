@@ -336,7 +336,11 @@ class AdminApiListUsersTest(SchemaRegistryEndpoints):
         security.endpoint_authn_method = "sasl"
         security.auto_auth = True
 
-        super(AdminApiListUsersTest, self).__init__(context, security=security)
+        super(AdminApiListUsersTest, self).__init__(
+            context,
+            security=security,
+            extra_rp_conf={"schema_registry_use_rpc": False},
+        )
 
         self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
         self.superuser_admin = Admin(

@@ -2844,6 +2844,7 @@ class AuditLogTestSchemaRegistryBase(AuditLogTestBase):
                 "info", logger_levels={"auditing": "trace", "schemaregistry": "trace"}
             ),
             schema_registry_config=sr_config,
+            extra_rp_conf={"schema_registry_use_rpc": False},
             **kwargs,
         )
 

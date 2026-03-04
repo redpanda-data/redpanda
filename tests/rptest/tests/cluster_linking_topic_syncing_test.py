@@ -807,6 +807,7 @@ message CType {
             secondary_cluster_args=SecondaryClusterArgs(
                 schema_registry_config=SchemaRegistryConfig()
             ),
+            extra_rp_conf={"schema_registry_use_rpc": True},
             log_config=LoggingConfig(
                 "info",
                 logger_levels={

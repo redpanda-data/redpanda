@@ -844,7 +844,12 @@ class PandaproxyAuthSecurityReportTest(RedpandaTest):
 
 class SchemaRegistryNoSecurityReportTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, schema_registry_config=SchemaRegistryConfig(), **kwargs)
+        super().__init__(
+            *args,
+            schema_registry_config=SchemaRegistryConfig(),
+            extra_rp_conf={"schema_registry_use_rpc": False},
+            **kwargs,
+        )
 
     def setUp(self):
         super().setUp()
@@ -952,6 +957,7 @@ class SchemaRegistryAuthSecurityReportTest(RedpandaTest):
             *args,
             extra_rp_conf={
                 "schema_registry_enable_authorization": True,
+                "schema_registry_use_rpc": False,
             },
             **kwargs,
         )
@@ -1014,7 +1020,12 @@ class SchemaRegistryAuthSecurityReportTest(RedpandaTest):
 
 class SchemaRegistryClientSecurityReportTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, schema_registry_config=SchemaRegistryConfig(), **kwargs)
+        super().__init__(
+            *args,
+            schema_registry_config=SchemaRegistryConfig(),
+            extra_rp_conf={"schema_registry_use_rpc": False},
+            **kwargs,
+        )
 
     def setUp(self):
         super().setUp()

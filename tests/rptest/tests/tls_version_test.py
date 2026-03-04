@@ -96,7 +96,10 @@ class TLSVersionTestBase(RedpandaTest):
     """
 
     def __init__(self, test_context, key_type: TLSKeyType):
-        super(TLSVersionTestBase, self).__init__(test_context=test_context)
+        super(TLSVersionTestBase, self).__init__(
+            test_context=test_context,
+            extra_rp_conf={"schema_registry_use_rpc": False},
+        )
         self.security = SecurityConfig()
         self.tls = TLSCertManager(self.logger, key_type=key_type)
         self.key_type = key_type

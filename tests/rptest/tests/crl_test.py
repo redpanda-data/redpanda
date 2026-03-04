@@ -104,7 +104,8 @@ class CertificateRevocationTest(RedpandaTest):
             {
                 "kafka_mtls_principal_mapping_rules": [
                     self.security.principal_mapping_rules
-                ]
+                ],
+                "schema_registry_use_rpc": False,
             }
         )
 
