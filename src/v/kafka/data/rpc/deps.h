@@ -20,6 +20,8 @@
 #include "model/metadata.h"
 #include "model/transform.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 /**
@@ -62,6 +64,19 @@ public:
 
     virtual std::optional<cluster::leader_term>
       get_leader_term(model::topic_namespace_view, model::partition_id) const
+      = 0;
+
+    /// Best-effort mitigation after a not_leader error: wait for a
+    /// leadership change to be reported by the metadata dissemination
+    /// service. \p stale_term is the term that was current when the caller
+    /// looked up the leader. If the table has already advanced past this
+    /// term, returns immediately instead of blocking.
+    virtual ss::future<> mitigate_not_leader(
+      model::topic_namespace_view,
+      model::partition_id,
+      model::term_id stale_term,
+      ss::lowres_clock::time_point timeout,
+      ss::abort_source& as)
       = 0;
 };
 

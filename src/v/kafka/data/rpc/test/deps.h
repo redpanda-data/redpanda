@@ -228,6 +228,15 @@ public:
         vassert(_leader_map.find(ntp) != _leader_map.end(), "what??");
     }
 
+    ss::future<> mitigate_not_leader(
+      model::topic_namespace_view,
+      model::partition_id,
+      model::term_id,
+      ss::lowres_clock::time_point,
+      ss::abort_source&) final {
+        co_return;
+    }
+
     std::optional<int32_t>
     partition_count(model::topic_namespace_view tp_ns) const {
         int32_t count = 0;
@@ -257,6 +266,15 @@ public:
     std::optional<cluster::leader_term> get_leader_term(
       model::topic_namespace_view tp_ns, model::partition_id p) const final {
         return _delegate->get_leader_term(tp_ns, p);
+    }
+
+    ss::future<> mitigate_not_leader(
+      model::topic_namespace_view,
+      model::partition_id,
+      model::term_id,
+      ss::lowres_clock::time_point,
+      ss::abort_source&) final {
+        co_return;
     }
 
     void set_leader_node(const model::ntp& ntp, model::node_id nid) {

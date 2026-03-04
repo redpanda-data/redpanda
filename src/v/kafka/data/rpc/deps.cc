@@ -15,6 +15,8 @@
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/notification.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
@@ -26,11 +28,13 @@
 #include "model/ktp.h"
 #include "model/transform.h"
 #include "transform/stm/transform_offsets_stm.h"
+#include "utils/expiring_promise.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <memory>
@@ -54,6 +58,47 @@ public:
     std::optional<cluster::leader_term> get_leader_term(
       model::topic_namespace_view tp_ns, model::partition_id p) const final {
         return _table->local().get_leader_term(tp_ns, p);
+    }
+
+    ss::future<> mitigate_not_leader(
+      model::topic_namespace_view tp_ns,
+      model::partition_id pid,
+      model::term_id stale_term,
+      ss::lowres_clock::time_point timeout,
+      ss::abort_source& as) final {
+        // Register for the next leadership change notification *before*
+        // checking the current term, so that a change arriving between
+        // the check and the registration is not missed.
+        auto promise = ss::make_lw_shared<expiring_promise<model::node_id>>();
+        auto ntp = model::ntp(tp_ns.ns, tp_ns.tp, pid);
+        auto n_id = _table->local().register_leadership_change_notification(
+          ntp,
+          [promise](
+            const model::ntp&, model::term_id, model::node_id new_leader) {
+              promise->set_value(new_leader);
+          });
+
+        auto unreg = ss::defer([this, ntp, n_id] {
+            _table->local().unregister_leadership_change_notification(
+              ntp, n_id);
+        });
+
+        // If the table already advanced past the caller's stale term,
+        // a new leader has been elected since the failed request — no
+        // need to wait.
+        auto current = _table->local().get_leader_term(tp_ns, pid);
+        if (current && current->term && *current->term > stale_term) {
+            co_return;
+        }
+
+        try {
+            co_await promise->get_future_with_timeout(
+              timeout,
+              [] { return std::make_exception_ptr(ss::timed_out_error()); },
+              std::ref(as));
+        } catch (const ss::timed_out_error&) {
+            // Timed out waiting for new leader; the retry loop handles it.
+        }
     }
 
 private:
