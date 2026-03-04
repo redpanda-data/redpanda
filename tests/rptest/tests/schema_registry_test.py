@@ -10730,3 +10730,181 @@ class SchemaRegistryContextAuthzRpcTransportTest(SchemaRegistryContextAuthzTest)
             extra_rp_conf={"schema_registry_use_rpc": True},
             **kwargs,
         )
+
+
+class SchemaRegistryRpcTransportStressTest(SchemaRegistryEndpoints):
+    """
+    Stress test for the schema registry RPC transport path. Performs
+    concurrent SR read/write operations while transferring leadership of
+    the _schemas topic to verify zero HTTP 500 errors surface to clients.
+    """
+
+    def __init__(self, context: TestContext):
+        super().__init__(
+            context,
+            extra_rp_conf={"schema_registry_use_rpc": True},
+        )
+
+    @cluster(num_nodes=3)
+    def test_no_errors_during_leadership_transfers(self):
+        import threading
+
+        admin = Admin(self.redpanda)
+
+        # --- Setup: register initial schemas so reads have data ---
+        num_subjects = 3
+        schema_ids = []
+        subjects = []
+        for i in range(num_subjects):
+            subject = f"stress-test-subject-{i}"
+            subjects.append(subject)
+            data = json.dumps(
+                {
+                    "schema": json.dumps(
+                        {
+                            "type": "record",
+                            "name": f"rec{i}",
+                            "fields": [{"name": "f1", "type": "string"}],
+                        }
+                    ),
+                }
+            )
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=subject, data=data
+            )
+            assert result.status_code == 200, (
+                f"Setup: failed to register schema: {result.status_code} {result.text}"
+            )
+            schema_ids.append(result.json()["id"])
+
+        self.logger.info(
+            f"Setup complete: {num_subjects} subjects, schema_ids={schema_ids}"
+        )
+
+        # --- Background workers ---
+        errors: list[str] = []
+        stop_event = threading.Event()
+
+        def reader_worker():
+            """Continuously read subjects and schemas from random nodes."""
+            while not stop_event.is_set():
+                for node in self.redpanda.nodes:
+                    if stop_event.is_set():
+                        break
+                    hostname = node.account.hostname
+                    try:
+                        r = self.sr_client.get_subjects(hostname=hostname)
+                        if r.status_code == 500:
+                            errors.append(f"GET /subjects on {hostname}: 500 {r.text}")
+                        for sid in schema_ids:
+                            if stop_event.is_set():
+                                break
+                            r = self.sr_client.request(
+                                "GET",
+                                f"schemas/ids/{sid}",
+                                hostname=hostname,
+                                headers=HTTP_GET_HEADERS,
+                            )
+                            if r.status_code == 500:
+                                errors.append(
+                                    f"GET /schemas/ids/{sid} on {hostname}: "
+                                    f"500 {r.text}"
+                                )
+                    except Exception as e:
+                        self.logger.warn(f"Reader exception on {hostname}: {e}")
+
+        write_counter = 0
+        write_counter_lock = threading.Lock()
+
+        def writer_worker():
+            """Continuously register new schema versions."""
+            nonlocal write_counter
+            while not stop_event.is_set():
+                with write_counter_lock:
+                    write_counter += 1
+                    seq = write_counter
+                subject = subjects[seq % num_subjects]
+                data = json.dumps(
+                    {
+                        "schema": json.dumps(
+                            {
+                                "type": "record",
+                                "name": f"rec{seq % num_subjects}",
+                                "fields": [
+                                    {"name": "f1", "type": ["null", "string"]},
+                                    {
+                                        "name": f"f_write_{seq}",
+                                        "type": "string",
+                                        "default": "x",
+                                    },
+                                ],
+                            }
+                        ),
+                    }
+                )
+                try:
+                    r = self.sr_client.post_subjects_subject_versions(
+                        subject=subject, data=data
+                    )
+                    if r.status_code == 500:
+                        errors.append(
+                            f"POST /subjects/{subject}/versions: 500 {r.text}"
+                        )
+                except Exception as e:
+                    self.logger.warn(f"Writer exception: {e}")
+
+                # Pace writes to avoid overwhelming the cluster
+                time.sleep(0.5)
+
+        # Start 2 reader threads and 1 writer thread
+        threads = []
+        for _ in range(2):
+            t = threading.Thread(target=reader_worker, daemon=True)
+            t.start()
+            threads.append(t)
+        t = threading.Thread(target=writer_worker, daemon=True)
+        t.start()
+        threads.append(t)
+
+        # --- Perturbation: leadership transfers ---
+        num_transfers = 20
+        for i in range(num_transfers):
+            leader = admin.get_partition_leader(
+                namespace="kafka", topic="_schemas", partition=0
+            )
+            self.logger.info(
+                f"Transfer {i + 1}/{num_transfers}: moving leadership "
+                f"from node {leader}"
+            )
+            admin.partition_transfer_leadership(
+                namespace="kafka", topic="_schemas", partition=0
+            )
+
+            def leader_changed():
+                new_leader = admin.get_partition_leader(
+                    namespace="kafka", topic="_schemas", partition=0
+                )
+                return new_leader != leader
+
+            wait_until(
+                leader_changed,
+                timeout_sec=10,
+                backoff_sec=1,
+                err_msg="Leadership did not transfer",
+            )
+            # Brief pause between transfers
+            time.sleep(1)
+
+        # --- Teardown ---
+        stop_event.set()
+        for t in threads:
+            t.join(timeout=30)
+
+        self.logger.info(
+            f"Stress test complete: {num_transfers} leadership transfers, "
+            f"{write_counter} writes attempted, {len(errors)} errors"
+        )
+        assert len(errors) == 0, (
+            f"Got {len(errors)} HTTP 500 errors during leadership transfers:\n"
+            + "\n".join(errors[:20])
+        )
