@@ -145,7 +145,8 @@ client::client(
 
 template<typename Func>
 std::invoke_result_t<Func> client::retry(Func&& func) {
-    return retry_with_backoff(std::forward<Func>(func), &_as);
+    auto holder = _gate.hold();
+    co_return co_await retry_with_backoff(std::forward<Func>(func), &_as);
 }
 
 ss::future<cluster::errc> client::produce(
