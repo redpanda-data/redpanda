@@ -167,13 +167,13 @@ def data_dependency():
         url = "https://github.com/redpanda-data/CRoaring/archive/c433d1c70c10fb2e40f049e019e2abbcafa6e69d.tar.gz",
     )
 
-    # branch: v26.1.x
+    # branch: td-perf-events-fixes
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "b697dbed6afd966feae8bf58a3a3af704cb74ef4ee699c70506533948b23c740",
-        strip_prefix = "seastar-7780db6428357bca114d405ee2c7c24c52db6901",
-        url = "https://github.com/redpanda-data/seastar/archive/7780db6428357bca114d405ee2c7c24c52db6901.tar.gz",
+        sha256 = "f76609810570f3c58d3235c4f8588c57d38a9491e8084bb97caacb4c9a21a40d",
+        strip_prefix = "seastar-6d369eb54ea13cf68c00352dd107f87dbb55c934",
+        url = "https://github.com/redpanda-data/seastar/archive/6d369eb54ea13cf68c00352dd107f87dbb55c934.tar.gz",
     )
 
     http_archive(
