@@ -178,7 +178,7 @@ COMPILERS = {
         "tars": {
             "aarch64": {
                 "build_date": "2026-03-02",
-                "sha": "f96deff1816083fdff8bc3e46c3fe6ca46a6bb49f4d5a00627616c13237a512c",
+                "sha": "4fcc2b9cc39b98f63e63739a5229e0b73a2bc9b26d1f4681f12c2cf55ddcab6e",
             },
             "x86_64": {
                 "build_date": "2026-03-02",
