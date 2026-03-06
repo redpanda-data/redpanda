@@ -114,51 +114,59 @@ const role_store mixed_store_64_r_512_m_data = make_store(
 const role_store mixed_store_8_r_1Ki_m_data = make_store(
   generate_role_names(8ul), mixed_members_data);
 
+static constexpr size_t query_inner_iters = 1000;
+
 template<bool materialize>
-void run_get_member_roles(
+size_t run_get_member_roles(
   const std::vector<role_member>& members, const role_store& store) {
-    const auto& m = members[random_generators::get_int(members.size() - 1)];
     perf_tests::start_measuring_time();
-    auto rng = store.roles_for_member(m);
-    perf_tests::do_not_optimize(rng);
-    if constexpr (materialize) {
-        bool is_empty = rng.empty();
-        perf_tests::do_not_optimize(is_empty);
+    for (size_t i = 0; i < query_inner_iters; ++i) {
+        const auto& m = members[random_generators::get_int(members.size() - 1)];
+        auto rng = store.roles_for_member(m);
+        perf_tests::do_not_optimize(rng);
+        if constexpr (materialize) {
+            bool is_empty = rng.empty();
+            perf_tests::do_not_optimize(is_empty);
+        }
     }
     perf_tests::stop_measuring_time();
+    return query_inner_iters;
 }
 
 template<bool materialize>
-void run_range_queries(
+size_t run_range_queries(
   const std::vector<role_member>& members, const role_store& store) {
-    const auto& m = members[random_generators::get_int(members.size() - 1)];
     perf_tests::start_measuring_time();
-    auto rng = store.range(
-      [&m](const auto& e) { return role_store::has_member(e, m); });
-    perf_tests::do_not_optimize(rng);
-    if constexpr (materialize) {
-        bool is_empty = rng.empty();
-        perf_tests::do_not_optimize(is_empty);
+    for (size_t i = 0; i < query_inner_iters; ++i) {
+        const auto& m = members[random_generators::get_int(members.size() - 1)];
+        auto rng = store.range(
+          [&m](const auto& e) { return role_store::has_member(e, m); });
+        perf_tests::do_not_optimize(rng);
+        if constexpr (materialize) {
+            bool is_empty = rng.empty();
+            perf_tests::do_not_optimize(is_empty);
+        }
     }
     perf_tests::stop_measuring_time();
+    return query_inner_iters;
 }
 
 } // namespace
 
 PERF_TEST(role_store_bench, get_member_roles) {
-    run_get_member_roles<true>(members_data, store_512_r_1Ki_m_data);
+    return run_get_member_roles<true>(members_data, store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, get_member_roles_bare_query) {
-    run_get_member_roles<false>(members_data, store_512_r_1Ki_m_data);
+    return run_get_member_roles<false>(members_data, store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, user_range_query) {
-    run_range_queries<true>(members_data, store_512_r_1Ki_m_data);
+    return run_range_queries<true>(members_data, store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, user_range_query_bare_query) {
-    run_range_queries<false>(members_data, store_512_r_1Ki_m_data);
+    return run_range_queries<false>(members_data, store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, remove_role) {
@@ -202,21 +210,23 @@ PERF_TEST(role_store_bench, put_role) {
 }
 
 PERF_TEST(role_store_bench, get_member_roles_mixed) {
-    run_get_member_roles<true>(
+    return run_get_member_roles<true>(
       mixed_members_data, mixed_store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, get_member_roles_bare_query_mixed) {
-    run_get_member_roles<false>(
+    return run_get_member_roles<false>(
       mixed_members_data, mixed_store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, range_query_mixed) {
-    run_range_queries<true>(mixed_members_data, mixed_store_512_r_1Ki_m_data);
+    return run_range_queries<true>(
+      mixed_members_data, mixed_store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, range_query_bare_query_mixed) {
-    run_range_queries<false>(mixed_members_data, mixed_store_512_r_1Ki_m_data);
+    return run_range_queries<false>(
+      mixed_members_data, mixed_store_512_r_1Ki_m_data);
 }
 
 PERF_TEST(role_store_bench, remove_role_mixed) {
@@ -274,7 +284,7 @@ make_test_authorizer(std::optional<const role_store*> roles = std::nullopt) {
       roles.value_or(&_roles)};
 }
 
-void run_authz(
+size_t run_authz(
   const role_store& store,
   const std::vector<role_member>& members,
   acl_permission perm = acl_permission::allow,
@@ -327,83 +337,89 @@ void run_authz(
     auto auth = make_test_authorizer(&store);
     auth.add_bindings(bindings);
 
-    const auto& m = members[random_generators::get_int(members.size() - 1)];
-    acl_principal p{
-      principal_type_for_member_type(m.type()), ss::sstring{m.name()}};
-
     perf_tests::start_measuring_time();
-    auto result = auth.authorized(
-      topic1,
-      acl_operation::read,
-      p,
-      host1,
-      security::superuser_required::no,
-      {});
-    perf_tests::do_not_optimize(result);
+    for (size_t i = 0; i < query_inner_iters; ++i) {
+        const auto& m = members[random_generators::get_int(members.size() - 1)];
+        acl_principal p{
+          principal_type_for_member_type(m.type()), ss::sstring{m.name()}};
+        auto result = auth.authorized(
+          topic1,
+          acl_operation::read,
+          p,
+          host1,
+          security::superuser_required::no,
+          {});
+        perf_tests::do_not_optimize(result);
+    }
     perf_tests::stop_measuring_time();
+    return query_inner_iters;
 }
 
 } // namespace
 
 PERF_TEST(role_store_bench, role_authz_512_roles_1Ki_members) {
-    run_authz(store_512_r_1Ki_m_data, members_data);
+    return run_authz(store_512_r_1Ki_m_data, members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_256_roles_1Ki_members) {
-    run_authz(store_256_r_1Ki_m_data, members_data);
+    return run_authz(store_256_r_1Ki_m_data, members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_128_roles_1Ki_members) {
-    run_authz(store_128_r_1Ki_m_data, members_data);
+    return run_authz(store_128_r_1Ki_m_data, members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_1Ki_members) {
-    run_authz(store_64_r_1Ki_m_data, members_data);
+    return run_authz(store_64_r_1Ki_m_data, members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_1Ki_members_4_extra_bindings) {
-    run_authz(store_64_r_1Ki_m_data, members_data, acl_permission::allow, 4);
+    return run_authz(
+      store_64_r_1Ki_m_data, members_data, acl_permission::allow, 4);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_1Ki_members_8_extra_bindings) {
-    run_authz(store_64_r_1Ki_m_data, members_data, acl_permission::allow, 8);
+    return run_authz(
+      store_64_r_1Ki_m_data, members_data, acl_permission::allow, 8);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_1Ki_members_16_extra_bindings) {
-    run_authz(store_64_r_1Ki_m_data, members_data, acl_permission::allow, 16);
+    return run_authz(
+      store_64_r_1Ki_m_data, members_data, acl_permission::allow, 16);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_512_members) {
-    run_authz(store_64_r_512_m_data, members_512_data);
+    return run_authz(store_64_r_512_m_data, members_512_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_512_members_deny) {
-    run_authz(store_64_r_512_m_data, members_512_data, acl_permission::deny);
+    return run_authz(
+      store_64_r_512_m_data, members_512_data, acl_permission::deny);
 }
 
 PERF_TEST(role_store_bench, role_authz_8_roles_1Ki_members) {
-    run_authz(store_8_r_1Ki_m_data, members_data);
+    return run_authz(store_8_r_1Ki_m_data, members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_512_roles_1Ki_members_mixed) {
-    run_authz(mixed_store_512_r_1Ki_m_data, mixed_members_data);
+    return run_authz(mixed_store_512_r_1Ki_m_data, mixed_members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_256_roles_1Ki_members_mixed) {
-    run_authz(mixed_store_256_r_1Ki_m_data, mixed_members_data);
+    return run_authz(mixed_store_256_r_1Ki_m_data, mixed_members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_128_roles_1Ki_members_mixed) {
-    run_authz(mixed_store_128_r_1Ki_m_data, mixed_members_data);
+    return run_authz(mixed_store_128_r_1Ki_m_data, mixed_members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_1Ki_members_mixed) {
-    run_authz(mixed_store_64_r_1Ki_m_data, mixed_members_data);
+    return run_authz(mixed_store_64_r_1Ki_m_data, mixed_members_data);
 }
 
 PERF_TEST(
   role_store_bench, role_authz_64_roles_1Ki_members_4_extra_bindings_mixed) {
-    run_authz(
+    return run_authz(
       mixed_store_64_r_1Ki_m_data,
       mixed_members_data,
       acl_permission::allow,
@@ -412,7 +428,7 @@ PERF_TEST(
 
 PERF_TEST(
   role_store_bench, role_authz_64_roles_1Ki_members_8_extra_bindings_mixed) {
-    run_authz(
+    return run_authz(
       mixed_store_64_r_1Ki_m_data,
       mixed_members_data,
       acl_permission::allow,
@@ -421,7 +437,7 @@ PERF_TEST(
 
 PERF_TEST(
   role_store_bench, role_authz_64_roles_1Ki_members_16_extra_bindings_mixed) {
-    run_authz(
+    return run_authz(
       mixed_store_64_r_1Ki_m_data,
       mixed_members_data,
       acl_permission::allow,
@@ -429,18 +445,18 @@ PERF_TEST(
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_512_members_mixed) {
-    run_authz(mixed_store_64_r_512_m_data, mixed_members_512_data);
+    return run_authz(mixed_store_64_r_512_m_data, mixed_members_512_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_64_roles_512_members_deny_mixed) {
-    run_authz(
+    return run_authz(
       mixed_store_64_r_512_m_data,
       mixed_members_512_data,
       acl_permission::deny);
 }
 
 PERF_TEST(role_store_bench, role_authz_8_roles_1Ki_members_mixed) {
-    run_authz(mixed_store_8_r_1Ki_m_data, mixed_members_data);
+    return run_authz(mixed_store_8_r_1Ki_m_data, mixed_members_data);
 }
 
 PERF_TEST(role_store_bench, role_authz_empty_store) {
@@ -470,13 +486,16 @@ PERF_TEST(role_store_bench, role_authz_empty_store) {
     auth.add_bindings(bindings);
 
     perf_tests::start_measuring_time();
-    auto result = auth.authorized(
-      topic1,
-      acl_operation::read,
-      user1,
-      host1,
-      security::superuser_required::no,
-      {});
-    perf_tests::do_not_optimize(result);
+    for (size_t i = 0; i < query_inner_iters; ++i) {
+        auto result = auth.authorized(
+          topic1,
+          acl_operation::read,
+          user1,
+          host1,
+          security::superuser_required::no,
+          {});
+        perf_tests::do_not_optimize(result);
+    }
     perf_tests::stop_measuring_time();
+    return query_inner_iters;
 }
