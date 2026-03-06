@@ -138,6 +138,7 @@ public:
 
     // Run requests serially
     ss::future<> test_run(int num_requests) {
+        perf_tests::start_measuring_time();
         for (int i = 0; i < num_requests; i++) {
             l0::dataplane_query query;
             query.output_size_estimate = 1_KiB;
@@ -153,14 +154,13 @@ public:
             // latency is expected to be in the ballpark of 10 microseconds end
             // to end. The actual I/O (either cache or cloud) will take
             // longer.
-            perf_tests::start_measuring_time();
             perf_tests::do_not_optimize(
               co_await pipeline.local().make_reader(
                 model::controller_ntp,
                 std::move(query),
                 ss::lowres_clock::now() + 10s));
-            perf_tests::stop_measuring_time();
         }
+        perf_tests::stop_measuring_time();
     }
 
     // Fire N concurrent requests all targeting the same object_id.
@@ -255,6 +255,7 @@ public:
 
     // Run requests serially, each with a unique object_id
     ss::future<> test_run_unique(int num_requests) {
+        perf_tests::start_measuring_time();
         for (int i = 0; i < num_requests; i++) {
             l0::dataplane_query query;
             query.output_size_estimate = 1_KiB;
@@ -263,14 +264,13 @@ public:
                 .id = object_id{.name = uuid_t::create()},
                 .byte_range_size = byte_range_size_t{1_KiB}});
 
-            perf_tests::start_measuring_time();
             perf_tests::do_not_optimize(
               co_await pipeline.local().make_reader(
                 model::controller_ntp,
                 std::move(query),
                 ss::lowres_clock::now() + 10s));
-            perf_tests::stop_measuring_time();
         }
+        perf_tests::stop_measuring_time();
     }
 
     // Fire N concurrent requests all targeting the same object_id.
