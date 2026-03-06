@@ -38,6 +38,7 @@ class RdkafkaPerformanceSelfTest(RedpandaTest):
             topic=topic,
             msg_count=self.MSG_COUNT,
             msg_size=self.MSG_SIZE,
+            warmup_msg_count=1000,
             num_nodes=2,
         )
         producer.start()
