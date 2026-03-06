@@ -29,6 +29,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/auth.h"
 #include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -45,6 +46,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
@@ -387,12 +389,35 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
-    co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
-        s._is_started = true;
-        return ss::this_shard_id() == seq_writer::reader_shard
-                 ? s.fetch_internal_topic()
-                 : ss::now();
-    });
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [](this auto, service& s) -> ss::future<> {
+          s._is_started = true;
+          if (ss::this_shard_id() != seq_writer::reader_shard) {
+              co_return;
+          }
+          // create_internal_topic returns once the controller commits the
+          // topic, but the metadata cache is updated asynchronously. Retry
+          // fetch_internal_topic on topic_not_exists to ride out this race.
+          for (int attempts = 0;; ++attempts) {
+              auto fut = co_await ss::coroutine::as_future(
+                s.fetch_internal_topic());
+              if (fut.available()) {
+                  co_return;
+              }
+              bool retriable = false;
+              try {
+                  std::rethrow_exception(fut.get_exception());
+              } catch (const exception& e) {
+                  retriable = e.code()
+                                == kafka::error_code::unknown_topic_or_partition
+                              && attempts < 10;
+                  if (!retriable) {
+                      throw;
+                  }
+              }
+              co_await ss::sleep(std::chrono::milliseconds(100));
+          }
+      });
 }
 
 ss::future<> create_acls(cluster::security_frontend& security_fe) {
