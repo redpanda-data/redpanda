@@ -21,6 +21,7 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/exceptions.h"
 #include "kafka/protocol/list_offset.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
@@ -29,6 +30,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/auth.h"
 #include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -43,6 +45,8 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/sleep.hh>
+#include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -381,12 +385,54 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
-    co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
-        s._is_started = true;
-        return ss::this_shard_id() == seq_writer::reader_shard
-                 ? s.fetch_internal_topic()
-                 : ss::now();
-    });
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [](this auto, service& s) -> ss::future<> {
+          s._is_started = true;
+          if (ss::this_shard_id() != seq_writer::reader_shard) {
+              co_return;
+          }
+
+          using namespace std::chrono_literals;
+
+          // create_internal_topic returns once the controller commits
+          // the topic, but the metadata cache and partition leadership
+          // are established asynchronously. Retry transient errors in
+          // that window with exponential backoff (100ms..5s, ~26s total).
+          constexpr int max_attempts = 10;
+          constexpr auto max_backoff = 5000ms;
+          auto backoff = 100ms;
+          for (int attempts = 0;; ++attempts) {
+              auto fut = co_await ss::coroutine::as_future(
+                s.fetch_internal_topic());
+              if (!fut.failed()) {
+                  co_return;
+              }
+              auto eptr = fut.get_exception();
+              if (attempts >= max_attempts) {
+                  std::rethrow_exception(eptr);
+              }
+              try {
+                  std::rethrow_exception(eptr);
+              } catch (const kafka::exception_base& e) {
+                  if (!kafka::is_retriable(e.error)) {
+                      throw;
+                  }
+              } catch (const exception& e) {
+                  // kafka_client_transport wraps "topic missing" as
+                  // unknown_server_error via schema_registry::exception.
+                  // treat this as retriable.
+                  if (e.code() != kafka::error_code::unknown_server_error) {
+                      throw;
+                  }
+              }
+              try {
+                  co_await ss::sleep_abortable(backoff, s._as);
+              } catch (const ss::sleep_aborted&) {
+                  std::rethrow_exception(eptr);
+              }
+              backoff = std::min(backoff * 2, max_backoff);
+          }
+      });
 }
 
 ss::future<> create_acls(cluster::security_frontend& security_fe) {
@@ -754,6 +800,7 @@ ss::future<> service::start() {
 }
 
 ss::future<> service::stop() {
+    _as.request_abort();
     co_await _gate.close();
     co_await _server.stop();
 }
