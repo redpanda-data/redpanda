@@ -144,19 +144,38 @@ class CloudCleanup:
             self.log.info(msg)
 
         # Function detects cluster type and deletes it
-        cluster = self.cloudv2.get_resource(handle)
-        if cluster is None:
+        _resp = self.cloudv2.get_resource(handle)
+        if _resp is None:
             self.log.warning(f"# Cluster '{handle}' was already deleted")
             return
+        cluster = _resp.get("cluster", _resp)
         id = cluster["id"]
-        cluster_type = cluster["spec"]["clusterType"]
-        state = cluster["state"]
-        createdDate = datetime.strptime(cluster["createdAt"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        cluster_type = cluster.get("type", cluster.get("spec", {}).get("clusterType", ""))
+        # Normalize v1 type enum to short form (e.g. TYPE_DEDICATED -> FMC, TYPE_BYOC -> BYOC)
+        if cluster_type == "TYPE_DEDICATED":
+            cluster_type = "FMC"
+        elif cluster_type == "TYPE_BYOC":
+            cluster_type = "BYOC"
+        state = cluster.get("state", "")
+        created_at = cluster.get("created_at", cluster.get("createdAt", ""))
+        name = cluster.get("name", "")
+        # v1 uses RFC3339 with timezone, legacy uses %Y-%m-%dT%H:%M:%S.%fZ
+        try:
+            createdDate = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+        except ValueError:
+            createdDate = datetime.strptime(created_at[:19], "%Y-%m-%dT%H:%M:%S")
         message = (
-            f"-> cluster '{cluster['name']}', {cluster['createdAt']}, {cluster_type} "
+            f"-> cluster '{name}', {created_at}, {cluster_type} "
         )
+        # Normalize v1 state enums for comparison
+        if state == "STATE_READY":
+            state = "ready"
+        elif state == "STATE_DELETING_AGENT":
+            state = "deleting_agent"
+        elif state == "STATE_CREATING_AGENT":
+            state = "creating_agent"
         if cluster_type in ["FMC"]:
-            message += f"| status: '{cluster['state']}' "
+            message += f"| status: '{state}' "
             if state in ["ready"]:
                 if not _ensure_date(createdDate):
                     _log_skip(message)
@@ -173,11 +192,18 @@ class CloudCleanup:
             # Check if provider is the same
             # This is relevant only for BYOC as
             # rpk will not be able to delete it anyway
-            if cluster["spec"]["provider"].lower() != self.config.provider.lower():
+            # v1 uses cloud_provider (e.g. CLOUD_PROVIDER_AWS), legacy uses spec.provider
+            _cluster_provider = cluster.get(
+                "cloud_provider",
+                cluster.get("spec", {}).get("provider", ""),
+            )
+            # Normalize v1 enum to short form for comparison
+            _cluster_provider_short = _cluster_provider.replace("CLOUD_PROVIDER_", "")
+            if _cluster_provider_short.lower() != self.config.provider.lower():
                 # Wrong provider, can't delete right now
                 message += (
                     "| SKIP: Can't delete "
-                    f"'{cluster['spec']['provider']}' "
+                    f"'{_cluster_provider_short}' "
                     f"cluster using '{self.config.provider}' creds"
                 )
                 self.log.info(message)
@@ -191,8 +217,8 @@ class CloudCleanup:
 
             # If the cluster in deleleting_agent, we should clean it
             # regardless of time or anything else to clean up quota
-            message += f"| status: '{cluster['state']}' "
-            if cluster["state"] in ["deleting_agent"]:
+            message += f"| status: '{state}' "
+            if state in ["deleting_agent"]:
                 # Login
                 try:
                     message += "| cloud login "
@@ -336,7 +362,8 @@ class CloudCleanup:
                         # Add peerings delete handle to own list
                         npr_queue += [
                             self.cloudv2.network_peering_endpoint(
-                                id=peernet["networkId"], peering_id=peernet["id"]
+                                id=peernet.get("network_id", peernet.get("networkId")),
+                                peering_id=peernet["id"],
                             )
                         ]
                 # TODO: Prepare needed data for clusters
