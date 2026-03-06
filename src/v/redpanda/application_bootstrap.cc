@@ -394,7 +394,6 @@ void application::wire_up_and_start(
     construct_service(_as).get();
 
     // Bootstrap services.
-    wire_up_and_start_crypto_services();
     wire_up_bootstrap_services();
     start_bootstrap_services();
 

@@ -85,8 +85,14 @@ class OpenSSLConfigIsolationTest(RedpandaTest):
     # Path on the node where we'll write the restrictive OpenSSL config
     RESTRICTIVE_CONFIG_PATH = "/tmp/restrictive_openssl.cnf"
 
+    # Same as the default value of tls_v1_3_cipher_suites, but reordered to trigger config validation
+    REORDERED_DEFAULT_CIPHERS = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_AES_128_CCM_SHA256:TLS_CHACHA20_POLY1305_SHA256"
+
     def __init__(self, test_context: TestContext):
-        super(OpenSSLConfigIsolationTest, self).__init__(test_context)
+        super(OpenSSLConfigIsolationTest, self).__init__(
+            test_context,
+            extra_rp_conf={"tls_v1_3_cipher_suites": self.REORDERED_DEFAULT_CIPHERS},
+        )
         self.security = SecurityConfig()
         self.tls = TLSCertManager(self.logger)
 
