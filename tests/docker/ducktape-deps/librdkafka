@@ -3,6 +3,8 @@ set -e
 mkdir /opt/librdkafka
 curl -SL "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.11.1.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
 cd /opt/librdkafka
+# warmup patch
+curl https://github.com/redpanda-data/librdkafka/commit/9c4f8ea374f9d117c92b2d49ef01416a2c26247e.patch | git apply
 ./configure --enable-gssapi --enable-curl
 make -j$(nproc)
 make install
