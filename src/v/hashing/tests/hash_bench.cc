@@ -31,7 +31,7 @@
 
 static constexpr size_t step_bytes = 57;
 
-static constexpr size_t inner_iters = 1000;
+static constexpr size_t inner_iters = 100000;
 
 template<typename F>
 static size_t header_body(F n) {
