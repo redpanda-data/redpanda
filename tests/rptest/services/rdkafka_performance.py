@@ -159,6 +159,7 @@ class RdkafkaPerformanceService(Service):
         msg_size: int = 1024,
         mode: RdkafkaPerformanceMode = RdkafkaPerformanceMode.PRODUCE,
         *,
+        warmup_msg_count: int = 0,
         group_name: str | None = None,
         num_nodes: int = 1,
         clients_per_node: int = 3,
@@ -192,6 +193,7 @@ class RdkafkaPerformanceService(Service):
         self._topic = topic
         self._msg_count = msg_count
         self._msg_size = msg_size
+        self._warmup_msg_count = warmup_msg_count
         self._mode = mode
         self._group_name = group_name
         self._clients_per_node = clients_per_node
@@ -220,7 +222,7 @@ class RdkafkaPerformanceService(Service):
                 self._sasl_options = security.simple_credentials()
             self._enable_tls = self._enable_tls or security.tls_enabled
 
-    def _build_cmd(self, msg_count: int) -> str:
+    def _build_cmd(self, msg_count: int, warmup_count: int) -> str:
         """Build the full rdkafka_performance command line."""
         parts: list[str] = [self.EXE]
 
@@ -248,6 +250,8 @@ class RdkafkaPerformanceService(Service):
             parts += ["-r", str(self._rate)]
         if self._partition is not None:
             parts += ["-p", str(self._partition)]
+        if warmup_count > 0:
+            parts += ["-w", str(warmup_count)]
 
         # Always use table output for machine-parseable metrics.
         parts.append("-u")
@@ -263,10 +267,12 @@ class RdkafkaPerformanceService(Service):
     def _instance_log_path(self, client_idx: int) -> str:
         return f"/tmp/{self.PROCESS_NAME}_{client_idx}.log"
 
-    def _instance_message_count(self, node: ClusterNode, client_idx: int) -> int:
+    def _instance_message_count(
+        self, node: ClusterNode, client_idx: int, count: int
+    ) -> int:
         total_instances = len(self.nodes) * self._clients_per_node
-        base_count = self._msg_count // total_instances
-        remainder = self._msg_count % total_instances
+        base_count = count // total_instances
+        remainder = count % total_instances
 
         global_instance_idx = (
             self.nodes.index(node) * self._clients_per_node + client_idx
@@ -302,8 +308,11 @@ class RdkafkaPerformanceService(Service):
         self._instances[node.name] = []
 
         for client_idx in range(self._clients_per_node):
-            msg_count = self._instance_message_count(node, client_idx)
-            cmd = self._build_cmd(msg_count)
+            msg_count = self._instance_message_count(node, client_idx, self._msg_count)
+            warmup_count = self._instance_message_count(
+                node, client_idx, self._warmup_msg_count
+            )
+            cmd = self._build_cmd(msg_count, warmup_count)
             log_path = self._instance_log_path(client_idx)
             wrapped_cmd = f"nohup {cmd} >> {log_path} 2>&1 & echo $!"
 
