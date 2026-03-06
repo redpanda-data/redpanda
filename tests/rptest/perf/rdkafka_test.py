@@ -38,6 +38,7 @@ class RdkafkaPerf(RedpandaTest):
             msg_size=self.MSG_SIZE,
             num_nodes=1,
             clients_per_node=1,
+            warmup_msg_count=50000,
             extra_config={
                 "enable.idempotence": "true",
                 "batch.size": "1",
@@ -71,7 +72,7 @@ class RdkafkaPerf(RedpandaTest):
         start_time = time.time()
         iterations = 0
         while (time.time() - start_time) < 90:
-            self.run_workload(spec, 100000, write_metrics=True)
+            self.run_workload(spec, 100000, write_metrics=False)
             iterations += 1
         self.logger.info(f"Warmup complete after {iterations} iteration(s)")
 
