@@ -253,14 +253,14 @@ void materialized_resources::register_segment(materialized_segment_state& s) {
     if (units > estimate) {
         vlog(
           cst_log.debug,
-          "Returning extra units. Current: {}, extimate: {}",
+          "Returning extra units. Current: {}, estimate: {}",
           units,
           estimate);
         s._units.return_units(units - estimate);
     } else {
         vlog(
           cst_log.debug,
-          "Adopting extra units. Current: {}, extimate: {}",
+          "Adopting extra units. Current: {}, estimate: {}",
           units,
           estimate);
         auto tr = _mem_units.take(estimate - units);
