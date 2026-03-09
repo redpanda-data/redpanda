@@ -31,8 +31,11 @@ ss::abort_source abort_never;
 constexpr archival::run_quota_t mock_quota{10};
 class mock_job : public archival::housekeeping_job {
 public:
-    explicit mock_job(std::chrono::milliseconds ms)
+    explicit mock_job(
+      std::chrono::milliseconds ms,
+      archival::run_quota_t consume_per_run = archival::run_quota_t(0))
       : _delay(ms)
+      , _consume_per_run(consume_per_run)
       , _root_rtc(_as) {}
 
     mock_job()
@@ -46,10 +49,18 @@ public:
         if (_throw) {
             throw std::runtime_error("Job failed");
         }
+        if (quota < _consume_per_run) {
+            run_result result{
+              .status = run_status::skipped,
+              .consumed = archival::run_quota_t(0),
+              .remaining = quota,
+            };
+            co_return result;
+        }
         run_result result{
-          .status = run_status::skipped,
-          .consumed = archival::run_quota_t(0),
-          .remaining = quota,
+          .status = run_status::ok,
+          .consumed = _consume_per_run,
+          .remaining = quota - _consume_per_run,
         };
         vlog(test_log.info, "mock job started");
         executed++;
@@ -92,6 +103,7 @@ public:
 
 private:
     std::chrono::milliseconds _delay;
+    archival::run_quota_t _consume_per_run{archival::run_quota_t(0)};
     ss::abort_source _as;
     retry_chain_node _root_rtc;
     ss::gate _gate;
@@ -268,4 +280,41 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_job_throws) {
         job2.stop().get();
     }
     wf.stop().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_round_robin_quota) {
+    archival::housekeeping_workflow wf(archival::run_quota_t{1});
+    mock_job job1(10ms, archival::run_quota_t{1});
+    mock_job job2(10ms, archival::run_quota_t{1});
+    mock_job job3(10ms, archival::run_quota_t{1});
+    wf.register_job(job1);
+    wf.register_job(job2);
+    wf.register_job(job3);
+    wf.start();
+
+    wf.resume(false);
+    wait_for_workflow_state(wf, archival::housekeeping_state::idle);
+    BOOST_REQUIRE_EQUAL(job1.executed, 1);
+    BOOST_REQUIRE_EQUAL(job2.executed, 0);
+    BOOST_REQUIRE_EQUAL(job3.executed, 0);
+
+    wf.resume(false);
+    wait_for_workflow_state(wf, archival::housekeeping_state::idle);
+    BOOST_REQUIRE_EQUAL(job1.executed, 1);
+    BOOST_REQUIRE_EQUAL(job2.executed, 0);
+    BOOST_REQUIRE_EQUAL(job3.executed, 1);
+
+    wf.resume(false);
+    wait_for_workflow_state(wf, archival::housekeeping_state::idle);
+    BOOST_REQUIRE_EQUAL(job1.executed, 2);
+    BOOST_REQUIRE_EQUAL(job2.executed, 0);
+    BOOST_REQUIRE_EQUAL(job3.executed, 1);
+
+    wf.deregister_job(job1);
+    wf.deregister_job(job2);
+    wf.deregister_job(job3);
+    wf.stop().get();
+    job1.stop().get();
+    job2.stop().get();
+    job3.stop().get();
 }
