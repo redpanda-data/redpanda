@@ -8,6 +8,7 @@ redpanda_cc_library(
     hdrs = [
         "compiler_utils.h",
         "format_to.h",
+        "invariants.h",
         "likely.h",
         "oncore.h",
         "outcome.h",
@@ -21,10 +22,17 @@ redpanda_cc_library(
         "vassert-register.h",
         "vlog.h",
     ],
+    defines = select({
+        "//bazel:antithesis_enabled": ["REDPANDA_INVARIANTS_ANTITHESIS"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         "@boost//:outcome",
         "@fmt",
         "@seastar",
-    ],
+    ] + select({
+        "//bazel:antithesis_enabled": ["@antithesis_sdk_cpp//:antithesis_sdk"],
+        "//conditions:default": [],
+    }),
 )
