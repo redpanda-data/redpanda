@@ -48,6 +48,9 @@ _helm_e2e_artifacts/
 user.bazelrc
 /external
 
+# antithesis auto-generated build files
+/.antithesis/
+
 # Vagrant
 .vagrant/
 

@@ -411,8 +411,20 @@ oci.pull(
         "linux/arm64/v8",
     ],
 )
+oci.pull(
+    name = "debian12_slim",
+    digest = "sha256:74d56e3931e0d5a1dd51f8c8a2466d21de84a271cd3b5a733b803aa91abf4421",
+    image = "docker.io/library/debian",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64/v8",
+    ],
+)
 use_repo(
     oci,
+    "debian12_slim",
+    "debian12_slim_linux_amd64",
+    "debian12_slim_linux_arm64_v8",
     "distroless_cc_debian12",
     "distroless_cc_debian12_linux_amd64",
     "distroless_cc_debian12_linux_arm64_v8",

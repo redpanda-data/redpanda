@@ -1627,7 +1627,7 @@
     "@@rules_oci+//oci:extensions.bzl%oci": {
       "general": {
         "bzlTransitiveDigest": "7mvYd9qW/BecPot3UiD0yQKzBwuHv+sleAQcgADZfdo=",
-        "usagesDigest": "D8Vc31kJbvSZtGmk/s82uAuo4Kg6P7b5rd/7tw+gknI=",
+        "usagesDigest": "H9lILyI5bhwcXB6o43JrsADeGnz/mEqRT0Iq6Y9LiNk=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -1669,6 +1669,46 @@
                 "@@platforms//cpu:arm64": "@distroless_cc_debian12_linux_arm64_v8"
               },
               "bzlmod_repository": "distroless_cc_debian12",
+              "reproducible": true
+            }
+          },
+          "debian12_slim_linux_amd64": {
+            "repoRuleId": "@@rules_oci+//oci/private:pull.bzl%oci_pull",
+            "attributes": {
+              "scheme": "https",
+              "registry": "index.docker.io",
+              "repository": "library/debian",
+              "identifier": "sha256:74d56e3931e0d5a1dd51f8c8a2466d21de84a271cd3b5a733b803aa91abf4421",
+              "platform": "linux/amd64",
+              "target_name": "debian12_slim_linux_amd64",
+              "bazel_tags": []
+            }
+          },
+          "debian12_slim_linux_arm64_v8": {
+            "repoRuleId": "@@rules_oci+//oci/private:pull.bzl%oci_pull",
+            "attributes": {
+              "scheme": "https",
+              "registry": "index.docker.io",
+              "repository": "library/debian",
+              "identifier": "sha256:74d56e3931e0d5a1dd51f8c8a2466d21de84a271cd3b5a733b803aa91abf4421",
+              "platform": "linux/arm64/v8",
+              "target_name": "debian12_slim_linux_arm64_v8",
+              "bazel_tags": []
+            }
+          },
+          "debian12_slim": {
+            "repoRuleId": "@@rules_oci+//oci/private:pull.bzl%oci_alias",
+            "attributes": {
+              "target_name": "debian12_slim",
+              "scheme": "https",
+              "registry": "index.docker.io",
+              "repository": "library/debian",
+              "identifier": "sha256:74d56e3931e0d5a1dd51f8c8a2466d21de84a271cd3b5a733b803aa91abf4421",
+              "platforms": {
+                "@@platforms//cpu:x86_64": "@debian12_slim_linux_amd64",
+                "@@platforms//cpu:arm64": "@debian12_slim_linux_arm64_v8"
+              },
+              "bzlmod_repository": "debian12_slim",
               "reproducible": true
             }
           },
@@ -2023,7 +2063,10 @@
           "explicitRootModuleDirectDevDeps": [
             "distroless_cc_debian12",
             "distroless_cc_debian12_linux_amd64",
-            "distroless_cc_debian12_linux_arm64_v8"
+            "distroless_cc_debian12_linux_arm64_v8",
+            "debian12_slim",
+            "debian12_slim_linux_amd64",
+            "debian12_slim_linux_arm64_v8"
           ],
           "useAllRepos": "NO",
           "reproducible": false
