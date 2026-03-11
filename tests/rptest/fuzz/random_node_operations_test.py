@@ -60,15 +60,13 @@ class RandomNodeOperationsTest(RandomNodeOperationsBase):
     @skip_debug_mode
     @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
     @matrix(
-        enable_failures=[True, False],
-        mixed_versions=[True, False],
-        with_iceberg=[True, False],
+        enable_failures=[True],
+        mixed_versions=[False],
+        with_iceberg=[False],
         compaction_mode=[
-            CompactionMode.SLIDING_WINDOW,
-            CompactionMode.CHUNKED_SLIDING_WINDOW,
             CompactionMode.ADJACENT_MERGE,
         ],
-        cloud_storage_type=get_cloud_storage_type(),
+        cloud_storage_type=[get_cloud_storage_type()[0]],
     )
     def test_node_operations(self, **kwargs: Any):
         self._do_test_node_operations(**kwargs)

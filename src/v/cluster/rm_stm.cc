@@ -2334,6 +2334,7 @@ rm_stm::take_raft_snapshot(model::offset last_included_offset) {
 ss::future<> rm_stm::apply_raft_snapshot(const iobuf& buf) {
     auto local_buf = buf.copy();
     auto units = co_await _state_lock.hold_write_lock();
+    co_await ss::sleep(1s); // simulate delay
     vlog(
       _ctx_log.info,
       "Resetting all state, reason: log eviction, offset: {}",

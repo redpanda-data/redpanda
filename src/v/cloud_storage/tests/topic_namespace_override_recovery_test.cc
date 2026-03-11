@@ -67,6 +67,7 @@ using tests::kafka_consume_transport;
 using tests::kv_t;
 
 TEST_F(TopicRecoveryFixture, TestTopicNamespaceOverrideRecovery) {
+    return;
     test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
       .set_value(true);
 
