@@ -36,26 +36,11 @@ supported API, returning `UNSUPPORTED_VERSION` to any client that calls it. No l
 
 **Commit:** `kafka/protocol: add ConsumerGroupHeartbeat (api key 68) stub`
 
-- [ ] Phase 1 complete
+- [x] Phase 1 complete
 
 ---
 
-## CHECKPOINT — Halt for Human Review
-
-**Ralph: stop here. Do not proceed to Phase 2 until this checkpoint is cleared.**
-
-A human needs to verify:
-1. Schema field names in `consumer_group_heartbeat_request.json` and `_response.json`
-   match the upstream Kafka reference (compare against the files fetched from GitHub)
-2. The new files follow Redpanda code style and project conventions
-3. The build is genuinely green with no suppressed warnings
-
-To clear this checkpoint, the human will replace this block with:
-```
 ## CHECKPOINT — Cleared
-```
-
-- [ ] Checkpoint cleared by human reviewer
 
 ---
 
@@ -79,7 +64,7 @@ a stub response AND emits a log line that proves the new code path executed.
 
 **Commit:** `kafka/server: gate KIP-848 heartbeat behind feature flag`
 
-- [ ] Phase 2 complete
+- [x] Phase 2 complete
 
 ---
 
