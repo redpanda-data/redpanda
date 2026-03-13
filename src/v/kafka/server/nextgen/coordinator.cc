@@ -9,21 +9,56 @@
 
 #include "kafka/server/nextgen/coordinator.h"
 
+#include "config/configuration.h"
 #include "kafka/protocol/logger.h"
+#include "metrics/prometheus_sanitize.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/metrics.hh>
 
 namespace kafka::nextgen {
 
+ss::future<> coordinator::start() {
+    setup_metrics();
+    co_return;
+}
+
+void coordinator::setup_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka_nextgen"),
+      {
+        sm::make_counter(
+          "heartbeat_total",
+          [this] { return _heartbeat_total; },
+          sm::description(
+            "Total number of KIP-848 consumer group heartbeats processed")),
+        sm::make_counter(
+          "group_state_transitions_total",
+          [this] { return _state_transitions_total; },
+          sm::description(
+            "Total number of KIP-848 consumer group member state transitions")),
+      },
+      {},
+      {sm::shard_label});
+}
+
 ss::future<heartbeat_result> coordinator::heartbeat(
   ss::sstring group_id, ss::sstring member_id, int32_t member_epoch) {
+    ++_heartbeat_total;
     auto& group = _groups[group_id];
 
     if (member_epoch == -1) {
         ss::sstring new_id = uuid_t::create();
         group.members[new_id] = member_info{
           .epoch = 0, .state = member_state::reconciling};
+        ++_state_transitions_total;
         vlog(
           klog.info,
           "kip848: group {} member {} -> reconciling (epoch=0)",
@@ -49,6 +84,7 @@ ss::future<heartbeat_result> coordinator::heartbeat(
     auto prev = m.state;
     if (m.state == member_state::reconciling) {
         m.state = member_state::stable;
+        ++_state_transitions_total;
     }
     vlog(
       klog.info,
@@ -59,9 +95,7 @@ ss::future<heartbeat_result> coordinator::heartbeat(
       m.state == member_state::stable ? "stable" : "reconciling",
       m.epoch);
     co_return heartbeat_result{
-      .ec = error_code::none,
-      .member_id = member_id,
-      .member_epoch = m.epoch};
+      .ec = error_code::none, .member_id = member_id, .member_epoch = m.epoch};
 }
 
 ss::future<> coordinator::stop() {

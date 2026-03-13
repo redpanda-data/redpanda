@@ -12,8 +12,10 @@
 #include "base/seastarx.h"
 #include "container/chunked_hash_map.h"
 #include "kafka/protocol/errors.h"
+#include "metrics/metrics.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/sstring.hh>
 
 #include <cstdint>
@@ -36,11 +38,14 @@ struct heartbeat_result {
 /// Member lifecycle:
 ///   - member_epoch == -1 → join sentinel; a new UUID member_id is assigned
 ///     and the member starts in RECONCILING with epoch 0.
-///   - known member, matching epoch → epoch advances; state moves toward STABLE.
+///   - known member, matching epoch → epoch advances; state moves toward
+///   STABLE.
 ///   - known member, mismatched epoch → fenced_member_epoch error.
 ///   - unknown member_id → unknown_member_id error.
 class coordinator {
 public:
+    ss::future<> start();
+
     ss::future<heartbeat_result> heartbeat(
       ss::sstring group_id, ss::sstring member_id, int32_t member_epoch);
 
@@ -58,7 +63,14 @@ private:
         chunked_hash_map<ss::sstring, member_info> members;
     };
 
+    void setup_metrics();
+
     chunked_hash_map<ss::sstring, group_info> _groups;
+
+    uint64_t _heartbeat_total{0};
+    uint64_t _state_transitions_total{0};
+
+    metrics::internal_metric_groups _metrics;
 };
 
 } // namespace kafka::nextgen
