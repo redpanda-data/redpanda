@@ -477,6 +477,16 @@ validate_default_redpanda_storage_mode(const configuration& config) {
 }
 
 std::optional<ss::sstring>
+validate_cloud_topics_enabled(const configuration& config) {
+    if (config.cloud_topics_enabled() && !config.cloud_storage_enabled()) {
+        return fmt::format(
+          "cloud_topics_enabled requires cloud_storage_enabled to be set to "
+          "true");
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
 validate_sane_partition_balancer_timeouts(const configuration& config) {
     // how often node status sends an rpc
     auto node_status = config.node_status_interval();

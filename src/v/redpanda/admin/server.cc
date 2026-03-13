@@ -2063,6 +2063,13 @@ void config_multi_property_validation(
         errors[ss::sstring{updated_config.default_redpanda_storage_mode.name()}]
           = storage_mode_err.value();
     }
+
+    // Validate cloud_topics_enabled dependencies
+    auto ct_err = config::validate_cloud_topics_enabled(updated_config);
+    if (ct_err.has_value()) {
+        errors[ss::sstring{updated_config.cloud_topics_enabled.name()}]
+          = ct_err.value();
+    }
 }
 } // namespace
 

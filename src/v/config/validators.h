@@ -90,4 +90,7 @@ validate_sane_partition_balancer_timeouts(const configuration& config);
 std::optional<ss::sstring>
 validate_default_redpanda_storage_mode(const configuration& config);
 
+std::optional<ss::sstring>
+validate_cloud_topics_enabled(const configuration& config);
+
 }; // namespace config
