@@ -699,6 +699,9 @@ struct configuration final : public config_store {
     property<bool> enable_mpx_extensions;
     bounded_property<uint64_t> virtual_cluster_min_producer_ids;
 
+    // KIP-848
+    property<bool> enable_kip848_next_gen_consumer_group_protocol;
+
     // temporary - to be deprecated
     property<bool> unsafe_enable_consumer_offsets_delete_retention;
 

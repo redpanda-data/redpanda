@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/consumer_group_heartbeat.h"
 
+#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -21,8 +22,22 @@ ss::future<response_ptr> consumer_group_heartbeat_handler::handle(
     consumer_group_heartbeat_request request;
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
-    co_return co_await ctx.respond(
-      consumer_group_heartbeat_response(error_code::unsupported_version));
+
+    if (!config::shard_local_cfg()
+           .enable_kip848_next_gen_consumer_group_protocol()) {
+        co_return co_await ctx.respond(
+          consumer_group_heartbeat_response(error_code::unsupported_version));
+    }
+
+    vlog(
+      klog.debug,
+      "kip848: heartbeat group={} member={}",
+      request.data.group_id,
+      request.data.member_id);
+
+    consumer_group_heartbeat_response response;
+    response.data.error_code = error_code::none;
+    co_return co_await ctx.respond(std::move(response));
 }
 
 } // namespace kafka

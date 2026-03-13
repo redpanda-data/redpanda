@@ -3964,6 +3964,13 @@ configuration::configuration()
       "Enable Redpanda extensions for MPX.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , enable_kip848_next_gen_consumer_group_protocol(
+      *this,
+      "enable_kip848_next_gen_consumer_group_protocol",
+      "Enable the KIP-848 next-generation consumer group rebalance protocol "
+      "(experimental).",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , virtual_cluster_min_producer_ids(
       *this,
       "virtual_cluster_min_producer_ids",
