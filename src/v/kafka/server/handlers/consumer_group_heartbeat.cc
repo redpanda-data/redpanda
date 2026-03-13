@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/server/nextgen/coordinator.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 
@@ -29,14 +30,30 @@ ss::future<response_ptr> consumer_group_heartbeat_handler::handle(
           consumer_group_heartbeat_response(error_code::unsupported_version));
     }
 
+    if (request.data.group_id.empty()) {
+        co_return co_await ctx.respond(
+          consumer_group_heartbeat_response(error_code::invalid_group_id));
+    }
+
     vlog(
       klog.debug,
-      "kip848: heartbeat group={} member={}",
+      "kip848: heartbeat group={} member={} epoch={}",
       request.data.group_id,
-      request.data.member_id);
+      request.data.member_id,
+      request.data.member_epoch);
+
+    auto result = co_await ctx.nextgen_coordinator().heartbeat(
+      request.data.group_id,
+      request.data.member_id,
+      request.data.member_epoch);
 
     consumer_group_heartbeat_response response;
-    response.data.error_code = error_code::none;
+    response.data.error_code = result.ec;
+    response.data.heartbeat_interval_ms = 5000;
+    if (result.ec == error_code::none) {
+        response.data.member_id = std::move(result.member_id);
+        response.data.member_epoch = result.member_epoch;
+    }
     co_return co_await ctx.respond(std::move(response));
 }
 

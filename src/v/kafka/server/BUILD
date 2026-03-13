@@ -251,6 +251,7 @@ redpanda_cc_library(
         ":qdc_monitor_config",
         ":security",
         ":topic_config_utils",
+        "//src/v/kafka/server/nextgen:coordinator",
         "//proto/redpanda/core/admin/v2:kafka_connections_redpanda_proto",
         "//src/v/base",
         "//src/v/bytes",
@@ -485,6 +486,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":server",
+        "//src/v/kafka/server/nextgen:coordinator",
     ],
     visibility = ["//src/v/redpanda:__pkg__"],
     deps = [

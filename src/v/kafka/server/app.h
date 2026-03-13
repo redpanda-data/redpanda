@@ -18,6 +18,10 @@
 
 #include <memory>
 
+namespace kafka::nextgen {
+class coordinator;
+} // namespace kafka::nextgen
+
 namespace cluster {
 class metadata_cache;
 class topics_frontend;
@@ -121,7 +125,12 @@ public:
     seastar::sharded<server>& ref() { return _server; }
     server& local() { return _server.local(); }
 
+    seastar::sharded<nextgen::coordinator>& nextgen_coordinator() {
+        return _nextgen_coordinator;
+    }
+
 private:
+    seastar::sharded<nextgen::coordinator> _nextgen_coordinator;
     seastar::sharded<server> _server;
 };
 

@@ -51,6 +51,10 @@ class singleton_thread_worker;
 
 namespace kafka {
 
+namespace nextgen {
+class coordinator;
+} // namespace nextgen
+
 class server final
   : public net::server
   , public ss::peering_sharded_service<server> {
@@ -83,6 +87,7 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<datalake_throttle_manager>&,
       ss::sharded<cluster::cluster_link::frontend>&,
+      ss::sharded<nextgen::coordinator>&,
       std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
       const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
@@ -259,6 +264,10 @@ public:
         return _cluster_link_frontend.local();
     }
 
+    nextgen::coordinator& nextgen_coordinator() {
+        return _nextgen_coordinator.local();
+    }
+
     bool is_cluster_link_active() const;
 
     chunked_vector<ss::lw_shared_ptr<const connection_context>>
@@ -300,6 +309,7 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<kafka::datalake_throttle_manager>& _datalake_throttle_manager;
     ss::sharded<cluster::cluster_link::frontend>& _cluster_link_frontend;
+    ss::sharded<nextgen::coordinator>& _nextgen_coordinator;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;

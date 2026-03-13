@@ -190,6 +190,10 @@ public:
 
     kafka::group_router& groups() { return _conn->server().group_router(); }
 
+    nextgen::coordinator& nextgen_coordinator() {
+        return _conn->server().nextgen_coordinator();
+    }
+
     cluster::shard_table& shards() { return _conn->server().shard_table(); }
 
     ss::sharded<cluster::partition_manager>& partition_manager() {

@@ -104,7 +104,7 @@ The test suite must cover:
 
 **Commit:** `kafka/server/nextgen: add KIP-848 in-memory group coordinator with tests`
 
-- [ ] Phase 3 complete
+- [x] Phase 3 complete
 
 ---
 
@@ -119,7 +119,59 @@ The test suite must cover:
 
 **Commit:** `kafka/server/nextgen: add Prometheus metrics for KIP-848`
 
-- [ ] Phase 4 complete
+- [x] Phase 4 complete
+
+---
+
+## Phase 5 — Wire Handler to Coordinator
+
+**Goal:** The `consumer_group_heartbeat` handler routes requests through
+`nextgen::coordinator` and returns real protocol values. The stub response
+is replaced with actual coordinator output.
+
+**Done condition:**
+- `bazel build //src/v/kafka/...` green
+- `bazel test //src/v/kafka/server/nextgen/tests:coordinator_test` green
+- Handler populates `member_id`, `member_epoch`, and `heartbeat_interval_ms`
+  from coordinator result (not hardcoded/zero defaults)
+- A new **Bazel C++ unit test** (extend `coordinator_test.cc` or add a new
+  target) directly exercises the handler path: a new-member heartbeat
+  (`member_epoch = -1`) returns a valid `member_id` and `member_epoch = 0`;
+  a stale epoch returns `fenced_member_epoch`
+- Do NOT modify `tests/rptest/tests/kip848_nextgen_consumer_group_test.py`
+  — that is a separate live-cluster integration test harness, already written
+
+**Implementation guidance:**
+- Grep `src/v/kafka/server/request_context.h` to understand how sharded
+  services are exposed to handlers; follow the same pattern to expose
+  `ss::sharded<nextgen::coordinator>`
+- `heartbeat_interval_ms` in the response should be a reasonable default
+  (e.g. 5000 ms) until the coordinator tracks it per-group
+- Request validation: reject empty `group_id` with `invalid_group_id`
+  before reaching the coordinator
+
+**Commit:** `kafka/server/nextgen: wire heartbeat handler to coordinator`
+
+- [x] Phase 5 complete
+
+---
+
+## Phase 6 — Pre-PR Gate
+
+**Goal:** All pre-PR checklist items pass. Code is clean, formatted, and
+ready for review.
+
+**Done condition:**
+- `bazel build //src/v/kafka/...` exits 0
+- `bazel test //src/v/kafka/server/nextgen/tests/...` exits 0
+- `bazel run //tools:clang_format` produces no diff output
+- `git diff dev -- 'src/v/kafka/server/group*'` is empty (isolation check)
+- `git log --oneline dev..HEAD` shows exactly one commit per phase (5 total)
+  with clean messages matching the format in each phase's Commit line
+
+**Commit:** none — this phase is a verification gate, not a code change
+
+- [ ] Phase 6 complete
 
 ---
 
@@ -131,6 +183,7 @@ Before opening a pull request, verify all of the following:
 - [ ] `bazel test //src/v/kafka/server/nextgen/tests/...` green
 - [ ] `bazel run //tools:clang_format` shows no diffs
 - [ ] `git diff dev -- 'src/v/kafka/server/group*'` shows no changes (isolation preserved)
+- [ ] `git diff dev -- 'tests/rptest/'` shows no changes to the Python integration test harness
 - [ ] `git log --oneline dev..HEAD` shows one commit per phase with clean messages
 
 ---

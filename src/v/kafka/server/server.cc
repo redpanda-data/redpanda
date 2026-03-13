@@ -32,6 +32,7 @@
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/datalake_throttle_manager.h"
+#include "kafka/server/nextgen/coordinator.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_manager.h"
@@ -162,6 +163,7 @@ server::server(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<kafka::datalake_throttle_manager>& datalake_throttle_manager,
   ss::sharded<cluster::cluster_link::frontend>& clfe,
+  ss::sharded<nextgen::coordinator>& nextgen_coord,
   std::optional<qdc_monitor_config> qdc_config,
   ssx::singleton_thread_worker& tw,
   const std::unique_ptr<pandaproxy::schema_registry::api>& sr) noexcept
@@ -200,6 +202,7 @@ server::server(
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _datalake_throttle_manager(datalake_throttle_manager)
   , _cluster_link_frontend(clfe)
+  , _nextgen_coordinator(nextgen_coord)
   , _mtls_principal_mapper(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
   , _gssapi_principal_mapper(

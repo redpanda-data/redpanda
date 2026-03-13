@@ -10,7 +10,10 @@
  */
 #include "kafka/server/app.h"
 
+#include "kafka/server/nextgen/coordinator.h"
 #include "kafka/server/server.h"
+
+#include <seastar/core/coroutine.hh>
 
 #include <memory>
 
@@ -47,7 +50,10 @@ seastar::future<> server_app::init(
   std::optional<qdc_monitor_config> qdc,
   ssx::singleton_thread_worker& worker,
   const std::unique_ptr<pandaproxy::schema_registry::api>& pp) {
-    return _server.start(
+    co_await _nextgen_coordinator.start();
+    co_await _nextgen_coordinator.invoke_on_all(
+      &nextgen::coordinator::start);
+    co_await _server.start(
       conf,
       smp,
       fetch_sched,
@@ -75,6 +81,7 @@ seastar::future<> server_app::init(
       std::ref(tx),
       std::ref(dtm),
       std::ref(clfe),
+      std::ref(_nextgen_coordinator),
       qdc,
       std::ref(worker),
       std::ref(pp));
@@ -94,6 +101,11 @@ seastar::future<> server_app::wait_for_shutdown() {
     return _server.invoke_on_all(&net::server::wait_for_shutdown);
 }
 
-seastar::future<> server_app::stop() { return _server.stop(); }
+seastar::future<> server_app::stop() {
+    co_await _server.stop();
+    if (_nextgen_coordinator.local_is_initialized()) {
+        co_await _nextgen_coordinator.stop();
+    }
+}
 
 } // namespace kafka
