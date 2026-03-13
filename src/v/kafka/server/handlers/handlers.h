@@ -17,6 +17,7 @@
 #include "kafka/server/handlers/alter_partition_reassignments.h"
 #include "kafka/server/handlers/alter_user_scram_credentials.h"
 #include "kafka/server/handlers/api_versions.h"
+#include "kafka/server/handlers/consumer_group_heartbeat.h"
 #include "kafka/server/handlers/create_acls.h"
 #include "kafka/server/handlers/create_partitions.h"
 #include "kafka/server/handlers/create_topics.h"
@@ -82,6 +83,7 @@ using request_types = make_request_types<
   api_versions_handler,
   join_group_handler,
   heartbeat_handler,
+  consumer_group_heartbeat_handler,
   delete_records_handler,
   leave_group_handler,
   sync_group_handler,

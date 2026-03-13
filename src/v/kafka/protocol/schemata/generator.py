@@ -155,6 +155,22 @@ path_type_map = {
             "MemberId": ("kafka::member_id", "string"),
         },
     },
+    "ConsumerGroupHeartbeatRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "TopicPartitions": {
+            "TopicId": ("model::topic_id", "uuid"),
+            "Partitions": ("model::partition_id", "int32"),
+        },
+    },
+    "ConsumerGroupHeartbeatResponseData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "Assignment": {
+            "TopicPartitions": {
+                "TopicId": ("model::topic_id", "uuid"),
+                "Partitions": ("model::partition_id", "int32"),
+            },
+        },
+    },
     "HeartbeatRequestData": {
         "GenerationId": ("kafka::generation_id", "int32"),
         "MemberId": ("kafka::member_id", "string"),
@@ -727,10 +743,11 @@ STRUCT_TYPES = [
     "ScramCredentialUpsertion",
     "AlterUserScramCredentialsResult",
     "Coordinator",
+    "TopicPartitions",
 ]
 
 # A list of StructTypes that are allowed to be not arrays in the schema.
-ALLOWED_SINGULAR_STRUCT_TYPES = ["EpochEndOffset"]
+ALLOWED_SINGULAR_STRUCT_TYPES = ["EpochEndOffset", "Assignment"]
 
 DROP_STREAM_OPERATOR = [
     "metadata_response_data",
@@ -757,7 +774,7 @@ TAGGED_WITH_FIELDS = []
 # respective types are correctly not prefixed with [].
 # They must not be treated as ArrayTypes
 # This list is the names after struct_renames have been applied.
-SINGULAR_STRUCT_TYPES = ["DivergingEpochEndOffset", "LeaderIdAndEpoch", "SnapshotId"]
+SINGULAR_STRUCT_TYPES = ["DivergingEpochEndOffset", "LeaderIdAndEpoch", "SnapshotId", "Assignment"]
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())

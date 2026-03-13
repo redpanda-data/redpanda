@@ -17,6 +17,7 @@
 #include "kafka/protocol/schemata/alter_partition_reassignments_request.h"
 #include "kafka/protocol/schemata/alter_user_scram_credentials_request.h"
 #include "kafka/protocol/schemata/api_versions_request.h"
+#include "kafka/protocol/schemata/consumer_group_heartbeat_request.h"
 #include "kafka/protocol/schemata/create_acls_request.h"
 #include "kafka/protocol/schemata/create_partitions_request.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
@@ -78,6 +79,7 @@ using request_types = make_request_types<
   api_versions_api,
   join_group_api,
   heartbeat_api,
+  consumer_group_heartbeat_api,
   delete_records_api,
   leave_group_api,
   sync_group_api,
