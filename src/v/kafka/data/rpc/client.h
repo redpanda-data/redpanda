@@ -117,6 +117,14 @@ private:
     get_remote_partition_offsets(
       model::node_id, chunked_vector<topic_partitions> topics);
 
+    ss::future<result<consume_reply, cluster::errc>> do_consume_once(
+      model::topic_partition,
+      kafka::offset start_offset,
+      kafka::offset max_offset,
+      size_t min_bytes,
+      size_t max_bytes,
+      model::timeout_clock::duration timeout);
+
     template<typename Func>
     std::invoke_result_t<Func> retry(Func&&);
 
