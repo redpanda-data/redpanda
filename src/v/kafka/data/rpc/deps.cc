@@ -51,6 +51,11 @@ public:
         return _table->local().get_leader(tp_ns, p);
     }
 
+    std::optional<cluster::leader_term> get_leader_term(
+      model::topic_namespace_view tp_ns, model::partition_id p) const final {
+        return _table->local().get_leader_term(tp_ns, p);
+    }
+
 private:
     ss::sharded<cluster::partition_leaders_table>* _table;
 };
@@ -242,6 +247,11 @@ kafka::data::rpc::partition_leader_cache::make_default(
 std::optional<model::node_id>
 partition_leader_cache::get_leader_node(const model::ntp& ntp) const {
     return get_leader_node(model::topic_namespace_view(ntp), ntp.tp.partition);
+}
+
+std::optional<cluster::leader_term>
+partition_leader_cache::get_leader_term(const model::ntp& ntp) const {
+    return get_leader_term(model::topic_namespace_view(ntp), ntp.tp.partition);
 }
 
 std::unique_ptr<topic_metadata_cache>

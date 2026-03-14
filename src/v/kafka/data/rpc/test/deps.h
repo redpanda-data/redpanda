@@ -213,6 +213,16 @@ public:
         return it->second;
     }
 
+    std::optional<cluster::leader_term> get_leader_term(
+      model::topic_namespace_view tp_ns, model::partition_id p) const final {
+        auto ntp = model::ntp(tp_ns.ns, tp_ns.tp, p);
+        auto it = _leader_map.find(ntp);
+        if (it == _leader_map.end()) {
+            return std::nullopt;
+        }
+        return cluster::leader_term(it->second, model::term_id{1});
+    }
+
     void set_leader_node(const model::ntp& ntp, model::node_id nid) {
         _leader_map.insert_or_assign(ntp, nid);
         vassert(_leader_map.find(ntp) != _leader_map.end(), "what??");
@@ -242,6 +252,11 @@ public:
     std::optional<model::node_id> get_leader_node(
       model::topic_namespace_view tp_ns, model::partition_id p) const final {
         return _delegate->get_leader_node(tp_ns, p);
+    }
+
+    std::optional<cluster::leader_term> get_leader_term(
+      model::topic_namespace_view tp_ns, model::partition_id p) const final {
+        return _delegate->get_leader_term(tp_ns, p);
     }
 
     void set_leader_node(const model::ntp& ntp, model::node_id nid) {

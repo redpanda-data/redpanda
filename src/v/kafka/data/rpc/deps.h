@@ -52,6 +52,17 @@ public:
     virtual std::optional<model::node_id>
       get_leader_node(model::topic_namespace_view, model::partition_id) const
       = 0;
+
+    /**
+     * Lookup leader and term for a given partition. Both are read from the
+     * same table entry so they are mutually consistent.
+     */
+    std::optional<cluster::leader_term>
+    get_leader_term(const model::ntp& ntp) const;
+
+    virtual std::optional<cluster::leader_term>
+      get_leader_term(model::topic_namespace_view, model::partition_id) const
+      = 0;
 };
 
 /**
