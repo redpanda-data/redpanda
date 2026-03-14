@@ -617,7 +617,7 @@ cache::remove_segment_full(const file_list_item& file_stat) {
           file_stat.path);
         result.deleted_size += file_stat.size;
         this_segment_deleted_bytes += file_stat.size;
-        _current_cache_size -= file_stat.size;
+        _current_cache_size -= std::min(file_stat.size, _current_cache_size);
         _current_cache_objects -= 1;
         result.deleted_count += 1;
 
@@ -653,7 +653,7 @@ cache::remove_segment_full(const file_list_item& file_stat) {
                 result.deleted_size += sz;
                 this_segment_deleted_bytes += sz;
                 result.deleted_count += 1;
-                _current_cache_size -= sz;
+                _current_cache_size -= std::min(sz, _current_cache_size);
                 _current_cache_objects -= 1;
             } catch (const std::filesystem::filesystem_error& e) {
                 if (e.code() != std::errc::no_such_file_or_directory) {
@@ -669,7 +669,7 @@ cache::remove_segment_full(const file_list_item& file_stat) {
                 result.deleted_size += sz;
                 this_segment_deleted_bytes += sz;
                 result.deleted_count += 1;
-                _current_cache_size -= sz;
+                _current_cache_size -= std::min(sz, _current_cache_size);
                 _current_cache_objects -= 1;
             } catch (const std::filesystem::filesystem_error& e) {
                 if (e.code() != std::errc::no_such_file_or_directory) {
@@ -1396,7 +1396,7 @@ ss::future<> cache::_invalidate(const std::filesystem::path& key) {
         auto stat = co_await ss::file_stat(path);
         _access_time_tracker.remove(key.native());
         co_await delete_file_and_empty_parents(path);
-        _current_cache_size -= stat.size;
+        _current_cache_size -= std::min(stat.size, _current_cache_size);
         _current_cache_objects -= 1;
         probe.set_size(_current_cache_size);
         probe.set_num_files(_current_cache_objects);
