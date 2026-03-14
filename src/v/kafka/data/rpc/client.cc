@@ -531,6 +531,66 @@ client::get_remote_partition_offsets(
     co_return ret_t(std::move(result.value().partition_offsets));
 }
 
+ss::future<result<partition_offsets, cluster::errc>>
+client::get_single_partition_offsets(model::topic_partition tp) {
+    co_return co_await retry_mitigating(
+      model::topic_namespace_view(model::kafka_namespace, tp.topic),
+      tp.partition,
+      [this, tp]() { return do_get_single_partition_offsets_once(tp); });
+}
+
+ss::future<result<partition_offsets, cluster::errc>>
+client::do_get_single_partition_offsets_once(model::topic_partition tp) {
+    using ret_t = result<partition_offsets, cluster::errc>;
+    model::topic_namespace_view tp_ns(model::kafka_namespace, tp.topic);
+
+    auto topic_cfg = _metadata_cache->find_topic_cfg(tp_ns);
+    if (!topic_cfg) {
+        co_return ret_t(cluster::errc::topic_not_exists);
+    }
+
+    auto leader = _leaders->get_leader_node(tp_ns, tp.partition);
+    if (!leader) {
+        co_return ret_t(cluster::errc::not_leader);
+    }
+
+    // Build the single-partition request in the same wire format the
+    // existing get_offsets RPC expects.
+    chunked_vector<topic_partitions> topics;
+    topic_partitions tps;
+    tps.topic = tp.topic;
+    tps.partitions.push_back(tp.partition);
+    topics.push_back(std::move(tps));
+
+    partition_offsets_map offsets_map;
+    if (*leader == _self) {
+        offsets_map = co_await _local_service->local().get_offsets(
+          std::move(topics));
+    } else {
+        auto remote_result = co_await get_remote_partition_offsets(
+          *leader, std::move(topics));
+        if (remote_result.has_error()) {
+            co_return ret_t(remote_result.error());
+        }
+        offsets_map = std::move(remote_result.value());
+    }
+
+    // Extract the single result.
+    auto topic_it = offsets_map.find(tp.topic);
+    if (topic_it == offsets_map.end()) {
+        co_return ret_t(cluster::errc::not_leader);
+    }
+    auto part_it = topic_it->second.find(tp.partition);
+    if (part_it == topic_it->second.end()) {
+        co_return ret_t(cluster::errc::not_leader);
+    }
+    auto& por = part_it->second;
+    if (por.err != cluster::errc::success) {
+        co_return ret_t(por.err);
+    }
+    co_return ret_t(por.offsets);
+}
+
 ss::future<result<consume_reply, cluster::errc>> client::consume(
   model::topic_partition tp,
   kafka::offset start_offset,

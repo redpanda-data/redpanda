@@ -90,6 +90,12 @@ public:
     ss::future<result<partition_offsets_map, cluster::errc>>
       get_partition_offsets(chunked_vector<topic_partitions>);
 
+    /// Get offsets for a single partition. Retries with leadership
+    /// mitigation — suitable for latency-sensitive callers like schema
+    /// registry that always target a single known partition.
+    ss::future<result<partition_offsets, cluster::errc>>
+      get_single_partition_offsets(model::topic_partition);
+
     ss::future<result<consume_reply, cluster::errc>> consume(
       model::topic_partition,
       kafka::offset start_offset,
@@ -103,6 +109,9 @@ private:
     ss::future<produce_reply> do_local_produce(produce_request);
     ss::future<produce_reply>
       do_remote_produce(model::node_id, produce_request);
+
+    ss::future<result<partition_offsets, cluster::errc>>
+      do_get_single_partition_offsets_once(model::topic_partition);
 
     ss::future<result<partition_offsets_map, cluster::errc>>
     get_remote_partition_offsets(
