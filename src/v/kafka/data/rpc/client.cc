@@ -30,29 +30,69 @@ namespace kafka::data::rpc {
 namespace {
 constexpr auto timeout = std::chrono::seconds(1);
 constexpr int max_client_retries = 5;
+constexpr auto base_backoff_duration = 100ms;
+constexpr auto max_backoff_duration = base_backoff_duration
+                                      * max_client_retries;
 
 template<typename T>
 concept ResponseWithErrorCode = requires(T resp) {
     { resp.ec } -> std::same_as<cluster::errc>;
 };
 
-template<typename Func>
-std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
-    constexpr auto base_backoff_duration = 100ms;
-    constexpr auto max_backoff_duration = base_backoff_duration
-                                          * max_client_retries;
-    auto backoff = ::make_exponential_backoff_policy<ss::lowres_clock>(
+/// Extracts the cluster::errc from a response of any supported type.
+template<typename T>
+cluster::errc extract_errc(const T& r) {
+    if constexpr (std::is_same_v<cluster::errc, T>) {
+        return r;
+    } else if constexpr (outcome::is_basic_result_v<T>) {
+        return r.has_error() ? r.error() : cluster::errc::success;
+    } else if constexpr (ResponseWithErrorCode<T>) {
+        return r.ec;
+    } else {
+        static_assert(
+          base::unsupported_type<T>::value, "unsupported response type");
+    }
+}
+
+/// Policy for retry_with_backoff: controls what happens before each attempt
+/// (prepare) and how retriable errors are mitigated between retries.
+template<typename T>
+concept RetryPolicy = requires(T ctx, cluster::errc ec) {
+    { ctx.prepare() } -> std::same_as<void>;
+    { ctx.mitigate(ec) } -> std::same_as<ss::future<>>;
+    { ctx.as() } -> std::same_as<ss::abort_source&>;
+};
+
+/// Default policy: blind exponential backoff on retriable errors.
+struct backoff_retry_policy {
+    ss::abort_source& _as;
+    backoff_policy _backoff = make_exponential_backoff_policy<ss::lowres_clock>(
       base_backoff_duration, max_backoff_duration);
+
+    explicit backoff_retry_policy(ss::abort_source& as)
+      : _as(as) {}
+
+    void prepare() {}
+
+    ss::future<> mitigate(cluster::errc) {
+        auto dur = _backoff.current_backoff_duration();
+        _backoff.next_backoff();
+        return ss::sleep_abortable<ss::lowres_clock>(dur, _as);
+    }
+
+    ss::abort_source& as() { return _as; }
+};
+
+template<typename Func, RetryPolicy Policy>
+std::invoke_result_t<Func> retry_with_backoff(Func func, Policy policy) {
     int attempts = 0;
     while (true) {
         ++attempts;
-        co_await ss::sleep_abortable<ss::lowres_clock>(
-          backoff.current_backoff_duration(), *as);
+        policy.prepare();
         using result_type
           = ss::futurize<typename std::invoke_result_t<Func>>::value_type;
         auto fut = co_await ss::coroutine::as_future<result_type>(
           ss::futurize_invoke(func));
-        backoff.next_backoff();
         if (fut.failed()) {
             if (attempts < max_client_retries) {
                 co_return co_await std::move(fut);
@@ -60,28 +100,17 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
             continue;
         }
         result_type r = fut.get();
-        cluster::errc ec = cluster::errc::success;
-        if constexpr (std::is_same_v<cluster::errc, result_type>) {
-            ec = r;
-        } else if constexpr (outcome::is_basic_result_v<result_type>) {
-            ec = r.has_error() ? r.error() : cluster::errc::success;
-        } else if constexpr (ResponseWithErrorCode<result_type>) {
-            ec = r.ec;
-        } else {
-            static_assert(
-              base::unsupported_type<result_type>::value,
-              "unsupported response type");
-        }
+        auto ec = extract_errc(r);
         switch (ec) {
         case cluster::errc::not_leader:
         case cluster::errc::timeout:
-            // We've ran out of retries, return our error
+        case cluster::errc::partition_operation_failed:
             if (attempts >= max_client_retries) {
                 co_return r;
             }
+            co_await policy.mitigate(ec);
             break;
         case cluster::errc::success:
-        // Don't retry arbitrary error codes.
         default:
             co_return r;
         }
@@ -146,7 +175,8 @@ client::client(
 template<typename Func>
 std::invoke_result_t<Func> client::retry(Func&& func) {
     auto holder = _gate.hold();
-    co_return co_await retry_with_backoff(std::forward<Func>(func), &_as);
+    co_return co_await retry_with_backoff(
+      std::forward<Func>(func), backoff_retry_policy{_as});
 }
 
 ss::future<cluster::errc> client::produce(
