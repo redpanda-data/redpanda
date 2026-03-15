@@ -15,19 +15,16 @@
 #include "kafka/data/partition_proxy.h"
 #include "logger.h"
 #include "model/ktp.h"
-#include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
-#include "utils/uuid.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/semaphore.hh>
-#include <seastar/core/smp.hh>
 #include <seastar/coroutine/switch_to.hh>
 
 #include <iterator>

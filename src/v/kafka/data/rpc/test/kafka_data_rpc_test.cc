@@ -10,7 +10,6 @@
  */
 
 #include "kafka/data/rpc/test/deps.h"
-#include "model/metadata.h"
 #include "model/namespace.h"
 #include "net/server.h"
 #include "rpc/connection_cache.h"

@@ -17,8 +17,6 @@
 #include "kafka/data/rpc/serde.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
-#include "model/metadata.h"
-#include "model/transform.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>

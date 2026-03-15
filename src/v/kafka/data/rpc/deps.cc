@@ -13,7 +13,6 @@
 
 #include "cluster/cluster_link/frontend.h"
 #include "cluster/controller.h"
-#include "cluster/fwd.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/notification.h"
 #include "cluster/partition_leaders_table.h"
@@ -26,8 +25,6 @@
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
-#include "model/transform.h"
-#include "transform/stm/transform_offsets_stm.h"
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/do_with.hh>
@@ -38,7 +35,6 @@
 #include <seastar/util/noncopyable_function.hh>
 
 #include <memory>
-#include <type_traits>
 
 namespace kafka::data::rpc {
 

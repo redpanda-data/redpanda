@@ -12,7 +12,6 @@
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/rpc_service.h"
 #include "kafka/data/rpc/serde.h"
-#include "model/fundamental.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>

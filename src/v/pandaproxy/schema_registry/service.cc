@@ -14,7 +14,6 @@
 #include "config/configuration.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/protocol/list_offset.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -36,15 +35,10 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
-#include <seastar/core/memory.hh>
 #include <seastar/core/sleep.hh>
-#include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
 #include <seastar/util/log.hh>
-#include <seastar/util/noncopyable_function.hh>
-
-#include <boost/algorithm/string/predicate.hpp>
 
 #include <variant>
 

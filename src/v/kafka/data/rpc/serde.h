@@ -21,8 +21,6 @@
 
 #include <seastar/core/chunked_fifo.hh>
 
-#include <iosfwd>
-
 namespace kafka::data::rpc {
 
 struct kafka_topic_data
