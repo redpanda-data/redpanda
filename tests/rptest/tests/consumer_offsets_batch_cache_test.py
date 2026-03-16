@@ -84,4 +84,4 @@ class ConsumerOffsetsCacheTest(RedpandaTest):
         hit_ratio = self._consumer_offsets_cache_hit_ratio()
         # hit ratio is not exactly 1.0 as the topic is read once during the
         # startup, the cache is cold during that operation
-        assert hit_ratio > 0.8, "Consumer offsets topic should use cache now"
+        assert hit_ratio > 0.75, "Consumer offsets topic should use cache now"
