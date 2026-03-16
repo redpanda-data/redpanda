@@ -1,0 +1,12 @@
+{
+    "state": "OPEN",
+    "last_change": "2026-03-13T20:39:09+00:00",
+    "consecutive_no_progress": 0,
+    "consecutive_same_error": 0,
+    "consecutive_permission_denials": 3,
+    "last_progress_loop": 1,
+    "total_opens": 2,
+    "reason": "Permission denied in 3 consecutive loops - update ALLOWED_TOOLS in .ralphrc",
+    "current_loop": 1,
+    "opened_at": "2026-03-13T20:39:09+00:00"
+}
