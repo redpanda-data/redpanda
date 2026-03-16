@@ -2287,7 +2287,18 @@ consensus::do_append_entries(append_entries_request&& r) {
             co_return reply;
         }
 
-        co_return co_await do_append_entries(std::move(r));
+        // Here we intentionally choose not to recurse with a mutated
+        // request (r) because of the risk of polluting prev_log_delta.
+        // If we are to recurse, we have to populate prev_log_delta with
+        // the local state of the log which could, in theory, diverge from
+        // the leader log. Instead we choose to return success, let the leader
+        // reconstruct new request from its state. This is an extra round trip
+        // but far easier to reason about in terms of correctness.
+        reply.last_dirty_log_index = adjusted_prev_log_index;
+        reply.last_flushed_log_index = std::min(
+          adjusted_prev_log_index, _flushed_offset);
+        reply.result = reply_result::success;
+        co_return reply;
     }
 
     // success. copy entries for each subsystem
