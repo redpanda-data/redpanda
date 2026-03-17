@@ -37,7 +37,7 @@ struct read_pipeline_accessor {
     // Call get_fetch_requests (which is private)
     read_pipeline<ss::manual_clock>::read_requests_list
     get_fetch_requests(size_t max_bytes, pipeline_stage stage) {
-        return pipeline->get_fetch_requests(max_bytes, stage);
+        return pipeline->pull_fetch_requests(max_bytes, stage);
     }
 
     read_pipeline<ss::manual_clock>* pipeline;

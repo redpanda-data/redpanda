@@ -10,7 +10,8 @@
 
 #include "cloud_topics/level_zero/pipeline/write_pipeline.h"
 
-#include "cloud_topics/level_zero/pipeline/event_filter.h"
+#include "base/units.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/pipeline/serializer.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
@@ -24,7 +25,6 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
-#include <seastar/util/optimized_optional.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -147,7 +147,7 @@ write_pipeline<Clock>::execute_write(
         timeout - Clock::now())
         .count());
     auto fut = request.response.get_future();
-    reenqueue(request, /*signal=*/true);
+    push_write_request(request, /*signal=*/true);
 
     auto res = co_await std::move(fut);
     if (!res.has_value()) {
@@ -163,7 +163,8 @@ write_pipeline<Clock>::execute_write(
 }
 
 template<class Clock>
-void write_pipeline<Clock>::reenqueue(write_request<Clock>& r, bool signal) {
+void write_pipeline<Clock>::push_write_request(
+  write_request<Clock>& r, bool signal) {
     if (r._hook.is_linked()) {
         r._hook.unlink();
     }
@@ -192,13 +193,15 @@ write_pipeline<Clock>::stage::stage(write_pipeline<Clock>* p, pipeline_stage s)
 
 template<class Clock>
 typename write_pipeline<Clock>::write_requests_list
-write_pipeline<Clock>::get_write_requests(
+write_pipeline<Clock>::pull_write_requests(
   size_t max_bytes, pipeline_stage stage, size_t max_requests) {
     // First remove timed out write request to avoid returning them
     this->remove_timed_out_requests();
 
     vlog(
-      cd_log.trace, "get_write_requests called with max_bytes = {}", max_bytes);
+      cd_log.trace,
+      "pull_write_requests called with max_bytes = {}",
+      max_bytes);
 
     auto& pending = this->get_pending();
 
@@ -237,7 +240,7 @@ write_pipeline<Clock>::get_write_requests(
       it, pending.end(), [stage](const auto& r) { return r.stage == stage; });
     vlog(
       cd_log.trace,
-      "get_write_requests returned {} elements, containing {} ({}B)",
+      "pull_write_requests returned {} elements, containing {} ({}B)",
       result.requests.size(),
       human::bytes(acc_size),
       acc_size);
@@ -252,18 +255,34 @@ write_pipeline<Clock>::register_write_pipeline_stage() noexcept {
 
 template<class Clock>
 void write_pipeline<Clock>::signal(pipeline_stage stage) {
-    this->do_signal(
-      stage, event_type::new_write_request, stage_bytes(stage), _bytes_total);
+    vlog(cd_log.debug, "signal, stage: {}", stage);
+    // Notify the actor registered for this stage
+    for (auto* actor : _actors) {
+        if (actor->stage().id() == stage) {
+            pipeline_notification notification{
+              .pending_bytes = stage_bytes(stage),
+              .total_bytes = _bytes_total,
+            };
+            // Use tell() which handles drop_oldest policy - if mailbox
+            // is full, oldest notification is dropped (coalesced).
+            // Ignore the future - we don't need to wait for delivery.
+            (void)actor->tell(std::move(notification));
+            break;
+        }
+    }
 }
 
 template<class Clock>
-event write_pipeline<Clock>::trigger_event(pipeline_stage stage) {
-    return event{
-      .stage = stage,
-      .type = event_type::new_write_request,
-      .pending_write_bytes = stage_bytes(stage),
-      .total_write_bytes = _bytes_total,
-    };
+void write_pipeline<Clock>::register_actor(write_pipeline_actor<Clock>* actor) {
+    if (!_actors.empty()) {
+        _actors.back()->set_next_actor(actor);
+    }
+    _actors.push_back(actor);
+    vlog(
+      cd_log.debug,
+      "Registered actor for stage {}, total actors: {}",
+      actor->stage().id(),
+      _actors.size());
 }
 
 template<class Clock>
@@ -274,7 +293,7 @@ bool write_pipeline<Clock>::stage::stopped() const noexcept {
 template<class Clock>
 void write_pipeline<Clock>::stage::push_next_stage(
   write_request<Clock>& req, bool signal) {
-    _parent->reenqueue(req, signal);
+    _parent->push_write_request(req, signal);
 }
 
 template<class Clock>
@@ -301,82 +320,7 @@ template<class Clock>
 write_pipeline<Clock>::write_requests_list
 write_pipeline<Clock>::stage::pull_write_requests(
   size_t max_bytes, size_t max_requests) {
-    return _parent->get_write_requests(max_bytes, _ps, max_requests);
-}
-
-template<class Clock>
-ss::future<std::expected<event, errc>> write_pipeline<Clock>::stage::wait_until(
-  size_t max_bytes,
-  typename Clock::time_point deadline,
-  ss::abort_source* maybe_as) noexcept {
-    auto [sub, as] = choose_abort_source(maybe_as);
-    l0::event_filter<Clock> filter(
-      l0::event_type::new_write_request,
-      _ps,
-      deadline,
-      {.min_pending_write_bytes = max_bytes});
-    auto event_fut = co_await ss::coroutine::as_future(
-      _parent->subscribe(filter, *as));
-    if (event_fut.failed()) {
-        auto err = event_fut.get_exception();
-        if (ssx::is_shutdown_exception(err)) {
-            co_return std::unexpected(errc::shutting_down);
-        }
-        co_return std::unexpected(errc::unexpected_failure);
-    }
-    auto event = event_fut.get();
-    switch (event.type) {
-    case l0::event_type::shutting_down:
-        co_return std::unexpected(errc::shutting_down);
-    case l0::event_type::new_write_request:
-    case l0::event_type::err_timedout:
-        break;
-    case l0::event_type::new_read_request:
-    case l0::event_type::none:
-        vunreachable("Read request added to the write pipeline");
-    }
-    co_return event;
-}
-
-template<class Clock>
-ss::future<std::expected<event, errc>>
-write_pipeline<Clock>::stage::wait_next(ss::abort_source* maybe_as) noexcept {
-    l0::event_filter<Clock> filter(l0::event_type::new_write_request, _ps);
-    auto [sub, as] = choose_abort_source(maybe_as);
-    auto event = co_await _parent->subscribe(filter, *as);
-    switch (event.type) {
-    case l0::event_type::shutting_down:
-        co_return std::unexpected(errc::shutting_down);
-    case l0::event_type::err_timedout:
-    case l0::event_type::new_read_request:
-    case l0::event_type::none:
-        vunreachable("Read request added to the write pipeline");
-    case l0::event_type::new_write_request:
-        break;
-    }
-    co_return event;
-}
-
-template<class Clock>
-
-std::pair<
-  ss::optimized_optional<ss::abort_source::subscription>,
-  ss::abort_source*>
-write_pipeline<Clock>::stage::choose_abort_source(ss::abort_source* maybe_as) {
-    auto as = maybe_as;
-    ss::optimized_optional<ss::abort_source::subscription> sub;
-    if (as == nullptr) {
-        as = &_parent->get_root_rtc().root_abort_source();
-    } else {
-        sub = _parent->get_root_rtc().root_abort_source().subscribe(
-          [as](const std::optional<std::exception_ptr>&) noexcept {
-              as->request_abort();
-          });
-        if (!sub) {
-            as->request_abort();
-        }
-    }
-    return std::make_pair(std::move(sub), as);
+    return _parent->pull_write_requests(max_bytes, _ps, max_requests);
 }
 
 template<class Clock>

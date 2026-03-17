@@ -11,7 +11,7 @@
 #include "cloud_topics/level_zero/pipeline/read_pipeline.h"
 
 #include "cloud_topics/level_zero/pipeline/circuit_breaker.h"
-#include "cloud_topics/level_zero/pipeline/event_filter.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
 #include "cloud_topics/level_zero/pipeline/read_request.h"
 #include "config/configuration.h"
 #include "resource_mgmt/memory_groups.h"
@@ -138,7 +138,7 @@ read_pipeline<Clock>::make_reader(
     auto fut = request.response.get_future();
     this->get_pending().push_back(request);
 
-    // Notify all active event_filter instances that new item is enqueued
+    // Notify actors that new item is enqueued
     this->signal(stage);
 
     if (this->stopped()) {
@@ -164,7 +164,7 @@ read_pipeline<Clock>::make_reader(
 
 template<class Clock>
 read_pipeline<Clock>::read_requests_list
-read_pipeline<Clock>::get_fetch_requests(
+read_pipeline<Clock>::pull_fetch_requests(
   size_t max_bytes, pipeline_stage stage) {
     // First remove timed out write request to avoid returning them
     this->remove_timed_out_requests();
@@ -172,7 +172,9 @@ read_pipeline<Clock>::get_fetch_requests(
     auto& pending = this->get_pending();
 
     vlog(
-      logger.debug, "get_fetch_requests called with max_bytes = {}", max_bytes);
+      logger.debug,
+      "pull_fetch_requests called with max_bytes = {}",
+      max_bytes);
 
     read_requests_list result(this, stage);
     size_t acc_size = 0;
@@ -187,7 +189,7 @@ read_pipeline<Clock>::get_fetch_requests(
         acc_size += sz;
         vlog(
           it->rtc_logger.trace,
-          "get_fetch_requests processing req for {}, size estimate: {}",
+          "pull_fetch_requests processing req for {}, size estimate: {}",
           it->ntp,
           acc_size);
         // Always include the first request even if it exceeds max_bytes
@@ -204,7 +206,7 @@ read_pipeline<Clock>::get_fetch_requests(
       it, pending.end(), [stage](const auto& r) { return r.stage == stage; });
     vlog(
       logger.debug,
-      "get_fetch_requests returned {} requests which are querying {} ({}B)",
+      "pull_fetch_requests returned {} requests which are querying {} ({}B)",
       result.requests.size(),
       human::bytes(acc_size),
       acc_size);
@@ -267,18 +269,51 @@ void read_pipeline<Clock>::reenqueue(read_request<Clock>& r, bool signal) {
 
 template<class Clock>
 void read_pipeline<Clock>::signal(pipeline_stage stage) {
-    this->do_signal(
-      stage, event_type::new_read_request, _current_size, _bytes_total);
+    vlog(this->logger().debug, "signal, stage: {}", stage);
+    // Notify the first actor if signaling the first stage,
+    // otherwise find and notify the actor for the given stage.
+    if (stage == this->first_stage()) {
+        notify_first_actor();
+    } else {
+        // Find and notify the actor registered for this stage
+        for (auto* actor : _actors) {
+            if (actor->stage().id() == stage) {
+                pipeline_notification notification{
+                  .pending_bytes = _current_size,
+                  .total_bytes = _bytes_total,
+                };
+                (void)actor->tell(std::move(notification));
+                break;
+            }
+        }
+    }
 }
 
 template<class Clock>
-event read_pipeline<Clock>::trigger_event(pipeline_stage stage) {
-    return event{
-      .stage = stage,
-      .type = event_type::new_read_request,
-      .pending_read_bytes = _current_size,
-      .total_read_bytes = _bytes_total,
-    };
+void read_pipeline<Clock>::register_actor(read_pipeline_actor<Clock>* actor) {
+    if (!_actors.empty()) {
+        _actors.back()->set_next_actor(actor);
+    }
+    _actors.push_back(actor);
+    vlog(
+      this->logger().debug,
+      "Registered read actor for stage {}, total actors: {}",
+      actor->stage().id(),
+      _actors.size());
+}
+
+template<class Clock>
+void read_pipeline<Clock>::notify_first_actor() {
+    if (!_actors.empty()) {
+        auto* first = _actors[0];
+        pipeline_notification notification{
+          .pending_bytes = _current_size,
+          .total_bytes = _bytes_total,
+        };
+        // Ignore the future - tell() with drop_oldest policy never blocks,
+        // and we don't need to wait for the notification to be delivered.
+        (void)first->tell(std::move(notification));
+    }
 }
 
 template class read_pipeline<ss::lowres_clock>;

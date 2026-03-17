@@ -12,7 +12,6 @@
 
 #include "cloud_topics/level_zero/common/level_zero_probe.h"
 #include "cloud_topics/level_zero/pipeline/base_pipeline.h"
-#include "cloud_topics/level_zero/pipeline/event_filter.h"
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
 #include "ssx/semaphore.h"
@@ -29,8 +28,13 @@
 #include <expected>
 #include <functional>
 #include <type_traits>
+#include <vector>
 
 namespace cloud_topics::l0 {
+
+// Forward declaration for actor-based pipeline components
+template<class Clock>
+class write_pipeline_actor;
 
 struct write_request_process_result {
     /// Iteration should be stopped
@@ -89,7 +93,7 @@ public:
         /// Return write request back into the pipeline.
         /// The write request advances to the next stage of the
         /// pipeline.
-        /// \param r Write request to reenqueue
+        /// \param r Write request to push
         /// \param signal If true signal the next stage that new write request
         void push_next_stage(write_request<Clock>& r, bool signal = true);
 
@@ -115,17 +119,6 @@ public:
         write_requests_list pull_write_requests(
           size_t max_bytes,
           size_t max_requests = std::numeric_limits<size_t>::max());
-
-        /// Wait until either the 'deadline' is reached or the pipeline
-        /// accumulated 'max_bytes' bytes
-        ss::future<std::expected<event, errc>> wait_until(
-          size_t max_bytes,
-          Clock::time_point deadline,
-          ss::abort_source* as = nullptr) noexcept;
-
-        /// Wait until the next write_request is added to the pipeline
-        ss::future<std::expected<event, errc>>
-        wait_next(ss::abort_source* as = nullptr) noexcept;
 
         /// Apply lambda function to every write request at certain stage.
         /// The lambda should return 'write_request_processing_result'.
@@ -199,19 +192,6 @@ public:
         }
 
     private:
-        /// Pick the right abort source to use.
-        ///
-        /// If the 'maybe_as' is not null use it but also subscribe to the root
-        /// abort_source so it'd be aborted if the root is aborted. If
-        /// 'maybe_as' is null then use root abort source. The subscription is
-        /// nullopt in this case.
-        /// The caller should keep the subscription for the duration of the
-        /// async call that uses the abort source.
-        std::pair<
-          ss::optimized_optional<ss::abort_source::subscription>,
-          ss::abort_source*>
-        choose_abort_source(ss::abort_source* maybe_as);
-
         write_pipeline<Clock>* _parent;
         pipeline_stage _ps;
     };
@@ -220,8 +200,6 @@ public:
     stage register_write_pipeline_stage() noexcept;
 
     void signal(pipeline_stage stage);
-
-    event trigger_event(pipeline_stage stage);
 
     /// Advance a request to the next stage, updating per-stage byte accounting.
     /// This is the canonical way to change a request's stage.
@@ -239,31 +217,37 @@ public:
     /// \return Pointer to the atomic counter, or nullptr if index is invalid
     const std::atomic<size_t>* stage_bytes_ref_by_index(int index) const;
 
+    /// Register an actor component with the pipeline.
+    /// Actors are stored in registration order and form a notification chain.
+    /// The pipeline will notify the first actor when new requests arrive.
+    void register_actor(write_pipeline_actor<Clock>* actor);
+
 private:
     /// Transfer bytes from one stage to another.
     void
     transfer_stage_bytes(pipeline_stage from, pipeline_stage to, size_t bytes);
 
-    /// Get write requests atomically.
+    /// Pull write requests atomically.
     /// The total size of returned write requests and the stage to which they
-    /// belong to should be specified.
+    /// belong to should be specified. This method transfers ownership to the
+    /// caller.
     /// \param max_bytes Maximum number of bytes to extract
-    /// \param stage Pipeline stage to get write requests from
+    /// \param stage Pipeline stage to pull write requests from
     /// \param max_requests Maximum number of requests to extract
     /// \return List of write requests that were extracted
-    write_requests_list get_write_requests(
+    write_requests_list pull_write_requests(
       size_t max_bytes,
       pipeline_stage stage,
       size_t max_requests = std::numeric_limits<size_t>::max());
 
     /// Return write request which was already been in the pipeline
     /// before back into the pipeline.
-    /// The method allows to reenqueue requests returned by get_write_requests
+    /// The method allows to push back requests returned by pull_write_requests
     /// method.
-    /// \param req Write request to reenqueue
+    /// \param req Write request to push
     /// \param signal If true signal the next stage that new write request is
     /// available
-    void reenqueue(write_request<Clock>& req, bool signal = true);
+    void push_write_request(write_request<Clock>& req, bool signal = true);
 
     // Bytes per pipeline stage.
     struct alignas(std::hardware_destructive_interference_size)
@@ -288,5 +272,9 @@ private:
     ssx::named_semaphore<Clock> _req_budget;
 
     pipeline_probe _probe;
+
+    // Ordered list of actor components registered with the pipeline.
+    // Actors form a chain where each notifies the next after processing.
+    std::vector<write_pipeline_actor<Clock>*> _actors;
 };
 } // namespace cloud_topics::l0

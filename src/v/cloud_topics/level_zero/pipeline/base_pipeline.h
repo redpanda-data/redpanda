@@ -13,19 +13,15 @@
 #include "base/outcome.h"
 #include "base/vlog.h"
 #include "cloud_topics/errc.h"
-#include "cloud_topics/level_zero/pipeline/event_filter.h"
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/logger.h"
 #include "container/chunked_vector.h"
-#include "ssx/future-util.h"
+#include "container/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/coroutine/as_future.hh>
 
 namespace cloud_topics::l0 {
 
@@ -102,57 +98,6 @@ public:
     base_pipeline&
     operator=(base_pipeline<Request, Derived, Clock>&&) noexcept = delete;
 
-    /// Subscribe to events of certain type
-    ///
-    /// The returned future will become ready when new data will be added to the
-    /// pipeline or when the shutdown even will occur.
-    ss::future<event>
-    subscribe(event_filter<Clock>& flt, ss::abort_source& as) noexcept {
-        auto sub = as.subscribe(
-          [&flt](const std::optional<std::exception_ptr>&) noexcept {
-              // This code just cancels event subscription but it can be
-              // improved by transferring exception to the subscriber.
-              flt.cancel();
-          });
-        if (!sub) {
-            co_return event{.type = event_type::shutting_down};
-        }
-        co_return co_await subscribe(flt);
-    }
-    ss::future<event> subscribe(event_filter<Clock>& flt) noexcept {
-        // If the pipeline already has some requests we need to set the future
-        // eagerly
-        bool found = false;
-        for (auto& wr : _pending) {
-            if (wr.stage == flt.get_stage()) {
-                found = true;
-                break;
-            }
-        }
-        if (found) {
-            // Trigger event immediately without waiting for the future
-            auto event = static_cast<Derived*>(this)->trigger_event(
-              flt.get_stage());
-            if (flt.trigger(event)) {
-                co_return event;
-            }
-        }
-        _filters.push_back(flt);
-        auto ev = co_await ss::coroutine::as_future(flt.get_future());
-        if (ev.failed()) {
-            auto ep = ev.get_exception();
-            if (ssx::is_shutdown_exception(ep)) {
-                co_return event{.type = event_type::shutting_down};
-            }
-            // The only exception that can be thrown here is a shutdown
-            // exception (broken_promise). We never set the promise to
-            // any other exception.
-            vassert(
-              false, "Unexpected failure in the event subscription: {}", ep);
-        }
-        co_return ev.get();
-    }
-
     /// Get root retry chain node to use with async
     /// operations.
     basic_retry_chain_node<Clock>& get_root_rtc() noexcept { return _root_rtc; }
@@ -169,11 +114,7 @@ public:
               std::make_exception_ptr(pipeline_abort_requested()));
             remove_requests_for_shutdown();
         }
-        auto fut = _gate.close();
-        for (auto& f : _filters) {
-            f.cancel();
-        }
-        co_await std::move(fut);
+        co_await _gate.close();
     }
 
     bool stopped() const noexcept { return _as.abort_requested(); }
@@ -246,45 +187,9 @@ protected:
         return _pending;
     }
 
-    /// Get list of event filters
-    auto& get_filters() noexcept { return _filters; }
-
     /// Create new pipeline stage object
     pipeline_stage register_pipeline_stage() noexcept {
         return _stages.register_pipeline_stage();
-    }
-
-    /// Signal all active filters
-    void do_signal(
-      pipeline_stage stage,
-      event_type ev_type,
-      size_t pending_bytes,
-      size_t total_bytes) {
-        vlog(_logger.debug, "signal, stage: {}", stage);
-        event ev{
-          .stage = stage,
-          .type = ev_type,
-        };
-        if (ev_type == event_type::new_read_request) {
-            ev.pending_read_bytes = pending_bytes;
-            ev.total_read_bytes = total_bytes;
-        } else if (ev_type == event_type::new_write_request) {
-            ev.pending_write_bytes = pending_bytes;
-            ev.total_write_bytes = total_bytes;
-        }
-        for (auto& f : _filters) {
-            if (f.get_type() == ev_type && f.get_stage() == stage) {
-                vlog(
-                  _logger.debug,
-                  "{}.signal, pending_write_bytes: {}, "
-                  "total_write_bytes: {}",
-                  static_cast<Derived*>(this)->pipeline_name(),
-                  ev.pending_write_bytes,
-                  ev.total_write_bytes);
-                f.trigger(ev);
-            }
-            // The cleanup is performed by the subscriber
-        }
     }
 
 private:
@@ -295,7 +200,6 @@ private:
     basic_retry_chain_node<Clock> _root_rtc;
     basic_retry_chain_logger<Clock> _logger;
 
-    event_filter<Clock>::event_filter_list _filters;
     pipeline_stage_container _stages;
 };
 } // namespace cloud_topics::l0
