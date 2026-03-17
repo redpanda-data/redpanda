@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/write_request_scheduler/write_request_scheduler.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -41,44 +43,25 @@ struct write_request_balancer_accessor {
 };
 } // namespace l0
 
-struct pipeline_sink {
-    explicit pipeline_sink(l0::write_pipeline<>& p)
-      : stage(p.register_write_pipeline_stage()) {}
+struct pipeline_sink : public l0::write_pipeline_actor<> {
+    using actor_t = l0::write_pipeline_actor<>;
 
-    ss::future<> start() {
-        ssx::background = bg_run();
+    explicit pipeline_sink(l0::write_pipeline<>::stage s)
+      : actor_t(std::move(s)) {}
+
+protected:
+    ss::future<> process(l0::pipeline_notification) override {
+        auto result = this->stage().pull_write_requests(
+          std::numeric_limits<size_t>::max(),
+          std::numeric_limits<size_t>::max());
+        for (auto& r : result.requests) {
+            r.set_value(
+              upload_meta{.shard = ss::this_shard_id(), .extents = {}});
+        }
         co_return;
     }
 
-    ss::future<> stop() {
-        _as.request_abort();
-        co_await _gate.close();
-    }
-
-    ss::future<> bg_run() {
-        auto h = _gate.hold();
-        while (!_as.abort_requested()) {
-            auto res = co_await stage.wait_next(&_as);
-            if (!res.has_value()) {
-                co_return;
-            }
-            auto event = res.value();
-            if (event.type == l0::event_type::shutting_down) {
-                co_return;
-            }
-            vassert(
-              event.type == l0::event_type::new_write_request,
-              "unexpected event type");
-            auto result = stage.pull_write_requests(
-              std::numeric_limits<size_t>::max());
-            for (auto& r : result.requests) {
-                r.set_value(upload_meta{});
-            }
-        }
-    }
-    l0::write_pipeline<>::stage stage;
-    ss::gate _gate;
-    ss::abort_source _as;
+    void on_error(std::exception_ptr) noexcept override {}
 };
 } // namespace cloud_topics
 
@@ -103,8 +86,15 @@ public:
         co_await scheduler.invoke_on_all(
           [](auto& sched) { return sched.start(); });
 
-        co_await request_sink.start(
-          ss::sharded_parameter([this] { return std::ref(pipeline.local()); }));
+        co_await request_sink.start(ss::sharded_parameter([this] {
+            return pipeline.local().register_write_pipeline_stage();
+        }));
+
+        co_await pipeline.invoke_on_all([this](auto& p) {
+            p.register_actor(&scheduler.local());
+            p.register_actor(&request_sink.local());
+        });
+
         co_await request_sink.invoke_on_all(
           [](cloud_topics::pipeline_sink& sink) { return sink.start(); });
     }

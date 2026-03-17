@@ -18,61 +18,23 @@ namespace cloud_topics::l0 {
 constexpr size_t max_bytes_per_iter = 10_MiB;
 
 read_fanout::read_fanout(l0::read_pipeline<>::stage s)
-  : _pipeline_stage(s) {}
+  : actor_t(std::move(s)) {}
 
-ss::future<> read_fanout::start() {
-    ssx::spawn_with_gate(_gate, [this] { return bg_process(); });
-    return ss::now();
-}
-ss::future<> read_fanout::stop() { co_await _gate.close(); }
-
-ss::future<> read_fanout::bg_process() {
-    auto holder = _gate.hold();
-    while (!_pipeline_stage.stopped()) {
-        auto fut = co_await ss::coroutine::as_future(
-          _pipeline_stage.pull_fetch_requests(max_bytes_per_iter));
-
-        if (fut.failed()) {
-            auto e = fut.get_exception();
-            if (ssx::is_shutdown_exception(e)) {
-                vlog(
-                  _pipeline_stage.logger().debug,
-                  "Read fanout stopping due to shutdown");
-                co_return;
-            }
-            vlog(
-              _pipeline_stage.logger().error,
-              "Read fanout failed to pull requests: {}",
-              e);
-            continue;
-        }
-        auto fut_res = std::move(fut).get();
-        if (!fut_res.has_value()) {
-            auto err = fut_res.error();
-            if (err == errc::shutting_down) {
-                vlog(
-                  _pipeline_stage.logger().debug,
-                  "Read fanout stopping due to shutdown");
-                co_return;
-            }
-            vlog(
-              _pipeline_stage.logger().error,
-              "Read fanout received error pulling requests: {}",
-              fut_res.error());
-            continue;
-        }
-        auto to_process = std::move(fut_res.value());
-        auto queue = std::move(to_process.requests);
-        while (!queue.empty()) {
-            auto req = &queue.front();
-            queue.pop_front();
-            // It's safe to spawn fiber per request because the memory usage
-            // is limited by the read pipeline memory quota.
-            ssx::spawn_with_gate(_gate, [this, req]() mutable {
-                return process_single_request(req);
-            });
-        }
+ss::future<> read_fanout::process(pipeline_notification) {
+    auto requests = stage().pull_fetch_requests_nowait(max_bytes_per_iter);
+    while (!requests.requests.empty()) {
+        auto req = &requests.requests.front();
+        requests.requests.pop_front();
+        // It's safe to spawn fiber per request because the memory usage
+        // is limited by the read pipeline memory quota.
+        ssx::spawn_with_gate(
+          _gate, [this, req]() mutable { return process_single_request(req); });
     }
+    co_return;
+}
+
+void read_fanout::on_error(std::exception_ptr e) noexcept {
+    vlog(stage().logger().error, "Read fanout error: {}", e);
 }
 
 read_fanout::stats read_fanout::get_stats() const noexcept { return _stats; }
@@ -83,7 +45,7 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
         if (req->query.meta.size() <= 1) {
             // Fast path
             _stats.requests_out++;
-            _pipeline_stage.push_next_stage(*req);
+            stage().push_next_stage(*req);
             co_return;
         }
 
@@ -109,13 +71,13 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
               req->ntp,
               std::move(curr_query.value()),
               timeout,
-              &_pipeline_stage.get_root_rtc(),
+              &stage().get_root_rtc(),
               req->stage);
 
             auto fut = proxy->response.get_future().finally([proxy] {});
 
             // start proxy request
-            _pipeline_stage.push_next_stage(*proxy);
+            stage().push_next_stage(*proxy);
 
             futures.emplace_back(std::move(fut));
             curr_query.emplace();
@@ -127,11 +89,11 @@ ss::future<> read_fanout::process_single_request(l0::read_request<>* req) {
               req->ntp,
               std::move(curr_query.value()),
               timeout,
-              &_pipeline_stage.get_root_rtc(),
+              &stage().get_root_rtc(),
               req->stage);
             auto fut = proxy->response.get_future().finally([proxy] {});
             // start proxy request
-            _pipeline_stage.push_next_stage(*proxy);
+            stage().push_next_stage(*proxy);
             futures.push_back(std::move(fut));
         }
         auto fut_res = co_await ss::when_all(futures.begin(), futures.end());

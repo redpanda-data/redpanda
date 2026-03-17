@@ -18,6 +18,7 @@
 #include "cloud_topics/cluster_services.h"
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
 #include "cloud_topics/level_zero/common/level_zero_probe.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
 #include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/pipeline/write_pipeline.h"
 #include "cloud_topics/types.h"
@@ -28,10 +29,6 @@
 #include "utils/retry_chain_node.h"
 #include "utils/uuid.h"
 
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/condition-variable.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 
 #include <chrono>
@@ -60,7 +57,8 @@ struct batcher_accessor;
 /// memory. Periodically, the data is uploaded to the cloud storage
 /// and removed from memory.
 template<class Clock = ss::lowres_clock>
-class batcher {
+class batcher : public write_pipeline_actor<Clock> {
+    using actor_t = write_pipeline_actor<Clock>;
     using clock_t = Clock;
     using timestamp_t = typename Clock::time_point;
 
@@ -73,34 +71,16 @@ public:
       cloud_io::remote_api<Clock>& remote_api,
       cloud_topics::cluster_services* cluster_services);
 
-    ss::future<> start();
-    ss::future<> stop();
+    ss::future<> stop() override;
+
+protected:
+    ss::future<> process(pipeline_notification msg) override;
+    void on_error(std::exception_ptr e) noexcept override;
 
 private:
-    /// Run one iteration of the background loop
-    ///
-    /// Single call
-    /// - filters out timed out requests
-    /// - aggregates requests to create one L0 object
-    /// - uploads L0 object
-    /// - generates placeholders and propagates them
-    ///
-    /// \returns error code
     ss::future<std::expected<std::monostate, errc>>
       run_once(write_pipeline<Clock>::write_requests_list) noexcept;
 
-    /// Background fiber responsible for merging
-    /// aggregated log data and sending it to the
-    /// cloud storage
-    ///
-    /// The method should only be invoked on shard 0
-    ss::future<> bg_controller_loop();
-
-    /// Upload L0 object based on placeholders
-    ///
-    /// Collect data from every shard and upload stream of data to S3.
-    ///
-    /// \return size of the uploaded object or error code
     ss::future<std::expected<size_t, errc>>
     upload_object(object_id id, iobuf payload);
 
@@ -110,16 +90,11 @@ private:
     config::binding<std::chrono::milliseconds> _upload_timeout;
     config::binding<std::chrono::milliseconds> _upload_backoff_interval;
 
-    ss::gate _gate;
-    ss::abort_source _as;
-
     static constexpr size_t max_buffer_size = 16_MiB;
     static constexpr size_t max_cardinality = 1000;
 
     basic_retry_chain_node<Clock> _rtc;
     basic_retry_chain_logger<Clock> _logger;
-
-    write_pipeline<Clock>::stage _stage;
 
     batcher_probe _probe;
 

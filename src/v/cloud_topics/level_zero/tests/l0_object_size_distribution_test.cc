@@ -147,6 +147,11 @@ public:
           ss::sharded_parameter([this] { return std::ref(remote.local()); }),
           &cluster_services);
 
+        co_await pipeline.invoke_on_all([this](auto& p) {
+            p.register_actor(&scheduler.local());
+            p.register_actor(&batcher.local());
+        });
+
         co_await scheduler.invoke_on_all(
           [](auto& sched) { return sched.start(); });
 

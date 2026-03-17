@@ -9,7 +9,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/cloud_topics:types",
-        "//src/v/cloud_topics/level_zero/pipeline:event_filter",
+        "//src/v/cloud_topics/level_zero/pipeline:pipeline_actor",
         "//src/v/cloud_topics/level_zero/pipeline:pipeline_stage",
         "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:read_request",
@@ -33,7 +33,7 @@ redpanda_cc_bench(
     cpu = 1,
     deps = [
         "//src/v/base",
-        "//src/v/cloud_topics/level_zero/pipeline:event_filter",
+        "//src/v/cloud_topics/level_zero/pipeline:pipeline_actor",
         "//src/v/cloud_topics/level_zero/pipeline:pipeline_stage",
         "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:read_request",

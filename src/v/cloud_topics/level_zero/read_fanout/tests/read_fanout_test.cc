@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/read_fanout/read_fanout.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
@@ -33,71 +35,51 @@ static auto id_to_fail = object_id{
   .name = uuid_t::create(),
 };
 
-struct fake_fetch_handler {
-    explicit fake_fetch_handler(l0::read_pipeline<>& p)
-      : stage(p.register_read_pipeline_stage()) {
-        vlog(stage.logger().info, "fake fetch handler created");
+struct fake_fetch_handler : public l0::read_pipeline_actor<> {
+    using actor_t = l0::read_pipeline_actor<>;
+
+    explicit fake_fetch_handler(l0::read_pipeline<>::stage s)
+      : actor_t(std::move(s)) {
+        vlog(this->stage().logger().info, "fake fetch handler created");
     }
 
-    ss::future<> start() {
-        ssx::background = bg_run();
-        return ss::now();
-    }
-
-    ss::future<> stop() {
-        vlog(stage.logger().info, "fake fetch handler stop");
-        co_await _gate.close();
-    }
-
-    ss::future<> bg_run() {
-        auto h = _gate.hold();
-        while (!stage.stopped()) {
-            vlog(stage.logger().debug, "fake_fetch_handler subscribe");
-
-            auto result = co_await stage.pull_fetch_requests(
-              std::numeric_limits<size_t>::max());
-
-            if (!result.has_value()) {
-                // Expected during shutdown
-                co_return;
+protected:
+    ss::future<> process(l0::pipeline_notification) override {
+        auto requests = this->stage().pull_fetch_requests_nowait(
+          std::numeric_limits<size_t>::max());
+        for (auto& r : requests.requests) {
+            // The expectation is that all extents in this request
+            // will share the same object id.
+            object_id id = r.query.meta.front().id;
+            chunked_vector<model::record_batch> batches;
+            for (size_t i = 0; i < r.query.meta.size(); i++) {
+                if (r.query.meta.at(i).id != id) {
+                    throw std::runtime_error(
+                      "request targets more than one object");
+                }
+                model::test::record_batch_spec spec{};
+                spec.offset = _next_offset;
+                spec.count = 1;
+                spec.records = 1;
+                auto rb = model::test::make_random_batch(spec);
+                batches.push_back(std::move(rb));
+                _next_offset = model::next_offset(_next_offset);
             }
-
-            vlog(
-              stage.logger().debug,
-              "fake_fetch_handler got {} requests",
-              result.value().requests.size());
-
-            for (auto& r : result.value().requests) {
-                // The expectation is that all extents in this request
-                // will share the same object id.
-                object_id id = r.query.meta.front().id;
-                chunked_vector<model::record_batch> batches;
-                for (size_t i = 0; i < r.query.meta.size(); i++) {
-                    if (r.query.meta.at(i).id != id) {
-                        throw std::runtime_error(
-                          "request targets more than one object");
-                    }
-                    model::test::record_batch_spec spec{};
-                    spec.offset = _next_offset;
-                    spec.count = 1;
-                    spec.records = 1;
-                    auto rb = model::test::make_random_batch(spec);
-                    batches.push_back(std::move(rb));
-                    _next_offset = model::next_offset(_next_offset);
-                }
-                if (id_to_fail == id) {
-                    // The failure was injected
-                    r.set_value(errc::timeout);
-                } else {
-                    r.set_value({{std::move(batches)}});
-                }
+            if (id_to_fail == id) {
+                r.set_value(errc::timeout);
+            } else {
+                r.set_value({{std::move(batches)}});
             }
         }
+        co_return;
     }
 
+    void on_error(std::exception_ptr e) noexcept override {
+        vlog(this->stage().logger().error, "fake_fetch_handler error: {}", e);
+    }
+
+private:
     model::offset _next_offset{0};
-    l0::read_pipeline<>::stage stage;
-    ss::gate _gate;
 };
 
 } // namespace cloud_topics
@@ -116,8 +98,14 @@ public:
         co_await fanout.invoke_on_all(
           [](l0::read_fanout& s) { return s.start(); });
 
-        co_await fetch_handler.start(
-          ss::sharded_parameter([this] { return std::ref(pipeline.local()); }));
+        co_await fetch_handler.start(ss::sharded_parameter([this] {
+            return pipeline.local().register_read_pipeline_stage();
+        }));
+
+        co_await pipeline.invoke_on_all([this](auto& p) {
+            p.register_actor(&fanout.local());
+            p.register_actor(&fetch_handler.local());
+        });
 
         co_await fetch_handler.invoke_on_all(
           [](fake_fetch_handler& handler) { return handler.start(); });

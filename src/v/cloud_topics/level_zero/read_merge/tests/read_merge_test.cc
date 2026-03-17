@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/read_merge/read_merge.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
@@ -18,6 +20,9 @@
 #include "utils/uuid.h"
 
 #include <seastar/core/manual_clock.hh>
+#include <seastar/core/queue.hh>
+#include <seastar/core/when_all.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <expected>
 #include <limits>
@@ -30,27 +35,36 @@ namespace cloud_topics {
 
 /// Manual fetch handler that gives the test full control over when
 /// and how requests are fulfilled.
-struct fetch_handler {
-    explicit fetch_handler(l0::read_pipeline<ss::manual_clock>& p)
-      : stage(p.register_read_pipeline_stage()) {}
+struct fetch_handler : public l0::read_pipeline_actor<ss::manual_clock> {
+    using actor_t = l0::read_pipeline_actor<ss::manual_clock>;
+    using read_requests_list
+      = l0::read_pipeline<ss::manual_clock>::read_requests_list;
 
-    using read_requests_list = l0::requests_list<
-      l0::read_pipeline<ss::manual_clock>,
-      l0::read_request<ss::manual_clock>>;
+    explicit fetch_handler(l0::read_pipeline<ss::manual_clock>::stage s)
+      : actor_t(std::move(s))
+      , _queue(100) {}
 
+    /// Called by tests to receive the next batch of requests from the pipeline.
     ss::future<std::expected<read_requests_list, errc>> get_next_requests() {
-        auto result = co_await stage.pull_fetch_requests(
-          std::numeric_limits<size_t>::max());
-
-        if (!result.has_value()) {
-            co_return std::unexpected(result.error());
-        }
-
-        auto list = std::move(result.value());
-        co_return std::move(list);
+        auto list = co_await _queue.pop_eventually();
+        co_return std::expected<read_requests_list, errc>{std::move(list)};
     }
 
-    l0::read_pipeline<ss::manual_clock>::stage stage;
+protected:
+    ss::future<> process(l0::pipeline_notification) override {
+        auto list = this->stage().pull_fetch_requests_nowait(
+          std::numeric_limits<size_t>::max());
+        if (!list.requests.empty()) {
+            co_await _queue.push_eventually(std::move(list));
+        }
+    }
+
+    void on_error(std::exception_ptr e) noexcept override {
+        vlog(test_log.error, "fetch_handler error: {}", e);
+    }
+
+private:
+    ss::queue<read_requests_list> _queue;
 };
 
 } // namespace cloud_topics
@@ -69,8 +83,16 @@ public:
         co_await merge.invoke_on_all(
           [](l0::read_merge<ss::manual_clock>& s) { return s.start(); });
 
-        co_await sink.start(
-          ss::sharded_parameter([this] { return std::ref(pipeline.local()); }));
+        co_await sink.start(ss::sharded_parameter([this] {
+            return pipeline.local().register_read_pipeline_stage();
+        }));
+
+        co_await pipeline.invoke_on_all([this](auto& p) {
+            p.register_actor(&merge.local());
+            p.register_actor(&sink.local());
+        });
+
+        co_await sink.invoke_on_all([](auto& s) { return s.start(); });
     }
 
     ss::future<> stop() {
@@ -251,13 +273,22 @@ TEST_F_CORO(read_merge_fixture, test_unique_objects_not_merged) {
       test_ntp, make_query(id2), ss::manual_clock::now() + 10s);
 
     // The fetch handler should receive TWO proxy requests (one per object).
-    auto request = co_await sink.local().get_next_requests();
-    ASSERT_TRUE_CORO(request.has_value());
-    ASSERT_EQ_CORO(request.value().requests.size(), 2);
+    // They may arrive in separate batches due to actor scheduling.
+    std::vector<fetch_handler::read_requests_list> batches;
+    size_t total = 0;
+    while (total < 2) {
+        auto request = co_await sink.local().get_next_requests();
+        ASSERT_TRUE_CORO(request.has_value());
+        total += request.value().requests.size();
+        batches.push_back(std::move(request.value()));
+    }
+    ASSERT_EQ_CORO(total, 2);
 
     // Fulfill both.
-    for (auto& r : request.value().requests) {
-        r.set_value({{make_batch_result()}});
+    for (auto& batch : batches) {
+        for (auto& r : batch.requests) {
+            r.set_value({{make_batch_result()}});
+        }
     }
 
     auto result1 = co_await std::move(fut1);

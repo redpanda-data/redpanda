@@ -13,6 +13,7 @@
 #include "absl/container/fixed_array.h"
 #include "base/seastarx.h"
 #include "cloud_topics/level_zero/common/level_zero_probe.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
 #include "cloud_topics/level_zero/pipeline/write_pipeline.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
 #include "config/property.h"
@@ -325,7 +326,9 @@ struct scheduler_context {
 /// requests from many different shards to the one target shard.
 template<typename Clock = seastar::lowres_clock>
 class write_request_scheduler
-  : public ss::peering_sharded_service<write_request_scheduler<Clock>> {
+  : public ss::peering_sharded_service<write_request_scheduler<Clock>>
+  , public write_pipeline_actor<Clock> {
+    using actor_t = write_pipeline_actor<Clock>;
     friend struct write_request_balancer_accessor;
 
     struct shard_info {
@@ -338,25 +341,17 @@ class write_request_scheduler
 public:
     explicit write_request_scheduler(write_pipeline<Clock>::stage s);
 
-    ss::future<> start();
+    ss::future<> start() override;
 
-    ss::future<> stop();
+    ss::future<> stop() override;
+
+protected:
+    ss::future<> process(pipeline_notification msg) override;
+    void on_error(std::exception_ptr e) noexcept override;
 
 private:
-    /// Target shard pulls write requests from pipelines of
-    /// other shards and forwards them to its own pipeline.
-    /// Then it propagates the responses back to the original
-    /// shards.
-    /// \param infos is a list of shards that have write requests
-    ///        to forward (could be outdated).
-    /// \note The method is invoked on the target shard. It communicates
-    ///       with other shards to instruct them to forward their requests
-    ///       to the target shard to upload.
     ss::future<> pull_and_roundtrip(
       std::vector<shard_info> infos, std::optional<schedule_request<Clock>>);
-
-    /// Unified upload path
-    ss::future<> bg_handler();
 
     /// Run one round of upload
     /// \return next wake up time
@@ -366,62 +361,24 @@ private:
 
     using gate_holder_ptr = std::unique_ptr<ss::gate::holder>;
 
-    /// Make a copy of a single write request and enqueue it
-    /// to the pipeline on the target shard. Wait until it's
-    /// processed and return the response.
-    ///
-    /// \param req is a write request to forward
-    /// \param target_gate_holder is a pointer to the gate holder owned by the
-    ///        target shard
-    /// \note The method is invoked on the target shard (the shard that uploads
-    /// the data).
     ss::future<std::expected<foreign_ptr_t, errc>> proxy_write_request(
       write_request<Clock>* req, ss::gate::holder target_gate_holder) noexcept;
 
-    /// Forward all write requests to the target shard
-    /// \param shard is a target shard that should perform the upload
-    /// \param list is a list of write requests to forward
-    /// \param target_shard_gate_holder is a pointer to the gate holder owned by
-    /// the
-    ///        target shard
-    /// \note The method is invoked on the shard that owns the data. It submits
-    /// the continuation
-    ///       to the target shard to complete the operation.
     ss::future<> roundtrip(
       ss::shard_id shard,
       write_pipeline<Clock>::write_requests_list list,
       ss::foreign_ptr<gate_holder_ptr> target_shard_gate_holder);
 
-    /// Acknowledge the write request with the response
-    /// \param req is a write request to acknowledge
-    /// \param resp is a response to propagate
-    /// \note The response is created on the target shard, the method
-    ///       is invoked on the shard that owns the write request.
     void ack_write_response(
       write_request<Clock>* req, std::expected<foreign_ptr_t, errc> resp);
 
-    /// Forward all write requests to the target shard
-    /// \param shard is a target shard that should perform the upload
-    /// \param target_shard_gate_holder is a pointer to the gate holder
-    /// \note The method is invoked on the shard that owns the data.
     ss::future<> forward_to(
       ss::shard_id shard,
       ss::foreign_ptr<gate_holder_ptr> target_shard_gate_holder);
 
-    /// Compute next wake up time for the background fiber.
-    /// The interval could be short or long. If the background fiber expects
-    /// that it will not have enough data for L0 upload for a relatively long
-    /// time it will request long sleep. If the upload conditions are almost met
-    /// it will ask for short sleep interval.
-    /// \param long_sleep indicates that the long sleep interval should be used
-    /// \return Time to wake up the background fiber next time.
     time_point get_next_wakeup_time(bool long_sleep = false);
 
-    write_pipeline<Clock>::stage _stage;
-    ss::abort_source _as;
-    ss::gate _gate;
-
-    // This field is used in tests to disable background activit
+    // This field is used in tests to disable background activity
     bool _test_only_disable_background_loop{false};
 
     config::binding<size_t> _max_buffer_size;
@@ -430,11 +387,8 @@ private:
 
     write_request_scheduler_probe _probe;
 
-    // Field used to allocate scheduler_context. Only initialized
-    // on shard zero. Accessed from all shards.
     std::optional<scheduler_context<Clock>> _shard_zero_context;
 
-    // Every shard accesses the context through this reference.
     scheduler_context<Clock>* _context;
     ssx::named_semaphore<Clock> _init_barrier{0, "l0/write_request_scheduler"};
 };

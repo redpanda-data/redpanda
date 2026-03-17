@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/write_request_scheduler/write_request_scheduler.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -35,70 +37,49 @@ namespace cloud_topics {
 
 // Sink consumes and acknowledges all write requests
 // in the pipeline.
-struct pipeline_sink {
+struct pipeline_sink : public l0::write_pipeline_actor<> {
+    using actor_t = l0::write_pipeline_actor<>;
+
     explicit pipeline_sink(l0::write_pipeline<>::stage s)
-      : stage(s) {
-        vlog(test_log.info, "pipeline_sink stage: {}", stage.id());
+      : actor_t(std::move(s)) {
+        vlog(test_log.info, "pipeline_sink stage: {}", this->stage().id());
     }
 
-    ss::future<> start() {
-        ssx::background = bg_run();
+protected:
+    ss::future<> process(l0::pipeline_notification) override {
+        auto result = this->stage().pull_write_requests(
+          std::numeric_limits<size_t>::max(),
+          std::numeric_limits<size_t>::max());
+        for (auto& r : result.requests) {
+            if (error_generator) {
+                auto errc = error_generator(r);
+                if (errc != errc::success) {
+                    r.set_value(errc);
+                    write_requests_acked++;
+                    vlog(
+                      test_log.debug,
+                      "Write request NACK({}), total ack: {}",
+                      errc,
+                      write_requests_acked);
+                    continue;
+                }
+            }
+            r.set_value(
+              upload_meta{.shard = ss::this_shard_id(), .extents = {}});
+            write_requests_acked++;
+            vlog(
+              test_log.debug,
+              "Write request ACK, total ack: {}",
+              write_requests_acked);
+        }
         co_return;
     }
 
-    ss::future<> stop() {
-        _as.request_abort();
-        co_await _gate.close();
+    void on_error(std::exception_ptr e) noexcept override {
+        vlog(test_log.error, "pipeline_sink error: {}", e);
     }
 
-    ss::future<> bg_run() {
-        auto h = _gate.hold();
-        while (!_as.abort_requested()) {
-            vlog(
-              test_log.debug,
-              "pipeline_sink subscribe, stage id {}",
-              stage.id());
-            auto res = co_await stage.wait_next(&_as);
-            vlog(test_log.debug, "pipeline_sink event");
-            if (!res.has_value()) {
-                vlog(
-                  test_log.error, "Event subscription failed: {}", res.error());
-                continue;
-            }
-            auto event = res.value();
-            if (event.type != l0::event_type::new_write_request) {
-                co_return;
-            }
-            // Vacuum all write requests
-            auto result = stage.pull_write_requests(
-              std::numeric_limits<size_t>::max());
-            for (auto& r : result.requests) {
-                if (error_generator) {
-                    auto errc = error_generator(r);
-                    if (errc != errc::success) {
-                        r.set_value(errc);
-                        write_requests_acked++;
-                        vlog(
-                          test_log.debug,
-                          "Write request NACK({}), total ack: {}",
-                          errc,
-                          write_requests_acked);
-                        continue;
-                    }
-                }
-                r.set_value(upload_meta{});
-                write_requests_acked++;
-                vlog(
-                  test_log.debug,
-                  "Write request ACK, total ack: {}",
-                  write_requests_acked);
-            }
-        }
-    }
-
-    l0::write_pipeline<>::stage stage;
-    ss::gate _gate;
-    ss::abort_source _as;
+public:
     size_t write_requests_acked{0};
     // This function is used to simulate upload failures
     std::function<errc(l0::write_request<>&)> error_generator;
@@ -136,18 +117,22 @@ public:
               }
           });
 
-        // Start scheduler - can be called before sink is created since
-        // next_stage() now returns unassigned_pipeline_stage when next
-        // stage is not registered
-        vlog(test_log.info, "Starting scheduler");
-        co_await scheduler.invoke_on_all(
-          [](l0::write_request_scheduler<>& sched) { return sched.start(); });
-
-        // Create and start the sink
+        // Create the sink
         vlog(test_log.info, "Creating request_sink");
         co_await request_sink.start(ss::sharded_parameter([this] {
             return pipeline.local().register_write_pipeline_stage();
         }));
+
+        // Register actors with pipeline in stage order
+        co_await pipeline.invoke_on_all([this](auto& p) {
+            p.register_actor(&scheduler.local());
+            p.register_actor(&request_sink.local());
+        });
+
+        // Start actors
+        vlog(test_log.info, "Starting scheduler");
+        co_await scheduler.invoke_on_all(
+          [](l0::write_request_scheduler<>& sched) { return sched.start(); });
         vlog(test_log.info, "Starting request_sink");
         co_await request_sink.invoke_on_all(
           [](pipeline_sink& sink) { return sink.start(); });

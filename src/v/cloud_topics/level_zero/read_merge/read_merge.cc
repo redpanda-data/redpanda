@@ -22,23 +22,15 @@ constexpr size_t max_bytes_per_iter = 10_MiB;
 
 template<class Clock>
 read_merge<Clock>::read_merge(read_pipeline<Clock>::stage s)
-  : _pipeline_stage(s)
+  : actor_t(std::move(s))
   , _probe(config::shard_local_cfg().disable_metrics())
   , _in_flight_sem(
       config::shard_local_cfg().cloud_storage_max_connections(),
       "l0/read_merge") {}
 
 template<class Clock>
-ss::future<> read_merge<Clock>::start() {
-    ssx::spawn_with_gate(_gate, [this] { return bg_loop(); });
-    return ss::now();
-}
-
-template<class Clock>
 ss::future<> read_merge<Clock>::stop() {
     // Signal all waiters so they don't hang during shutdown.
-    // Use errc::shutting_down so waiters propagate the error
-    // instead of pushing requests to the next stage.
     for (auto& [id, promise] : _in_flight) {
         if (promise.available()) {
             continue;
@@ -47,74 +39,45 @@ ss::future<> read_merge<Clock>::stop() {
     }
     _in_flight.clear();
     _in_flight_sem.broken();
-    co_await _gate.close();
+    co_await actor_t::stop();
 }
 
 template<class Clock>
-ss::future<> read_merge<Clock>::bg_loop() {
-    auto holder = _gate.hold();
-    while (!_pipeline_stage.stopped()) {
-        auto fut = co_await ss::coroutine::as_future(
-          _pipeline_stage.pull_fetch_requests(max_bytes_per_iter));
+ss::future<> read_merge<Clock>::process(pipeline_notification) {
+    auto requests = this->stage().pull_fetch_requests_nowait(
+      max_bytes_per_iter);
+    auto queue = std::move(requests.requests);
 
-        if (fut.failed()) {
-            auto e = fut.get_exception();
-            if (ssx::is_shutdown_exception(e)) {
-                vlog(
-                  _pipeline_stage.logger().debug,
-                  "Read merge stopping due to shutdown");
-                co_return;
-            }
+    while (!queue.empty()) {
+        auto units_fut = co_await ss::coroutine::as_future(
+          ss::get_units(
+            _in_flight_sem,
+            1,
+            this->stage().get_root_rtc().root_abort_source()));
+
+        if (units_fut.failed()) {
+            auto ex = units_fut.get_exception();
             vlog(
-              _pipeline_stage.logger().error,
-              "Read merge failed to pull requests: {}",
-              e);
-            continue;
-        }
-        auto fut_res = std::move(fut).get();
-        if (!fut_res.has_value()) {
-            auto err = fut_res.error();
-            if (err == errc::shutting_down) {
-                vlog(
-                  _pipeline_stage.logger().debug,
-                  "Read merge stopping due to shutdown");
-                co_return;
+              this->stage().logger().debug,
+              "read_merge is shutting down: {}",
+              ex);
+            for (auto& req : queue) {
+                req.set_value(errc::shutting_down);
             }
-            vlog(
-              _pipeline_stage.logger().error,
-              "Read merge received error pulling requests: {}",
-              fut_res.error());
-            continue;
+            break;
         }
-        auto to_process = std::move(fut_res.value());
-        auto queue = std::move(to_process.requests);
-
-        while (!queue.empty()) {
-            auto units_fut = co_await ss::coroutine::as_future(
-              ss::get_units(
-                _in_flight_sem,
-                1,
-                _pipeline_stage.get_root_rtc().root_abort_source()));
-
-            if (units_fut.failed()) {
-                auto ex = units_fut.get_exception();
-                vlog(
-                  _pipeline_stage.logger().debug,
-                  "read_merge is shutting down: {}",
-                  ex);
-                for (auto& req : queue) {
-                    req.set_value(errc::shutting_down);
-                }
-                break;
-            }
-            auto req = &queue.front();
-            queue.pop_front();
-            ssx::spawn_with_gate(
-              _gate, [this, req, u = std::move(units_fut.get())]() mutable {
-                  return process_single_request(req, std::move(u));
-              });
-        }
+        auto req = &queue.front();
+        queue.pop_front();
+        ssx::spawn_with_gate(
+          this->_gate, [this, req, u = std::move(units_fut.get())]() mutable {
+              return process_single_request(req, std::move(u));
+          });
     }
+}
+
+template<class Clock>
+void read_merge<Clock>::on_error(std::exception_ptr e) noexcept {
+    vlog(this->stage().logger().error, "Read merge error: {}", e);
 }
 
 template<class Clock>
@@ -147,7 +110,7 @@ ss::future<> read_merge<Clock>::process_single_request(
             auto sf = it->second.get_shared_future();
             auto result = co_await std::move(sf);
 
-            if (_pipeline_stage.stopped()) {
+            if (this->stage().stopped()) {
                 req->set_value(errc::shutting_down);
                 co_return;
             }
@@ -165,7 +128,7 @@ ss::future<> read_merge<Clock>::process_single_request(
 
             // The first download succeeded. Push our request to the
             // next stage where it will hit cache.
-            _pipeline_stage.push_next_stage(*req);
+            this->stage().push_next_stage(*req);
             co_return;
         }
 
@@ -185,15 +148,15 @@ ss::future<> read_merge<Clock>::process_single_request(
           req->ntp,
           std::move(query),
           req->expiration_time,
-          &_pipeline_stage.get_root_rtc(),
+          &this->stage().get_root_rtc(),
           req->stage);
 
         _probe.register_request_out(size_estimate);
-        _pipeline_stage.push_next_stage(*proxy);
+        this->stage().push_next_stage(*proxy);
 
         using request_fut_t
           = ss::future<typename read_request<Clock>::response_t>;
-        auto holder = _gate.hold();
+        auto holder = this->_gate.hold();
         proxy->response.get_future()
           .then_wrapped(
             [this, id, proxy, h = std::move(holder), u = std::move(units)](

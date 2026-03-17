@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
     name = "read_pipeline_test",
@@ -80,4 +80,3 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
-

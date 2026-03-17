@@ -10,11 +10,8 @@
 
 #pragma once
 
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
 #include "cloud_topics/level_zero/pipeline/read_pipeline.h"
-
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/gate.hh>
-#include <seastar/core/lowres_clock.hh>
 
 namespace cloud_topics::l0 {
 
@@ -29,7 +26,9 @@ namespace cloud_topics::l0 {
 ///
 /// For requests that target single extent the stage simply forwards
 /// them to the next stage without any modifications.
-class read_fanout {
+class read_fanout : public read_pipeline_actor<> {
+    using actor_t = read_pipeline_actor<>;
+
 public:
     explicit read_fanout(l0::read_pipeline<>::stage);
 
@@ -39,18 +38,15 @@ public:
         size_t requests_fail{0};
     };
 
-    ss::future<> start();
-    ss::future<> stop();
-
     stats get_stats() const noexcept;
 
-private:
-    ss::future<> bg_process();
+protected:
+    ss::future<> process(pipeline_notification msg) override;
+    void on_error(std::exception_ptr e) noexcept override;
 
+private:
     ss::future<> process_single_request(l0::read_request<>* req);
 
-    ss::gate _gate;
-    l0::read_pipeline<>::stage _pipeline_stage;
     stats _stats;
 };
 } // namespace cloud_topics::l0

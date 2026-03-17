@@ -31,59 +31,32 @@ fetch_handler::fetch_handler(
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* remote,
   cloud_io::basic_cache_service_api<>* cache)
-  : _bucket(std::move(bucket))
+  : actor_t(std::move(pipeline_stage))
+  , _bucket(std::move(bucket))
   , _remote(remote)
   , _cache(cache)
-  , _rtc(&pipeline_stage.get_root_rtc())
-  , _logger(cd_log, _rtc, "ct:l0_fetch_handler")
-  , _pipeline_stage(pipeline_stage) {}
+  , _rtc(&stage().get_root_rtc())
+  , _logger(cd_log, _rtc, "ct:l0_fetch_handler") {}
 
-ss::future<> fetch_handler::start() {
-    ssx::spawn_with_gate(_gate, [this] { return bg_process_requests(); });
-    return ss::now();
+ss::future<> fetch_handler::process(pipeline_notification) {
+    auto requests = stage().pull_fetch_requests_nowait(100_MiB);
+    vlog(
+      _logger.trace,
+      "got {} requests from the pipeline",
+      requests.requests.size());
+    chunked_vector<ss::future<>> bg;
+    for (auto& req : requests.requests) {
+        bg.push_back(process_single_request(&req));
+    }
+    co_await ss::when_all_succeed(bg.begin(), bg.end());
 }
 
-ss::future<> fetch_handler::stop() { co_await _gate.close(); }
-
-ss::future<> fetch_handler::bg_process_requests() {
-    while (!_rtc.root_abort_source().abort_requested()) {
-        auto fut = co_await ss::coroutine::as_future(process_requests());
-        if (fut.failed()) {
-            auto e = fut.get_exception();
-            if (ssx::is_shutdown_exception(e)) {
-                vlog(
-                  _logger.debug,
-                  "Got shutdown error while resolving the request: "
-                  "{}",
-                  e);
-                co_return;
-            } else {
-                // Unexpected exception failure
-                vlog(
-                  _logger.error,
-                  "Got unexpected failure while resolving the request: {}",
-                  e);
-                _pipeline_stage.register_pipeline_error(
-                  errc::unexpected_failure);
-            }
-        } else {
-            auto res = fut.get();
-            if (!res.has_value()) {
-                if (res.error() == errc::shutting_down) {
-                    vlog(_logger.debug, "Shutting down");
-                    co_return;
-                } else {
-                    // Other types of errors are logged inside
-                    // the 'process_request'
-                    _pipeline_stage.register_pipeline_error(res.error());
-                }
-            } else {
-                auto msg = res.value()
-                             ? "no work, l0_fetch_handler will be suspended"
-                             : "l0_fetch_handler will not be suspended";
-                vlog(_logger.trace, "{}", msg);
-            }
-        }
+void fetch_handler::on_error(std::exception_ptr e) noexcept {
+    if (ssx::is_shutdown_exception(e)) {
+        vlog(_logger.debug, "Got shutdown error: {}", e);
+    } else {
+        vlog(_logger.error, "Unexpected failure: {}", e);
+        stage().register_pipeline_error(errc::unexpected_failure);
     }
 }
 
@@ -123,7 +96,7 @@ ss::future<> fetch_handler::process_single_request(l0::read_request<>* req) {
         auto [res, probe] = extent.get();
         // The registration happens even for failed requests because
         // failed requests are consuming resources (API calls).
-        _pipeline_stage.register_micro_probe(probe);
+        stage().register_micro_probe(probe);
         if (!res.has_value()) {
             vlog(
               req->rtc_logger.warn,
@@ -163,29 +136,6 @@ ss::future<> fetch_handler::process_single_request(l0::read_request<>* req) {
         co_return;
     }
     vlog(req->rtc_logger.debug, "Request processing completed");
-}
-
-ss::future<checked<bool, errc>> fetch_handler::process_requests() {
-    // The limit here defines how much memory can be used by all
-    // fetch requests on a shard. The pipeline has its own limit
-    // but it should only be used to avoid OOM'ing on read_request
-    // instances.
-    // TODO: use proper limit
-    auto to_process = co_await _pipeline_stage.pull_fetch_requests(100_MiB);
-    if (!to_process.has_value()) {
-        co_return to_process.error();
-    }
-    vlog(
-      _logger.trace,
-      "got {} requests from the pipeline, completeness: {}",
-      to_process.value().requests.size(),
-      to_process.value().complete);
-    chunked_vector<ss::future<>> bg;
-    for (auto& req : to_process.value().requests) {
-        bg.push_back(process_single_request(&req));
-    }
-    co_await ss::when_all_succeed(bg.begin(), bg.end());
-    co_return to_process.value().complete;
 }
 
 } // namespace cloud_topics::l0

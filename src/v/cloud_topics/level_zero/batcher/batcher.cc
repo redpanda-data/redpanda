@@ -14,6 +14,8 @@
 #include "cloud_io/remote_api.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/batcher/aggregator.h"
+#include "cloud_topics/level_zero/pipeline/serializer.h"
+#include "cloud_topics/level_zero/pipeline/write_request.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/object_utils.h"
 #include "cloud_topics/types.h"
@@ -24,7 +26,6 @@
 
 #include <exception>
 #include <limits>
-#include <variant>
 
 using namespace std::chrono_literals;
 
@@ -36,7 +37,8 @@ batcher<Clock>::batcher(
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<Clock>& remote_api,
   cloud_topics::cluster_services* cluster_services)
-  : _cluster_services(cluster_services)
+  : actor_t(std::move(stage))
+  , _cluster_services(cluster_services)
   , _remote(remote_api)
   , _bucket(std::move(bucket))
   , _upload_timeout(
@@ -44,26 +46,17 @@ batcher<Clock>::batcher(
   , _upload_backoff_interval(
       config::shard_local_cfg()
         .cloud_storage_upload_loop_initial_backoff_ms.bind())
-  , _rtc(_as)
+  , _rtc(this->_as)
   , _logger(cd_log, _rtc)
-  , _stage(std::move(stage))
   , _probe(config::shard_local_cfg().disable_metrics())
   , _upload_sem(
       config::shard_local_cfg().cloud_storage_max_connections(), "l0/batcher") {
 }
 
 template<class Clock>
-ss::future<> batcher<Clock>::start() {
-    vlog(cd_log.debug, "Batcher start");
-    ssx::spawn_with_gate(_gate, [this] { return bg_controller_loop(); });
-    return ss::now();
-}
-
-template<class Clock>
 ss::future<> batcher<Clock>::stop() {
     vlog(cd_log.debug, "Batcher stop");
-    _as.request_abort();
-    co_await _gate.close();
+    co_await actor_t::stop();
 }
 
 template<class Clock>
@@ -106,7 +99,7 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
           .payload = std::move(payload),
         });
 
-        _stage.register_micro_probe(probe);
+        this->stage().register_micro_probe(probe);
 
         switch (upl_result) {
         case cloud_io::upload_result::success:
@@ -171,7 +164,7 @@ ss::future<std::expected<std::monostate, errc>> batcher<Clock>::run_once(
         }
 
         auto epoch_fut = co_await ss::coroutine::as_future<cluster_epoch>(
-          _cluster_services->current_epoch(&_as));
+          _cluster_services->current_epoch(&this->_as));
 
         if (epoch_fut.failed()) {
             auto ex = epoch_fut.get_exception();
@@ -231,131 +224,117 @@ ss::future<std::expected<std::monostate, errc>> batcher<Clock>::run_once(
 }
 
 template<class Clock>
-ss::future<> batcher<Clock>::bg_controller_loop() {
-    auto h = _gate.hold();
-    while (!_as.abort_requested()) {
-        auto wait_res = co_await _stage.wait_next(&_as);
-        if (!wait_res.has_value()) {
-            vlog(
-              _logger.info,
-              "Batcher upload loop is shutting down {}",
-              wait_res.error());
-            co_return;
-        }
-        if (_as.abort_requested()) {
-            vlog(_logger.info, "Batcher upload loop is shutting down");
-            co_return;
-        }
+ss::future<> batcher<Clock>::process(pipeline_notification) {
+    // Pull all available write requests at once.
+    auto all = this->stage().pull_write_requests(
+      std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
 
-        // Pull all available write requests at once.
-        auto all = _stage.pull_write_requests(
-          std::numeric_limits<size_t>::max(),
-          std::numeric_limits<size_t>::max());
-
-        if (all.requests.empty()) {
-            continue;
-        }
-
-        // Calculate total size and split into evenly-sized chunks,
-        // each close to the configured threshold.
-        size_t total_size = 0;
-        for (const auto& wr : all.requests) {
-            total_size += wr.size_bytes();
-        }
-
-        auto threshold = config::shard_local_cfg()
-                           .cloud_topics_produce_batching_size_threshold();
-
-        // If we will allow every chunk to be 'threshold' size
-        // then the last chunk in the list has an opportunity to be
-        // much smaller than the rest. Consider a case when the threshold
-        // is 4MiB and we got 8MiB + 1KiB in one iteration. If we will
-        // upload two 4MiB objects we will have to upload 1KiB object next.
-        // The solution is to allow upload size to deviate more if it allows
-        // us to avoid overly small objects (which will impact TCO).
-        //
-        // The computation below can yield small target_chunk_size in case
-        // if total_size is below the threshold. If the total_size exceeds
-        // the threshold the target_chunk_size can either overshoot the
-        // threshold or undershoot. In both cases the error is bounded by
-        // about 50%. The largest error is an overshoot in case if
-        // the total_size is 6MiB - 1 byte and the threshold is 4MiB. The
-        // num_chunks in this case is 1 and the target_chunk_size is approx.
-        // 6MiB which is 2MiB over the threshold (50% of 4MiB threshold).
-        // If the total_size is 6MiB the num_chunks will be 2 and the
-        // target_chunk_size will be 3MiB which is 1MiB below the threshold
-        // (or 25% of 4MiB).
-        size_t num_chunks = std::max(
-          size_t{1}, (total_size + threshold / 2) / threshold);
-        size_t target_chunk_size = total_size / num_chunks;
-
-        vlog(
-          _logger.trace,
-          "Splitting {} ({} bytes) into {} chunks, target chunk size: {} "
-          "({})",
-          human::bytes(total_size),
-          total_size,
-          num_chunks,
-          human::bytes(target_chunk_size),
-          target_chunk_size);
-
-        for (size_t i = 0; i < num_chunks && !all.requests.empty(); ++i) {
-            auto units_fut = co_await ss::coroutine::as_future(
-              ss::get_units(_upload_sem, 1, _as));
-
-            if (units_fut.failed()) {
-                auto ex = units_fut.get_exception();
-                vlog(
-                  _logger.info, "Batcher upload loop is shutting down: {}", ex);
-                co_return;
-            }
-            auto units = std::move(units_fut.get());
-
-            // Build a chunk by moving requests from the pulled list
-            // until we reach the target size (unless it's the last
-            // chunk, upload everything in this case).
-            typename write_pipeline<Clock>::write_requests_list chunk(
-              all._parent, all._ps);
-
-            size_t chunk_size = 0;
-            bool is_last = (i == num_chunks - 1);
-            while (!all.requests.empty()) {
-                auto& wr = all.requests.front();
-                auto sz = wr.size_bytes();
-                chunk_size += sz;
-                wr._hook.unlink();
-                chunk.requests.push_back(wr);
-                // Allow the last chunk to be larger than the target
-                // to avoid small objects.
-                if (!is_last && chunk_size >= target_chunk_size) {
-                    break;
-                }
-            }
-
-            ssx::spawn_with_gate(
-              _gate,
-              [this,
-               chunk = std::move(chunk),
-               units = std::move(units)]() mutable {
-                  return run_once(std::move(chunk))
-                    .then([this](std::expected<std::monostate, errc> res) {
-                        if (!res.has_value()) {
-                            if (res.error() == errc::shutting_down) {
-                                vlog(
-                                  _logger.info,
-                                  "Batcher upload loop is shutting down");
-                            } else {
-                                vlog(
-                                  _logger.info,
-                                  "Batcher upload loop error: {}",
-                                  res.error());
-                            }
-                        }
-                    })
-                    .finally([u = std::move(units)] {});
-              });
-        }
+    if (all.requests.empty()) {
+        vlog(_logger.trace, "No write requests to process");
+        co_return;
     }
+
+    // Calculate total size and split into evenly-sized chunks,
+    // each close to the configured threshold.
+    size_t total_size = 0;
+    for (const auto& wr : all.requests) {
+        total_size += wr.size_bytes();
+    }
+
+    auto threshold = config::shard_local_cfg()
+                       .cloud_topics_produce_batching_size_threshold();
+
+    // If we will allow every chunk to be 'threshold' size
+    // then the last chunk in the list has an opportunity to be
+    // much smaller than the rest. Consider a case when the threshold
+    // is 4MiB and we got 8MiB + 1KiB in one iteration. If we will
+    // upload two 4MiB objects we will have to upload 1KiB object next.
+    // The solution is to allow upload size to deviate more if it allows
+    // us to avoid overly small objects (which will impact TCO).
+    //
+    // The computation below can yield small target_chunk_size in case
+    // if total_size is below the threshold. If the total_size exceeds
+    // the threshold the target_chunk_size can either overshoot the
+    // threshold or undershoot. In both cases the error is bounded by
+    // about 50%. The largest error is an overshoot in case if
+    // the total_size is 6MiB - 1 byte and the threshold is 4MiB. The
+    // num_chunks in this case is 1 and the target_chunk_size is approx.
+    // 6MiB which is 2MiB over the threshold (50% of 4MiB threshold).
+    // If the total_size is 6MiB the num_chunks will be 2 and the
+    // target_chunk_size will be 3MiB which is 1MiB below the threshold
+    // (or 25% of 4MiB).
+    size_t num_chunks = std::max(
+      size_t{1}, (total_size + threshold / 2) / threshold);
+    size_t target_chunk_size = total_size / num_chunks;
+
+    vlog(
+      _logger.trace,
+      "Splitting {} ({} bytes) into {} chunks, target chunk size: {} "
+      "({})",
+      human::bytes(total_size),
+      total_size,
+      num_chunks,
+      human::bytes(target_chunk_size),
+      target_chunk_size);
+
+    for (size_t i = 0; i < num_chunks && !all.requests.empty(); ++i) {
+        auto units_fut = co_await ss::coroutine::as_future(
+          ss::get_units(_upload_sem, 1, this->_as));
+
+        if (units_fut.failed()) {
+            auto ex = units_fut.get_exception();
+            vlog(_logger.info, "Batcher upload loop is shutting down: {}", ex);
+            co_return;
+        }
+        auto units = std::move(units_fut.get());
+
+        // Build a chunk by moving requests from the pulled list
+        // until we reach the target size (unless it's the last
+        // chunk, upload everything in this case).
+        typename write_pipeline<Clock>::write_requests_list chunk(
+          all._parent, all._ps);
+
+        size_t chunk_size = 0;
+        bool is_last = (i == num_chunks - 1);
+        while (!all.requests.empty()) {
+            auto& wr = all.requests.front();
+            auto sz = wr.size_bytes();
+            chunk_size += sz;
+            wr._hook.unlink();
+            chunk.requests.push_back(wr);
+            // Allow the last chunk to be larger than the target
+            // to avoid small objects.
+            if (!is_last && chunk_size >= target_chunk_size) {
+                break;
+            }
+        }
+
+        ssx::spawn_with_gate(
+          this->_gate,
+          [this, chunk = std::move(chunk), units = std::move(units)]() mutable {
+              return run_once(std::move(chunk))
+                .then([this](std::expected<std::monostate, errc> res) {
+                    if (!res.has_value()) {
+                        if (res.error() == errc::shutting_down) {
+                            vlog(
+                              _logger.info,
+                              "Batcher upload loop is shutting down");
+                        } else {
+                            vlog(
+                              _logger.info,
+                              "Batcher upload loop error: {}",
+                              res.error());
+                        }
+                    }
+                })
+                .finally([u = std::move(units)] {});
+          });
+    }
+}
+
+template<class Clock>
+void batcher<Clock>::on_error(std::exception_ptr e) noexcept {
+    vlog(_logger.error, "Batcher error: {}", e);
 }
 
 template class batcher<ss::lowres_clock>;

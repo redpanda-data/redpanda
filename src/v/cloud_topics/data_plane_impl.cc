@@ -105,6 +105,25 @@ public:
           _batch_cache, ss::sharded_parameter([storage_api] {
               return &storage_api->local().log_mgr();
           }));
+
+        // Register actors with their pipelines. Order matters: actors are
+        // chained so that signal() on the pipeline notifies the first
+        // registered actor, which can then notify_next().
+        co_await _write_pipeline.invoke_on_all([this](auto& p) {
+            p.register_actor(&_write_req_scheduler.local());
+            p.register_actor(&_batcher.local());
+        });
+
+        co_await _read_pipeline.invoke_on_all([this](auto& p) {
+            p.register_actor(&_read_fanout.local());
+            if (_read_request_scheduler.local_is_initialized()) {
+                p.register_actor(&_read_request_scheduler.local());
+            }
+            if (_read_merge.local_is_initialized()) {
+                p.register_actor(&_read_merge.local());
+            }
+            p.register_actor(&_fetch_handler.local());
+        });
     }
 
     seastar::future<> start() override {

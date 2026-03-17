@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/read_fanout/read_fanout.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -28,9 +30,11 @@ namespace cloud_topics {
 
 /// The handler simulates L0 object downloads
 /// by injecting sleeps.
-struct fetch_handler {
-    explicit fetch_handler(l0::read_pipeline<>& p, int concurrency)
-      : stage(p.register_read_pipeline_stage())
+struct fetch_handler : public l0::read_pipeline_actor<> {
+    using actor_t = l0::read_pipeline_actor<>;
+
+    explicit fetch_handler(l0::read_pipeline<>::stage s, int concurrency)
+      : actor_t(std::move(s))
       , _con(concurrency) {
         // Use same batch to reply to all materialization requests
         // to avoid regenerating it during the run.
@@ -44,34 +48,27 @@ struct fetch_handler {
           });
     }
 
-    ss::future<> start(std::chrono::milliseconds d) {
+    void set_download_latency(std::chrono::milliseconds d) {
         _download_latency = d;
-        ssx::background = bg_run();
-        return ss::now();
     }
 
-    ss::future<> stop() { co_await _gate.close(); }
-
-    ss::future<> bg_run() {
-        auto h = _gate.hold();
-        while (!stage.stopped()) {
-            auto result = co_await stage.pull_fetch_requests(
-              std::numeric_limits<size_t>::max());
-
-            if (!result.has_value()) {
-                // Expected during shutdown
-                co_return;
-            }
-
-            for (auto& r : result.value().requests) {
-                // Process every request concurrently because this is what
-                // real fetch handler does.
-                ssx::spawn_with_gate(
-                  _gate, [this, &r] { return process_single_request(&r); });
-            }
+protected:
+    ss::future<> process(l0::pipeline_notification) override {
+        auto requests = this->stage().pull_fetch_requests_nowait(
+          std::numeric_limits<size_t>::max());
+        for (auto& r : requests.requests) {
+            // Process every request concurrently because this is what
+            // real fetch handler does.
+            ssx::spawn_with_gate(this->_gate, [this, req = &r] {
+                return process_single_request(req);
+            });
         }
+        co_return;
     }
 
+    void on_error(std::exception_ptr) noexcept override {}
+
+private:
     ss::future<> process_single_request(l0::read_request<>* req) {
         auto auto_dispose = ss::defer(
           [req] { req->set_value(errc::unexpected_failure); });
@@ -94,8 +91,6 @@ struct fetch_handler {
     }
 
     std::optional<model::record_batch> _batch;
-    l0::read_pipeline<>::stage stage;
-    ss::gate _gate;
     std::chrono::milliseconds _download_latency;
     // Semaphore used to simulate connection pool.
     // Up to 20 connections are allowed to run concurrently.
@@ -125,11 +120,21 @@ public:
         }
 
         co_await sink.start(
-          ss::sharded_parameter([this] { return std::ref(pipeline.local()); }),
+          ss::sharded_parameter(
+            [this] { return pipeline.local().register_read_pipeline_stage(); }),
           concurrency);
 
-        co_await sink.invoke_on_all(
-          [dl_lat](auto& sink) { return sink.start(dl_lat); });
+        co_await pipeline.invoke_on_all([this](auto& p) {
+            if (fanout.local_is_initialized()) {
+                p.register_actor(&fanout.local());
+            }
+            p.register_actor(&sink.local());
+        });
+
+        co_await sink.invoke_on_all([dl_lat](auto& sink) {
+            sink.set_download_latency(dl_lat);
+            return sink.start();
+        });
     }
 
     ss::future<> stop() {

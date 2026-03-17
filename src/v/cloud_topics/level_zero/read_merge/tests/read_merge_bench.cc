@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_stage.h"
 #include "cloud_topics/level_zero/read_merge/read_merge.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -29,11 +31,13 @@ namespace cloud_topics {
 /// Mock fetch handler that processes requests with an optional delay
 /// to simulate I/O latency. When delay is zero, requests complete
 /// synchronously (original behavior).
-struct fetch_handler {
+struct fetch_handler : public l0::read_pipeline_actor<> {
+    using actor_t = l0::read_pipeline_actor<>;
+
     explicit fetch_handler(
-      l0::read_pipeline<>& p,
+      l0::read_pipeline<>::stage s,
       std::chrono::microseconds delay = std::chrono::microseconds(0))
-      : stage(p.register_read_pipeline_stage())
+      : actor_t(std::move(s))
       , _delay(delay) {
         _batch = model::test::make_random_batch(
           model::test::record_batch_spec{
@@ -45,32 +49,21 @@ struct fetch_handler {
           });
     }
 
-    ss::future<> start() {
-        ssx::background = bg_run();
-        return ss::now();
-    }
-
-    ss::future<> stop() { co_await _gate.close(); }
-
-    ss::future<> bg_run() {
-        auto h = _gate.hold();
-        while (!stage.stopped()) {
-            auto result = co_await stage.pull_fetch_requests(
-              std::numeric_limits<size_t>::max());
-
-            if (!result.has_value()) {
-                // Expected during shutdown
-                co_return;
-            }
-
-            for (auto& r : result.value().requests) {
-                ssx::spawn_with_gate(_gate, [this, req = &r]() mutable {
-                    return process_single_request(req);
-                });
-            }
+protected:
+    ss::future<> process(l0::pipeline_notification) override {
+        auto requests = this->stage().pull_fetch_requests_nowait(
+          std::numeric_limits<size_t>::max());
+        for (auto& r : requests.requests) {
+            ssx::spawn_with_gate(this->_gate, [this, req = &r]() mutable {
+                return process_single_request(req);
+            });
         }
+        co_return;
     }
 
+    void on_error(std::exception_ptr) noexcept override {}
+
+private:
     ss::future<> process_single_request(l0::read_request<>* req) {
         if (_delay.count() > 0) {
             co_await ss::sleep(_delay);
@@ -86,8 +79,6 @@ struct fetch_handler {
     }
 
     std::optional<model::record_batch> _batch;
-    l0::read_pipeline<>::stage stage;
-    ss::gate _gate;
     std::chrono::microseconds _delay;
 };
 } // namespace cloud_topics
@@ -110,8 +101,16 @@ public:
         }
 
         co_await sink.start(
-          ss::sharded_parameter([this] { return std::ref(pipeline.local()); }),
+          ss::sharded_parameter(
+            [this] { return pipeline.local().register_read_pipeline_stage(); }),
           fetch_delay);
+
+        co_await pipeline.invoke_on_all([this](auto& p) {
+            if (merge.local_is_initialized()) {
+                p.register_actor(&merge.local());
+            }
+            p.register_actor(&sink.local());
+        });
 
         co_await sink.invoke_on_all([](auto& sink) { return sink.start(); });
     }

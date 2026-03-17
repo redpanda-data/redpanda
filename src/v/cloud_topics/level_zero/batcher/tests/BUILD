@@ -40,7 +40,6 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/level_zero/batcher",
         "//src/v/cloud_topics/level_zero/batcher:aggregator",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
-        "//src/v/cloud_topics/level_zero/pipeline:event_filter",
         "//src/v/cloud_topics/level_zero/pipeline:serializer",
         "//src/v/cloud_topics/level_zero/pipeline:write_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:write_request",

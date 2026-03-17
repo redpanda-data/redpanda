@@ -52,6 +52,7 @@ TEST_F_CORO(materialized_extent_fixture, l0_fetch_handler_test) {
 
     vlog(test_log.debug, "Starting L0 fetch handler");
 
+    pipeline.register_actor(&l0_fetch_handler);
     co_await l0_fetch_handler.start();
 
     vlog(test_log.debug, "Make reader");
@@ -91,6 +92,7 @@ TEST_F_CORO(materialized_extent_fixture, l0_fetch_handler_timeout) {
 
     vlog(test_log.debug, "Starting L0 fetch handler");
 
+    pipeline.register_actor(&l0_fetch_handler);
     co_await l0_fetch_handler.start();
 
     vlog(test_log.debug, "Make reader");

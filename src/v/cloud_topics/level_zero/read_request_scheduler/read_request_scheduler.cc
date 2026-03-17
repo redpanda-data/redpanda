@@ -20,15 +20,14 @@ namespace cloud_topics::l0 {
 
 read_request_scheduler::read_request_scheduler(
   read_pipeline<ss::lowres_clock>::stage stage)
-  : _stage(std::move(stage)) {}
+  : actor_t(std::move(stage)) {}
 
 ss::future<> read_request_scheduler::start() {
     vlog(cd_log.debug, "Read Request Scheduler start");
-    ssx::spawn_with_gate(_gate, [this] { return bg_loop(); });
-    co_return;
+    co_await actor_t::start();
 }
 
-ss::future<> read_request_scheduler::stop() { co_await _gate.close(); }
+ss::future<> read_request_scheduler::stop() { co_await actor_t::stop(); }
 
 namespace {
 ss::shard_id shard_for(const read_request<ss::lowres_clock>& req) {
@@ -64,12 +63,12 @@ void read_request_scheduler::schedule_on(
   read_request<ss::lowres_clock>& source_req, ss::shard_id target) {
     if (target == ss::this_shard_id()) {
         // Fast path, just push source_req down the pipeline
-        _stage.push_next_stage(source_req);
+        stage().push_next_stage(source_req);
         return;
     }
 
     // Check shutdown before launching cross-shard RPC
-    if (_stage.stopped()) {
+    if (stage().stopped()) {
         source_req.set_value(errc::shutting_down);
         return;
     }
@@ -106,15 +105,15 @@ read_request_scheduler::proxy_read_request(
     // The request belongs to another pipeline and its stage id doesn't make
     // sense on the current shard.
     auto proxy = make_proxy(
-      target, source_req, timeout, &_stage.get_root_rtc(), _stage.id());
+      target, source_req, timeout, &stage().get_root_rtc(), stage().id());
 
     // Check if pipeline is shutting down before awaiting response
-    if (_stage.stopped()) {
+    if (stage().stopped()) {
         co_return std::unexpected(errc::shutting_down);
     }
 
     auto f = proxy->response.get_future();
-    _stage.push_next_stage(*proxy);
+    stage().push_next_stage(*proxy);
     auto res = co_await ss::coroutine::as_future(std::move(f));
     if (res.failed()) {
         auto ex = res.get_exception();
@@ -127,46 +126,37 @@ read_request_scheduler::proxy_read_request(
     co_return std::move(res.get());
 }
 
-ss::future<> read_request_scheduler::bg_loop() {
-    while (!_stage.stopped()) {
-        // NOTE(1): requests are vectorized but it's not guaranteed
-        // that all extents in the request target the same object.
-        // If this is the case the scheduler will use first extent
-        // to decide the target shard. This could lead to suboptimal
-        // distribution of requests across shards and some edge cases.
-        // To avoid this the caller of the 'materialize' must ensure
-        // that the requests are split properly so that all extents
-        // in the request target the same object. This is not a
-        // correctness problem. The only side effect is that we may
-        // download same objects on multiple shards in parallel in
-        // cases.
-        //
-        // NOTE(2): cache locality is not a concern here because
-        // unlike in cases of write path the read path is only used
-        // when there is a cache miss. Normally, we will not hit this
-        // code path if the cache is working well and there is no
-        // leadership transfers. The goal here is to brute-force the
-        // reconciliation of cache misses as fast as possible.
-        auto res = co_await _stage.pull_fetch_requests(10_MiB);
-        if (!res.has_value()) {
-            if (res.error() == errc::shutting_down) {
-                break;
-            }
-            vlog(
-              _stage.logger().error,
-              "Failed to pull fetch requests: {}",
-              res.error());
-            _stage.register_pipeline_error(res.error());
-            continue;
-        }
-        auto list = std::move(res.value());
-        while (!list.requests.empty()) {
-            auto front = &list.requests.front();
-            list.requests.pop_front();
-            auto target_shard = shard_for(*front);
-            schedule_on(*front, target_shard);
-        }
+ss::future<> read_request_scheduler::process(pipeline_notification) {
+    // NOTE(1): requests are vectorized but it's not guaranteed
+    // that all extents in the request target the same object.
+    // If this is the case the scheduler will use first extent
+    // to decide the target shard. This could lead to suboptimal
+    // distribution of requests across shards and some edge cases.
+    // To avoid this the caller of the 'materialize' must ensure
+    // that the requests are split properly so that all extents
+    // in the request target the same object. This is not a
+    // correctness problem. The only side effect is that we may
+    // download same objects on multiple shards in parallel in
+    // cases.
+    //
+    // NOTE(2): cache locality is not a concern here because
+    // unlike in cases of write path the read path is only used
+    // when there is a cache miss. Normally, we will not hit this
+    // code path if the cache is working well and there is no
+    // leadership transfers. The goal here is to brute-force the
+    // reconciliation of cache misses as fast as possible.
+    auto list = stage().pull_fetch_requests_nowait(10_MiB);
+    while (!list.requests.empty()) {
+        auto front = &list.requests.front();
+        list.requests.pop_front();
+        auto target_shard = shard_for(*front);
+        schedule_on(*front, target_shard);
     }
+    co_return;
+}
+
+void read_request_scheduler::on_error(std::exception_ptr e) noexcept {
+    vlog(cd_log.error, "Read request scheduler error: {}", e);
 }
 
 } // namespace cloud_topics::l0

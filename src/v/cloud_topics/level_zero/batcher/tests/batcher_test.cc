@@ -88,7 +88,7 @@ namespace cloud_topics::l0 {
 struct batcher_accessor {
     ss::future<std::expected<std::monostate, errc>> run_once() noexcept {
         constexpr static size_t lim = 10_MiB;
-        auto list = batcher->_stage.pull_write_requests(lim);
+        auto list = batcher->stage().pull_write_requests(lim, lim);
         return batcher->run_once(std::move(list));
     }
 
@@ -366,6 +366,10 @@ TEST_CORO(batcher_test, chunk_splitting_balances_upload_sizes) {
       .pipeline = &pipeline,
     };
 
+    // Register the batcher as an actor before pushing requests so that
+    // pipeline signals queue in the batcher's mailbox.
+    pipeline.register_actor(&batcher);
+
     // Push several write requests. Each has 1 batch with 10 records
     // (~3KB serialized), so 6 requests total ~18KB. With threshold=4096
     // this should produce multiple balanced chunks.
@@ -383,16 +387,13 @@ TEST_CORO(batcher_test, chunk_splitting_balances_upload_sizes) {
           model::controller_ntp, min_epoch, std::move(batches), deadline));
     }
 
-    // Wait for all write requests to be staged in the pipeline
-    // before starting the batcher. subscribe() checks pre-existing
-    // pending data, so bg_controller_loop's wait_next will return
-    // immediately seeing all requests at once.
+    // Wait for all write requests to be staged in the pipeline.
     co_await sleep_until(10ms, [&] {
         return pipeline_accessor.write_requests_pending(num_requests);
     });
 
-    // Start the batcher — bg_controller_loop will pull all 6 requests
-    // in one batch and split them into balanced chunks.
+    // Start the batcher — it processes queued notifications from the
+    // pipeline, pulling all 6 requests and splitting into balanced chunks.
     co_await batcher.start();
 
     // Wait for all write request futures to resolve (the batcher

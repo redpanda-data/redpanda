@@ -331,7 +331,7 @@ void scheduler_context<Clock>::record_upload_time(
 template<typename Clock>
 write_request_scheduler<Clock>::write_request_scheduler(
   write_pipeline<Clock>::stage s)
-  : _stage(s)
+  : actor_t(std::move(s))
   , _max_buffer_size(
       config::shard_local_cfg()
         .cloud_topics_produce_batching_size_threshold.bind())
@@ -358,9 +358,9 @@ ss::future<> write_request_scheduler<Clock>::start() {
               // Get the next stage bytes reference. This works even if the next
               // stage hasn't been registered yet because the counters are
               // pre-allocated.
-              auto next_ref = s._stage.next_stage_bytes_ref();
+              auto next_ref = s.stage().next_stage_bytes_ref();
               return counter_shard{
-                .count = s._stage.stage_bytes_ref(),
+                .count = s.stage().stage_bytes_ref(),
                 .next_stage_count = next_ref ? next_ref : &zero_counter,
                 .shard = ss::this_shard_id(),
               };
@@ -397,16 +397,19 @@ ss::future<> write_request_scheduler<Clock>::start() {
     }
 
     if (!_test_only_disable_background_loop) {
-        ssx::spawn_with_gate(_gate, [this] { return bg_handler(); });
+        co_await actor_t::start();
+        // Kick off the periodic scheduler tick via self-notification.
+        // The scheduler needs periodic wakeups for round-robin
+        // scheduling even when no new data arrives on this shard.
+        this->tell(pipeline_notification{});
     }
     co_return;
 }
 
 template<typename Clock>
 ss::future<> write_request_scheduler<Clock>::stop() {
-    _as.request_abort();
     _init_barrier.broken();
-    co_await _gate.close();
+    co_await actor_t::stop();
 }
 
 template<typename Clock>
@@ -451,27 +454,32 @@ write_request_scheduler<Clock>::run_once() {
 }
 
 template<typename Clock>
-ss::future<> write_request_scheduler<Clock>::bg_handler() {
-    auto projected_wakeup_time = get_next_wakeup_time(true);
-    while (!_as.abort_requested()) {
-        // Wait until max bytes or projected wake up time is reached. Check how
-        // much data we have and was the deadline reached.
-        auto event = co_await _stage.wait_until(
-          _max_buffer_size(), projected_wakeup_time, &_as);
-        if (!event.has_value()) {
-            if (event.error() == errc::shutting_down) {
-                vlog(cd_log.debug, "bg_handler: shutting down");
-                co_return;
-            } else {
-                vlog(
-                  cd_log.error,
-                  "bg_handler: error waiting for write requests: {}",
-                  event.error());
-            }
+ss::future<> write_request_scheduler<Clock>::process(pipeline_notification) {
+    auto next_wakeup = co_await run_once();
+
+    // Sleep until next wakeup time. New notifications arriving during
+    // the sleep are coalesced in the mailbox (drop_oldest, size 1)
+    // and processed after this returns.
+    auto now = Clock::now();
+    if (next_wakeup > now && !this->_as.abort_requested()) {
+        try {
+            co_await ss::sleep_abortable<Clock>(next_wakeup - now, this->_as);
+        } catch (const ss::sleep_aborted&) {
             co_return;
         }
-        projected_wakeup_time = co_await run_once();
     }
+
+    // Always self-notify to maintain periodic scheduler ticks.
+    // The scheduler needs periodic wakeups for round-robin
+    // scheduling across shards and group management.
+    if (!this->_as.abort_requested()) {
+        this->tell(pipeline_notification{});
+    }
+}
+
+template<typename Clock>
+void write_request_scheduler<Clock>::on_error(std::exception_ptr e) noexcept {
+    vlog(cd_log.error, "write_request_scheduler error: {}", e);
 }
 
 template<typename Clock>
@@ -569,7 +577,7 @@ ss::future<> write_request_scheduler<Clock>::pull_and_roundtrip(
         if (ss::this_shard_id() == info.shard && info.bytes > 0) {
             // Fast path: process requests locally
             // This shard is the target shard selected by round-robin.
-            _stage.process(
+            this->stage().process(
               [this, &signaled](const write_request<Clock>& r) noexcept {
                   signaled = true;
                   _probe.register_request(r.size_bytes());
@@ -584,7 +592,7 @@ ss::future<> write_request_scheduler<Clock>::pull_and_roundtrip(
         // above will see no write requests. Other shards are depositing their
         // requests to the target shard without signalling the next stage. So we
         // need to signal it here.
-        _stage.signal_next_stage();
+        this->stage().signal_next_stage();
     }
     co_await ss::when_all_succeed(in_flight.begin(), in_flight.end());
 }
@@ -601,7 +609,7 @@ write_request_scheduler<Clock>::proxy_write_request(
     // It is safe to dispose the gate holder here because
     // the holder was created on the target shard and
     // it will be destroyed on the target shard as well.
-    auto h = _gate.hold();
+    auto h = this->_gate.hold();
     _probe.register_receive_xshard(req->size_bytes());
     // Create proxy for the foreign request. The bytes were already accounted
     // for on the source shard, so we use enqueue_foreign_request to place it
@@ -612,7 +620,7 @@ write_request_scheduler<Clock>::proxy_write_request(
       shallow_copy(req->data_chunk),
       req->expiration_time);
     auto fut = proxy.response.get_future();
-    _stage.enqueue_foreign_request(proxy, false);
+    this->stage().enqueue_foreign_request(proxy, false);
     target_gate_holder.release();
     auto upload_fut = co_await ss::coroutine::as_future(std::move(fut));
     if (upload_fut.failed()) {
@@ -657,7 +665,7 @@ ss::future<> write_request_scheduler<Clock>::roundtrip(
     // This is executed in the context of the shard that owns the data.
     // The method submits the continuation back to the target shard
     // to complete the operation.
-    auto h = _gate.hold();
+    auto h = this->_gate.hold();
     // Temporary storage for x-shard request and response correlation.
     using response_t
       = std::expected<write_request_scheduler<Clock>::foreign_ptr_t, errc>;
@@ -706,7 +714,7 @@ ss::future<> write_request_scheduler<Clock>::forward_to(
   ss::shard_id target_shard,
   ss::foreign_ptr<gate_holder_ptr> target_shard_gate_holder) {
     // Owning shard
-    auto req = _stage.pull_write_requests(
+    auto req = this->stage().pull_write_requests(
       _max_buffer_size(), _max_cardinality());
     co_await roundtrip(
       target_shard, std::move(req), std::move(target_shard_gate_holder));

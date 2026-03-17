@@ -13,12 +13,11 @@
 #include "base/seastarx.h"
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/remote.h"
+#include "cloud_topics/level_zero/pipeline/pipeline_actor.h"
 #include "cloud_topics/level_zero/pipeline/read_pipeline.h"
 #include "model/fundamental.h"
 
-#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/weak_ptr.hh>
 
 namespace cloud_topics::l0 {
 
@@ -27,7 +26,9 @@ namespace cloud_topics::l0 {
 /// This component should be split up into separate components in the
 /// future (one for materialization step, one for reading from cache,
 // etc). Currently everything is done in one place for simplicity.
-class fetch_handler {
+class fetch_handler : public read_pipeline_actor<> {
+    using actor_t = read_pipeline_actor<>;
+
 public:
     explicit fetch_handler(
       l0::read_pipeline<>::stage,
@@ -35,15 +36,11 @@ public:
       cloud_io::remote_api<>*,
       cloud_io::basic_cache_service_api<>*);
 
-    ss::future<> start();
-    ss::future<> stop();
+protected:
+    ss::future<> process(pipeline_notification msg) override;
+    void on_error(std::exception_ptr e) noexcept override;
 
 private:
-    ss::future<> bg_process_requests();
-
-    /// Run resolver loop once
-    ss::future<checked<bool, errc>> process_requests();
-
     /// Process single request
     ss::future<> process_single_request(l0::read_request<>* req);
 
@@ -52,7 +49,5 @@ private:
     cloud_io::basic_cache_service_api<>* _cache;
     retry_chain_node _rtc;
     retry_chain_logger _logger;
-    ss::gate _gate;
-    l0::read_pipeline<>::stage _pipeline_stage;
 };
 } // namespace cloud_topics::l0
