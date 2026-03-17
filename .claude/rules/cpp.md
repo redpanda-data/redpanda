@@ -26,7 +26,7 @@ the coroutine frame. Required for memory safety, not just style.
 - Don't call `.get_exception()` inside log/assert args — assign to a variable first
 
 ## Naming & style
-- snake_case for identifiers, CamelCase for concepts
+- snake_case uniformly — identifiers, class names, namespaces, file names
 - `/// \brief` Doxygen on public types
 - Map strings to values with `string_switch` (`src/v/strings/string_switch.h`), not if-else chains
 

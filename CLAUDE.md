@@ -28,6 +28,31 @@ Before marking any task done, run in order:
 2. `bazel test <relevant targets>`
 3. `bazel run //tools:clang_format` — must produce no diff
 
+## Architecture
+
+Redpanda is sharded and thread-per-core. Each CPU core runs one Seastar reactor
+shard. Cross-shard calls use `peering_sharded_service::invoke_on(shard, fn)` —
+never shared memory.
+
+Write path:
+```
+Kafka client → src/v/kafka/   (protocol parsing, request routing)
+             → src/v/raft/    (consensus, replication to followers)
+             → src/v/storage/ (log segment append, fsync)
+```
+
+Key subsystems:
+```
+src/v/raft/          HIGH RISK — consensus; bugs cause data loss or split-brain
+src/v/storage/       HIGH RISK — log segments; bugs corrupt persistent data
+src/v/cluster/       partition leadership, membership, metadata coordination
+src/v/kafka/         Kafka protocol translation; no persistent state of its own
+src/v/cloud_storage/ tiered storage (S3/GCS offload)
+src/v/ssx/           Seastar extensions (futures, semaphores, background tasks)
+src/v/container/     chunked_vector, chunked_hash_map
+src/go/rpk/          CLI; no broker-side state
+```
+
 ## Don't
 - Don't open PRs against `main` — always target `dev`
 - Don't manually install C++ deps — Bazel manages them via `MODULE.bazel`
