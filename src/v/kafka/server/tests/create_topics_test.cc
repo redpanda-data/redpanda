@@ -495,10 +495,10 @@ FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
 }
 
 FIXTURE_TEST(unlicensed_permit_if_config_disabled, create_topic_fixture) {
-    lconf().enable_schema_id_validation.set_value(
-      pandaproxy::schema_registry::schema_id_validation_mode::none);
-    lconf().cloud_storage_enabled.set_value(false);
+    update_cluster_config(lconf().enable_schema_id_validation.name(), "none");
+    update_cluster_config(lconf().cloud_storage_enabled.name(), "false");
 
+    wait_for_license_init();
     revoke_license();
 
     using prop_t = std::map<ss::sstring, ss::sstring>;
