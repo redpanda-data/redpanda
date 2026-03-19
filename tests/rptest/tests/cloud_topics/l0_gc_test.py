@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import json
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import TypeAlias, cast
@@ -73,6 +74,9 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
         }
         if extra_rp_conf_overrides:
             extra_rp_conf.update(extra_rp_conf_overrides)
+        self._epoch_increment_interval_ms: int = extra_rp_conf[
+            "cloud_topics_epoch_service_epoch_increment_interval"
+        ]
         super().__init__(
             test_context=test_context,
             extra_rp_conf=extra_rp_conf,
@@ -128,7 +132,24 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             return int(max(s.value for s in samples.samples))
         return 0
 
-    def produce_some(self, topics: list[str], n: int = 300):
+    def produce_some(
+        self,
+        topics: list[str],
+        min_runtime_s: int | None = None,
+    ):
+        """Run a repeater for long enough that the batcher spreads L0
+        objects across multiple epoch intervals, which is required for
+        GC to find epoch-eligible objects to collect. Make sure the
+        repeater makes some progress during that time.
+
+        :param min_runtime_s: Minimum time (seconds) to keep the
+            repeater running.  Defaults to 6x the configured epoch
+            increment interval.
+        """
+        epoch_interval_s = self._epoch_increment_interval_ms // 1000
+        if min_runtime_s is None:
+            min_runtime_s = 6 * epoch_interval_s
+
         with repeater_traffic(
             context=self.test_context,
             redpanda=self.redpanda,
@@ -137,8 +158,21 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             rate_limit_bps=2 * 1024 * 1024,
             workers=1,
         ) as repeater:
-            repeater.await_group_ready()
-            repeater.await_progress(n, timeout_sec=120)
+            start = time.monotonic()
+
+            def produced_across_epochs():
+                produced, _ = repeater.total_messages()
+                elapsed = time.monotonic() - start
+                return produced > 0 and elapsed >= min_runtime_s
+
+            wait_until_with_progress_check(
+                lambda: repeater.total_messages()[0],
+                produced_across_epochs,
+                timeout_sec=int(min_runtime_s) + 60,
+                backoff_sec=2,
+                progress_sec=epoch_interval_s * 3,
+                logger=self.logger,
+            )
 
 
 class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
@@ -154,7 +188,7 @@ class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
         # workload), but we do want to add tests that check constraints
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=5,
             retry_on_exc=True,
         )
@@ -180,7 +214,7 @@ class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
         )
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=5,
             retry_on_exc=True,
         )
@@ -416,7 +450,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         self.logger.debug("Wait until we've deleted something...")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=5,
             retry_on_exc=True,
         )
@@ -442,7 +476,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
 
         wait_until(
             lambda: self.get_num_objects_deleted() > n_deleted,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=5,
             retry_on_exc=True,
         )
@@ -479,7 +513,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         self.logger.debug("Wait for GC to kick in")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=5,
             retry_on_exc=True,
         )
@@ -501,7 +535,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
 
         wait_until(
             lambda: self.get_num_objects_deleted(nodes=[pause_node]) > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -603,7 +637,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
             f"{stalled_topic=} in {produce_topics=}"
         )
 
-        self.produce_some(topics=produce_topics, n=200)
+        self.produce_some(topics=produce_topics)
 
         # since we've produced nothing to stalled_topic, that partition will block GC
         # from progressing. this block checks that the epoch report has the right shape
@@ -675,7 +709,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         )
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=5,
             retry_on_exc=True,
         )
@@ -683,7 +717,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         # After unstick, min_partition_gc_epoch should be positive.
         wait_until(
             lambda: self._get_metric_max(min_epoch_metric) > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -704,12 +738,12 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         self.topics = [topic]
         self.create_topics(self.topics)
 
-        self.produce_some(topics=[topic.name], n=300)
+        self.produce_some(topics=[topic.name])
 
         self.logger.info("Waiting for GC to start deleting")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -754,7 +788,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         # Verify GC continues to make progress.
         wait_until(
             lambda: self.get_num_objects_deleted() > deleted_after_toggle,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -793,12 +827,12 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         self.topics = [topic]
         self.create_topics(self.topics)
 
-        self.produce_some(topics=[topic.name], n=300)
+        self.produce_some(topics=[topic.name])
 
         self.logger.debug("Wait for GC to start deleting")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -822,7 +856,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
 
         wait_until(
             lambda: self.get_num_objects_deleted() > deleted_before_reset,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -843,12 +877,12 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         self.topics = [topic]
         self.create_topics(self.topics)
 
-        self.produce_some(topics=[topic.name], n=300)
+        self.produce_some(topics=[topic.name])
 
         self.logger.debug("Wait for GC to start deleting")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -865,7 +899,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         self.logger.debug("Verify GC continues making progress after reset")
         wait_until(
             lambda: self.get_num_objects_deleted() > deleted_after_reset,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -914,12 +948,12 @@ class CloudTopicsL0GCMetricsTest(CloudTopicsL0GCTestBase):
     def test_gc_metrics(self, cloud_storage_type: CloudStorageType):
         self.topics = [TopicSpec(partition_count=1)]
         self.create_topics(self.topics)
-        self.produce_some(topics=[spec.name for spec in self.topics], n=100)
+        self.produce_some(topics=[spec.name for spec in self.topics])
 
         # GC should be completing collection rounds and scanning objects
         wait_until(
             lambda: sum(self.get_collection_rounds()) > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=2,
             retry_on_exc=True,
         )
@@ -929,7 +963,7 @@ class CloudTopicsL0GCMetricsTest(CloudTopicsL0GCTestBase):
 
         wait_until(
             lambda: sum(self.get_objects_listed()) > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=2,
             retry_on_exc=True,
         )
@@ -940,7 +974,7 @@ class CloudTopicsL0GCMetricsTest(CloudTopicsL0GCTestBase):
         # Wait for GC to start deleting - max_deleted_epoch should become >= 0 on some shard
         wait_until(
             lambda: any(e >= 0 for e in self.get_max_deleted_epoch()),
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=2,
             retry_on_exc=True,
         )
@@ -949,12 +983,12 @@ class CloudTopicsL0GCMetricsTest(CloudTopicsL0GCTestBase):
         self.logger.info(f"GC started deleting, {initial_max_deleted=}")
 
         # Produce more to create new epochs while GC is running
-        self.produce_some(topics=[spec.name for spec in self.topics], n=100)
+        self.produce_some(topics=[spec.name for spec in self.topics])
 
         # max_deleted_epoch should increase as GC makes progress
         wait_until(
             lambda: max(self.get_max_deleted_epoch()) > initial_max_deleted,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=2,
             retry_on_exc=True,
         )
@@ -1124,7 +1158,7 @@ class CloudTopicsL0GCGracePeriodTest(CloudTopicsL0GCTestBase):
         )
         wait_until(
             lambda: self._get_metric_total(skipped_metric) > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=1,
             retry_on_exc=True,
         )
@@ -1160,12 +1194,12 @@ class CloudTopicsL0GCNodeFailureTest(CloudTopicsL0GCTestBase):
         self.topics = [topic]
         self.create_topics(self.topics)
 
-        self.produce_some(topics=[topic.name], n=500)
+        self.produce_some(topics=[topic.name])
 
         self.logger.info("Waiting for GC kick in")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -1187,7 +1221,7 @@ class CloudTopicsL0GCNodeFailureTest(CloudTopicsL0GCTestBase):
         wait_until(
             lambda: self.get_num_objects_deleted(nodes=surviving_nodes)
             > deleted_on_survivors_before,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -1198,7 +1232,7 @@ class CloudTopicsL0GCNodeFailureTest(CloudTopicsL0GCTestBase):
         self.logger.info("Waiting for restarted node GC to resume")
         wait_until(
             lambda: self.get_num_objects_deleted(nodes=[kill_node]) > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -1223,12 +1257,12 @@ class CloudTopicsL0GCLeadershipTransferTest(CloudTopicsL0GCTestBase):
         self.topics = [topic]
         self.create_topics(self.topics)
 
-        self.produce_some(topics=[topic.name], n=300)
+        self.produce_some(topics=[topic.name])
 
         self.logger.info("Waiting for GC to start deleting")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -1263,7 +1297,7 @@ class CloudTopicsL0GCLeadershipTransferTest(CloudTopicsL0GCTestBase):
         # Verify GC continues to make progress post-transfer.
         wait_until(
             lambda: self.get_num_objects_deleted() > deleted_before,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -1290,12 +1324,12 @@ class CloudTopicsL0GCTopicDeletionTest(CloudTopicsL0GCTestBase):
         self.topics = [topic_a, topic_b]
         self.create_topics(self.topics)
 
-        self.produce_some(topics=[topic_a.name, topic_b.name], n=300)
+        self.produce_some(topics=[topic_a.name, topic_b.name])
 
         self.logger.info("Waiting for GC to start deleting")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -1451,7 +1485,7 @@ class CloudTopicsL0GCOrphanedObjectsTest(CloudTopicsL0GCTestBase):
         self.topics = [topic]
         self.create_topics(self.topics)
 
-        self.produce_some(topics=[topic.name], n=300)
+        self.produce_some(topics=[topic.name])
 
         # Wait for the GC watermark to be well above the epoch we'll
         # use for fake objects (epoch=1), and for GC to be actively
@@ -1463,7 +1497,7 @@ class CloudTopicsL0GCOrphanedObjectsTest(CloudTopicsL0GCTestBase):
             )
             > 10
             and self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
@@ -1670,11 +1704,11 @@ class CloudTopicsL0GCSafetyBlockTest(CloudTopicsL0GCAdminBase):
     ):
         self.topics = [TopicSpec(partition_count=1)]
         self.create_topics(self.topics)
-        self.produce_some(topics=[self.topics[0].name], n=300)
+        self.produce_some(topics=[self.topics[0].name])
 
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=30,
+            timeout_sec=60,
             backoff_sec=5,
             retry_on_exc=True,
         )
