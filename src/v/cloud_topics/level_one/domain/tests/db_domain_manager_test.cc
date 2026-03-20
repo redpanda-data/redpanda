@@ -44,7 +44,7 @@ namespace l1_rpc = cloud_topics::l1::rpc;
 
 namespace {
 
-ss::logger dm_test_log("db_domain_manager_test");
+ss::logger dm_test_log("db_domain_manager_tes");
 
 ss::future<> random_sleep_ms(int max_ms) {
     co_await ss::sleep(random_generators::get_int(max_ms) * 1ms);
