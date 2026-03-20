@@ -4064,8 +4064,11 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
           config::shard_local_cfg()
             .space_management_max_segment_concurrency()));
 
+        // Copy segment pointers so that concurrent modification of
+        // _segs does not invalidate the range we iterate over.
+        auto segments = _segs.copy();
         use = co_await ss::map_reduce(
-          _segs,
+          segments,
           [&limit](const segment_set::type& seg) {
               return ss::with_semaphore(
                 limit, 1, [&seg] { return seg->persistent_size(); });
