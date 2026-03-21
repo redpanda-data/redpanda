@@ -78,6 +78,23 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "context_sleep_test",
+    timeout = "short",
+    srcs = [
+        "context_sleep_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/context",
+        "//src/v/context:context_frame",
+        "//src/v/ssx:context_sleep",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "watchdog_test",
     timeout = "short",

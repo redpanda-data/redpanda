@@ -617,3 +617,16 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "retry_loop_test",
+    timeout = "short",
+    srcs = ["retry_loop_test.cc"],
+    deps = [
+        "//src/v/context:context_frame",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:retry_loop",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

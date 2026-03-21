@@ -31,7 +31,7 @@ CheckOptions:
   - key:             hicpp-uppercase-literal-suffix.NewSuffixes
     value:           KiB;MiB;GiB;TiB
   - key:             performance-unnecessary-value-param.AllowedTypes
-    value:           seastar::shared_ptr;seastar::lw_shared_ptr;
+    value:           seastar::shared_ptr;seastar::lw_shared_ptr;context_ref;
   - key:             bugprone-unused-local-non-trivial-variable.IncludeTypes
     value:           ::seastar::future
   - key:             performance-move-const-arg.CheckTriviallyCopyableMove
