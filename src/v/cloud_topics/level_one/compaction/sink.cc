@@ -198,6 +198,9 @@ ss::future<> compaction_sink::flush(kafka::offset object_last_offset) {
     auto builder = std::exchange(inflight_object->builder, nullptr);
     auto oid = inflight_object->oid;
     auto object_base_offset = inflight_object->object_base_offset;
+    vassert(
+      object_last_offset >= object_base_offset,
+      "Offset range must be properly bounded");
 
     // Write the footer and get object metadata.
     auto object_info_fut = co_await ss::coroutine::as_future(builder->finish());
