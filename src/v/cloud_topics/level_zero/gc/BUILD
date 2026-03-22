@@ -17,6 +17,29 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "epoch_source",
+    srcs = [
+        "epoch_source.cc",
+    ],
+    hdrs = [
+        "epoch_source.h",
+    ],
+    implementation_deps = [
+        "//src/v/cloud_topics:logger",
+        "//src/v/config",
+    ],
+    deps = [
+        ":level_zero_gc_probe",
+        "//src/v/cloud_topics:types",
+        "//src/v/cluster",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "level_zero_gc",
     srcs = [
         "level_zero_gc.cc",
@@ -36,6 +59,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":epoch_source",
         ":level_zero_gc_probe",
         "//src/v/cloud_io:io_result",
         "//src/v/cloud_storage_clients",
