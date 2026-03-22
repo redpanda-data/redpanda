@@ -361,6 +361,37 @@ class CloudTopicsL0GCAdminBase(CloudTopicsL0GCTestBase):
             retry_on_exc=True,
         )
 
+    def wait_for_status(
+        self,
+        status: GcStatus.ValueType,
+        nodes: list[int] | None = None,
+        node: int | None = None,
+        strict: bool = True,
+        timeout_sec: int = 30,
+    ):
+        """Wait for GC status to converge on the expected state.
+
+        The safety monitor runs periodic health checks, so status may
+        transiently be SAFETY_BLOCKED.
+
+        """
+
+        def check():
+            self.check_statuses(
+                self.gc_get_status(node=node),
+                nodes=nodes,
+                status=status,
+                strict=strict,
+            )
+            return True
+
+        wait_until(
+            check,
+            timeout_sec=timeout_sec,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )
+
     def setUp(self):
         super().setUp()
         self.logger.debug("Wait for safety monitor to clear initial health check")
@@ -456,7 +487,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         )
 
         self.gc_pause()
-        self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_PAUSED)
+        self.wait_for_status(status=GcStatus.L0_GC_STATUS_PAUSED)
 
         n_deleted = self.get_num_objects_deleted()
         self.logger.debug(f"GC should be stopped now, so we won't exceed {n_deleted=}")
@@ -494,17 +525,16 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
 
         self.logger.debug(f"Pause GC on {pause_node.name} and produce some records")
         self.gc_pause(pause_node_id)
-        self.check_statuses(
-            self.gc_get_status(node=pause_node_id),
-            nodes=[pause_node_id],
+        self.wait_for_status(
             status=GcStatus.L0_GC_STATUS_PAUSED,
+            nodes=[pause_node_id],
+            node=pause_node_id,
         )
         other_nodes = [self.redpanda.node_id(n) for n in self.redpanda.nodes[1:]]
 
-        self.check_statuses(
-            self.gc_get_status(),
-            nodes=other_nodes,
+        self.wait_for_status(
             status=GcStatus.L0_GC_STATUS_RUNNING,
+            nodes=other_nodes,
             strict=False,
         )
 
@@ -531,7 +561,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
 
         self.logger.debug(f"Now unpause {pause_node.name} and wait for some deletes")
         self.gc_start(pause_node_id)
-        self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_RUNNING)
+        self.wait_for_status(status=GcStatus.L0_GC_STATUS_RUNNING)
 
         wait_until(
             lambda: self.get_num_objects_deleted(nodes=[pause_node]) > 0,
