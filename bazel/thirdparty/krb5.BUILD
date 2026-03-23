@@ -28,7 +28,28 @@ configure_make(
     autoreconf_options = ["-ivf ./src"],
     configure_command = "./src/configure",
     configure_in_place = True,
-    configure_options = [
+    configure_options = select({
+        # When cross-compiling from macOS to Linux, configure tries to run
+        # compiled test programs on the exec machine. Pass --host to tell it
+        # the target architecture so it skips that check.
+        "@platforms//cpu:x86_64": ["--host=x86_64-linux-gnu"],
+        "@platforms//cpu:aarch64": ["--host=aarch64-linux-gnu"],
+        "//conditions:default": [],
+    }) + [
+        # Pre-supply cache variables that require running test binaries,
+        # which is not possible when cross-compiling from macOS to Linux.
+        # __attribute__((constructor)) and __attribute__((destructor)) work
+        # on modern Linux targets with clang.
+        "krb5_cv_attr_constructor_destructor=yes,yes",
+        "ac_cv_func_regcomp=yes",
+        "ac_cv_printf_positional=yes",
+        # AC_PROG_CC_STDC probes for C standards and appends the best one to CC.
+        # With clang 20 it detects -std=gnu23, which removes K&R function
+        # definitions used in util/ss/*.c. Setting ac_cv_prog_cc_c23 to the
+        # empty string makes configure conclude "none needed" (C23 works without
+        # an explicit flag), so it skips appending -std=gnu23 to CC. Clang 20
+        # then defaults to gnu17, which still supports K&R.
+        "ac_cv_prog_cc_c23=",
         "--srcdir=./src",
         "--disable-thread-support",
         "--with-crypto-impl=openssl",
@@ -58,6 +79,15 @@ configure_make(
         # Need to pass this additionally here because of a bug in the kerberos build where it doesn't properly pass the linker flag down
         "KRB5_BUILD_JOBS": "$(BUILD_JOBS)",
         "LINKER": "$(LINKER)",
+        # On Apple Silicon, Homebrew installs to /opt/homebrew/bin, which is not
+        # in the default Bazel sandbox PATH (/bin:/usr/bin:/usr/local/bin).
+        # autoreconf requires autoconf/automake from Homebrew, so add it here.
+        "PATH": "/opt/homebrew/bin:/bin:/usr/bin:/usr/local/bin",
+        # krb5's configure.ac checks ${WARN_CFLAGS+set}: if WARN_CFLAGS is set in
+        # the environment (even as empty), it skips adding -Wall -Wmissing-prototypes
+        # -Werror=... flags that would turn K&R C deprecation warnings into errors.
+        # util/ss/*.c uses K&R C style which triggers -Wdeprecated-non-prototype.
+        "WARN_CFLAGS": "",
     },
     lib_source = ":srcs",
     out_shared_libs = [
