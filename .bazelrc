@@ -3,8 +3,8 @@ common --extra_toolchains=@current_llvm_toolchain//:all
 
 common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
-build --linkopt --unwindlib=libgcc
-build --linkopt -stdlib=libc++
+# Removed global --linkopt --unwindlib=libgcc - may be triggering libc++ static linking
+# Note: stdlib configuration in MODULE.bazel for toolchains
 
 common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
@@ -26,6 +26,13 @@ build:gofips --@rules_go//go/config:pure=false
 # absolute paths, and instead use paths that are relative to the redpanda repo.
 # https://github.com/bazel-contrib/toolchains_llvm/pull/445#issuecomment-2605443516
 build --copt=-ffile-compilation-dir=. --host_copt=-ffile-compilation-dir=.
+
+# Fix for LLVM 20+ with C++23: disable C++ modules, use Clang modules instead
+# Issue: LLVM 20's C++23 support tries to use C++ modules which Bazel doesn't fully support
+# This causes "module 'crosstool' is needed" errors for exec tools on macOS
+# See: https://github.com/bazel-contrib/toolchains_llvm/issues/334
+build --cxxopt=-Xclang --cxxopt=-fno-cxx-modules
+build --host_cxxopt=-Xclang --host_cxxopt=-fno-cxx-modules
 
 build:system-clang --extra_toolchains=@local_config_cc_toolchains//:all
 build:system-clang --action_env=BAZEL_COMPILER=clang
@@ -343,5 +350,28 @@ test:lldb --strategy=TestRunner=local
 # always pass through the following variables if they are set in the environment
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
+
+# ====================================
+# macOS to Linux Cross-Compilation
+# ====================================
+
+# Cross-compile from macOS to Linux x86_64 (default)
+# Set target platform to Linux and exec platform to macOS
+build:macos-linux --platforms=//bazel/platforms:linux_x86_64
+build:macos-linux --host_platform=//bazel/platforms:macos_aarch64
+# Use macOS-specific toolchain for cross-compilation
+build:macos-linux --extra_toolchains=@macos_toolchain//:all
+# Note: toolchain will use stdc++ from sysroot for cross-compilation
+
+# Cross-compile from macOS to Linux aarch64
+build:macos-linux-arm64 --platforms=//bazel/platforms:linux_aarch64
+build:macos-linux-arm64 --host_platform=//bazel/platforms:macos_aarch64
+
+# Convenience alias: Release build for Linux from macOS
+build:macos-release --config=macos-linux
+build:macos-release --config=release
+
+# Note: Bazel automatically detects macOS as the execution platform.
+# The local compiler (Homebrew LLVM) is configured via user.bazelrc.
 
 try-import %workspace%/user.bazelrc
