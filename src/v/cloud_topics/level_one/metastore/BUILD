@@ -340,6 +340,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":metastore",
+        ":retry",
         "//src/v/base",
         "//src/v/cloud_topics:logger",
         "//src/v/cluster",

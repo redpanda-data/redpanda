@@ -11,6 +11,7 @@
 
 #include "base/vlog.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
+#include "cloud_topics/level_one/metastore/retry.h"
 #include "cloud_topics/logger.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
@@ -31,7 +32,6 @@ topic_purger::topic_purger(
 ss::future<std::expected<void, topic_purger::error>>
 topic_purger::purge_tombstoned_topics(ss::abort_source* as) {
     static constexpr auto max_topics_per_req = 10;
-    static constexpr auto max_failed_metastore_attempts = 5;
     static constexpr auto max_concurrent_purges = 10;
     while (true) {
         const auto& tombstones = topics_->get_cloud_topic_tombstones();
@@ -50,12 +50,14 @@ topic_purger::purge_tombstoned_topics(ss::abort_source* as) {
             co_return std::expected<void, error>{};
         }
 
-        size_t failed_attempts = 0;
-        while (true) {
-            // TODO: ensure all reconcilers for the given topics are stopped,
-            // otherwise we may end up with orphaned topics in the metastore.
-            auto remove_res = co_await metastore_->remove_topics(
-              topics_to_remove);
+        // TODO: ensure all reconcilers for the given topics are stopped,
+        // otherwise we may end up with orphaned topics in the metastore.
+        while (!topics_to_remove.empty()) {
+            auto remove_res = co_await retry_metastore_op_with_default_rtc(
+              [this, &topics_to_remove]() {
+                  return metastore_->remove_topics(topics_to_remove);
+              },
+              *as);
             if (!remove_res.has_value()) {
                 co_return std::unexpected(
                   error{fmt::format(
@@ -66,23 +68,14 @@ topic_purger::purge_tombstoned_topics(ss::abort_source* as) {
             if (resp.not_removed.empty()) {
                 break;
             }
-            ++failed_attempts;
-            if (failed_attempts == max_failed_metastore_attempts) {
-                co_return std::unexpected(
-                  error{"Metastore requests failed too many times"});
-            }
-            if (as->abort_requested()) {
-                co_return std::unexpected(error{"Shutting down topic purger"});
-            }
-            chunked_vector<model::topic_id> topics_to_retry;
-            for (const auto& t : resp.not_removed) {
-                topics_to_retry.push_back(t);
-            }
             vlog(
               cd_log.debug,
               "Retrying removal of {} topics",
-              topics_to_retry.size());
-            topics_to_remove = std::move(topics_to_retry);
+              resp.not_removed.size());
+            topics_to_remove.clear();
+            for (const auto& t : resp.not_removed) {
+                topics_to_remove.push_back(t);
+            }
         }
         if (as->abort_requested()) {
             co_return std::unexpected(error{"Shutting down topic purger"});
