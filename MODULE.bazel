@@ -25,6 +25,14 @@ bazel_dep(name = "fmt", version = "9.1.0")
 bazel_dep(name = "googletest", version = "1.17.0")
 bazel_dep(name = "lexy", version = "2025.05.0")
 bazel_dep(name = "liburing", version = "2.5")
+single_version_override(
+    module_name = "liburing",
+    patch_strip = 1,
+    patches = [
+        "//bazel/patches:liburing_macos_echo_fix.patch",
+        "//bazel/patches:liburing_macos_build_fix.patch",
+    ],
+)
 bazel_dep(name = "lz4", version = "1.9.4")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5")
@@ -47,12 +55,20 @@ bazel_dep(name = "rules_rust", version = "0.60.0")
 bazel_dep(name = "snappy", version = "1.2.1")
 bazel_dep(name = "yaml-cpp", version = "0.8.0")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.6")
+single_version_override(
+    module_name = "zlib",
+    patch_strip = 1,
+    patches = [
+        "//bazel/patches:zlib_static_darwin.patch",
+    ],
+)
 bazel_dep(name = "zstd", version = "1.5.7")
 bazel_dep(name = "patchelf", version = "0.18.0")
 bazel_dep(name = "bzip2", version = "1.0.8.bcr.2")
 bazel_dep(name = "googleapis", version = "0.0.0-20250703-f9d6fe4a")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
+
 single_version_override(
     module_name = "buildifier_prebuilt",
     patches = [
@@ -140,10 +156,12 @@ COMPILE_FLAGS = {
     "linux-aarch64": [
         "--target=aarch64-unknown-linux-gnu",
         "-march=armv8-a+crc+crypto",
+        "-stdlib=libc++",  # Need libc++ headers for Linux targets
     ] + COMMON_COMPILE_FLAGS,
     "linux-x86_64": [
         "--target=x86_64-unknown-linux-gnu",
         "-march=westmere",
+        "-stdlib=libc++",  # Need libc++ headers for Linux targets
     ] + COMMON_COMPILE_FLAGS,
 }
 
@@ -158,6 +176,10 @@ COMPILERS = {
                 "build_date": "2025-11-14",
                 "sha": "616e3f50b1f03b61ec712f4f28fa67668d60ae3edccea8508065a3f49dbbb24a",
             },
+            # Note: macOS cross-compilation to Linux is supported using local toolchains.
+            # For macOS development, use Homebrew LLVM or system clang:
+            #   Run: ./bazel/toolchain/setup-macos-toolchain.sh
+            # See: docs/BUILDING_ON_MACOS.md for details
         },
         "version": "20.1.8",
     },
@@ -171,6 +193,9 @@ COMPILERS = {
                 "build_date": "2025-11-25",
                 "sha": "b3aa9cb72c2e46bd1cc3f17f3772b37a424e54f796253961382163eab2f4a9c0",
             },
+            # Note: macOS cross-compilation to Linux is supported using local toolchains.
+            # For macOS development, use Homebrew LLVM or system clang.
+            # See: docs/BUILDING_ON_MACOS.md for details
         },
         "version": "21.1.6",
     },
@@ -196,6 +221,14 @@ COMPILERS = {
             compile_flags = COMPILE_FLAGS,
             cxx_standard = {"": CXX_STANDARD},
             llvm_version = compiler["version"],
+            # Use libc++ (LLVM's C++ stdlib) instead of libstdc++ (GNU's C++ stdlib)
+            # Using "libc++" instead of "builtin-libc++" to avoid explicit libstdc++ link
+            # Platform-specific: only apply static libc++ linking to Linux targets
+            # Darwin/macOS exec tools use system libc++ (no -l:libc++.a flags)
+            stdlib = {
+                "linux-x86_64": "libc++",
+                "linux-aarch64": "libc++",
+            },
             sha256 = {
                 "linux-" + arch: compiler["tars"][arch]["sha"]
                 for arch in [
@@ -214,6 +247,8 @@ COMPILERS = {
                     "x86_64",
                 ]
             },
+            # Note: For macOS cross-compilation, use local Homebrew LLVM or system clang
+            # via user.bazelrc. See docs/BUILDING_ON_MACOS.md for setup instructions.
         ),
         llvm.sysroot(
             name = "{version}_llvm_toolchain".format(version = major_version),
@@ -234,6 +269,86 @@ COMPILERS = {
     )
     for (major_version, compiler) in COMPILERS.items()
 ]
+
+# ====================================
+# macOS Cross-Compilation Toolchain
+# ====================================
+# For macOS hosts, use locally-built LLVM toolchain that enables
+# cross-compilation to Linux with hermetic sysroots
+
+# macOS ARM64 toolchain (for Apple Silicon Macs)
+llvm.toolchain(
+    name = "macos_toolchain",
+    compile_flags = COMPILE_FLAGS,
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_version = "20.1.8",
+    stdlib = {
+        "linux-x86_64": "libc++",
+        "linux-aarch64": "libc++",
+        "darwin-aarch64": "builtin-libc++",
+        "darwin-x86_64": "builtin-libc++",
+    },
+    # Cross-compiled libc++ for Linux is installed at lib/<triple>/lib/ by cmake.
+    # Override link_flags to add -L so lld can find libc++.a / libc++abi.a.
+    # These replicate toolchains_llvm defaults for darwin→linux cross-compilation.
+    link_flags = {
+        "linux-x86_64": [
+            "--target=x86_64-unknown-linux-gnu",
+            "-no-canonical-prefixes",
+            "-lm",
+            "-fuse-ld=lld",
+            "-Wl,--build-id=md5",
+            "-Wl,--hash-style=gnu",
+            "-Wl,-z,relro,-z,now",
+            "-L{toolchain_path_prefix}lib/x86_64-unknown-linux-gnu/lib",
+            "-l:libc++.a",
+            "-l:libc++abi.a",
+        ],
+        "linux-aarch64": [
+            "--target=aarch64-unknown-linux-gnu",
+            "-no-canonical-prefixes",
+            "-lm",
+            "-fuse-ld=lld",
+            "-Wl,--build-id=md5",
+            "-Wl,--hash-style=gnu",
+            "-Wl,-z,relro,-z,now",
+            "-L{toolchain_path_prefix}lib/aarch64-unknown-linux-gnu/lib",
+            "-l:libc++.a",
+            "-l:libc++abi.a",
+        ],
+    },
+    sha256 = {
+        "darwin-aarch64": "5f33823246a068ca54046092820b3439b76b1ad86fca60d2509c3762a22d5c8f",
+    },
+    urls = {
+        "darwin-aarch64": ["https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-20.1.8/llvm-20.1.8-darwin-aarch64-2026-03-23.tar.zst"],
+    },
+    strip_prefix = {
+        "darwin-aarch64": "",
+    },
+)
+
+# Attach Linux sysroots for cross-compilation
+llvm.sysroot(
+    name = "macos_toolchain",
+    label = "@x86_64_sysroot//:sysroot",
+    targets = ["linux-x86_64"],
+)
+
+llvm.sysroot(
+    name = "macos_toolchain",
+    label = "@aarch64_sysroot//:sysroot",
+    targets = ["linux-aarch64"],
+)
+
+use_repo(llvm, "macos_toolchain")
+use_repo(llvm, "macos_toolchain_llvm")
+
+# Register with lower priority than Linux native toolchains
+register_toolchains(
+    "@macos_toolchain//:all",
+    dev_dependency = True,
+)
 
 # ====================================
 # Go Toolchain
@@ -386,10 +501,13 @@ crate.from_cargo(
     cargo_lockfile = "//bazel/thirdparty:Cargo.lock",
     manifests = ["//bazel/thirdparty:Cargo.toml"],
     supported_platform_triples = [
-        # We currently only build this rust code on linux
-        # so don't fetch for other platforms
+        # Linux platforms (target)
         "aarch64-unknown-linux-gnu",
         "x86_64-unknown-linux-gnu",
+        # macOS platforms (exec/host) - needed for cross-compilation
+        # Wasmtime and other build tools need to run on macOS during builds
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
     ],
 )
 crate.annotation(

@@ -56,6 +56,94 @@ docker build --file Dockerfile.llvm --build-arg LLVM_VERSION=$LLVM_VERSION --bui
 By default we build with PGO+LTO, but if PGO is causing issues (like on AArch64), we can choose a different build (resulting
 in a slower compiler) by adding the flag `--target=lto`. The current default target is `--target=pgo`
 
+## Building macOS Toolchains
+
+For macOS developers who want to cross-compile to Linux, we provide macOS-native LLVM toolchains that can target Linux platforms.
+
+### Prerequisites
+
+On macOS, install the required build tools:
+
+```bash
+# Install Xcode Command Line Tools
+xcode-select --install
+
+# Install build dependencies via Homebrew
+brew install cmake ninja zstd
+```
+
+### Building macOS-Hosted Toolchains
+
+Use the `build-macos-toolchain.sh` script to build macOS-native LLVM toolchains:
+
+**Build for current macOS architecture** (Apple Silicon or Intel):
+```bash
+cd bazel/toolchain
+./build-macos-toolchain.sh
+```
+
+**Build LLVM 21.1.6** (next version):
+```bash
+LLVM_VERSION=21.1.6 ./build-macos-toolchain.sh
+```
+
+**Custom output directory**:
+```bash
+OUTPUT_DIR=/path/to/output ./build-macos-toolchain.sh
+```
+
+### Build Output
+
+The script produces a compressed tarball in the format:
+```
+llvm-{VERSION}-darwin-{ARCH}-{DATE}.tar.zst
+```
+
+For example:
+- `llvm-20.1.8-darwin-aarch64-2025-02-07.tar.zst` (Apple Silicon)
+- `llvm-20.1.8-darwin-x86_64-2025-02-07.tar.zst` (Intel)
+
+The script also outputs the SHA256 hash, which must be added to `MODULE.bazel`.
+
+### Build Time
+
+Building an LLVM toolchain takes approximately:
+- **Apple Silicon (M1/M2/M3)**: 60-90 minutes
+- **Intel Mac**: 90-120 minutes
+
+### Uploading Toolchains
+
+After building, upload the toolchains to GitHub:
+
+1. Go to the Redpanda LLVM releases page:
+   ```
+   https://github.com/redpanda-data/llvm-project/releases
+   ```
+
+2. Find or create the release for the LLVM version (e.g., `llvmorg-20.1.8`)
+
+3. Upload the `.tar.zst` file to the release
+
+4. Update `MODULE.bazel` with the build date and SHA256 hash:
+   ```python
+   "darwin-aarch64": {
+       "build_date": "2025-02-07",  # From build
+       "sha": "abc123...",            # From build output
+   },
+   ```
+
+### Cross-Compilation Architecture
+
+The macOS toolchains enable the following cross-compilation scenarios:
+
+| Execution Platform | Target Platform | Toolchain Used |
+|-------------------|-----------------|----------------|
+| macOS Apple Silicon | Linux x86_64 | `darwin-aarch64` → `linux-x86_64` |
+| macOS Apple Silicon | Linux ARM64 | `darwin-aarch64` → `linux-aarch64` |
+| macOS Intel | Linux x86_64 | `darwin-x86_64` → `linux-x86_64` |
+| macOS Intel | Linux ARM64 | `darwin-x86_64` → `linux-aarch64` |
+
+The toolchains use the hermetic Ubuntu 22.04 sysroots (see below) to ensure consistent Linux binaries.
 
 ## Sysroot
 
