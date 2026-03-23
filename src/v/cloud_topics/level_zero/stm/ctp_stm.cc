@@ -335,6 +335,7 @@ void ctp_stm::apply_advance_epoch(
     vlog(_log.debug, "Advancing epoch: {}", cmd.new_epoch);
     _epoch_checker.check_epoch(ntp(), cmd.new_epoch, base_offset);
     _state.advance_epoch(cmd.new_epoch, base_offset);
+    _state.set_last_epoch_log_offset(base_offset);
 }
 
 void ctp_stm::apply_placeholder(const model::record_batch& batch) {
@@ -352,6 +353,7 @@ void ctp_stm::apply_placeholder(const model::record_batch& batch) {
     _state.record_placeholder_size(
       batch.header().base_offset,
       static_cast<uint64_t>(placeholder.size_bytes));
+    _state.set_last_epoch_log_offset(batch.header().base_offset);
 }
 
 struct ctp_stm_snapshot

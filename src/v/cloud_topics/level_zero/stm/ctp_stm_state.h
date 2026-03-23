@@ -128,6 +128,16 @@ public:
     std::optional<model::offset>
     get_last_reconciled_log_offset() const noexcept;
 
+    /// Raft log offset of the last epoch-bearing batch.
+    /// Set by both placeholder batches and advance_epoch commands.
+    std::optional<model::offset> get_last_epoch_log_offset() const noexcept {
+        return _last_epoch_log_offset;
+    }
+
+    void set_last_epoch_log_offset(model::offset o) noexcept {
+        _last_epoch_log_offset = o;
+    }
+
     auto serde_fields() {
         return std::tie(
           _max_applied_epoch,
@@ -217,6 +227,13 @@ private:
 
     // Estimates total cloud data bytes addressable by the surviving log.
     size_estimator _size_estimator;
+
+    // Raft log offset of the last epoch-bearing batch — either a
+    // ctp_placeholder or an advance_epoch command. Both establish or advance
+    // the partition's epoch.
+    // Similar to previous_seen_epoch, this is not persisted with the snapshot
+    // because it reflects the state of in-flight requests.
+    std::optional<model::offset> _last_epoch_log_offset;
 };
 
 }; // namespace cloud_topics
