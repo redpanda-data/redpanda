@@ -4754,6 +4754,20 @@ configuration::configuration()
       "when no progress is being made or errors are occurring.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1min)
+  , cloud_topics_gc_barrier_loop_interval(
+      *this,
+      "cloud_topics_gc_barrier_loop_interval",
+      "The interval between barrier rounds. Each round computes a candidate "
+      "epoch, fans out to all nodes, and polls until convergence.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5s)
+  , cloud_topics_gc_barrier_poll_interval(
+      *this,
+      "cloud_topics_gc_barrier_poll_interval",
+      "The interval between reconciliation checks within a single barrier "
+      "round.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      2s)
   , cloud_topics_gc_health_check_interval(
       *this,
       "cloud_topics_gc_health_check_interval",
