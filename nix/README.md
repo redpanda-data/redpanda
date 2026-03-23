@@ -8,9 +8,22 @@
   `/etc/nix/nix.conf` or `~/.config/nix/nix.conf`)
 - ~20 GB disk for the first build
 
-### System Configuration (nix.conf)
+### Minimal Build (no nix.conf changes)
 
-Two additions to `/etc/nix/nix.conf` are required:
+This works out of the box with just Nix flakes enabled:
+
+```bash
+nix build .#redpanda --print-build-logs
+result/bin/redpanda --version
+```
+
+Each build compiles from scratch (~30 min) because the Bazel action cache
+is discarded when the sandbox exits. For one-off builds or CI this is fine.
+
+### Cached Build (recommended for development)
+
+For fast iterative rebuilds (~5-6 min warm), configure a persistent Bazel
+cache that survives across builds. This requires two `nix.conf` changes:
 
 1. **`/bin/bash` in sandbox** — Bazel repo rules execute scripts with
    `#!/bin/bash` shebangs, but the Nix sandbox only provides `/bin/sh`.
@@ -18,7 +31,7 @@ Two additions to `/etc/nix/nix.conf` are required:
 2. **Persistent Bazel cache passthrough** — allows the sandbox to read/write
    a shared Bazel cache directory so warm builds skip recompilation.
 
-Add both on a single line:
+Add to `/etc/nix/nix.conf`:
 
 ```
 extra-sandbox-paths = /bin/bash=/run/current-system/sw/bin/bash /var/cache/bazel-nix
@@ -46,7 +59,7 @@ After editing, restart the Nix daemon:
 sudo systemctl restart nix-daemon
 ```
 
-### Create the Bazel Cache Directory
+Create the cache directory:
 
 ```bash
 sudo mkdir -p /var/cache/bazel-nix
@@ -57,21 +70,15 @@ sudo chmod 1775 /var/cache/bazel-nix
 The `nixbld` group ownership and sticky bit allow all Nix builder users to
 share the cache while preventing cross-user file deletion.
 
-### Build
+Then build with the cached target:
 
 ```bash
 # First build (cold, ~30 min):
 nix build .#redpanda-cached --print-build-logs
 
-# Verify:
-result/bin/redpanda --version
-
 # Subsequent builds (warm, ~5-6 min):
 nix build .#redpanda-cached --print-build-logs
 ```
-
-Use `redpanda-cached` (not `redpanda`) to get persistent Bazel caching.
-The plain `redpanda` target works but does not share cache across builds.
 
 ## How It Works
 
@@ -197,10 +204,16 @@ date > nix/entropy                     # Nix cache (changes derivation hash)
 
 ### OCI Container Images
 
+The default image targets work without any nix.conf changes. The `-cached`
+variants use the persistent Bazel cache for faster rebuilds (requires
+`/var/cache/bazel-nix` sandbox passthrough — see [Cached Build](#cached-build-recommended-for-development)).
+
 | Target | Command | Description |
 |--------|---------|-------------|
 | `redpanda-image` | `nix build .#redpanda-image` | Minimal server image |
 | `redpanda-image-debug` | `nix build .#redpanda-image-debug` | Server image with bash/coreutils |
+| `redpanda-image-cached` | `nix build .#redpanda-image-cached` | Server image (persistent cache) |
+| `redpanda-image-debug-cached` | `nix build .#redpanda-image-debug-cached` | Debug image (persistent cache) |
 | `rpk-image` | `nix build .#rpk-image` | rpk CLI image |
 
 Because the Nix images contain only the exact runtime closure (no package
