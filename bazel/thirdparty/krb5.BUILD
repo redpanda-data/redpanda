@@ -58,6 +58,9 @@ configure_make(
         # Need to pass this additionally here because of a bug in the kerberos build where it doesn't properly pass the linker flag down
         "KRB5_BUILD_JOBS": "$(BUILD_JOBS)",
         "LINKER": "$(LINKER)",
+        # configure runs test binaries that link against libcrypto; they
+        # need LD_LIBRARY_PATH to find the .so at runtime.
+        "LD_LIBRARY_PATH": "$$EXT_BUILD_DEPS/openssl_foreign_cc/lib",
     },
     lib_source = ":srcs",
     out_shared_libs = [
