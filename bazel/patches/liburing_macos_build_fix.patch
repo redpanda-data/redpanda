@@ -1,0 +1,15 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -29,7 +29,11 @@ genrule(
+
+             # collect the outputs
+             for out in $(OUTS); do
+-              cp $$(realpath --relative-to=$(BINDIR) $$out) $$out
++              # Use portable method instead of GNU realpath --relative-to
++              SRCDIR=$$(dirname $(location configure))
++              # Remove bazel-out prefix and extract just the relative path from source dir
++              RELPATH=$$(echo $$out | sed -e "s|.*/external/liburing+/||")
++              cp $$SRCDIR/$$RELPATH $$out
+             done
+           """,
+     toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],
