@@ -45,11 +45,20 @@
             inherit redpanda rpk redpanda-cached;
             default = redpanda;
 
-            # OCI container images
+            # OCI container images (use plain redpanda so they work without
+            # /var/cache/bazel-nix sandbox passthrough in nix.conf)
             redpanda-image = pkgs.callPackage ./nix/redpanda-image.nix {
-              redpandaDrv = redpanda-cached;
+              redpandaDrv = redpanda;
             };
             redpanda-image-debug = pkgs.callPackage ./nix/redpanda-image.nix {
+              redpandaDrv = redpanda;
+              debug = true;
+            };
+            # Cached variants for repeat builders with /var/cache/bazel-nix configured
+            redpanda-image-cached = pkgs.callPackage ./nix/redpanda-image.nix {
+              redpandaDrv = redpanda-cached;
+            };
+            redpanda-image-debug-cached = pkgs.callPackage ./nix/redpanda-image.nix {
               redpandaDrv = redpanda-cached;
               debug = true;
             };
