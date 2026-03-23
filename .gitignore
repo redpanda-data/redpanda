@@ -46,6 +46,7 @@ _helm_e2e_artifacts/
 # bazel
 /bazel-*
 user.bazelrc
+.bazelrc.nix
 /external
 
 # Vagrant
@@ -286,3 +287,6 @@ bazel_cc_flags.json
 
 # perf
 perf.data*
+
+#nix
+result*

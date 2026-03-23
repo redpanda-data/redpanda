@@ -1,0 +1,21 @@
+diff --git a/.bazelrc b/.bazelrc
+index 545784d4c8..880a7bd067 100644
+--- a/.bazelrc
++++ b/.bazelrc
+@@ -27,7 +27,9 @@ build --copt=-ffile-compilation-dir=. --host_copt=-ffile-compilation-dir=.
+ build:system-clang --extra_toolchains=@local_config_cc_toolchains//:all
+ build:system-clang --action_env=BAZEL_COMPILER=clang
+ build:system-clang --cxxopt=-std=c++23 --host_cxxopt=-std=c++23
+-build:system-clang --linkopt -fuse-ld=lld
++build:system-clang --linkopt -fuse-ld=lld --host_linkopt -fuse-ld=lld
++build:system-clang --host_linkopt -stdlib=libc++
++build:system-clang --host_linkopt --unwindlib=libgcc
+ # use a compiler name that doesn't symlink to ccache
+ build:system-clang-19 --config=system-clang
+ build:system-clang-19 --action_env=CC=clang-19 --host_action_env=CC=clang-19
+@@ -327,4 +329,5 @@ test:lldb --strategy=TestRunner=local
+ test --test_env=REDPANDA_RNG_SEEDING_MODE
+ test --test_env=REDPANDA_DEBUG_TEST_HOOKS
+ 
++try-import %workspace%/.bazelrc.nix
+ try-import %workspace%/user.bazelrc
