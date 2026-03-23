@@ -101,6 +101,29 @@ bazel build --config=release //...
 
 For more build configurations, see `.bazelrc`.
 
+### Building on macOS
+
+Redpanda supports cross-compilation from macOS to Linux using Homebrew LLVM or system clang.
+
+```bash
+# Quick setup
+brew install llvm@20
+./bazel/toolchain/setup-macos-toolchain.sh
+
+# Build Linux x86_64 binary
+bazel build --config=macos-linux-local //:redpanda
+
+# Build Linux ARM64 binary
+bazel build --config=macos-linux-arm64-local //:redpanda
+
+# Build release binary
+bazel build --config=macos-release --config=macos-local //:redpanda
+```
+
+**Note**: The resulting binaries are Linux ELF format and require a Linux environment to execute (Docker, VM, or remote Linux machine).
+
+See [docs/BUILDING_ON_MACOS.md](docs/BUILDING_ON_MACOS.md) for detailed instructions, including prerequisites, testing strategies, and troubleshooting.
+
 ## Release candidate builds
 
 Redpanda Data creates a release candidate (RC) build when we get close to a new release, and we publish it to make new features available for testing.
