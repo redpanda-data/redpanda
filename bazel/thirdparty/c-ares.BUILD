@@ -7,6 +7,8 @@ filegroup(
 
 cmake(
     name = "c-ares",
+    # Only build for Linux target - avoid cross-compilation issues on darwin exec
+    target_compatible_with = ["@platforms//os:linux"],
     cache_entries = {
         "BUILD_SHARED_LIBS": "OFF",
         "CARES_SHARED": "OFF",

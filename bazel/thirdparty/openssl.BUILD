@@ -43,6 +43,8 @@ filegroup(
 
 configure_make(
     name = "openssl_foreign_cc",
+    # Only build for Linux target - avoid cross-compilation issues on darwin exec
+    target_compatible_with = ["@platforms//os:linux"],
     # These don't get make variables expanded, so use the injected environment variable.
     args = [
         "-j$OPENSSL_BUILD_JOBS",
@@ -50,7 +52,14 @@ configure_make(
         "DESTDIR=$BUILD_TMPDIR/openssl_foreign_cc",
     ],
     configure_command = "Configure",
-    configure_options = [
+    configure_options = select({
+        # When cross-compiling from macOS to Linux, OpenSSL's Configure auto-detects
+        # macOS and injects '-arch arm64', which conflicts with the Linux cross-compilation
+        # target. Pass the explicit OpenSSL platform to bypass auto-detection.
+        "@platforms//cpu:x86_64": ["linux-x86_64"],
+        "@platforms//cpu:aarch64": ["linux-aarch64"],
+        "//conditions:default": [],
+    }) + [
         # OpenSSL will look for system certs in a path relative to the OPENSSLDIR macro
         # This macro is defined as <prefix>/<openssldir>
         # Most linux environments install system certs in /etc/ssl/certs, so we set

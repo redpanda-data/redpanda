@@ -17,8 +17,8 @@ filegroup(
 configure_make(
     name = "ragel",
     args = ["-j$RAGEL_BUILD_JOBS"],
-    autoreconf = True,
-    autoreconf_options = ["-ivf"],
+    # Disable autoreconf - ragel 6.10 source already has configure script
+    autoreconf = False,
     configure_in_place = True,
     configure_options = [
         # Build a static binary for better portability

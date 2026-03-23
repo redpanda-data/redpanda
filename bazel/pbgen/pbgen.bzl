@@ -106,7 +106,7 @@ def _redpanda_protogen_impl(ctx):
         direct_sources.extend(proto_info.proto_sources)
         transitive_sources.append(proto_info.transitive_proto_sources)
 
-    protoc_plugin = ctx.file._protoc_plugin
+    protoc_plugin = ctx.executable._protoc_plugin
     proto_toolchain = proto_toolchains.find_toolchain(
         ctx,
         legacy_attr = None,
@@ -165,6 +165,8 @@ _redpanda_protogen = rule(
         "_protoc_plugin": attr.label(
             allow_single_file = True,
             default = "//bazel/pbgen",
+            cfg = "exec",
+            executable = True,
         ),
     },
     toolchains = [

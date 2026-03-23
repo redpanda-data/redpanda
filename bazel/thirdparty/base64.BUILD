@@ -14,10 +14,15 @@ common_cache_entries = {
     "CMAKE_INSTALL_LIBDIR": "lib",
     "BASE64_WITH_OpenMP": "OFF",
     "BASE64_WERROR": "OFF",
+    # Fix RPATH issue with Ninja generator during cross-compilation
+    # See: https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_WITH_INSTALL_RPATH.html
+    "CMAKE_BUILD_WITH_INSTALL_RPATH": "ON",
 }
 
 cmake(
     name = "base64",
+    # Only build for Linux target - avoid cross-compilation issues on darwin exec
+    target_compatible_with = ["@platforms//os:linux"],
     cache_entries = common_cache_entries | select({
         "@platforms//cpu:x86_64": {
             "BASE64_WITH_SSSE3": "ON",
