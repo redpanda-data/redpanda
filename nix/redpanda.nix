@@ -616,13 +616,13 @@ REPOS_PATCH
     # (which would need network access unavailable in the sandbox).
     cp ${./MODULE.bazel.lock.nix} $out/MODULE.bazel.lock
 
-    # Apply patches for existing repo files.
-    # These changes are needed for Nix builds but kept as patches (not direct
-    # modifications) so the PR doesn't touch upstream Bazel/build files.
+    # Apply Nix-specific patches. These enable use_default_shell_env (needed
+    # under --incompatible_strict_action_env) and add libc++/unwindlib flags
+    # for Nix's clang. Generic fixes (krb5 LD_LIBRARY_PATH, interpreter null
+    # check, host_linkopt) are applied directly to source files.
     cd $out
     patch -p1 < ${./patches/expand-stamp-shell-env.patch}
     patch -p1 < ${./patches/pbgen-shell-env.patch}
-    patch -p1 < ${./patches/krb5-ld-library-path.patch}
     patch -p1 < ${./patches/bazelrc-nix.patch}
   '';
 
