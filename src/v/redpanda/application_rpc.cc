@@ -187,7 +187,8 @@ void application::add_runtime_rpc_services(
         runtime_services.push_back(
           std::make_unique<cloud_topics::l0::gc::rpc::service>(
             scheduling_groups::instance().cloud_topics_metastore_sg(),
-            smp_service_groups.cloud_topics_metastore_smp_sg()));
+            smp_service_groups.cloud_topics_metastore_smp_sg(),
+            cloud_topics_app->get_epoch_barrier()));
     }
     runtime_services.push_back(
       std::make_unique<admin::proxy::service_impl>(
