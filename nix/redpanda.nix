@@ -974,6 +974,15 @@ stdenv.mkDerivation {
     # so the nixbld group can share the persistent cache.
     # Restored to 022 before installPhase (Nix rejects group-writable outputs).
     umask 002
+    ${lib.optionalString (bazelCacheDir != "") ''
+      # Pre-create the output_base lock file with group-writable permissions.
+      # Bazel acquires this lock during startup (before our umask takes effect
+      # on Bazel-created files). Without this, the first builder creates it
+      # with 644, and subsequent builders (different nixbld users) get EACCES.
+      mkdir -p "${bazelCacheDir}/output_base"
+      touch "${bazelCacheDir}/output_base/lock"
+      chmod g+w "${bazelCacheDir}/output_base/lock"
+    ''}
 
     # ── Sanitize Nix stdenv env vars for Bazel cache stability ──
     # Nix injects derivation-hash-dependent values into these env vars:
