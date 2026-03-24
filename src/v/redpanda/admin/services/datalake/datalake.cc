@@ -12,9 +12,14 @@
 #include "redpanda/admin/services/datalake/datalake.h"
 
 #include "container/chunked_hash_map.h"
+#include "datalake/coordinator/coordinator_manager.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/types.h"
+#include "datalake/schema_migration_detector.h"
+#include "datalake/table_id_provider.h"
+#include "iceberg/rename_columns_action.h"
+#include "iceberg/transaction.h"
 
 namespace {
 proto::admin::data_file to_proto(const datalake::coordinator::data_file& df) {
@@ -114,9 +119,11 @@ namespace admin {
 
 datalake_service_impl::datalake_service_impl(
   admin::proxy::client proxy_client,
-  ss::sharded<datalake::coordinator::frontend>* coordinator_fe)
+  ss::sharded<datalake::coordinator::frontend>* coordinator_fe,
+  ss::sharded<datalake::coordinator::coordinator_manager>* coordinator_mgr)
   : _proxy_client(std::move(proxy_client))
-  , _coordinator_fe(coordinator_fe) {}
+  , _coordinator_fe(coordinator_fe)
+  , _coordinator_mgr(coordinator_mgr) {}
 
 ss::future<proto::admin::get_coordinator_state_response>
 datalake_service_impl::get_coordinator_state(
@@ -263,6 +270,160 @@ datalake_service_impl::describe_catalog(
     }
 
     co_return proto::admin::describe_catalog_response{};
+}
+
+namespace {
+
+ss::sstring table_id_to_string(const iceberg::table_identifier& id) {
+    ss::sstring ns_str;
+    for (size_t i = 0; i < id.ns.size(); ++i) {
+        if (i > 0) {
+            ns_str += ".";
+        }
+        ns_str += id.ns[i];
+    }
+    return fmt::format("{}.{}", ns_str, id.table);
+}
+
+proto::admin::table_migration_result migrate_one_table(
+  const iceberg::table_identifier& table_id,
+  const model::topic& topic,
+  bool is_dlq,
+  const chunked_vector<datalake::column_migration_entry>& renames) {
+    proto::admin::table_migration_result result;
+    result.set_topic(ss::sstring(topic()));
+    result.set_table_name(table_id_to_string(table_id));
+    result.set_is_dlq(is_dlq);
+    chunked_vector<proto::admin::column_rename> pb_renames;
+    for (const auto& entry : renames) {
+        proto::admin::column_rename cr;
+        cr.set_column_path(ss::sstring(entry.column_path));
+        cr.set_old_name(ss::sstring(entry.current_name));
+        cr.set_new_name(ss::sstring(entry.suggested_new_name));
+        cr.set_reason(ss::sstring(entry.reason));
+        pb_renames.emplace_back(std::move(cr));
+    }
+    result.set_renames(std::move(pb_renames));
+    return result;
+}
+
+} // namespace
+
+ss::future<proto::admin::migrate_iceberg_schema_response>
+datalake_service_impl::migrate_iceberg_schema(
+  serde::pb::rpc::context, proto::admin::migrate_iceberg_schema_request req) {
+    auto* catalog = _coordinator_mgr->local().catalog();
+    if (!catalog) {
+        throw serde::pb::rpc::unavailable_exception(
+          "Iceberg catalog not initialized");
+    }
+
+    proto::admin::migrate_iceberg_schema_response response;
+    chunked_vector<proto::admin::table_migration_result> results;
+
+    for (const auto& topic_migration : req.get_topics()) {
+        model::topic topic{topic_migration.get_topic()};
+        auto table_id = datalake::table_id_provider::table_id(topic);
+        auto dlq_table_id = datalake::table_id_provider::dlq_table_id(topic);
+
+        // Process main table.
+        auto table_res = co_await catalog->load_table(table_id);
+        if (table_res.has_error()) {
+            proto::admin::table_migration_result err_result;
+            err_result.set_topic(ss::sstring(topic()));
+            err_result.set_table_name(table_id_to_string(table_id));
+            err_result.set_error(
+              fmt::format("failed to load table: {}", table_res.error()));
+            results.emplace_back(std::move(err_result));
+        } else {
+            auto& table_meta = table_res.value();
+            auto cur_schema_it = std::ranges::find(
+              table_meta.schemas,
+              table_meta.current_schema_id,
+              &iceberg::schema::schema_id);
+            if (cur_schema_it != table_meta.schemas.end()) {
+                auto renames = datalake::detect_redpanda_struct_renames(
+                  *cur_schema_it);
+
+                if (!renames.empty() && !req.get_dry_run()) {
+                    chunked_vector<iceberg::rename_columns_action::rename_entry>
+                      rename_entries;
+                    for (const auto& r : renames) {
+                        rename_entries.emplace_back(
+                          iceberg::rename_columns_action::rename_entry{
+                            .field_path = r.field_path,
+                            .new_name = r.suggested_new_name});
+                    }
+                    iceberg::transaction tx(std::move(table_meta));
+                    auto txn_res = co_await tx.rename_columns(
+                      std::move(rename_entries));
+                    if (txn_res.has_error()) {
+                        auto result = migrate_one_table(
+                          table_id, topic, false, renames);
+                        result.set_error("failed to build rename transaction");
+                        results.emplace_back(std::move(result));
+                    } else if (!tx.is_noop()) {
+                        auto commit_res = co_await catalog->commit_txn(
+                          table_id, std::move(tx));
+                        if (commit_res.has_error()) {
+                            auto result = migrate_one_table(
+                              table_id, topic, false, renames);
+                            result.set_error(
+                              fmt::format(
+                                "commit failed: {}", commit_res.error()));
+                            results.emplace_back(std::move(result));
+                        } else {
+                            results.emplace_back(migrate_one_table(
+                              table_id, topic, false, renames));
+                        }
+                    } else {
+                        results.emplace_back(
+                          migrate_one_table(table_id, topic, false, renames));
+                    }
+                } else {
+                    results.emplace_back(
+                      migrate_one_table(table_id, topic, false, renames));
+                }
+            }
+        }
+
+        // Process DLQ table.
+        auto dlq_res = co_await catalog->load_table(dlq_table_id);
+        if (dlq_res.has_value()) {
+            auto& dlq_meta = dlq_res.value();
+            auto cur_schema_it = std::ranges::find(
+              dlq_meta.schemas,
+              dlq_meta.current_schema_id,
+              &iceberg::schema::schema_id);
+            if (cur_schema_it != dlq_meta.schemas.end()) {
+                auto renames = datalake::detect_redpanda_struct_renames(
+                  *cur_schema_it);
+
+                if (!renames.empty() && !req.get_dry_run()) {
+                    chunked_vector<iceberg::rename_columns_action::rename_entry>
+                      rename_entries;
+                    for (const auto& r : renames) {
+                        rename_entries.emplace_back(
+                          iceberg::rename_columns_action::rename_entry{
+                            .field_path = r.field_path,
+                            .new_name = r.suggested_new_name});
+                    }
+                    iceberg::transaction tx(std::move(dlq_meta));
+                    auto txn_res = co_await tx.rename_columns(
+                      std::move(rename_entries));
+                    if (!txn_res.has_error() && !tx.is_noop()) {
+                        std::ignore = co_await catalog->commit_txn(
+                          dlq_table_id, std::move(tx));
+                    }
+                }
+                results.emplace_back(
+                  migrate_one_table(dlq_table_id, topic, true, renames));
+            }
+        }
+    }
+
+    response.set_results(std::move(results));
+    co_return response;
 }
 
 } // namespace admin

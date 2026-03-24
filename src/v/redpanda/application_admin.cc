@@ -89,7 +89,9 @@ void application::configure_admin_server(model::node_id node_id) {
               create_client(), stress_fiber_manager));
           s.add_service(
             std::make_unique<admin::datalake_service_impl>(
-              create_client(), &_datalake_coordinator_fe));
+              create_client(),
+              &_datalake_coordinator_fe,
+              &_datalake_coordinator_mgr));
           s.add_service(
             std::make_unique<admin::cluster_service_impl>(
               create_client(),
