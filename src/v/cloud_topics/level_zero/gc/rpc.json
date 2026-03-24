@@ -1,0 +1,14 @@
+{
+    "namespace": "cloud_topics::l0::gc::rpc::impl",
+    "service_name": "epoch_barrier_rpc",
+    "includes": [
+        "cloud_topics/level_zero/gc/rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "advance_barrier",
+            "input_type": "barrier_request",
+            "output_type": "barrier_response"
+        }
+    ]
+}
