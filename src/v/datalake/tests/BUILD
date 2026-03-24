@@ -1,5 +1,21 @@
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
+redpanda_cc_gtest(
+    name = "schema_migration_detector_test",
+    timeout = "short",
+    srcs = [
+        "schema_migration_detector_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/datalake:schema_migration_detector",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:schema",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
 redpanda_test_cc_library(
     name = "catalog_and_registry_fixture",
     hdrs = ["catalog_and_registry_fixture.h"],
