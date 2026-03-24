@@ -98,6 +98,9 @@ redpanda_cc_library(
     hdrs = [
         "service.h",
     ],
+    implementation_deps = [
+        ":epoch_barrier",
+    ],
     visibility = [
         "//src/v/redpanda:__pkg__",
     ],
@@ -105,6 +108,37 @@ redpanda_cc_library(
         ":generated_epoch_barrier_rpc",
         ":rpc_types",
         "//src/v/base",
+        "//src/v/rpc",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "epoch_barrier",
+    srcs = [
+        "epoch_barrier.cc",
+    ],
+    hdrs = [
+        "epoch_barrier.h",
+    ],
+    implementation_deps = [
+        ":generated_epoch_barrier_rpc",
+        "//src/v/cloud_topics:inflight_write_tracker",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
+        "//src/v/cluster",
+        "//src/v/rpc",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:when_all",
+    ],
+    deps = [
+        ":rpc_types",
+        "//src/v/base",
+        "//src/v/cloud_topics:types",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
         "//src/v/rpc",
         "@seastar",
     ],
