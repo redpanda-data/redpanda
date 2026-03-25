@@ -8,8 +8,10 @@ is not stamped (ie. dev builds).
 
 def _expand_with_stamp_vars(ctx):
     toolchain = ctx.toolchains[Label("@rules_python//python:toolchain_type")]
-    interpreter = toolchain.py3_runtime.interpreter
-    tools = [ctx.executable._tool] + ([interpreter] if interpreter else [])
+    runtime = toolchain.py3_runtime
+    if not runtime.interpreter and not runtime.interpreter_path:
+        fail("Python toolchain has no interpreter; configure a hermetic Python toolchain or set interpreter_path")
+    tools = [ctx.executable._tool] + ([runtime.interpreter] if runtime.interpreter else [])
     ctx.actions.run(
         outputs = [ctx.outputs.out],
         inputs = [ctx.file.defaults_file, ctx.file.template, ctx.info_file],

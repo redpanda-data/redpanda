@@ -327,5 +327,4 @@ test:lldb --strategy=TestRunner=local
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 
-try-import %workspace%/.bazelrc.nix
 try-import %workspace%/user.bazelrc
