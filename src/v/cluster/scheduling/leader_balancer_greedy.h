@@ -35,6 +35,7 @@ public:
       size_t node_count,
       index_type index,
       group_id_to_topic_id group_to_topic,
+      absl::flat_hash_set<topic_id_t> internal_topics,
       muted_index muted_index_value,
       std::optional<preference_index> preference_idx);
 
@@ -65,6 +66,8 @@ private:
     even_shard_load_constraint _shard_load_constraint;
 
     std::optional<pinning_constraint> _pinning_constraint;
+
+    absl::flat_hash_set<topic_id_t> _internal_topics;
 
     chunked_vector<reassignment> _pending_moves;
     size_t _next_pending{0};

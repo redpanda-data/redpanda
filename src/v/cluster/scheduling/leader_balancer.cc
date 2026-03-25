@@ -646,16 +646,26 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           std::move(muted_index),
           std::move(preference_index));
         break;
-    case model::leader_balancer_mode::greedy:
+    case model::leader_balancer_mode::greedy: {
         vlog(clusterlog.debug, "using greedy strategy");
+        // Collect non-user topic IDs so the greedy strategy can exclude
+        // them from cross-topic global counts.
+        absl::flat_hash_set<leader_balancer_types::topic_id_t> internal_topics;
+        for (const auto& t : _topics.topics_map()) {
+            if (!model::is_user_topic(t.first)) {
+                internal_topics.emplace(t.second.get_revision());
+            }
+        }
         strategy = std::make_unique<
           leader_balancer_types::greedy_topic_aware_strategy>(
           _members.node_count(),
           std::move(index),
           std::move(group_id_to_topic),
+          std::move(internal_topics),
           std::move(muted_index),
           std::move(preference_index));
         break;
+    }
     case model::leader_balancer_mode::calibrated:
         vlog(clusterlog.debug, "using calibrated_hill_climbing strategy");
         strategy = std::make_unique<

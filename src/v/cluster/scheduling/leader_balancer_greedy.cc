@@ -24,6 +24,7 @@ greedy_topic_aware_strategy::greedy_topic_aware_strategy(
   size_t node_count,
   index_type index,
   group_id_to_topic_id group_to_topic,
+  absl::flat_hash_set<topic_id_t> internal_topics,
   muted_index muted_index_value,
   std::optional<preference_index> preference_idx)
   : _muted_index(std::move(muted_index_value))
@@ -31,6 +32,7 @@ greedy_topic_aware_strategy::greedy_topic_aware_strategy(
   , _shard_index(std::move(index))
   , _topic_distribution_constraint(_group_to_topic, _shard_index, _muted_index)
   , _shard_load_constraint(_shard_index, _muted_index)
+  , _internal_topics(std::move(internal_topics))
   , _node_count(node_count) {
     if (preference_idx) {
         _pinning_constraint.emplace(
@@ -135,6 +137,7 @@ void greedy_topic_aware_strategy::build_target_assignment() {
     // gate guarantees broker balance while shard_count optimises
     // shard placement within that constraint.
     for (auto& [topic, partitions] : partitions_by_topic) {
+        bool is_internal = _internal_topics.contains(topic);
         std::ranges::sort(
           partitions, std::ranges::less{}, &partition_info::group);
 
@@ -174,6 +177,13 @@ void greedy_topic_aware_strategy::build_target_assignment() {
             }
             assigned_broker_counts[selected.node_id] += 1;
             assigned_shard_counts[selected] += 1;
+
+            // Internal topics (e.g. id_allocator, tx_manager) are
+            // excluded from global counts so their fixed placement
+            // does not distort the cross-topic balance of user topics.
+            if (!is_internal) {
+                global_shard_counts[selected] += 1;
+            }
         }
     }
 }
