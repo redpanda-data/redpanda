@@ -68,6 +68,14 @@ public:
       model::timeout_clock::time_point deadline,
       ss::abort_source& as);
 
+    /// Replicate an advance_gc_epoch command to durably record the
+    /// barrier's safe-to-GC epoch in this partition's STM state.
+    ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+    advance_gc_epoch(
+      cluster_epoch safe_epoch,
+      model::timeout_clock::time_point deadline,
+      ss::abort_source& as);
+
     /// Fence and replicate an advance_epoch_cmd if new_epoch > max_epoch.
     ss::future<std::expected<std::monostate, ctp_stm_api_errc>> advance_epoch(
       cluster_epoch new_epoch,

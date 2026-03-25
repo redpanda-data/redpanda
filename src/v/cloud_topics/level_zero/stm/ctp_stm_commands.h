@@ -110,4 +110,21 @@ struct reset_state_cmd
     ctp_stm_state state;
 };
 
+struct advance_gc_epoch_cmd
+  : public serde::envelope<
+      advance_gc_epoch_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr cmd_key key = cmd_key(
+      std::to_underlying(ctp_stm_key::advance_gc_epoch));
+
+    advance_gc_epoch_cmd() noexcept = default;
+    explicit advance_gc_epoch_cmd(cluster_epoch e)
+      : safe_epoch(e) {}
+
+    auto serde_fields() { return std::tie(safe_epoch); }
+
+    cluster_epoch safe_epoch;
+};
+
 } // namespace cloud_topics

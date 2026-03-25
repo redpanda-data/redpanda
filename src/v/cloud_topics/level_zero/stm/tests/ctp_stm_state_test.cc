@@ -470,4 +470,62 @@ TEST(ctp_stm_state_test, l0_simulation) {
     }
 }
 
+TEST(ctp_stm_state_test, GcSafeEpochPendingUntilReconciled) {
+    ct::ctp_stm_state state;
+
+    EXPECT_FALSE(state.get_gc_safe_epoch().has_value());
+
+    // Pending gc safe epoch is not visible until LRLO catches up.
+    state.set_pending_gc_safe_epoch(ct::cluster_epoch{5}, model::offset{100});
+    EXPECT_FALSE(state.get_gc_safe_epoch().has_value());
+
+    // LRLO advances but not past the command offset — still pending.
+    state.advance_last_reconciled_offset(kafka::offset{50}, model::offset{50});
+    EXPECT_FALSE(state.get_gc_safe_epoch().has_value());
+
+    // LRLO reaches the command offset — promoted.
+    state.advance_last_reconciled_offset(
+      kafka::offset{100}, model::offset{100});
+    ASSERT_TRUE(state.get_gc_safe_epoch().has_value());
+    EXPECT_EQ(state.get_gc_safe_epoch().value(), ct::cluster_epoch{5});
+}
+
+TEST(ctp_stm_state_test, GcSafeEpochPendingRatchetsForward) {
+    ct::ctp_stm_state state;
+
+    // Two commands before reconciliation catches up — latest wins.
+    state.set_pending_gc_safe_epoch(ct::cluster_epoch{5}, model::offset{100});
+    state.set_pending_gc_safe_epoch(ct::cluster_epoch{7}, model::offset{200});
+    EXPECT_FALSE(state.get_gc_safe_epoch().has_value());
+
+    // Older epoch's command is not tracked — ratchet keeps the latest.
+    // LRLO passes offset 200 → epoch 7 promoted.
+    state.advance_last_reconciled_offset(
+      kafka::offset{200}, model::offset{200});
+    ASSERT_TRUE(state.get_gc_safe_epoch().has_value());
+    EXPECT_EQ(state.get_gc_safe_epoch().value(), ct::cluster_epoch{7});
+}
+
+TEST(ctp_stm_state_test, GcSafeEpochNeverRegresses) {
+    ct::ctp_stm_state state;
+
+    // Promote epoch 5.
+    state.set_pending_gc_safe_epoch(ct::cluster_epoch{5}, model::offset{100});
+    state.advance_last_reconciled_offset(
+      kafka::offset{100}, model::offset{100});
+    EXPECT_EQ(state.get_gc_safe_epoch().value(), ct::cluster_epoch{5});
+
+    // A stale pending (epoch 3) does not regress the ratchet.
+    state.set_pending_gc_safe_epoch(ct::cluster_epoch{3}, model::offset{150});
+    state.advance_last_reconciled_offset(
+      kafka::offset{150}, model::offset{150});
+    EXPECT_EQ(state.get_gc_safe_epoch().value(), ct::cluster_epoch{5});
+
+    // A higher pending advances it.
+    state.set_pending_gc_safe_epoch(ct::cluster_epoch{9}, model::offset{300});
+    state.advance_last_reconciled_offset(
+      kafka::offset{300}, model::offset{300});
+    EXPECT_EQ(state.get_gc_safe_epoch().value(), ct::cluster_epoch{9});
+}
+
 } // anonymous namespace

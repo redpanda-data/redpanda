@@ -197,6 +197,31 @@ ctp_stm_api::set_start_offset(
 }
 
 ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+ctp_stm_api::advance_gc_epoch(
+  cluster_epoch safe_epoch,
+  model::timeout_clock::time_point deadline,
+  ss::abort_source& as) {
+    vlog(
+      _log.debug,
+      "Replicating ctp_stm_cmd::advance_gc_epoch{{{}}}",
+      safe_epoch);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::ctp_stm_command, model::offset(0));
+    builder.add_raw_kv(
+      serde::to_iobuf(advance_gc_epoch_cmd::key),
+      serde::to_iobuf(advance_gc_epoch_cmd(safe_epoch)));
+
+    auto batch = std::move(builder).build();
+    auto apply_result = co_await replicated_apply(
+      std::move(batch), std::nullopt, deadline, as);
+    if (!apply_result.has_value()) {
+        co_return std::unexpected(apply_result.error());
+    }
+    co_return std::monostate{};
+}
+
+ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
 ctp_stm_api::advance_epoch(
   cluster_epoch new_epoch,
   model::timeout_clock::time_point deadline,
