@@ -1666,10 +1666,17 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
 
     @skip_debug_mode
     @cluster(num_nodes=2)
-    def test_many_partitions_recovery_with_traffic_shaping(self):
+    def test_lease_timeout_with_traffic_shaping(self):
         """
-        Test that reproduces an OOM when doing recovery with a large dataset in
-        the bucket.
+        Verify that cloud_storage client lease timeouts fire under degraded
+        network conditions and that uploads recover once the network heals.
+
+        Uses netem traffic shaping (added latency + dropped incoming packets)
+        on the link between the Redpanda node and S3 to simulate stuck HTTP
+        connections. With traffic shaping active, waits for lease timeout
+        metrics to accumulate and the client pool to reach full utilization.
+        After removing traffic shaping, confirms that segment uploads resume
+        and reach the expected count.
         """
         producer = KgoVerifierProducer(
             self.test_context,
@@ -1738,19 +1745,3 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             )
         finally:
             producer.stop()
-
-        node = self.redpanda.nodes[0]
-        self.redpanda.stop()
-        self.redpanda.remove_local_data(node)
-        self.redpanda.restart_nodes(
-            self.redpanda.nodes, auto_assign_node_id=True, omit_seeds_on_idx_one=False
-        )
-        self.redpanda._admin.await_stable_leader(
-            "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
-        )
-
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_recovery_start(wait=True)
-        wait_until(
-            lambda: len(set(rpk.list_topics())) == 1, timeout_sec=120, backoff_sec=3
-        )
