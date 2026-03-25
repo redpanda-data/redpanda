@@ -24,7 +24,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, ResourceSettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 
@@ -166,13 +166,16 @@ class TopicAwareRebalanceTestBase(RedpandaTest):
         leaders_per_node_ratio: float = 0.8,
         improvement_deadline: int = 70,
         require_even_distribution: bool = False,
+        **kwargs: Any,
     ):
         extra_rp_conf: dict[str, Any] = dict(
             leader_balancer_idle_timeout=20000,
             leader_balancer_mode=mode,
         )
 
-        super().__init__(test_context=test_context, extra_rp_conf=extra_rp_conf)
+        super().__init__(
+            test_context=test_context, extra_rp_conf=extra_rp_conf, **kwargs
+        )
         self.topics = topic_specs
         self._leaders_per_node_ratio = leaders_per_node_ratio
         self._improvement_deadline = improvement_deadline
@@ -373,6 +376,42 @@ class GreedyLeaderBalancingTest(TopicAwareRebalanceTestBase):
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_greedy_rebalance(self):
         self._do_test_topic_aware_rebalance()
+
+
+class GreedyLeaderBalancingFourShardsTest(TopicAwareRebalanceTestBase):
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context,
+            mode="greedy",
+            topic_specs=[],
+            leaders_per_node_ratio=1.0,
+            improvement_deadline=120,
+            require_even_distribution=True,
+            resource_settings=ResourceSettings(num_cpus=4),
+        )
+
+    def _run_scenario(self, specs: list[TopicSpec]):
+        self.topics = specs
+        for s in specs:
+            self.client().create_topic(s)
+        self._do_test_topic_aware_rebalance()
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_one_topic_18p(self):
+        self._run_scenario([TopicSpec(partition_count=18, replication_factor=3)])
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_one_topic_12p(self):
+        self._run_scenario([TopicSpec(partition_count=12, replication_factor=3)])
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_two_topics_18p(self):
+        self._run_scenario(
+            [
+                TopicSpec(partition_count=18, replication_factor=3),
+                TopicSpec(partition_count=18, replication_factor=3),
+            ]
+        )
 
 
 class AutomaticLeadershipBalancingTest(RedpandaTest):
