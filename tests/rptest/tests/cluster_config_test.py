@@ -1671,7 +1671,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             "AZURE_CLIENT_ID": "client_id",
             "AZURE_TENANT_ID": "tenantid",
             "AZURE_FEDERATED_TOKEN_FILE": "/etc/hosts",
-            "AZURE_AUTHORITY_HOST": "authority.host.com",
+            "AZURE_AUTHORITY_HOST": "http://localhost:42",
         },
     }
 
