@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <random>
 #include <ranges>
 #include <tuple>
 #include <vector>
@@ -98,6 +99,7 @@ make_strategy_from_partitions(
       nodes.size(),
       std::move(index),
       std::move(group_to_topic),
+      absl::flat_hash_set<cluster::leader_balancer_types::topic_id_t>{},
       cluster::leader_balancer_types::muted_index{muted_nodes, {}},
       std::move(preference_idx));
 
@@ -125,18 +127,38 @@ make_greedy_strategy(
         }
     }
 
+    // Each node independently assigns partitions to shards in a
+    // balanced-but-shuffled order: a permutation of [0..shards-1]
+    // that repeats, so every shard gets the same number of replicas.
+    // Different nodes use different permutations (seeded by node id
+    // and topic) so replicas of the same partition land on different
+    // shards across nodes, matching real node-local shard placement.
+    auto make_shard_sequence = [&](int node, int topic) {
+        std::vector<uint32_t> perm(static_cast<size_t>(shards_per_broker));
+        std::iota(perm.begin(), perm.end(), uint32_t{0});
+        std::mt19937 rng(static_cast<uint32_t>(node * 137 + topic * 31));
+        std::ranges::shuffle(perm, rng);
+        return perm;
+    };
+
     for (int topic : std::views::iota(0, topic_count)) {
+        // Build per-node shard permutations and counters.
+        std::vector<std::vector<uint32_t>> node_perms;
+        std::vector<size_t> node_counters(static_cast<size_t>(broker_count), 0);
+        for (int n = 0; n < broker_count; ++n) {
+            node_perms.push_back(make_shard_sequence(n, topic));
+        }
+
         for (int partition : std::views::iota(0, partitions_per_topic)) {
             std::vector<model::broker_shard> replicas;
-            uint32_t topic_shard_offset = static_cast<uint32_t>(
-              std::max(1, shards_per_broker / 2));
             int broker_offset = partition + topic;
             for (int replica : std::views::iota(0, replication_factor)) {
-                replicas.push_back(bs(
-                  (broker_offset + replica) % broker_count,
-                  static_cast<uint32_t>(
-                    (partition + topic * topic_shard_offset)
-                    % shards_per_broker)));
+                int node = (broker_offset + replica) % broker_count;
+                auto& ctr = node_counters[static_cast<size_t>(node)];
+                auto& perm = node_perms[static_cast<size_t>(node)];
+                auto shard = perm[ctr % perm.size()];
+                ++ctr;
+                replicas.push_back(bs(node, shard));
             }
             partitions.push_back(
               partition_spec{
@@ -419,28 +441,27 @@ TEST(GreedyLeaderBalancerTest, TwoTopicsFourBrokersThreeShards) {
       balanced,
       0,
       std::array<std::array<int, 3>, 4>{{
-        {{2, 2, 1}},
-        {{1, 2, 2}},
-        {{1, 1, 2}},
         {{2, 1, 1}},
+        {{1, 2, 2}},
+        {{2, 2, 1}},
+        {{1, 1, 2}},
       }});
     expect_shard_counts_per_broker(
       balanced,
       1,
       std::array<std::array<int, 3>, 4>{{
-        {{2, 2, 1}},
-        {{1, 1, 1}},
+        {{1, 1, 2}},
         {{1, 2, 2}},
-        {{2, 1, 2}},
+        {{2, 1, 1}},
+        {{1, 2, 2}},
       }});
-    // Not perfect
     expect_combined_shard_counts(
       balanced,
       std::array<std::array<int, 3>, 4>{{
-        {{4, 4, 2}},
-        {{2, 3, 3}},
+        {{3, 2, 3}},
+        {{2, 4, 4}},
+        {{4, 3, 2}},
         {{2, 3, 4}},
-        {{4, 2, 3}},
       }});
 }
 
@@ -468,10 +489,10 @@ TEST(GreedyLeaderBalancerTest, RemainderPartitions) {
     expect_shard_counts_per_broker(
       balanced_leaders,
       1,
-      std::array<std::array<int, 2>, 3>{{{{1, 1}}, {{2, 1}}, {{1, 2}}}});
+      std::array<std::array<int, 2>, 3>{{{{1, 2}}, {{1, 1}}, {{1, 2}}}});
     expect_combined_shard_counts(
       balanced_leaders,
-      std::array<std::array<int, 2>, 3>{{{{3, 2}}, {{3, 3}}, {{2, 3}}}});
+      std::array<std::array<int, 2>, 3>{{{{3, 3}}, {{2, 3}}, {{2, 3}}}});
 }
 
 TEST(GreedyLeaderBalancerTest, RemainderPartitionsThreeTopics) {
@@ -486,11 +507,11 @@ TEST(GreedyLeaderBalancerTest, RemainderPartitionsThreeTopics) {
     expect_shard_counts_per_broker(
       balanced_leaders,
       1,
-      std::array<std::array<int, 2>, 3>{{{{1, 1}}, {{2, 1}}, {{1, 2}}}});
+      std::array<std::array<int, 2>, 3>{{{{1, 2}}, {{1, 1}}, {{1, 2}}}});
     expect_shard_counts_per_broker(
       balanced_leaders,
       2,
-      std::array<std::array<int, 2>, 3>{{{{1, 2}}, {{1, 1}}, {{2, 1}}}});
+      std::array<std::array<int, 2>, 3>{{{{1, 1}}, {{2, 1}}, {{2, 1}}}});
     expect_combined_shard_counts(
       balanced_leaders,
       std::array<std::array<int, 2>, 3>{{{{4, 4}}, {{4, 4}}, {{4, 4}}}});
@@ -506,23 +527,23 @@ TEST(GreedyLeaderBalancerTest, BalancesShardsWithinBroker) {
       0,
       std::array<std::array<int, 4>, 3>{{
         {{2, 1, 1, 2}},
-        {{2, 2, 1, 1}},
-        {{1, 2, 2, 1}},
+        {{1, 1, 2, 2}},
+        {{1, 2, 1, 2}},
       }});
     expect_shard_counts_per_broker(
       balanced_leaders,
       1,
       std::array<std::array<int, 4>, 3>{{
         {{1, 2, 2, 1}},
-        {{1, 1, 2, 2}},
         {{2, 1, 1, 2}},
+        {{2, 2, 1, 1}},
       }});
     expect_combined_shard_counts(
       balanced_leaders,
       std::array<std::array<int, 4>, 3>{{
         {{3, 3, 3, 3}},
-        {{3, 3, 3, 3}},
-        {{3, 3, 3, 3}},
+        {{3, 2, 3, 4}},
+        {{3, 4, 2, 3}},
       }});
 }
 
@@ -536,17 +557,16 @@ TEST(GreedyLeaderBalancerTest, TwoTopicsSixBrokersTwoShardsRfThree) {
       balanced_leaders,
       0,
       std::array<std::array<int, 2>, 6>{
-        {{{2, 1}}, {{1, 2}}, {{2, 1}}, {{1, 2}}, {{2, 1}}, {{1, 2}}}});
+        {{{2, 1}}, {{1, 2}}, {{2, 1}}, {{2, 1}}, {{1, 2}}, {{1, 2}}}});
     expect_shard_counts_per_broker(
       balanced_leaders,
       1,
       std::array<std::array<int, 2>, 6>{
-        {{{2, 2}}, {{2, 1}}, {{1, 2}}, {{1, 1}}, {{1, 2}}, {{2, 1}}}});
+        {{{2, 2}}, {{2, 1}}, {{1, 2}}, {{1, 1}}, {{1, 2}}, {{1, 2}}}});
     expect_combined_shard_counts(
-      // Not perfect
       balanced_leaders,
       std::array<std::array<int, 2>, 6>{
-        {{{4, 3}}, {{3, 3}}, {{3, 3}}, {{2, 3}}, {{3, 3}}, {{3, 3}}}});
+        {{{4, 3}}, {{3, 3}}, {{3, 3}}, {{3, 2}}, {{2, 4}}, {{2, 4}}}});
 }
 
 TEST(GreedyLeaderBalancerTest, SkippedMoveDoesNotDesyncIndex) {
