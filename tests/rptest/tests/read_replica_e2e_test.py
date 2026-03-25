@@ -601,9 +601,20 @@ class TestReadReplicaService(EndToEndTest):
         mode: ReadReplicaSourceMode,
     ):
         self.mode = mode
-        bucket_region = self.rr_settings.cloud_storage_region
-        bucket_endpoint = self.rr_settings.cloud_storage_api_endpoint
-        self.rr_topic_bucket = f"{self.si_settings.cloud_storage_bucket}?region={bucket_region}&endpoint={bucket_endpoint}"
+        self.si_settings.load_context(self.logger, self.test_context)
+        bucket_name = self.si_settings.cloud_storage_bucket
+        bucket_region = self.si_settings.cloud_storage_region
+        # si_settings.cloud_storage_api_endpoint is only valid for docker
+        # (minio-s3). In CDT the endpoint is not set in SISettings, so we
+        # construct the real S3 endpoint from the region.
+        # NOTE: this test currently only runs on AWS or docker.
+        if get_cloud_provider() == "docker":
+            bucket_endpoint = self.si_settings.cloud_storage_api_endpoint
+        else:
+            bucket_endpoint = f"s3.{bucket_region}.amazonaws.com"
+        self.rr_topic_bucket = (
+            f"{bucket_name}?region={bucket_region}&endpoint={bucket_endpoint}"
+        )
 
         # Bogus region and endpoint to test overrides take effect.
         self.rr_settings.cloud_storage_region = "unknown-region-1"
