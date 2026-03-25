@@ -9,7 +9,6 @@
 import json
 import random
 import re
-import socket
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -1625,6 +1624,9 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                 "enable_cluster_metadata_upload_loop": True,
                 "controller_snapshot_max_age_sec": 1,
                 "cloud_storage_client_lease_timeout_ms": 1000,
+                # Enable HNS explicitly to avoid self configuration failure on
+                # startup caused by blocked egress.
+                "cloud_storage_azure_hierarchical_namespace_enabled": True,
             },
             environment={"__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS": 5000},
             si_settings=si_settings,
@@ -1641,23 +1643,18 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             self.redpanda = redpanda
 
         def __enter__(self) -> NodeQdisc:
-            s3_service_ep = self.redpanda.si_settings.cloud_storage_api_endpoint
-
-            #  block all outgoing https if we can't get an IP address or the api endpoint is not config'ed
-            s3_service_dest = ":443"
-            try:
-                s3_service_dest = socket.gethostbyname(s3_service_ep)
-            except Exception:
-                pass
-
+            # Shape all traffic to port 443 rather than resolving the cloud
+            # storage endpoint IP, which is unreliable across backends
+            # (S3, GCS, Azure, Docker, etc).
+            object_storage_dest = [":9000", ":443"]
             self.rp_qdisc = NodeQdisc(
                 self.redpanda.nodes[0], ClusterTopology._get_if_in_use(), 1
             )
             self.rp_qdisc.initialize()
             self.rp_qdisc.add(
-                target_addresses=[s3_service_dest], spec=NetemSpec(300, 100)
+                target_addresses=object_storage_dest, spec=NetemSpec(300, 100)
             )
-            self.rp_qdisc.drop_incoming(s3_service_dest)
+            self.rp_qdisc.drop_incoming(object_storage_dest)
 
             return self.rp_qdisc
 
@@ -1703,7 +1700,7 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                     nodes=self.redpanda.nodes[0:1],
                     expect_metric=True,
                 )
-                self.logger.info(f"redpanda_cloud_client_lease_timeout_total: {v}")
+                self.logger.debug(f"redpanda_cloud_client_lease_timeout_total: {v}")
                 return v
 
             def pool_utilization(pct):
@@ -1715,13 +1712,13 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                 if not v:
                     return False
                 u = [s.value for s in v.samples]
-                self.logger.info(
+                self.logger.debug(
                     f"redpanda_cloud_client_client_pool_utilization: {json.dumps(u)}"
                 )
                 return all(v == pct for v in u)
 
             producer.start()
-            self.logger.debug(
+            self.logger.info(
                 "Wait until the client pool is backed up due to long-running requests"
             )
             try:
@@ -1733,13 +1730,13 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             finally:
                 producer.stop()
 
-        self.logger.debug(
+        self.logger.info(
             "Now check that the things return to normal after traffic shaping is switched off"
         )
         producer.start()
         try:
             wait_until(
-                lambda: nodes_report_cloud_segments(self.redpanda, 10000),
+                lambda: nodes_report_cloud_segments(self.redpanda, 1000),
                 timeout_sec=180,
                 backoff_sec=3,
             )
