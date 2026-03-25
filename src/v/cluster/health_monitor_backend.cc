@@ -607,7 +607,9 @@ health_monitor_backend::get_current_node_in_sync_replicas_share(
         const followers_stats& fs,
         const model::topic_namespace&,
         model::partition_id) {
-          if (std::ranges::count(fs.out_of_sync, _self)) {
+          if (
+            std::ranges::contains(fs.out_of_sync, _self)
+            || std::ranges::contains(fs.down, _self)) {
               ++out_of_sync_replicas;
           } else {
               ++in_sync_replicas;
