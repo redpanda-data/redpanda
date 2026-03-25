@@ -85,20 +85,20 @@ std::vector<shard_load> greedy_topic_aware_strategy::stats() const {
 }
 
 // Lower-is-better on every element:
-// 1) excess above per-topic floor (0 while at or below
-//    fair share; positive once exceeded — this gates the
-//    remainder allocation so global counts can steer it)
+// 1) at_quota: 0 while broker is below its per-topic fair share,
+//    1 once reached — guarantees each broker fills to floor_quota
+//    before any gets more, so shard preferences in fields 2-3
+//    cannot cause broker imbalance.
 // 2) fewest topic leaders on this broker-shard
-// 3) fewest global leaders on this broker
-// 4) fewest topic leaders on this broker
-// 5) fewest global leaders on this broker-shard
-// 6) deterministic tie-break by broker-shard ordering
+// 3) fewest topic leaders on this broker (tie-break to spread
+//    across nodes when shards tie)
+// 4) fewest global leaders on this broker-shard
+// 5) deterministic tie-break by broker-shard ordering
 struct leader_preference {
-    size_t excess;
+    size_t at_quota;
     size_t shard_count;
-    size_t global_broker_count;
     size_t broker_count;
-    size_t global_shard_counts;
+    size_t global_shard_count;
     model::broker_shard replica;
 
     auto operator<=>(const leader_preference&) const = default;
@@ -106,17 +106,15 @@ struct leader_preference {
 
 void greedy_topic_aware_strategy::build_target_assignment() {
     // `partitions_by_topic` is the input to the greedy planner grouped by
-    // topic. Each entry stores the raft groups for one topic along with the
-    // broker-shards that can legally host leadership for those groups.
+    // topic. Each entry stores the raft groups for one topic along with
+    // the broker-shards that can legally host leadership for those groups.
     std::map<topic_id_t, chunked_vector<partition_info>> partitions_by_topic;
 
-    // `global_shard_counts` and `global_broker_counts` track how many target
-    // leaders have been assigned to each broker-shard and broker respectively
-    // across previously processed topics. They serve as cross-topic
-    // tie-breakers: when two replicas have equal per-topic counts, the one on
-    // the globally least-loaded broker (then shard) wins.
+    // `global_shard_counts` tracks how many target leaders have been
+    // assigned to each broker-shard across all topics processed so far.
+    // It serves as a cross-topic tie-breaker so that topics processed
+    // later inherit shard awareness from earlier ones.
     chunked_hash_map<model::broker_shard, size_t> global_shard_counts;
-    chunked_hash_map<model::node_id, size_t> global_broker_counts;
 
     for (const auto& [leader, groups] : _shard_index.shards()) {
         for (const auto& [group, replicas] : groups) {
@@ -126,17 +124,16 @@ void greedy_topic_aware_strategy::build_target_assignment() {
                   clusterlog.warn, "missing topic mapping for group {}", group);
                 continue;
             }
-
             partitions_by_topic[topic_iterator->second].emplace_back(
               group, topic_iterator->second, leader, replicas);
         }
     }
 
-    // Build targets topic-by-topic. For each topic the greedy walk assigns
-    // each partition to the replica that minimises a scoring tuple. A
-    // per-topic floor (partitions / brokers) gates the first element so
-    // that a broker that has already received its fair share is penalised,
-    // letting globally under-loaded brokers absorb the remainder.
+    // Build targets topic-by-topic. For each topic the greedy walk
+    // assigns each partition to the replica that minimises the
+    // leader_preference scoring tuple defined above. The at_quota
+    // gate guarantees broker balance while shard_count optimises
+    // shard placement within that constraint.
     for (auto& [topic, partitions] : partitions_by_topic) {
         std::ranges::sort(
           partitions, std::ranges::less{}, &partition_info::group);
@@ -155,19 +152,14 @@ void greedy_topic_aware_strategy::build_target_assignment() {
             std::optional<leader_preference> best_assignment;
             for (const model::broker_shard& replica : partition.replicas) {
                 size_t broker_count = assigned_broker_counts[replica.node_id];
-                size_t excess = broker_count > floor_quota
-                                  ? broker_count - floor_quota
-                                  : 0;
-                auto candidate_assignment = leader_preference{
-                  .excess = excess,
+                auto candidate = leader_preference{
+                  .at_quota = broker_count >= floor_quota ? 1u : 0u,
                   .shard_count = assigned_shard_counts[replica],
-                  .global_broker_count = global_broker_counts[replica.node_id],
                   .broker_count = broker_count,
-                  .global_shard_counts = global_shard_counts[replica],
+                  .global_shard_count = global_shard_counts[replica],
                   .replica = replica};
-                if (
-                  !best_assignment || candidate_assignment < *best_assignment) {
-                    best_assignment = candidate_assignment;
+                if (!best_assignment || candidate < *best_assignment) {
+                    best_assignment = candidate;
                 }
             }
 
@@ -175,28 +167,13 @@ void greedy_topic_aware_strategy::build_target_assignment() {
                 // group has no replicas
                 continue;
             }
-            model::broker_shard selected_leader_shard
-              = best_assignment->replica;
-            if (partition.leader != selected_leader_shard) {
+            model::broker_shard selected = best_assignment->replica;
+            if (partition.leader != selected) {
                 _pending_moves.emplace_back(
-                  partition.group, partition.leader, selected_leader_shard);
+                  partition.group, partition.leader, selected);
             }
-            assigned_broker_counts[selected_leader_shard.node_id] += 1;
-            assigned_shard_counts[selected_leader_shard] += 1;
-        }
-
-        // Commit this topic's assignments to the global counters after
-        // the entire topic is processed, not per-partition.  If globals
-        // were updated per-partition, the first assignment to an
-        // under-loaded broker (e.g. global {3,3,2} → {3,3,3}) would
-        // erase the imbalance before the remaining partitions are
-        // scored, preventing global_broker_counts from steering subsequent
-        // remainder assignments to that broker.
-        for (const auto& [node, count] : assigned_broker_counts) {
-            global_broker_counts[node] += count;
-        }
-        for (const auto& [shard, count] : assigned_shard_counts) {
-            global_shard_counts[shard] += count;
+            assigned_broker_counts[selected.node_id] += 1;
+            assigned_shard_counts[selected] += 1;
         }
     }
 }
