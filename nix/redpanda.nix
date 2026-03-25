@@ -616,14 +616,17 @@ REPOS_PATCH
     # (which would need network access unavailable in the sandbox).
     cp ${./MODULE.bazel.lock.nix} $out/MODULE.bazel.lock
 
-    # Apply Nix-specific patches. These enable use_default_shell_env (needed
-    # under --incompatible_strict_action_env) and add libc++/unwindlib flags
-    # for Nix's clang. Generic fixes (krb5 LD_LIBRARY_PATH, interpreter null
-    # check, host_linkopt) are applied directly to source files.
+    # Enable use_default_shell_env for actions that invoke py_binary wrappers.
+    # With use_default_shell_env = False, actions get an empty environment.
+    # --action_env settings (including BAZEL_SH) only apply when True.
+    # The rules_python bootstrap needs bash (declare -a, [[ ]], etc.) and
+    # discovers it via BAZEL_SH — without it, the Nix sandbox (which lacks
+    # /bin/bash) can't run Python wrapper scripts.
     cd $out
-    patch -p1 < ${./patches/expand-stamp-shell-env.patch}
-    patch -p1 < ${./patches/pbgen-shell-env.patch}
-    patch -p1 < ${./patches/bazelrc-nix.patch}
+    sed -i 's/use_default_shell_env = False/use_default_shell_env = True/' \
+      src/v/version/expand_with_stamp_vars.bzl
+    sed -i '/mnemonic = "RedpandaProtoGen",/a\        use_default_shell_env = True,' \
+      bazel/pbgen/pbgen.bzl
   '';
 
   registry = callPackage ./bcr.nix { };
@@ -872,10 +875,14 @@ REPOS_PATCH
     '';
   };
 
-  # Generate .bazelrc.nix content (same settings as shell.nix shellHook)
+  # Generate user.bazelrc content (same settings as shell.nix shellHook)
   bazelrcNix = ''
     build --config=system-clang
     build --shell_executable=${bash}/bin/bash
+    build --action_env=BAZEL_SH=${bash}/bin/bash
+    build --host_action_env=BAZEL_SH=${bash}/bin/bash
+    build --host_linkopt=-stdlib=libc++
+    build --host_linkopt=--unwindlib=libgcc
     build --action_env=PATH=${nixPath}
     build --host_action_env=PATH=${nixPath}
     build --action_env=NIX_LDFLAGS
@@ -997,8 +1004,8 @@ stdenv.mkDerivation {
     export NIX_CFLAGS_COMPILE="$(echo "$NIX_CFLAGS_COMPILE" | sed 's/-frandom-seed=[^[:space:]]*//')"
     export NIX_LDFLAGS="$(echo "$NIX_LDFLAGS" | sed 's|-rpath /nix/store/[^[:space:]]*/lib[[:space:]]*||')"
 
-    # Write .bazelrc.nix
-    cat > .bazelrc.nix <<'BAZELRC'
+    # Write user.bazelrc (try-import %workspace%/user.bazelrc is in .bazelrc)
+    cat > user.bazelrc <<'BAZELRC'
     ${bazelrcNix}
     BAZELRC
 
