@@ -616,12 +616,12 @@ REPOS_PATCH
     # (which would need network access unavailable in the sandbox).
     cp ${./MODULE.bazel.lock.nix} $out/MODULE.bazel.lock
 
-    # Enable use_default_shell_env for actions that invoke py_binary wrappers.
-    # With use_default_shell_env = False, actions get an empty environment.
-    # --action_env settings (including BAZEL_SH) only apply when True.
-    # The rules_python bootstrap needs bash (declare -a, [[ ]], etc.) and
-    # discovers it via BAZEL_SH — without it, the Nix sandbox (which lacks
-    # /bin/bash) can't run Python wrapper scripts.
+    # Enable use_default_shell_env so --action_env reaches these actions.
+    # Without it, Bazel runs actions with `env -` (empty environment),
+    # so BAZEL_SH and PATH from --action_env are never delivered.
+    # The py_binary wrapper (rules_python bootstrap) needs bash, which
+    # it discovers via BAZEL_SH — absent in the Nix sandbox's empty env.
+    # Verified: build fails with "bash not found. Set BAZEL_SH" without this.
     cd $out
     sed -i 's/use_default_shell_env = False/use_default_shell_env = True/' \
       src/v/version/expand_with_stamp_vars.bzl
