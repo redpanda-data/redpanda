@@ -1659,6 +1659,8 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
             )
             self.rp_qdisc.drop_incoming(s3_service_dest)
 
+            return self.rp_qdisc
+
         def __exit__(self, exc_type, exc_value, traceback):
             self.rp_qdisc.remove_all()
 
@@ -1703,6 +1705,8 @@ class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
                     metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
                     nodes=self.redpanda.nodes[0:1],
                 )
+                if not v:
+                    return False
                 u = [s.value for s in v.samples]
                 self.logger.info(
                     f"redpanda_cloud_client_client_pool_utilization: {json.dumps(u)}"
