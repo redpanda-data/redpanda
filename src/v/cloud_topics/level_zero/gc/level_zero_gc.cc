@@ -231,6 +231,7 @@ private:
           curr_prefix_);
         // cached continuation is single use. pass it to list_objects and
         // null it out immediately.
+        probe_->list_request();
         auto list_result = co_await storage_->list_objects(
           &as_, curr_prefix_, std::exchange(continuation_token_, std::nullopt));
         if (!list_result.has_value()) {

@@ -30,6 +30,7 @@ public:
     void object_skipped_too_young() { objects_skipped_too_young_++; }
     void collection_round() { collection_rounds_++; }
     void delete_request() { delete_requests_++; }
+    void list_request() { list_requests_++; }
     void list_error() { list_errors_++; }
     void delete_error() { delete_errors_++; }
     void add_backpressure(double seconds) { backpressure_seconds_ += seconds; }
@@ -57,6 +58,7 @@ private:
     uint64_t objects_skipped_too_young_{0};
     uint64_t collection_rounds_{0};
     uint64_t delete_requests_{0};
+    uint64_t list_requests_{0};
     uint64_t list_errors_{0};
     uint64_t delete_errors_{0};
     double backpressure_seconds_{0};
