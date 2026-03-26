@@ -9,8 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
+#include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
+#include "cluster/controller_stm.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_balancer_backend.h"
 #include "cluster/partition_manager.h"

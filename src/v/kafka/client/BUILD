@@ -184,6 +184,7 @@ redpanda_cc_library(
     name = "brokers",
     srcs = [
         "broker.cc",
+        "broker_auth.cc",
         "brokers.cc",
     ],
     hdrs = [

@@ -10,6 +10,7 @@ redpanda_cc_library(
     name = "rpc",
     srcs = [
         "client.cc",
+        "client_wasm.cc",
         "deps.cc",
         "logger.cc",
         "logger.h",

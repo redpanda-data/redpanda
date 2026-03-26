@@ -257,6 +257,8 @@ redpanda_cc_library(
         "recovery.cc",
         "security.cc",
         "server.cc",
+        "server_config_routes.cc",
+        "server_operations.cc",
         "topics.cc",
         "transaction.cc",
         "transform.cc",

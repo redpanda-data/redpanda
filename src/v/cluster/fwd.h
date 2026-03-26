@@ -76,6 +76,11 @@ class state_machine_registry;
 class tx_topic_manager;
 class shard_placement_table;
 class shard_balancer;
+class bootstrap_backend;
+class crash_reporter;
+class leader_balancer;
+class security_manager;
+class topic_metrics_watcher;
 class id_allocator_stm;
 class tm_stm;
 class rm_stm;
@@ -87,6 +92,8 @@ class backend;
 class migrations_table;
 class frontend;
 class irpc_frontend;
+class router;
+class group_proxy;
 } // namespace data_migrations
 
 namespace tx {

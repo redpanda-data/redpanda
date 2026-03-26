@@ -14,12 +14,15 @@
 #include "cluster/controller.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/feature_manager.h"
+#include "cluster/node/local_monitor.h"
 #include "cluster_link/service.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/tls_config.h"
 #include "crypto/ossl_context_service.h"
 #include "features/feature_table_snapshot.h"
+#include "finjector/stress_fiber.h"
+#include "metrics/aggregate_metrics_watcher.h"
 #include "migrations/migrators.h"
 #include "migrations/rbac_migrator.h"
 #include "migrations/topic_id_migrator.h"
@@ -31,8 +34,10 @@
 #include "raft/group_manager.h"
 #include "redpanda/admin/server.h"
 #include "redpanda/application.h"
+#include "redpanda/monitor_unsafe.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/scheduling_groups_probe.h"
+#include "rpc/rpc_server.h"
 #include "rpc/rpc_utils.h"
 #include "security/audit/audit_log_manager.h"
 #include "ssx/thread_worker.h"
@@ -47,6 +52,7 @@
 
 #include <seastar/core/memory.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/core/thread.hh>
 
 void application::wire_up_and_start_crypto_services() {
     construct_single_service(thread_worker);

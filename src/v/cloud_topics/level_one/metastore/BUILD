@@ -89,6 +89,7 @@ redpanda_cc_library(
     name = "leader_router",
     srcs = [
         "leader_router.cc",
+        "leader_router_ops.cc",
         "leader_router_probe.cc",
         "service.cc",
     ],

@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
+#include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "kafka/client/configuration.h"
 #include "security/acl.h"

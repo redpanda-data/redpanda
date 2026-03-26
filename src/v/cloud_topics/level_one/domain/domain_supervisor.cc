@@ -16,6 +16,7 @@
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/logger.h"
 #include "cluster/controller.h"
+#include "cluster/partition.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"

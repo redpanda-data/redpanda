@@ -11,41 +11,44 @@
 
 #pragma once
 
-#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cluster_epoch_service.h"
 #include "cluster/cluster_link/fwd.h"
+#include "cluster/config_manager.h"
 #include "cluster/controller_probe.h"
-#include "cluster/controller_stm.h"
-#include "cluster/data_migration_group_proxy.h"
-#include "cluster/data_migration_router.h"
 #include "cluster/fwd.h"
-#include "cluster/node_status_table.h"
-#include "cluster/scheduling/leader_balancer.h"
-#include "cluster/topic_metrics_watcher.h"
-#include "cluster/types.h"
-#include "crash_reporter.h"
+#include "cluster/metrics_reporter.h"
+#include "cluster/security_manager.h"
+#include "cluster/topic_updates_dispatcher.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "raft/fwd.h"
 #include "rpc/fwd.h"
 #include "security/fwd.h"
 #include "ssx/single_sharded.h"
-#include "storage/api.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 #include <chrono>
 #include <vector>
 
+namespace cloud_io {
+class cache;
+} // namespace cloud_io
+
 namespace cloud_storage {
+class remote;
 class topic_mount_handler;
-}
+} // namespace cloud_storage
 
 namespace cloud_topics {
 class state_accessors;
 } // namespace cloud_topics
+
+namespace features {
+class feature_table;
+} // namespace features
 
 namespace cluster {
 
@@ -184,12 +187,7 @@ public:
     }
 
     std::optional<std::reference_wrapper<cloud_metadata::uploader>>
-    metadata_uploader() {
-        if (_metadata_uploader) {
-            return std::ref<cloud_metadata::uploader>(*_metadata_uploader);
-        }
-        return std::nullopt;
-    }
+    metadata_uploader();
 
     ss::sharded<cluster_recovery_manager>& get_cluster_recovery_manager() {
         return _recovery_manager;
@@ -258,11 +256,7 @@ public:
      */
     ss::future<> set_ready();
 
-    ss::future<model::offset> get_last_applied_offset() {
-        return _stm.invoke_on(controller_stm_shard, [](auto& stm) {
-            return stm.get_last_applied_offset();
-        });
-    }
+    ss::future<model::offset> get_last_applied_offset();
 
     ss::future<result<model::offset>> linearizable_barrier() {
         return _raft0->linearizable_barrier();
@@ -273,12 +267,7 @@ public:
     /// other node, and we may wait for that to ensure our controller
     /// state is current before trying to serve client I/O.
     ss::future<>
-    wait_for_offset(model::offset target, ss::abort_source& shard0_as) {
-        return _stm.invoke_on(
-          controller_stm_shard, [target, &as = shard0_as](auto& stm) {
-              return stm.wait(target, model::no_timeout, as);
-          });
-    }
+    wait_for_offset(model::offset target, ss::abort_source& shard0_as);
 
     model::offset get_start_offset() const { return _raft0->start_offset(); }
 

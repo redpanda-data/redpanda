@@ -13,52 +13,27 @@
 
 #include "base/seastarx.h"
 #include "cloud_storage/fwd.h"
-#include "cloud_topics/app.h"
 #include "cloud_topics/test_fixture_cfg.h"
 #include "cluster/archival/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
-#include "cluster/inventory_service.h"
-#include "cluster/migrations/tx_manager_migrator.h"
-#include "cluster/node/local_monitor.h"
-#include "cluster/node_status_backend.h"
-#include "cluster/node_status_table.h"
-#include "cluster/self_test_backend.h"
-#include "cluster/self_test_frontend.h"
-#include "cluster/tx_coordinator_mapper.h"
 #include "cluster_link/fwd.h"
-#include "config/node_config.h"
-#include "crash_tracker/service.h"
-#include "crypto/ossl_context_service.h"
-#include "datalake/credential_manager.h"
+#include "config/node_overrides.h"
 #include "datalake/fwd.h"
 #include "debug_bundle/fwd.h"
 #include "features/fwd.h"
-#include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
-#include "kafka/data/rpc/client.h"
-#include "kafka/data/rpc/service.h"
 #include "kafka/server/app.h"
-#include "kafka/server/data_migration_group_proxy_impl.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/snc_quota_manager.h"
-#include "metrics/aggregate_metrics_watcher.h"
-#include "metrics/host_metrics_watcher.h"
 #include "metrics/metrics.h"
-#include "net/conn_quota.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "redpanda/admin/kafka_connections_service.h"
-#include "redpanda/monitor_unsafe.h"
-#include "resource_mgmt/cpu_profiler.h"
-#include "resource_mgmt/memory_sampling.h"
-#include "resource_mgmt/scheduling_groups_probe.h"
 #include "resource_mgmt/smp_groups.h"
-#include "resource_mgmt/storage.h"
-#include "rpc/rpc_server.h"
+#include "rpc/fwd.h"
 #include "ssx/sharded_service_container.h"
-#include "storage/api.h"
 #include "transform/fwd.h"
 #include "utils/stop_signal.h"
 #include "wasm/fwd.h"
@@ -72,15 +47,91 @@
 namespace po = boost::program_options; // NOLINT
 
 class admin_server;
+class aggregate_metrics_watcher;
+class memory_sampling;
+class monitor_unsafe;
+class scheduling_groups_probe;
+class stress_fiber_manager;
+
+namespace admin {
+class kafka_connections_service;
+} // namespace admin
+
+namespace cloud_io {
+class remote;
+} // namespace cloud_io
+
+namespace cloud_topics {
+class app;
+} // namespace cloud_topics
 
 namespace cluster {
 class cluster_discovery;
+class inventory_service;
+namespace data_migrations {
+class group_proxy;
+} // namespace data_migrations
 } // namespace cluster
 
 namespace cloud_storage_clients {
 class client_pool;
 class upstream_registry;
 } // namespace cloud_storage_clients
+
+namespace crash_tracker {
+class service;
+} // namespace crash_tracker
+
+namespace crypto {
+class ossl_context_service;
+} // namespace crypto
+
+namespace datalake {
+class credential_manager;
+} // namespace datalake
+
+namespace kafka {
+class group_initializer;
+} // namespace kafka
+
+namespace kafka::data::rpc {
+class client;
+class local_service;
+} // namespace kafka::data::rpc
+
+namespace metrics {
+class host_metrics_watcher;
+struct public_metrics_group_service;
+} // namespace metrics
+
+namespace net {
+class conn_quota;
+} // namespace net
+
+namespace raft {
+class coordinated_recovery_throttle;
+class group_manager;
+} // namespace raft
+
+namespace resources {
+class cpu_profiler;
+} // namespace resources
+
+namespace security::audit {
+class audit_log_manager;
+} // namespace security::audit
+
+namespace rpc {
+class rpc_server;
+struct service;
+} // namespace rpc
+
+namespace storage {
+class api;
+class compaction_controller;
+class disk_space_manager;
+class node;
+} // namespace storage
 
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -237,6 +288,11 @@ private:
       ::stop_signal& app_signal,
       std::optional<cloud_storage_clients::bucket_name>& bucket_name,
       cloud_topics::test_fixture_cfg ct_test_cfg);
+    void wire_up_redpanda_services_cloud(
+      model::node_id,
+      ::stop_signal&,
+      std::optional<cloud_storage_clients::bucket_name>&);
+    void wire_up_redpanda_services_kafka(model::node_id);
 
     void load_feature_table_snapshot();
 
@@ -250,6 +306,25 @@ private:
       cloud_topics::test_fixture_cfg ct_test_cfg);
     void start_kafka(const model::node_id&, ::stop_signal&);
     void add_runtime_rpc_services(rpc::rpc_server&, bool start_raft_rpc_early);
+    // Helpers for add_runtime_rpc_services, split across compilation units.
+    void add_cluster_rpc_services(rpc::rpc_server&, bool start_raft_rpc_early);
+    void
+    add_cluster_rpc_services_2(std::vector<std::unique_ptr<rpc::service>>&);
+    void
+    add_cluster_rpc_services_3(std::vector<std::unique_ptr<rpc::service>>&);
+    void add_data_rpc_services(std::vector<std::unique_ptr<rpc::service>>&);
+    void add_data_rpc_services_2(std::vector<std::unique_ptr<rpc::service>>&);
+
+    // Helpers for wire_up_redpanda_services, split across compilation units.
+    void wire_up_services_cloud_io(
+      ::stop_signal&, std::optional<cloud_storage_clients::bucket_name>&);
+    void wire_up_services_cloud_archival(model::node_id);
+    void wire_up_services_cloud_cache(model::node_id, uint64_t fs_avail);
+    void wire_up_services_cloud_inventory(
+      std::optional<cloud_storage_clients::bucket_name>&);
+    void wire_up_services_core_2(model::node_id);
+    void wire_up_services_kafka_data(model::node_id);
+    void wire_up_services_kafka_server(uint64_t fs_avail);
 
     // All methods are calleds from Seastar thread
     ss::app_template::config setup_app_config();

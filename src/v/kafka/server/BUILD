@@ -16,7 +16,10 @@ redpanda_cc_library(
     hdrs = [
         "logger.h",
     ],
-    visibility = [":__subpackages__"],
+    visibility = [
+        ":__subpackages__",
+        "//src/v/redpanda:__pkg__",
+    ],
     deps = [
         "//src/v/base",
         "//src/v/kafka/protocol:logger",
@@ -104,6 +107,7 @@ redpanda_cc_library(
         "group.cc",
         "group_initializer.cc",
         "group_manager.cc",
+        "group_manager_ops.cc",
         "group_metadata.cc",
         "group_recovery_consumer.cc",
         "group_router.cc",
@@ -142,6 +146,7 @@ redpanda_cc_library(
         "requests.cc",
         "rm_group_frontend.cc",
         "server.cc",
+        "server_handlers.cc",
         "snc_quota_manager.cc",
         "usage_aggregator.cc",
         "usage_manager.cc",

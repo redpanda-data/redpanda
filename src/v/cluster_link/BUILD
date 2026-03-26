@@ -189,6 +189,7 @@ redpanda_cc_library(
     name = "cluster_link",
     srcs = [
         "service.cc",
+        "service_manager.cc",
     ],
     hdrs = [
         "service.h",
