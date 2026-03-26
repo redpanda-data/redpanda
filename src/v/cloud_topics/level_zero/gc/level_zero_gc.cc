@@ -741,6 +741,7 @@ seastar::future<> level_zero_gc::start() {
     vlog(cd_log.info, "Starting cloud topics L0 GC worker");
     delete_worker_->start();
     safety_monitor_->start();
+    skip_backoff_ = true;
     should_run_ = true;
     worker_cv_.signal();
 }
@@ -774,6 +775,9 @@ seastar::future<> level_zero_gc::reset() {
     vlog(cd_log.info, "Resetting cloud topics L0 GC worker state");
 
     resetting_ = true;
+    oldest_ineligible_modified_.reset();
+    had_epoch_ineligible_ = false;
+    skip_backoff_ = true;
     const bool was_running = should_run_;
 
     auto done = ss::defer([this] {
@@ -848,6 +852,14 @@ enum class level_zero_gc::collection_error : int8_t {
 seastar::future<> level_zero_gc::worker() {
     std::chrono::milliseconds backoff{0};
 
+    // Wake the worker when the grace period changes so we recalculate
+    // how long to sleep. Without this, a reduction in grace period
+    // wouldn't take effect until the current sleep expires.
+    config_.deletion_grace_period.watch([this] {
+        asrc_.request_abort();
+        worker_cv_.signal();
+    });
+
     while (true) {
         try {
             co_await worker_cv_.wait(
@@ -876,24 +888,73 @@ seastar::future<> level_zero_gc::worker() {
             }
 
             if (backoff.count() > 0) {
-                auto t0 = ss::lowres_clock::now();
-                (co_await seastar::coroutine::as_future(
-                   seastar::sleep_abortable(backoff, asrc_)))
-                  .ignore_ready_future();
-                auto elapsed
-                  = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    ss::lowres_clock::now() - t0);
-                probe_.add_backpressure(
-                  static_cast<double>(elapsed.count()) / 1000.0);
-                backoff = std::chrono::seconds{0};
+                if (skip_backoff_) {
+                    skip_backoff_ = false;
+                } else {
+                    auto t0 = ss::lowres_clock::now();
+                    (co_await seastar::coroutine::as_future(
+                       seastar::sleep_abortable(backoff, asrc_)))
+                      .ignore_ready_future();
+                    auto elapsed
+                      = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        ss::lowres_clock::now() - t0);
+                    probe_.add_backpressure(
+                      static_cast<double>(elapsed.count()) / 1000.0);
+                }
             }
+            backoff = std::chrono::milliseconds{0};
 
             auto res = co_await try_to_collect();
+
+            // Compute the next backoff based on what we observed during
+            // collection. The goal is to avoid LIST traffic when we can
+            // predict that no objects will become eligible:
+            //
+            //  - Progress (deleted objects): use the normal progress
+            //    interval.
+            //
+            //  - Objects skipped because their epoch exceeds
+            //    max_gc_eligible_epoch: we can't predict when the
+            //    housekeeper will advance the epoch, so poll at
+            //    throttle_no_progress.
+            //
+            //  - All ineligible objects are just too young: we know
+            //    exactly when the oldest one will age past the grace
+            //    period, so sleep until then.
+            //
+            //  - No objects listed at all: nothing can become eligible
+            //    until at least grace_period from now (new objects must
+            //    age), so sleep for the full grace period.
+            //
+            //  - Errors: poll at throttle_no_progress.
             if (res.has_value()) {
                 if (res.value() > 0) {
                     backoff = config_.throttle_progress();
-                } else {
+                } else if (had_epoch_ineligible_) {
                     backoff = config_.throttle_no_progress();
+                } else if (oldest_ineligible_modified_.has_value()) {
+                    auto wake_at = oldest_ineligible_modified_.value()
+                                   + config_.deletion_grace_period();
+                    auto now = std::chrono::system_clock::now();
+                    backoff = wake_at > now
+                                ? std::chrono::duration_cast<
+                                    std::chrono::milliseconds>(wake_at - now)
+                                : config_.throttle_no_progress();
+                } else if (round_had_listing_) {
+                    // Listed objects but all were eligible and deleted
+                    // (total_eligible == 0 means the delete_objects call
+                    // returned 0, but work was submitted). Check back at
+                    // the progress interval.
+                    backoff = config_.throttle_progress();
+                } else if (!round_had_listing_) {
+                    // No objects listed at all. Either storage is empty
+                    // or the delete worker is at capacity. If at
+                    // capacity, deletes are in flight and we should check
+                    // back soon. Otherwise nothing can become eligible
+                    // until at least grace_period from now.
+                    backoff = delete_worker_->has_capacity()
+                                ? config_.deletion_grace_period()
+                                : config_.throttle_progress();
                 }
             } else {
                 switch (res.error()) {
@@ -923,6 +984,9 @@ level_zero_gc::try_to_collect() {
     // per collection loop.
     std::optional<cluster_epoch> max_gc_epoch;
     size_t total_eligible{0};
+    oldest_ineligible_modified_.reset();
+    had_epoch_ineligible_ = false;
+    round_had_listing_ = false;
     probe_.reset_deletion_epoch();
     probe_.collection_round();
     while (delete_worker_->has_capacity()) {
@@ -990,6 +1054,8 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
     object_id::prefix_t last_prefix{0};
 
     for (const auto& object : candidate_objects.value()) {
+        round_had_listing_ = true;
+
         const auto object_epoch = object_path_factory::level_zero_path_to_epoch(
           object.key);
 
@@ -1049,6 +1115,7 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               "Ignoring object with non-collectible epoch: {} > {}",
               object.key,
               max_gc_epoch.value());
+            had_epoch_ineligible_ = true;
             probe_.object_skipped_not_eligible();
             continue;
         }
@@ -1061,6 +1128,11 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               object.key,
               object.last_modified,
               max_gc_birthday);
+            if (
+              !oldest_ineligible_modified_.has_value()
+              || object.last_modified < oldest_ineligible_modified_.value()) {
+                oldest_ineligible_modified_ = object.last_modified;
+            }
             probe_.object_skipped_too_young();
             continue;
         }

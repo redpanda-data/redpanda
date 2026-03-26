@@ -442,6 +442,29 @@ private:
 
     level_zero_gc_probe probe_;
 
+    /// Oldest last_modified among objects that passed the epoch check but
+    /// were skipped as too young. Used to compute exactly when the next
+    /// object will become eligible for deletion.
+    std::optional<std::chrono::system_clock::time_point>
+      oldest_ineligible_modified_;
+
+    /// Whether any objects were skipped because their epoch exceeded
+    /// max_gc_eligible_epoch. When true, we can't predict when new work
+    /// will appear (depends on housekeeper advancing the epoch) so we
+    /// fall back to throttle_no_progress.
+    bool had_epoch_ineligible_{false};
+
+    /// Whether any objects were processed (entered the for loop in
+    /// do_try_to_collect) in the most recent collection round. When false
+    /// and no tracking flags are set, we didn't actually look (e.g.
+    /// delete worker at capacity) vs truly empty storage.
+    bool round_had_listing_{false};
+
+    /// Set by start() and reset() to force the worker to skip its next
+    /// backoff sleep so the first round after a state change runs
+    /// immediately.
+    bool skip_backoff_{false};
+
     class list_delete_worker;
     std::unique_ptr<list_delete_worker> delete_worker_{};
 };

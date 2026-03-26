@@ -52,6 +52,7 @@ public:
             co_return std::unexpected{
               cloud_storage_clients::error_outcome::fail};
         }
+        ++list_call_count_;
         chunked_vector<cloud_storage_clients::client::list_bucket_item> keep;
         co_await seastar::sleep(cfg_->list_cost);
         auto lu = co_await list_mtx_.get_units(*as);
@@ -120,6 +121,7 @@ public:
     chunked_vector<cloud_storage_clients::client::list_bucket_item>* listed_;
     std::unordered_set<ss::sstring>* deleted_;
     gc_test_config* cfg_;
+    uint64_t list_call_count_{0};
 
     ssx::mutex list_mtx_{"object-store-impl-list"};
     ssx::mutex delete_mtx_{"object-store-impl-delete"};
@@ -640,6 +642,72 @@ TEST_F(LevelZeroGCScaleOutTest, ConcurrentDeletesPipelineSaturation) {
       [this, expected = (size_t)n] { return deleted.size() == expected; },
       50,
       100ms));
+}
+
+// =============================================================================
+// Idle backoff tests
+// =============================================================================
+
+// When all objects are too young, GC should sleep until the oldest one
+// ages past the grace period — not poll every throttle_no_progress.
+TEST_F(LevelZeroGCTest, TooYoungObjectsSleepUntilEligible) {
+    for (int i = 0; i < 10; ++i) {
+        add_listed(i, 1h); // within 12h grace period
+    }
+    max_epoch = 100;
+    gc->start().get();
+
+    // Wait for the first round to list and find everything too young
+    EXPECT_TRUE(Eventually([this] { return storage_->list_call_count_ > 0; }));
+    seastar::sleep(50ms).get();
+    auto count_after_first = storage_->list_call_count_;
+
+    // GC should now be sleeping for ~11h (grace_period - object age).
+    // Over 200ms, no additional list calls should occur.
+    seastar::sleep(200ms).get();
+    EXPECT_EQ(storage_->list_call_count_, count_after_first);
+}
+
+// When no objects exist, GC should sleep for the full grace period.
+TEST_F(LevelZeroGCTest, EmptyStorageSleepsForGracePeriod) {
+    max_epoch = 100;
+    gc->start().get();
+
+    // First round lists empty prefixes
+    EXPECT_TRUE(Eventually([this] { return storage_->list_call_count_ > 0; }));
+    seastar::sleep(50ms).get();
+    auto count_after_first = storage_->list_call_count_;
+
+    // GC should now be sleeping for the full grace period (12h).
+    seastar::sleep(200ms).get();
+    EXPECT_EQ(storage_->list_call_count_, count_after_first);
+}
+
+// After pause/start, the long backoff should be skipped so the first
+// round after restart runs immediately.
+TEST_F(LevelZeroGCTest, StartAfterPauseSkipsBackoff) {
+    for (int i = 0; i < 10; ++i) {
+        add_listed(i, 1h);
+    }
+    max_epoch = 100;
+    gc->start().get();
+
+    // Let the first round complete and enter the long sleep
+    EXPECT_TRUE(Eventually([this] { return storage_->list_call_count_ > 0; }));
+    seastar::sleep(50ms).get();
+    auto count_before = storage_->list_call_count_;
+
+    // Pause then restart
+    gc->pause().get();
+    gc->start().get();
+
+    // A fresh round should happen promptly (not after the old backoff)
+    EXPECT_TRUE(Eventually(
+      [this, count_before] {
+          return storage_->list_call_count_ > count_before;
+      },
+      20,
+      10ms));
 }
 
 // =============================================================================
