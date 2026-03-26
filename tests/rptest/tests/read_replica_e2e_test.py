@@ -601,13 +601,33 @@ class TestReadReplicaService(EndToEndTest):
         mode: ReadReplicaSourceMode,
     ):
         self.mode = mode
+
+        self.rr_settings.load_context(self.logger, self.test_context)
+
         bucket_region = self.rr_settings.cloud_storage_region
         bucket_endpoint = self.rr_settings.cloud_storage_api_endpoint
-        self.rr_topic_bucket = f"{self.si_settings.cloud_storage_bucket}?region={bucket_region}&endpoint={bucket_endpoint}"
+        assert self.si_settings, (
+            "si_settings is required to determine bucket name for cross-region test"
+        )
+        bucket_name = self.si_settings.cloud_storage_bucket
+        # cloud_storage_api_endpoint is only set for docker (minio-s3). In CDT
+        # the endpoint is not in SISettings, so construct from the region.
+        # NOTE: this test currently only runs on AWS or docker.
+        if get_cloud_provider() == "aws":
+            bucket_endpoint = f"s3.{bucket_region}.amazonaws.com"
+        self.rr_topic_bucket = (
+            f"{bucket_name}?region={bucket_region}&endpoint={bucket_endpoint}"
+        )
 
         # Bogus region and endpoint to test overrides take effect.
         self.rr_settings.cloud_storage_region = "unknown-region-1"
         self.rr_settings.cloud_storage_api_endpoint = "nonexistent.localhost"
+        self.rr_settings.skip_load_context = True
+
+        # Testing infra requires this to be set for overrides to be applied.
+        self.rr_settings.endpoint_url = (
+            f"http://{self.rr_settings.cloud_storage_api_endpoint}"
+        )
 
         self._setup_read_replica(
             num_messages=100000,
@@ -616,6 +636,17 @@ class TestReadReplicaService(EndToEndTest):
             num_source_brokers=1,
             num_rrr_brokers=1,
             replication_factor=1,
+        )
+
+        assert self.second_cluster, "second_cluster is not initialized"
+
+        rr_admin = Admin(self.second_cluster)
+        rr_config = rr_admin.get_cluster_config()
+        assert rr_config["cloud_storage_region"] == "unknown-region-1", (
+            f"Expected cloud_storage_region='unknown-region-1', got '{rr_config['cloud_storage_region']}'"
+        )
+        assert rr_config["cloud_storage_api_endpoint"] == "nonexistent.localhost", (
+            f"Expected cloud_storage_api_endpoint='nonexistent.localhost', got '{rr_config['cloud_storage_api_endpoint']}'"
         )
 
         self.start_consumer()
