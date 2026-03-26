@@ -113,6 +113,20 @@ public:
               "in the future or in the past"))},
           {},
           {sm::shard_label});
+
+        _metrics.add_group(
+          "kafka",
+          {sm::make_counter(
+            "fetch_response_dropped_bytes",
+            [this] { return _fetch_response_dropped_bytes; },
+            sm::description(
+              "Total bytes read from storage (including cloud storage) that "
+              "were discarded in fill_fetch_responses because the response "
+              "budget was already consumed by other partitions. Non-zero "
+              "values indicate read amplification: data was fetched from S3 "
+              "but not delivered to the consumer."))},
+          {},
+          {sm::shard_label});
     }
 
     void setup_public_metrics() {
@@ -153,6 +167,10 @@ public:
         _fetch_latency.record(micros.count());
     }
 
+    void add_fetch_response_dropped_bytes(uint64_t bytes) {
+        _fetch_response_dropped_bytes += bytes;
+    }
+
     void record_batch(uint64_t size, model::compression compression) {
         _batch_size.record(size);
         if (auto idx = (size_t)compression;
@@ -167,6 +185,7 @@ private:
     friend prod_consume_fixture;
 
     uint32_t _produce_bad_create_time = 0;
+    uint64_t _fetch_response_dropped_bytes = 0;
 
     hist_t _produce_latency;
     hist_t _fetch_latency;

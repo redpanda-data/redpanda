@@ -460,7 +460,13 @@ static void fill_fetch_responses(
             resp_units = std::move(res.memory_units);
             resp.records = batch_reader(std::move(res).release_data());
         } else {
-            // TODO: add probe to measure how much of read data is discarded
+            if (res.has_data()) {
+                // Data was read from cloud storage but cannot fit in the
+                // response budget. This is pure read amplification: S3 bytes
+                // were downloaded, materialized, and now dropped.
+                octx.rctx.probe().add_fetch_response_dropped_bytes(
+                  res.data_size_bytes());
+            }
             resp.records = batch_reader();
         }
 
