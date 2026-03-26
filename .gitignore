@@ -286,3 +286,6 @@ bazel_cc_flags.json
 
 # perf
 perf.data*
+
+ # rpk binary
+src/go/rpk/cmd/rpk/rpk

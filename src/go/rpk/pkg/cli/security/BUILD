@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/go/rpk/pkg/cli/security/acl",
-        "//src/go/rpk/pkg/cli/security/group",
         "//src/go/rpk/pkg/cli/security/role",
         "//src/go/rpk/pkg/cli/security/secret",
         "//src/go/rpk/pkg/cli/security/user",
