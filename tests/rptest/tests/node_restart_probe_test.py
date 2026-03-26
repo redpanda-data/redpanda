@@ -344,61 +344,72 @@ class NodePreRestartProbeTest(NodeRestartProbeTestBase):
         self.wait_pre_restart_probes(inevitable_risks, timeout_sec=240)
 
 
-# Same as `wait_until(lambda: value_fn() == target, **kwargs)`, but also checks
-# that:
-# 1) intermediate values can be increased by no more than `max_drop` each but
-# no higher than to `target` to form a non-decreasing sequence.
-# 2) it receives at least `min_values` values, apart from `bottom` and `target`
-def wait_gradually_increases(value_fn, target, max_drop, min_values, **kwargs):
-    max_seen_value = None
-    distinct_values = set()
+# Waits for value_fn() to eventually settle into a monotonically increasing
+# sequence from `from_at_most` (or lower) up to `to`, with at least
+# `min_values` distinct values in that final run.  Earlier dips are tolerated:
+# any decrease resets the tracked run.
+def wait_eventually_gradually_increases(
+    value_fn, from_at_most, to, min_values, **kwargs
+):
+    last_dip = None
+    prev = None
+    distinct_values_since_last_dip = 0
 
     def completed():
-        nonlocal max_seen_value, distinct_values
+        nonlocal last_dip, prev, distinct_values_since_last_dip
         cur_value = value_fn()
-        if max_seen_value is None:
-            max_seen_value = cur_value
-        assert cur_value >= max_seen_value - max_drop, (
-            f"received {cur_value} after {max_seen_value}"
+        if prev is None or cur_value < prev:
+            last_dip = cur_value
+            distinct_values_since_last_dip = 1
+        elif cur_value > prev:
+            distinct_values_since_last_dip += 1
+        prev = cur_value
+        return (
+            cur_value == to
+            and last_dip <= from_at_most
+            and distinct_values_since_last_dip >= min_values
         )
-        max_seen_value = max(max_seen_value, cur_value)
-        if len(distinct_values) < min_values:
-            distinct_values.add(cur_value)
-        return cur_value == target and len(distinct_values) == min_values
 
     wait_until(completed, **kwargs)
 
 
-def unittest_wait_gradually_increases():
+def unittest_wait_eventually_gradually_increases():
     def make_val_fn(*values):
         it = iter(values)
         return lambda: next(it)
 
     default_params = dict(
-        target=100, max_drop=2, min_values=5, timeout_sec=1, backoff_sec=0
+        from_at_most=50, to=100, min_values=5, timeout_sec=1, backoff_sec=0
     )
 
-    def call_wgi(*values):
-        wait_gradually_increases(make_val_fn(*values), **default_params)
+    def call(*values):
+        wait_eventually_gradually_increases(make_val_fn(*values), **default_params)
 
-    def expect_wgi_pass(*values):
-        call_wgi(*values)
+    def expect_pass(*values):
+        call(*values)
 
-    def expect_wgi_fail(*values):
+    def expect_fail(*values):
         try:
-            call_wgi(*values)
-        except StopIteration:
-            pass
-        except AssertionError:
+            call(*values)
+        except (StopIteration, AssertionError):
             pass
         else:
             assert False, "should have failed"
 
-    expect_wgi_pass(1, 0, 60, 58, 100)
-    expect_wgi_pass(1, 0, 50, 48, 78, 100)
-    expect_wgi_fail(5, 60, 58, 58, 60, 100)  # too few distinct vals
-    expect_wgi_fail(11, 40, 60, 58, 56, 100)  # decreases too much
-    expect_wgi_fail(1, 40, 60, 58, 59, 99)  # does not reach 100
+    # dip to 40 (<= 50), then monotonic rise with 5 distinct values
+    expect_pass(80, 70, 40, 55, 70, 85, 100)
+    # dip to 30, rise, another dip to 45, then final monotonic rise
+    expect_pass(60, 30, 50, 45, 55, 70, 85, 95, 100)
+    # dip to 50 (== from_at_most), valid
+    expect_pass(80, 50, 60, 70, 80, 100)
+    # never dips to from_at_most
+    expect_fail(60, 55, 70, 85, 95, 100)
+    # dips to from_at_most but the last dip is above from_at_most
+    expect_fail(60, 45, 70, 55, 95, 100)
+    # too few distinct values in final run
+    expect_fail(80, 40, 90, 100)
+    # does not reach `to`
+    expect_fail(80, 40, 55, 70, 85, 99)
 
 
 class NodePostRestartProbeTest(NodeRestartProbeTestBase):
@@ -429,7 +440,7 @@ class NodePostRestartProbeTest(NodeRestartProbeTestBase):
     @skip_debug_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def post_restart_probe_test(self):
-        unittest_wait_gradually_increases()
+        unittest_wait_eventually_gradually_increases()
 
         self.create_topics()
 
@@ -458,14 +469,15 @@ class NodePostRestartProbeTest(NodeRestartProbeTestBase):
             err_msg="lagged replica load_reclamed_pc won't go down",
         )
 
-        wait_gradually_increases(
+        # Score may fluctuate as it takes some time to gather up-to-date health info from all nodes
+        wait_eventually_gradually_increases(
             lambda: self.get_load_reclaimed_pc(lagging_node),
-            target=100,
-            max_drop=10,
+            from_at_least=75,
+            to=100,
             min_values=3,
             timeout_sec=30,
             backoff_sec=0.1,
-            err_msg="lagged replica load_reclamed_pc won't reach 100%",
+            err_msg="lagged replica load_reclamed_pc won't reach 100% gradually",
         )
 
         for n in self.redpanda.nodes:
