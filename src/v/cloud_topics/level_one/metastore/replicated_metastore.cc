@@ -533,35 +533,37 @@ replicated_metastore::remove_topics(
     }
     static constexpr auto max_rpc_concurrency = 10;
     chunked_hash_set<model::topic_id> not_removed;
+    std::optional<rpc::errc> first_error;
     auto fut = co_await ss::coroutine::as_future(
       ss::max_concurrent_for_each(
         std::views::iota(0, *num_metastore_partitions),
         max_rpc_concurrency,
-        [this, &topics, &not_removed](int pid) {
+        [this, &topics, &not_removed, &first_error](int pid) {
             return fe_
               .remove_topics(
                 rpc::remove_topics_request{
                   .metastore_partition = model::partition_id{pid},
                   .topics = topics.copy(),
                 })
-              .then(
-                [&not_removed, &topics](const rpc::remove_topics_reply& repl) {
-                    if (topics.size() == not_removed.size()) {
-                        // Minor optimization: exit early if the set needing
-                        // retry is the complete set of topics to remove.
-                        return;
-                    }
-                    if (repl.ec != rpc::errc::ok) {
-                        not_removed.insert(topics.begin(), topics.end());
-                    }
-                    not_removed.insert(
-                      repl.not_removed.begin(), repl.not_removed.end());
-                });
+              .then([&not_removed,
+                     &first_error](const rpc::remove_topics_reply& repl) {
+                  if (repl.ec != rpc::errc::ok) {
+                      if (!first_error.has_value()) {
+                          first_error = repl.ec;
+                      }
+                      return;
+                  }
+                  not_removed.insert(
+                    repl.not_removed.begin(), repl.not_removed.end());
+              });
         }));
     if (fut.failed()) {
         auto ex = fut.get_exception();
         vlog(cd_log.warn, "Error while sending topic removal requests: {}", ex);
         co_return std::unexpected(metastore::errc::transport_error);
+    }
+    if (first_error.has_value()) {
+        co_return std::unexpected(rpc_to_meta_errc(*first_error));
     }
     co_return topic_removal_response{
       .not_removed = std::move(not_removed),
