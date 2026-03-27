@@ -274,6 +274,19 @@ func runProducerLoop(
 }
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "benchmark",
+		Short:  "Run a Kafka benchmark",
+		Long:   "Load testing tool which stresses the broker by sending small batches with high request rate",
+		Hidden: true,
+	}
+
+	cmd.AddCommand(newProduceCommand(fs, p))
+
+	return cmd
+}
+
+func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		topic                  string
 		partitions             int32
@@ -287,8 +300,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:    "benchmark",
-		Short:  "Run a Kafka benchmark",
+		Use:    "produce",
+		Short:  "Run a Kafka produce benchmark",
 		Long:   "Load testing tool which stresses the broker by sending small batches with high request rate",
 		Args:   cobra.NoArgs,
 		Hidden: true,
