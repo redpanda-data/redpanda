@@ -88,6 +88,27 @@ service MetastoreService {
             authz: SUPERUSER
         };
     }
+
+    // List cloud topics from the topic table, returning their names, UUIDs,
+    // and partition counts. Supports pagination by topic name.
+    rpc ListCloudTopics(ListCloudTopicsRequest)
+        returns (ListCloudTopicsResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // Validate metastore state for a single partition. Checks invariants
+    // such as extent contiguity, offset bounds, and term ordering.
+    // Supports pagination via max_extents and resume_after_offset to
+    // bound the work per call. Cross-page contiguity is enforced by
+    // checking the boundary between consecutive pages.
+    rpc ValidatePartition(ValidatePartitionRequest)
+        returns (ValidatePartitionResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 // GetOffsetsRequest is the request for looking up the offsets in the metastore
@@ -323,4 +344,97 @@ message ReadRowsResponse {
     repeated ReadRow rows = 1;
     // Raw key for the next page. Empty if no more rows.
     string next_key = 2;
+}
+
+// ValidatePartitionRequest validates metastore invariants for a single
+// partition. Supports paginated validation via max_extents and
+// resume_at_offset.
+message ValidatePartitionRequest {
+    // The topic UUID to validate.
+    string topic_id = 1;
+    // The partition ID to validate.
+    int32 partition_id = 2;
+    // If true, verify each extent's object_id exists in the metastore
+    // object table and is not a preregistration.
+    bool check_object_metadata = 3;
+    // If true, verify each extent's L1 object exists in cloud storage
+    // via HEAD request.
+    bool check_object_storage = 4;
+    // Resume validation at this base_offset (inclusive). On the next
+    // page, the validator re-reads the extent at this offset to verify
+    // cross-page contiguity, then continues forward. The re-read extent
+    // is not counted toward max_extents. Omit to start from the
+    // beginning of the partition.
+    optional int64 resume_at_offset = 5;
+    // Max extents to validate per call (excluding the re-read extent on
+    // continuation pages). 0 means validate all remaining extents.
+    uint32 max_extents = 6;
+}
+
+// ValidatePartitionResponse contains the results of partition validation.
+message ValidatePartitionResponse {
+    // Anomalies found during validation. Empty if the partition is valid.
+    repeated MetastoreAnomaly anomalies = 1;
+    // The base_offset of the last extent validated. If absent, all
+    // extents have been validated. Pass this value as resume_at_offset
+    // in the next call to continue validation.
+    optional int64 resume_at_offset = 2;
+    // Number of extents validated in this call (excluding the re-read
+    // extent on continuation pages).
+    uint32 extents_validated = 3;
+}
+
+// Type of anomaly found during metastore validation.
+enum AnomalyType {
+    ANOMALY_TYPE_UNSPECIFIED = 0;
+    ANOMALY_TYPE_EXTENT_OVERLAP = 1;
+    ANOMALY_TYPE_EXTENT_GAP = 2;
+    ANOMALY_TYPE_NEXT_OFFSET_MISMATCH = 3;
+    ANOMALY_TYPE_START_OFFSET_MISMATCH = 4;
+    ANOMALY_TYPE_OBJECT_NOT_FOUND = 5;
+    ANOMALY_TYPE_OBJECT_PREREGISTERED = 6;
+    ANOMALY_TYPE_OBJECT_NOT_IN_STORAGE = 7;
+    ANOMALY_TYPE_COMPACTION_RANGE_BELOW_START = 8;
+    ANOMALY_TYPE_COMPACTION_RANGE_ABOVE_NEXT = 9;
+    ANOMALY_TYPE_COMPACTION_TOMBSTONE_OVERLAP = 10;
+    ANOMALY_TYPE_COMPACTION_TOMBSTONE_OUTSIDE_CLEANED = 11;
+    ANOMALY_TYPE_TERM_ORDERING = 12;
+    ANOMALY_TYPE_COMPACTION_STATE_UNEXPECTED = 13;
+}
+
+// A single anomaly found during metastore validation.
+message MetastoreAnomaly {
+    // The type of anomaly.
+    AnomalyType anomaly_type = 1;
+    // Human-readable description of the anomaly.
+    string description = 2;
+}
+
+// ListCloudTopicsRequest lists cloud topics from the cluster's topic table
+// (not the metastore). Hosted here for convenience since the metastore
+// admin service already has topic_table access.
+message ListCloudTopicsRequest {
+    // Optional: resume listing after this topic name (exclusive).
+    // Omit to start from the beginning.
+    string after_topic_name = 1;
+    // Maximum number of topics to return. 0 uses a default of 100.
+    uint32 max_topics = 2;
+}
+
+// ListCloudTopicsResponse contains cloud topics with their metadata.
+message ListCloudTopicsResponse {
+    repeated CloudTopicInfo topics = 1;
+    // If true, more topics are available. Call again with after_topic_name
+    // set to the last topic's name to continue.
+    bool has_more = 2;
+}
+
+// Information about a single cloud topic.
+message CloudTopicInfo {
+    // The Kafka topic name.
+    string topic_name = 1;
+    // The topic UUID.
+    string topic_id = 2;
+    // Number of partitions.
+    int32 partition_count = 3;
 }
