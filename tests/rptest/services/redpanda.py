@@ -665,6 +665,8 @@ class SISettings:
             CloudStorageCleanupStrategy.ALWAYS_SMALL_BUCKETS_ONLY
         )
 
+        self.skip_load_context = False
+
         if self.cloud_storage_type == CloudStorageType.S3:
             self.cloud_storage_credentials_source = cloud_storage_credentials_source
             self.cloud_storage_access_key = cloud_storage_access_key
@@ -672,11 +674,14 @@ class SISettings:
             self.cloud_storage_region = cloud_storage_region
             self._cloud_storage_bucket = f"panda-bucket-{uuid.uuid1()}"
             self.cloud_storage_url_style = cloud_storage_url_style
-            self.has_cloud_storage_api_endpoint_override = False
 
             if cloud_storage_api_endpoint is not None:
-                self.has_cloud_storage_api_endpoint_override = True
+                self.skip_load_context = True
                 self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
+                test_context.logger.debug(
+                    "using custom cloud storage api endpoint: %s",
+                    cloud_storage_api_endpoint,
+                )
             elif test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER, "aws") == "gcp":
                 self.cloud_storage_api_endpoint = "storage.googleapis.com"
                 # For GCP, we currently use S3 compat API over boto3, which does not support batch deletes
@@ -800,6 +805,10 @@ class SISettings:
         )
 
     def load_context(self, logger: Logger, test_context: TestContext) -> None:
+        if self.skip_load_context:
+            logger.info("Skipping SISettings.load_context")
+            return
+
         if self.cloud_storage_type == CloudStorageType.S3:
             self._load_s3_context(logger, test_context)
         elif self.cloud_storage_type == CloudStorageType.ABS:
@@ -849,11 +858,6 @@ class SISettings:
         Update based on the test context, to e.g. consume AWS access keys in
         the globals dictionary.
         """
-        if self.has_cloud_storage_api_endpoint_override:
-            logger.info(
-                "cloud_storage_api_endpoint is overridden, skipping loading global test_context options in _load_s3_context."
-            )
-            return
         cloud_storage_credentials_source = test_context.globals.get(
             self.GLOBAL_CLOUD_STORAGE_CRED_SOURCE_KEY, "config_file"
         )
