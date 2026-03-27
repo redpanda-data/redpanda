@@ -111,10 +111,8 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     // discover if the backend is in `virtual_host` or `path mode`
     client_cfg.uri = access_point_uri(base_endpoint_uri);
 
-    if (overrides.disable_tls == false) {
-        client_cfg.tls_credentials_builder
-          = co_await make_tls_credentials_builder(overrides.trust_file);
-    }
+    client_cfg.disable_tls = overrides.disable_tls;
+    client_cfg.tls_truststore_path = overrides.trust_file;
 
     // When using virtual host addressing, the client must connect to
     // the s3 endpoint with the bucket name, e.g.
@@ -186,10 +184,9 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
     client_cfg.storage_account_name = storage_account_name;
     client_cfg.shared_key = shared_key;
     client_cfg.uri = access_point_uri{endpoint_uri};
-    if (overrides.disable_tls == false) {
-        client_cfg.tls_credentials_builder
-          = co_await make_tls_credentials_builder(overrides.trust_file);
-    }
+
+    client_cfg.disable_tls = overrides.disable_tls;
+    client_cfg.tls_truststore_path = overrides.trust_file;
 
     client_cfg.server_addr = net::unresolved_address(
       client_cfg.uri(),
@@ -406,10 +403,10 @@ build_refresh_credentials_source(
 namespace {
 ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
 build_tls_credentials(
-  ss::sstring name, const ss::tls::credentials_builder& cred_builder) {
+  ss::sstring name, ss::tls::credentials_builder cred_builder) {
     co_return co_await net::build_reloadable_credentials_with_probe<
       ss::tls::certificate_credentials>(
-      cred_builder, "cloud_storage_client", std::move(name));
+      std::move(cred_builder), "cloud_storage_client", std::move(name));
 }
 } // namespace
 
@@ -420,16 +417,20 @@ build_tls_credentials(const client_configuration& config) {
     return ss::visit(
       config,
       [](const s3_configuration& s3_cfg) {
-          if (s3_cfg.tls_credentials_builder) {
-              return build_tls_credentials(
-                "s3", *s3_cfg.tls_credentials_builder);
+          if (!s3_cfg.disable_tls) {
+              return make_tls_credentials_builder(s3_cfg.tls_truststore_path)
+                .then([](ss::tls::credentials_builder builder) {
+                    return build_tls_credentials("s3", std::move(builder));
+                });
           }
           return ss::make_ready_future<val_t>(nullptr);
       },
       [](const abs_configuration& abs_cfg) {
-          if (abs_cfg.tls_credentials_builder) {
-              return build_tls_credentials(
-                "abs", *abs_cfg.tls_credentials_builder);
+          if (!abs_cfg.disable_tls) {
+              return make_tls_credentials_builder(abs_cfg.tls_truststore_path)
+                .then([](ss::tls::credentials_builder builder) {
+                    return build_tls_credentials("abs", std::move(builder));
+                });
           }
           return ss::make_ready_future<val_t>(nullptr);
       });
