@@ -8,7 +8,9 @@
 // by the Apache License, Version 2.0
 
 #include "config/config_store.h"
+#include "config/property_schema.h"
 #include "json/document.h"
+#include "json/rjson_writer.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 
@@ -301,7 +303,7 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
 
         // cfg -> json string
         json::StringBuffer cfg_sb;
-        json::Writer<json::StringBuffer> cfg_writer(cfg_sb);
+        json::rjson_writer cfg_writer(cfg_sb);
         cfg.to_json(cfg_writer, redact);
         auto jstr = cfg_sb.GetString();
 

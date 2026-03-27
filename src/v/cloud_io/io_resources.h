@@ -18,6 +18,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/scheduling.hh>
 
 namespace cloud_io {

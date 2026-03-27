@@ -56,6 +56,7 @@
 #include "finjector/hbadger.h"
 #include "finjector/stress_fiber.h"
 #include "json/document.h"
+#include "json/rjson_writer.h"
 #include "json/stringbuffer.h"
 #include "json/validator.h"
 #include "json/writer.h"
@@ -1536,7 +1537,7 @@ void admin_server::register_config_routes() {
       ss::httpd::config_json::get_config,
       [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
-          json::Writer<json::StringBuffer> writer(buf);
+          json::rjson_writer writer(buf);
           config::shard_local_cfg().to_json(
             writer, config::redact_secrets::yes);
 
@@ -1548,7 +1549,7 @@ void admin_server::register_config_routes() {
       ss::httpd::cluster_config_json::get_cluster_config,
       [](ss::httpd::const_req req, ss::http::reply& reply) {
           json::StringBuffer buf;
-          json::Writer<json::StringBuffer> writer(buf);
+          json::rjson_writer writer(buf);
 
           bool include_defaults = true;
           auto include_defaults_str = req.get_query_param("include_defaults");
@@ -1584,7 +1585,7 @@ void admin_server::register_config_routes() {
       ss::httpd::config_json::get_node_config,
       [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
-          json::Writer<json::StringBuffer> writer(buf);
+          json::rjson_writer writer(buf);
           config::node().to_json(writer, config::redact_secrets::yes);
 
           reply.set_status(ss::http::reply::status_type::ok, buf.GetString());

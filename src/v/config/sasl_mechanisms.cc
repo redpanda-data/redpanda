@@ -10,6 +10,7 @@
 #include "config/sasl_mechanisms.h"
 
 #include "config/configuration.h"
+#include "config/rjson_serialization.h"
 
 #include <algorithm>
 

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "config/endpoint_tls_config.h"
 #include "config/rest_authn_endpoint.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"

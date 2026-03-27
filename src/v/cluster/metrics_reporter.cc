@@ -29,6 +29,7 @@
 #include "features/enterprise_features.h"
 #include "features/feature_table.h"
 #include "hashing/secure.h"
+#include "json/rjson_writer.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "model/namespace.h"
@@ -566,7 +567,7 @@ ss::future<> metrics_reporter::propagate_cluster_id() {
 iobuf serialize_metrics_snapshot(
   const metrics_reporter::metrics_snapshot& snapshot) {
     json::StringBuffer sb;
-    json::Writer<json::StringBuffer> writer(sb);
+    json::rjson_writer writer(sb);
 
     json::rjson_serialize(writer, snapshot);
     iobuf out;
@@ -698,7 +699,7 @@ ss::future<> metrics_reporter::do_report_metrics() {
 
 namespace json {
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
+  json::rjson_writer& w,
   const cluster::metrics_reporter::metrics_snapshot& snapshot) {
     w.StartObject();
 
@@ -803,8 +804,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cluster::metrics_reporter::node_disk_space& ds) {
+  json::rjson_writer& w, const cluster::metrics_reporter::node_disk_space& ds) {
     w.StartObject();
     w.Key("free");
     w.Uint64(ds.free);
@@ -814,7 +814,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
+  json::rjson_writer& w,
   const cluster::metrics_reporter::kubernetes_metrics& km) {
     w.StartObject();
     if (km.deployment_type.has_value()) {
@@ -845,8 +845,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cluster::metrics_reporter::node_metrics& nm) {
+  json::rjson_writer& w, const cluster::metrics_reporter::node_metrics& nm) {
     w.StartObject();
     w.Key("node_id");
     w.Int(nm.id);
@@ -873,7 +872,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
+  json::rjson_writer& w,
   const cluster::metrics_reporter::schema_registry_metrics& sr) {
     w.StartObject();
     w.Key("context_count");

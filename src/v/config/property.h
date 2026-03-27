@@ -12,20 +12,16 @@
 #pragma once
 #include "base/oncore.h"
 #include "base/type_traits.h"
+#include "base/vlog.h"
 #include "config/base_property.h"
 #include "config/logger.h"
-#include "config/rjson_serialization.h"
-#include "config/tls_config.h"
 #include "config/types.h"
 #include "container/intrusive_list_helpers.h"
-#include "features/enterprise_feature_messages.h"
-#include "json/stringbuffer.h"
-#include "json/writer.h"
-#include "model/metadata.h"
-#include "pandaproxy/schema_registry/schema_id_validation.h"
+#include "ssx/sformat.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/noncopyable_function.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -161,14 +157,7 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(json::Writer<json::StringBuffer>& w, redact_secrets redact)
-      const override {
-        if (is_secret() && !is_default() && redact == redact_secrets::yes) {
-            json::rjson_serialize(w, secret_placeholder);
-        } else {
-            json::rjson_serialize(w, _value);
-        }
-    }
+    void to_json(json::rjson_writer& w, redact_secrets redact) const override;
 
     void set_value(std::any v) override {
         update_value(std::any_cast<value_type>(std::move(v)));
@@ -182,9 +171,7 @@ public:
         set_value(std::make_any<value_type>(std::forward<U>(v)));
     }
 
-    bool set_value(YAML::Node n) override {
-        return update_value(std::move(n.as<T>()));
-    }
+    bool set_value(const YAML::Node& n) override;
 
     std::optional<validation_error> validate(const value_type& v) const {
         if (auto err = _validator(v); err) {
@@ -193,13 +180,11 @@ public:
         return std::nullopt;
     }
 
-    std::optional<validation_error> validate(YAML::Node n) const override {
-        auto v = std::move(n.as<value_type>());
-        return validate(v);
-    }
+    std::optional<validation_error>
+    validate(const YAML::Node& n) const override;
 
     std::optional<validation_error>
-    check_restricted(YAML::Node) const override {
+    check_restricted(const YAML::Node&) const override {
         // Config properties are unrestricted by default
         return std::nullopt;
     }
@@ -590,206 +575,6 @@ public:
     }
 };
 
-namespace detail {
-
-template<typename T>
-concept has_type_name = requires(T x) { x.type_name(); };
-
-template<typename T>
-concept is_collection = requires(T x) {
-    typename T::value_type;
-    !std::is_same_v<typename T::value_type, char>;
-    { x.size() };
-    { x.begin() };
-    { x.end() };
-};
-
-template<typename T>
-concept is_pair = requires(T x) {
-    typename T::first_type;
-    typename T::second_type;
-};
-
-template<typename T>
-consteval std::string_view property_type_name() {
-    using type = std::decay_t<T>;
-    if constexpr (std::is_same_v<type, ss::sstring>) {
-        // String check must come before is_collection check
-        return "string";
-    } else if constexpr (std::is_same_v<type, bool>) {
-        // boolean check must come before is_integral check
-        return "boolean";
-    } else if constexpr (reflection::is_std_optional<type>) {
-        return property_type_name<typename type::value_type>();
-    } else if constexpr (is_collection<type>) {
-        return property_type_name<typename type::value_type>();
-    } else if constexpr (is_pair<type>) {
-        return property_type_name<typename type::second_type>();
-    } else if constexpr (has_type_name<type>) {
-        return type::type_name();
-    } else if constexpr (std::is_same_v<type, model::compression>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::timestamp_type>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::cleanup_policy_bitflags>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, config::data_directory_path>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::node_id>) {
-        return "integer";
-    } else if constexpr (std::is_same_v<type, std::chrono::seconds>) {
-        return "integer";
-    } else if constexpr (std::is_same_v<type, std::chrono::milliseconds>) {
-        return "integer";
-    } else if constexpr (std::is_same_v<type, seed_server>) {
-        return "seed_server";
-    } else if constexpr (std::is_same_v<type, net::unresolved_address>) {
-        return "net::unresolved_address";
-    } else if constexpr (std::is_same_v<type, tls_config>) {
-        return "tls_config";
-    } else if constexpr (std::is_same_v<type, endpoint_tls_config>) {
-        return "endpoint_tls_config";
-    } else if constexpr (std::is_same_v<type, model::broker_endpoint>) {
-        return "broker_endpoint";
-    } else if constexpr (std::is_same_v<type, model::rack_id>) {
-        return "rack_id";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::partition_autobalancing_mode>) {
-        return "partition_autobalancing_mode";
-    } else if constexpr (std::is_floating_point_v<type>) {
-        return "number";
-    } else if constexpr (std::is_integral_v<type>) {
-        return "integer";
-    } else if constexpr (std::
-                           is_same_v<type, model::cloud_credentials_source>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, s3_url_style>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::cloud_storage_backend>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, std::filesystem::path>) {
-        return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::cloud_storage_chunk_eviction_strategy>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::leader_balancer_mode>) {
-        return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           pandaproxy::schema_registry::
-                             schema_id_validation_mode>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::fetch_read_strategy>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::write_caching_mode>) {
-        return "string";
-    } else if constexpr (std::
-                           is_same_v<type, model::recovery_validation_mode>) {
-        return "recovery_validation_mode";
-    } else if constexpr (std::is_same_v<type, config::fips_mode_flag>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, config::tls_version>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::node_uuid>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, config::node_id_override>) {
-        return "node_id_override";
-    } else if constexpr (std::is_same_v<type, config::leaders_preference>) {
-        return "leaders_preference";
-    } else if constexpr (std::is_same_v<type, config::datalake_catalog_type>) {
-        return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::iceberg_invalid_record_action>) {
-        return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           config::datalake_catalog_auth_mode>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, config::tls_name_format>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, config::audit_failure_policy>) {
-        return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::kafka_batch_validation_mode>) {
-        return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           security::oidc::nested_group_behavior>) {
-        return "string";
-    } else if constexpr (std::is_same_v<type, model::redpanda_storage_mode>) {
-        return "string";
-    } else {
-        static_assert(
-          base::unsupported_type<T>::value, "Type name not defined");
-    }
-}
-
-template<typename T>
-consteval std::string_view property_units_name() {
-    using type = std::decay_t<T>;
-    if constexpr (std::is_same_v<type, std::chrono::milliseconds>) {
-        return "ms";
-    } else if constexpr (std::is_same_v<type, std::chrono::seconds>) {
-        return "s";
-    } else if constexpr (reflection::is_std_optional<type>) {
-        return property_units_name<typename type::value_type>();
-    } else {
-        // This will be transformed to nullopt at runtime: returning
-        // std::optional from this function triggered a clang crash.
-        return "";
-    }
-}
-
-template<typename T>
-consteval bool is_array() {
-    if constexpr (
-      std::is_same_v<T, ss::sstring> || std::is_same_v<T, std::string>) {
-        // Special case for strings, which are collections but we do not
-        // want to report them that way.
-        return false;
-    } else if constexpr (detail::is_collection<std::decay_t<T>>) {
-        return true;
-    } else if constexpr (reflection::is_std_optional<T>) {
-        return is_array<typename T::value_type>();
-    } else {
-        return false;
-    }
-}
-
-} // namespace detail
-
-template<typename T>
-std::string_view property<T>::type_name() const {
-    // Go via a non-member function so that specialized implementations
-    // can use concepts without all the same concepts having to apply
-    // to the type T in the class definition.
-    return detail::property_type_name<T>();
-}
-
-template<typename T>
-std::optional<std::string_view> property<T>::units_name() const {
-    auto u = detail::property_units_name<T>();
-    if (u == "") {
-        return std::nullopt;
-    } else {
-        return u;
-    }
-}
-
-template<typename T>
-bool property<T>::is_nullable() const {
-    return reflection::is_std_optional<std::decay_t<T>>;
-}
-
-template<typename T>
-bool property<T>::is_array() const {
-    return detail::is_array<T>();
-}
-
 /*
  * Same as property<std::vector<T>> but will also decode a single T. This can be
  * useful for dealing with backwards compatibility or creating easier yaml
@@ -800,33 +585,13 @@ class one_or_many_property : public property<std::vector<T>> {
 public:
     using property<std::vector<T>>::property;
 
-    bool set_value(YAML::Node n) override {
-        auto value = decode_yaml(n);
-        return property<std::vector<T>>::update_value(std::move(value));
-    }
+    bool set_value(const YAML::Node& n) override;
 
     std::optional<validation_error>
-    validate([[maybe_unused]] YAML::Node n) const override {
-        std::vector<T> value = decode_yaml(n);
-        return property<std::vector<T>>::validate(value);
-    }
+    validate(const YAML::Node& n) const override;
 
 private:
-    /**
-     * Given either a single value or a list of values, return
-     * a list of decoded values.
-     */
-    std::vector<T> decode_yaml(const YAML::Node& n) const {
-        std::vector<T> value;
-        if (n.IsSequence()) {
-            for (auto elem : n) {
-                value.push_back(std::move(elem.as<T>()));
-            }
-        } else {
-            value.push_back(std::move(n.as<T>()));
-        }
-        return value;
-    }
+    std::vector<T> decode_yaml(const YAML::Node& n) const;
 };
 
 /*
@@ -840,37 +605,14 @@ class one_or_many_map_property
 public:
     using property<std::unordered_map<typename T::key_type, T>>::property;
 
-    bool set_value(YAML::Node n) override {
-        auto value = decode_yaml(n);
-        return property<std::unordered_map<typename T::key_type, T>>::
-          update_value(std::move(value));
-    }
+    bool set_value(const YAML::Node& n) override;
 
-    std::optional<validation_error> validate(YAML::Node n) const override {
-        std::unordered_map<typename T::key_type, T> value = decode_yaml(n);
-        return property<std::unordered_map<typename T::key_type, T>>::validate(
-          value);
-    }
+    std::optional<validation_error>
+    validate(const YAML::Node& n) const override;
 
 private:
-    /**
-     * Given either a single value or a list of values, return
-     * a hash_map of decoded values.
-     **/
     std::unordered_map<typename T::key_type, T>
-    decode_yaml(const YAML::Node& n) const {
-        std::unordered_map<typename T::key_type, T> value;
-        if (n.IsSequence()) {
-            for (const auto& elem : n) {
-                auto elem_val = elem.as<T>();
-                value.emplace(elem_val.key(), std::move(elem_val));
-            }
-        } else {
-            auto elem_val = n.as<T>();
-            value.emplace(elem_val.key(), std::move(elem_val));
-        }
-        return value;
-    }
+    decode_yaml(const YAML::Node& n) const;
 };
 
 /**
@@ -893,7 +635,7 @@ public:
         return;
     }
 
-    bool set_value(YAML::Node) override {
+    bool set_value(const YAML::Node&) override {
         vlog(configlog.warn, "{}", deprecated_property_log_line());
         return false;
     }
@@ -937,16 +679,7 @@ public:
       , _values(values) {}
 
     std::optional<validation_error>
-    validate(YAML::Node n) const final override {
-        try {
-            auto v = n.as<T>();
-            return property<T>::validate(v);
-        } catch (...) {
-            // Not convertible (e.g. if the underlying type is an enum class)
-            // therefore assume it is out of bounds.
-            return validation_error{property<T>::name().data(), help_text()};
-        }
-    }
+    validate(const YAML::Node& n) const final override;
 
     std::vector<ss::sstring> enum_values() const final override {
         std::vector<ss::sstring> r;
@@ -993,9 +726,7 @@ public:
             .value_or(-1ms));
     }
 
-    bool set_value(YAML::Node n) final {
-        return update_value(n.as<std::chrono::milliseconds>());
-    }
+    bool set_value(const YAML::Node& n) final;
 
     void print(std::ostream& o) const final {
         vassert(!is_secret(), "{} must not be a secret", name());
@@ -1005,14 +736,7 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void
-    to_json(json::Writer<json::StringBuffer>& w, redact_secrets) const final {
-        // TODO: there's nothing forcing the retention duration to be a
-        // non-secret; if a secret retention duration is ever introduced,
-        // redact it, but consider the implications on the JSON type.
-        vassert(!is_secret(), "{} must not be a secret", name());
-        json::rjson_serialize(w, _value.value_or(-1ms));
-    }
+    void to_json(json::rjson_writer& w, redact_secrets) const final;
 
 private:
     bool update_value(std::chrono::milliseconds value) {
@@ -1041,6 +765,38 @@ public:
     }
 };
 namespace detail {
+
+template<typename T>
+concept is_collection = requires(T x) {
+    typename T::value_type;
+    !std::is_same_v<typename T::value_type, char>;
+    { x.size() };
+    { x.begin() };
+    { x.end() };
+};
+
+template<typename T>
+consteval bool is_array() {
+    if constexpr (
+      std::is_same_v<T, ss::sstring> || std::is_same_v<T, std::string>) {
+        // Special case for strings, which are collections but we do not
+        // want to report them that way.
+        return false;
+    } else if constexpr (detail::is_collection<std::decay_t<T>>) {
+        return true;
+    } else if constexpr (reflection::is_std_optional<T>) {
+        return is_array<typename T::value_type>();
+    } else {
+        return false;
+    }
+}
+
+// Primary template declarations; definitions are in property_schema.h.
+template<typename T>
+consteval std::string_view property_type_name();
+
+template<typename T>
+consteval std::string_view property_units_name();
 
 template<typename P>
 concept Property = requires() {
@@ -1170,16 +926,8 @@ public:
      * checks whether that value should be restricted to enterprise clusters
      * based on the unwrapped value restrictions described at construction.
      */
-    std::optional<validation_error> check_restricted(YAML::Node n) const final {
-        auto v = std::move(n.as<T>());
-        if (do_check_restricted(v)) {
-            return std::make_optional<validation_error>(
-              P::name().data(),
-              features::enterprise_error_message::cluster_property(
-                P::name().data(), v));
-        }
-        return std::nullopt;
-    }
+    std::optional<validation_error>
+    check_restricted(const YAML::Node& n) const final;
 
     /**
      * @brief Checks current value of property to see if it is restricted

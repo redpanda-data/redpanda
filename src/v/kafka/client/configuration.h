@@ -14,7 +14,9 @@
 #include "config/bounded_property.h"
 #include "config/config_store.h"
 #include "config/tls_config.h"
+#include "model/compression.h"
 #include "net/tls.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>

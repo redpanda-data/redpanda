@@ -10,6 +10,7 @@
 #include "config/base_property.h"
 #include "config/config_store.h"
 #include "config/property.h"
+#include "config/property_schema.h"
 #include "config/types.h"
 #include "features/enterprise_features.h"
 

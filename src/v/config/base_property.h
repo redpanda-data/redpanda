@@ -12,17 +12,18 @@
 #pragma once
 #include "base/seastarx.h"
 #include "config/validation_error.h"
-#include "json/stringbuffer.h"
-#include "json/writer.h"
+#include "json/rjson_writer_fwd.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/bool_class.hh>
 
-#include <yaml-cpp/yaml.h>
-
 #include <any>
 #include <iosfwd>
 #include <string>
+
+namespace YAML {
+class Node;
+} // namespace YAML
 
 namespace config {
 
@@ -108,12 +109,11 @@ public:
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken
     // from the property name.
-    virtual void
-    to_json(json::Writer<json::StringBuffer>& w, redact_secrets redact) const
+    virtual void to_json(json::rjson_writer& w, redact_secrets redact) const
       = 0;
 
     virtual void print(std::ostream&) const = 0;
-    virtual bool set_value(YAML::Node) = 0;
+    virtual bool set_value(const YAML::Node&) = 0;
     virtual void set_value(std::any) = 0;
     virtual void reset() = 0;
     virtual bool is_default() const = 0;
@@ -153,14 +153,15 @@ public:
      * Validation of a proposed new value before it has been assigned
      * to this property.
      */
-    virtual std::optional<validation_error> validate(YAML::Node) const = 0;
+    virtual std::optional<validation_error>
+    validate(const YAML::Node&) const = 0;
 
     /**
      * Check whether a proposed new value is restricted before it has been
      * assigned. Rejection logic should be accounted for at the call site.
      */
     virtual std::optional<validation_error>
-      check_restricted(YAML::Node) const = 0;
+    check_restricted(const YAML::Node&) const = 0;
 
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;

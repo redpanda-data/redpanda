@@ -10,6 +10,7 @@
 #include "node_config.h"
 
 #include "config/configuration.h"
+#include "config/property_schema.h"
 #include "config/types.h"
 #include "utils/unresolved_address.h"
 

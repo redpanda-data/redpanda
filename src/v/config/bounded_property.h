@@ -230,10 +230,7 @@ public:
         property<T>::update_value(std::any_cast<T>(std::move(v)));
     }
 
-    bool set_value(YAML::Node n) override {
-        auto val = std::move(n.as<T>());
-        return clamp_and_update(val);
-    }
+    bool set_value(const YAML::Node& n) override;
 
     std::optional<std::string_view> example() const override {
         if (!_example.empty()) {

@@ -24,6 +24,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "features/feature_table.h"
+#include "json/rjson_writer.h"
 #include "model/metadata.h"
 #include "rpc/connection_cache.h"
 #include "utils/file_io.h"
@@ -153,7 +154,7 @@ ss::future<> config_manager::do_bootstrap() {
       [&update](const config::base_property& p) {
           if (!p.is_default()) {
               json::StringBuffer buf;
-              json::Writer<json::StringBuffer> writer(buf);
+              json::rjson_writer writer(buf);
               p.to_json(writer, config::redact_secrets::no);
               ss::sstring key_str(p.name());
               ss::sstring val_str = buf.GetString();

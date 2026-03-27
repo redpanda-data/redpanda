@@ -25,6 +25,8 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <avro/Generic.hh>
 #include <avro/GenericDatum.hh>
 

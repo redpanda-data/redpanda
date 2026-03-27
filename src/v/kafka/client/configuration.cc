@@ -11,6 +11,7 @@
 
 #include "base/units.h"
 #include "config/configuration.h"
+#include "config/property_schema.h"
 #include "kafka/client/logger.h"
 #include "security/oidc_authenticator.h"
 #include "security/scram_authenticator.h"

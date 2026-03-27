@@ -9,6 +9,7 @@
 
 #include "config/bounded_property.h"
 #include "config/config_store.h"
+#include "config/property_schema.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

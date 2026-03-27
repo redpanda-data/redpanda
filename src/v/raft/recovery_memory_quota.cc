@@ -10,6 +10,7 @@
  */
 #include "raft/recovery_memory_quota.h"
 
+#include "base/units.h"
 #include "base/vlog.h"
 #include "raft/logger.h"
 #include "resource_mgmt/memory_groups.h"

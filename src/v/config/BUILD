@@ -15,6 +15,7 @@ redpanda_cc_library(
     srcs = [
         "base_property.cc",
         "broker_authn_endpoint.cc",
+        "config_store.cc",
         "configuration.cc",
         "leaders_preference.cc",
         "logger.cc",
@@ -46,6 +47,7 @@ redpanda_cc_library(
         "node_config.h",
         "node_overrides.h",
         "property.h",
+        "property_schema.h",
         "rest_authn_endpoint.h",
         "rjson_serialization.h",
         "sasl_mechanisms.h",

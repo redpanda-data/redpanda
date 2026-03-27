@@ -11,6 +11,7 @@
 
 #include "config/config_store.h"
 #include "config/property.h"
+#include "config/property_schema.h"
 #include "config/throughput_control_group.h"
 
 #include <seastar/core/sstring.hh>

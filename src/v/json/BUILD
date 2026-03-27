@@ -20,6 +20,8 @@ redpanda_cc_library(
         "pointer.h",
         "prettywriter.h",
         "reader.h",
+        "rjson_writer.h",
+        "rjson_writer_fwd.h",
         "schema.h",
         "stream.h",
         "stringbuffer.h",

@@ -14,6 +14,7 @@
 #include "config/base_property.h"
 #include "config/bounded_property.h"
 #include "config/node_config.h"
+#include "config/property_schema.h"
 #include "config/sasl_mechanisms.h"
 #include "config/types.h"
 #include "config/validators.h"

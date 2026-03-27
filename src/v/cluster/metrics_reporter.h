@@ -18,6 +18,7 @@
 #include "features/enterprise_features.h"
 #include "features/fwd.h"
 #include "http/client.h"
+#include "json/rjson_writer_fwd.h"
 #include "model/fundamental.h"
 #include "security/fwd.h"
 #include "storage/fwd.h"
@@ -228,18 +229,15 @@ std::optional<metrics_reporter::kubernetes_metrics> get_kubernetes_metrics();
 } // namespace cluster
 namespace json {
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cluster::metrics_reporter::metrics_snapshot& v);
+  json::rjson_writer& w, const cluster::metrics_reporter::metrics_snapshot& v);
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cluster::metrics_reporter::node_disk_space& v);
+  json::rjson_writer& w, const cluster::metrics_reporter::node_disk_space& v);
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
-  const cluster::metrics_reporter::node_metrics& v);
+  json::rjson_writer& w, const cluster::metrics_reporter::node_metrics& v);
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
+  json::rjson_writer& w,
   const cluster::metrics_reporter::kubernetes_metrics& v);
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w,
+  json::rjson_writer& w,
   const cluster::metrics_reporter::schema_registry_metrics& v);
 } // namespace json

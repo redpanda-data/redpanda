@@ -12,6 +12,7 @@
 #include "config/base_property.h"
 #include "config/broker_endpoint.h"
 #include "config/endpoint_tls_config.h"
+#include "config/property_schema.h"
 #include "config/rest_authn_endpoint.h"
 #include "model/metadata.h"
 

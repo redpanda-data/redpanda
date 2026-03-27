@@ -13,6 +13,7 @@
 #include "config/property.h"
 #include "config/sasl_mechanisms.h"
 #include "config/types.h"
+#include "security/config.h"
 #include "security/fwd.h"
 
 #include <chrono>

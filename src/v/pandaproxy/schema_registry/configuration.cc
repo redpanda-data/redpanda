@@ -9,6 +9,8 @@
 
 #include "pandaproxy/schema_registry/configuration.h"
 
+#include "config/property_schema.h"
+
 namespace pandaproxy::schema_registry {
 
 configuration::configuration(const YAML::Node& cfg)
