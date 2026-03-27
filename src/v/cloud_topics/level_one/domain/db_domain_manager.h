@@ -107,6 +107,10 @@ public:
       std::optional<ss::sstring> last_key,
       uint32_t max_rows) override;
 
+    ss::future<
+      std::expected<partition_validation_result, partition_validator::error>>
+      validate_partition(validate_partition_options) override;
+
 private:
     // Initializes the underlying database for the current term, potentially
     // reopening it if needed (e.g. the underlying Raft term has changed since
