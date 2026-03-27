@@ -64,6 +64,7 @@ bool is_reconnect_error(const std::system_error& e) {
         case EHOSTDOWN:
         case ENETRESET:
         case ENETDOWN:
+        case ENODATA:
             return true;
         default:
             return false;

@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
 
 redpanda_cc_btest(
     name = "connection_rate_test",
@@ -59,6 +59,20 @@ redpanda_cc_btest(
         "//src/v/net",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "reconnect_error_test",
+    timeout = "short",
+    srcs = [
+        "reconnect_error_test.cc",
+    ],
+    deps = [
+        "//src/v/net",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
         "@seastar",
     ],
 )
