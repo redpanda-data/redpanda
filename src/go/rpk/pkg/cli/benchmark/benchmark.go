@@ -46,7 +46,6 @@ type benchmarkConfig struct {
 	partitions             int32
 	replicas               int16
 	clients                int
-	recordSize             int
 	warmupS                int
 	durationS              int
 	metricsJSON            string
@@ -82,7 +81,6 @@ func (cfg *benchmarkConfig) addFlags(cmd *cobra.Command) {
 	cmd.Flags().Int32VarP(&cfg.partitions, "partitions", "p", 18, "Number of partitions for benchmark topic creation")
 	cmd.Flags().Int16VarP(&cfg.replicas, "replicas", "r", 3, "Replication factor for benchmark topic creation")
 	cmd.Flags().IntVar(&cfg.clients, "clients", 16, "Number of benchmark client connections")
-	cmd.Flags().IntVar(&cfg.recordSize, "record-size", 100, "Record payload size in bytes")
 	cmd.Flags().IntVar(&cfg.warmupS, "warmup", 10, "Warmup duration in seconds")
 	cmd.Flags().IntVar(&cfg.durationS, "duration", 60, "Measurement duration in seconds")
 	cmd.Flags().StringVar(&cfg.metricsJSON, "metrics-json", "", "Optional path to write final metrics JSON")
@@ -98,9 +96,6 @@ func (cfg benchmarkConfig) validate() error {
 	}
 	if cfg.clients <= 0 {
 		return fmt.Errorf("invalid --clients %d, must be > 0", cfg.clients)
-	}
-	if cfg.recordSize <= 0 {
-		return fmt.Errorf("invalid --record-size %d, must be > 0", cfg.recordSize)
 	}
 	if cfg.warmupS < 0 {
 		return fmt.Errorf("invalid --warmup %d, must be >= 0", cfg.warmupS)
@@ -153,6 +148,7 @@ func newBenchmarkRun(fs afero.Fs, p *config.Params, cmd *cobra.Command, cfg benc
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize admin kafka client: %w", err)
 	}
+
 	ctx, cancel := setupSignalContext(cmd)
 
 	if err := prepareBenchmarkTopic(ctx, adm, cfg); err != nil {
@@ -455,6 +451,10 @@ func waitForBalancedLeadership(
 	}
 }
 
+func withinMeasurementWindow(now, measureStart, measureEnd time.Time) bool {
+	return !now.Before(measureStart) && now.Before(measureEnd)
+}
+
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "benchmark",
@@ -463,7 +463,10 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Hidden: true,
 	}
 
-	cmd.AddCommand(newProduceCommand(fs, p))
+	cmd.AddCommand(
+		newProduceCommand(fs, p),
+		newFetchCommand(fs, p),
+	)
 
 	return cmd
 }

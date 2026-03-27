@@ -51,3 +51,7 @@ class RpkBenchmarkServiceSelfTest(RedpandaTest):
     @cluster(num_nodes=2)
     def test_produce_smoke(self) -> None:
         self.run_smoke("produce")
+
+    @cluster(num_nodes=2)
+    def test_fetch_smoke(self) -> None:
+        self.run_smoke("fetch")

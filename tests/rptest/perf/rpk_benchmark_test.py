@@ -54,3 +54,7 @@ class RpkBenchmarkPerf(RedpandaTest):
     @cluster(num_nodes=6)
     def test_produce(self) -> None:
         self.run_workload("produce")
+
+    @cluster(num_nodes=6)
+    def test_fetch(self) -> None:
+        self.run_workload("fetch")

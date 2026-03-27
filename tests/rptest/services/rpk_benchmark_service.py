@@ -60,7 +60,7 @@ class RpkBenchmarkService(Service):
         wait_for_stable_leadership: bool = True,
     ):
         super().__init__(context, num_nodes=1)
-        if mode != "produce":
+        if mode not in {"produce", "fetch"}:
             raise ValueError(f"unsupported rpk benchmark mode: {mode}")
         self._redpanda = redpanda
         self._topic = topic
