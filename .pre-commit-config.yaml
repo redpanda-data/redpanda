@@ -44,6 +44,13 @@ repos:
         language: script
         types_or: [c++, c, proto]
 
+      - id: golangci-lint
+        name: Go linting (golangci-lint)
+        entry: bash -lc 'cd src/go/rpk && golangci-lint run --timeout 10m --verbose'
+        language: system
+        files: '^src/go/rpk/.*\.go$|^src/go/rpk/go\.(mod|sum)$|^src/go/rpk/\.golangci\.yml$'
+        pass_filenames: false
+
       - id: bazel/buildifier
         name: Bazel formatting
         entry: bazel run //tools:buildifier.fix
@@ -57,4 +64,3 @@ repos:
         language: script
         files: '\.(cc|h|py|go|java|sh)$'
         pass_filenames: false
-
