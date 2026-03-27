@@ -19,6 +19,7 @@ import builtins
 import collections.abc
 import google.protobuf.descriptor
 import google.protobuf.internal.containers
+import google.protobuf.internal.enum_type_wrapper
 import google.protobuf.message
 from ........ import proto
 import sys
@@ -28,6 +29,45 @@ if sys.version_info >= (3, 10):
 else:
     import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+
+class _AnomalyType:
+    ValueType = typing.NewType('ValueType', builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _AnomalyTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_AnomalyType.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    ANOMALY_TYPE_UNSPECIFIED: _AnomalyType.ValueType
+    ANOMALY_TYPE_EXTENT_OVERLAP: _AnomalyType.ValueType
+    ANOMALY_TYPE_EXTENT_GAP: _AnomalyType.ValueType
+    ANOMALY_TYPE_NEXT_OFFSET_MISMATCH: _AnomalyType.ValueType
+    ANOMALY_TYPE_START_OFFSET_MISMATCH: _AnomalyType.ValueType
+    ANOMALY_TYPE_OBJECT_NOT_FOUND: _AnomalyType.ValueType
+    ANOMALY_TYPE_OBJECT_PREREGISTERED: _AnomalyType.ValueType
+    ANOMALY_TYPE_OBJECT_NOT_IN_STORAGE: _AnomalyType.ValueType
+    ANOMALY_TYPE_COMPACTION_RANGE_BELOW_START: _AnomalyType.ValueType
+    ANOMALY_TYPE_COMPACTION_RANGE_ABOVE_NEXT: _AnomalyType.ValueType
+    ANOMALY_TYPE_COMPACTION_TOMBSTONE_OVERLAP: _AnomalyType.ValueType
+    ANOMALY_TYPE_COMPACTION_TOMBSTONE_OUTSIDE_CLEANED: _AnomalyType.ValueType
+    ANOMALY_TYPE_TERM_ORDERING: _AnomalyType.ValueType
+    ANOMALY_TYPE_COMPACTION_STATE_UNEXPECTED: _AnomalyType.ValueType
+
+class AnomalyType(_AnomalyType, metaclass=_AnomalyTypeEnumTypeWrapper):
+    """Type of anomaly found during metastore validation."""
+ANOMALY_TYPE_UNSPECIFIED: AnomalyType.ValueType
+ANOMALY_TYPE_EXTENT_OVERLAP: AnomalyType.ValueType
+ANOMALY_TYPE_EXTENT_GAP: AnomalyType.ValueType
+ANOMALY_TYPE_NEXT_OFFSET_MISMATCH: AnomalyType.ValueType
+ANOMALY_TYPE_START_OFFSET_MISMATCH: AnomalyType.ValueType
+ANOMALY_TYPE_OBJECT_NOT_FOUND: AnomalyType.ValueType
+ANOMALY_TYPE_OBJECT_PREREGISTERED: AnomalyType.ValueType
+ANOMALY_TYPE_OBJECT_NOT_IN_STORAGE: AnomalyType.ValueType
+ANOMALY_TYPE_COMPACTION_RANGE_BELOW_START: AnomalyType.ValueType
+ANOMALY_TYPE_COMPACTION_RANGE_ABOVE_NEXT: AnomalyType.ValueType
+ANOMALY_TYPE_COMPACTION_TOMBSTONE_OVERLAP: AnomalyType.ValueType
+ANOMALY_TYPE_COMPACTION_TOMBSTONE_OUTSIDE_CLEANED: AnomalyType.ValueType
+ANOMALY_TYPE_TERM_ORDERING: AnomalyType.ValueType
+ANOMALY_TYPE_COMPACTION_STATE_UNEXPECTED: AnomalyType.ValueType
+Global___AnomalyType: typing_extensions.TypeAlias = AnomalyType
 
 @typing.final
 class GetOffsetsRequest(google.protobuf.message.Message):
@@ -672,3 +712,151 @@ class ReadRowsResponse(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal['next_key', b'next_key', 'rows', b'rows']) -> None:
         ...
 Global___ReadRowsResponse: typing_extensions.TypeAlias = ReadRowsResponse
+
+@typing.final
+class ValidatePartitionRequest(google.protobuf.message.Message):
+    """ValidatePartitionRequest validates metastore invariants for a single
+    partition. Supports paginated validation via max_extents and
+    resume_at_offset.
+    """
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPIC_ID_FIELD_NUMBER: builtins.int
+    PARTITION_ID_FIELD_NUMBER: builtins.int
+    CHECK_OBJECT_METADATA_FIELD_NUMBER: builtins.int
+    CHECK_OBJECT_STORAGE_FIELD_NUMBER: builtins.int
+    RESUME_AT_OFFSET_FIELD_NUMBER: builtins.int
+    MAX_EXTENTS_FIELD_NUMBER: builtins.int
+    topic_id: builtins.str
+    'The topic UUID to validate.'
+    partition_id: builtins.int
+    'The partition ID to validate.'
+    check_object_metadata: builtins.bool
+    "If true, verify each extent's object_id exists in the metastore\n    object table and is not a preregistration.\n    "
+    check_object_storage: builtins.bool
+    "If true, verify each extent's L1 object exists in cloud storage\n    via HEAD request.\n    "
+    resume_at_offset: builtins.int
+    'Resume validation at this base_offset (inclusive). On the next\n    page, the validator re-reads the extent at this offset to verify\n    cross-page contiguity, then continues forward. The re-read extent\n    is not counted toward max_extents. Omit to start from the\n    beginning of the partition.\n    '
+    max_extents: builtins.int
+    'Max extents to validate per call (excluding the re-read extent on\n    continuation pages). 0 means validate all remaining extents.\n    '
+
+    def __init__(self, *, topic_id: builtins.str=..., partition_id: builtins.int=..., check_object_metadata: builtins.bool=..., check_object_storage: builtins.bool=..., resume_at_offset: builtins.int | None=..., max_extents: builtins.int=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['_resume_at_offset', b'_resume_at_offset', 'resume_at_offset', b'resume_at_offset']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['_resume_at_offset', b'_resume_at_offset', 'check_object_metadata', b'check_object_metadata', 'check_object_storage', b'check_object_storage', 'max_extents', b'max_extents', 'partition_id', b'partition_id', 'resume_at_offset', b'resume_at_offset', 'topic_id', b'topic_id']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['_resume_at_offset', b'_resume_at_offset']) -> typing.Literal['resume_at_offset'] | None:
+        ...
+Global___ValidatePartitionRequest: typing_extensions.TypeAlias = ValidatePartitionRequest
+
+@typing.final
+class ValidatePartitionResponse(google.protobuf.message.Message):
+    """ValidatePartitionResponse contains the results of partition validation."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    ANOMALIES_FIELD_NUMBER: builtins.int
+    RESUME_AT_OFFSET_FIELD_NUMBER: builtins.int
+    EXTENTS_VALIDATED_FIELD_NUMBER: builtins.int
+    resume_at_offset: builtins.int
+    'The base_offset of the last extent validated. If absent, all\n    extents have been validated. Pass this value as resume_at_offset\n    in the next call to continue validation.\n    '
+    extents_validated: builtins.int
+    'Number of extents validated in this call (excluding the re-read\n    extent on continuation pages).\n    '
+
+    @property
+    def anomalies(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetastoreAnomaly]:
+        """Anomalies found during validation. Empty if the partition is valid."""
+
+    def __init__(self, *, anomalies: collections.abc.Iterable[Global___MetastoreAnomaly] | None=..., resume_at_offset: builtins.int | None=..., extents_validated: builtins.int=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['_resume_at_offset', b'_resume_at_offset', 'resume_at_offset', b'resume_at_offset']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['_resume_at_offset', b'_resume_at_offset', 'anomalies', b'anomalies', 'extents_validated', b'extents_validated', 'resume_at_offset', b'resume_at_offset']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['_resume_at_offset', b'_resume_at_offset']) -> typing.Literal['resume_at_offset'] | None:
+        ...
+Global___ValidatePartitionResponse: typing_extensions.TypeAlias = ValidatePartitionResponse
+
+@typing.final
+class MetastoreAnomaly(google.protobuf.message.Message):
+    """A single anomaly found during metastore validation."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    ANOMALY_TYPE_FIELD_NUMBER: builtins.int
+    DESCRIPTION_FIELD_NUMBER: builtins.int
+    anomaly_type: Global___AnomalyType.ValueType
+    'The type of anomaly.'
+    description: builtins.str
+    'Human-readable description of the anomaly.'
+
+    def __init__(self, *, anomaly_type: Global___AnomalyType.ValueType=..., description: builtins.str=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['anomaly_type', b'anomaly_type', 'description', b'description']) -> None:
+        ...
+Global___MetastoreAnomaly: typing_extensions.TypeAlias = MetastoreAnomaly
+
+@typing.final
+class ListCloudTopicsRequest(google.protobuf.message.Message):
+    """ListCloudTopicsRequest lists cloud topics from the cluster's topic table
+    (not the metastore). Hosted here for convenience since the metastore
+    admin service already has topic_table access.
+    """
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    AFTER_TOPIC_NAME_FIELD_NUMBER: builtins.int
+    MAX_TOPICS_FIELD_NUMBER: builtins.int
+    after_topic_name: builtins.str
+    'Optional: resume listing after this topic name (exclusive).\n    Omit to start from the beginning.\n    '
+    max_topics: builtins.int
+    'Maximum number of topics to return. 0 uses a default of 100.'
+
+    def __init__(self, *, after_topic_name: builtins.str=..., max_topics: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['after_topic_name', b'after_topic_name', 'max_topics', b'max_topics']) -> None:
+        ...
+Global___ListCloudTopicsRequest: typing_extensions.TypeAlias = ListCloudTopicsRequest
+
+@typing.final
+class ListCloudTopicsResponse(google.protobuf.message.Message):
+    """ListCloudTopicsResponse contains cloud topics with their metadata."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPICS_FIELD_NUMBER: builtins.int
+    HAS_MORE_FIELD_NUMBER: builtins.int
+    has_more: builtins.bool
+    "If true, more topics are available. Call again with after_topic_name\n    set to the last topic's name to continue.\n    "
+
+    @property
+    def topics(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___CloudTopicInfo]:
+        ...
+
+    def __init__(self, *, topics: collections.abc.Iterable[Global___CloudTopicInfo] | None=..., has_more: builtins.bool=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['has_more', b'has_more', 'topics', b'topics']) -> None:
+        ...
+Global___ListCloudTopicsResponse: typing_extensions.TypeAlias = ListCloudTopicsResponse
+
+@typing.final
+class CloudTopicInfo(google.protobuf.message.Message):
+    """Information about a single cloud topic."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPIC_NAME_FIELD_NUMBER: builtins.int
+    TOPIC_ID_FIELD_NUMBER: builtins.int
+    PARTITION_COUNT_FIELD_NUMBER: builtins.int
+    topic_name: builtins.str
+    'The Kafka topic name.'
+    topic_id: builtins.str
+    'The topic UUID.'
+    partition_count: builtins.int
+    'Number of partitions.'
+
+    def __init__(self, *, topic_name: builtins.str=..., topic_id: builtins.str=..., partition_count: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['partition_count', b'partition_count', 'topic_id', b'topic_id', 'topic_name', b'topic_name']) -> None:
+        ...
+Global___CloudTopicInfo: typing_extensions.TypeAlias = CloudTopicInfo
