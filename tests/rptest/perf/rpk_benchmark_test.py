@@ -28,11 +28,12 @@ class RpkBenchmarkPerf(RedpandaTest):
             *args, num_brokers=3, resource_settings=resource_settings, **kwargs
         )
 
-    def run_workload(self) -> None:
+    def run_workload(self, mode: str) -> None:
         svc = RpkBenchmarkService(
             self.test_context,
             self.redpanda,
             topic="rpk-bench-topic",
+            mode=mode,
             partitions=self.PARTITIONS,
             replicas=self.REPLICAS,
             clients=self.CLIENTS,
@@ -52,4 +53,4 @@ class RpkBenchmarkPerf(RedpandaTest):
 
     @cluster(num_nodes=6)
     def test_produce(self) -> None:
-        self.run_workload()
+        self.run_workload("produce")

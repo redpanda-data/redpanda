@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "benchmark",
-    srcs = ["benchmark.go"],
+    srcs = [
+        "benchmark.go",
+        "produce.go",
+    ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/benchmark",
     visibility = ["//visibility:public"],
     deps = [
