@@ -187,6 +187,7 @@ def cluster(
             and not test_failed
         ):
             try:
+                self.redpanda.validate_metastore()
                 self.redpanda.maybe_do_internal_scrub()
                 usage = self.redpanda.stop_and_scrub_object_storage()
                 stopped = True
