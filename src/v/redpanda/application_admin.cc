@@ -105,7 +105,8 @@ void application::configure_admin_server(model::node_id node_id) {
                   &controller->get_topics_state(),
                   &metadata_cache,
                   &controller->get_shard_table(),
-                  cloud_topics_app->get_sharded_l1_domain_supervisor()));
+                  cloud_topics_app->get_sharded_l1_domain_supervisor(),
+                  cloud_topics_app->get_sharded_l1_metastore_router()));
               s.add_service(
                 std::make_unique<admin::level_zero_service_impl>(
                   node_id,
