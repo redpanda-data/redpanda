@@ -14,6 +14,7 @@
 #include "base/vlog.h"
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/types.h"
+#include "cloud_topics/level_zero/gc/epoch_barrier_coordinator.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/object_utils.h"
 #include "cluster/health_monitor_frontend.h"
@@ -335,7 +336,8 @@ private:
 };
 
 seastar::future<std::expected<std::optional<cluster_epoch>, std::string>>
-level_zero_gc::epoch_source::max_gc_eligible_epoch(seastar::abort_source* as) {
+level_zero_gc::epoch_source::max_barrier_candidate_epoch(
+  seastar::abort_source* as) {
     /*
      * First retrieve a consistent snapshot of cloud topic partitions. This
      * establishes a set of partitions from which we must obtain an epoch
@@ -419,10 +421,20 @@ public:
     explicit epoch_source_impl(
       seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
       seastar::sharded<cluster::controller_stm>* controller_stm,
-      seastar::sharded<cluster::topic_table>* topic_table)
+      seastar::sharded<cluster::topic_table>* topic_table,
+      l0::gc::epoch_barrier_coordinator* coordinator = nullptr)
       : health_monitor_(health_monitor)
       , controller_stm_(controller_stm)
-      , topic_table_(topic_table) {}
+      , topic_table_(topic_table)
+      , coordinator_(coordinator) {}
+
+    seastar::future<std::expected<std::optional<cluster_epoch>, std::string>>
+    max_gc_eligible_epoch(seastar::abort_source*) override {
+        if (coordinator_) {
+            co_return coordinator_->safe_epoch();
+        }
+        co_return std::nullopt;
+    }
 
     seastar::future<std::expected<partitions_snapshot, std::string>>
     get_partitions(seastar::abort_source* as) override {
@@ -586,6 +598,7 @@ private:
     seastar::sharded<cluster::health_monitor_frontend>* health_monitor_;
     seastar::sharded<cluster::controller_stm>* controller_stm_;
     seastar::sharded<cluster::topic_table>* topic_table_;
+    l0::gc::epoch_barrier_coordinator* coordinator_;
 };
 
 class node_info_impl : public level_zero_gc::node_info {
@@ -709,7 +722,8 @@ level_zero_gc::level_zero_gc(
   seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
   seastar::sharded<cluster::controller_stm>* controller_stm,
   seastar::sharded<cluster::topic_table>* topic_table,
-  seastar::sharded<cluster::members_table>* members_table)
+  seastar::sharded<cluster::members_table>* members_table,
+  l0::gc::epoch_barrier_coordinator* coordinator)
   : level_zero_gc(
       level_zero_gc_config{
         .deletion_grace_period
@@ -723,12 +737,20 @@ level_zero_gc::level_zero_gc(
       },
       std::make_unique<object_storage_remote_impl>(remote, std::move(bucket)),
       std::make_unique<epoch_source_impl>(
-        health_monitor, controller_stm, topic_table),
+        health_monitor, controller_stm, topic_table, coordinator),
       std::make_unique<node_info_impl>(self, members_table),
       std::make_unique<cluster_safety_monitor>(
         health_monitor,
         config::shard_local_cfg()
           .cloud_topics_gc_health_check_interval.bind())) {}
+
+std::unique_ptr<level_zero_gc::epoch_source> level_zero_gc::make_epoch_source(
+  seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
+  seastar::sharded<cluster::controller_stm>* controller_stm,
+  seastar::sharded<cluster::topic_table>* topic_table) {
+    return std::make_unique<epoch_source_impl>(
+      health_monitor, controller_stm, topic_table);
+}
 
 level_zero_gc::~level_zero_gc() = default;
 

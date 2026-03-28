@@ -17,6 +17,8 @@
 #include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/metastore/flush_loop.h"
 #include "cloud_topics/level_one/metastore/topic_purger.h"
+#include "cloud_topics/level_zero/gc/epoch_barrier_coordinator.h"
+#include "cloud_topics/level_zero/gc/epoch_barrier_manager.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/manager/manager.h"
@@ -159,6 +161,26 @@ ss::future<> app::construct(
         [&metadata_cache] { return &metadata_cache->local(); }),
       scheduling_groups::instance().cloud_topics_reconciler_sg());
 
+    co_await construct_service(
+      epoch_barrier_coordinator,
+      std::ref(controller->get_cluster_epoch_generator()),
+      std::ref(*data_plane),
+      ss::sharded_parameter([&controller] {
+          return l0::gc::epoch_barrier_coordinator::
+            make_default_partition_source(
+              controller->get_partition_manager().local());
+      }));
+
+    co_await construct_service(
+      epoch_barrier_mgr,
+      self,
+      &controller->get_members_table(),
+      connection_cache,
+      &epoch_barrier_coordinator,
+      &controller->get_health_monitor(),
+      &controller->get_controller_stm(),
+      &controller->get_topics_state());
+
     if (!skip_level_zero_gc) {
         co_await construct_service(
           l0_gc,
@@ -168,7 +190,9 @@ ss::future<> app::construct(
           &controller->get_health_monitor(),
           &controller->get_controller_stm(),
           &controller->get_topics_state(),
-          &controller->get_members_table());
+          &controller->get_members_table(),
+          ss::sharded_parameter(
+            [this] { return &epoch_barrier_coordinator.local(); }));
     }
 
     co_await construct_service(housekeeper_manager, ss::sharded_parameter([&] {
@@ -218,9 +242,18 @@ ss::future<> app::start() {
     if (l0_gc.local_is_initialized()) {
         co_await l0_gc.invoke_on_all(&level_zero_gc::start);
     }
+
+    co_await l0_gc.invoke_on_all(&level_zero_gc::start);
+    co_await epoch_barrier_coordinator.invoke_on_all(
+      &l0::gc::epoch_barrier_coordinator::start);
+
     if (flush_loop_manager.local_is_initialized()) {
         co_await flush_loop_manager.invoke_on_all(
           &l1::flush_loop_manager::start);
+    }
+    if (epoch_barrier_mgr.local_is_initialized()) {
+        co_await epoch_barrier_mgr.invoke_on_all(
+          &l0::gc::epoch_barrier_manager::start);
     }
 
     // Start read replica metadata manager
@@ -264,6 +297,19 @@ ss::future<> app::wire_up_notifications() {
               });
         });
     }
+    co_await epoch_barrier_mgr.invoke_on_all([this](auto& mgr) {
+        manager.local().on_l1_domain_leader([&mgr](
+                                              const model::ntp& ntp,
+                                              const auto&,
+                                              const auto& partition) noexcept {
+            if (ntp.tp.partition != model::partition_id{0}) {
+                return;
+            }
+            auto needs_loop = l0::gc::epoch_barrier_manager::needs_loop{
+              bool(partition)};
+            mgr.enqueue_loop_reset(needs_loop);
+        });
+    });
     co_await housekeeper_manager.invoke_on_all([this](auto& hm) {
         manager.local().on_ctp_partition_leader(
           [&hm](
@@ -415,6 +461,11 @@ ss::sharded<level_zero_gc>* app::get_level_zero_gc() { return &l0_gc; }
 
 cluster_services& app::get_local_cluster_services() {
     return std::ref(cluster_services.local());
+}
+
+ss::sharded<l0::gc::epoch_barrier_coordinator>*
+app::get_epoch_barrier_coordinator() {
+    return &epoch_barrier_coordinator;
 }
 
 } // namespace cloud_topics

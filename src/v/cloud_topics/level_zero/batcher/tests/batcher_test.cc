@@ -106,6 +106,12 @@ struct batcher_accessor {
         return batcher->run_once(std::move(list));
     }
 
+    std::unique_ptr<cloud_topics::inflight_write_token> track_write() {
+        return batcher->track_write();
+    }
+
+    ss::future<> drain_writes() { return batcher->drain_writes(); }
+
     cloud_topics::l0::batcher<ss::manual_clock>* batcher;
 };
 } // namespace cloud_topics::l0
@@ -367,7 +373,6 @@ TEST_CORO(batcher_test, chunk_splitting_balances_upload_sizes) {
 
     remote_mock mock;
     mock.expect_upload_object_repeatedly();
-
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
     static_cluster_services cluster_services;
@@ -435,3 +440,61 @@ TEST_CORO(batcher_test, chunk_splitting_balances_upload_sizes) {
           << " is too small relative to average " << avg_size;
     }
 }
+
+TEST_CORO(batcher_test, drain_inflight_writes) {
+    // Verify that drain_writes() blocks until all tracked tokens complete.
+    remote_mock mock;
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+    static_cluster_services cluster_services;
+    cloud_topics::l0::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(),
+      bucket,
+      mock,
+      &cluster_services);
+    cloud_topics::l0::batcher_accessor batcher_accessor{
+      .batcher = &batcher,
+    };
+
+    auto token1 = batcher_accessor.track_write();
+    auto token2 = batcher_accessor.track_write();
+
+    bool drain_done = false;
+    auto drain_fut = batcher_accessor.drain_writes().then(
+      [&drain_done] { drain_done = true; });
+
+    co_await sleep(10ms);
+    ASSERT_FALSE_CORO(drain_done);
+
+    // drain_writes completes only after both tokens are completed
+
+    token1->done.set_value();
+    co_await sleep(10ms);
+    ASSERT_FALSE_CORO(drain_done);
+
+    token2->done.set_value();
+    co_await std::move(drain_fut);
+    ASSERT_TRUE_CORO(drain_done);
+}
+
+TEST_CORO(batcher_test, drain_empty) {
+    // Verify that drain_writes() returns immediately with no tokens.
+    remote_mock mock;
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+    static_cluster_services cluster_services;
+    cloud_topics::l0::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(),
+      bucket,
+      mock,
+      &cluster_services);
+    cloud_topics::l0::batcher_accessor batcher_accessor{
+      .batcher = &batcher,
+    };
+
+    co_await batcher_accessor.drain_writes();
+}
+
+// TODO: add more tests
+// - behaviour in case if pending write request sizes exceed L0 object size
+// limit

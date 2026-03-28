@@ -12,6 +12,7 @@
 #include "cloud_topics/app.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/frontend.h"
+#include "cloud_topics/inflight_write_token.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/types.h"
@@ -112,6 +113,14 @@ public:
     MOCK_METHOD(ss::future<>, start, (), (override));
 
     MOCK_METHOD(ss::future<>, stop, (), (override));
+
+    MOCK_METHOD(
+      std::unique_ptr<cloud_topics::inflight_write_token>,
+      track_inflight_write,
+      (),
+      (override));
+
+    MOCK_METHOD(ss::future<>, drain_inflight_writes, (), (override));
 };
 
 auto make_extent_fut(model::offset o, cluster_epoch epoch) {
@@ -138,6 +147,13 @@ public:
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
         _data_plane = ss::make_shared<mock_api>();
+        ON_CALL(*_data_plane, track_inflight_write()).WillByDefault([] {
+            auto token = std::make_unique<cloud_topics::inflight_write_token>();
+            return token;
+        });
+        ON_CALL(*_data_plane, drain_inflight_writes()).WillByDefault([] {
+            return ss::now();
+        });
     }
 
     scoped_config test_local_cfg;
@@ -166,6 +182,9 @@ TEST_F(frontend_fixture, test_replicate_epoch) {
     ON_CALL(*_data_plane, cache_put_ordered(_, _))
       .WillByDefault([](const auto&, auto) {});
     EXPECT_CALL(*_data_plane, cache_put_ordered(_, _)).Times(2);
+
+    EXPECT_CALL(*_data_plane, cache_put(_, _)).Times(2);
+
     using stage_result = std::expected<staged_write, std::error_code>;
     EXPECT_CALL(*_data_plane, stage_write(_))
       .WillOnce(Return(ss::as_ready_future(stage_result{})))

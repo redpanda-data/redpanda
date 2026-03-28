@@ -56,6 +56,7 @@ redpanda_cc_library(
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
         "//src/v/cloud_topics:cluster_services_interface",
+        "//src/v/cloud_topics:inflight_write_token",
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/cluster_services_impl",
         "//src/v/cloud_topics/level_zero/common:level_zero_probe",
@@ -68,7 +69,6 @@ redpanda_cc_library(
         "//src/v/ssx:semaphore",
         "//src/v/utils:retry_chain_node",
         "//src/v/utils:uuid",
-        "@abseil-cpp//absl/container:btree",
         "@seastar",
     ],
 )

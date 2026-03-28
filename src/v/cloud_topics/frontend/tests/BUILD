@@ -11,6 +11,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_topics:app",
         "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:inflight_write_token",
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/frontend",
         "//src/v/cloud_topics/level_zero/common:extent_meta",

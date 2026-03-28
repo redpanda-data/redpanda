@@ -22,7 +22,7 @@ namespace cloud_topics {
 ///
 class ctp_stm_state
   : public serde::
-      envelope<ctp_stm_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<ctp_stm_state, serde::version<1>, serde::compat_version<0>> {
     friend class ctp_stm_state_accessor;
 
 public:
@@ -120,6 +120,15 @@ public:
     /// Access the size estimator directly (for testing and metrics).
     const size_estimator& get_size_estimator() const noexcept;
 
+    /// Estimate the epoch eligible for barrier-based GC.
+    ///
+    /// Unlike estimate_inactive_epoch() which uses the conservative
+    /// _previous_applied_epoch, this returns _max_applied_epoch once LRO
+    /// has advanced past the current epoch window offset. The barrier
+    /// protocol provides the stale-arrival guarantee that makes this safe.
+    std::optional<cluster_epoch>
+    estimate_barrier_eligible_epoch() const noexcept;
+
     /// Advance LRO and it's translated log offset counterpart.
     void advance_last_reconciled_offset(
       kafka::offset new_last_reconciled_offset,
@@ -139,7 +148,8 @@ public:
           _min_epoch_lower_bound,
           _previous_applied_epoch,
           _start_offset,
-          _size_estimator);
+          _size_estimator,
+          _barrier_epoch_estimate);
     }
 
     /// Max collectible offset is defined by the LRO.
@@ -198,6 +208,13 @@ private:
     /// view of the partition) but it's guaranteed that all epochs before
     /// this epoch are "inactive".
     std::optional<cluster_epoch> _min_epoch_lower_bound;
+
+    /// Barrier-eligible epoch estimate. When LRO advances past the current
+    /// epoch window offset, this is set to _max_applied_epoch (rather than
+    /// _previous_applied_epoch used by _min_epoch_lower_bound). This is
+    /// safe when combined with the epoch barrier protocol which guarantees
+    /// no new data will arrive at epoch <= the barrier candidate.
+    std::optional<cluster_epoch> _barrier_epoch_estimate;
 
     /// The last offset that was uploaded to L1. This value may lag behind
     /// the value stored in the L1 metastore, but should never be ahead of

@@ -286,6 +286,11 @@ ctp_stm_api::get_epoch_window_offset() const noexcept {
     return _stm->state().current_epoch_window_offset();
 }
 
+std::optional<cluster_epoch>
+ctp_stm_api::estimate_barrier_eligible_epoch() const noexcept {
+    return _stm->estimate_barrier_eligible_epoch();
+}
+
 ss::future<bool> ctp_stm_api::sync_in_term(
   model::timeout_clock::time_point deadline, ss::abort_source& as) {
     vlog(_log.debug, "Syncing ctp_stm in term {}", _stm->_raft->term());

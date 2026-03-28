@@ -1,0 +1,24 @@
+{
+    "namespace": "cloud_topics::l0::gc::rpc::impl",
+    "service_name": "epoch_barrier_rpc",
+    "includes": [
+        "cloud_topics/level_zero/gc/rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "invalidate_epoch",
+            "input_type": "invalidate_epoch_request",
+            "output_type": "invalidate_epoch_response"
+        },
+        {
+            "name": "poll_drain",
+            "input_type": "poll_drain_request",
+            "output_type": "poll_drain_response"
+        },
+        {
+            "name": "publish_safe_epoch",
+            "input_type": "publish_safe_epoch_request",
+            "output_type": "publish_safe_epoch_response"
+        }
+    ]
+}

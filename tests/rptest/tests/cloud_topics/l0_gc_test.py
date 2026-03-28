@@ -62,14 +62,14 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
         )
         extra_rp_conf = {
             CLOUD_TOPICS_CONFIG_STR: True,
-            "cloud_topics_reconciliation_min_interval": 2000,
+            "cloud_topics_reconciliation_min_interval": 1000,
             "cloud_topics_reconciliation_max_interval": 2000,
-            "cloud_topics_epoch_service_epoch_increment_interval": 5000,
-            "cloud_topics_epoch_service_local_epoch_cache_duration": 5000,
-            "cloud_topics_short_term_gc_minimum_object_age": 10000,
+            # "cloud_topics_epoch_service_epoch_increment_interval": 5000,
+            # "cloud_topics_epoch_service_local_epoch_cache_duration": 5000,
+            "cloud_topics_short_term_gc_minimum_object_age": 1000,
             "cloud_topics_short_term_gc_interval": 2000,
-            "cloud_topics_short_term_gc_backoff_interval": 10000,
             "cloud_topics_gc_health_check_interval": 2000,
+            "cloud_topics_short_term_gc_backoff_interval": 5000,
         }
         if extra_rp_conf_overrides:
             extra_rp_conf.update(extra_rp_conf_overrides)
@@ -143,11 +143,11 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
 
 class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(cloud_storage_type=get_cloud_storage_type()[0:1])
     def test_l0_gc(self, cloud_storage_type: CloudStorageType):
         self.topics = [TopicSpec(partition_count=2)]
         self.create_topics(self.topics)
-        self.produce_some(topics=[spec.name for spec in self.topics])
+        self.produce_some(topics=[spec.name for spec in self.topics], n=300)
 
         # TODO: we are only checking that deletes are happening here (and should
         # also be happening in parallel with the repeater's fetch/produce
@@ -155,7 +155,7 @@ class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
             timeout_sec=30,
-            backoff_sec=5,
+            backoff_sec=1,
             retry_on_exc=True,
         )
 

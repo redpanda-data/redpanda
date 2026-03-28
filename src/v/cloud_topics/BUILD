@@ -58,6 +58,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "inflight_write_token",
+    hdrs = ["inflight_write_token.h"],
+    visibility = [
+        "//src/v/cloud_topics/frontend:__pkg__",
+        "//src/v/cloud_topics/frontend/tests:__pkg__",
+        "//src/v/cloud_topics/level_zero/batcher:__pkg__",
+        "//src/v/cloud_topics/level_zero/batcher/tests:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc:__pkg__",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:intrusive",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "data_plane_api",
     hdrs = [
         "data_plane_api.h",
@@ -68,13 +85,17 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/frontend_reader:__pkg__",
         "//src/v/cloud_topics/level_one/frontend_reader/tests:__pkg__",
         "//src/v/cloud_topics/level_zero/frontend_reader:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc/tests:__pkg__",
         "//src/v/cloud_topics/reconciler:__pkg__",
         "//src/v/kafka/data:__pkg__",
         "//src/v/redpanda:__pkg__",
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics:inflight_write_token",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
+        "//src/v/cloud_topics:types",
         "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/storage",
@@ -98,6 +119,8 @@ redpanda_cc_library(
         "//src/v/cloud_topics/housekeeper:manager",
         "//src/v/cloud_topics/level_one/metastore:flush_loop",
         "//src/v/cloud_topics/level_one/metastore:topic_purger",
+        "//src/v/cloud_topics/level_zero/gc:epoch_barrier_coordinator",
+        "//src/v/cloud_topics/level_zero/gc:epoch_barrier_manager",
         "//src/v/cloud_topics/level_zero/gc:level_zero_gc",
         "//src/v/cloud_topics/manager",
         "//src/v/cloud_topics/read_replica:metadata_manager",

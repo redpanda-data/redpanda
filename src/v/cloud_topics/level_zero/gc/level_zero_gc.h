@@ -35,6 +35,10 @@ class topic_table;
 class members_table;
 } // namespace cluster
 
+namespace cloud_topics::l0::gc {
+class epoch_barrier_coordinator;
+} // namespace cloud_topics::l0::gc
+
 namespace cloud_topics {
 
 /*
@@ -281,10 +285,23 @@ public:
          * L0 objects with epochs <= the return value may be deleted. An
          * expected return value of std::nullopt is not an error, but rather
          * indicates that no GC eligible epoch could yet be determined.
+         *
+         * Implementations typically read the safe epoch from the local
+         * epoch_barrier_coordinator, which is the authoritative result of
+         * the barrier protocol.
          */
         virtual seastar::future<
           std::expected<std::optional<cluster_epoch>, std::string>>
-        max_gc_eligible_epoch(seastar::abort_source*);
+        max_gc_eligible_epoch(seastar::abort_source*) = 0;
+
+        /*
+         * Candidate epoch derived from health-report data. This is the
+         * value fed into the barrier protocol; it has NOT yet been through
+         * the barrier and therefore must NOT be used directly for deletion.
+         */
+        virtual seastar::future<
+          std::expected<std::optional<cluster_epoch>, std::string>>
+        max_barrier_candidate_epoch(seastar::abort_source*);
 
         /*
          * Snapshot of existing cloud topic partition identifiers along with the
@@ -348,6 +365,13 @@ public:
         virtual seastar::future<> stop() { return seastar::now(); }
     };
 
+    /// Create a default epoch_source implementation. Used by the epoch
+    /// barrier manager to query the same epoch information as the GC.
+    static std::unique_ptr<epoch_source> make_epoch_source(
+      seastar::sharded<cluster::health_monitor_frontend>*,
+      seastar::sharded<cluster::controller_stm>*,
+      seastar::sharded<cluster::topic_table>*);
+
 public:
     /*
      * Construct with the given storage and epoch providers. This interface is
@@ -370,7 +394,8 @@ public:
       seastar::sharded<cluster::health_monitor_frontend>*,
       seastar::sharded<cluster::controller_stm>*,
       seastar::sharded<cluster::topic_table>*,
-      seastar::sharded<cluster::members_table>*);
+      seastar::sharded<cluster::members_table>*,
+      l0::gc::epoch_barrier_coordinator*);
 
     ~level_zero_gc();
 
