@@ -12,7 +12,6 @@ package role
 import (
 	"fmt"
 
-	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/common-go/rpadmin"
@@ -26,20 +25,15 @@ import (
 
 func unassignCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var principals []string
-	var groups []string
 	cmd := &cobra.Command{
-		Use:     "unassign [ROLE] --principal [PRINCIPALS...] --group [GROUPS...]",
+		Use:     "unassign [ROLE] --principal [PRINCIPALS...]",
 		Aliases: []string{"remove"},
-		Short:   "Unassign a Redpanda role from a principal or group",
-		Long: `Unassign a Redpanda role from a principal or group.
+		Short:   "Unassign a Redpanda role from a principal",
+		Long: `Unassign a Redpanda role from a principal.
 
 The '--principal' flag accepts principals with the format
 '<PrincipalPrefix>:<Principal>'. If 'PrincipalPrefix' is not provided, then
 defaults to 'User:'.
-
-The '--group' flag removes the role from an identity provider group.
-Group assignments are only supported on local (non-cloud) clusters running
-Redpanda ` + minGroupVersion.String() + ` or later.
 `,
 		Example: `
 Unassign role "redpanda-admin" from user "red"
@@ -48,11 +42,8 @@ Unassign role "redpanda-admin" from user "red"
 Unassign role "redpanda-admin" from users "red" and "panda"
   rpk security role unassign redpanda-admin --principal red,panda
 
-Unassign role "data-reader" from group "engineering"
-  rpk security role unassign data-reader --group engineering
-
-Unassign role "data-reader" from both a user and a group
-  rpk security role unassign data-reader --principal alice --group engineering
+Unassign role "redpanda-admin" from group "pandas"
+  rpk security role unassign redpanda-admin --principal Group:pandas
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -88,28 +79,6 @@ Unassign role "data-reader" from both a user and a group
 				}
 			}
 
-			// Handle groups (local-only).
-			if len(groups) > 0 {
-				if prof.CheckFromCloud() {
-					out.Die("--group is not supported for cloud clusters")
-				}
-				cl, err := adminapi.NewClient(cmd.Context(), fs, prof)
-				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
-
-				if !adminapi.HasMinimumVersion(cmd.Context(), cl, minGroupVersion) {
-					out.Die("--group requires Redpanda version %s or later", minGroupVersion.String())
-				}
-				members := make([]*adminv2.RoleMember, len(groups))
-				for i, g := range groups {
-					members[i] = &adminv2.RoleMember{Member: &adminv2.RoleMember_Group{Group: &adminv2.RoleGroup{Name: g}}}
-				}
-				_, err = cl.SecurityService().RemoveRoleMembers(cmd.Context(), connect.NewRequest(&adminv2.RemoveRoleMembersRequest{
-					RoleName: roleName,
-					Members:  members,
-				}))
-				out.MaybeDie(err, "unable to unassign group(s) from role %q: %v", roleName, err)
-			}
-
 			// Output principals.
 			if len(toRemove) > 0 {
 				if isText, _, s, err := f.Format(toRemove); !isText {
@@ -123,16 +92,10 @@ Unassign role "data-reader" from both a user and a group
 					tw.PrintStructFields(m)
 				}
 			}
-
-			// Output groups.
-			if len(groups) > 0 {
-				fmt.Printf("Successfully unassigned role %q from group(s) %v\n", roleName, groups)
-			}
 		},
 	}
 
 	cmd.Flags().StringSliceVar(&principals, "principal", nil, "Principal to unassign the role from (repeatable)")
-	cmd.Flags().StringSliceVar(&groups, "group", nil, "Group to unassign the role from (repeatable)")
-	cmd.MarkFlagsOneRequired("principal", "group")
+	cmd.MarkFlagRequired("principal")
 	return cmd
 }
