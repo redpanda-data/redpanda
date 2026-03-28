@@ -25,6 +25,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -38,7 +39,8 @@ constexpr ss::lowres_clock::duration health_report_query_timeout = 10s;
 
 namespace cloud_topics {
 
-class level_zero_gc::list_delete_worker {
+template<class Clock>
+class level_zero_gc_t<Clock>::list_delete_worker {
     static constexpr auto handle_worker_exc = [](std::exception_ptr eptr) {
         vlog(cd_log.warn, "Exception from delete worker: {}", eptr);
     };
@@ -229,7 +231,7 @@ private:
     seastar::future<std::expected<
       chunked_vector<cloud_storage_clients::client::list_bucket_item>,
       cloud_storage_clients::error_outcome>>
-    do_next_page(const cloud_storage_clients::object_key& prefix) {
+    do_next_page(const cloud_storage_clients::object_key&) {
         vlog(
           cd_log.trace,
           "list_delete_worker: Processing key prefix {}",
@@ -689,7 +691,8 @@ private:
     seastar::future<> poll_loop_;
 };
 
-level_zero_gc::level_zero_gc(
+template<class Clock>
+level_zero_gc_t<Clock>::level_zero_gc_t(
   level_zero_gc_config config,
   std::unique_ptr<l0::gc::object_storage> storage,
   std::unique_ptr<l0::gc::epoch_source> epoch_source,
@@ -708,7 +711,8 @@ level_zero_gc::level_zero_gc(
     epoch_source_->set_probe(&probe_);
 }
 
-level_zero_gc::level_zero_gc(
+template<>
+level_zero_gc_t<ss::lowres_clock>::level_zero_gc_t(
   model::node_id self,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
@@ -716,7 +720,7 @@ level_zero_gc::level_zero_gc(
   seastar::sharded<cluster::controller_stm>* controller_stm,
   seastar::sharded<cluster::topic_table>* topic_table,
   seastar::sharded<cluster::members_table>* members_table)
-  : level_zero_gc(
+  : level_zero_gc_t(
       level_zero_gc_config{
         .deletion_grace_period
         = config::shard_local_cfg()
@@ -736,9 +740,11 @@ level_zero_gc::level_zero_gc(
         config::shard_local_cfg()
           .cloud_topics_gc_health_check_interval.bind())) {}
 
-level_zero_gc::~level_zero_gc() = default;
+template<class Clock>
+level_zero_gc_t<Clock>::~level_zero_gc_t() = default;
 
-seastar::future<> level_zero_gc::start() {
+template<class Clock>
+seastar::future<> level_zero_gc_t<Clock>::start() {
     while (resetting_) {
         co_await reset_cv_.wait(
           control_timeout, [this] { return !resetting_; });
@@ -753,7 +759,8 @@ seastar::future<> level_zero_gc::start() {
     worker_cv_.signal();
 }
 
-seastar::future<> level_zero_gc::pause() {
+template<class Clock>
+seastar::future<> level_zero_gc_t<Clock>::pause() {
     while (resetting_) {
         co_await reset_cv_.wait(
           control_timeout, [this] { return !resetting_; });
@@ -765,7 +772,8 @@ seastar::future<> level_zero_gc::pause() {
     delete_worker_->pause();
 }
 
-seastar::future<> level_zero_gc::stop() {
+template<class Clock>
+seastar::future<> level_zero_gc_t<Clock>::stop() {
     vlog(cd_log.info, "Stopping cloud topics L0 GC worker");
     should_shutdown_ = true;
     asrc_.request_abort();
@@ -777,7 +785,8 @@ seastar::future<> level_zero_gc::stop() {
     vlog(cd_log.info, "Stopped cloud_topics L0 GC worker");
 }
 
-seastar::future<> level_zero_gc::reset() {
+template<class Clock>
+seastar::future<> level_zero_gc_t<Clock>::reset() {
     if (should_shutdown_ || resetting_) {
         co_return;
     }
@@ -857,7 +866,8 @@ fmt::iterator collection_outcome::format_to(fmt::iterator it) const {
 
 } // namespace l0::gc
 
-l0::gc::state level_zero_gc::get_state() const {
+template<class Clock>
+l0::gc::state level_zero_gc_t<Clock>::get_state() const {
     auto st = [this] {
         if (should_shutdown_) {
             return worker_.available() ? l0::gc::state::stopped
@@ -880,7 +890,8 @@ l0::gc::state level_zero_gc::get_state() const {
 // The collection_error enum is defined in level_zero_gc_types.h as
 // l0::gc::collection_error.
 
-seastar::future<> level_zero_gc::worker() {
+template<class Clock>
+seastar::future<> level_zero_gc_t<Clock>::worker() {
     std::chrono::milliseconds backoff{0};
 
     // Abort the backoff sleep when the grace period changes so we
@@ -911,7 +922,7 @@ seastar::future<> level_zero_gc::worker() {
                   safety.reason.value_or("unknown"));
                 probe_.safety_blocked();
                 (co_await seastar::coroutine::as_future(
-                   seastar::sleep_abortable(
+                   seastar::sleep_abortable<Clock>(
                      config_.throttle_no_progress(), asrc_)))
                   .ignore_ready_future();
                 continue;
@@ -921,18 +932,18 @@ seastar::future<> level_zero_gc::worker() {
                 backoff = std::chrono::milliseconds{0};
             }
             if (backoff.count() > 0) {
-                auto t0 = ss::lowres_clock::now();
+                auto t0 = Clock::now();
                 // Use a dedicated abort source for the backoff sleep so
                 // that config changes (grace period watcher) and state
                 // changes (pause/stop/reset) can wake us without aborting
                 // asrc_, which is reserved for cancelling in-flight
                 // service calls.
                 (co_await seastar::coroutine::as_future(
-                   seastar::sleep_abortable(backoff, backoff_asrc_)))
+                   seastar::sleep_abortable<Clock>(backoff, backoff_asrc_)))
                   .ignore_ready_future();
                 auto elapsed
                   = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    ss::lowres_clock::now() - t0);
+                    Clock::now() - t0);
                 probe_.add_backpressure(
                   static_cast<double>(elapsed.count()) / 1000.0);
                 backoff = std::chrono::seconds{0};
@@ -978,9 +989,10 @@ seastar::future<> level_zero_gc::worker() {
     vlog(cd_log.info, "Level zero GC worker is exiting");
 }
 
+template<class Clock>
 seastar::future<
   std::expected<l0::gc::collection_outcome, l0::gc::collection_error>>
-level_zero_gc::try_to_collect() {
+level_zero_gc_t<Clock>::try_to_collect() {
     using enum l0::gc::collection_outcome::status;
 
     // Ultra-temporary cache to avoid repeatedly querying for max gc-able epoch.
@@ -1019,7 +1031,8 @@ level_zero_gc::try_to_collect() {
                 break;
             }
             (co_await seastar::coroutine::as_future(
-               seastar::sleep_abortable(config_.throttle_progress(), asrc_)))
+               seastar::sleep_abortable<Clock>(
+                 config_.throttle_progress(), asrc_)))
               .ignore_ready_future();
             if (asrc_.abort_requested()) {
                 break;
@@ -1035,10 +1048,12 @@ level_zero_gc::try_to_collect() {
     co_return outcome;
 }
 
+template<class Clock>
 seastar::future<std::expected<
   std::optional<l0::gc::collection_outcome>,
   l0::gc::collection_error>>
-level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
+level_zero_gc_t<Clock>::do_try_to_collect(
+  std::optional<cluster_epoch>& max_gc_epoch) {
     using enum l0::gc::collection_outcome::status;
     auto candidate_objects = co_await delete_worker_->next_page();
     if (!candidate_objects.has_value()) {
@@ -1212,5 +1227,8 @@ compute_prefix_range(size_t shard_idx, size_t total_shards) {
 
     return prefix_range_inclusive{min, max};
 }
+
+template class level_zero_gc_t<ss::lowres_clock>;
+template class level_zero_gc_t<ss::manual_clock>;
 
 } // namespace cloud_topics

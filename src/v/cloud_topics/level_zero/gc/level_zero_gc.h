@@ -14,6 +14,7 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 
 #include <expected>
@@ -207,13 +208,14 @@ struct level_zero_gc_config {
  *
  *  start()/pause() block while resetting_ is true.
  */
-class level_zero_gc {
+template<class Clock = ss::lowres_clock>
+class level_zero_gc_t {
 public:
     /*
      * Construct with the given storage and epoch providers. This interface is
      * intended to be used by tests which swap in mock implementations.
      */
-    level_zero_gc(
+    level_zero_gc_t(
       level_zero_gc_config,
       std::unique_ptr<l0::gc::object_storage>,
       std::unique_ptr<l0::gc::epoch_source>,
@@ -223,7 +225,7 @@ public:
     /*
      * Construct with default implementations of storage and epoch providers.
      */
-    level_zero_gc(
+    level_zero_gc_t(
       model::node_id,
       cloud_io::remote*,
       cloud_storage_clients::bucket_name,
@@ -232,7 +234,7 @@ public:
       seastar::sharded<cluster::topic_table>*,
       seastar::sharded<cluster::members_table>*);
 
-    ~level_zero_gc();
+    ~level_zero_gc_t();
 
     /*
      * Request that GC be started or paused. These can be called multiple times
@@ -298,6 +300,8 @@ private:
     class list_delete_worker;
     std::unique_ptr<list_delete_worker> delete_worker_{};
 };
+
+using level_zero_gc = level_zero_gc_t<>;
 
 /**
  * @brief Compute a subrange of [0,999] for some shard.
