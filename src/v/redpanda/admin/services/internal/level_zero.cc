@@ -13,6 +13,7 @@
 #include "base/vassert.h"
 #include "cloud_topics/frontend/frontend.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
+#include "cloud_topics/level_zero/gc/level_zero_gc_types.h"
 #include "cloud_topics/state_accessors.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
@@ -48,10 +49,10 @@ namespace admin {
 
 namespace {
 constexpr proto::admin::level_zero::status
-map_gc_state(cloud_topics::level_zero_gc::state st) {
+map_gc_state(cloud_topics::l0::gc::state st) {
     using namespace proto::admin::level_zero;
     switch (st) {
-        using enum cloud_topics::level_zero_gc::state;
+        using enum cloud_topics::l0::gc::state;
     case paused:
         return status::l0_gc_status_paused;
     case running:

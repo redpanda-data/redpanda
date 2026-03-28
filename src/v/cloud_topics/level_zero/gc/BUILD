@@ -17,6 +17,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "level_zero_gc_types",
+    hdrs = [
+        "level_zero_gc_types.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":level_zero_gc_probe",
+        "//src/v/cloud_io:io_result",
+        "//src/v/cloud_storage_clients",
+        "//src/v/cloud_topics:types",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "level_zero_gc",
     srcs = [
         "level_zero_gc.cc",
@@ -37,11 +54,9 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":level_zero_gc_probe",
-        "//src/v/cloud_io:io_result",
+        ":level_zero_gc_types",
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:types",
-        "//src/v/container:chunked_hash_map",
-        "//src/v/model",
         "@seastar",
     ],
 )

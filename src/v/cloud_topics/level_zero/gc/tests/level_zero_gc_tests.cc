@@ -27,8 +27,7 @@ constexpr size_t prefix_max = cloud_topics::object_id::prefix_max;
 constexpr size_t n_prefixes = prefix_max + 1;
 } // namespace
 
-class object_storage_test_impl
-  : public cloud_topics::level_zero_gc::object_storage {
+class object_storage_test_impl : public cloud_topics::l0::gc::object_storage {
 public:
     object_storage_test_impl(
       chunked_vector<cloud_storage_clients::client::list_bucket_item>* listed,
@@ -129,8 +128,7 @@ private:
     seastar::condition_variable delete_cv_;
 };
 
-class epoch_source_test_impl
-  : public cloud_topics::level_zero_gc::epoch_source {
+class epoch_source_test_impl : public cloud_topics::l0::gc::epoch_source {
 public:
     explicit epoch_source_test_impl(std::optional<int64_t>* epoch)
       : epoch_(epoch) {}
@@ -173,7 +171,7 @@ private:
  * indices based on the members table, this allows direct control over the
  * shard index and total shard count.
  */
-class node_info_test_impl : public cloud_topics::level_zero_gc::node_info {
+class node_info_test_impl : public cloud_topics::l0::gc::node_info {
 public:
     node_info_test_impl() = default;
     node_info_test_impl(size_t shard_idx, size_t total)
@@ -187,8 +185,7 @@ private:
     size_t total_shards_{1};
 };
 
-class safety_monitor_test_impl
-  : public cloud_topics::level_zero_gc::safety_monitor {
+class safety_monitor_test_impl : public cloud_topics::l0::gc::safety_monitor {
     static constexpr bool default_ok{true};
 
 public:
@@ -426,8 +423,7 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
     // Give it a chance to enter the resetting state
     EXPECT_TRUE(Eventually(
       [this] {
-          return gc->get_state()
-                 == cloud_topics::level_zero_gc::state::resetting;
+          return gc->get_state() == cloud_topics::l0::gc::state::resetting;
       },
       5 /* wait ~100ms */));
 
@@ -439,7 +435,7 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
     EXPECT_FALSE(start_fut.available());
 
     // Still resetting (first reset is blocked)
-    EXPECT_EQ(gc->get_state(), cloud_topics::level_zero_gc::state::resetting);
+    EXPECT_EQ(gc->get_state(), cloud_topics::l0::gc::state::resetting);
     EXPECT_EQ(deleted.size(), 0);
 
     // Unblock deletes — reset completes, which signals the CV, unblocking
@@ -458,7 +454,7 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
  * eligible epoch calculation, so that is not overriden.
  */
 class epoch_source_test_default_impl
-  : public cloud_topics::level_zero_gc::epoch_source {
+  : public cloud_topics::l0::gc::epoch_source {
 public:
     explicit epoch_source_test_default_impl(
       partitions_snapshot* get_partitions_value,
@@ -503,7 +499,7 @@ private:
 
 class LevelZeroGCMaxEpochTest : public testing::Test {
 public:
-    using epoch_source_type = cloud_topics::level_zero_gc::epoch_source;
+    using epoch_source_type = cloud_topics::l0::gc::epoch_source;
     using partitions_snapshot = epoch_source_type::partitions_snapshot;
     using partitions_max_gc_epoch = epoch_source_type::partitions_max_gc_epoch;
 

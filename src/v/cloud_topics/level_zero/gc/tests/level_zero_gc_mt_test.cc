@@ -57,7 +57,7 @@ struct shared_bucket_state {
  * Object storage mock that builds results locally on each shard.
  * Cross-shard calls are only used for tracking and atomic updates.
  */
-class mt_object_storage : public level_zero_gc::object_storage {
+class mt_object_storage : public l0::gc::object_storage {
 public:
     mt_object_storage(shared_bucket_state* bucket_state)
       : g_bucket_state(bucket_state) {}
@@ -135,7 +135,7 @@ public:
 /*
  * Epoch source that accesses the global shared state.
  */
-class mt_epoch_source : public level_zero_gc::epoch_source {
+class mt_epoch_source : public l0::gc::epoch_source {
 public:
     explicit mt_epoch_source(shared_bucket_state* bucket_state)
       : g_bucket_state(bucket_state) {}
@@ -165,14 +165,13 @@ public:
 /*
  * Node info that returns shard index based on the current Seastar shard.
  */
-class mt_node_info : public level_zero_gc::node_info {
+class mt_node_info : public l0::gc::node_info {
 public:
     size_t shard_index() const override { return ss::this_shard_id(); }
     size_t total_shards() const override { return ss::smp::count; }
 };
 
-class safety_monitor_test_impl
-  : public cloud_topics::level_zero_gc::safety_monitor {
+class safety_monitor_test_impl : public cloud_topics::l0::gc::safety_monitor {
 public:
     result can_proceed() const override {
         return {.ok = true, .reason = std::nullopt};

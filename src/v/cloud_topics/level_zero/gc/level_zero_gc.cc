@@ -45,8 +45,8 @@ class level_zero_gc::list_delete_worker {
 
 public:
     explicit list_delete_worker(
-      std::unique_ptr<object_storage> storage,
-      std::unique_ptr<node_info> node_info,
+      std::unique_ptr<l0::gc::object_storage> storage,
+      std::unique_ptr<l0::gc::node_info> node_info,
       level_zero_gc_probe& probe)
       : storage_(std::move(storage))
       , node_info_(std::move(node_info))
@@ -264,8 +264,8 @@ private:
         co_return std::move(objects.contents);
     }
 
-    std::unique_ptr<object_storage> storage_;
-    std::unique_ptr<node_info> node_info_;
+    std::unique_ptr<l0::gc::object_storage> storage_;
+    std::unique_ptr<l0::gc::node_info> node_info_;
     level_zero_gc_probe* probe_;
     std::unique_ptr<ssx::work_queue> worker_;
     // TODO: configurable limits?
@@ -281,7 +281,7 @@ private:
     prefix_compressor key_prefixes_;
 };
 
-class object_storage_remote_impl : public level_zero_gc::object_storage {
+class object_storage_remote_impl : public l0::gc::object_storage {
 public:
     // TODO(noah) some random-but-not-awful values for the retry chain that
     // cloud io requires. will need to be fine tuned at some point.
@@ -341,7 +341,7 @@ private:
 };
 
 seastar::future<std::expected<std::optional<cluster_epoch>, std::string>>
-level_zero_gc::epoch_source::max_gc_eligible_epoch(seastar::abort_source* as) {
+l0::gc::epoch_source::max_gc_eligible_epoch(seastar::abort_source* as) {
     /*
      * First retrieve a consistent snapshot of cloud topic partitions. This
      * establishes a set of partitions from which we must obtain an epoch
@@ -420,7 +420,7 @@ level_zero_gc::epoch_source::max_gc_eligible_epoch(seastar::abort_source* as) {
     co_return result;
 }
 
-class epoch_source_impl : public level_zero_gc::epoch_source {
+class epoch_source_impl : public l0::gc::epoch_source {
 public:
     explicit epoch_source_impl(
       seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
@@ -594,7 +594,7 @@ private:
     seastar::sharded<cluster::topic_table>* topic_table_;
 };
 
-class node_info_impl : public level_zero_gc::node_info {
+class node_info_impl : public l0::gc::node_info {
 public:
     node_info_impl(
       model::node_id self, seastar::sharded<cluster::members_table>* mt)
@@ -622,7 +622,7 @@ private:
     seastar::sharded<cluster::members_table>* members_table_;
 };
 
-class cluster_safety_monitor : public level_zero_gc::safety_monitor {
+class cluster_safety_monitor : public l0::gc::safety_monitor {
 public:
     explicit cluster_safety_monitor(
       seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
@@ -691,10 +691,10 @@ private:
 
 level_zero_gc::level_zero_gc(
   level_zero_gc_config config,
-  std::unique_ptr<object_storage> storage,
-  std::unique_ptr<epoch_source> epoch_source,
-  std::unique_ptr<node_info> node_info,
-  std::unique_ptr<safety_monitor> safety_monitor)
+  std::unique_ptr<l0::gc::object_storage> storage,
+  std::unique_ptr<l0::gc::epoch_source> epoch_source,
+  std::unique_ptr<l0::gc::node_info> node_info,
+  std::unique_ptr<l0::gc::safety_monitor> safety_monitor)
   : config_(std::move(config))
   , epoch_source_(std::move(epoch_source))
   , safety_monitor_(std::move(safety_monitor))
@@ -801,54 +801,53 @@ seastar::future<> level_zero_gc::reset() {
     }
 }
 
-std::string_view to_string_view(level_zero_gc::state s) {
+namespace l0::gc {
+
+std::string_view to_string_view(state s) {
     switch (s) {
-        using enum level_zero_gc::state;
+        using enum state;
     case paused:
-        return "level_zero_gc::state::paused";
+        return "l0_gc_state::paused";
     case running:
-        return "level_zero_gc::state::running";
+        return "l0_gc_state::running";
     case resetting:
-        return "level_zero_gc::state::resetting";
+        return "l0_gc_state::resetting";
     case stopping:
-        return "level_zero_gc::state::stopping";
+        return "l0_gc_state::stopping";
     case stopped:
-        return "level_zero_gc::state::stopped";
+        return "l0_gc_state::stopped";
     case safety_blocked:
-        return "level_zero_gc::state::safety_blocked";
+        return "l0_gc_state::safety_blocked";
     }
     vunreachable("Unrecognized GC state: {}", s);
 }
 
-auto format_as(level_zero_gc::state s) { return to_string_view(s); }
+auto format_as(state s) { return to_string_view(s); }
 
-auto level_zero_gc::get_state() const -> state {
+} // namespace l0::gc
+
+l0::gc::state level_zero_gc::get_state() const {
     auto st = [this] {
         if (should_shutdown_) {
-            return worker_.available() ? state::stopped : state::stopping;
+            return worker_.available() ? l0::gc::state::stopped
+                                       : l0::gc::state::stopping;
         }
         if (resetting_) {
-            return state::resetting;
+            return l0::gc::state::resetting;
         }
         if (!should_run_) {
-            return state::paused;
+            return l0::gc::state::paused;
         }
-        return safety_monitor_->can_proceed().ok ? state::running
-                                                 : state::safety_blocked;
+        return safety_monitor_->can_proceed().ok
+                 ? l0::gc::state::running
+                 : l0::gc::state::safety_blocked;
     }();
     vlog(cd_log.debug, "cloud_topics L0 GC worker state: {}", st);
     return st;
 }
 
-// internal error codes used between the worker fiber and the main GC function
-enum class level_zero_gc::collection_error : int8_t {
-    // problem occurred interacting with the storage or epoch services
-    service_error,
-    // the cluster is reporting that no collectible epoch exists
-    no_collectible_epoch,
-    // object listing contained an invalid object name
-    invalid_object_name,
-};
+// The collection_error enum is defined in level_zero_gc_types.h as
+// l0::gc::collection_error.
 
 seastar::future<> level_zero_gc::worker() {
     std::chrono::milliseconds backoff{0};
@@ -902,9 +901,9 @@ seastar::future<> level_zero_gc::worker() {
                 }
             } else {
                 switch (res.error()) {
-                case collection_error::service_error:
-                case collection_error::invalid_object_name:
-                case collection_error::no_collectible_epoch:
+                case l0::gc::collection_error::service_error:
+                case l0::gc::collection_error::invalid_object_name:
+                case l0::gc::collection_error::no_collectible_epoch:
                     backoff = config_.throttle_no_progress();
                 }
             }
@@ -921,7 +920,7 @@ seastar::future<> level_zero_gc::worker() {
     vlog(cd_log.info, "Level zero GC worker is exiting");
 }
 
-seastar::future<std::expected<size_t, level_zero_gc::collection_error>>
+seastar::future<std::expected<size_t, l0::gc::collection_error>>
 level_zero_gc::try_to_collect() {
     // Ultra-temporary cache to avoid repeatedly querying for max gc-able epoch.
     // Since the result will always be valid clusterwide, compute exactly once
@@ -944,7 +943,7 @@ level_zero_gc::try_to_collect() {
     co_return total_eligible;
 }
 
-seastar::future<std::expected<size_t, level_zero_gc::collection_error>>
+seastar::future<std::expected<size_t, l0::gc::collection_error>>
 level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
     auto candidate_objects = co_await delete_worker_->next_page();
     if (!candidate_objects.has_value()) {
@@ -952,7 +951,7 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
           cd_log.debug,
           "Received error listing objects during L0 GC: {}",
           candidate_objects.error());
-        co_return std::unexpected(collection_error::service_error);
+        co_return std::unexpected(l0::gc::collection_error::service_error);
     }
 
     if (!max_gc_epoch.has_value()) {
@@ -963,14 +962,15 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               cd_log.debug,
               "Received error retrieving GC eligible epoch: {}",
               maybe_max_gc_epoch.error());
-            co_return std::unexpected(collection_error::service_error);
+            co_return std::unexpected(l0::gc::collection_error::service_error);
         }
         max_gc_epoch = maybe_max_gc_epoch.value();
     }
 
     if (!max_gc_epoch.has_value()) {
         vlog(cd_log.info, "No GC eligible epoch currently exists");
-        co_return std::unexpected(collection_error::no_collectible_epoch);
+        co_return std::unexpected(
+          l0::gc::collection_error::no_collectible_epoch);
     }
     probe_.set_max_gc_eligible_epoch(max_gc_epoch.value());
 
@@ -1004,7 +1004,8 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               cd_log.error,
               "Unable to parse epoch during L0 GC: {}",
               object_epoch.error());
-            co_return std::unexpected(collection_error::invalid_object_name);
+            co_return std::unexpected(
+              l0::gc::collection_error::invalid_object_name);
         }
 
         const auto object_pfx = object_path_factory::level_zero_path_to_prefix(
@@ -1015,7 +1016,8 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               cd_log.error,
               "Unable to parse prefix during L0 GC: {}",
               object_pfx.error());
-            co_return std::unexpected(collection_error::invalid_object_name);
+            co_return std::unexpected(
+              l0::gc::collection_error::invalid_object_name);
         }
 
         // detect non-lexicographic ordering. this may indicate that GC will
