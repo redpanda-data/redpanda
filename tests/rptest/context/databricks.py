@@ -24,6 +24,7 @@ GLOBAL_DATABRICKS_EXT_LOC_CREDENTIAL_NAME = "databricks_ext_loc_credential_name"
 GLOBAL_DATABRICKS_TOKEN = "databricks_token"
 GLOBAL_DATABRICKS_CLIENT_ID = "databricks_client_id"
 GLOBAL_DATABRICKS_CLIENT_SECRET = "databricks_client_secret"
+GLOBAL_CLOUD_PROVIDER = "cloud_provider"
 
 
 class DatabricksContext:
@@ -34,12 +35,14 @@ class DatabricksContext:
         credentials: "Credentials",
         sql_warehouse_path: str,
         ext_loc_credential_name: str,
+        cloud_provider: str,
         logger: Logger,
     ):
         self.workspace_url = workspace_url
         self.credentials = credentials
         self.sql_warehouse_path = sql_warehouse_path
         self.ext_loc_credential_name = ext_loc_credential_name
+        self.cloud_provider = cloud_provider
         self.logger = logger
 
     @staticmethod
@@ -71,6 +74,8 @@ class DatabricksContext:
             "Missing databricks external location credential name"
         )
 
+        cloud_provider = test_context.globals.get(GLOBAL_CLOUD_PROVIDER, "aws")
+
         # Remove trailing slash so that no one has to worry about it.
         workspace_url = str(workspace_url).rstrip("/")
 
@@ -79,12 +84,17 @@ class DatabricksContext:
             credentials=credentials,
             sql_warehouse_path=sql_warehouse_path,
             ext_loc_credential_name=ext_loc_credential_name,
+            cloud_provider=cloud_provider,
             logger=test_context.logger,
         )
 
     @property
     def iceberg_rest_url(self) -> str:
         return f"{self.workspace_url}/api/2.1/unity-catalog/iceberg-rest"
+
+    @property
+    def iceberg_rest_catalog_oauth2_server_uri(self) -> str:
+        return f"{self.workspace_url}/oidc/v1/token"
 
     @property
     def server_hostname(self) -> str:
