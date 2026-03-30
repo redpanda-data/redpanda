@@ -2134,7 +2134,9 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
           snap.finished_requests, [start_kafka_offset](const auto& req) {
               return req.last_offset < start_kafka_offset;
           });
-        if (!snap.finished_requests.empty()) {
+        if (
+          !snap.finished_requests.empty()
+          || state->has_transaction_in_progress()) {
             stm_snapshot.producers.push_back(std::move(snap));
         }
     }

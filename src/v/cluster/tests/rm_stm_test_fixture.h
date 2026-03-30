@@ -100,6 +100,21 @@ struct rm_stm_test_fixture : simple_raft_fixture {
         return _stm->apply_local_snapshot(hdr, std::move(buf));
     }
 
+    // Tears down all infrastructure and recreates it from the same data
+    // directory. Invalidates all existing references to _stm and _raft.
+    void restart_stm_and_raft(
+      storage::ntp_config::default_overrides overrides = {}) {
+        stop_all();
+        producer_state_manager.stop().get();
+        producer_expiration_ms.stop().get();
+        max_concurent_producers.stop().get();
+        create_stm_and_start_raft(overrides);
+        _stm->testing_only_disable_auto_abort();
+        _stm->start().get();
+        wait_for_confirmed_leader();
+        wait_for_meta_initialized();
+    }
+
     auto wait_for_kafka_offset_apply(kafka::offset offset) {
         auto raft_offset = _stm->to_log_offset(offset);
         return _stm->wait(raft_offset, model::timeout_clock::now() + 10ms);
