@@ -746,6 +746,9 @@ seastar::future<> level_zero_gc::start() {
     vlog(cd_log.info, "Starting cloud topics L0 GC worker");
     delete_worker_->start();
     safety_monitor_->start();
+    if (!should_run_) {
+        skip_backoff_ = true;
+    }
     should_run_ = true;
     worker_cv_.signal();
 }
@@ -758,6 +761,7 @@ seastar::future<> level_zero_gc::pause() {
     vlog(cd_log.info, "Pausing cloud topics L0 GC worker");
     should_run_ = false;
     asrc_.request_abort();
+    backoff_asrc_.request_abort();
     delete_worker_->pause();
 }
 
@@ -765,6 +769,7 @@ seastar::future<> level_zero_gc::stop() {
     vlog(cd_log.info, "Stopping cloud topics L0 GC worker");
     should_shutdown_ = true;
     asrc_.request_abort();
+    backoff_asrc_.request_abort();
     worker_cv_.signal();
     co_await delete_worker_->stop();
     co_await std::exchange(worker_, seastar::make_ready_future<>());
@@ -779,6 +784,7 @@ seastar::future<> level_zero_gc::reset() {
     vlog(cd_log.info, "Resetting cloud topics L0 GC worker state");
 
     resetting_ = true;
+    skip_backoff_ = true;
     const bool was_running = should_run_;
 
     auto done = ss::defer([this] {
@@ -789,6 +795,7 @@ seastar::future<> level_zero_gc::reset() {
     // Pause the outer worker loop so it blocks on the CV
     should_run_ = false;
     asrc_.request_abort();
+    backoff_asrc_.request_abort();
 
     co_await delete_worker_->reset();
 
@@ -824,6 +831,30 @@ std::string_view to_string_view(state s) {
 
 auto format_as(state s) { return to_string_view(s); }
 
+std::string_view to_string_view(collection_outcome::status s) {
+    using enum collection_outcome::status;
+    switch (s) {
+    case progress:
+        return "progress";
+    case epoch_ineligible:
+        return "epoch_ineligible";
+    case age_ineligible:
+        return "age_ineligible";
+    case empty:
+        return "empty";
+    case at_capacity:
+        return "at_capacity";
+    }
+    vunreachable(
+      "Unrecognized collection_outcome::status: {}", static_cast<int>(s));
+}
+
+auto format_as(collection_outcome::status s) { return to_string_view(s); }
+
+fmt::iterator collection_outcome::format_to(fmt::iterator it) const {
+    return fmt::format_to(it, "{{st={}, eligible={}}}", st, eligible_);
+}
+
 } // namespace l0::gc
 
 l0::gc::state level_zero_gc::get_state() const {
@@ -852,6 +883,12 @@ l0::gc::state level_zero_gc::get_state() const {
 seastar::future<> level_zero_gc::worker() {
     std::chrono::milliseconds backoff{0};
 
+    // Abort the backoff sleep when the grace period changes so we
+    // recalculate how long to sleep. Without this, a reduction in
+    // grace period wouldn't take effect until the current sleep expires.
+    config_.deletion_grace_period.watch(
+      [this] { backoff_asrc_.request_abort(); });
+
     while (true) {
         try {
             co_await worker_cv_.wait(
@@ -865,6 +902,7 @@ seastar::future<> level_zero_gc::worker() {
             // may subscribe or reset the abort source since it is able to
             // ensure that the abort source is unreferenced at this time.
             asrc_ = {};
+            backoff_asrc_ = {};
 
             if (auto safety = safety_monitor_->can_proceed(); !safety.ok) {
                 vlog(
@@ -879,10 +917,18 @@ seastar::future<> level_zero_gc::worker() {
                 continue;
             }
 
+            if (std::exchange(skip_backoff_, false)) {
+                backoff = std::chrono::milliseconds{0};
+            }
             if (backoff.count() > 0) {
                 auto t0 = ss::lowres_clock::now();
+                // Use a dedicated abort source for the backoff sleep so
+                // that config changes (grace period watcher) and state
+                // changes (pause/stop/reset) can wake us without aborting
+                // asrc_, which is reserved for cancelling in-flight
+                // service calls.
                 (co_await seastar::coroutine::as_future(
-                   seastar::sleep_abortable(backoff, asrc_)))
+                   seastar::sleep_abortable(backoff, backoff_asrc_)))
                   .ignore_ready_future();
                 auto elapsed
                   = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -894,10 +940,22 @@ seastar::future<> level_zero_gc::worker() {
 
             auto res = co_await try_to_collect();
             if (res.has_value()) {
-                if (res.value() > 0) {
+                using enum l0::gc::collection_outcome::status;
+                switch (res->st) {
+                case progress:
+                case at_capacity:
                     backoff = config_.throttle_progress();
-                } else {
+                    break;
+                case epoch_ineligible:
                     backoff = config_.throttle_no_progress();
+                    break;
+                case age_ineligible:
+                    backoff = res->age_backoff(config_.deletion_grace_period())
+                                .value_or(config_.throttle_no_progress());
+                    break;
+                case empty:
+                    backoff = config_.deletion_grace_period();
+                    break;
                 }
             } else {
                 switch (res.error()) {
@@ -920,31 +978,68 @@ seastar::future<> level_zero_gc::worker() {
     vlog(cd_log.info, "Level zero GC worker is exiting");
 }
 
-seastar::future<std::expected<size_t, l0::gc::collection_error>>
+seastar::future<
+  std::expected<l0::gc::collection_outcome, l0::gc::collection_error>>
 level_zero_gc::try_to_collect() {
+    using enum l0::gc::collection_outcome::status;
+
     // Ultra-temporary cache to avoid repeatedly querying for max gc-able epoch.
     // Since the result will always be valid clusterwide, compute exactly once
     // per collection loop.
     std::optional<cluster_epoch> max_gc_epoch;
-    size_t total_eligible{0};
+    l0::gc::collection_outcome outcome(empty);
+    size_t pages_scanned{0};
     probe_.reset_deletion_epoch();
     probe_.collection_round();
-    while (delete_worker_->has_capacity()) {
-        auto res = co_await do_try_to_collect(std::ref(max_gc_epoch));
-        if (!res.has_value()) {
-            co_return res;
-        }
-        if (res.value() == 0) {
-            break;
-        }
-        total_eligible += res.value();
+
+    if (!delete_worker_->has_capacity()) {
+        co_return l0::gc::collection_outcome(at_capacity);
     }
 
-    co_return total_eligible;
+    while (delete_worker_->has_capacity()) {
+        ++pages_scanned;
+        auto res = co_await do_try_to_collect(std::ref(max_gc_epoch));
+        if (!res.has_value()) {
+            co_return std::unexpected(res.error());
+        }
+        if (!res.value().has_value()) {
+            // All prefixes exhausted.
+            break;
+        }
+        outcome.merge(res->value());
+        if (res->value().st != progress) {
+            // Page had objects but none were eligible. Continue
+            // scanning only if we're tracking age-ineligible objects —
+            // we need the full picture to compute age_backoff
+            // accurately. For epoch-ineligible objects, further pages
+            // don't help (we can't predict epoch advancement), and
+            // continuing would hold a stale max_gc_epoch cache while
+            // the real epoch may be advancing.
+            if (outcome.st != age_ineligible) {
+                break;
+            }
+            (co_await seastar::coroutine::as_future(
+               seastar::sleep_abortable(config_.throttle_progress(), asrc_)))
+              .ignore_ready_future();
+            if (asrc_.abort_requested()) {
+                break;
+            }
+        }
+    }
+
+    vlog(
+      cd_log.debug,
+      "Collection round scanned {} pages: {}",
+      pages_scanned,
+      outcome);
+    co_return outcome;
 }
 
-seastar::future<std::expected<size_t, l0::gc::collection_error>>
+seastar::future<std::expected<
+  std::optional<l0::gc::collection_outcome>,
+  l0::gc::collection_error>>
 level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
+    using enum l0::gc::collection_outcome::status;
     auto candidate_objects = co_await delete_worker_->next_page();
     if (!candidate_objects.has_value()) {
         vlog(
@@ -952,6 +1047,10 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
           "Received error listing objects during L0 GC: {}",
           candidate_objects.error());
         co_return std::unexpected(l0::gc::collection_error::service_error);
+    }
+
+    if (candidate_objects.value().empty()) {
+        co_return std::nullopt;
     }
 
     if (!max_gc_epoch.has_value()) {
@@ -983,10 +1082,10 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
       max_gc_epoch.value(),
       max_gc_birthday);
 
-    // objects that can be safely deleted
+    l0::gc::collection_outcome page_outcome(empty);
+
     chunked_vector<cloud_storage_clients::client::list_bucket_item>
       eligible_objects;
-    // total size of eligible keys
     size_t object_keys_total_bytes = 0;
 
     // used to detect unsorted object listings
@@ -1056,6 +1155,7 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               "Ignoring object with non-collectible epoch: {} > {}",
               object.key,
               max_gc_epoch.value());
+            page_outcome.mark_epoch_ineligible();
             probe_.object_skipped_not_eligible();
             continue;
         }
@@ -1068,6 +1168,7 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               object.key,
               object.last_modified,
               max_gc_birthday);
+            page_outcome.mark_age_ineligible(object.last_modified);
             probe_.object_skipped_too_young();
             continue;
         }
@@ -1077,8 +1178,9 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
         probe_.report_deletion_epoch(object_epoch.value());
     }
 
-    co_return delete_worker_->delete_objects(
-      std::move(eligible_objects), object_keys_total_bytes);
+    page_outcome.add_eligible(delete_worker_->delete_objects(
+      std::move(eligible_objects), object_keys_total_bytes));
+    co_return page_outcome;
 }
 
 std::optional<prefix_range_inclusive>

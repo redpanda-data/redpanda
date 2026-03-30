@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "base/format_to.h"
 #include "cloud_io/io_result.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/types.h"
@@ -157,6 +158,106 @@ public:
     virtual seastar::future<> stop() { return seastar::now(); }
 };
 
+/// Outcome of a collection round, used by the worker to decide
+/// how long to sleep before the next round.
+struct collection_outcome {
+    enum class status : int8_t {
+        /// Deleted objects — poll at throttle_progress.
+        progress,
+        /// Objects skipped because their epoch exceeds the
+        /// collectible epoch — poll at throttle_no_progress.
+        epoch_ineligible,
+        /// Objects skipped because they are too young —
+        /// sleep until the oldest one ages past the grace period.
+        age_ineligible,
+        /// No objects listed (empty storage or all deleted) —
+        /// sleep for the full grace period.
+        empty,
+        /// Delete worker at capacity — poll at throttle_progress.
+        at_capacity,
+    };
+
+    status st;
+
+    explicit collection_outcome(status s)
+      : st(s) {}
+    size_t eligible() const { return eligible_; }
+
+    /// Record that objects were submitted for deletion. Progress
+    /// always takes precedence over any other status.
+    void add_eligible(size_t n) {
+        eligible_ += n;
+        if (eligible_ > 0) {
+            st = status::progress;
+        }
+    }
+
+    /// Record that an object was skipped because its epoch exceeds
+    /// the collectible epoch. Does not downgrade from progress.
+    void mark_epoch_ineligible() {
+        if (st != status::progress) {
+            st = status::epoch_ineligible;
+        }
+    }
+
+    /// Record that an object was skipped because it is younger
+    /// than the grace period. Tracks the oldest such object so
+    /// we can compute exactly when it becomes eligible.
+    /// Does not downgrade from progress or epoch_ineligible.
+    void
+    mark_age_ineligible(std::chrono::system_clock::time_point last_modified) {
+        if (
+          !oldest_ineligible_modified_.has_value()
+          || last_modified < oldest_ineligible_modified_.value()) {
+            oldest_ineligible_modified_ = last_modified;
+        }
+        if (st != status::progress && st != status::epoch_ineligible) {
+            st = status::age_ineligible;
+        }
+    }
+
+    /// Merge another page's outcome into this one.
+    void merge(const collection_outcome& other) {
+        add_eligible(other.eligible_);
+        if (other.oldest_ineligible_modified_.has_value()) {
+            mark_age_ineligible(other.oldest_ineligible_modified_.value());
+        }
+        if (other.st == status::epoch_ineligible) {
+            mark_epoch_ineligible();
+        }
+    }
+
+    /// Compute the backoff for the age_ineligible case: how long
+    /// until the oldest too-young object ages past the grace
+    /// period. Returns nullopt if the oldest_ineligible timestamp
+    /// is missing OR the object is already old enough (race or clock skew)
+    std::optional<std::chrono::milliseconds>
+    age_backoff(std::chrono::milliseconds grace_period) const {
+        return oldest_ineligible_modified_
+          .transform([grace_period](
+                       std::chrono::system_clock::time_point oldest_modified) {
+              return oldest_modified + grace_period;
+          })
+          .and_then(
+            [](std::chrono::system_clock::time_point wake_at)
+              -> std::optional<std::chrono::milliseconds> {
+                auto now = std::chrono::system_clock::now();
+                if (wake_at <= now) {
+                    return std::nullopt;
+                }
+                return std::chrono::duration_cast<std::chrono::milliseconds>(
+                  wake_at - now);
+            });
+    }
+
+    fmt::iterator format_to(fmt::iterator) const;
+
+private:
+    size_t eligible_{0};
+    std::optional<std::chrono::system_clock::time_point>
+      oldest_ineligible_modified_;
+};
+
 enum class collection_error : int8_t {
     // problem occurred interacting with the storage or epoch services
     service_error,
@@ -187,5 +288,6 @@ enum class state : uint8_t {
 };
 
 std::string_view to_string_view(state s);
+std::string_view to_string_view(collection_outcome::status s);
 
 } // namespace cloud_topics::l0::gc

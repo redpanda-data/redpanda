@@ -262,6 +262,9 @@ public:
     l0::gc::state get_state() const;
 
 private:
+    seastar::condition_variable worker_cv_;
+    seastar::condition_variable reset_cv_;
+
     level_zero_gc_config config_;
     std::unique_ptr<l0::gc::epoch_source> epoch_source_;
     std::unique_ptr<l0::gc::safety_monitor> safety_monitor_;
@@ -270,20 +273,27 @@ private:
     bool should_shutdown_;
     bool resetting_{false};
     seastar::abort_source asrc_;
-    seastar::condition_variable worker_cv_;
+    seastar::abort_source backoff_asrc_;
     seastar::future<> worker_;
-    seastar::condition_variable reset_cv_;
 
     seastar::future<> worker();
 
-    seastar::future<std::expected<size_t, l0::gc::collection_error>>
+    seastar::future<
+      std::expected<l0::gc::collection_outcome, l0::gc::collection_error>>
     try_to_collect();
 
-    /// Returns eligible count, or nullopt when all prefixes are exhausted.
-    seastar::future<std::expected<size_t, l0::gc::collection_error>>
+    /// Returns per-page outcome, or nullopt when all prefixes are exhausted.
+    seastar::future<std::expected<
+      std::optional<l0::gc::collection_outcome>,
+      l0::gc::collection_error>>
     do_try_to_collect(std::optional<cluster_epoch>&);
 
     level_zero_gc_probe probe_;
+
+    /// Set by start() and reset() to force the worker to skip its next
+    /// backoff sleep so the first round after a state change runs
+    /// immediately.
+    bool skip_backoff_{false};
 
     class list_delete_worker;
     std::unique_ptr<list_delete_worker> delete_worker_{};
