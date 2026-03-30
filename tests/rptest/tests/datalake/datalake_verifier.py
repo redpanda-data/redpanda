@@ -363,6 +363,7 @@ class DatalakeVerifier:
         return progress
 
     def wait(self, progress_timeout_sec=30):
+        check = True
         try:
             while not self._all_offsets_translated():
                 wait_until(
@@ -377,30 +378,32 @@ class DatalakeVerifier:
             self.logger.debug("No errors around waiting")
         except Exception as e:
             self.logger.error(f"Error around waiting: {e}")
+            check = False
             raise
         finally:
-            self.stop()
+            self.stop(check=check)
 
-    def stop(self):
+    def stop(self, check=True):
         self.logger.debug("stopping")
         try:
             self._stop.set()
             self._msg_semaphore.release()
             self._executor.shutdown(wait=False)
-            assert len(self._errors) == 0, (
-                f"Topic {self.topic} validation errors: {self._errors}"
-            )
+            if check:
+                assert len(self._errors) == 0, (
+                    f"Topic {self.topic} validation errors: {self._errors}"
+                )
 
-            self.logger.debug(f"consumed offsets: {self.max_consumed_offsets}")
-            self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
+                self.logger.debug(f"consumed offsets: {self.max_consumed_offsets}")
+                self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
 
-            assert self._max_queried_offsets == self.max_consumed_offsets, (
-                "Mismatch between maximum offsets in topic vs iceberg table"
-            )
+                assert self._max_queried_offsets == self.max_consumed_offsets, (
+                    "Mismatch between maximum offsets in topic vs iceberg table"
+                )
 
-            assert len(self._expected_compacted_keys) == 0, (
-                "Some keys which were compacted away were not seen later in the consumer's log"
-            )
+                assert len(self._expected_compacted_keys) == 0, (
+                    "Some keys which were compacted away were not seen later in the consumer's log"
+                )
         finally:
             if self._consumer:
                 self._consumer.close()
