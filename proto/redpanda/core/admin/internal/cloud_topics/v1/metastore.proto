@@ -236,6 +236,7 @@ message MetadataValue {
     int64 next_offset = 2;
     int64 compaction_epoch = 3;
     uint64 size = 4;
+    uint64 num_extents = 5;
 }
 
 // Value for an extent row.

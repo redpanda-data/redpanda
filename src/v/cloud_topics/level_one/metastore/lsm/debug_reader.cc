@@ -156,6 +156,7 @@ debug_reader::decode_value(row_type type, iobuf value) {
             mv.set_next_offset(rv.next_offset());
             mv.set_compaction_epoch(rv.compaction_epoch());
             mv.set_size(rv.size);
+            mv.set_num_extents(rv.num_extents);
             pv.set_metadata(std::move(mv));
             return pv;
         }

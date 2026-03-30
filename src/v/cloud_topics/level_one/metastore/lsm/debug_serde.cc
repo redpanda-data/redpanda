@@ -119,6 +119,7 @@ debug_encode_value(const proto::admin::metastore::row_value& val) {
           .compaction_epoch
           = partition_state::compaction_epoch_t{v.get_compaction_epoch()},
           .size = static_cast<size_t>(v.get_size()),
+          .num_extents = static_cast<size_t>(v.get_num_extents()),
         };
         return serde::to_iobuf(std::move(rv));
     }
