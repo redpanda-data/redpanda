@@ -49,6 +49,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <utility>
@@ -1058,7 +1059,7 @@ bool is_partition_offline(
 ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
   const std::vector<model::node_id>& offline_nodes,
   aggregated_report& aggr_report) {
-    size_t retries_left = 5;
+    uint8_t retries_left = 5;
 
     ssx::async_counter counter;
     while (retries_left > 0) {
@@ -1068,12 +1069,27 @@ ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
                  ++it) {
                 const auto& topic = it->first;
                 const auto& assignment_set = it->second.get_assignments();
+                auto inner_it = assignment_set.begin();
+
+                // hack for async_while_counter, we iterate 0 ->
+                // assignment_set.size(), only use inner_it after a stability
+                // check to avoid UB
+                const auto assignment_set_size = assignment_set.size();
+                // iterator distances in iota_view<size_t> are long long which
+                // async_for_each can't handle
+                vassert(
+                  assignment_set_size <= std::numeric_limits<uint32_t>::max(),
+                  "required shortening operation");
+                const auto inner_iteration_view = std::ranges::iota_view{
+                  0U, static_cast<uint32_t>(assignment_set_size)};
                 co_await ssx::async_for_each_counter(
                   counter,
-                  assignment_set,
-                  [&offline_nodes, &aggr_report, &topic, &it](
-                    const auto& p_as) {
+                  inner_iteration_view,
+                  [&it, &inner_it, &offline_nodes, &aggr_report, &topic](
+                    uint32_t /*ignored*/) {
                       it.check();
+                      const auto& p_as = *inner_it;
+                      ++inner_it;
                       if (!is_partition_offline(p_as.second, offline_nodes)) {
                           return;
                       }
@@ -1087,7 +1103,6 @@ ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
                         model::ntp(topic.ns, topic.tp, p_as.first));
                   });
             }
-            // success, return from the function
             co_return;
         } catch (const iterator_stability_violation&) {
             --retries_left;
