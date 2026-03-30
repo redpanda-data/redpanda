@@ -710,56 +710,58 @@ class CloudTopicsL0GCDataIntegrityTest(CloudTopicsL0GCTestBase):
             nodes=[producer.nodes[0]],
             producer=producer,
         )
+        try:
+            producer.start()
+            producer.wait(timeout_sec=120)
 
-        producer.start()
-        producer.wait(timeout_sec=120)
+            pstatus = producer.produce_status
+            acked = pstatus.acked
+            self.logger.info(
+                f"Produced {acked}/{self.MSG_COUNT} records, "
+                f"bad_offsets={pstatus.bad_offsets}"
+            )
+            assert acked >= self.MSG_COUNT * 3 // 4, (
+                f"Too few acks for a meaningful data-loss check: {acked}/{self.MSG_COUNT}"
+            )
 
-        pstatus = producer.produce_status
-        acked = pstatus.acked
-        self.logger.info(
-            f"Produced {acked}/{self.MSG_COUNT} records, "
-            f"bad_offsets={pstatus.bad_offsets}"
-        )
-        assert acked >= self.MSG_COUNT * 3 // 4, (
-            f"Too few acks for a meaningful data-loss check: {acked}/{self.MSG_COUNT}"
-        )
+            self.logger.info("Waiting for GC to delete L0 objects")
+            wait_until(
+                lambda: self.get_num_objects_deleted() > 0,
+                timeout_sec=60,
+                backoff_sec=5,
+                retry_on_exc=True,
+            )
+            objects_deleted = self.get_num_objects_deleted()
+            self.logger.info(
+                f"GC has deleted {objects_deleted} L0 objects, consuming now"
+            )
 
-        self.logger.info("Waiting for GC to delete L0 objects")
-        wait_until(
-            lambda: self.get_num_objects_deleted() > 0,
-            timeout_sec=60,
-            backoff_sec=5,
-            retry_on_exc=True,
-        )
-        objects_deleted = self.get_num_objects_deleted()
-        self.logger.info(f"GC has deleted {objects_deleted} L0 objects, consuming now")
+            consumer.start(clean=False)
+            consumer.wait(timeout_sec=120)
 
-        consumer.start(clean=False)
-        consumer.wait(timeout_sec=120)
+            cstatus = consumer.consumer_status
+            self.logger.info(
+                f"Consumer: valid_reads={cstatus.validator.valid_reads}, "
+                f"invalid_reads={cstatus.validator.invalid_reads}, "
+                f"offset_gaps={cstatus.validator.offset_gaps}, "
+                f"out_of_scope_invalid_reads={cstatus.validator.out_of_scope_invalid_reads}"
+            )
 
-        cstatus = consumer.consumer_status
-        self.logger.info(
-            f"Consumer: valid_reads={cstatus.validator.valid_reads}, "
-            f"invalid_reads={cstatus.validator.invalid_reads}, "
-            f"offset_gaps={cstatus.validator.offset_gaps}, "
-            f"out_of_scope_invalid_reads={cstatus.validator.out_of_scope_invalid_reads}"
-        )
-
-        assert cstatus.validator.invalid_reads == 0, (
-            f"Data corruption: {cstatus.validator.invalid_reads} invalid reads"
-        )
-        assert cstatus.validator.out_of_scope_invalid_reads == 0, (
-            f"Out-of-scope reads: {cstatus.validator.out_of_scope_invalid_reads}"
-        )
-        assert cstatus.validator.valid_reads == acked, (
-            f"Data loss: expected {acked} reads (acked), "
-            f"got {cstatus.validator.valid_reads}"
-        )
-
-        producer.stop()
-        consumer.stop()
-        producer.free()
-        consumer.free()
+            assert cstatus.validator.invalid_reads == 0, (
+                f"Data corruption: {cstatus.validator.invalid_reads} invalid reads"
+            )
+            assert cstatus.validator.out_of_scope_invalid_reads == 0, (
+                f"Out-of-scope reads: {cstatus.validator.out_of_scope_invalid_reads}"
+            )
+            assert cstatus.validator.valid_reads == acked, (
+                f"Data loss: expected {acked} reads (acked), "
+                f"got {cstatus.validator.valid_reads}"
+            )
+        finally:
+            producer.stop()
+            consumer.stop()
+            producer.free()
+            consumer.free()
 
 
 class CloudTopicsL0GCResilienceTest(CloudTopicsL0GCTestBase):
@@ -989,91 +991,91 @@ class CloudTopicsL0GCStressTest(CloudTopicsL0GCTestBase):
             nodes=[producer.nodes[0]],
             producer=producer,
         )
-
-        producer.start()
-        consumer.start(clean=False)
-        self.logger.info(
-            f"Waiting for GC to delete >= {self.GC_BYTES_TARGET / (1024**3):.1f} GiB"
-        )
-        wait_until_with_progress_check(
-            check=lambda: self.get_bytes_deleted(),
-            condition=lambda: self.get_bytes_deleted() >= self.GC_BYTES_TARGET,
-            timeout_sec=self.timeout_s,
-            progress_sec=60,
-            backoff_sec=5,
-            logger=self.logger,
-        )
-        bytes_deleted = self.get_bytes_deleted()
-        self.logger.info(
-            f"GC deleted {bytes_deleted / (1024**3):.2f} GiB "
-            f"({self.get_num_objects_deleted()} objects)"
-        )
-
-        producer.wait(timeout_sec=self.timeout_s)
-
-        pstatus = producer.produce_status
-        acked = pstatus.acked
-        self.logger.info(
-            f"Produced {acked}/{self.MSG_COUNT} records "
-            f"(~{acked * self.MSG_SIZE / (1024**3):.2f} GiB), "
-            f"bad_offsets={pstatus.bad_offsets}"
-        )
-        assert acked > 0, "Producer did not ack any messages"
-
-        consumer.wait(timeout_sec=self.timeout_s)
-
-        cstatus = consumer.consumer_status
-        self.logger.info(
-            f"Consumer: valid_reads={cstatus.validator.valid_reads}, "
-            f"invalid_reads={cstatus.validator.invalid_reads}, "
-            f"offset_gaps={cstatus.validator.offset_gaps}, "
-            f"out_of_scope_invalid_reads="
-            f"{cstatus.validator.out_of_scope_invalid_reads}"
-        )
-
-        assert cstatus.validator.invalid_reads == 0, (
-            f"Data corruption: {cstatus.validator.invalid_reads} invalid reads"
-        )
-        assert cstatus.validator.out_of_scope_invalid_reads == 0, (
-            f"Out-of-scope reads: {cstatus.validator.out_of_scope_invalid_reads}"
-        )
-        assert cstatus.validator.valid_reads >= acked, (
-            f"Data loss: expected at least {acked} reads (acked), "
-            f"got {cstatus.validator.valid_reads}"
-        )
-
-        l1_read_bytes = self._get_metric_total(
-            "vectorized_cloud_topics_level_one_reader_read_bytes"
-        )
-        self.logger.info(
-            f"L1 reader bytes: {l1_read_bytes / (1024**2):.1f} MiB "
-            f"(target: {self.L1_READ_BYTES_TARGET / (1024**2):.1f} MiB)"
-        )
-        assert l1_read_bytes >= self.L1_READ_BYTES_TARGET, (
-            f"Expected >= {self.L1_READ_BYTES_TARGET} bytes read from L1, "
-            f"got {l1_read_bytes}"
-        )
-
-        # Verify batching: delete requests should be fewer than objects
-        # deleted, confirming multiple objects per batch request.
-        total_delete_requests = sum(
-            self._get_metric_values(
-                "vectorized_cloud_topics_l0_gc_delete_requests_total"
+        try:
+            producer.start()
+            consumer.start(clean=False)
+            self.logger.info(
+                f"Waiting for GC to delete >= {self.GC_BYTES_TARGET / (1024**3):.1f} GiB"
             )
-        )
-        total_deleted = self.get_num_objects_deleted()
-        self.logger.info(
-            f"Batching: {total_deleted=} objects, {total_delete_requests=} requests"
-        )
-        assert total_delete_requests > 0, "Expected at least one delete request"
-        assert total_deleted > total_delete_requests, (
-            f"Expected batching: {total_deleted=} > {total_delete_requests=}"
-        )
+            wait_until_with_progress_check(
+                check=lambda: self.get_bytes_deleted(),
+                condition=lambda: self.get_bytes_deleted() >= self.GC_BYTES_TARGET,
+                timeout_sec=self.timeout_s,
+                progress_sec=60,
+                backoff_sec=5,
+                logger=self.logger,
+            )
+            bytes_deleted = self.get_bytes_deleted()
+            self.logger.info(
+                f"GC deleted {bytes_deleted / (1024**3):.2f} GiB "
+                f"({self.get_num_objects_deleted()} objects)"
+            )
 
-        producer.stop()
-        consumer.stop()
-        producer.free()
-        consumer.free()
+            producer.wait(timeout_sec=self.timeout_s)
+
+            pstatus = producer.produce_status
+            acked = pstatus.acked
+            self.logger.info(
+                f"Produced {acked}/{self.MSG_COUNT} records "
+                f"(~{acked * self.MSG_SIZE / (1024**3):.2f} GiB), "
+                f"bad_offsets={pstatus.bad_offsets}"
+            )
+            assert acked > 0, "Producer did not ack any messages"
+
+            consumer.wait(timeout_sec=self.timeout_s)
+
+            cstatus = consumer.consumer_status
+            self.logger.info(
+                f"Consumer: valid_reads={cstatus.validator.valid_reads}, "
+                f"invalid_reads={cstatus.validator.invalid_reads}, "
+                f"offset_gaps={cstatus.validator.offset_gaps}, "
+                f"out_of_scope_invalid_reads="
+                f"{cstatus.validator.out_of_scope_invalid_reads}"
+            )
+
+            assert cstatus.validator.invalid_reads == 0, (
+                f"Data corruption: {cstatus.validator.invalid_reads} invalid reads"
+            )
+            assert cstatus.validator.out_of_scope_invalid_reads == 0, (
+                f"Out-of-scope reads: {cstatus.validator.out_of_scope_invalid_reads}"
+            )
+            assert cstatus.validator.valid_reads >= acked, (
+                f"Data loss: expected at least {acked} reads (acked), "
+                f"got {cstatus.validator.valid_reads}"
+            )
+
+            l1_read_bytes = self._get_metric_total(
+                "vectorized_cloud_topics_level_one_reader_read_bytes"
+            )
+            self.logger.info(
+                f"L1 reader bytes: {l1_read_bytes / (1024**2):.1f} MiB "
+                f"(target: {self.L1_READ_BYTES_TARGET / (1024**2):.1f} MiB)"
+            )
+            assert l1_read_bytes >= self.L1_READ_BYTES_TARGET, (
+                f"Expected >= {self.L1_READ_BYTES_TARGET} bytes read from L1, "
+                f"got {l1_read_bytes}"
+            )
+
+            # Verify batching: delete requests should be fewer than objects
+            # deleted, confirming multiple objects per batch request.
+            total_delete_requests = sum(
+                self._get_metric_values(
+                    "vectorized_cloud_topics_l0_gc_delete_requests_total"
+                )
+            )
+            total_deleted = self.get_num_objects_deleted()
+            self.logger.info(
+                f"Batching: {total_deleted=} objects, {total_delete_requests=} requests"
+            )
+            assert total_delete_requests > 0, "Expected at least one delete request"
+            assert total_deleted > total_delete_requests, (
+                f"Expected batching: {total_deleted=} > {total_delete_requests=}"
+            )
+        finally:
+            producer.stop()
+            consumer.stop()
+            producer.free()
+            consumer.free()
 
 
 class CloudTopicsL0GCSafetyBlockTest(CloudTopicsL0GCAdminBase):
