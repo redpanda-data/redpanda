@@ -988,3 +988,45 @@ TEST_F(StateReaderTestFixture, TestObjectKeyRangeWithLowerBound) {
         EXPECT_THAT(rows, testing::ElementsAre());
     }
 }
+
+TEST_F(StateReaderTestFixture, GetAllTermsEmpty) {
+    auto reader = make_reader();
+    auto res = reader.get_all_terms(make_tidp()).get();
+    ASSERT_TRUE(res.has_value());
+    EXPECT_TRUE(res->empty());
+}
+
+TEST_F(StateReaderTestFixture, GetAllTermsOrdered) {
+    auto tidp = make_tidp();
+    write_term_start(tidp, model::term_id{1}, kafka::offset{0});
+    write_term_start(tidp, model::term_id{3}, kafka::offset{100});
+    write_term_start(tidp, model::term_id{5}, kafka::offset{200});
+
+    auto reader = make_reader();
+    auto res = reader.get_all_terms(tidp).get();
+    ASSERT_TRUE(res.has_value());
+    ASSERT_EQ(res->size(), 3u);
+    EXPECT_EQ((*res)[0].term_id, model::term_id{1});
+    EXPECT_EQ((*res)[0].start_offset, kafka::offset{0});
+    EXPECT_EQ((*res)[1].term_id, model::term_id{3});
+    EXPECT_EQ((*res)[1].start_offset, kafka::offset{100});
+    EXPECT_EQ((*res)[2].term_id, model::term_id{5});
+    EXPECT_EQ((*res)[2].start_offset, kafka::offset{200});
+}
+
+TEST_F(StateReaderTestFixture, GetAllTermsIsolatedByPartition) {
+    auto tidp0 = make_tidp(0);
+    auto tidp1 = make_tidp(1);
+    write_term_start(tidp0, model::term_id{1}, kafka::offset{0});
+    write_term_start(tidp1, model::term_id{1}, kafka::offset{0});
+    write_term_start(tidp1, model::term_id{2}, kafka::offset{50});
+
+    auto reader = make_reader();
+    auto res0 = reader.get_all_terms(tidp0).get();
+    ASSERT_TRUE(res0.has_value());
+    EXPECT_EQ(res0->size(), 1u);
+
+    auto res1 = reader.get_all_terms(tidp1).get();
+    ASSERT_TRUE(res1.has_value());
+    EXPECT_EQ(res1->size(), 2u);
+}

@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import uuid
+from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
 from rptest.clients.admin.v2 import metastore_pb
@@ -20,6 +22,25 @@ from connectrpc.errors import ConnectError
 class PartitionAndRow(NamedTuple):
     metastore_partition: int
     row: metastore_pb.ReadRow
+
+
+AT = metastore_pb.AnomalyType
+
+
+@dataclass
+class CorruptionScenario:
+    """A single corruption to inject and validate."""
+
+    name: str
+    expected_anomalies: set[int]
+    # Rows to upsert and keys to delete (computed by the test).
+    writes: list[metastore_pb.WriteRow] = field(
+        default_factory=lambda: list[metastore_pb.WriteRow]()
+    )
+    deletes: list[metastore_pb.RowKey] = field(
+        default_factory=lambda: list[metastore_pb.RowKey]()
+    )
+    check_object_metadata: bool = False
 
 
 INT32_MAX: int = (2**31) - 1
@@ -227,3 +248,284 @@ class DebugRowsTest(EndToEndCloudTopicsBase):
         assert len(self.read_extents(target_mp, topic_id, partition_id)) == 0
         assert len(self.read_terms(target_mp, topic_id, partition_id)) == 0
         assert len(self.read_objects(target_mp)) == 0
+
+    def _validate_partition(
+        self,
+        topic_id: str,
+        partition_id: int,
+        check_object_metadata: bool = False,
+        max_extents: int = 0,
+    ) -> metastore_pb.ValidatePartitionResponse:
+        """Run ValidatePartition and return the full response."""
+        all_anomalies: list[metastore_pb.MetastoreAnomaly] = []
+        extents_total = 0
+        resume: int | None = None
+        while True:
+            req = metastore_pb.ValidatePartitionRequest(
+                topic_id=topic_id,
+                partition_id=partition_id,
+                check_object_metadata=check_object_metadata,
+                max_extents=max_extents,
+            )
+            if resume is not None:
+                req.resume_at_offset = resume
+            resp = self.admin.metastore().validate_partition(req=req)
+            all_anomalies.extend(resp.anomalies)
+            extents_total += resp.extents_validated
+            if not resp.HasField("resume_at_offset"):
+                break
+            resume = resp.resume_at_offset
+
+        # Build a synthetic response with aggregated results.
+        combined = metastore_pb.ValidatePartitionResponse(
+            extents_validated=extents_total,
+        )
+        combined.anomalies.extend(all_anomalies)
+        return combined
+
+    def _write_rows(
+        self,
+        metastore_partition: int,
+        writes: list[metastore_pb.WriteRow] | None = None,
+        deletes: list[metastore_pb.RowKey] | None = None,
+    ) -> None:
+        req = metastore_pb.WriteRowsRequest(
+            metastore_partition=metastore_partition,
+            writes=writes or [],
+            deletes=deletes or [],
+        )
+        self.admin.metastore().write_rows(req=req)
+
+    def _has_anomaly(
+        self,
+        resp: metastore_pb.ValidatePartitionResponse,
+        anomaly_type: int,
+    ) -> bool:
+        return any(a.anomaly_type == anomaly_type for a in resp.anomalies)
+
+    def _snapshot_rows(self, mp: int) -> list[metastore_pb.ReadRow]:
+        """Snapshot all rows on a metastore partition."""
+        return self._read_rows(mp)
+
+    def _restore_snapshot(
+        self,
+        mp: int,
+        snapshot: list[metastore_pb.ReadRow],
+    ) -> None:
+        """Restore a metastore partition to a previous snapshot.
+
+        Writes back all snapshotted rows and deletes any rows that
+        exist now but weren't in the snapshot.
+        """
+        current = self._read_rows(mp)
+        snapshot_keys = {row.key.SerializeToString() for row in snapshot}
+        extra_keys = [
+            row.key
+            for row in current
+            if row.key.SerializeToString() not in snapshot_keys
+        ]
+        self._write_rows(
+            mp,
+            writes=[
+                metastore_pb.WriteRow(key=row.key, value=row.value) for row in snapshot
+            ],
+            deletes=extra_keys,
+        )
+
+    @cluster(num_nodes=4)
+    def test_validate_partition(self) -> None:
+        """Validate metastore state, then inject corruptions via WriteRows
+        and verify the validator detects each one.
+
+        Each scenario is a CorruptionScenario with writes/deletes to apply
+        and expected anomaly types. After each scenario, state is restored
+        from a snapshot taken before any corruptions.
+        """
+        self.start_producer(num_nodes=1)  # type: ignore[reportUnknownMemberType]
+        self.await_num_produced(min_records=5000, timeout_sec=120)  # type: ignore[reportUnknownMemberType]
+        self.producer.stop()
+        # Wait for all partitions to fully reconcile L0 -> L1 before
+        # snapshotting state, so no background writes race with our
+        # corruption/restore cycle.
+        self.wait_until_all_reconciled()
+
+        # Locate the partition's metadata.
+        rows = self.read_all_rows()
+        metadata_row = next((r for r in rows if r.row.key.HasField("metadata")), None)
+        assert metadata_row is not None
+        md = metadata_row.row
+        mp = metadata_row.metastore_partition
+        tid = md.key.metadata.topic_id
+        pid = md.key.metadata.partition_id
+        start = md.value.metadata.start_offset
+        next_o = md.value.metadata.next_offset
+
+        # Baseline: valid state should have no anomalies.
+        resp = self._validate_partition(tid, pid, check_object_metadata=True)
+        assert len(resp.anomalies) == 0, (
+            f"expected no anomalies on valid state, got: "
+            f"{[(a.anomaly_type, a.description) for a in resp.anomalies]}"
+        )
+        assert resp.extents_validated > 0
+        self.logger.info(f"Baseline: {resp.extents_validated} extents, no anomalies")
+
+        # Paginated validation should also pass.
+        resp = self._validate_partition(tid, pid, max_extents=1)
+        assert len(resp.anomalies) == 0
+
+        extents = self.read_extents(mp, tid, pid)
+        assert len(extents) >= 1
+        first_ext = extents[0]
+        last_ext = extents[-1]
+
+        def md_write(**overrides: Any) -> metastore_pb.WriteRow:
+            """Metadata row with field overrides."""
+            fields: dict[str, Any] = dict(
+                start_offset=start,
+                next_offset=next_o,
+                compaction_epoch=md.value.metadata.compaction_epoch,
+                size=md.value.metadata.size,
+            )
+            fields.update(overrides)
+            return metastore_pb.WriteRow(
+                key=md.key,
+                value=metastore_pb.RowValue(
+                    metadata=metastore_pb.MetadataValue(**fields)
+                ),
+            )
+
+        def ext_write(
+            ext_row: metastore_pb.ReadRow, **overrides: Any
+        ) -> metastore_pb.WriteRow:
+            """Extent row with field overrides."""
+            ev = ext_row.value.extent
+            fields: dict[str, Any] = dict(
+                last_offset=ev.last_offset,
+                max_timestamp=ev.max_timestamp,
+                filepos=ev.filepos,
+                len=ev.len,
+                object_id=ev.object_id,
+            )
+            fields.update(overrides)
+            return metastore_pb.WriteRow(
+                key=ext_row.key,
+                value=metastore_pb.RowValue(extent=metastore_pb.ExtentValue(**fields)),
+            )
+
+        def compaction_writes(
+            cleaned: list[tuple[int, int]],
+            tombstones: list[tuple[int, int]] | None = None,
+            **md_overrides: Any,
+        ) -> list[metastore_pb.WriteRow]:
+            """Metadata (with compaction_epoch=1) + compaction row."""
+            comp_key = metastore_pb.RowKey(
+                compaction=metastore_pb.CompactionKey(topic_id=tid, partition_id=pid)
+            )
+            ranges = [
+                metastore_pb.OffsetRange(base_offset=b, last_offset=l)
+                for b, l in cleaned
+            ]
+            ts_ranges = [
+                metastore_pb.CleanedRangeWithTombstones(
+                    base_offset=b,
+                    last_offset=l,
+                    cleaned_with_tombstones_at=1000,
+                )
+                for b, l in (tombstones or [])
+            ]
+            return [
+                md_write(compaction_epoch=1, **md_overrides),
+                metastore_pb.WriteRow(
+                    key=comp_key,
+                    value=metastore_pb.RowValue(
+                        compaction=metastore_pb.CompactionValue(
+                            cleaned_ranges=ranges,
+                            cleaned_ranges_with_tombstones=ts_ranges,
+                        )
+                    ),
+                ),
+            ]
+
+        fake_oid = str(uuid.uuid4())
+
+        scenarios: list[CorruptionScenario] = [
+            CorruptionScenario(
+                name="next_offset_mismatch",
+                expected_anomalies={AT.ANOMALY_TYPE_NEXT_OFFSET_MISMATCH},
+                writes=[md_write(next_offset=1)],
+            ),
+            CorruptionScenario(
+                name="extent_gap (delete first extent)",
+                expected_anomalies={
+                    AT.ANOMALY_TYPE_EXTENT_GAP,
+                    AT.ANOMALY_TYPE_NEXT_OFFSET_MISMATCH,
+                },
+                deletes=[first_ext.key],
+            ),
+            CorruptionScenario(
+                name="object_not_found",
+                expected_anomalies={AT.ANOMALY_TYPE_OBJECT_NOT_FOUND},
+                check_object_metadata=True,
+                writes=[ext_write(last_ext, object_id=fake_oid)],
+            ),
+            CorruptionScenario(
+                name="compaction_range_below_start",
+                expected_anomalies={AT.ANOMALY_TYPE_COMPACTION_RANGE_BELOW_START},
+                writes=compaction_writes(
+                    cleaned=[(start, start + 10)],
+                    start_offset=start + 20,
+                ),
+            ),
+        ]
+
+        # Snapshot state before running scenarios.
+        snapshot = self._snapshot_rows(mp)
+
+        passed = 0
+        failed: list[str] = []
+        for scenario in scenarios:
+            self.logger.info(f"Running scenario: {scenario.name}")
+            try:
+                # Apply corruption.
+                self._write_rows(
+                    mp,
+                    writes=scenario.writes,
+                    deletes=scenario.deletes,
+                )
+
+                # Validate.
+                resp = self._validate_partition(
+                    tid,
+                    pid,
+                    check_object_metadata=scenario.check_object_metadata,
+                )
+                found = {a.anomaly_type for a in resp.anomalies}
+
+                # At least one expected anomaly must be present.
+                if not found & scenario.expected_anomalies:
+                    msg = (
+                        f"FAIL [{scenario.name}]: expected one of "
+                        f"{scenario.expected_anomalies}, got {found}"
+                    )
+                    for a in resp.anomalies:
+                        msg += f"\n  [{a.anomaly_type}] {a.description}"
+                    self.logger.error(msg)
+                    failed.append(msg)
+                else:
+                    self.logger.info(f"PASS [{scenario.name}]: detected {found}")
+                    passed += 1
+            finally:
+                # Always restore, even on assertion failure.
+                self._restore_snapshot(mp, snapshot)
+
+        # Final sanity: restored state is clean.
+        resp = self._validate_partition(tid, pid, check_object_metadata=True)
+        assert len(resp.anomalies) == 0, (
+            f"state not properly restored after scenarios, got: "
+            f"{[(a.anomaly_type, a.description) for a in resp.anomalies]}"
+        )
+
+        self.logger.info(f"Validation scenarios: {passed}/{len(scenarios)} passed")
+        assert not failed, (
+            f"{len(failed)}/{len(scenarios)} scenarios failed:\n" + "\n".join(failed)
+        )
