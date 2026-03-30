@@ -114,6 +114,7 @@ public:
 
 
   std::string_view full_name() const override { return "example.C"; }
+  static constexpr size_t field_count = 0;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -161,6 +162,7 @@ public:
   void set_c(c&& v);
 
   std::string_view full_name() const override { return "example.A"; }
+  static constexpr size_t field_count = 1;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -212,6 +214,7 @@ public:
   void set_a(a&& v);
 
   std::string_view full_name() const override { return "example.B"; }
+  static constexpr size_t field_count = 2;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -261,6 +264,7 @@ public:
   void set_value(ss::sstring&& v);
 
   std::string_view full_name() const override { return "example.SuperDuperSecret"; }
+  static constexpr size_t field_count = 1;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -309,6 +313,7 @@ public:
   void set_mask(serde::pb::field_mask&& v);
 
   std::string_view full_name() const override { return "example.MaskWrapper"; }
+  static constexpr size_t field_count = 1;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -381,6 +386,7 @@ public:
   void set_timestamp_map(chunked_hash_map<ss::sstring, absl::Time>&& v);
 
   std::string_view full_name() const override { return "example.WellKnownProtos"; }
+  static constexpr size_t field_count = 9;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -437,6 +443,7 @@ public:
   void set_large_data(iobuf&& v);
 
   std::string_view full_name() const override { return "example.IOBufStringField"; }
+  static constexpr size_t field_count = 1;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -487,6 +494,7 @@ public:
   void set_greeting(ss::sstring&& v);
 
   std::string_view full_name() const override { return "example.SayGreetingRequest"; }
+  static constexpr size_t field_count = 1;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -535,6 +543,7 @@ public:
   void set_response(ss::sstring&& v);
 
   std::string_view full_name() const override { return "example.SayGreetingResponse"; }
+  static constexpr size_t field_count = 1;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.

@@ -87,6 +87,7 @@ public:
   void set_c(int32_t v);
 
   std::string_view full_name() const override { return "protobuf_test_messages.editions.ForeignMessageEdition2023"; }
+  static constexpr size_t field_count = 1;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -137,6 +138,7 @@ public:
   void set_group_uint32(uint32_t v);
 
   std::string_view full_name() const override { return "protobuf_test_messages.editions.TestAllTypesEdition2023.GroupLikeType"; }
+  static constexpr size_t field_count = 2;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -188,6 +190,7 @@ public:
   void set_corecursive(std::unique_ptr<test_all_types_edition2023>&& v);
 
   std::string_view full_name() const override { return "protobuf_test_messages.editions.TestAllTypesEdition2023.NestedMessage"; }
+  static constexpr size_t field_count = 2;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
@@ -534,6 +537,7 @@ public:
   void set_delimited_field(test_all_types_edition2023_group_like_type&& v);
 
   std::string_view full_name() const override { return "protobuf_test_messages.editions.TestAllTypesEdition2023"; }
+  static constexpr size_t field_count = 101;
   // Convert a field path into a path of field numbers.
   static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
   // Convert a field path into a path of field numbers.
