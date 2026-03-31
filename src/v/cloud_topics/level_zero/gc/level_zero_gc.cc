@@ -20,6 +20,7 @@
 #include "cluster/members_table.h"
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
+#include "random/simple_time_jitter.h"
 #include "ssx/semaphore.h"
 #include "ssx/work_queue.h"
 
@@ -30,6 +31,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 
+#include <chrono>
 #include <memory>
 
 namespace {
@@ -697,10 +699,12 @@ level_zero_gc_t<Clock>::level_zero_gc_t(
   std::unique_ptr<l0::gc::object_storage> storage,
   std::unique_ptr<l0::gc::epoch_source> epoch_source,
   std::unique_ptr<l0::gc::node_info> node_info,
-  std::unique_ptr<l0::gc::safety_monitor> safety_monitor)
+  std::unique_ptr<l0::gc::safety_monitor> safety_monitor,
+  jitter_fn fn)
   : config_(std::move(config))
   , epoch_source_(std::move(epoch_source))
   , safety_monitor_(std::move(safety_monitor))
+  , jitter_fn_(std::move(fn))
   , should_run_(false) // begin in a stopped state
   , should_shutdown_(false)
   , worker_(worker())
@@ -892,7 +896,7 @@ l0::gc::state level_zero_gc_t<Clock>::get_state() const {
 
 template<class Clock>
 seastar::future<> level_zero_gc_t<Clock>::worker() {
-    std::chrono::milliseconds backoff{0};
+    typename Clock::duration backoff{0ms};
 
     // Abort the backoff sleep when the grace period changes so we
     // recalculate how long to sleep. Without this, a reduction in
@@ -977,6 +981,10 @@ seastar::future<> level_zero_gc_t<Clock>::worker() {
                 }
             }
 
+            if (backoff > 0ms) {
+                backoff += jitter_fn_(backoff);
+            }
+
         } catch (...) {
             vlog(
               cd_log.info,
@@ -1008,6 +1016,12 @@ level_zero_gc_t<Clock>::try_to_collect() {
         co_return l0::gc::collection_outcome(at_capacity);
     }
 
+    // Jitter inter-page sleeps to avoid tight LIST cadence against
+    // the object store. +[0, 10%) of throttle_progress.
+    simple_time_jitter<Clock> page_jitter(
+      config_.throttle_progress(),
+      std::max(config_.throttle_progress() / 10, 1ms));
+
     while (delete_worker_->has_capacity()) {
         ++pages_scanned;
         auto res = co_await do_try_to_collect(std::ref(max_gc_epoch));
@@ -1032,7 +1046,7 @@ level_zero_gc_t<Clock>::try_to_collect() {
             }
             (co_await seastar::coroutine::as_future(
                seastar::sleep_abortable<Clock>(
-                 config_.throttle_progress(), asrc_)))
+                 page_jitter.next_duration(), asrc_)))
               .ignore_ready_future();
             if (asrc_.abort_requested()) {
                 break;

@@ -48,6 +48,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:object_utils",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/random:time_jitter",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:work_queue",
     ],
@@ -57,6 +58,7 @@ redpanda_cc_library(
         ":level_zero_gc_types",
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:types",
+        "//src/v/random:generators",
         "@seastar",
     ],
 )

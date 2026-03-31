@@ -231,7 +231,8 @@ public:
           std::move(storage),
           std::make_unique<epoch_source_test_impl>(&max_epoch),
           std::make_unique<node_info_test_impl>(),
-          std::make_unique<safety_monitor_test_impl>(&safety_ok));
+          std::make_unique<safety_monitor_test_impl>(&safety_ok),
+          [](ss::lowres_clock::duration) { return 0ms; });
     }
 
     void TearDown() override { gc->stop().get(); }
@@ -682,7 +683,8 @@ public:
           std::move(s),
           std::make_unique<epoch_source_test_impl>(&max_epoch),
           std::make_unique<node_info_test_impl>(),
-          std::make_unique<safety_monitor_test_impl>(&safety_ok));
+          std::make_unique<safety_monitor_test_impl>(&safety_ok),
+          [](ss::manual_clock::duration) { return 0ms; });
     }
 
     void add_listed(int64_t epoch, std::chrono::milliseconds age) {
@@ -718,21 +720,23 @@ public:
     /// backoff sleep. Returns the stabilized list_call_count_.
     ss::future<uint64_t> wait_for_round() {
         co_await tick_until([this] { return storage_->list_call_count_ > 0; });
-        // Require the count to be unchanged for two consecutive ticks
-        // to avoid catching a gap between pages where the inter-page
-        // sleep hasn't resolved yet.
+        // Require the count to be unchanged for two consecutive ticks.
+        // Use a step larger than throttle_progress (the inter-page
+        // sleep) so each tick fully flushes any pending page work.
         int stable_ticks = 0;
         uint64_t prev = 0;
-        co_await tick_until([this, &prev, &stable_ticks] {
-            auto cur = storage_->list_call_count_;
-            if (cur == prev && cur > 0) {
-                ++stable_ticks;
-            } else {
-                stable_ticks = 0;
-            }
-            prev = cur;
-            return stable_ticks >= 2;
-        });
+        co_await tick_until(
+          [this, &prev, &stable_ticks] {
+              auto cur = storage_->list_call_count_;
+              if (cur == prev && cur > 0) {
+                  ++stable_ticks;
+              } else {
+                  stable_ticks = 0;
+              }
+              prev = cur;
+              return stable_ticks >= 2;
+          },
+          20ms);
         co_return storage_->list_call_count_;
     }
 
@@ -1051,7 +1055,8 @@ public:
           std::make_unique<epoch_source_test_impl>(&max_epoch_),
           std::make_unique<node_info_test_impl>(
             std::get<0>(GetParam()), std::get<1>(GetParam())),
-          std::make_unique<safety_monitor_test_impl>()) {}
+          std::make_unique<safety_monitor_test_impl>(),
+          [](ss::lowres_clock::duration) { return 0ms; }) {}
 
     void TearDown() override { gc_.stop().get(); }
 

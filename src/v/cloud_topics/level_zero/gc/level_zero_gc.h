@@ -11,11 +11,13 @@
 
 #include "cloud_topics/level_zero/gc/level_zero_gc_probe.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc_types.h"
+#include "random/generators.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <expected>
 
@@ -211,6 +213,22 @@ struct level_zero_gc_config {
 template<class Clock = ss::lowres_clock>
 class level_zero_gc_t {
 public:
+    using jitter_fn = ss::noncopyable_function<typename Clock::duration(
+      typename Clock::duration)>;
+
+    // Add positive jitter to despread wake times across
+    // shards. +[0, 10%] of the computed backoff.
+    static constexpr auto default_jitter =
+      [](Clock::duration base) -> Clock::duration {
+        using namespace std::chrono_literals;
+        // 2m is sort of arbitrary here with the aim of roughly staggering GC
+        // wakeups. "longer than a collection round but much shorter than a
+        // grace period"
+        constexpr typename Clock::duration max_jitter{120s};
+        auto ub = std::min(base / 10, max_jitter);
+        return std::chrono::milliseconds{random_generators::get_int(ub / 1ms)};
+    };
+
     /*
      * Construct with the given storage and epoch providers. This interface is
      * intended to be used by tests which swap in mock implementations.
@@ -220,7 +238,8 @@ public:
       std::unique_ptr<l0::gc::object_storage>,
       std::unique_ptr<l0::gc::epoch_source>,
       std::unique_ptr<l0::gc::node_info>,
-      std::unique_ptr<l0::gc::safety_monitor>);
+      std::unique_ptr<l0::gc::safety_monitor>,
+      jitter_fn = default_jitter);
 
     /*
      * Construct with default implementations of storage and epoch providers.
@@ -270,6 +289,7 @@ private:
     level_zero_gc_config config_;
     std::unique_ptr<l0::gc::epoch_source> epoch_source_;
     std::unique_ptr<l0::gc::safety_monitor> safety_monitor_;
+    jitter_fn jitter_fn_;
 
     bool should_run_;
     bool should_shutdown_;
