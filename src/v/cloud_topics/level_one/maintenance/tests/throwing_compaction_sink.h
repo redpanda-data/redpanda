@@ -46,15 +46,14 @@ public:
         return _inner->initialize(src);
     }
 
-    ss::future<ss::stop_iteration>
-    operator()(model::record_batch b, model::compression c) final {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) final {
         if (_should_roll()) {
             auto next_offset = model::offset_cast(b.base_offset());
             auto prev_offset = kafka::prev_offset(next_offset);
             co_await _inner->flush(prev_offset);
             co_await _inner->initialize_builder(next_offset);
         }
-        auto res = co_await (*_inner)(std::move(b), c);
+        auto res = co_await (*_inner)(std::move(b));
         if (_should_throw()) {
             throw std::runtime_error(
               "throwing_compaction_sink: injected exception");

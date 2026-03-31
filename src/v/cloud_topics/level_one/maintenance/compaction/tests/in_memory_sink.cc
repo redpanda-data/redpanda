@@ -13,8 +13,6 @@
 #include "bytes/iostream.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "compaction/reducer.h"
-#include "model/batch_compression.h"
-#include "model/compression.h"
 
 namespace cloud_topics::l1 {
 
@@ -63,11 +61,8 @@ in_memory_sink::initialize(compaction::sliding_window_reducer::source&) {
 }
 
 ss::future<ss::stop_iteration>
-in_memory_sink::operator()(model::record_batch b, model::compression c) {
+in_memory_sink::operator()(model::record_batch b) {
     co_await maybe_roll();
-    if (c != model::compression::none) {
-        b = co_await model::compress_batch(c, std::move(b));
-    }
     co_await _builder->add_batch(std::move(b));
     co_return ss::stop_iteration::no;
 }

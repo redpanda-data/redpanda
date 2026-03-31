@@ -52,8 +52,7 @@ public:
     // to the `sink`.
     ss::future<> finish_iteration(kafka::offset, kafka::offset) final;
 
-    ss::future<ss::stop_iteration>
-    operator()(model::record_batch, model::compression) final;
+    ss::future<ss::stop_iteration> operator()(model::record_batch) final;
 
     ss::future<> finalize(bool success) final;
 

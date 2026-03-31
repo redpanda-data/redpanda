@@ -15,7 +15,6 @@ redpanda_test_cc_library(
         "//src/v/compaction:reducer",
         "//src/v/container:chunked_vector",
         "//src/v/model",
-        "//src/v/model:batch_compression",
         "@seastar",
     ],
 )

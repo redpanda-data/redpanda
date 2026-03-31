@@ -17,8 +17,6 @@
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cloud_topics/level_one/metastore/offset_interval_set.h"
 #include "cloud_topics/level_one/metastore/retry.h"
-#include "model/batch_compression.h"
-#include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "ssx/future-util.h"
@@ -284,7 +282,7 @@ ss::future<> compaction_sink::flush(kafka::offset object_last_offset) {
 }
 
 ss::future<ss::stop_iteration>
-compaction_sink::operator()(model::record_batch b, model::compression c) {
+compaction_sink::operator()(model::record_batch b) {
     auto next_offset = model::offset_cast(b.base_offset());
     auto prev_offset = kafka::prev_offset(next_offset);
 
@@ -296,10 +294,6 @@ compaction_sink::operator()(model::record_batch b, model::compression c) {
 
     if (!_inflight_object) {
         co_await initialize_builder(next_offset);
-    }
-
-    if (c != model::compression::none) {
-        b = co_await model::compress_batch(c, std::move(b));
     }
 
     co_await _inflight_object->builder->add_batch(std::move(b));

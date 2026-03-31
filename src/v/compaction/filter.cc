@@ -136,7 +136,11 @@ ss::future<ss::stop_iteration> filter::filter_and_rewrite_with_sink(
             ++_stats.non_compactible_batches;
         }
 
-        co_return co_await _sink(std::move(to_copy).value(), original);
+        auto batch = std::move(to_copy).value();
+        if (original != model::compression::none) {
+            batch = co_await model::compress_batch(original, std::move(batch));
+        }
+        co_return co_await _sink(std::move(batch));
     } else {
         ++_stats.batches_discarded;
         _stats.records_discarded += record_count_before;

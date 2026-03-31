@@ -31,8 +31,7 @@ public:
 
     ss::future<bool>
     initialize(compaction::sliding_window_reducer::source&) final;
-    ss::future<ss::stop_iteration>
-    operator()(model::record_batch, model::compression) final;
+    ss::future<ss::stop_iteration> operator()(model::record_batch) final;
     ss::future<> finalize(bool) final;
     ss::future<> prepare_iteration(kafka::offset) final { co_return; }
     ss::future<> finish_iteration(kafka::offset, kafka::offset) final {

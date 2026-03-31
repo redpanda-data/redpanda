@@ -77,8 +77,7 @@ public:
         co_return true;
     }
 
-    ss::future<ss::stop_iteration>
-    operator()(model::record_batch b, model::compression) final {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) final {
         _output_batches.push_back(std::move(b));
         co_return ss::stop_iteration::no;
     }

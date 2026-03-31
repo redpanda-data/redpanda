@@ -10,7 +10,6 @@
 #pragma once
 
 #include "compaction/types.h"
-#include "model/compression.h"
 #include "model/record.h"
 
 #include <seastar/core/loop.hh>
@@ -79,7 +78,7 @@ public:
     public:
         virtual ss::future<bool> initialize(source&) = 0;
         virtual ss::future<ss::stop_iteration>
-        operator()(model::record_batch, model::compression) = 0;
+        operator()(model::record_batch) = 0;
         virtual ss::future<> finalize(bool) = 0;
         virtual ss::future<> prepare_iteration(kafka::offset) = 0;
         virtual ss::future<> finish_iteration(kafka::offset, kafka::offset) = 0;
