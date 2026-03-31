@@ -26,6 +26,7 @@
 #include "cloud_topics/topic_manifest_upload_manager.h"
 #include "cluster/controller.h"
 #include "cluster/utils/partition_change_notifier_impl.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "ssx/future-util.h"
@@ -102,6 +103,11 @@ ss::future<> app::construct(
       ss::sharded_parameter([&remote] { return std::ref(remote->local()); }),
       bucket);
 
+    co_await construct_service(l1_footer_cache_, ss::sharded_parameter([] {
+                                   return config::shard_local_cfg()
+                                     .cloud_topics_l1_footer_cache_max_size();
+                               }));
+
     co_await construct_service(l1_reader_cache_);
 
     co_await construct_service(
@@ -132,6 +138,7 @@ ss::future<> app::construct(
         [&metadata_cache] { return &metadata_cache->local(); }),
       ss::sharded_parameter([this] { return &_l1_reader_probe.local(); }),
       ss::sharded_parameter([this] { return &l1_reader_cache_.local(); }),
+      ss::sharded_parameter([this] { return &l1_footer_cache_.local(); }),
       ss::sharded_parameter([this] { return &rr_metadata_manager_.local(); }),
       ss::sharded_parameter([this] { return &rr_snapshot_manager_.local(); }));
 

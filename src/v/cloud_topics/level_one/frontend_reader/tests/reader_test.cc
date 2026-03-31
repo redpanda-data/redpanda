@@ -12,6 +12,7 @@
 #include "cloud_topics/level_one/common/fake_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/frontend_reader/l1_footer_cache.h"
 #include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
@@ -902,4 +903,79 @@ TEST_P(l1_reader_test, lookahead_multiple_objects) {
     auto reader_no_prefetch = make_reader(ntp, tidp);
     auto result_no_prefetch = read_all(std::move(reader_no_prefetch));
     EXPECT_EQ(result_no_prefetch, expected);
+}
+
+// ---------------------------------------------------------------------------
+// Footer cache tests
+// ---------------------------------------------------------------------------
+
+class l1_footer_cache_test : public l1::l1_reader_fixture {};
+
+TEST_F(l1_footer_cache_test, populate_and_evict) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    // Create 4 separate L1 objects with sequential offset ranges and track
+    // OIDs in read order (ascending offset) by diffing list_objects after each.
+    //
+    // The fixture's _footer_cache has capacity 2. The s3-fifo eviction loop
+    // runs *before* each insert (while total > capacity), so the first eviction
+    // fires on the 4th insert: inserts 1-3 don't trigger eviction (3 > 2 is
+    // false when we check before the 3rd insert: 2 > 2 = false), but the 4th
+    // insert does (3 > 2 = true). The oldest entry (oid[0]) is at the head of
+    // the small queue with freq=0, so it is evicted first.
+    auto batches1 = model::test::make_random_batches(model::offset{0}, 5).get();
+    auto off2 = batches1.back().last_offset() + model::offset{1};
+    auto batches2 = model::test::make_random_batches(off2, 5).get();
+    auto off3 = batches2.back().last_offset() + model::offset{1};
+    auto batches3 = model::test::make_random_batches(off3, 5).get();
+    auto off4 = batches3.back().last_offset() + model::offset{1};
+    auto batches4 = model::test::make_random_batches(off4, 5).get();
+
+    std::vector<l1::object_id> oids_by_offset;
+
+    auto collect_new_oids = [&](const std::vector<l1::object_id>& known) {
+        auto all = _io.list_objects();
+        for (auto& oid : all) {
+            if (std::find(known.begin(), known.end(), oid) == known.end()) {
+                oids_by_offset.push_back(oid);
+            }
+        }
+    };
+
+    {
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches1));
+        make_l1_objects(std::move(tb)).get();
+        collect_new_oids({});
+    }
+    {
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches2));
+        make_l1_objects(std::move(tb)).get();
+        collect_new_oids(oids_by_offset);
+    }
+    {
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches3));
+        make_l1_objects(std::move(tb)).get();
+        collect_new_oids(oids_by_offset);
+    }
+    {
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches4));
+        make_l1_objects(std::move(tb)).get();
+        collect_new_oids(oids_by_offset);
+    }
+
+    ASSERT_EQ(oids_by_offset.size(), 4);
+
+    // Read all 4 objects. The 4th insert triggers eviction of oid[0].
+    auto result = read_all(make_reader(ntp, tidp));
+    EXPECT_FALSE(result.empty());
+
+    // oid[1], oid[2], oid[3] should be cached; oid[0] should be evicted.
+    EXPECT_NE(_footer_cache.get(oids_by_offset[1]), nullptr);
+    EXPECT_NE(_footer_cache.get(oids_by_offset[2]), nullptr);
+    EXPECT_NE(_footer_cache.get(oids_by_offset[3]), nullptr);
+    EXPECT_EQ(_footer_cache.get(oids_by_offset[0]), nullptr);
 }

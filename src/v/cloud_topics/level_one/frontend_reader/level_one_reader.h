@@ -12,11 +12,14 @@
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/frontend_reader/l1_footer_cache.h"
 #include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/log_reader_config.h"
 #include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
+
+#include <seastar/core/shared_ptr.hh>
 
 #include <deque>
 #include <expected>
@@ -74,7 +77,8 @@ public:
       l1::metastore* metastore,
       l1::io* io_interface,
       level_one_reader_probe* probe = nullptr,
-      l1_reader_cache* cache = nullptr);
+      l1_reader_cache* cache = nullptr,
+      l1_footer_cache* footer_cache = nullptr);
 
     bool is_end_of_stream() const final;
 
@@ -86,7 +90,7 @@ public:
 private:
     struct object_info {
         l1::object_id oid;
-        l1::footer footer;
+        ss::shared_ptr<const l1::footer> footer;
         kafka::offset last_offset;
     };
 
@@ -137,7 +141,7 @@ private:
     ss::future<chunked_circular_buffer<model::record_batch>>
     read_batches(l1::object_reader& reader);
 
-    ss::future<l1::footer>
+    ss::future<ss::shared_ptr<const l1::footer>>
     read_footer(l1::object_id oid, size_t footer_pos, size_t object_size);
 
     /*
@@ -177,6 +181,7 @@ private:
     l1::io* _io;
     level_one_reader_probe* _probe;
     l1_reader_cache* _cache;
+    l1_footer_cache* _footer_cache;
     prefix_logger _log;
     size_t _bytes_consumed{0};
 

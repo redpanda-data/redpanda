@@ -838,6 +838,8 @@ public:
     bounded_property<size_t> cloud_topics_produce_write_inflight_limit;
     bounded_property<size_t> cloud_topics_produce_no_pid_concurrency;
 
+    bounded_property<size_t> cloud_topics_l1_footer_cache_max_size;
+
     development_feature_property<int> development_feature_property_testing_only;
 
 private:

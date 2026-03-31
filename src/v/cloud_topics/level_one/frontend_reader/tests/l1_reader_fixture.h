@@ -14,6 +14,7 @@
 #include "cloud_topics/level_one/common/fake_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/frontend_reader/l1_footer_cache.h"
 #include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
@@ -152,7 +153,14 @@ protected:
         config.lookahead_objects = lookahead_objects;
         return model::record_batch_reader(
           std::make_unique<level_one_log_reader_impl>(
-            config, ntp, tidp, &_metastore, &_io, nullptr, _cache_ptr));
+            config,
+            ntp,
+            tidp,
+            &_metastore,
+            &_io,
+            nullptr,
+            _cache_ptr,
+            &_footer_cache));
     }
 
     chunked_circular_buffer<model::record_batch>
@@ -165,12 +173,17 @@ protected:
         return result;
     }
 
-    ss::future<> TearDownAsync() override { co_await _cache.stop(); }
+    ss::future<> TearDownAsync() override {
+        co_await _footer_cache.stop();
+        co_await _cache.stop();
+    }
 
     l1::simple_metastore _metastore{};
     l1::fake_io _io{};
     l1_reader_cache _cache{};
     l1_reader_cache* _cache_ptr = &_cache;
+    // Small capacity so footer cache eviction tests can exercise LRU logic.
+    l1_footer_cache _footer_cache{2};
 };
 
 } // namespace cloud_topics::l1

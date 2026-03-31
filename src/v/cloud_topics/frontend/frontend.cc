@@ -395,6 +395,7 @@ std::unique_ptr<model::record_batch_reader::impl> frontend::make_l1_reader(
     auto l1_io = ct_state->local().get_l1_io();
     auto l1_reader_probe = ct_state->local().get_l1_reader_probe();
     auto l1_cache = ct_state->local().get_l1_reader_cache();
+    auto l1_footer_cache = ct_state->local().get_l1_footer_cache();
 
     return std::make_unique<level_one_log_reader_impl>(
       cfg,
@@ -403,7 +404,8 @@ std::unique_ptr<model::record_batch_reader::impl> frontend::make_l1_reader(
       l1_metastore,
       l1_io,
       l1_reader_probe,
-      l1_cache);
+      l1_cache,
+      l1_footer_cache);
 }
 
 ss::future<std::optional<storage::timequery_result>>

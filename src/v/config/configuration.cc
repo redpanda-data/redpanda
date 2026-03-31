@@ -4842,6 +4842,14 @@ configuration::configuration()
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       32,
       {.min = 1})
+  , cloud_topics_l1_footer_cache_max_size(
+      *this,
+      "cloud_topics_l1_footer_cache_max_size",
+      "Maximum number of L1 object footers cached per shard. 0 disables "
+      "footer caching.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      512,
+      {.min = 0, .max = 65536})
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
