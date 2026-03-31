@@ -120,7 +120,7 @@ std::vector<std::vector<acl_binding>> authorizer::remove_bindings(
     return store().remove_bindings(filters, dry_run);
 }
 
-std::vector<acl_binding>
+chunked_vector<acl_binding>
 authorizer::acls(const acl_binding_filter& filter) const {
     return store().acls(filter);
 }

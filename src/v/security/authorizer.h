@@ -266,7 +266,7 @@ public:
     /*
      * Retrieve ACL bindings that match the filter.
      */
-    std::vector<acl_binding> acls(const acl_binding_filter& filter) const;
+    chunked_vector<acl_binding> acls(const acl_binding_filter& filter) const;
 
     /*
      * Authorize an operation on a resource. The type of resource is deduced by

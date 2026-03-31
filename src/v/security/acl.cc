@@ -278,9 +278,9 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
     return res;
 }
 
-std::vector<acl_binding>
+chunked_vector<acl_binding>
 acl_store::acls(const acl_binding_filter& filter) const {
-    std::vector<acl_binding> result;
+    chunked_vector<acl_binding> result;
     for (const auto& acl : _acls) {
         for (const auto& entry : acl.second) {
             acl_binding binding(acl.first, entry);

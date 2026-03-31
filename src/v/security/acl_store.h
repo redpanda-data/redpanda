@@ -45,7 +45,7 @@ public:
     std::vector<std::vector<acl_binding>> remove_bindings(
       const std::vector<acl_binding_filter>&, bool dry_run = false);
 
-    std::vector<acl_binding> acls(const acl_binding_filter&) const;
+    chunked_vector<acl_binding> acls(const acl_binding_filter&) const;
 
     /**
      * WARNING: The acl_matches returned from this function may contain

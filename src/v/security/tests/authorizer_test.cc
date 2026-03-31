@@ -1156,7 +1156,7 @@ TEST(AUTHORIZER_TEST, authz_acl_filter) {
     auto auth = make_test_instance();
     auth.add_bindings({acl1, acl2, acl3, acl4});
 
-    auto to_set = [](std::vector<acl_binding> bindings) {
+    auto to_set = [](chunked_vector<acl_binding> bindings) {
         absl::flat_hash_set<acl_binding> ret(bindings.begin(), bindings.end());
         return ret;
     };
