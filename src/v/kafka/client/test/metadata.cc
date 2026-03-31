@@ -10,6 +10,7 @@
 #include "kafka/protocol/metadata.h"
 
 #include "cluster/security_frontend.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/client.h"
 #include "kafka/client/test/fixture.h"
 #include "kafka/server/handlers/details/security.h"
@@ -70,7 +71,7 @@ FIXTURE_TEST(test_authz_response, metadata_fixture) {
     enable_sasl();
     auto disable_sasl_defer = ss::defer([this] { disable_sasl(); });
 
-    std::vector<security::acl_binding> cluster_bindings{
+    chunked_vector<security::acl_binding> cluster_bindings{
       security::acl_binding(
         security::resource_pattern(
           security::resource_type::cluster,

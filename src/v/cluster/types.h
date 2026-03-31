@@ -1447,7 +1447,13 @@ struct create_acls_cmd_data
       serde::version<0>,
       serde::compat_version<0>> {
     static constexpr int8_t current_version = 1;
-    std::vector<security::acl_binding> bindings;
+    chunked_vector<security::acl_binding> bindings;
+
+    create_acls_cmd_data copy() const {
+        return create_acls_cmd_data{
+          .bindings = bindings.copy(),
+        };
+    }
 
     friend bool operator==(
       const create_acls_cmd_data&, const create_acls_cmd_data&) = default;
@@ -1474,6 +1480,10 @@ struct create_acls_request
       create_acls_cmd_data data, model::timeout_clock::duration timeout)
       : data(std::move(data))
       , timeout(timeout) {}
+
+    create_acls_request copy() const {
+        return create_acls_request{data.copy(), timeout};
+    }
 
     friend bool operator==(
       const create_acls_request&, const create_acls_request&) = default;

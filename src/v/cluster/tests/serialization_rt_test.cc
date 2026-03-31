@@ -924,7 +924,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         for (auto i = 0, mi = random_generators::get_int(5, 25); i < mi; ++i) {
             data.bindings.push_back(tests::random_acl_binding());
         }
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::delete_acls_cmd_data data;
@@ -1488,8 +1488,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             create_acls_data.bindings.push_back(tests::random_acl_binding());
         }
         cluster::create_acls_request data{
-          create_acls_data, random_timeout_clock_duration()};
-        roundtrip_test(data);
+          std::move(create_acls_data), random_timeout_clock_duration()};
+        roundtrip_test(std::move(data));
     }
     {
         std::vector<cluster::errc> results;

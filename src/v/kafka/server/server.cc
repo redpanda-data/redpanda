@@ -23,6 +23,7 @@
 #include "config/node_config.h"
 #include "config/sasl_mechanisms.h"
 #include "container/chunked_hash_map.h"
+#include "container/chunked_vector.h"
 #include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
@@ -1977,7 +1978,7 @@ ss::future<response_ptr> create_acls_handler::handle(
     result_index.reserve(request.data.creations.size());
 
     // bindings to create. optimized for common case
-    std::vector<security::acl_binding> bindings;
+    chunked_vector<security::acl_binding> bindings;
     bindings.reserve(request.data.creations.size());
 
     for (const auto& acl : request.data.creations) {
@@ -1999,7 +2000,7 @@ ss::future<response_ptr> create_acls_handler::handle(
     // so we have access to the parsed data for auditing.  May result in
     // unecessary cycles if auditing fails or if the operation isn't authorized.
 
-    auto get_bindings = [&bindings] { return bindings; };
+    auto get_bindings = [&bindings] { return bindings.copy(); };
 
     bool authz = ctx.authorized(
       security::acl_operation::alter,

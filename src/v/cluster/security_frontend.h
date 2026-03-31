@@ -166,7 +166,7 @@ public:
      * command to the leader node automatically.
      */
     ss::future<std::vector<errc>> create_acls(
-      std::vector<security::acl_binding>, model::timeout_clock::duration);
+      chunked_vector<security::acl_binding>, model::timeout_clock::duration);
 
     /**
      * Remove ACL bindings matching the provided filters from the authorizer
@@ -214,11 +214,11 @@ private:
       get_leader_committed(model::timeout_clock::duration);
 
     ss::future<std::vector<errc>> do_create_acls(
-      std::vector<security::acl_binding>, model::timeout_clock::duration);
+      chunked_vector<security::acl_binding>, model::timeout_clock::duration);
 
     ss::future<std::vector<errc>> dispatch_create_acls_to_leader(
       model::node_id,
-      std::vector<security::acl_binding>,
+      chunked_vector<security::acl_binding>,
       model::timeout_clock::duration);
 
     ss::future<chunked_vector<delete_acls_result>> do_delete_acls(

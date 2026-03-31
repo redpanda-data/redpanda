@@ -119,8 +119,8 @@ struct consumer_offsets_fixture : public redpanda_thread_fixture {
         app.controller->get_security_frontend()
           .local()
           .create_acls(
-            resources | std::views::transform(make_binding)
-              | std::ranges::to<std::vector>(),
+            chunked_vector<security::acl_binding>(
+              std::from_range, resources | std::views::transform(make_binding)),
             5s)
           .get();
     }

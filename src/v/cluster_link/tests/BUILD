@@ -16,6 +16,7 @@ redpanda_test_cc_library(
         "//src/v/cluster_link:utils",
         "//src/v/cluster_link/replication/tests:deps_test_impl",
         "//src/v/config",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/client/test:cluster_mock",
         "//src/v/kafka/data/rpc",
         "//src/v/kafka/data/rpc/test:test_deps",

@@ -31,7 +31,7 @@ public:
     acl_store& operator=(const acl_store&) = delete;
     ~acl_store() noexcept = default;
 
-    void add_bindings(const std::vector<acl_binding>& bindings) {
+    void add_bindings(const chunked_vector<acl_binding>& bindings) {
         for (auto& binding : bindings) {
             auto& entries = _acls[binding.pattern()];
             entries.insert(binding.entry());

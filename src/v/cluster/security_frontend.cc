@@ -174,7 +174,7 @@ ss::future<std::error_code> security_frontend::update_role(
 }
 
 ss::future<std::vector<errc>> security_frontend::create_acls(
-  std::vector<security::acl_binding> bindings,
+  chunked_vector<security::acl_binding> bindings,
   model::timeout_clock::duration timeout) {
     if (unlikely(bindings.empty())) {
         co_return std::vector<errc>{};
@@ -197,7 +197,7 @@ ss::future<std::vector<errc>> security_frontend::create_acls(
 
 ss::future<std::vector<errc>> security_frontend::dispatch_create_acls_to_leader(
   model::node_id leader,
-  std::vector<security::acl_binding> bindings,
+  chunked_vector<security::acl_binding> bindings,
   model::timeout_clock::duration timeout) {
     auto num_bindings = bindings.size();
     return _connections.local()
@@ -223,7 +223,7 @@ ss::future<std::vector<errc>> security_frontend::dispatch_create_acls_to_leader(
 }
 
 ss::future<std::vector<errc>> security_frontend::do_create_acls(
-  std::vector<security::acl_binding> bindings,
+  chunked_vector<security::acl_binding> bindings,
   model::timeout_clock::duration timeout) {
     const auto num_bindings = bindings.size();
 

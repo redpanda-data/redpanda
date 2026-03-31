@@ -221,7 +221,7 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
     case recovery_stage::recovered_acls: {
         retry_chain_node acls_retry(&parent_retry);
         // TODO: batch this up.
-        std::vector<security::acl_binding> acls;
+        chunked_vector<security::acl_binding> acls;
         for (size_t i = 0; i < actions.acls.size(); i++) {
             acls.emplace_back(std::move(actions.acls[i]));
         }

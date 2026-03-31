@@ -26,7 +26,7 @@ public:
     explicit security_impl(ss::sharded<cluster::security_frontend>* security_fe)
       : _security_fe(security_fe) {}
     ss::future<std::vector<cluster::errc>> create_acls(
-      std::vector<security::acl_binding> bindings,
+      chunked_vector<security::acl_binding> bindings,
       ::model::timeout_clock::duration timeout) final {
         return _security_fe->local().create_acls(std::move(bindings), timeout);
     }

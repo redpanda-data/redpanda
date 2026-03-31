@@ -327,7 +327,7 @@ size_t run_authz(
           perm);
     }
 
-    std::vector<acl_binding> bindings;
+    chunked_vector<acl_binding> bindings;
     for (const auto& acl : acls) {
         resource_pattern resource(
           resource_type::topic, topic1(), pattern_type::prefixed);
@@ -475,7 +475,7 @@ PERF_TEST(role_store_bench, role_authz_empty_store) {
     acl_entry acl3(
       user1, acl_host::wildcard_host(), acl_operation::describe, perm);
 
-    std::vector<acl_binding> bindings;
+    chunked_vector<acl_binding> bindings;
     for (const auto& acl : {acl1, acl2, acl3}) {
         resource_pattern resource(
           resource_type::topic, topic1(), pattern_type::prefixed);

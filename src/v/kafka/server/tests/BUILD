@@ -620,6 +620,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/cluster",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/client:transport",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:create_topics",
@@ -870,6 +871,7 @@ redpanda_cc_bench(
     memory = "4GiB",
     deps = [
         "//src/v/base",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/client:types",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:fetch",
@@ -933,6 +935,7 @@ redpanda_cc_btest(
     env = {"RP_FIXTURE_ENV": "1"},
     deps = [
         "//src/v/cluster",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:describe_user_scram_credentials",
         "//src/v/kafka/server",
@@ -955,6 +958,7 @@ redpanda_cc_btest(
     env = {"RP_FIXTURE_ENV": "1"},
     deps = [
         "//src/v/cluster",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:alter_user_scram_credentials",
         "//src/v/kafka/server",

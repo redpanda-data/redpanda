@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #include "base/seastarx.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/schemata/fetch_request.h"
@@ -90,7 +91,7 @@ struct fetch_plan : redpanda_thread_fixture {
           security::resource_pattern::wildcard,
           security::pattern_type::literal);
 
-        std::vector<security::acl_binding> bindings{
+        chunked_vector<security::acl_binding> bindings{
           security::acl_binding{resource, acl}};
         return bindings;
     }

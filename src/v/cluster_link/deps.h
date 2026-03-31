@@ -14,6 +14,7 @@
 #include "cluster_link/errc.h"
 #include "cluster_link/fwd.h"
 #include "cluster_link/model/types.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/cluster.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/fwd.h"
@@ -192,7 +193,8 @@ public:
     make_default(ss::sharded<cluster::security_frontend>*);
 
     virtual ss::future<std::vector<cluster::errc>> create_acls(
-      std::vector<security::acl_binding>, ::model::timeout_clock::duration) = 0;
+      chunked_vector<security::acl_binding>,
+      ::model::timeout_clock::duration) = 0;
 };
 
 class kafka_rpc_client_service {

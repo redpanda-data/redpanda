@@ -255,7 +255,7 @@ public:
     /*
      * Add ACL bindings to the authorizer.
      */
-    void add_bindings(const std::vector<acl_binding>& bindings);
+    void add_bindings(const chunked_vector<acl_binding>& bindings);
 
     /*
      * Remove ACL bindings that match the filter(s).

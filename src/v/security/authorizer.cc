@@ -104,7 +104,7 @@ authorizer::authorizer(
     _superusers_conf.watch([this]() { update_superusers(); });
 }
 
-void authorizer::add_bindings(const std::vector<acl_binding>& bindings) {
+void authorizer::add_bindings(const chunked_vector<acl_binding>& bindings) {
     if (
       unlikely(
         seclog.is_shard_zero() && seclog.is_enabled(ss::log_level::debug))) {

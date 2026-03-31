@@ -75,6 +75,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/config",
+        "//src/v/container:chunked_vector",
         "//src/v/pandaproxy/schema_registry:types",
         "//src/v/random:generators",
         "//src/v/security",
