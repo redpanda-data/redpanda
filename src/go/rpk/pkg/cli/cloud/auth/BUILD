@@ -9,6 +9,7 @@ go_library(
         "edit.go",
         "list.go",
         "rename.go",
+        "token.go",
         "use.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/auth",
