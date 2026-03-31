@@ -367,9 +367,7 @@ public:
         return resp;
     }
 
-    template<
-      typename T,
-      security::audit::returns_auditable_resource_vector Func>
+    template<typename T, security::audit::returns_auditable_resources Func>
     bool authorized(
       security::acl_operation operation,
       const T& name,

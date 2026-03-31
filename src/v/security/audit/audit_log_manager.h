@@ -84,7 +84,7 @@ public:
 
     template<
       typename T,
-      security::audit::returns_auditable_resource_vector Func,
+      security::audit::returns_auditable_resources Func,
       typename... Args>
     bool enqueue_authz_audit_event(
       kafka::api_key api,
@@ -380,7 +380,7 @@ private:
 
     audit_probe& probe() { return _probe; }
 
-    template<security::audit::returns_auditable_resource_vector Func>
+    template<security::audit::returns_auditable_resources Func>
     auto restrict_topics(Func&& func) const noexcept {
         auto result = func();
         if constexpr (

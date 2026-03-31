@@ -602,7 +602,9 @@ struct deserializer {
                 auto results = co_await ss::when_all_succeed(
                   reflection::async_adl<key_t>{}.from(k_parser),
                   reflection::async_adl<value_t>{}.from(v_parser));
-                co_return Cmd(std::get<0>(results), std::get<1>(results));
+                co_return Cmd(
+                  std::move(std::get<0>(results)),
+                  std::move(std::get<1>(results)));
             }
         }
         vassert(use_serde, "Requested to ADL serialize a serde-only type");

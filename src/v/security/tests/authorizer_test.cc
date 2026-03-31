@@ -739,7 +739,7 @@ TEST(AUTHORIZER_TEST, authz_remove_acl_wildcard_resource) {
     auth.add_bindings(bindings);
 
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(wildcard_resource, allow_read_acl);
         auth.remove_bindings(filters);
     }
@@ -756,7 +756,7 @@ TEST(AUTHORIZER_TEST, authz_remove_all_acl_wildcard_resource) {
     auth.add_bindings(bindings);
 
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(wildcard_resource, acl_entry_filter::any());
         auth.remove_bindings(filters);
     }
@@ -813,7 +813,7 @@ TEST(AUTHORIZER_TEST, authz_remove_acl_prefixed_resource) {
     auth.add_bindings(bindings);
 
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(prefixed_resource, allow_read_acl);
         auth.remove_bindings(filters);
     }
@@ -830,7 +830,7 @@ TEST(AUTHORIZER_TEST, authz_remove_all_acl_prefixed_resource) {
     auth.add_bindings(bindings);
 
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(prefixed_resource, acl_entry_filter::any());
         auth.remove_bindings(filters);
     }
@@ -1094,7 +1094,7 @@ TEST(AUTHORIZER_TEST, authz_get_acls_principal) {
     ASSERT_EQ(get_acls(auth, user).size(), 1);
 
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(default_resource, acl_entry_filter::any());
         auth.remove_bindings(filters);
     }
@@ -1740,7 +1740,7 @@ TEST(AUTHORIZER_TEST, role_authz_get_acls_principal) {
     ASSERT_EQ(get_acls(auth, role).size(), 1);
 
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(default_resource, acl_entry_filter::any());
         auth.remove_bindings(filters);
     }
@@ -1905,7 +1905,7 @@ TEST(AUTHORIZER_TEST, role_authz_remove_binding_multiple_match) {
     auth.add_bindings(bindings);
 
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(wildcard_resource, allow_read_acl);
         filters.emplace_back(wildcard_resource, allow_write_acl);
         auth.remove_bindings(filters);
@@ -2713,7 +2713,7 @@ TEST(AUTHORIZER_TEST, group_authz_remove_bindings_with_groups) {
 
     // Remove only group1's read permission
     {
-        std::vector<acl_binding_filter> filters;
+        chunked_vector<acl_binding_filter> filters;
         filters.emplace_back(default_resource, group1_read);
         auth.remove_bindings(filters);
     }

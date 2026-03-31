@@ -186,8 +186,8 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
     return acl_matches(wildcards, literals, std::move(prefixes));
 }
 
-std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
-  const std::vector<acl_binding_filter>& filters, bool dry_run) {
+std::vector<chunked_vector<acl_binding>> acl_store::remove_bindings(
+  const chunked_vector<acl_binding_filter>& filters, bool dry_run) {
     // the pair<filter, size_t> is used to record the index of the filter in the
     // input so that returned set of matching binding is organized in the same
     // order as the input filters. this is a property needed by the kafka api.
@@ -268,8 +268,8 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
         maybe_roles.clear();
     }
 
-    std::vector<std::vector<acl_binding>> res;
-    res.assign(filters.size(), {});
+    std::vector<chunked_vector<acl_binding>> res;
+    res.resize(filters.size());
 
     for (const auto& binding : deleted) {
         res[binding.second].push_back(binding.first);

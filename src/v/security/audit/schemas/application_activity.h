@@ -72,7 +72,7 @@ public:
       , _status_id(status_id)
       , _unmapped(std::move(unmapped)) {}
 
-    template<typename T>
+    template<std::ranges::range Range>
     static size_t hash(
       std::string_view operation_name,
       const security::auth_result& auth_result,
@@ -81,7 +81,8 @@ public:
       ss::net::inet_address client_addr,
       uint16_t client_port,
       std::optional<std::string_view> client_id,
-      const std::vector<T>& additional_resources) {
+      const Range& additional_resources) {
+        using T = std::ranges::range_value_t<Range>;
         size_t h = api_activity_event_base_hash(
           operation_name,
           auth_result,
@@ -131,7 +132,7 @@ public:
       std::optional<std::string_view> reason,
       const chunked_vector<resource_detail>& resources);
 
-    template<typename T>
+    template<std::ranges::range Range>
     static api_activity construct(
       std::string_view operation_name,
       const security::auth_result& auth_result,
@@ -140,8 +141,8 @@ public:
       ss::net::inet_address client_addr,
       uint16_t client_port,
       std::optional<std::string_view> client_id,
-      std::vector<T> additional_resources) {
-        auto new_ars = create_resource_details(std::move(additional_resources));
+      Range additional_resources) {
+        auto new_ars = create_resource_details(additional_resources);
         auto crud = op_to_crud(auth_result.operation);
         auto actor = result_to_actor(auth_result);
         new_ars.emplace_back(

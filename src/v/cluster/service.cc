@@ -279,7 +279,7 @@ service::delete_acls(delete_acls_request request, rpc::streaming_context&) {
                  return _security_frontend.local().delete_acls(
                    std::move(r.data.filters), r.timeout);
              })
-      .then([](std::vector<delete_acls_result> results) {
+      .then([](chunked_vector<delete_acls_result> results) {
           return delete_acls_reply{.results = std::move(results)};
       });
 }

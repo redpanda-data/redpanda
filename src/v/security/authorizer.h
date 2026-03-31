@@ -260,8 +260,8 @@ public:
     /*
      * Remove ACL bindings that match the filter(s).
      */
-    std::vector<std::vector<acl_binding>> remove_bindings(
-      const std::vector<acl_binding_filter>& filters, bool dry_run = false);
+    std::vector<chunked_vector<acl_binding>> remove_bindings(
+      const chunked_vector<acl_binding_filter>& filters, bool dry_run = false);
 
     /*
      * Retrieve ACL bindings that match the filter.

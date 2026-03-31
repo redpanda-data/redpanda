@@ -24,6 +24,7 @@
 #include <seastar/http/request.hh>
 
 #include <iterator>
+#include <ranges>
 #include <type_traits>
 
 namespace security::audit {
@@ -139,9 +140,9 @@ resource_detail transform_to_resource_detail(const T& v) {
     };
 }
 
-template<AuditableResource T>
-std::vector<resource_detail>
-create_resource_details(const std::vector<T>& resources) {
+template<std::ranges::sized_range Range>
+requires AuditableResource<std::ranges::range_value_t<Range>>
+std::vector<resource_detail> create_resource_details(const Range& resources) {
     std::vector<resource_detail> resource_details;
     resource_details.reserve(resources.size());
     std::transform(
@@ -154,14 +155,11 @@ create_resource_details(const std::vector<T>& resources) {
 }
 
 template<typename Func>
-concept returns_auditable_resource_vector = requires(Func func) {
-    {
-        func()
-    } -> std::same_as<
-      std::vector<typename std::remove_cvref_t<decltype(func())>::value_type>>;
+concept returns_auditable_resources = requires(Func func) {
+    requires std::ranges::range<std::remove_cvref_t<decltype(func())>>;
 
     requires AuditableResource<
-      typename std::remove_cvref_t<decltype(func())>::value_type>;
+      std::ranges::range_value_t<std::remove_cvref_t<decltype(func())>>>;
 };
 
 } // namespace security::audit
