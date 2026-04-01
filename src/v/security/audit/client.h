@@ -147,6 +147,7 @@ public:
 
     cluster::controller* controller() { return _controller; }
     const ss::abort_source& as() const { return _as; }
+    ss::abort_source& as() { return _as; }
 
 protected:
     virtual ss::future<> do_produce(
