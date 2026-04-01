@@ -29,6 +29,8 @@ namespace kafka::data::rpc::test {
 
 namespace {
 
+using namespace std::chrono_literals;
+
 constexpr uint16_t test_server_port = 8080;
 constexpr model::node_id self_node = model::node_id(1);
 constexpr model::node_id other_node = model::node_id(2);
@@ -60,7 +62,7 @@ public:
         scfg.disable_public_metrics = net::public_metrics_disabled::yes;
         _server = std::make_unique<::rpc::rpc_server>(scfg);
         std::vector<std::unique_ptr<::rpc::service>> rpc_services;
-        _kd->register_services(rpc_services);
+        _kd->register_services(rpc_services, _server.get());
         _server->add_services(std::move(rpc_services));
         _server->start();
 
@@ -131,6 +133,8 @@ public:
     model::node_id non_leader_node() const {
         return GetParam().non_leader_node;
     }
+
+    ssx::semaphore& server_memory() { return _server->memory(); }
 
     record_batches non_leader_batches(const model::ntp& ntp) {
         return batches_for(non_leader_node(), ntp);
@@ -313,6 +317,25 @@ TEST_P(KafkaDataRpcTest, ClientCanConsume) {
     ASSERT_TRUE(ne_result.has_value());
     auto ne_reply = std::move(ne_result.value());
     EXPECT_EQ(ne_reply.err, cluster::errc::topic_not_exists);
+}
+
+TEST_P(KafkaDataRpcTest, ProduceRejectsUnderMemoryPressure) {
+    if (leader_node() == self_node) {
+        GTEST_SKIP() << "Local produces bypass network_service";
+    }
+
+    auto ntp = make_ntp("memory-pressure-test");
+    create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
+
+    // The test server is configured with 1 GiB of RPC memory. Exhaust
+    // it past the 10% low-water mark so the memory check in
+    // network_service::produce() rejects.
+    auto units = ss::get_units(
+                   server_memory(), server_memory().available_units() - 1)
+                   .get();
+
+    auto result = produce(ntp, record_batches::make());
+    EXPECT_EQ(result, cluster::errc::timeout);
 }
 
 INSTANTIATE_TEST_SUITE_P(
