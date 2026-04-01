@@ -12,6 +12,7 @@
 #include "cloud_io/io_result.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/types.h"
+#include "cloud_topics/level_zero/gc/epoch_source.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc_probe.h"
 #include "cloud_topics/types.h"
 #include "container/chunked_hash_map.h"
@@ -246,63 +247,7 @@ public:
           = 0;
     };
 
-    /*
-     * Interface for computing the maximum epoch eligible for GC.
-     */
-    class epoch_source {
-    public:
-        struct partitions_snapshot {
-            using partition_map = chunked_hash_map<
-              model::topic_namespace,
-              chunked_vector<model::partition_id>,
-              model::topic_namespace_hash,
-              model::topic_namespace_eq>;
-
-            partition_map partitions;
-            cluster_epoch snap_revision;
-        };
-
-        using partitions_max_gc_epoch = chunked_hash_map<
-          model::topic_namespace,
-          chunked_hash_map<model::partition_id, cluster_epoch>,
-          model::topic_namespace_hash,
-          model::topic_namespace_eq>;
-
-        epoch_source() = default;
-        epoch_source(const epoch_source&) = default;
-        epoch_source(epoch_source&&) = delete;
-        epoch_source& operator=(const epoch_source&) = default;
-        epoch_source& operator=(epoch_source&&) = delete;
-        virtual ~epoch_source() = default;
-
-        void set_probe(level_zero_gc_probe* p) { probe_ = p; }
-
-        /*
-         * L0 objects with epochs <= the return value may be deleted. An
-         * expected return value of std::nullopt is not an error, but rather
-         * indicates that no GC eligible epoch could yet be determined.
-         */
-        virtual seastar::future<
-          std::expected<std::optional<cluster_epoch>, std::string>>
-        max_gc_eligible_epoch(seastar::abort_source*);
-
-        /*
-         * Snapshot of existing cloud topic partition identifiers along with the
-         * maximum possible GC eligible epoch for the set of partitions.
-         */
-        virtual seastar::future<std::expected<partitions_snapshot, std::string>>
-        get_partitions(seastar::abort_source*) = 0;
-
-        /*
-         * Reported max GC eligible epochs for cloud topic partitions.
-         */
-        virtual seastar::future<
-          std::expected<partitions_max_gc_epoch, std::string>>
-        get_partitions_max_gc_epoch(seastar::abort_source*) = 0;
-
-    protected:
-        level_zero_gc_probe* probe_{nullptr};
-    };
+    using epoch_source = ::cloud_topics::l0::gc::epoch_source;
 
     /**
      * Interface for determining the total number of shards in the cluster

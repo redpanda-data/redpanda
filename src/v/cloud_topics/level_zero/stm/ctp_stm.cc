@@ -212,6 +212,11 @@ std::optional<cluster_epoch> ctp_stm::estimate_inactive_epoch() const noexcept {
     return _state.estimate_inactive_epoch();
 }
 
+std::optional<cluster_epoch>
+ctp_stm::estimate_barrier_eligible_epoch() const noexcept {
+    return _state.estimate_barrier_eligible_epoch();
+}
+
 ss::future<std::optional<cluster_epoch>> ctp_stm::get_inactive_epoch() {
     auto holder = _gate.hold();
     // Consume the first epoch from the partition starting from
@@ -338,6 +343,7 @@ void ctp_stm::apply_advance_epoch(
     vlog(_log.debug, "Advancing epoch: {}", cmd.new_epoch);
     _epoch_checker.check_epoch(ntp(), cmd.new_epoch, base_offset);
     _state.advance_epoch(cmd.new_epoch, base_offset);
+    _state.set_last_epoch_log_offset(base_offset);
 }
 
 void ctp_stm::apply_reset_state(model::record record) {
@@ -361,6 +367,7 @@ void ctp_stm::apply_placeholder(const model::record_batch& batch) {
     _state.record_placeholder_size(
       batch.header().base_offset,
       static_cast<uint64_t>(placeholder.size_bytes));
+    _state.set_last_epoch_log_offset(batch.header().base_offset);
 }
 
 struct ctp_stm_snapshot

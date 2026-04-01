@@ -205,6 +205,51 @@ TEST_F_CORO(ClusterEpochService, CacheInvalidation) {
     EXPECT_EQ(accesses, 2);
 }
 
+// Invalidating with a specific epoch only affects shards whose cached
+// value is <= that epoch. Shards already past it are unaffected.
+TEST_F_CORO(ClusterEpochService, ConditionalInvalidation) {
+    using ::testing::ElementsAre;
+
+    // Populate cache at epoch 0.
+    EXPECT_THAT(co_await all_epochs(), ElementsAre(0, 0));
+    EXPECT_EQ(accesses, 1);
+
+    // Epoch advances externally (e.g. raft0 checkpoint).
+    cluster_epoch = 42;
+
+    // Cache is still stale.
+    EXPECT_THAT(co_await all_epochs(), ElementsAre(0, 0));
+    EXPECT_EQ(accesses, 1);
+
+    // Invalidate at epoch 5. Cached epoch (0) <= 5, so the cache is
+    // invalidated and the next read re-fetches.
+    co_await service.invoke_on_all(&epoch_service::invalidate_epoch_cache, 5);
+
+    EXPECT_THAT(co_await all_epochs(), ElementsAre(42, 42));
+    EXPECT_EQ(accesses, 2);
+
+    // Invalidate at epoch 10. Cached epoch (42) > 10, so the
+    // invalidation is a no-op — the cache is already past it.
+    co_await service.invoke_on_all(&epoch_service::invalidate_epoch_cache, 10);
+
+    EXPECT_THAT(co_await all_epochs(), ElementsAre(42, 42));
+    EXPECT_EQ(accesses, 2) << "No re-fetch: cached epoch already ahead";
+}
+
+// Repeated invalidation cycles monotonically advance the cached epoch.
+TEST_F_CORO(ClusterEpochService, RepeatedInvalidationCycles) {
+    EXPECT_EQ(co_await get_cached_epoch(), 0);
+    EXPECT_EQ(accesses, 1);
+
+    for (int64_t epoch : {5, 10, 15}) {
+        cluster_epoch = epoch;
+        co_await service.invoke_on_all(
+          &epoch_service::invalidate_epoch_cache, epoch);
+        co_await tests::drain_task_queue();
+        EXPECT_EQ(co_await get_cached_epoch(), epoch);
+    }
+}
+
 TEST_F_CORO(ClusterEpochService, InjectedError) {
     using ::testing::ElementsAre;
     ++cluster_epoch;

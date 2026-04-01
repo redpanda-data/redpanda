@@ -113,6 +113,80 @@ TEST(ctp_stm_state_test, get_max_collectible_offset) {
     EXPECT_EQ(state.get_max_collectible_offset(), log_offset);
 }
 
+TEST(ctp_stm_state_test, barrier_epoch_estimate_tracks_max_applied) {
+    ct::ctp_stm_state state;
+    ct::cluster_epoch epoch1(10);
+    ct::cluster_epoch epoch2(20);
+    ct::cluster_epoch epoch3(30);
+
+    // Initially barrier epoch estimate is not set
+    EXPECT_FALSE(state.estimate_barrier_eligible_epoch().has_value());
+
+    // estimate_barrier_eligible_epoch returns _max_applied_epoch directly.
+    // The reconciliation wait in the barrier protocol provides the safety
+    // guarantee that prev() was approximating.
+    state.advance_epoch(epoch1, model::offset(1));
+    EXPECT_EQ(state.estimate_barrier_eligible_epoch(), ct::cluster_epoch(10));
+
+    state.advance_epoch(epoch2, model::offset(5));
+    EXPECT_EQ(state.estimate_barrier_eligible_epoch(), ct::cluster_epoch(20));
+
+    state.advance_epoch(epoch3, model::offset(10));
+    EXPECT_EQ(state.estimate_barrier_eligible_epoch(), ct::cluster_epoch(30));
+
+    // Advance LRO past epoch3's window offset (10)
+    state.advance_last_reconciled_offset(kafka::offset(300), model::offset(11));
+
+    // estimate_inactive_epoch still uses the conservative prev() path
+    EXPECT_EQ(state.estimate_inactive_epoch(), ct::cluster_epoch(19));
+    // estimate_barrier_eligible_epoch returns _max_applied_epoch directly
+    EXPECT_EQ(state.estimate_barrier_eligible_epoch(), ct::cluster_epoch(30));
+
+    // Key invariant: barrier estimate >= inactive estimate
+    EXPECT_GE(
+      state.estimate_barrier_eligible_epoch().value(),
+      state.estimate_inactive_epoch().value());
+}
+
+TEST(ctp_stm_state_test, barrier_estimate_ge_inactive_estimate) {
+    // Property test: barrier estimate should always be >= inactive estimate
+    ct::ctp_stm_state state;
+    ct::cluster_epoch epoch1(5);
+    ct::cluster_epoch epoch2(10);
+    ct::cluster_epoch epoch3(15);
+    ct::cluster_epoch epoch4(20);
+
+    state.advance_epoch(epoch1, model::offset(0));
+    state.advance_epoch(epoch2, model::offset(3));
+    state.advance_epoch(epoch3, model::offset(7));
+
+    // Before any LRO advancement
+    if (
+      state.estimate_barrier_eligible_epoch().has_value()
+      && state.estimate_inactive_epoch().has_value()) {
+        EXPECT_GE(
+          state.estimate_barrier_eligible_epoch().value(),
+          state.estimate_inactive_epoch().value());
+    }
+
+    // After LRO advancement past epoch3 window
+    state.advance_last_reconciled_offset(kafka::offset(100), model::offset(8));
+    EXPECT_GE(
+      state.estimate_barrier_eligible_epoch().value(),
+      state.estimate_inactive_epoch().value());
+
+    state.advance_epoch(epoch4, model::offset(12));
+    // LRO hasn't advanced past epoch4 yet
+    EXPECT_GE(
+      state.estimate_barrier_eligible_epoch().value(),
+      state.estimate_inactive_epoch().value());
+
+    state.advance_last_reconciled_offset(kafka::offset(200), model::offset(13));
+    EXPECT_GE(
+      state.estimate_barrier_eligible_epoch().value(),
+      state.estimate_inactive_epoch().value());
+}
+
 TEST(ctp_stm_state_test, advance_lro_updates_min_epoch) {
     ct::ctp_stm_state state;
     ct::cluster_epoch epoch1(10);
@@ -356,6 +430,17 @@ TEST(ctp_stm_state_test, l0_simulation) {
                          "above inactive_epoch: {}",
                          min_active_epoch->epoch,
                          inactive_epoch.value());
+            }
+            // Validate that barrier estimate is always >= inactive estimate
+            auto barrier_epoch = stm.estimate_barrier_eligible_epoch();
+            if (inactive_epoch.has_value() && barrier_epoch.has_value()) {
+                if (barrier_epoch.value() < inactive_epoch.value()) {
+                    return testing::AssertionFailure() << fmt::format(
+                             "expected barrier epoch ({}) >= inactive epoch "
+                             "({})",
+                             barrier_epoch.value(),
+                             inactive_epoch.value());
+                }
             }
             return testing::AssertionSuccess();
         }

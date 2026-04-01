@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "absl/container/btree_map.h"
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "base/units.h"
@@ -76,6 +75,12 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    /// Create a token linked to this shard's tracking list.
+    std::unique_ptr<inflight_write_token> track_write();
+
+    /// Detach the current inflight list and wait for all tokens to complete.
+    ss::future<> drain_writes();
+
 private:
     /// Run one iteration of the background loop
     ///
@@ -125,5 +130,7 @@ private:
 
     // Limit the number of concurrent background fibers running run_once
     ssx::named_semaphore<Clock> _upload_sem;
+
+    inflight_write_list _inflight_writes;
 };
 } // namespace cloud_topics::l0

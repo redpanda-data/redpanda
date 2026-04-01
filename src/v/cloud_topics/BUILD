@@ -48,6 +48,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/base",
+        "//src/v/container:intrusive",
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/utils:named_type",
@@ -74,6 +75,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/container:chunked_vector",
         "//src/v/model",
