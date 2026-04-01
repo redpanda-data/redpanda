@@ -113,6 +113,11 @@ public:
       chunked_vector<cloud_storage_clients::client::list_bucket_item>,
       cloud_storage_clients::error_outcome>>
     next_page() {
+        if (gate_.is_closed()) {
+            co_return chunked_vector<
+              cloud_storage_clients::client::list_bucket_item>{};
+        }
+        auto holder = gate_.hold();
         while (
           !as_.abort_requested()
           && (continuation_token_.has_value() || (curr_prefix_ = next_prefix()).has_value())) {
