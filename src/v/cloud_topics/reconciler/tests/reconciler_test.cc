@@ -60,9 +60,8 @@ public:
         return src;
     }
 
-    void reconcile() {
-        // Advance the clock to ensure all topics are due for reconciliation.
-        ss::manual_clock::advance(std::chrono::hours(1));
+    void reconcile(ss::manual_clock::duration advance = std::chrono::hours(1)) {
+        ss::manual_clock::advance(advance);
         _reconciler.reconcile().get();
     }
 
@@ -747,4 +746,49 @@ TEST_F(ReconcilerTest, DetachDuringReconcileDoesNotOrphanScheduler) {
     // the orphaned scheduler has no matching sources.
     reconcile();
     EXPECT_EQ(_reconciler.topic_scheduler_count_for_tests(), 1);
+}
+
+TEST_F(ReconcilerTest, CompactionLagDeadlinePassed) {
+    auto src = add_source();
+    src->add_batch({.count = 10});
+
+    // First reconcile to establish a real last_reconciled timestamp.
+    reconcile();
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{9});
+
+    // Add more data. Set deadline 5 seconds in the past.
+    src->add_batch({.count = 10});
+    src->set_compaction_deadline(
+      ss::manual_clock::now() - std::chrono::seconds{5});
+
+    // Without advancing the clock, the adaptive interval hasn't elapsed,
+    // but the compaction lag deadline has passed so it should reconcile.
+    reconcile_without_advancing_clock();
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{19});
+}
+
+TEST_F(ReconcilerTest, CompactionLagDeadlineInFuture) {
+    auto src = add_source();
+    src->add_batch({.count = 10});
+
+    // First reconcile to establish a real last_reconciled timestamp.
+    reconcile();
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{9});
+
+    // Add more data. Deadline is 15 seconds in the future.
+    src->add_batch({.count = 10});
+    src->set_compaction_deadline(
+      ss::manual_clock::now() + std::chrono::seconds{15});
+
+    // Without advancing the clock, the topic should NOT be due.
+    reconcile_without_advancing_clock();
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{9});
+
+    // Advance by 6 seconds — still 9 seconds until deadline, not due.
+    reconcile(std::chrono::seconds{6});
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{9});
+
+    // Advance past the deadline (another 10 seconds, total 16s > 15s).
+    reconcile(std::chrono::seconds{10});
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{19});
 }
