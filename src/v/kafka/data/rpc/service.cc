@@ -11,6 +11,7 @@
 
 #include "kafka/data/rpc/service.h"
 
+#include "cluster/errc.h"
 #include "kafka/data/log_reader_config.h"
 #include "kafka/data/partition_proxy.h"
 #include "logger.h"
@@ -36,6 +37,9 @@
 #include <utility>
 
 namespace kafka::data::rpc {
+
+using namespace std::chrono_literals;
+
 namespace {
 
 raft::replicate_options
@@ -311,6 +315,30 @@ ss::future<result<model::offset, cluster::errc>> local_service::produce(
 
 ss::future<produce_reply>
 network_service::produce(produce_request req, ::rpc::streaming_context&) {
+    static constexpr size_t memory_pressure_denominator = 10;
+    if (_server_memory != nullptr) {
+        auto available = _server_memory->current();
+        if (available <= _server_memory_total / memory_pressure_denominator) {
+            thread_local static ss::logger::rate_limit rate(1s);
+            log.log(
+              ss::log_level::warn,
+              rate,
+              "Rejecting produce request: RPC server memory pressure "
+              "(available={}, total={})",
+              available,
+              _server_memory_total);
+            produce_reply reply;
+            for (auto& td : req.topic_data) {
+                // errc::timeout is used here becuase clients already treat it
+                // as a retryable error. for a future major release, it would be
+                // better to add some explicit backoff advice to the produce
+                // response, similar to how the real kafka API works. for a
+                // serde-compatible OOM backstop, this is good enough.
+                reply.results.emplace_back(td.tp, cluster::errc::timeout);
+            }
+            co_return reply;
+        }
+    }
     co_await ss::coroutine::switch_to(get_scheduling_group());
     auto results = co_await _service->local().produce(
       std::move(req.topic_data), req.timeout);
