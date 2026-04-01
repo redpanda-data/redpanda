@@ -83,6 +83,13 @@ public:
     virtual ss::future<model::record_batch_reader>
       make_reader(reader_config) = 0;
 
+    // Returns the remaining time until this source's max.compaction.lag.ms
+    // deadline, based on the lowest base timestamp of all unreconciled data.
+    // Returns std::nullopt if the topic is not compacted or has no pending
+    // unreconciled data.
+    virtual std::optional<std::chrono::milliseconds>
+    compaction_lag_remaining() = 0;
+
 private:
     model::ntp _ntp;
     model::topic_id_partition _tidp;

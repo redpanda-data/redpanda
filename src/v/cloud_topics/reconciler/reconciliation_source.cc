@@ -22,6 +22,8 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "storage/segment.h"
+#include "storage/segment_set.h"
 #include "utils/retry_chain_node.h"
 
 #include <expected>
@@ -148,6 +150,51 @@ public:
         co_return model::make_readahead_record_batch_reader(
           model::make_record_batch_reader<kafka::read_committed_reader>(
             std::move(tracker), std::move(reader.reader)));
+    }
+
+    std::optional<std::chrono::milliseconds>
+    compaction_lag_remaining() override {
+        if (!has_pending_data()) {
+            return std::nullopt;
+        }
+
+        const auto& cfg = _partition->get_ntp_config();
+
+        if (!cfg.is_remotely_compacted()) {
+            return std::nullopt;
+        }
+
+        auto max_lag = cfg.max_compaction_lag_ms();
+
+        std::optional<model::timestamp> earliest_ts;
+        try {
+            auto lro = last_reconciled_offset();
+            auto ot_state = _partition->get_offset_translator_state();
+            auto next_kafka = kafka::next_offset(lro);
+            auto log_offset = ot_state->to_log_offset(
+              kafka::offset_cast(next_kafka));
+            const auto& segs = _partition->log()->segments();
+            auto it = segs.lower_bound(log_offset);
+
+            for (; it != segs.end(); ++it) {
+                const auto& seg = *it;
+                auto ts = seg->index().base_timestamp();
+                if (!earliest_ts.has_value() || ts < earliest_ts.value()) {
+                    earliest_ts = ts;
+                }
+            }
+        } catch (...) {
+            // fallthrough
+        }
+
+        if (!earliest_ts.has_value()) {
+            return std::nullopt;
+        }
+
+        const auto now = to_time_point(model::timestamp::now());
+        const auto age = now - to_time_point(earliest_ts.value());
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          max_lag - age);
     }
 
 private:

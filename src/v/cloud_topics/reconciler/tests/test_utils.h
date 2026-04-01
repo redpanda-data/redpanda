@@ -89,10 +89,24 @@ public:
           std::move(log));
     }
 
+    std::optional<std::chrono::milliseconds>
+    compaction_lag_remaining() override {
+        if (!_compaction_deadline.has_value()) {
+            return std::nullopt;
+        }
+        auto now = ss::manual_clock::now();
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          _compaction_deadline.value() - now);
+    }
+
     void fail_set_lro(bool fail) { _fail_set_lro = fail; }
     void fail_make_reader(bool fail) { _fail_make_reader = fail; }
     void set_on_make_reader(std::function<void()> cb) {
         _on_make_reader = std::move(cb);
+    }
+    void set_compaction_deadline(
+      std::optional<ss::manual_clock::time_point> deadline) {
+        _compaction_deadline = deadline;
     }
 
 private:
@@ -101,6 +115,7 @@ private:
     bool _fail_set_lro = false;
     bool _fail_make_reader = false;
     std::function<void()> _on_make_reader;
+    std::optional<ss::manual_clock::time_point> _compaction_deadline;
 };
 
 class unreliable_metastore : public l1::simple_metastore {
