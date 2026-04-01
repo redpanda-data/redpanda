@@ -159,7 +159,19 @@ typename Clock::duration reconciler<Clock>::compute_next_wait() const {
         min_wait = std::min(min_wait, wait);
     }
 
-    return std::min(min_wait, default_wait);
+    auto result = std::min(min_wait, default_wait);
+
+    // Check compaction lag deadlines across all sources.
+    for (auto& [_, src] : _sources) {
+        auto remaining = src->compaction_lag_remaining();
+        if (remaining.has_value()) {
+            auto dur = std::chrono::duration_cast<typename Clock::duration>(
+              remaining.value());
+            result = std::min(result, std::max(dur, Clock::duration::zero()));
+        }
+    }
+
+    return result;
 }
 
 template<class Clock>
@@ -365,7 +377,16 @@ ss::future<> reconciler<Clock>::reconcile() {
         auto next_due = sched_it->second.last_reconciled
                         + sched_it->second.scheduler.current_interval();
 
-        if (now >= next_due) {
+        // For compacted topics, cap next_due by the max_compaction_lag_ms
+        // deadline of the oldest unreconciled data.
+        auto is_due_for_compaction = [&]() -> bool {
+            auto remaining = topic_sources.front()->compaction_lag_remaining();
+            return remaining.has_value()
+                   && remaining.value() <= std::chrono::milliseconds{0};
+        };
+        bool is_due = now >= next_due || is_due_for_compaction();
+
+        if (is_due) {
             due_topics.push_back(std::move(topic_sources));
         }
     }
