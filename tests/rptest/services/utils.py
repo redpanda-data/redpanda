@@ -137,6 +137,7 @@ class LogSearch(ABC):
         "Aborting on shard",
         "terminating due to uncaught exception",
         "oversized allocation",
+        "Too long queue accumulated",
     ]
 
     def __init__(
