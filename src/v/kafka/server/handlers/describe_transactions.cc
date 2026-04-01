@@ -11,6 +11,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "constants/common.h"
 #include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/describe_transactions_request.h"
@@ -95,7 +96,9 @@ ss::future<> fill_info_about_transactions(
   describe_transactions_response& response,
   chunked_vector<kafka::transactional_id> tx_ids) {
     return ss::max_concurrent_for_each(
-      tx_ids, 32, [&response, &tx_frontend](const auto tx_id) -> ss::future<> {
+      tx_ids,
+      constants::common::default_concurrency,
+      [&response, &tx_frontend](const auto tx_id) -> ss::future<> {
           return fill_info_about_tx(tx_frontend, response, tx_id);
       });
 }

@@ -11,6 +11,7 @@
 
 #include "kafka/data/rpc/service.h"
 
+#include "constants/common.h"
 #include "kafka/data/log_reader_config.h"
 #include "kafka/data/partition_proxy.h"
 #include "logger.h"
@@ -102,7 +103,8 @@ ss::future<ss::chunked_fifo<kafka_topic_data_result>> local_service::produce(
 
 ss::future<partition_offsets_map>
 local_service::get_offsets(chunked_vector<topic_partitions> topics) {
-    static constexpr int concurrency_limit = 32;
+    static constexpr int concurrency_limit
+      = constants::common::default_concurrency;
     partition_offsets_map results;
     for (auto& t : topics) {
         results.reserve(topics.size());

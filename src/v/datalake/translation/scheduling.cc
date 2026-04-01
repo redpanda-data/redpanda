@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "constants/common.h"
 #include "datalake/logger.h"
 #include "datalake/translation/scheduling_policies.h"
 #include "ssx/future-util.h"
@@ -496,9 +497,9 @@ ss::future<> scheduler::stop() {
     _state_changed_cvar.broken();
     co_await _executor.gate.close();
     co_await ss::max_concurrent_for_each(
-      _executor.translators, 32, [](auto& it) mutable {
-          return it.second._translator->close();
-      });
+      _executor.translators,
+      constants::common::default_concurrency,
+      [](auto& it) mutable { return it.second._translator->close(); });
 }
 
 ss::future<bool>

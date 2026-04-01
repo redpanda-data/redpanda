@@ -716,6 +716,8 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
         "//src/v/cluster_link/model",
         "//src/v/config",
+        "//src/v/constants:balancer_constants",
+        "//src/v/constants:common_constants",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/container:contiguous_range_map",

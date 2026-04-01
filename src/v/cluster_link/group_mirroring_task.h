@@ -3,6 +3,7 @@
 #include "base/format_to.h"
 #include "cluster_link/deps.h"
 #include "cluster_link/task.h"
+#include "constants/common.h"
 #include "kafka/protocol/types.h"
 
 #include <fmt/format.h>
@@ -70,7 +71,8 @@ public:
     };
 
     static constexpr auto task_name = "Consumer Group Shadowing";
-    static constexpr auto concurrent_requests_limit = 32;
+    static constexpr auto concurrent_requests_limit
+      = constants::common::default_concurrency;
 
     group_mirroring_task(link* link, const model::metadata& link_metadata);
     group_mirroring_task(const group_mirroring_task&) = delete;

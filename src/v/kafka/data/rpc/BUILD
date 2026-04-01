@@ -29,6 +29,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/constants:common_constants",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/kafka/data:log_reader_config",

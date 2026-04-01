@@ -29,6 +29,7 @@ redpanda_test_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/constants:common_constants",
         "//src/v/datalake:logger",
         "//src/v/datalake/translation:scheduler",
         "//src/v/random:generators",

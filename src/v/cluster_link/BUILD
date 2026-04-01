@@ -158,6 +158,7 @@ redpanda_cc_library(
     visibility = ["//src/v/cluster_link:__subpackages__"],
     deps = [
         ":impl",
+        "//src/v/constants:common_constants",
         "//src/v/kafka/client:cluster",
     ],
 )

@@ -18,6 +18,7 @@
 #include "cluster/tx_errc.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
+#include "constants/common.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "metrics/metrics.h"
@@ -242,7 +243,10 @@ ss::future<> rm_stm::reset_producers() {
     // note: must always be called under exlusive write lock to
     // avoid concurrrent state changes to _producers.
     co_await ss::max_concurrent_for_each(
-      _producers.begin(), _producers.end(), 32, [this](auto& it) {
+      _producers.begin(),
+      _producers.end(),
+      constants::common::default_concurrency,
+      [this](auto& it) {
           auto& producer = it.second;
           producer->shutdown_input();
           _producer_state_manager.local().deregister_producer(
@@ -1934,7 +1938,9 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       data.highest_producer_id, _highest_producer_id);
     _aborted_tx_state.aborted = std::move(data.aborted);
     co_await ss::max_concurrent_for_each(
-      data.abort_indexes, 32, [this](const abort_index& idx) -> ss::future<> {
+      data.abort_indexes,
+      constants::common::default_concurrency,
+      [this](const abort_index& idx) -> ss::future<> {
           auto f_name = abort_idx_name(idx.first, idx.last);
           return _abort_snapshot_mgr.get_snapshot_size(f_name).then(
             [this, idx](uint64_t snapshot_size) {

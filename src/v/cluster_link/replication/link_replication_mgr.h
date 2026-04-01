@@ -13,6 +13,7 @@
 #include "cluster_link/replication/partition_replicator.h"
 #include "cluster_link/replication/replication_probe.h"
 #include "cluster_link/replication/types.h"
+#include "constants/common.h"
 #include "container/chunked_hash_map.h"
 #include "ssx/work_queue.h"
 
@@ -108,7 +109,8 @@ private:
     // reconciliation is in progress.
     chunked_hash_map<::model::ntp, ntp_reconciliation_state> _pending;
     ss::condition_variable _pending_cv;
-    ssx::semaphore _max_reconciliations{32, "link-replicator-mgr"};
+    ssx::semaphore _max_reconciliations{
+      constants::common::default_concurrency, "link-replicator-mgr"};
 
     ss::scheduling_group _sg;
     std::unique_ptr<link_configuration_provider> _config_provider;

@@ -33,6 +33,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/leaders_preference.h"
+#include "constants/common.h"
 #include "data_migration_types.h"
 #include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
@@ -1910,7 +1911,9 @@ topics_frontend::do_cancel_moving_partition_replicas(
     std::vector<move_cancellation_result> results;
     results.reserve(ntps.size());
     co_await ss::max_concurrent_for_each(
-      ntps, 32, [this, &results, timeout](model::ntp& ntp) {
+      ntps,
+      constants::common::default_concurrency,
+      [this, &results, timeout](model::ntp& ntp) {
           auto f = cancel_moving_partition_replicas(ntp, timeout);
           return f.then(
             [ntp = std::move(ntp), &results](std::error_code ec) mutable {

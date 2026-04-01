@@ -17,6 +17,7 @@
 #include "cluster/rm_stm.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
+#include "constants/common.h"
 #include "container/chunked_vector.h"
 #include "container/lw_shared_container.h"
 #include "kafka/data/partition_proxy.h"
@@ -1083,7 +1084,9 @@ admin_server::get_topic_partitions_handler(
     }
 
     co_await ss::max_concurrent_for_each(
-      partitions, 32, [this, &tp_ns](partition_t& p) {
+      partitions,
+      constants::common::default_concurrency,
+      [this, &tp_ns](partition_t& p) {
           return _controller->get_api()
             .local()
             .get_reconciliation_state(

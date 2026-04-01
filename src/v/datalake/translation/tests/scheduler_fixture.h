@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/units.h"
+#include "constants/common.h"
 #include "datalake/translation/scheduling.h"
 #include "test_utils/test.h"
 
@@ -174,7 +175,8 @@ protected:
     static constexpr clock::duration large_target_lag
       = std::chrono::duration_cast<clock::duration>(6h);
     static constexpr size_t large_translation_throughput = 32_MiB;
-    static constexpr size_t large_concurrent_writers = 32;
+    static constexpr size_t large_concurrent_writers
+      = constants::common::default_concurrency;
 
     static constexpr clock::duration medium_target_lag
       = std::chrono::duration_cast<clock::duration>(1h);

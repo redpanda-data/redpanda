@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/sasl_mechanisms.h"
 #include "config/types.h"
+#include "constants/balancer_constants.h"
 #include "datalake/partition_spec_parser.h"
 #include "model/namespace.h"
 #include "model/validation.h"
@@ -480,9 +481,9 @@ std::optional<ss::sstring>
 validate_sane_partition_balancer_timeouts(const configuration& config) {
     // how often node status sends an rpc
     auto node_status = config.node_status_interval();
-    // in pbp, if 7 consecutive node statuses are missed, the node is considered
-    // down for the purposes of determining alive / dead quorums
-    auto node_unresponsiveness = 7 * node_status;
+    // see constant definition
+    auto node_unresponsiveness
+      = constants::balancer::missed_statuses_until_unresponsive * node_status;
     // how often the partition balancer runs
     auto pbp_tick_interval = config.partition_autobalancing_tick_interval_ms();
     // timeout after which the partition balancer will start draining partitions
@@ -513,8 +514,9 @@ validate_sane_partition_balancer_timeouts(const configuration& config) {
     // node_availability
     if (node_unresponsiveness > node_availability) {
         return fmt::format(
-          "node_status_interval * 7 ({}) should be less than "
+          "node_status_interval * {} ({}) should be less than "
           "partition_autobalancing_node_availability_timeout_sec ({})",
+          constants::balancer::missed_statuses_until_unresponsive,
           node_unresponsiveness,
           node_availability);
     }

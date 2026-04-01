@@ -88,6 +88,7 @@ redpanda_cc_library(
         ":types",
         "//src/v/base",
         "//src/v/cluster_link:logger",
+        "//src/v/constants:common_constants",
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
         "//src/v/ssx:work_queue",
