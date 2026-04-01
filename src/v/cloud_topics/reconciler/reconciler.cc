@@ -74,9 +74,16 @@ reconciler<Clock>::reconciler(
   , _metadata_cache(metadata_cache)
   , _reconciler_sg(reconciler_sg)
   , _upload_part_size(config::shard_local_cfg().cloud_topics_upload_part_size())
+  , _min_interval_binding(
+      config::shard_local_cfg().cloud_topics_reconciliation_min_interval.bind())
+  , _max_interval_binding(
+      config::shard_local_cfg().cloud_topics_reconciliation_max_interval.bind())
   , _reconciliation_sem(
       config::shard_local_cfg().cloud_topics_reconciliation_parallelism(),
-      "reconciler/parallelism") {}
+      "reconciler/parallelism") {
+    _min_interval_binding.watch([this]() { _loop_cv.signal(); });
+    _max_interval_binding.watch([this]() { _loop_cv.signal(); });
+}
 
 template<class Clock>
 reconciler<Clock>::topic_scheduler_state::topic_scheduler_state(
@@ -168,6 +175,7 @@ ss::future<> reconciler<Clock>::start() {
 template<class Clock>
 ss::future<> reconciler<Clock>::stop() {
     _as.request_abort();
+    _loop_cv.broken();
     co_await _gate.close();
 }
 
@@ -236,9 +244,11 @@ ss::future<> reconciler<Clock>::reconciliation_loop() {
         auto next_wait = compute_next_wait();
 
         try {
-            co_await ss::sleep_abortable<Clock>(next_wait, _as);
-        } catch (const ss::sleep_aborted&) {
-            // If the sleep was aborted, we can exit our loop
+            co_await _loop_cv.wait(next_wait);
+        } catch (const ss::condition_variable_timed_out&) {
+            // Normal timeout, fall through to reconcile.
+        } catch (const ss::broken_condition_variable&) {
+            // If the condition variable was broken, we can exit our loop
             co_return;
         }
 

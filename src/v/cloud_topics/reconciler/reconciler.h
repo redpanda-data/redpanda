@@ -25,6 +25,7 @@
 #include "model/fundamental.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
@@ -305,6 +306,9 @@ private:
     // does not take effect without a restart (and without bumping the
     // corresponding memory reservation).
     size_t _upload_part_size;
+    ss::condition_variable _loop_cv;
+    config::binding<std::chrono::milliseconds> _min_interval_binding;
+    config::binding<std::chrono::milliseconds> _max_interval_binding;
     // Bounds total concurrent domain-level reconciliations (multipart
     // uploads) across all topics on this shard.
     ssx::named_semaphore<Clock> _reconciliation_sem;
