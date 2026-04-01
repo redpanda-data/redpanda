@@ -471,3 +471,98 @@ class EndToEndCloudTopicsCompactionTest(EndToEndCloudTopicsBase):
                 backoff_sec=1,
                 err_msg="Did not see a fully compacted CTP log.",
             )
+
+
+class EndToEndCloudTopicsCompactionLagTest(EndToEndCloudTopicsBase):
+    """Verify that the reconciler respects max.compaction.lag.ms for compacted
+    cloud topics, even when the reconciliation interval is set very high."""
+
+    # Use a normal min interval for the initial reconciliation.
+    RECONCILIATION_MIN_INTERVAL_MS = 2000
+    MAX_COMPACTION_LAG_MS = 10000  # 10 seconds
+
+    # We will create the topic manually with a custom config
+    topics = ()
+
+    def __init__(self, test_context):
+        extra_rp_conf = {
+            "cloud_topics_reconciliation_min_interval": self.RECONCILIATION_MIN_INTERVAL_MS,
+        }
+        super().__init__(test_context, extra_rp_conf)
+
+    def _metric_sum(self, metric_name):
+        assert self.redpanda
+        return self.redpanda.metric_sum(
+            metric_name=metric_name,
+            metrics_endpoint=MetricsEndpoint.METRICS,
+        )
+
+    def _partitions_reconciled(self):
+        return self._metric_sum(
+            "vectorized_cloud_topics_reconciler_partitions_reconciled_total"
+        )
+
+    @cluster(num_nodes=3)
+    def test_max_compaction_lag_forces_reconciliation(self):
+        """Create a compacted cloud topic with max.compaction.lag.ms,
+        produce data, and verify the reconciler lifts it to L1. Then
+        increase the reconciliation interval to be much longer than the
+        lag, produce more data, and verify it still gets reconciled
+        within the lag window."""
+        assert self.redpanda
+        self.rpk.create_topic(
+            topic=self.s3_topic_name,
+            partitions=1,
+            replicas=3,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                "cleanup.policy": TopicSpec.CLEANUP_COMPACT,
+                "max.compaction.lag.ms": str(self.MAX_COMPACTION_LAG_MS),
+            },
+        )
+
+        # Produce initial data and wait for it to be reconciled.
+        for i in range(10):
+            self.rpk.produce(
+                self.s3_topic_name,
+                f"key-{i}",
+                f"value-{i}",
+            )
+        wait_until(
+            lambda: self._partitions_reconciled() > 0,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Initial reconciliation did not happen",
+        )
+
+        # Bump the reconciliation interval before producing more data.
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_topics_reconciliation_min_interval": 3600000,
+                "cloud_topics_reconciliation_max_interval": 3600000,
+            }
+        )
+
+        # Produce more data.
+        reconciled_before = self._partitions_reconciled()
+        for i in range(10):
+            self.rpk.produce(
+                self.s3_topic_name,
+                f"key-{i}",
+                f"new-value-{i}",
+            )
+
+        # Alter the reconciliation interval once again to wake the reconciler up.
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_topics_reconciliation_min_interval": 3600001,
+                "cloud_topics_reconciliation_max_interval": 3600001,
+            }
+        )
+
+        wait_until(
+            lambda: self._partitions_reconciled() > reconciled_before,
+            timeout_sec=self.MAX_COMPACTION_LAG_MS // 1000 + 30,
+            backoff_sec=2,
+            err_msg=("Reconciler did not reconcile within max.compaction.lag.ms"),
+        )
