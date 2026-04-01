@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/oncore.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/types.h"
@@ -32,6 +33,8 @@ public:
       , _tags(
           flex ? std::optional<tagged_fields>(tagged_fields{}) : std::nullopt)
       , _writer(_buf) {}
+
+    ~response() noexcept { _oncore.assert_shard_source_location(); }
 
     protocol::encoder& writer() { return _writer; }
 
@@ -63,6 +66,7 @@ private:
     std::optional<tagged_fields> _tags;
     iobuf _buf;
     protocol::encoder _writer;
+    oncore _oncore;
 };
 
 using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
