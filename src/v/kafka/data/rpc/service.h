@@ -13,6 +13,7 @@
 #include "kafka/data/rpc/rpc_service.h"
 #include "kafka/data/rpc/serde.h"
 #include "model/fundamental.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
@@ -78,12 +79,24 @@ private:
  */
 class network_service final : public impl::kafka_data_rpc_service {
 public:
+    struct memory_config {
+        ssx::semaphore* memory{nullptr};
+        ssize_t total{0};
+    };
+
     network_service(
       ss::scheduling_group sc,
       ss::smp_service_group ssg,
-      ss::sharded<local_service>* service)
+      ss::sharded<local_service>* service,
+      memory_config mem_cfg)
       : impl::kafka_data_rpc_service{sc, ssg}
-      , _service(service) {}
+      , _service(service)
+      , _server_memory(mem_cfg.memory)
+      , _server_memory_total(mem_cfg.total) {
+        vassert(
+          (_server_memory == nullptr) == (_server_memory_total == 0),
+          "memory_config: memory and total must both be set or both be zero");
+    }
 
     ss::future<produce_reply>
     produce(produce_request, ::rpc::streaming_context&) override;
@@ -96,6 +109,8 @@ public:
 
 private:
     ss::sharded<local_service>* _service;
+    ssx::semaphore* _server_memory{nullptr};
+    ssize_t _server_memory_total{0};
 };
 
 } // namespace kafka::data::rpc
