@@ -2736,6 +2736,42 @@ class ClusterConfigUnknownTest(RedpandaTest):
         # issue would appear when reloading the property back
         self.redpanda.restart_nodes(self.redpanda.nodes[0])
 
+    @cluster(num_nodes=3)
+    def test_unknown_value_can_be_removed(self):
+        """
+        Test that an unknown property forced into the log can be removed through the admin API _without_
+        use of ?force=true.
+        """
+        FAKE_PROPERTY = "my_fake_property"
+        # Force-write a removed property into the raft log
+        self.admin.patch_cluster_config(upsert={FAKE_PROPERTY: "true"}, force=True)
+
+        def _unknown_visible(expect_visible):
+            statuses = self.admin.get_cluster_config_status()
+            return all(
+                (FAKE_PROPERTY in s.get("unknown", [])) == expect_visible
+                for s in statuses
+            )
+
+        # Wait for all nodes to report it as unknown
+        wait_until(
+            lambda: _unknown_visible(True),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"{FAKE_PROPERTY} did not appear as unknown on all nodes",
+        )
+
+        # Remove the unknown property without force=true
+        self.admin.patch_cluster_config(remove=[FAKE_PROPERTY], force=False)
+
+        # Wait for all nodes to no longer report it as unknown
+        wait_until(
+            lambda: _unknown_visible(False),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"{FAKE_PROPERTY} was not removed from unknown on all nodes",
+        )
+
 
 class DevelopmentFeatureTest(RedpandaTest):
     def __init__(self, test_context):
