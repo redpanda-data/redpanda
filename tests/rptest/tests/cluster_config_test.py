@@ -257,6 +257,39 @@ class ClusterConfigHelpersMixin:
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere(key, expect_value)
 
+    def _upgrade(self, wipe_cache, version: RedpandaVersion = RedpandaInstaller.HEAD):
+        self.installer.install(self.redpanda.nodes, version)
+        for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node)
+
+            if wipe_cache:
+                # Erase the cluster config cache, so that the node will replay from
+                # controller log and/or controller snapshots
+                cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
+                self.logger.info("Erasing config cache on {node.name} at {cache_path}")
+                assert node.account.exists(cache_path)
+                node.account.remove(cache_path)
+
+            self.redpanda.start_node(node)
+
+        def all_versions_are_the_same():
+            admin = Admin(self.redpanda)
+            node_features = [admin.get_features(n) for n in self.redpanda.nodes]
+
+            self.logger.info(
+                f"Current cluster versions: {[f['cluster_version'] for f in node_features]}"
+            )
+            return all(
+                f["cluster_version"] == f["node_latest_version"] for f in node_features
+            )
+
+        wait_until(
+            all_versions_are_the_same,
+            30,
+            1,
+            "failed waiting for all brokers to report the same version",
+        )
+
 
 class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
     def __init__(self, *args, **kwargs):
@@ -2576,39 +2609,6 @@ class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
     def setUp(self):
         pass
 
-    def _upgrade(self, wipe_cache, version: RedpandaVersion = RedpandaInstaller.HEAD):
-        self.installer.install(self.redpanda.nodes, version)
-        for node in self.redpanda.nodes:
-            self.redpanda.stop_node(node)
-
-            if wipe_cache:
-                # Erase the cluster config cache, so that the node will replay from
-                # controller log and/or controller snapshots
-                cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
-                self.logger.info("Erasing config cache on {node.name} at {cache_path}")
-                assert node.account.exists(cache_path)
-                node.account.remove(cache_path)
-
-            self.redpanda.start_node(node)
-
-        def all_versions_are_the_same():
-            admin = Admin(self.redpanda)
-            node_features = [admin.get_features(n) for n in self.redpanda.nodes]
-
-            self.logger.info(
-                f"Current cluster versions: {[f['cluster_version'] for f in node_features]}"
-            )
-            return all(
-                f["cluster_version"] == f["node_latest_version"] for f in node_features
-            )
-
-        wait_until(
-            all_versions_are_the_same,
-            30,
-            1,
-            "failed waiting for all brokers to report the same version",
-        )
-
     @cluster(num_nodes=3)
     @parametrize(wipe_cache=True)
     @parametrize(wipe_cache=False)
@@ -2735,6 +2735,152 @@ class ClusterConfigUnknownTest(RedpandaTest):
 
         # issue would appear when reloading the property back
         self.redpanda.restart_nodes(self.redpanda.nodes[0])
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @matrix(wipe_cache=[False, True])
+    def test_removed_property_purged(self, wipe_cache):
+        """
+        Test that properties which have been removed completely from the binary/configuration
+        do not appear as unknown in the config status API. "enable_coproc" is
+        an example of a property that was once deprecated and since removed, and is in the
+        removed_properties set in config_manager.cc.
+        """
+        REMOVED_PROPERTY = "enable_coproc"
+        UNKNOWN_PROPERTY = "enable_coproc2"
+        cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
+
+        # Force-write a removed property into the raft log
+        self.admin.patch_cluster_config(upsert={REMOVED_PROPERTY: "true"}, force=True)
+        # Force-write an unknown property into the raft log for a sanity check
+        self.admin.patch_cluster_config(upsert={UNKNOWN_PROPERTY: "true"}, force=True)
+
+        def _read_cache(node):
+            return node.account.ssh_output(f"cat {cache_path}").decode("utf-8")
+
+        # Wait for the unknown property to appear on all nodes (confirms
+        # status reconciliation is complete), then check the deprecated
+        # property is absent.
+        def _unknown_visible_deprecated_absent():
+            statuses = self.admin.get_cluster_config_status()
+            return all(
+                UNKNOWN_PROPERTY in s.get("unknown", [])
+                and REMOVED_PROPERTY not in s.get("unknown", [])
+                for s in statuses
+            )
+
+        wait_until(
+            _unknown_visible_deprecated_absent,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Expected unknown property visible and deprecated property absent",
+        )
+
+        # The removed property should not be in the config cache on any node,
+        # but the unknown property should be (it's preserved for rolling
+        # upgrade safety).
+        for node in self.redpanda.nodes:
+            cache = _read_cache(node)
+            assert REMOVED_PROPERTY not in cache, (
+                f"{REMOVED_PROPERTY} should not be in config cache on {node.name}"
+            )
+            assert UNKNOWN_PROPERTY in cache, (
+                f"{UNKNOWN_PROPERTY} should be in config cache on {node.name}"
+            )
+
+        # Restart all nodes
+        for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node)
+
+            if wipe_cache:
+                # Erase the cluster config cache, so that the node will replay
+                # from controller log and/or controller snapshots
+                self.logger.info(f"Erasing config cache on {node.name}")
+                assert node.account.exists(cache_path)
+                node.account.remove(cache_path)
+
+            self.redpanda.start_node(node)
+
+        # Same status check after restart.
+        wait_until(
+            _unknown_visible_deprecated_absent,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Expected unknown property visible and deprecated property absent after restart",
+        )
+
+        # Config cache should still be clean after restart.
+        for node in self.redpanda.nodes:
+            cache = _read_cache(node)
+            assert REMOVED_PROPERTY not in cache, (
+                f"{REMOVED_PROPERTY} should not be in config cache on {node.name} after restart"
+            )
+            assert UNKNOWN_PROPERTY in cache, (
+                f"{UNKNOWN_PROPERTY} should be in config cache on {node.name} after restart"
+            )
+
+
+class ClusterConfigRemovedPropertyUpgradeTest(RedpandaTest, ClusterConfigHelpersMixin):
+    """
+    Test that properties removed from the configuration are purged from the
+    config cache and status API after upgrading from a version where they
+    were deprecated_property instances.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.admin = Admin(self.redpanda)
+        self.installer = self.redpanda._installer
+        self.initial_version = (25, 3)
+
+    def setUp(self):
+        self.installer.install(self.redpanda.nodes, self.initial_version)
+        super().setUp()
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @matrix(wipe_cache=[False, True])
+    def test_removed_property_purged_on_upgrade(self, wipe_cache):
+        """
+        Start on v25.3 where enable_coproc exists as a deprecated_property,
+        set it, then upgrade to HEAD and verify it is purged.
+        """
+        REMOVED_PROPERTY = "enable_coproc"
+        # On v25.3 enable_coproc is a known deprecated_property. Setting it
+        # writes a delta to the raft log and stores the value in the config
+        # cache, even though the property value is ignored.
+        self.admin.patch_cluster_config(upsert={REMOVED_PROPERTY: "true"}, force=True)
+
+        def _deprecated_absent():
+            statuses = self.admin.get_cluster_config_status()
+            return all(REMOVED_PROPERTY not in s.get("unknown", []) for s in statuses)
+
+        # On the old version it should not be unknown (it's a known
+        # deprecated_property).
+        wait_until(
+            _deprecated_absent,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Expected unknown property visible and deprecated property absent",
+        )
+
+        for version in self.installer.upgrade_path_to_head(self.initial_version):
+            self._upgrade(wipe_cache, version)
+
+        # After upgrade to HEAD, enable_coproc is fully removed from the
+        # binary and is in the removed_properties set. Our purge logic should
+        # have cleaned it from _raw_values and the status API.
+        statuses = self.admin.get_cluster_config_status()
+        for s in statuses:
+            assert REMOVED_PROPERTY not in s.get("unknown", []), (
+                f"Removed property should not appear as unknown after upgrade on node {s['node_id']}"
+            )
+
+        # The removed property should have been purged from the config cache.
+        cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
+        for node in self.redpanda.nodes:
+            cache = node.account.ssh_output(f"cat {cache_path}").decode("utf-8")
+            assert REMOVED_PROPERTY not in cache, (
+                f"{REMOVED_PROPERTY} should not be in config cache on {node.name} after upgrade"
+            )
 
 
 class DevelopmentFeatureTest(RedpandaTest):
