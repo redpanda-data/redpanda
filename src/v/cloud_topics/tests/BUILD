@@ -1,5 +1,18 @@
 load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
+redpanda_cc_gtest(
+    name = "inflight_write_tracker_test",
+    timeout = "short",
+    srcs = [
+        "inflight_write_tracker_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics:inflight_write_tracker",
+        "//src/v/test_utils:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_test_cc_library(
     name = "cluster_fixture",
     hdrs = ["cluster_fixture.h"],
