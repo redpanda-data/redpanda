@@ -110,6 +110,18 @@ static const absl::flat_hash_set<ss::sstring> removed_properties{
   "datalake_disk_space_monitor_interval",
 };
 
+/// Check if a property should be purged from _raw_values. True for properties
+/// in the removed set (fully deleted from binary) and for deprecated_property
+/// instances still registered in the config store.
+static bool is_deprecated_property(const ss::sstring& key) {
+    if (removed_properties.contains(key)) {
+        return true;
+    }
+    auto& cfg = config::shard_local_cfg();
+    return cfg.contains(key)
+           && dynamic_cast<config::deprecated_property*>(&cfg.get(key))
+                != nullptr;
+}
 
 config_manager::config_manager(
   config_manager::preload_result preload,
