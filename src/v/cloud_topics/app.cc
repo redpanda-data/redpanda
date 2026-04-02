@@ -14,6 +14,7 @@
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/data_plane_impl.h"
 #include "cloud_topics/housekeeper/manager.h"
+#include "cloud_topics/inflight_write_tracker.h"
 #include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/metastore/flush_loop.h"
 #include "cloud_topics/level_one/metastore/topic_purger.h"
@@ -59,6 +60,9 @@ ss::future<> app::construct(
   ss::sharded<storage::api>* storage,
   bool skip_flush_loop,
   bool skip_level_zero_gc) {
+    tracker = inflight_write_tracker::make_default();
+    co_await tracker->start();
+
     data_plane = co_await make_data_plane(
       ssx::sformat("{}::data_plane", _logger_name),
       remote,
@@ -387,6 +391,7 @@ ss::future<> app::cleanup_tmp_files() {
 ss::future<> app::stop() {
     ssx::sharded_service_container::shutdown();
     co_await data_plane->stop();
+    co_await tracker->stop();
 }
 
 ss::sharded<l1::leader_router>* app::get_sharded_l1_metastore_router() {

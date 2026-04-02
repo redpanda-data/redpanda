@@ -117,6 +117,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":cluster_services_interface",
         ":data_plane_impl",
+        ":inflight_write_tracker",
         ":logger",
         ":topic_manifest_upload_manager",
         "//src/v/cloud_topics/housekeeper:manager",
