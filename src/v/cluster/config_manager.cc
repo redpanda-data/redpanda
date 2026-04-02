@@ -12,6 +12,7 @@
 #include "config_manager.h"
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "base/vlog.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller_service.h"
@@ -53,6 +54,62 @@ static constexpr std::string_view cache_file = "config_cache.yaml";
 
 // The filename within the data directory to use for first-start bootstrap
 static constexpr std::string_view bootstrap_file = ".bootstrap.yaml";
+
+// Property names that were fully removed from the configuration in past
+// versions. These need to be filtered out of _raw_values, the config cache, and
+// snapshots to prevent them from accumulating indefinitely.
+static const absl::flat_hash_set<ss::sstring> removed_properties{
+  "enable_coproc",
+  "coproc_max_inflight_bytes",
+  "coproc_max_ingest_bytes",
+  "coproc_max_batch_size",
+  "coproc_offset_flush_interval_ms",
+  "seed_server_meta_topic_partitions",
+  "min_version",
+  "max_version",
+  "raft_recovery_default_read_size",
+  "use_scheduling_groups",
+  "enable_admin_api",
+  "target_quota_byte_rate",
+  "target_fetch_quota_byte_rate",
+  "kafka_admin_topic_api_rate",
+  "tm_sync_timeout_ms",
+  "tx_registry_sync_timeout_ms",
+  "tm_violation_recovery_policy",
+  "rm_sync_timeout_ms",
+  "find_coordinator_timeout_ms",
+  "seq_table_min_size",
+  "rm_violation_recovery_policy",
+  "alter_topic_cfg_timeout_ms",
+  "log_message_timestamp_alert_before_ms",
+  "log_message_timestamp_alert_after_ms",
+  "metadata_status_wait_timeout_ms",
+  "log_compaction_adjacent_merge_self_compaction_count",
+  "log_compaction_disable_tx_batch_removal",
+  "transaction_coordinator_replication",
+  "id_allocator_replication",
+  "create_topic_timeout_ms",
+  "wait_for_leader_timeout_ms",
+  "recovery_append_timeout_ms",
+  "raft_max_concurrent_append_requests_per_follower",
+  "tx_registry_log_capacity",
+  "node_management_operation_timeout_ms",
+  "kafka_client_group_byte_rate_quota",
+  "kafka_client_group_fetch_byte_rate_quota",
+  "cloud_storage_reconciliation_ms",
+  "cloud_storage_disable_metadata_consistency_checks",
+  "full_raft_configuration_recovery_pattern",
+  "leader_balancer_mode",
+  "kafka_throughput_throttling_v2",
+  "kafka_quota_balancer_window",
+  "kafka_quota_balancer_node_period",
+  "kafka_quota_balancer_min_shard_throughput_ratio",
+  "kafka_quota_balancer_min_shard_throughput_bps",
+  "schema_registry_protobuf_renderer_v2",
+  "kafka_memory_batch_size_estimate_for_fetch",
+  "datalake_disk_space_monitor_interval",
+};
+
 
 config_manager::config_manager(
   config_manager::preload_result preload,
