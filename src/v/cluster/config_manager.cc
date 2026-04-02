@@ -399,8 +399,18 @@ static void preload_local(
         }
     } else {
         if (result.has_value()) {
-            vlog(clusterlog.info, "Ignoring unknown property: {}", key);
-            result.value().get().unknown.push_back(key);
+            bool is_deprecated = is_deprecated_property(key);
+            vlog(
+              clusterlog.info,
+              "Ignoring {} property: {}",
+              is_deprecated ? "deprecated" : "unknown",
+              key);
+            if (!is_deprecated) {
+                // Don't push back deprecated properties into the "unknown"
+                // category. They should be effectively purged from snapshots &
+                // the cache.
+                result.value().get().unknown.push_back(key);
+            }
         }
     }
 }
@@ -431,8 +441,18 @@ static void preload_local(
         return preload_local(key, ss::sstring(raw_value), result);
     } else {
         if (result.has_value()) {
-            vlog(clusterlog.info, "Ignoring unknown property: {}", key);
-            result.value().get().unknown.push_back(key);
+            bool is_deprecated = is_deprecated_property(key);
+            vlog(
+              clusterlog.info,
+              "Ignoring {} property: {}",
+              is_deprecated ? "deprecated" : "unknown",
+              key);
+            if (!is_deprecated) {
+                // Don't push back deprecated properties into the "unknown"
+                // category. They should be effectively purged from snapshots &
+                // the cache.
+                result.value().get().unknown.push_back(key);
+            }
         }
     }
 }
@@ -443,9 +463,18 @@ config_manager::preload_join(const controller_join_snapshot& snap) {
 
     result.version = snap.config.version;
     for (const auto& i : snap.config.values) {
-        result.raw_values.insert(i);
         auto& key = i.first;
         auto& value = i.second;
+
+        if (is_deprecated_property(key)) {
+            vlog(
+              clusterlog.info,
+              "Purging deprecated property from snapshot: {}",
+              key);
+            continue;
+        }
+
+        result.raw_values.insert(i);
 
         // Run locally to get validation fields of result
         preload_local(key, value, std::ref(result));
@@ -576,11 +605,21 @@ ss::future<config_manager::preload_result> config_manager::load_cache() {
         co_return result;
     }
 
+    bool should_purge_deprecated = false;
     for (const auto& i : config) {
         ss::sstring key = i.first.as<std::string>();
         auto& value = i.second;
         if (key == version_key) {
             result.version = value.as<config_version>();
+            continue;
+        }
+
+        if (is_deprecated_property(key)) {
+            vlog(
+              clusterlog.info,
+              "Purging deprecated property from cache: {}",
+              key);
+            should_purge_deprecated = true;
             continue;
         }
 
@@ -598,6 +637,12 @@ ss::future<config_manager::preload_result> config_manager::load_cache() {
         // Broadcast value to all shards
         co_await ss::smp::invoke_on_all(
           [&key, &value]() { preload_local(key, value, std::nullopt); });
+    }
+
+    if (should_purge_deprecated) {
+        // Rewrite the cache file immediately so deprecated properties don't
+        // linger on disk until the next config change.
+        co_await write_local_cache(result.version, result.raw_values);
     }
 
     co_return result;
@@ -701,12 +746,20 @@ apply_local(const cluster_config_delta_cmd_data& data, bool silent) {
     auto result = config_manager::apply_result{};
     for (const auto& u : data.upsert) {
         if (!cfg.contains(u.key)) {
-            // We never heard of this property.  Record it as unknown
-            // in our config_status.
+            bool is_deprecated = is_deprecated_property(u.key);
             if (!silent) {
-                vlog(clusterlog.info, "Unknown property {}", u.key);
+                vlog(
+                  clusterlog.info,
+                  "Ignoring {} property: {}",
+                  is_deprecated ? "deprecated" : "unknown",
+                  u.key);
             }
-            result.unknown.push_back(u.key);
+            if (!is_deprecated) {
+                // Don't push back deprecated properties into the "unknown"
+                // category. They should be effectively purged from snapshots &
+                // the cache.
+                result.unknown.push_back(u.key);
+            }
             continue;
         }
         auto& property = cfg.get(u.key);
@@ -880,6 +933,13 @@ config_manager::store_delta(const cluster_config_delta_cmd_data& data) {
     auto& cfg = config::shard_local_cfg();
 
     for (const auto& u : data.upsert) {
+        if (is_deprecated_property(u.key)) {
+            // Deprecated properties should be effectively purged from snapshots
+            // & the cache.
+            _raw_values.erase(u.key);
+            continue;
+        }
+
         /// skip section
         if (!cfg.contains(u.key)) {
             // passthrough unknown values
@@ -905,6 +965,11 @@ config_manager::store_delta(const cluster_config_delta_cmd_data& data) {
     for (const auto& d : data.remove) {
         _raw_values.erase(d);
     }
+
+    // Purge any lingering removed properties from _raw_values.
+    std::erase_if(_raw_values, [](const auto& kv) {
+        return is_deprecated_property(kv.first);
+    });
 
     return write_local_cache(_seen_version, _raw_values);
 }
