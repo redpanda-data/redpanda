@@ -71,12 +71,15 @@ class VerifyConsumerOffsetsThruUpgrades(RedpandaTest):
                 )
                 collectible = []
                 for replica in state["replicas"]:
+                    node_id = replica["raft_state"]["node_id"]
                     for stm in replica["raft_state"]["stms"]:
                         if stm["name"] == "group_tx_tracker_stm.snapshot":
-                            collectible.append(
-                                stm["last_applied_offset"]
-                                == stm["max_removable_local_log_offset"]
+                            lao = stm["last_applied_offset"]
+                            mrlo = stm["max_removable_local_log_offset"]
+                            self.redpanda.logger.debug(
+                                f"node {node_id}: {lao=}, {mrlo=}"
                             )
+                            collectible.append(lao == mrlo)
                 return len(collectible) == 3 and all(collectible)
             except Exception as e:
                 self.redpanda.logger.debug(f"failed to get partition state: {e}")
