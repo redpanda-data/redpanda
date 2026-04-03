@@ -16,10 +16,12 @@
 
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <gtest/gtest.h>
 
 using namespace std::chrono_literals;
+using mc_gc = cloud_topics::level_zero_gc_t<ss::manual_clock>;
 
 namespace {
 struct gc_test_config {
@@ -57,7 +59,13 @@ public:
         }
         ++list_call_count_;
         chunked_vector<cloud_storage_clients::client::list_bucket_item> keep;
-        co_await seastar::sleep(cfg_->list_cost);
+        auto list_sleep = co_await ss::coroutine::as_future(
+          seastar::sleep_abortable<ss::manual_clock>(cfg_->list_cost, *as));
+        if (list_sleep.failed()) {
+            list_sleep.ignore_ready_future();
+            co_return std::unexpected{
+              cloud_storage_clients::error_outcome::fail};
+        }
         auto lu = co_await list_mtx_.get_units(*as);
         for (const auto& object : *listed_) {
             if (continuation_token.has_value()) {
@@ -106,7 +114,12 @@ public:
         }
         auto abort = as->subscribe([this]() noexcept { delete_cv_.broken(); });
         co_await delete_cv_.wait([this] { return !deletes_blocked_; });
-        co_await seastar::sleep(cfg_->delete_cost);
+        auto delete_sleep = co_await ss::coroutine::as_future(
+          seastar::sleep_abortable<ss::manual_clock>(cfg_->delete_cost, *as));
+        if (delete_sleep.failed()) {
+            delete_sleep.ignore_ready_future();
+            co_return std::unexpected{cloud_io::upload_result::cancelled};
+        }
         auto u = co_await delete_mtx_.get_units(*as);
         deleted_->insert_range(
           std::move(objects)
@@ -218,7 +231,7 @@ public:
         auto storage = std::make_unique<object_storage_test_impl>(
           &listed, &deleted, &cfg);
         storage_ = storage.get();
-        gc = std::make_unique<cloud_topics::level_zero_gc>(
+        gc = std::make_unique<mc_gc>(
           cloud_topics::level_zero_gc_config{
             .deletion_grace_period = grace_period_.bind(),
             .throttle_progress
@@ -232,7 +245,9 @@ public:
           std::make_unique<epoch_source_test_impl>(&max_epoch),
           std::make_unique<node_info_test_impl>(),
           std::make_unique<safety_monitor_test_impl>(&safety_ok),
-          [](ss::lowres_clock::duration) { return 0ms; });
+          [](ss::manual_clock::duration) {
+              return ss::manual_clock::duration::zero();
+          });
     }
 
     void TearDown() override { gc->stop().get(); }
@@ -255,28 +270,33 @@ public:
         listed.push_back(item);
     }
 
+    void tick(ss::manual_clock::duration delta = 20ms) {
+        ss::manual_clock::advance(delta);
+        tests::drain_task_queue().get();
+    }
+
+    template<typename Fn>
+    void tick_until(Fn&& fn, int max_ticks = 500) {
+        for (int i = 0; i < max_ticks; ++i) {
+            tick();
+            if (fn()) {
+                return;
+            }
+        }
+        ADD_FAILURE() << "tick_until: condition not met after " << max_ticks
+                      << " ticks";
+    }
+
     chunked_vector<cloud_storage_clients::client::list_bucket_item> listed;
     std::unordered_set<ss::sstring> deleted;
     std::optional<int64_t> max_epoch;
     config::mock_property<std::chrono::milliseconds> grace_period_{
       std::chrono::milliseconds{12h}};
-    std::unique_ptr<cloud_topics::level_zero_gc> gc;
+    std::unique_ptr<mc_gc> gc;
     gc_test_config cfg{};
     object_storage_test_impl* storage_{nullptr};
     bool safety_ok{true};
 };
-
-template<typename Func>
-::testing::AssertionResult Eventually(
-  Func func, int retries = 50, std::chrono::milliseconds delay = 20ms) {
-    while (retries-- > 0) {
-        if (func()) {
-            return ::testing::AssertionSuccess();
-        }
-        seastar::sleep_abortable(delay).get();
-    }
-    return ::testing::AssertionFailure() << "Timeout";
-}
 
 class LevelZeroGCSafetyTest : public LevelZeroGCTest {};
 
@@ -287,7 +307,8 @@ TEST_F(LevelZeroGCSafetyTest, ProceedsWhenSafe) {
     max_epoch = 100;
     safety_ok = true;
     gc->start().get();
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 100; }));
+    tick_until([this] { return deleted.size() == 100; });
+    EXPECT_EQ(deleted.size(), 100u);
 }
 
 TEST_F(LevelZeroGCSafetyTest, BlockedWhenUnsafe) {
@@ -297,7 +318,8 @@ TEST_F(LevelZeroGCSafetyTest, BlockedWhenUnsafe) {
     max_epoch = 100;
     safety_ok = false;
     gc->start().get();
-    EXPECT_FALSE(Eventually([this] { return deleted.size() > 0; }));
+    tick(1h);
+    EXPECT_EQ(deleted.size(), 0u);
 }
 
 TEST_F(LevelZeroGCSafetyTest, ResumesAfterSafetyRestored) {
@@ -308,14 +330,13 @@ TEST_F(LevelZeroGCSafetyTest, ResumesAfterSafetyRestored) {
     safety_ok = false;
     gc->start().get();
 
-    // GC should not delete anything while unsafe
-    EXPECT_FALSE(Eventually([this] { return deleted.size() > 0; }));
+    tick(1h);
+    EXPECT_EQ(deleted.size(), 0u);
 
-    // Flip to safe
     safety_ok = true;
 
-    // GC should now proceed
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 100; }));
+    tick_until([this] { return deleted.size() == 100; });
+    EXPECT_EQ(deleted.size(), 100u);
 }
 
 // all 100 objects are deleted
@@ -325,7 +346,8 @@ TEST_F(LevelZeroGCTest, ListedIsDeleted) {
     }
     this->max_epoch = 100;
     gc->start().get();
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 100; }));
+    tick_until([this] { return deleted.size() == 100; });
+    EXPECT_EQ(deleted.size(), 100u);
 }
 
 // all the objects below the max epoch are deleted
@@ -335,7 +357,8 @@ TEST_F(LevelZeroGCTest, ListedIsDeletedBelowEpoch) {
     }
     this->max_epoch = 49;
     gc->start().get();
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 50; }));
+    tick_until([this] { return deleted.size() == 50; });
+    EXPECT_EQ(deleted.size(), 50u);
 }
 
 // none are deleted when max_epoch is not available
@@ -344,7 +367,8 @@ TEST_F(LevelZeroGCTest, NoDeletesWithoutMaxEpoch) {
         add_listed(i, 24h);
     }
     gc->start().get();
-    EXPECT_FALSE(Eventually([this] { return deleted.size() > 0; }));
+    tick(1h);
+    EXPECT_EQ(deleted.size(), 0u);
 }
 
 // recently created objects aren't deleted
@@ -354,7 +378,8 @@ TEST_F(LevelZeroGCTest, NoDeletesForYoungObjects) {
     }
     this->max_epoch = 100;
     gc->start().get();
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 88; }));
+    tick_until([this] { return deleted.size() == 88; });
+    EXPECT_EQ(deleted.size(), 88u);
 }
 
 // reset while paused keeps GC paused
@@ -364,13 +389,14 @@ TEST_F(LevelZeroGCTest, ResetWhilePaused) {
     }
     this->max_epoch = 50;
     gc->start().get();
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 50; }));
+    tick_until([this] { return deleted.size() == 50; });
+    EXPECT_EQ(deleted.size(), 50u);
 
     gc->pause().get();
     gc->reset().get();
 
-    // GC should remain paused — no new deletes
-    EXPECT_FALSE(Eventually([this] { return deleted.size() > 50; }, 10));
+    tick(1h);
+    EXPECT_EQ(deleted.size(), 50u);
 }
 
 // reset while running resumes collection automatically
@@ -381,15 +407,14 @@ TEST_F(LevelZeroGCTest, ResetWhileRunning) {
     this->max_epoch = 50;
     gc->start().get();
 
-    // Wait for some progress
-    EXPECT_TRUE(Eventually([this] { return !deleted.empty(); }));
+    tick_until([this] { return !deleted.empty(); });
 
-    // Reset while running — should resume and eventually delete all
     gc->reset().get();
 
     this->max_epoch = 100;
 
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 100; }));
+    tick_until([this] { return deleted.size() == 100; });
+    EXPECT_EQ(deleted.size(), 100u);
 }
 
 // reset on a GC that was never started is a no-op
@@ -399,12 +424,11 @@ TEST_F(LevelZeroGCTest, ResetBeforeStart) {
     }
     this->max_epoch = 10;
 
-    // Reset before ever starting — should not crash
     gc->reset().get();
 
-    // Now start and verify it works normally
     gc->start().get();
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 10; }));
+    tick_until([this] { return deleted.size() == 10; });
+    EXPECT_EQ(deleted.size(), 10u);
 }
 
 // concurrent reset is a no-op: the second reset returns immediately while the
@@ -421,19 +445,13 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
     storage_->block_deletes();
     gc->start().get();
 
-    // Wait for the worker loop to have submitted at least one delete task.
-    EXPECT_TRUE(Eventually(
-      [this] { return storage_->has_delete_waiters(); }, 5 /* wait ~100ms */));
+    tick_until([this] { return storage_->has_delete_waiters(); });
 
     // Kick off the first reset — it will block waiting for gate_.close()
     auto reset_fut = gc->reset();
 
-    // Give it a chance to enter the resetting state
-    EXPECT_TRUE(Eventually(
-      [this] {
-          return gc->get_state() == cloud_topics::l0::gc::state::resetting;
-      },
-      5 /* wait ~100ms */));
+    // reset() sets resetting_ synchronously before its first co_await
+    EXPECT_EQ(gc->get_state(), cloud_topics::l0::gc::state::resetting);
 
     // A second concurrent reset should return immediately (no-op)
     gc->reset().get();
@@ -442,9 +460,8 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
     auto start_fut = gc->start();
     EXPECT_FALSE(start_fut.available());
 
-    // Still resetting (first reset is blocked)
     EXPECT_EQ(gc->get_state(), cloud_topics::l0::gc::state::resetting);
-    EXPECT_EQ(deleted.size(), 0);
+    EXPECT_EQ(deleted.size(), 0u);
 
     // Unblock deletes — reset completes, which signals the CV, unblocking
     // start()
@@ -452,8 +469,8 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
     reset_fut.get();
     start_fut.get();
 
-    // After reset completes, GC resumes and finishes the work
-    EXPECT_TRUE(Eventually([this] { return deleted.size() == 50; }));
+    tick_until([this] { return deleted.size() == 50; });
+    EXPECT_EQ(deleted.size(), 50u);
 }
 
 /*
@@ -616,8 +633,9 @@ TEST_F(LevelZeroGCScaleOutTest, MultiPageDelete) {
     this->max_epoch = n;
     this->cfg.list_page_size = list_page_size;
     gc->start().get();
-    EXPECT_TRUE(Eventually(
-      [this, expected = (size_t)n] { return deleted.size() == expected; }));
+    auto expected = static_cast<size_t>(n);
+    tick_until([this, expected] { return deleted.size() == expected; });
+    EXPECT_EQ(deleted.size(), expected);
 }
 
 TEST_F(LevelZeroGCScaleOutTest, CleanShutdown) {
@@ -630,9 +648,7 @@ TEST_F(LevelZeroGCScaleOutTest, CleanShutdown) {
     this->cfg.list_page_size = list_page_size;
     this->cfg.delete_cost = 200ms;
     gc->start().get();
-    // wait until we process one page
-    EXPECT_TRUE(Eventually([this] { return !deleted.empty(); }));
-    // then immediately shutdown gc
+    tick_until([this] { return !deleted.empty(); });
     gc->stop().get();
 }
 
@@ -646,8 +662,9 @@ TEST_F(LevelZeroGCScaleOutTest, ConcurrentDeletes) {
     this->cfg.list_page_size = list_page_size;
     this->cfg.delete_cost = 100ms;
     gc->start().get();
-    EXPECT_TRUE(Eventually(
-      [this, expected = (size_t)n] { return deleted.size() == expected; }));
+    auto expected = static_cast<size_t>(n);
+    tick_until([this, expected] { return deleted.size() == expected; });
+    EXPECT_EQ(deleted.size(), expected);
 }
 
 // make sure we make progress when the total size of eligible keys exceeds the
@@ -663,10 +680,9 @@ TEST_F(LevelZeroGCScaleOutTest, ConcurrentDeletesPipelineSaturation) {
     this->cfg.list_page_size = list_page_size;
     this->cfg.delete_cost = 50ms;
     gc->start().get();
-    EXPECT_TRUE(Eventually(
-      [this, expected = (size_t)n] { return deleted.size() == expected; },
-      50,
-      100ms));
+    auto expected = static_cast<size_t>(n);
+    tick_until([this, expected] { return deleted.size() == expected; });
+    EXPECT_EQ(deleted.size(), expected);
 }
 
 // =============================================================================
@@ -1079,9 +1095,28 @@ public:
           std::make_unique<node_info_test_impl>(
             std::get<0>(GetParam()), std::get<1>(GetParam())),
           std::make_unique<safety_monitor_test_impl>(),
-          [](ss::lowres_clock::duration) { return 0ms; }) {}
+          [](ss::manual_clock::duration) {
+              return ss::manual_clock::duration::zero();
+          }) {}
 
     void TearDown() override { gc_.stop().get(); }
+
+    void tick(ss::manual_clock::duration delta = 20ms) {
+        ss::manual_clock::advance(delta);
+        tests::drain_task_queue().get();
+    }
+
+    template<typename Fn>
+    void tick_until(Fn&& fn, int max_ticks = 500) {
+        for (int i = 0; i < max_ticks; ++i) {
+            tick();
+            if (fn()) {
+                return;
+            }
+        }
+        ADD_FAILURE() << "tick_until: condition not met after " << max_ticks
+                      << " ticks";
+    }
 
     /*
      * Insert an object with a specific prefix and epoch.
@@ -1157,7 +1192,7 @@ public:
     chunked_vector<cloud_storage_clients::client::list_bucket_item> listed_;
     std::unordered_set<ss::sstring> deleted_;
     std::optional<int64_t> max_epoch_;
-    cloud_topics::level_zero_gc gc_;
+    mc_gc gc_;
     gc_test_config cfg_{};
 };
 
@@ -1186,10 +1221,10 @@ TEST_P(LevelZeroGCPartitioningTest, ShardOnlyDeletesObjectsInRange) {
 
     gc_.start().get();
 
-    // Only objects in this shard's range should be deleted
-    EXPECT_TRUE(Eventually([this, expected_in_range] {
+    tick_until([this, expected_in_range] {
         return deleted_.size() == expected_in_range;
-    }));
+    });
+    EXPECT_EQ(deleted_.size(), expected_in_range);
 
     // Verify all deleted objects are within range
     EXPECT_EQ(
@@ -1223,10 +1258,10 @@ TEST_P(LevelZeroGCPartitioningTest, PaginationWithinRange) {
 
     gc_.start().get();
 
-    EXPECT_TRUE(
-      Eventually([this, expected] { return deleted_.size() == expected; }));
-    EXPECT_FALSE(
-      Eventually([this, expected] { return deleted_.size() > expected; }, 10));
+    tick_until([this, expected] { return deleted_.size() == expected; });
+    EXPECT_EQ(deleted_.size(), expected);
+    tick(1h);
+    EXPECT_EQ(deleted_.size(), expected);
 }
 
 /*
@@ -1251,9 +1286,10 @@ TEST_P(LevelZeroGCPartitioningTest, EpochFilteringWithPartitioning) {
 
     gc_.start().get();
 
-    // Only 2 objects (epochs 50 and 100) should be deleted
-    EXPECT_TRUE(Eventually([this] { return deleted_.size() == 2; }));
-    EXPECT_FALSE(Eventually([this] { return deleted_.size() > 2; }, 10));
+    tick_until([this] { return deleted_.size() == 2; });
+    EXPECT_EQ(deleted_.size(), 2u);
+    tick(1h);
+    EXPECT_EQ(deleted_.size(), 2u);
 }
 
 /*
@@ -1280,8 +1316,8 @@ TEST_P(LevelZeroGCPartitioningTest, AgeFilteringWithPartitioning) {
 
     gc_.start().get();
 
-    // Only 2 old objects should be deleted
-    EXPECT_TRUE(Eventually([this] { return deleted_.size() == 2; }));
+    tick_until([this] { return deleted_.size() == 2; });
+    EXPECT_EQ(deleted_.size(), 2u);
 }
 
 /*
@@ -1308,8 +1344,8 @@ TEST_P(LevelZeroGCPartitioningTest, NoObjectsInRange) {
 
     gc_.start().get();
 
-    // No objects should be deleted since none are in our range
-    EXPECT_FALSE(Eventually([this] { return !deleted_.empty(); }, 10));
+    tick(1h);
+    EXPECT_EQ(deleted_.size(), 0u);
 }
 
 /*
@@ -1335,8 +1371,8 @@ TEST_P(LevelZeroGCPartitioningTest, ObjectsAtBoundaries) {
 
     gc_.start().get();
 
-    EXPECT_TRUE(
-      Eventually([this, expected] { return deleted_.size() == expected; }));
+    tick_until([this, expected] { return deleted_.size() == expected; });
+    EXPECT_EQ(deleted_.size(), expected);
 }
 
 // Instantiate tests for various shard configurations
