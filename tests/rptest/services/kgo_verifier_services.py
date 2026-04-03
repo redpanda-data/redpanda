@@ -837,25 +837,25 @@ class KgoVerifierProducer(KgoVerifierService):
             )
         self.status_thread.raise_on_error()
 
-    def _wait_for_file_on_nodes(self, file_name: str) -> None:
+    def _wait_for_file_on_nodes(self, file_name: str, timeout_sec: int = 60) -> None:
         self._redpanda.wait_until(
             lambda: self.status_thread.errored
             or all(node.account.exists(file_name) for node in self.nodes),
-            timeout_sec=15,
+            timeout_sec=timeout_sec,
             backoff_sec=1,
             err_msg=f"Timed out waiting for {file_name} to be created",
         )
         self.status_thread.raise_on_error()
 
-    def wait_for_offset_map(self) -> None:
+    def wait_for_offset_map(self, timeout_sec: int = 60) -> None:
         # Producer worker aims to checkpoint every 5 seconds, so we should see this promptly.
         offset_map_file_name = f"valid_offsets_{self._topic}.json"
-        self._wait_for_file_on_nodes(offset_map_file_name)
+        self._wait_for_file_on_nodes(offset_map_file_name, timeout_sec=timeout_sec)
 
-    def wait_for_latest_value_map(self) -> None:
+    def wait_for_latest_value_map(self, timeout_sec: int = 60) -> None:
         # Producer worker aims to checkpoint every 5 seconds, so we should see this promptly.
         value_map_file_name = f"latest_value_{self._topic}.json"
-        self._wait_for_file_on_nodes(value_map_file_name)
+        self._wait_for_file_on_nodes(value_map_file_name, timeout_sec=timeout_sec)
 
     def is_complete(self) -> bool:
         return self.produce_status.acked >= self._msg_count
