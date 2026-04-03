@@ -39,7 +39,8 @@ class api;
 namespace cloud_topics {
 class data_plane_api;
 class cloud_topics_manager;
-class level_zero_gc;
+template<class>
+class level_zero_gc_t;
 class housekeeper_manager;
 class topic_manifest_upload_manager;
 
@@ -88,7 +89,7 @@ public:
     ss::sharded<reconciler::reconciler<>>* get_reconciler();
     ss::sharded<l1::replicated_metastore>* get_sharded_replicated_metastore();
     l1::compaction_scheduler* get_compaction_scheduler();
-    ss::sharded<level_zero_gc>* get_level_zero_gc();
+    ss::sharded<level_zero_gc_t<ss::lowres_clock>>* get_level_zero_gc();
     cluster_services& get_local_cluster_services();
 
     // TODO: add 'get_control_plane_api' etc
@@ -112,7 +113,7 @@ private:
     ss::sharded<l1::topic_purger_manager> topic_purge_manager;
     ss::sharded<l1::flush_loop_manager> flush_loop_manager;
     ss::sharded<cloud_topics_manager> manager;
-    ss::sharded<level_zero_gc> l0_gc;
+    ss::sharded<level_zero_gc_t<ss::lowres_clock>> l0_gc;
     ss::sharded<housekeeper_manager> housekeeper_manager;
     ss::sharded<topic_manifest_upload_manager> topic_manifest_upload_mgr;
     std::unique_ptr<l1::compaction_scheduler> compaction_scheduler;
