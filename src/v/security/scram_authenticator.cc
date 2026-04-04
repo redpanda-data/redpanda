@@ -31,6 +31,10 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     auto credential = _credentials.get<scram_credential>(
       credential_user(authid));
     if (!credential) {
+        vlog(
+          seclog.warn,
+          "Authentication failed for user {}: not found in credential store",
+          authid);
         return errc::invalid_credentials;
     }
     _principal = credential->principal().value_or(
@@ -52,7 +56,11 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
 
     if (
       !_client_first->authzid().empty() && _client_first->authzid() != authid) {
-        vlog(seclog.info, "Invalid authorization id and username pair");
+        vlog(
+          seclog.info,
+          "Authentication failed for user {}: invalid authorization id and "
+          "username pair",
+          authid);
         return errc::invalid_credentials;
     }
 
@@ -93,8 +101,9 @@ scram_authenticator<T>::handle_client_final(bytes_view auth_bytes) {
     if (computed_stored_key != _credential->stored_key()) {
         vlog(
           seclog.info,
-          "Authentication failed: stored and client submitted credentials do "
-          "not match");
+          "Authentication failed for user {}: stored and client submitted "
+          "credentials do not match",
+          _audit_user.name);
         return errc::invalid_credentials;
     }
 
