@@ -195,6 +195,14 @@ partition_validator::validate(validate_partition_options opts) {
         co_return result;
     }
     const auto& metadata = metadata_res.value().value();
+    if (
+      opts.resume_at_offset.has_value()
+      && *opts.resume_at_offset < metadata.start_offset) {
+        // A prefix truncation may have advanced start_offset past the
+        // resume point between paginated calls. Clamp to start_offset
+        // so pagination skips past the truncated region.
+        opts.resume_at_offset = metadata.start_offset;
+    }
 
     auto seen_objects_res = co_await validate_extents(opts, metadata, result);
     if (!seen_objects_res.has_value()) {

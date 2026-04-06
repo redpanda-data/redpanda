@@ -401,3 +401,74 @@ TEST_F(PartitionValidatorTest, CompactionValidAfterSetStartOffset) {
     write_compaction(tp_a, std::move(c));
     expect_clean(validate({.tidp = tp_a}));
 }
+
+// Simulate a prefix truncation between paginated validation calls.  Page 1
+// validates [0,99] and returns resume_at_offset=0.  Before page 2,
+// set_start_offset advances start to 100 and removes the [0,99] extent. The
+// validator should detect that resume_at is below start_offset and fall back
+// to first-page behavior.
+TEST_F(PartitionValidatorTest, PrefixTruncationDuringPagination) {
+    auto o1 = create_object_id();
+    auto o2 = create_object_id();
+    add_extent(tp_a, o1, 0_o, 99_o);
+    add_extent(tp_a, o2, 100_o, 199_o);
+
+    auto p1 = validate({.tidp = tp_a, .max_extents = 1});
+    expect_clean(p1);
+    ASSERT_TRUE(p1.resume_at_offset.has_value());
+
+    // Simulate prefix truncation: advance start_offset, remove first extent.
+    write_metadata(tp_a, 100_o, 200_o);
+    {
+        auto wb = db_->create_write_batch();
+        wb.remove(extent_row_key::encode(tp_a, 0_o), next_seqno());
+        db_->apply(std::move(wb)).get();
+    }
+
+    // Page 2 with stale resume_at_offset: clamped to start_offset=100,
+    // re-reads [100,199] (exact match, not counted), no more extents.
+    auto p2 = validate({.tidp = tp_a, .resume_at_offset = p1.resume_at_offset});
+    expect_clean(p2);
+    EXPECT_FALSE(p2.resume_at_offset.has_value());
+}
+
+TEST_F(PartitionValidatorTest, MidExtentStartWithPagination) {
+    auto o1 = create_object_id();
+    auto o2 = create_object_id();
+    write_metadata(tp_a, 50_o, 200_o);
+
+    // NOTE: first extent falls below start offset.
+    write_extent(tp_a, 0_o, 99_o, o1);
+    write_extent(tp_a, 100_o, 199_o, o2);
+    write_object(o1);
+    write_object(o2);
+    write_term(tp_a, model::term_id{1}, 0_o);
+
+    auto p1 = validate({.tidp = tp_a, .max_extents = 1});
+    expect_clean(p1);
+    EXPECT_EQ(p1.extents_validated, 1);
+    ASSERT_TRUE(p1.resume_at_offset.has_value());
+
+    // The returned resume should be the first extent, which is below the start
+    // offset.
+    EXPECT_EQ(*p1.resume_at_offset, 0_o);
+
+    // We should be able to page through the rest of the partition without
+    // issues (e.g. no looping on the same extent).
+    auto p2 = validate(
+      {.tidp = tp_a,
+       .resume_at_offset = p1.resume_at_offset,
+       .max_extents = 1});
+    expect_clean(p2);
+    EXPECT_TRUE(p2.resume_at_offset.has_value());
+    EXPECT_EQ(*p2.resume_at_offset, 100_o);
+    EXPECT_GE(p2.extents_validated, 1);
+
+    auto p3 = validate(
+      {.tidp = tp_a,
+       .resume_at_offset = p2.resume_at_offset,
+       .max_extents = 1});
+    expect_clean(p3);
+    EXPECT_FALSE(p3.resume_at_offset.has_value());
+    EXPECT_GE(p3.extents_validated, 0);
+}
