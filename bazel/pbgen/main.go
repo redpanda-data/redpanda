@@ -635,6 +635,7 @@ func (g *headerGenerator) generateMessage(msg protoreflect.MessageDescriptor, w 
 	}
 	w.Println()
 	w.Printf("std::string_view full_name() const override { return %q; }\n", msg.FullName())
+	w.Printf("static constexpr size_t field_count = %d;\n", msg.Fields().Len())
 	w.Println("// Convert a field path into a path of field numbers.")
 	w.Println("static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);")
 	w.Println("// Convert a field path into a path of field numbers.")

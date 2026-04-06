@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "role",
@@ -19,8 +19,6 @@ go_library(
         "//src/go/rpk/pkg/kafka",
         "//src/go/rpk/pkg/out",
         "//src/go/rpk/pkg/publicapi",
-        "//src/go/rpk/pkg/redpanda",
-        "@build_buf_gen_go_redpandadata_core_protocolbuffers_go//redpanda/core/admin/v2:admin",
         "@build_buf_gen_go_redpandadata_dataplane_protocolbuffers_go//redpanda/api/dataplane/v1:dataplane",
         "@com_connectrpc_connect//:connect",
         "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
@@ -29,4 +27,11 @@ go_library(
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_types//:types",
     ],
+)
+
+go_test(
+    name = "role_test",
+    srcs = ["role_test.go"],
+    embed = [":role"],
+    deps = ["@com_github_stretchr_testify//require"],
 )

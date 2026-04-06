@@ -340,6 +340,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":metastore",
+        ":retry",
         "//src/v/base",
         "//src/v/cloud_topics:logger",
         "//src/v/cluster",
@@ -376,6 +377,34 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/ssx:actor",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition_validator",
+    srcs = [
+        "partition_validator.cc",
+    ],
+    hdrs = [
+        "partition_validator.h",
+    ],
+    implementation_deps = [
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_topics/level_one/common:object_utils",
+        "//src/v/cloud_topics/level_one/metastore/lsm:keys",
+        "//src/v/utils:retry_chain_node",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_storage_clients",
+        "//src/v/cloud_topics/level_one/metastore/lsm:state_reader",
+        "//src/v/cloud_topics/level_one/metastore/lsm:values",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "//src/v/utils:detailed_error",
         "@seastar",
     ],
 )

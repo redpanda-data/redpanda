@@ -180,6 +180,25 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "partition_validator_test",
+    timeout = "short",
+    srcs = [
+        "partition_validator_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/metastore:partition_validator",
+        "//src/v/cloud_topics/level_one/metastore/lsm:keys",
+        "//src/v/cloud_topics/level_one/metastore/lsm:values",
+        "//src/v/lsm",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "extent_metadata_reader_test",
     timeout = "short",
     srcs = [

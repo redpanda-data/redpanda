@@ -93,6 +93,7 @@ pm::row_value make_metadata_value() {
     mv.set_next_offset(20);
     mv.set_compaction_epoch(1);
     mv.set_size(1000);
+    mv.set_num_extents(42);
     val.set_metadata(std::move(mv));
     return val;
 }
@@ -224,6 +225,7 @@ TEST(DebugReaderTest, RoundTripMetadataValue) {
     EXPECT_EQ(decoded->get_metadata().get_next_offset(), 20);
     EXPECT_EQ(decoded->get_metadata().get_compaction_epoch(), 1);
     EXPECT_EQ(decoded->get_metadata().get_size(), 1000);
+    EXPECT_EQ(decoded->get_metadata().get_num_extents(), 42);
 }
 
 TEST(DebugReaderTest, RoundTripExtentValue) {

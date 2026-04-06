@@ -10,6 +10,7 @@
 #pragma once
 
 #include "cloud_topics/level_one/metastore/lsm/write_batch_row.h"
+#include "cloud_topics/level_one/metastore/partition_validator.h"
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "container/chunked_vector.h"
 
@@ -122,6 +123,10 @@ public:
       std::optional<ss::sstring> last_key,
       uint32_t max_rows)
       = 0;
+
+    virtual ss::future<
+      std::expected<partition_validation_result, partition_validator::error>>
+      validate_partition(validate_partition_options) = 0;
 };
 
 } // namespace cloud_topics::l1

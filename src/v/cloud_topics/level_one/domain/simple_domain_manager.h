@@ -93,6 +93,10 @@ public:
       std::optional<ss::sstring> last_key,
       uint32_t max_rows) override;
 
+    ss::future<
+      std::expected<partition_validation_result, partition_validator::error>>
+      validate_partition(validate_partition_options) override;
+
 private:
     std::optional<ss::gate::holder> maybe_gate();
     ss::future<> gc_loop();

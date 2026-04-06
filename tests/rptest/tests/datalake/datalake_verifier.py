@@ -10,7 +10,7 @@
 import random
 import threading
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait as futures_wait
 from time import sleep
 from typing import List, Optional
 
@@ -83,6 +83,8 @@ class DatalakeVerifier:
         self._query_batch_size = 1000
         self._query_batch_wait_timeout_s = 3
         self._executor = ThreadPoolExecutor(max_workers=2)
+        self._consumer_future: Future | None = None
+        self._query_future: Future | None = None
         self._rpk = RpkTool(self.redpanda)
         # errors found during verification
         self._errors = []
@@ -326,8 +328,8 @@ class DatalakeVerifier:
                 sleep(2)
 
     def start(self, wait_first_iceberg_msg=False):
-        self._executor.submit(self._consumer_thread)
-        self._executor.submit(self._query_thread)
+        self._consumer_future = self._executor.submit(self._consumer_thread)
+        self._query_future = self._executor.submit(self._query_thread)
         if wait_first_iceberg_msg:
             self._received_first_iceberg_message.wait()
 
@@ -363,6 +365,7 @@ class DatalakeVerifier:
         return progress
 
     def wait(self, progress_timeout_sec=30):
+        check = True
         try:
             while not self._all_offsets_translated():
                 wait_until(
@@ -377,30 +380,44 @@ class DatalakeVerifier:
             self.logger.debug("No errors around waiting")
         except Exception as e:
             self.logger.error(f"Error around waiting: {e}")
+            check = False
             raise
         finally:
-            self.stop()
+            self.stop(check=check)
 
-    def stop(self):
+    _SHUTDOWN_TIMEOUT_S = 30
+
+    def stop(self, check=True):
         self.logger.debug("stopping")
         try:
             self._stop.set()
             self._msg_semaphore.release()
-            self._executor.shutdown(wait=False)
-            assert len(self._errors) == 0, (
-                f"Topic {self.topic} validation errors: {self._errors}"
-            )
+            futures = [
+                f for f in [self._consumer_future, self._query_future] if f is not None
+            ]
+            done, not_done = futures_wait(futures, timeout=self._SHUTDOWN_TIMEOUT_S)
+            if not_done:
+                self.logger.error(
+                    f"Verifier threads did not stop within {self._SHUTDOWN_TIMEOUT_S}s"
+                )
+                self._executor.shutdown(wait=False)
+            else:
+                self._executor.shutdown(wait=True)
+            if check:
+                assert len(self._errors) == 0, (
+                    f"Topic {self.topic} validation errors: {self._errors}"
+                )
 
-            self.logger.debug(f"consumed offsets: {self.max_consumed_offsets}")
-            self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
+                self.logger.debug(f"consumed offsets: {self.max_consumed_offsets}")
+                self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
 
-            assert self._max_queried_offsets == self.max_consumed_offsets, (
-                "Mismatch between maximum offsets in topic vs iceberg table"
-            )
+                assert self._max_queried_offsets == self.max_consumed_offsets, (
+                    "Mismatch between maximum offsets in topic vs iceberg table"
+                )
 
-            assert len(self._expected_compacted_keys) == 0, (
-                "Some keys which were compacted away were not seen later in the consumer's log"
-            )
+                assert len(self._expected_compacted_keys) == 0, (
+                    "Some keys which were compacted away were not seen later in the consumer's log"
+                )
         finally:
             if self._consumer:
                 self._consumer.close()
