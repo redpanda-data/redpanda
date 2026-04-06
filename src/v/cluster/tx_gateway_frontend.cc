@@ -51,10 +51,12 @@ static auto with(
   const kafka::transactional_id& tx_id,
   const std::string_view name,
   Func&& func) {
+    auto gh = stm->gate().hold();
     return stm->lock_tx(tx_id, name)
-      .then([stm, func = std::forward<Func>(func)](auto units) mutable {
+      .then([stm, func = std::forward<Func>(func), gh = std::move(gh)](
+              auto units) mutable {
           return ss::futurize_invoke(std::forward<Func>(func))
-            .finally([units = std::move(units)] {});
+            .finally([units = std::move(units), gh = std::move(gh)] {});
       });
 }
 
@@ -64,6 +66,7 @@ static auto with_free(
   const kafka::transactional_id& tx_id,
   const std::string_view name,
   Func&& func) {
+    auto gh = stm->gate().hold();
     auto units = stm->try_lock_tx(tx_id, name);
     auto f = ss::now();
 
@@ -71,11 +74,12 @@ static auto with_free(
         f = ss::make_exception_future(ss::semaphore_timed_out());
     }
 
-    return f.then(
-      [units = std::move(units), func = std::forward<Func>(func)]() mutable {
-          return ss::futurize_invoke(std::forward<Func>(func))
-            .finally([units = std::move(units)] {});
-      });
+    return f.then([units = std::move(units),
+                   func = std::forward<Func>(func),
+                   gh = std::move(gh)]() mutable {
+        return ss::futurize_invoke(std::forward<Func>(func))
+          .finally([units = std::move(units), gh = std::move(gh)] {});
+    });
 }
 
 static auto send(tx_gateway_client_protocol& cp, try_abort_request&& request) {
