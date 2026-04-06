@@ -26,6 +26,7 @@ from rptest.services.redpanda import (
     SISettings,
     get_cloud_provider,
     get_cloud_storage_type,
+    get_cloud_storage_type_and_url_style,
     make_redpanda_service,
 )
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
@@ -535,7 +536,7 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[10],
-        cloud_storage_type_and_url_style=[[CloudStorageType.S3, "path"]],
+        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(),
         mode=get_read_replica_sources(),
     )
     def test_simple_end_to_end(
