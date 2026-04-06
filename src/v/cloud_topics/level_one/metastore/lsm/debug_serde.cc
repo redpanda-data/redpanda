@@ -17,6 +17,26 @@
 
 namespace cloud_topics::l1 {
 
+// Ensure debug serde stays in sync when fields are added to row value types.
+namespace pb = proto::admin::metastore;
+template<typename T>
+constexpr size_t serde_field_count() {
+    return std::tuple_size_v<decltype(std::declval<T>().serde_fields())>;
+}
+static_assert(
+  serde_field_count<metadata_row_value>() == pb::metadata_value::field_count);
+static_assert(
+  serde_field_count<extent_row_value>() == pb::extent_value::field_count);
+static_assert(
+  serde_field_count<term_row_value>() == pb::term_value::field_count);
+static_assert(
+  serde_field_count<compaction_state>() == pb::compaction_value::field_count);
+static_assert(
+  serde_field_count<compaction_state::cleaned_range_with_tombstones>()
+  == pb::cleaned_range_with_tombstones::field_count);
+static_assert(
+  serde_field_count<object_entry>() == pb::object_value::field_count);
+
 std::string_view to_string_view(debug_serde_errc e) {
     switch (e) {
     case debug_serde_errc::invalid_uuid:
@@ -119,6 +139,7 @@ debug_encode_value(const proto::admin::metastore::row_value& val) {
           .compaction_epoch
           = partition_state::compaction_epoch_t{v.get_compaction_epoch()},
           .size = static_cast<size_t>(v.get_size()),
+          .num_extents = static_cast<size_t>(v.get_num_extents()),
         };
         return serde::to_iobuf(std::move(rv));
     }

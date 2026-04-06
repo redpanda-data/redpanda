@@ -10,13 +10,17 @@
 
 #include "redpanda/admin/services/internal/metastore.h"
 
+#include "absl/container/btree_map.h"
 #include "cloud_topics/level_one/domain/domain_manager.h"
 #include "cloud_topics/level_one/metastore/lsm/debug_reader.h"
 #include "cloud_topics/level_one/metastore/lsm/debug_serde.h"
 #include "cloud_topics/level_one/metastore/lsm/debug_writer.h"
+#include "cloud_topics/level_one/metastore/partition_validator.h"
 #include "cluster/shard_table.h"
+#include "cluster/topic_table.h"
 #include "redpanda/admin/services/utils.h"
 #include "serde/protobuf/rpc.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -321,6 +325,134 @@ metastore_service_impl::read_rows(
           fmt::format("decode error: {}", resp_res.error()));
     }
     co_return std::move(*resp_res);
+}
+
+seastar::future<proto::admin::metastore::validate_partition_response>
+metastore_service_impl::validate_partition(
+  serde::pb::rpc::context ctx,
+  proto::admin::metastore::validate_partition_request req) {
+    model::topic_id topic_id;
+
+    try {
+        topic_id = model::topic_id{uuid_t::from_string(req.get_topic_id())};
+    } catch (...) {
+        throw serde::pb::rpc::invalid_argument_exception(
+          fmt::format("invalid topic id: {}", req.get_topic_id()));
+    }
+    auto partition_id = model::partition_id{req.get_partition_id()};
+    auto tidp = model::topic_id_partition{topic_id, partition_id};
+
+    // Resolve the metastore partition from the topic-partition.
+    auto mp = _leader_router->local().metastore_partition(tidp);
+    if (!mp) {
+        throw serde::pb::rpc::unavailable_exception(
+          "cannot resolve metastore partition");
+    }
+    model::ntp metastore_ntp{
+      model::kafka_internal_namespace, model::l1_metastore_topic, *mp};
+
+    auto redirect_node = utils::redirect_to_leader(
+      _metadata_cache->local(), metastore_ntp, _proxy_client.self_node_id());
+    if (redirect_node) {
+        co_return co_await _proxy_client
+          .make_client_for_node<
+            proto::admin::metastore::metastore_service_client>(*redirect_node)
+          .validate_partition(std::move(ctx), std::move(req));
+    }
+
+    auto shard = _shard_table->local().shard_for(metastore_ntp);
+    if (!shard.has_value()) {
+        throw serde::pb::rpc::unavailable_exception("no shard");
+    }
+
+    cloud_topics::l1::validate_partition_options opts{
+      .tidp = tidp,
+      .check_object_metadata = req.get_check_object_metadata(),
+      .check_object_storage = req.get_check_object_storage(),
+      .resume_at_offset = req.has_resume_at_offset()
+                            ? std::optional{kafka::offset{
+                                req.get_resume_at_offset()}}
+                            : std::nullopt,
+      .max_extents = req.get_max_extents(),
+    };
+
+    auto result_exp = co_await _domain_supervisor->invoke_on(
+      *shard,
+      [metastore_ntp, opts](this auto, cloud_topics::l1::domain_supervisor& sup)
+        -> ss::future<std::expected<
+          cloud_topics::l1::partition_validation_result,
+          cloud_topics::l1::partition_validator::error>> {
+          auto dm = sup.get(metastore_ntp);
+          if (!dm) {
+              throw serde::pb::rpc::unavailable_exception("not leader");
+          }
+          co_return co_await dm->validate_partition(opts);
+      });
+
+    if (!result_exp.has_value()) {
+        throw serde::pb::rpc::unavailable_exception(
+          fmt::format("validation error: {}", result_exp.error()));
+    }
+
+    auto& result = result_exp.value();
+    proto::admin::metastore::validate_partition_response response;
+    for (auto& anomaly : result.anomalies) {
+        proto::admin::metastore::metastore_anomaly a;
+        a.set_anomaly_type(
+          static_cast<proto::admin::metastore::anomaly_type>(anomaly.type));
+        a.set_description(std::move(anomaly.description));
+        response.get_anomalies().push_back(std::move(a));
+    }
+    if (result.resume_at_offset.has_value()) {
+        response.set_resume_at_offset((*result.resume_at_offset)());
+    }
+    response.set_extents_validated(result.extents_validated);
+    co_return response;
+}
+
+seastar::future<proto::admin::metastore::list_cloud_topics_response>
+metastore_service_impl::list_cloud_topics(
+  serde::pb::rpc::context,
+  proto::admin::metastore::list_cloud_topics_request req) {
+    auto after = ss::sstring(req.get_after_topic_name());
+    uint32_t max_topics = req.get_max_topics();
+    if (max_topics == 0) {
+        max_topics = 100;
+    }
+
+    const auto& topics_metadata = _topic_table->local().all_topics_metadata();
+    absl::
+      btree_map<ss::sstring, const cluster::topic_table::topic_metadata_item*>
+        cloud_topics;
+    for (const auto& [tn, item] : topics_metadata) {
+        const auto& cfg = item.get_configuration();
+        if (
+          !cfg.is_cloud_topic() || cfg.is_read_replica()
+          || !cfg.tp_id.has_value()) {
+            continue;
+        }
+        if (!after.empty() && tn.tp() <= after) {
+            continue;
+        }
+        cloud_topics.emplace(tn.tp(), &item);
+    }
+
+    proto::admin::metastore::list_cloud_topics_response response;
+    uint32_t count = 0;
+    for (const auto& [name, item] : cloud_topics) {
+        if (count >= max_topics) {
+            response.set_has_more(true);
+            break;
+        }
+        const auto& cfg = item->get_configuration();
+        proto::admin::metastore::cloud_topic_info info;
+        info.set_topic_name(ss::sstring(name));
+        info.set_topic_id(ss::sstring(cfg.tp_id.value()()));
+        info.set_partition_count(cfg.partition_count);
+        response.get_topics().push_back(std::move(info));
+        ++count;
+    }
+    co_return response;
 }
 
 } // namespace admin

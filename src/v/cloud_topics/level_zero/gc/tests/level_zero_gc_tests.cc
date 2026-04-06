@@ -9,8 +9,12 @@
  */
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
 #include "cloud_topics/object_utils.h"
+#include "config/mock_property.h"
 #include "ssx/mutex.h"
+#include "test_utils/async.h"
+#include "test_utils/test.h"
 
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/sleep.hh>
 
 #include <gtest/gtest.h>
@@ -27,8 +31,7 @@ constexpr size_t prefix_max = cloud_topics::object_id::prefix_max;
 constexpr size_t n_prefixes = prefix_max + 1;
 } // namespace
 
-class object_storage_test_impl
-  : public cloud_topics::level_zero_gc::object_storage {
+class object_storage_test_impl : public cloud_topics::l0::gc::object_storage {
 public:
     object_storage_test_impl(
       chunked_vector<cloud_storage_clients::client::list_bucket_item>* listed,
@@ -52,6 +55,7 @@ public:
             co_return std::unexpected{
               cloud_storage_clients::error_outcome::fail};
         }
+        ++list_call_count_;
         chunked_vector<cloud_storage_clients::client::list_bucket_item> keep;
         co_await seastar::sleep(cfg_->list_cost);
         auto lu = co_await list_mtx_.get_units(*as);
@@ -120,6 +124,7 @@ public:
     chunked_vector<cloud_storage_clients::client::list_bucket_item>* listed_;
     std::unordered_set<ss::sstring>* deleted_;
     gc_test_config* cfg_;
+    uint64_t list_call_count_{0};
 
     ssx::mutex list_mtx_{"object-store-impl-list"};
     ssx::mutex delete_mtx_{"object-store-impl-delete"};
@@ -129,8 +134,7 @@ private:
     seastar::condition_variable delete_cv_;
 };
 
-class epoch_source_test_impl
-  : public cloud_topics::level_zero_gc::epoch_source {
+class epoch_source_test_impl : public cloud_topics::l0::gc::epoch_source {
 public:
     explicit epoch_source_test_impl(std::optional<int64_t>* epoch)
       : epoch_(epoch) {}
@@ -173,7 +177,7 @@ private:
  * indices based on the members table, this allows direct control over the
  * shard index and total shard count.
  */
-class node_info_test_impl : public cloud_topics::level_zero_gc::node_info {
+class node_info_test_impl : public cloud_topics::l0::gc::node_info {
 public:
     node_info_test_impl() = default;
     node_info_test_impl(size_t shard_idx, size_t total)
@@ -187,8 +191,7 @@ private:
     size_t total_shards_{1};
 };
 
-class safety_monitor_test_impl
-  : public cloud_topics::level_zero_gc::safety_monitor {
+class safety_monitor_test_impl : public cloud_topics::l0::gc::safety_monitor {
     static constexpr bool default_ok{true};
 
 public:
@@ -217,8 +220,7 @@ public:
         storage_ = storage.get();
         gc = std::make_unique<cloud_topics::level_zero_gc>(
           cloud_topics::level_zero_gc_config{
-            .deletion_grace_period
-            = config::mock_binding<std::chrono::milliseconds>(12h),
+            .deletion_grace_period = grace_period_.bind(),
             .throttle_progress
             = config::mock_binding<std::chrono::milliseconds>(
               throttle_progress),
@@ -229,7 +231,8 @@ public:
           std::move(storage),
           std::make_unique<epoch_source_test_impl>(&max_epoch),
           std::make_unique<node_info_test_impl>(),
-          std::make_unique<safety_monitor_test_impl>(&safety_ok));
+          std::make_unique<safety_monitor_test_impl>(&safety_ok),
+          [](ss::lowres_clock::duration) { return 0ms; });
     }
 
     void TearDown() override { gc->stop().get(); }
@@ -238,7 +241,7 @@ public:
      * Insert an entry into the `listed` container which is the source of
      * objects reported by `list_objects`.
      */
-    void add_listed(int64_t epoch, std::chrono::seconds age) {
+    void add_listed(int64_t epoch, std::chrono::milliseconds age) {
         auto key = cloud_topics::object_path_factory::level_zero_path(
           cloud_topics::object_id{
             .epoch = cloud_topics::cluster_epoch(epoch),
@@ -255,6 +258,8 @@ public:
     chunked_vector<cloud_storage_clients::client::list_bucket_item> listed;
     std::unordered_set<ss::sstring> deleted;
     std::optional<int64_t> max_epoch;
+    config::mock_property<std::chrono::milliseconds> grace_period_{
+      std::chrono::milliseconds{12h}};
     std::unique_ptr<cloud_topics::level_zero_gc> gc;
     gc_test_config cfg{};
     object_storage_test_impl* storage_{nullptr};
@@ -426,8 +431,7 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
     // Give it a chance to enter the resetting state
     EXPECT_TRUE(Eventually(
       [this] {
-          return gc->get_state()
-                 == cloud_topics::level_zero_gc::state::resetting;
+          return gc->get_state() == cloud_topics::l0::gc::state::resetting;
       },
       5 /* wait ~100ms */));
 
@@ -439,7 +443,7 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
     EXPECT_FALSE(start_fut.available());
 
     // Still resetting (first reset is blocked)
-    EXPECT_EQ(gc->get_state(), cloud_topics::level_zero_gc::state::resetting);
+    EXPECT_EQ(gc->get_state(), cloud_topics::l0::gc::state::resetting);
     EXPECT_EQ(deleted.size(), 0);
 
     // Unblock deletes — reset completes, which signals the CV, unblocking
@@ -458,7 +462,7 @@ TEST_F(LevelZeroGCTest, ResetConcurrentOps) {
  * eligible epoch calculation, so that is not overriden.
  */
 class epoch_source_test_default_impl
-  : public cloud_topics::level_zero_gc::epoch_source {
+  : public cloud_topics::l0::gc::epoch_source {
 public:
     explicit epoch_source_test_default_impl(
       partitions_snapshot* get_partitions_value,
@@ -503,7 +507,7 @@ private:
 
 class LevelZeroGCMaxEpochTest : public testing::Test {
 public:
-    using epoch_source_type = cloud_topics::level_zero_gc::epoch_source;
+    using epoch_source_type = cloud_topics::l0::gc::epoch_source;
     using partitions_snapshot = epoch_source_type::partitions_snapshot;
     using partitions_max_gc_epoch = epoch_source_type::partitions_max_gc_epoch;
 
@@ -640,6 +644,219 @@ TEST_F(LevelZeroGCScaleOutTest, ConcurrentDeletesPipelineSaturation) {
       [this, expected = (size_t)n] { return deleted.size() == expected; },
       50,
       100ms));
+}
+
+// =============================================================================
+// Backoff behavior tests (manual clock)
+//
+// These instantiate level_zero_gc_t<ss::manual_clock> so that time
+// progression is fully controlled by the test. Each test advances the
+// manual clock and verifies the worker wakes at the right time.
+// =============================================================================
+
+class LevelZeroGCBackoffTest : public seastar_test {
+public:
+    ss::future<> TearDownAsync() override {
+        if (gc_) {
+            co_await gc_->stop();
+        }
+    }
+
+    void configure(
+      std::chrono::milliseconds gp,
+      std::chrono::milliseconds throttle_progress = 10ms,
+      std::chrono::milliseconds throttle_no_progress = 10ms) {
+        grace_period_.update(std::chrono::milliseconds{gp});
+        auto s = std::make_unique<object_storage_test_impl>(
+          &listed, &deleted, &cfg);
+        storage_ = s.get();
+        gc_ = std::make_unique<cloud_topics::level_zero_gc_t<ss::manual_clock>>(
+          cloud_topics::level_zero_gc_config{
+            .deletion_grace_period = grace_period_.bind(),
+            .throttle_progress
+            = config::mock_binding<std::chrono::milliseconds>(
+              throttle_progress),
+            .throttle_no_progress
+            = config::mock_binding<std::chrono::milliseconds>(
+              throttle_no_progress),
+          },
+          std::move(s),
+          std::make_unique<epoch_source_test_impl>(&max_epoch),
+          std::make_unique<node_info_test_impl>(),
+          std::make_unique<safety_monitor_test_impl>(&safety_ok),
+          [](ss::manual_clock::duration) { return 0ms; });
+    }
+
+    void add_listed(int64_t epoch, std::chrono::milliseconds age) {
+        auto key = cloud_topics::object_path_factory::level_zero_path(
+          cloud_topics::object_id{
+            .epoch = cloud_topics::cluster_epoch(epoch),
+            .name = uuid_t::create(),
+            .prefix = 0,
+          });
+        cloud_storage_clients::client::list_bucket_item item{
+          .key = key().string(),
+          .last_modified = std::chrono::system_clock::now() - age,
+        };
+        listed.push_back(item);
+    }
+
+    ss::future<>
+    tick(std::chrono::milliseconds delta = std::chrono::milliseconds{0}) {
+        ss::manual_clock::advance(delta);
+        co_await tests::drain_task_queue();
+    }
+
+    template<class Fn>
+    ss::future<> tick_until(
+      Fn&& fn, std::chrono::milliseconds step = 10ms, int retries = 20) {
+        for (int i = 0; i < retries && !fn(); ++i) {
+            co_await tick(step);
+        }
+    }
+
+    /// Wait for a collection round to fully complete (all pages +
+    /// inter-page throttle sleeps) and the worker to enter its
+    /// backoff sleep. Returns the stabilized list_call_count_.
+    ss::future<uint64_t> wait_for_round() {
+        co_await tick_until([this] { return storage_->list_call_count_ > 0; });
+        // Require the count to be unchanged for two consecutive ticks.
+        // Use a step larger than throttle_progress (the inter-page
+        // sleep) so each tick fully flushes any pending page work.
+        int stable_ticks = 0;
+        uint64_t prev = 0;
+        co_await tick_until(
+          [this, &prev, &stable_ticks] {
+              auto cur = storage_->list_call_count_;
+              if (cur == prev && cur > 0) {
+                  ++stable_ticks;
+              } else {
+                  stable_ticks = 0;
+              }
+              prev = cur;
+              return stable_ticks >= 2;
+          },
+          20ms);
+        co_return storage_->list_call_count_;
+    }
+
+    chunked_vector<cloud_storage_clients::client::list_bucket_item> listed;
+    std::unordered_set<ss::sstring> deleted;
+    std::optional<int64_t> max_epoch;
+    config::mock_property<std::chrono::milliseconds> grace_period_{
+      std::chrono::milliseconds{12h}};
+    gc_test_config cfg{};
+    object_storage_test_impl* storage_{nullptr};
+    bool safety_ok{true};
+    std::unique_ptr<cloud_topics::level_zero_gc_t<ss::manual_clock>> gc_;
+};
+
+// age_backoff computes a duration from system_clock time points. That
+// duration is passed to sleep_abortable<manual_clock>, so advancing
+// the manual clock by that amount resolves the sleep.
+TEST_F_CORO(LevelZeroGCBackoffTest, AgeIneligibleWakesAtGracePeriod) {
+    configure(1000ms, 10ms, 10ms);
+    for (int i = 0; i < 5; ++i) {
+        add_listed(i, 200ms);
+    }
+    max_epoch = 100;
+    gc_->start().get();
+
+    auto baseline = co_await wait_for_round();
+
+    // The computed backoff is ~800ms (1000ms grace - ~200ms age).
+    // Advance 500ms — well within. Worker should still be sleeping.
+    co_await tick(500ms);
+    ASSERT_EQ_CORO(storage_->list_call_count_, baseline);
+
+    // Advance past the backoff. Worker should wake and list again.
+    co_await tick_until(
+      [this, baseline] { return storage_->list_call_count_ > baseline; }, 50ms);
+    ASSERT_GT_CORO(storage_->list_call_count_, baseline);
+}
+
+TEST_F_CORO(LevelZeroGCBackoffTest, EpochIneligiblePollsAtThrottle) {
+    configure(1000ms, 10ms, 50ms);
+    for (int i = 50; i < 55; ++i) {
+        add_listed(i, 24h);
+    }
+    max_epoch = 10;
+    gc_->start().get();
+
+    auto count_after_first = co_await wait_for_round();
+
+    // Advance past throttle_no_progress (50ms) — another round fires.
+    co_await tick_until(
+      [this, count_after_first] {
+          return storage_->list_call_count_ > count_after_first;
+      },
+      10ms);
+    ASSERT_GT_CORO(storage_->list_call_count_, count_after_first);
+}
+
+TEST_F_CORO(LevelZeroGCBackoffTest, EmptyStorageSleepsForGracePeriod) {
+    configure(500ms, 10ms, 10ms);
+    max_epoch = 100;
+    gc_->start().get();
+
+    auto baseline = co_await wait_for_round();
+
+    // 300ms — well within the 500ms grace period. Still sleeping.
+    co_await tick(300ms);
+    ASSERT_EQ_CORO(storage_->list_call_count_, baseline);
+
+    // Past the grace period — worker should wake.
+    co_await tick_until(
+      [this, baseline] { return storage_->list_call_count_ > baseline; }, 50ms);
+    ASSERT_GT_CORO(storage_->list_call_count_, baseline);
+}
+
+TEST_F_CORO(LevelZeroGCBackoffTest, GracePeriodReductionWakesWorker) {
+    configure(1000ms, 10ms, 10ms);
+    for (int i = 0; i < 5; ++i) {
+        add_listed(i, 500ms);
+    }
+    max_epoch = 100;
+    gc_->start().get();
+
+    co_await wait_for_round();
+
+    // Reduce grace period below the object age — objects become
+    // eligible. The config watcher aborts the backoff sleep.
+    grace_period_.update(std::chrono::milliseconds{200ms});
+    co_await tick_until([this] { return deleted.size() == 5; });
+    ASSERT_EQ_CORO(deleted.size(), 5u);
+}
+
+// After pause/start, the skip_backoff flag should cause the first
+// round after restart to run immediately, not after the old backoff.
+TEST_F_CORO(LevelZeroGCBackoffTest, StartAfterPauseSkipsBackoff) {
+    configure(1000ms, 10ms, 10ms);
+    // Objects 200ms old with 1000ms grace period → too young, worker
+    // enters a ~800ms backoff.
+    for (int i = 0; i < 10; ++i) {
+        add_listed(i, 200ms);
+    }
+    max_epoch = 100;
+    gc_->start().get();
+
+    auto count_before = co_await wait_for_round();
+
+    // Verify worker is sleeping — no new LISTs after 200ms
+    // (well within ~800ms backoff).
+    co_await tick(200ms);
+    ASSERT_EQ_CORO(storage_->list_call_count_, count_before);
+
+    gc_->pause().get();
+    gc_->start().get();
+
+    // A fresh round should happen promptly (skip_backoff_ set).
+    co_await tick_until(
+      [this, count_before] {
+          return storage_->list_call_count_ > count_before;
+      },
+      10ms);
+    ASSERT_GT_CORO(storage_->list_call_count_, count_before);
 }
 
 // =============================================================================
@@ -838,7 +1055,8 @@ public:
           std::make_unique<epoch_source_test_impl>(&max_epoch_),
           std::make_unique<node_info_test_impl>(
             std::get<0>(GetParam()), std::get<1>(GetParam())),
-          std::make_unique<safety_monitor_test_impl>()) {}
+          std::make_unique<safety_monitor_test_impl>(),
+          [](ss::lowres_clock::duration) { return 0ms; }) {}
 
     void TearDown() override { gc_.stop().get(); }
 

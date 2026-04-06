@@ -397,8 +397,7 @@ void namespaced_cache<
      * find the eviction spot. Therefore we do not yield here.
      */
     size_t iteration = 0;
-    while (_size >= _max_size() && iteration++ < _size) {
-        evict(it);
+    while (_size >= _max_size() && iteration++ < _size && evict(it)) {
     }
     /**
      * If there was no entry to evict from cache, throw cache full error

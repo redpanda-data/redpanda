@@ -801,4 +801,13 @@ simple_domain_manager::read_debug_rows(
     co_return std::unexpected(rpc::errc::not_leader);
 }
 
+ss::future<
+  std::expected<partition_validation_result, partition_validator::error>>
+simple_domain_manager::validate_partition(validate_partition_options) {
+    co_return std::unexpected(
+      partition_validator::error(
+        partition_validator::errc::io_error,
+        "validate_partition not supported on simple_domain_manager"));
+}
+
 } // namespace cloud_topics::l1

@@ -9,6 +9,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/cloud_topics:object_utils",
         "//src/v/cloud_topics/level_zero/gc:level_zero_gc",
+        "//src/v/config",
         "//src/v/ssx:mutex",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

@@ -1967,4 +1967,28 @@ db_domain_manager::read_debug_rows(
     }
 }
 
+ss::future<
+  std::expected<partition_validation_result, partition_validator::error>>
+db_domain_manager::validate_partition(validate_partition_options opts) {
+    auto gl_res = co_await gate_and_open_reads();
+    if (!gl_res.has_value()) {
+        co_return std::unexpected(
+          partition_validator::error(
+            partition_validator::errc::io_error, "failed to open database"));
+    }
+    if (opts.remote == nullptr) {
+        opts.remote = remote_;
+    }
+    if (opts.bucket == nullptr) {
+        opts.bucket = &bucket_;
+    }
+    if (opts.as == nullptr) {
+        opts.as = &as_;
+    }
+
+    auto reader = state_reader(db_->db().create_snapshot());
+    partition_validator validator(reader);
+    co_return co_await validator.validate(opts);
+}
+
 } // namespace cloud_topics::l1
