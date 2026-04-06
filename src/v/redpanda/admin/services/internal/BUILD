@@ -79,6 +79,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:state_accessors",
         "//src/v/cloud_topics/frontend",
         "//src/v/cloud_topics/level_zero/gc:level_zero_gc",
+        "//src/v/cloud_topics/level_zero/gc:level_zero_gc_types",
         "//src/v/cluster",
         "//src/v/model",
         "//src/v/redpanda/admin/proxy:client",

@@ -40,6 +40,7 @@ redpanda_cc_library(
         "//src/v/serde:map",
         "//src/v/serde:vector",
         "//src/v/ssx:async_algorithm",
+        "//src/v/ssx:semaphore",
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",
         "//src/v/transform/stm",
