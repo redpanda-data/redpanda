@@ -832,9 +832,13 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
             continue;
         }
 
-        // Unlike the fast trim, we *do not* skip .tmp files.  This is to handle
-        // the case where we have some abandoned tmp files, and have hit the
-        // exhaustive trim because they are occupying too much space.
+        if (
+          std::string_view(file_stat.path)
+            .ends_with(cache_tmp_file_extension)) {
+            result.trim_missed_tmp_files = true;
+            continue;
+        }
+
         try {
             co_await delete_file_and_empty_parents(file_stat.path);
             _access_time_tracker.remove(file_stat.path);
@@ -855,23 +859,6 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
         } catch (const ss::gate_closed_exception&) {
             // We are shutting down, stop iterating and propagate
             throw;
-        } catch (const std::filesystem::filesystem_error& e) {
-            if (likely(file_stat.path.ends_with(cache_tmp_file_extension))) {
-                // In exhaustive scan we might hit a .part file and get ENOENT,
-                // this is expected behavior occasionally.
-                result.trim_missed_tmp_files = true;
-                vlog(
-                  log.info,
-                  "trim: couldn't delete temp file {}: {}.",
-                  file_stat.path,
-                  e.what());
-            } else {
-                vlog(
-                  log.error,
-                  "trim: couldn't delete {}: {}.",
-                  file_stat.path,
-                  e.what());
-            }
         } catch (const std::exception& e) {
             vlog(
               log.error,
