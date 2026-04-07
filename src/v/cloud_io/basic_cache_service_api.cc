@@ -31,6 +31,15 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 }
 
 template<class Clock>
+void basic_space_reservation_guard<Clock>::merge(
+  basic_space_reservation_guard&& other) noexcept {
+    _bytes += other._bytes;
+    _objects += other._objects;
+    other._bytes = 0;
+    other._objects = 0;
+}
+
+template<class Clock>
 void basic_space_reservation_guard<Clock>::wrote_data(
   uint64_t written_bytes, size_t written_objects) {
     // Release the reservation, and update usage stats for how much we actually
