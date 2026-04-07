@@ -70,7 +70,7 @@ public:
             auto file = ss::open_file_dma(
               filepath.native(),
               ss::open_flags::create | ss::open_flags::rw
-                | ss::open_flags::truncate);
+                | ss::open_flags::exclusive);
             auto stream = co_await ss::with_file_close_on_failure(
               std::move(file), [](ss::file& f) {
                   return ss::make_file_output_stream(
