@@ -12,17 +12,17 @@
 
 #include "cloud_io/io_result.h"
 #include "cloud_storage_clients/types.h"
-#include "config/configuration.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
+#include "lsm/io/cloud_data_persistence_base.h"
 #include "lsm/io/file_io.h"
 #include "lsm/io/persistence.h"
 #include "ssx/future-util.h"
-#include "utils/retry_chain_node.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <algorithm>
 #include <exception>
@@ -31,70 +31,6 @@
 namespace lsm::io {
 
 namespace {
-
-retry_chain_node make_rtc(ss::abort_source& as) {
-    constexpr auto timeout = std::chrono::seconds(10);
-    auto backoff
-      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value();
-    return retry_chain_node{
-      as,
-      timeout,
-      backoff,
-    };
-}
-
-bool check_result(cloud_io::download_result result) {
-    switch (result) {
-    case cloud_io::download_result::success:
-        return true;
-    case cloud_io::download_result::notfound:
-        return false;
-    case cloud_io::download_result::timedout:
-        throw io_error_exception(
-          std::make_error_code(std::errc::timed_out),
-          "timeout reading from cloud storage");
-    case cloud_io::download_result::failed:
-        throw io_error_exception("failed to read from cloud storage");
-    }
-}
-
-void check_result(cloud_io::upload_result result) {
-    switch (result) {
-    case cloud_io::upload_result::success:
-        return;
-    case cloud_io::upload_result::timedout:
-        throw io_error_exception(
-          std::make_error_code(std::errc::timed_out),
-          "timeout reading from cloud storage");
-    case cloud_io::upload_result::failed:
-        throw io_error_exception("failed to write to cloud storage");
-    case cloud_io::upload_result::cancelled:
-        throw io_error_exception("cloud storage write cancelled");
-    }
-}
-
-cloud_storage_clients::object_key
-join(const cloud_storage_clients::object_key& prefix, std::string_view suffix) {
-    return cloud_storage_clients::object_key(prefix() / suffix);
-}
-
-// TODO: deduplicate, expose from cloud storage
-struct one_time_stream_provider : public stream_provider {
-    explicit one_time_stream_provider(ss::input_stream<char> s)
-      : _st(std::move(s)) {}
-
-    ss::input_stream<char> take_stream() override {
-        auto tmp = std::exchange(_st, std::nullopt);
-        return std::move(tmp.value());
-    }
-    ss::future<> close() override {
-        if (_st.has_value()) {
-            return _st->close().then([this] { _st = std::nullopt; });
-        }
-        return ss::now();
-    }
-    std::optional<ss::input_stream<char>> _st;
-};
 
 class staged_file_writer : public disk_seq_file_writer {
 public:
@@ -118,24 +54,14 @@ public:
 
     ss::future<> close() override {
         co_await disk_seq_file_writer::close();
-        try {
-            co_await upload().then_wrapped([this](ss::future<> fut) {
-                // If the upload fails, then we need to delete the staged file.
-                if (fut.failed()) {
-                    return fut.finally(
-                      [this] { return ss::remove_file(path().native()); });
-                }
-                return fut;
-            });
-        } catch (const std::system_error& err) {
-            throw io_error_exception(err.code(), "io error closing: {}", err);
-        } catch (...) {
-            auto ex = std::current_exception();
-            if (ssx::is_shutdown_exception(ex)) {
-                throw abort_requested_exception(
-                  "shutdown exception while closing: {}", ex);
-            }
-            throw io_error_exception("io error closing: {}", ex);
+        auto upload_fut = co_await ss::coroutine::as_future(
+          upload_file(*_remote, *_as, _bucket, _key, path(), _written));
+        if (upload_fut.failed()) {
+            auto ex = upload_fut.get_exception();
+            co_await ss::remove_file(path().native())
+              .then_wrapped(
+                [](ss::future<> fut) { fut.ignore_ready_future(); });
+            throw_as_lsm_ex(ex, "io error closing");
         }
     }
 
@@ -146,37 +72,6 @@ public:
     }
 
 private:
-    ss::future<> upload() {
-        auto root = make_rtc(*_as);
-        lazy_abort_source las{[this] {
-            return _as->abort_requested()
-                     ? std::make_optional("abort requested")
-                     : std::nullopt;
-        }};
-        // TODO: Ensure the file doesn't yet exist with CAS
-        auto result = co_await _remote->upload_stream(
-          {
-            .bucket = _bucket,
-            .key = _key,
-            .parent_rtc = root,
-          },
-          _written,
-          [this]() {
-              return ss::open_file_dma(path().native(), ss::open_flags::ro)
-                .then([](ss::file file) -> std::unique_ptr<stream_provider> {
-                    ss::file_input_stream_options opts{.read_ahead = 1};
-                    auto stream = ss::make_file_input_stream(
-                      std::move(file), opts);
-                    return std::make_unique<one_time_stream_provider>(
-                      std::move(stream));
-                });
-          },
-          las,
-          "SST file upload",
-          std::nullopt);
-        check_result(result);
-    }
-
     size_t _written = 0;
     cloud_io::remote* _remote;
     ss::abort_source* _as;
@@ -184,7 +79,7 @@ private:
     cloud_storage_clients::object_key _key;
 };
 
-class cloud_data_persistence : public data_persistence {
+class cloud_data_persistence : public cloud_data_persistence_base {
 public:
     cloud_data_persistence(
       std::filesystem::path staging,
@@ -192,10 +87,9 @@ public:
       cloud_storage_clients::bucket_name bucket,
       cloud_storage_clients::object_key prefix,
       ss::sstring staging_prefix)
-      : _staging(std::move(staging))
-      , _remote(remote)
-      , _bucket(std::move(bucket))
-      , _prefix(std::move(prefix))
+      : cloud_data_persistence_base(
+          remote, std::move(bucket), std::move(prefix))
+      , _staging(std::move(staging))
       , _staging_prefix(std::move(staging_prefix)) {}
 
     ss::future<optional_pointer<random_access_file_reader>>
@@ -208,7 +102,7 @@ public:
         if (reader) {
             co_return reader;
         }
-        auto root = make_rtc(_as);
+        auto root = make_cloud_rtc(_as);
         cloud_io::download_result result{};
         try {
             result = co_await _remote->download_stream(
@@ -235,7 +129,7 @@ public:
             }
             throw io_error_exception("io error downloading file: {}", ex);
         }
-        if (check_result(result)) {
+        if (check_cloud_result(result)) {
             co_return co_await open_local_reader(filepath);
         } else {
             co_return std::nullopt;
@@ -278,77 +172,8 @@ public:
         }
     }
 
-    ss::future<> remove_file(internal::file_handle h) override {
-        _as.check();
-        auto _ = _gate.hold();
-        auto rtc = make_rtc(_as);
-        auto filename = internal::sst_file_name(h);
-        cloud_io::upload_result result{};
-        try {
-            co_await ss::remove_file(staging_path(filename).native());
-            result = co_await _remote->delete_object({
-              .bucket = _bucket,
-              .key = cloud_key(filename),
-              .parent_rtc = rtc,
-            });
-        } catch (const std::system_error& e) {
-            if (e.code() != std::errc::no_such_file_or_directory) {
-                throw io_error_exception(
-                  e.code(), "io error removing file: {}", e);
-            }
-        } catch (...) {
-            auto ex = std::current_exception();
-            if (ssx::is_shutdown_exception(ex)) {
-                throw abort_requested_exception(
-                  "shutdown exception while removing file: {}", ex);
-            }
-            throw io_error_exception("io error removing file: {}", ex);
-        }
-        check_result(result);
-    }
-
-    ss::coroutine::experimental::generator<internal::file_handle>
-    list_files() override {
-        _as.check();
-        auto _ = _gate.hold();
-        auto rtc = make_rtc(_as);
-        // TODO: Consider merging with on disk file listing.
-        cloud_io::list_result result
-          = cloud_storage_clients::error_outcome::fail;
-        try {
-            result = co_await _remote->list_objects(_bucket, rtc, _prefix);
-        } catch (...) {
-            auto ex = std::current_exception();
-            if (ssx::is_shutdown_exception(ex)) {
-                throw abort_requested_exception(
-                  "shutdown exception while listing files: {}", ex);
-            }
-            throw io_error_exception("io error listing files: {}", ex);
-        }
-        if (result.has_error()) {
-            throw io_error_exception(
-              "io error listing files: {}", result.error());
-        }
-        for (const auto& item : result.value().contents) {
-            auto suffix = std::filesystem::path(item.key).lexically_relative(
-              _prefix());
-            if (suffix.has_parent_path() || !suffix.has_filename()) {
-                continue;
-            }
-            auto file_id = internal::parse_sst_file_name(
-              suffix.filename().native());
-            if (!file_id) {
-                continue;
-            }
-            co_yield *file_id;
-            _as.check();
-        }
-    }
-
-    ss::future<> close() override {
-        _as.request_abort_ex(
-          abort_requested_exception("cloud persistence layer shutdown"));
-        co_await _gate.close();
+    ss::future<> remove_file_locally(std::string_view filename) override {
+        co_await ss::remove_file(staging_path(filename).native());
     }
 
 private:
@@ -433,17 +258,8 @@ private:
         return _staging / fmt::format("{}-{}", _staging_prefix, name);
     }
 
-    cloud_storage_clients::object_key cloud_key(std::string_view name) {
-        return join(_prefix, name);
-    }
-
     std::filesystem::path _staging;
-    cloud_io::remote* _remote;
-    cloud_storage_clients::bucket_name _bucket;
-    cloud_storage_clients::object_key _prefix;
     ss::sstring _staging_prefix;
-    ss::abort_source _as;
-    ss::gate _gate;
 };
 
 class cloud_metadata_persistence : public metadata_persistence {
@@ -460,7 +276,7 @@ public:
     read_manifest(internal::database_epoch epoch) override {
         _as.check();
         auto _ = _gate.hold();
-        auto rtc = make_rtc(_as);
+        auto rtc = make_cloud_rtc(_as);
         auto max_key = manifest_key(epoch);
         auto keys = co_await list_manifests();
         // list_manifests gives you biggest to smallest key, so find the first
@@ -481,15 +297,15 @@ public:
           .payload = b,
           .expect_missing = true,
         });
-        co_return check_result(result) ? std::make_optional(std::move(b))
-                                       : std::nullopt;
+        co_return check_cloud_result(result) ? std::make_optional(std::move(b))
+                                             : std::nullopt;
     }
 
     ss::future<>
     write_manifest(internal::database_epoch epoch, iobuf b) override {
         _as.check();
         auto _ = _gate.hold();
-        auto rtc = make_rtc(_as);
+        auto rtc = make_cloud_rtc(_as);
         auto my_key = manifest_key(epoch);
         auto result = co_await _remote->upload_object({
           .transfer_details = {
@@ -500,7 +316,7 @@ public:
           .display_str = "LSM Manifest upload",
           .payload = std::move(b),
         });
-        check_result(result);
+        check_cloud_result(result);
         // Now cleanup old manifests
         chunked_vector<cloud_storage_clients::object_key> keys_to_delete;
         for (const auto& key : co_await list_manifests()) {
@@ -523,7 +339,7 @@ private:
     ss::future<chunked_vector<cloud_storage_clients::object_key>>
     list_manifests() {
         using namespace cloud_storage_clients;
-        auto rtc = make_rtc(_as);
+        auto rtc = make_cloud_rtc(_as);
         auto list_result = co_await _remote->list_objects(
           _bucket, rtc, manifest_prefix());
         if (list_result.has_error()) {
