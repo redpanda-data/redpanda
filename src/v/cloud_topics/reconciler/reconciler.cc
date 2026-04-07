@@ -933,45 +933,54 @@ reconciler<Clock>::commit_objects(
     // the metastore.
     const auto& corrected_next_offsets
       = add_objects_result.value().corrected_next_offsets;
-    std::optional<reconcile_error> error;
+    chunked_vector<const commit_info*> all_commits;
     for (const auto& obj_meta : objects) {
         for (const auto& commit : obj_meta.commits) {
-            auto tidp = commit.source->topic_id_partition();
-            kafka::offset lro = commit.metadata.last_offset;
-            auto it = corrected_next_offsets.find(tidp);
-            if (it != corrected_next_offsets.end()) {
-                _probe.increment_offset_corrections();
-                // We want the previous offset, because that is what was last
-                // reconciled. During next reconciliation we should get the
-                // offset *after* the LRO to start reading from.
-                lro = kafka::prev_offset(it->second);
-            }
-            auto result = co_await commit.source->set_last_reconciled_offset(
-              lro, _as);
-            if (result.has_value()) {
-                vlog(
-                  lg.debug,
-                  "successfully bumped LRO for {} (tidp: {}) to {}",
-                  commit.source->ntp(),
-                  tidp,
-                  lro);
-            } else {
-                // Don't fail early, just keep going until we're done.
-                if (error) {
-                    error = error->with_context(
-                      "failed to set LRO in L0: {}", result.error());
-                } else {
-                    error = reconcile_error(
-                      "failed to set LRO in L0: {}", result.error());
-                }
-                if (result.error() == source::errc::failure) {
-                    // Other errors can be expected in normal operating
-                    // conditions.
-                    error = error->non_benign();
-                }
-            }
+            all_commits.push_back(&commit);
         }
     }
+    std::optional<reconcile_error> error;
+    static constexpr size_t max_concurrent_lro_updates = 32;
+    co_await ss::max_concurrent_for_each(
+      all_commits,
+      max_concurrent_lro_updates,
+      [this, &corrected_next_offsets, &error](
+        this auto, const commit_info* commit) -> ss::future<> {
+          auto tidp = commit->source->topic_id_partition();
+          kafka::offset lro = commit->metadata.last_offset;
+          auto it = corrected_next_offsets.find(tidp);
+          if (it != corrected_next_offsets.end()) {
+              _probe.increment_offset_corrections();
+              // We want the previous offset, because that is what was last
+              // reconciled. During next reconciliation we should get the
+              // offset *after* the LRO to start reading from.
+              lro = kafka::prev_offset(it->second);
+          }
+          auto result = co_await commit->source->set_last_reconciled_offset(
+            lro, _as);
+          if (result.has_value()) {
+              vlog(
+                lg.debug,
+                "successfully bumped LRO for {} (tidp: {}) to {}",
+                commit->source->ntp(),
+                tidp,
+                lro);
+              co_return;
+          }
+          // Don't fail early, just keep going until we're done.
+          if (error) {
+              error = error->with_context(
+                "failed to set LRO in L0: {}", result.error());
+          } else {
+              error = reconcile_error(
+                "failed to set LRO in L0: {}", result.error());
+          }
+          if (result.error() == source::errc::failure) {
+              // Other errors can be expected in normal operating
+              // conditions.
+              error = error->non_benign();
+          }
+      });
     co_return error
       .transform(
         [](reconcile_error& err) -> std::expected<void, reconcile_error> {
