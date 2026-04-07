@@ -148,15 +148,18 @@ redpanda_cc_library(
         "cache_probe.cc",
         "cache_service.cc",
         "recursive_directory_walker.cc",
+        "staging_file.cc",
     ],
     hdrs = [
         "access_time_tracker.h",
         "cache_probe.h",
         "cache_service.h",
         "recursive_directory_walker.h",
+        "staging_file.h",
     ],
     implementation_deps = [
         ":logger",
+        "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_vector",
         "//src/v/serde",

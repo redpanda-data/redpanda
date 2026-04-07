@@ -824,3 +824,116 @@ FIXTURE_TEST(test_tracker_sync_add_remove, cache_test_fixture) {
     BOOST_REQUIRE_EQUAL(cache.get_usage_bytes(), 1024);
     BOOST_REQUIRE_EQUAL(cache.get_usage_objects(), 1);
 }
+
+namespace {
+
+constexpr cloud_io::staging_file_options test_staging_opts{
+  .reservation_min_chunk_size = 4_KiB, .initial_reservation_bytes = 0};
+
+iobuf make_iobuf(char fill, size_t size) {
+    iobuf buf;
+    auto data = ss::sstring(size, fill);
+    buf.append(data.data(), data.size());
+    return buf;
+}
+} // namespace
+
+// Full staging write cycle: create staging_file, append data, commit,
+// verify the result via get().
+FIXTURE_TEST(staging_write_commit_read_cycle, cache_test_fixture) {
+    auto& cache = sharded_cache.local();
+
+    auto staging
+      = cache.create_staging_file(KEY, test_staging_opts, std::nullopt).get();
+
+    BOOST_CHECK(staging.path().native().ends_with(".part"));
+    BOOST_CHECK(staging.path().native().starts_with(CACHE_DIR.native()));
+
+    staging.append(make_iobuf('x', 4_KiB)).get();
+
+    BOOST_CHECK(!cache.get(KEY).get().has_value());
+
+    staging.commit().get();
+
+    auto item = cache.get(KEY).get();
+    BOOST_REQUIRE(item.has_value());
+    BOOST_CHECK_EQUAL(item->size, 4_KiB);
+    item->body.close().get();
+
+    BOOST_CHECK(ss::file_exists(cache.get_local_path(KEY).native()).get());
+}
+
+// Verify that .part staging files are not evicted by trims.
+FIXTURE_TEST(staging_files_survive_trim, cache_test_fixture) {
+    auto& cache = sharded_cache.local();
+
+    // Commit a regular file so the cache is non-empty.
+    auto data_string = create_data_string('z', 1_KiB);
+    put_into_cache(data_string, KEY);
+
+    // Create a staging file for a different key.
+    const std::filesystem::path staging_key{
+      "abc001/test_topic/staging_target.txt"};
+    auto staging
+      = cache.create_staging_file(staging_key, test_staging_opts, std::nullopt)
+          .get();
+    staging.append(make_iobuf('y', 1_KiB)).get();
+    staging.flush().get();
+    BOOST_REQUIRE(ss::file_exists(staging.path().native()).get());
+
+    // Trim the committed file. The limits must be generous enough to
+    // accommodate the outstanding reservation (which may overshoot due
+    // to chunking) so trim_fast handles everything and does not fall
+    // through to trim_exhaustive (which deletes .part files).
+    trim_cache(8_KiB, 4);
+
+    BOOST_CHECK(ss::file_exists(staging.path().native()).get());
+
+    staging.close().get();
+    ss::remove_file(staging.path().native()).get();
+}
+
+// Committing two staging files for the same key doesn't crash or corrupt.
+// The key remains readable and accounting reflects exactly one object.
+FIXTURE_TEST(double_commit_same_key_is_safe, cache_test_fixture) {
+    auto& cache = sharded_cache.local();
+
+    auto staging1
+      = cache.create_staging_file(KEY, test_staging_opts, std::nullopt).get();
+    staging1.append(make_iobuf('a', 4_KiB)).get();
+
+    auto staging2
+      = cache.create_staging_file(KEY, test_staging_opts, std::nullopt).get();
+    staging2.append(make_iobuf('b', 4_KiB)).get();
+
+    staging1.commit().get();
+    staging2.commit().get();
+
+    BOOST_CHECK_EQUAL(cache.get_usage_objects(), 1);
+    BOOST_CHECK_EQUAL(cache.get_usage_bytes(), 4_KiB);
+
+    auto item = cache.get(KEY).get();
+    BOOST_REQUIRE(item.has_value());
+    BOOST_CHECK_EQUAL(item->size, 4_KiB);
+    item->body.close().get();
+}
+
+// Destroying a staging_file without calling commit() releases the reservation.
+FIXTURE_TEST(staging_file_abandoned_releases_reservation, cache_test_fixture) {
+    auto& cache = sharded_cache.local();
+
+    auto pre_bytes = cache.get_usage_bytes();
+    auto pre_objects = cache.get_usage_objects();
+
+    {
+        auto staging
+          = cache.create_staging_file(KEY, test_staging_opts, std::nullopt)
+              .get();
+        staging.append(make_iobuf('z', 4_KiB)).get();
+        staging.close().get();
+    }
+
+    BOOST_CHECK_EQUAL(cache.get_usage_bytes(), pre_bytes);
+    BOOST_CHECK_EQUAL(cache.get_usage_objects(), pre_objects);
+    BOOST_CHECK(!cache.get(KEY).get().has_value());
+}

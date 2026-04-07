@@ -2036,4 +2036,115 @@ cache::validate_cache_config(const config::configuration& conf) {
     return std::nullopt;
 }
 
+ss::future<std::filesystem::path>
+cache::create_staging_path(std::filesystem::path key) {
+    auto guard = _gate.hold();
+
+    auto key_path = _cache_dir / key;
+    auto filename = key_path.filename();
+    auto dir_path = key_path;
+    dir_path.remove_filename();
+
+    // TODO: share code with put().
+    auto tmp_filename = std::filesystem::path(
+      ss::format(
+        "{}_{}_{}{}",
+        filename.native(),
+        ss::this_shard_id(),
+        (++_cnt),
+        cache_tmp_file_extension));
+    auto tmp_filepath = dir_path / tmp_filename;
+    if (!co_await ss::file_exists(dir_path.string())) {
+        co_await ss::recursive_touch_directory(dir_path.string());
+    }
+
+    co_return tmp_filepath;
+}
+
+ss::future<staging_file> cache::create_staging_file(
+  std::filesystem::path key,
+  staging_file_options opts,
+  std::optional<ss::lowres_clock::time_point> deadline) {
+    auto gate_holder = _gate.hold();
+    auto reservation = co_await reserve_space(
+      opts.initial_reservation_bytes, /*objects=*/1, deadline);
+    auto staging_path = co_await create_staging_path(key);
+    std::exception_ptr ex;
+    std::optional<ss::output_stream<char>> stream_opt;
+    try {
+        auto file = co_await ss::open_file_dma(
+          staging_path.native(),
+          ss::open_flags::create | ss::open_flags::rw
+            | ss::open_flags::exclusive);
+        stream_opt = co_await ss::make_file_output_stream(std::move(file));
+    } catch (...) {
+        ex = std::current_exception();
+    }
+    if (ex) {
+        co_await ss::remove_file(staging_path.native())
+          .then_wrapped([](ss::future<> f) { f.ignore_ready_future(); });
+        std::rethrow_exception(ex);
+    }
+    co_return staging_file{
+      *this,
+      std::move(gate_holder),
+      std::move(key),
+      std::move(staging_path),
+      std::move(stream_opt.value()),
+      std::move(reservation),
+      opts};
+}
+
+ss::future<> cache::commit_staging_file(
+  std::filesystem::path key,
+  std::filesystem::path staging_path,
+  space_reservation_guard reservation) {
+    auto guard = _gate.hold();
+
+    auto dest_path = _cache_dir / key;
+    vlog(
+      log.debug, "Committing staging file {} to {}", staging_path, dest_path);
+
+    // We use link() rather than O_EXCL create + rename because a crash between
+    // the O_EXCL create and the rename would leave an empty file at the
+    // destination: on restart the cache would see a zero-byte entry for this
+    // key. With link(), a crash between link and unlink leaves the real data
+    // at the destination.
+    auto link_fut = co_await ss::coroutine::as_future(
+      ss::link_file(staging_path.native(), dest_path.native()));
+    if (link_fut.failed()) {
+        auto ex = link_fut.get_exception();
+        try {
+            std::rethrow_exception(ex);
+        } catch (const std::system_error& e) {
+            if (e.code() != std::errc::file_exists) {
+                throw;
+            }
+        }
+        // Someone else already wrote to the destination. Treat this as a
+        // success, but presume that the one who won the race already did the
+        // reservation accounting and just release the reservation rather than
+        // accounting for successfully written data.
+        co_await ss::remove_file(staging_path.native());
+        co_return;
+    }
+    co_await ss::remove_file(staging_path.native());
+
+    auto file_size = co_await ss::file_size(dest_path.native());
+    reservation.wrote_data(file_size, 1);
+
+    auto source = dest_path.native();
+    if (ss::this_shard_id() == 0) {
+        _access_time_tracker.add(
+          source, std::chrono::system_clock::now(), file_size);
+    } else {
+        ssx::spawn_with_gate(_gate, [this, source, file_size] {
+            return container().invoke_on(0, [source, file_size](cache& c) {
+                c._access_time_tracker.add(
+                  source, std::chrono::system_clock::now(), file_size);
+            });
+        });
+    }
+}
+
 } // namespace cloud_io
