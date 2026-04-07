@@ -84,7 +84,7 @@ ss::future<> app::construct(
       domain_supervisor,
       controller,
       ss::sharded_parameter([this] { return &l1_io.local(); }),
-      config::node().l1_staging_path(),
+      ss::sharded_parameter([&cloud_cache] { return &cloud_cache->local(); }),
       ss::sharded_parameter([&remote] { return &remote->local(); }),
       bucket,
       scheduling_groups::instance().cloud_topics_metastore_sg());

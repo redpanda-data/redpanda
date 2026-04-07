@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/types.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
@@ -62,7 +63,7 @@ public:
     open(
       model::term_id expected_term,
       stm* s,
-      const std::filesystem::path& staging_directory,
+      cloud_io::cache* cache,
       cloud_io::remote* remote,
       const cloud_storage_clients::bucket_name& bucket,
       ss::abort_source& as,

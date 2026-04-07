@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_io/tests/scoped_remote.h"
@@ -22,10 +23,12 @@
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "config/node_config.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/io/cloud_persistence.h"
 #include "lsm/io/persistence.h"
 #include "model/fundamental.h"
 #include "raft/tests/raft_fixture.h"
+#include "storage/disk.h"
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 #include "test_utils/tmp_dir.h"
@@ -56,10 +59,12 @@ struct domain_manager_node {
       ss::shared_ptr<stm> s,
       cloud_io::remote* remote,
       const cloud_storage_clients::bucket_name& bucket,
+      cloud_io::cache* cache,
       const ss::sstring& staging_path)
       : stm_ptr(std::move(s))
       , remote(remote)
       , bucket(bucket)
+      , cache(cache)
       , staging_directory(staging_path.data())
       , object_io(
           staging_directory.get_path(),
@@ -73,7 +78,7 @@ struct domain_manager_node {
         auto mgr = std::make_unique<db_domain_manager>(
           stm_ptr->raft()->confirmed_term(),
           stm_ptr,
-          staging_directory.get_path(),
+          cache,
           remote,
           bucket,
           &object_io,
@@ -116,6 +121,7 @@ struct domain_manager_node {
     ss::shared_ptr<stm> stm_ptr;
     cloud_io::remote* remote;
     const cloud_storage_clients::bucket_name& bucket;
+    cloud_io::cache* cache;
     temporary_dir staging_directory;
     file_io object_io;
 
@@ -311,6 +317,33 @@ public:
         set_expectations_and_listen({});
         sr = cloud_io::scoped_remote::create(10, conf);
 
+        // Set up cloud cache.
+        cache_tmpdir = std::make_unique<temporary_dir>("db_dm_cache");
+        auto cache_dir = cache_tmpdir->get_path() / "cache";
+        cloud_io::cache::initialize(cache_dir).get();
+        test_cache
+          .start(
+            cache_dir,
+            30_GiB,
+            config::mock_binding<double>(0.0),
+            config::mock_binding<uint64_t>(100_MiB),
+            config::mock_binding<std::optional<double>>(std::nullopt),
+            config::mock_binding<uint32_t>(100000),
+            config::mock_binding<uint16_t>(3))
+          .get();
+        test_cache.invoke_on_all([](cloud_io::cache& c) { return c.start(); })
+          .get();
+        test_cache
+          .invoke_on(
+            ss::shard_id{0},
+            [](cloud_io::cache& c) {
+                c.notify_disk_status(
+                  100ULL * 1024 * 1024 * 1024,
+                  50ULL * 1024 * 1024 * 1024,
+                  storage::disk_space_alert::ok);
+            })
+          .get();
+
         raft::raft_fixture::SetUpAsync().get();
 
         // Create our STMs.
@@ -328,10 +361,13 @@ public:
 
             node->start(std::move(builder)).get();
 
-            // Create staging directory for this node.
             auto staging_path = fmt::format("db_domain_manager_test_{}", id());
             dm_nodes.at(id()) = std::make_unique<domain_manager_node>(
-              std::move(s), &sr->remote.local(), bucket_name, staging_path);
+              std::move(s),
+              &sr->remote.local(),
+              bucket_name,
+              &test_cache.local(),
+              staging_path);
         }
         opt_ref leader;
         ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader).get());
@@ -352,6 +388,8 @@ public:
         }
         raft::raft_fixture::TearDownAsync().get();
         sr.reset();
+        test_cache.stop().get();
+        cache_tmpdir.reset();
     }
 
     // Returns the node of the current leader.
@@ -625,6 +663,8 @@ public:
     std::array<std::unique_ptr<domain_manager_node>, num_nodes> dm_nodes;
     scoped_config cfg;
     std::unique_ptr<cloud_io::scoped_remote> sr;
+    std::unique_ptr<temporary_dir> cache_tmpdir;
+    ss::sharded<cloud_io::cache> test_cache;
 
     // Initial leader and manager on that leader.
     domain_manager_node* initial_leader{nullptr};

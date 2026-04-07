@@ -242,13 +242,13 @@ db_domain_manager::entity_locks::acquire_objects(
 db_domain_manager::db_domain_manager(
   model::term_id expected_term,
   ss::shared_ptr<stm> stm,
-  std::filesystem::path staging_dir,
+  cloud_io::cache* cache,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
   io* object_io,
   ss::scheduling_group sg)
   : expected_term_(expected_term)
-  , staging_dir_(std::move(staging_dir))
+  , cache_(cache)
   , remote_(remote)
   , bucket_(std::move(bucket))
   , object_io_(object_io)
@@ -1617,7 +1617,7 @@ ss::future<std::expected<void, rpc::errc>> db_domain_manager::maybe_open_db() {
     vlog(
       cd_log.debug, "Opening database with expected term {}", expected_term_);
     auto db_res = co_await replicated_database::open(
-      expected_term_, stm_.get(), staging_dir_, remote_, bucket_, as_, sg_);
+      expected_term_, stm_.get(), cache_, remote_, bucket_, as_, sg_);
     if (!db_res.has_value()) {
         co_return std::unexpected(
           log_and_convert(db_res.error(), "Failed to open database: "));
@@ -1801,7 +1801,7 @@ db_domain_manager::restore_domain(rpc::restore_domain_request req) {
       "Re-opening database with expected term {}",
       expected_term_);
     auto db_res = co_await replicated_database::open(
-      expected_term_, stm_.get(), staging_dir_, remote_, bucket_, as_, sg_);
+      expected_term_, stm_.get(), cache_, remote_, bucket_, as_, sg_);
     if (!db_res.has_value()) {
         co_return rpc::restore_domain_reply{
           .ec = log_and_convert(db_res.error(), "Failed to reopen database: "),
