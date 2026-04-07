@@ -57,6 +57,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":db_utils",
+        "//src/v/cloud_io:cache",
         "//src/v/cloud_io:remote",
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_io/tests:scoped_remote",
@@ -71,6 +72,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/read_replica:stm",
         "//src/v/lsm",
         "//src/v/raft/tests:raft_fixture",
+        "//src/v/storage:disk",
         "//src/v/test_utils:async",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:scoped_config",
