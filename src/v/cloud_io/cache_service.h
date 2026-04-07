@@ -167,6 +167,12 @@ public:
         return _cache_dir / key;
     }
 
+    /// Reserve cache space with an optional deadline for blocking waits.
+    ss::future<space_reservation_guard> reserve_space(
+      uint64_t bytes,
+      size_t objects,
+      std::optional<ss::lowres_clock::time_point> deadline);
+
     // Checks if a cluster configuration is valid for the properties
     // `cloud_storage_cache_size` and `cloud_storage_cache_size_percent`.
     // Two cases are invalid: 1. the case in which both are 0, 2. the case in
@@ -230,10 +236,13 @@ private:
     /// rate limit.
     std::optional<std::chrono::milliseconds> get_trim_delay() const;
 
-    /// Invoke trim, waiting if not enough time passed since the last trim
+    /// Invoke trim, waiting if not enough time passed since the last trim.
+    /// If a deadline is provided and the throttle delay would exceed it,
+    /// throws ss::timed_out_error rather than skipping the rate limit.
     ss::future<> trim_throttled_unlocked(
       std::optional<uint64_t> size_limit_override = std::nullopt,
-      std::optional<size_t> object_limit_override = std::nullopt);
+      std::optional<size_t> object_limit_override = std::nullopt,
+      std::optional<ss::lowres_clock::time_point> deadline = std::nullopt);
 
     // Take the cleanup semaphore before calling trim_throttled
     ss::future<> trim_throttled(
@@ -261,7 +270,8 @@ private:
 
     /// Block until enough space is available to commit to a reservation
     /// (only runs on shard 0)
-    ss::future<> do_reserve_space(uint64_t, size_t);
+    ss::future<> do_reserve_space(
+      uint64_t, size_t, std::optional<ss::lowres_clock::time_point> deadline);
 
     /// Trim cache using results from the previous recursive directory walk
     ss::future<trim_result>

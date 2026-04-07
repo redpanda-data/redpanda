@@ -269,7 +269,8 @@ std::optional<std::chrono::milliseconds> cache::get_trim_delay() const {
 
 ss::future<> cache::trim_throttled_unlocked(
   std::optional<uint64_t> size_limit_override,
-  std::optional<size_t> object_limit_override) {
+  std::optional<size_t> object_limit_override,
+  std::optional<ss::lowres_clock::time_point> deadline) {
     // If we trimmed very recently then do not do it immediately:
     // this reduces load and improves chance of currently promoted
     // segments finishing their read work before we demote their
@@ -277,6 +278,9 @@ ss::future<> cache::trim_throttled_unlocked(
     auto trim_delay = get_trim_delay();
 
     if (trim_delay.has_value()) {
+        if (deadline && ss::lowres_clock::now() + *trim_delay > *deadline) {
+            throw ss::timed_out_error();
+        }
         vlog(
           log.info,
           "Cache trimming throttled, waiting {}ms",
@@ -1419,15 +1423,26 @@ ss::future<> cache::_invalidate(const std::filesystem::path& key) {
 
 ss::future<space_reservation_guard>
 cache::reserve_space(uint64_t bytes, size_t objects) {
+    return reserve_space(bytes, objects, std::nullopt);
+}
+
+ss::future<space_reservation_guard> cache::reserve_space(
+  uint64_t bytes,
+  size_t objects,
+  std::optional<ss::lowres_clock::time_point> deadline) {
     while (_block_puts) {
         vlog(
           log.warn,
           "Blocking tiered storage cache write, disk space critically low.");
-        co_await _block_puts_cond.wait();
+        if (deadline) {
+            co_await _block_puts_cond.wait(*deadline);
+        } else {
+            co_await _block_puts_cond.wait();
+        }
     }
 
-    co_await container().invoke_on(0, [bytes, objects](cache& c) {
-        return c.do_reserve_space(bytes, objects);
+    co_await container().invoke_on(0, [bytes, objects, deadline](cache& c) {
+        return c.do_reserve_space(bytes, objects, deadline);
     });
 
     vlog(
@@ -1684,8 +1699,17 @@ void cache::maybe_background_trim() {
     }
 }
 
-ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
+ss::future<> cache::do_reserve_space(
+  uint64_t bytes,
+  size_t objects,
+  std::optional<ss::lowres_clock::time_point> deadline) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
+
+    auto check_deadline = [&] {
+        if (deadline && ss::lowres_clock::now() >= *deadline) {
+            throw ss::timed_out_error();
+        }
+    };
 
     maybe_background_trim();
 
@@ -1708,7 +1732,19 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
       _reservations_pending,
       _reservations_pending_objects);
 
-    auto units = co_await ss::get_units(_cleanup_sm, 1);
+    check_deadline();
+
+    auto get_cleanup_units = [&]() {
+        if (deadline) {
+            auto now = ss::lowres_clock::now();
+            auto remaining = *deadline > now
+                               ? *deadline - now
+                               : ss::lowres_clock::duration::zero();
+            return ss::get_units(_cleanup_sm, 1, remaining);
+        }
+        return ss::get_units(_cleanup_sm, 1);
+    };
+    auto units = co_await get_cleanup_units();
 
     // Situation may change after a scheduling point. Another fiber could
     // trigger carryover trim which released some resources. Exit early in this
@@ -1780,6 +1816,8 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
         _reservations_pending_objects += objects;
 
         while (!may_reserve_space(bytes, objects)) {
+            check_deadline();
+
             bool may_exceed = may_exceed_limits(bytes, objects)
                               && _last_trim_failed;
             bool may_trim_now = !get_trim_delay().has_value();
@@ -1799,7 +1837,8 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                 // After taking lock, there still isn't space: means someone
                 // else didn't take it and free space for us already, so we will
                 // do the trim.
-                co_await trim_throttled_unlocked();
+                co_await trim_throttled_unlocked(
+                  std::nullopt, std::nullopt, deadline);
                 did_trim = true;
             } else {
                 vlog(
