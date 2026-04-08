@@ -147,6 +147,10 @@ remote_probe::remote_probe(
               sm::description(
                 "Number of times backoff was applied during "
                 "controller snapshot uploads")),
+            sm::make_counter(
+              "batch_delete_errors",
+              [this] { return _cnt_batch_delete_errors; },
+              sm::description("Number of failed batch delete requests")),
             sm::make_histogram(
               "client_acquisition_latency",
               [this] {

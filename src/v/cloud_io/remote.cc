@@ -896,7 +896,7 @@ ss::future<upload_result> remote::delete_object_batch(
         if (res) {
             if (!res.value().undeleted_keys.empty()) {
                 vlog(
-                  ctxlog.debug,
+                  ctxlog.info,
                   "{} objects were not deleted by plural delete; first "
                   "failure: {{key: {}, reason:{}}}",
                   res.value().undeleted_keys.size(),
