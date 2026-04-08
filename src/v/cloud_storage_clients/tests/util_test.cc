@@ -1040,6 +1040,48 @@ TEST(FindMultipartBoundary, EmptyBoundaryParameter) {
       result.error(), testing::HasSubstr("Boundary missing from multipart"));
 }
 
+TEST(FindMultipartBoundary, TrailingParameterAfterBoundary) {
+    using namespace cloud_storage_clients;
+
+    http::client::response_header headers;
+    headers.insert(
+      boost::beast::http::field::content_type,
+      "multipart/mixed; boundary=batch_abc123; charset=utf-8");
+
+    auto result = util::find_multipart_boundary(headers);
+
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "batch_abc123");
+}
+
+TEST(FindMultipartBoundary, TrailingParameterAfterQuotedBoundary) {
+    using namespace cloud_storage_clients;
+
+    http::client::response_header headers;
+    headers.insert(
+      boost::beast::http::field::content_type,
+      R"(multipart/mixed; boundary="batch_abc123"; charset=utf-8)");
+
+    auto result = util::find_multipart_boundary(headers);
+
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "batch_abc123");
+}
+
+TEST(FindMultipartBoundary, BoundaryNotFirstParameter) {
+    using namespace cloud_storage_clients;
+
+    http::client::response_header headers;
+    headers.insert(
+      boost::beast::http::field::content_type,
+      "multipart/mixed; charset=utf-8; boundary=batch_abc123");
+
+    auto result = util::find_multipart_boundary(headers);
+
+    EXPECT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "batch_abc123");
+}
+
 // ============================================================================
 // Preamble handling tests
 //
