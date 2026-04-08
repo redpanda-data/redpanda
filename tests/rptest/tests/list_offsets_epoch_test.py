@@ -481,3 +481,94 @@ class ListOffsetsLeaderEpochTest(RedpandaTest):
         assert epoch == 1, (
             f"Server should store the lower epoch: expected 1, got {epoch}"
         )
+
+    @cluster(num_nodes=3)
+    @parametrize(expect_fix=True)
+    def test_list_offsets_seek_reconsume(self, expect_fix):
+        """End-to-end test for CORE-12505: rpk seek + re-consume.
+
+        Workflow:
+        1. Produce records, transfer leadership to raise epoch.
+        2. Consume all records with a consumer group.
+        3. Seek the group back to start via rpk (calls ListOffsets).
+        4. Verify the seek committed the correct epoch.
+        5. Re-consume and verify the group advances to the end.
+        """
+        initial_epoch, current_epoch = self._setup_topic_with_epoch_gap()
+        rpk = RpkTool(self.redpanda)
+        group = "test-group"
+
+        # --- Step 1: consume all 12 records ---
+        rpk.consume("epoch-test", group=group, n=12)
+        group_desc = rpk.group_describe(group)
+        assert group_desc.partitions[0].current_offset == 12, (
+            f"Expected offset 12 after consuming, "
+            f"got {group_desc.partitions[0].current_offset}"
+        )
+        assert group_desc.partitions[0].lag == 0, (
+            f"Expected lag 0, got {group_desc.partitions[0].lag}"
+        )
+
+        # --- Step 2: inspect committed epoch after consumption ---
+        offset, epoch = self._offset_fetch(group, "epoch-test", 0)
+        self.logger.info(f"After consume: committed offset={offset}, epoch={epoch}")
+
+        # --- Step 3: seek to start ---
+        rpk.group_seek_to(group, "start")
+        group_desc = rpk.group_describe(group)
+        assert group_desc.partitions[0].current_offset == 0, (
+            f"Expected offset 0 after seek, "
+            f"got {group_desc.partitions[0].current_offset}"
+        )
+
+        # --- Step 4: inspect committed epoch after seek ---
+        # rpk seek calls ListOffsets for the start offset, then commits
+        # the result.  With the fix, the epoch should be the record
+        # epoch, not the current leader epoch.
+        offset, epoch = self._offset_fetch(group, "epoch-test", 0)
+        self.logger.info(
+            f"After seek: committed offset={offset}, epoch={epoch}, "
+            f"current_epoch={current_epoch}"
+        )
+        if expect_fix:
+            assert epoch == initial_epoch, (
+                f"After seek, committed epoch should be {initial_epoch} "
+                f"(record epoch), got {epoch}"
+            )
+        else:
+            assert epoch == current_epoch, (
+                f"Bug expected: after seek, committed epoch should be "
+                f"current ({current_epoch}), got {epoch}"
+            )
+
+        # --- Step 5: re-consume ---
+        # Run without -n so rpk stays alive long enough for franz-go's
+        # 5-second auto-commit interval to fire.  The 10-second timeout
+        # kills rpk after auto-commit has had time to run.
+        #
+        # NOTE: rpk consume with -n exits immediately after reading the
+        # requested records, often before auto-commit fires.  This is
+        # why the original reproduction appeared to show epoch-based
+        # commit rejection — the commit was never sent, not rejected.
+        try:
+            rpk.consume("epoch-test", group=group, timeout=10)
+        except Exception as e:
+            self.logger.info(f"Re-consume timed out (expected): {e}")
+
+        # --- Step 6: verify the group advanced ---
+        group_desc = rpk.group_describe(group)
+        final_offset, final_epoch = self._offset_fetch(group, "epoch-test", 0)
+        self.logger.info(
+            f"After re-consume: "
+            f"committed offset={final_offset}, epoch={final_epoch}, "
+            f"lag={group_desc.partitions[0].lag}"
+        )
+        if expect_fix:
+            assert group_desc.partitions[0].lag == 0, (
+                f"Expected lag 0 after re-consume, got {group_desc.partitions[0].lag}"
+            )
+        else:
+            self.logger.info(
+                f"DIAGNOSTIC (expect_fix=False): "
+                f"final_offset={final_offset}, final_epoch={final_epoch}"
+            )
