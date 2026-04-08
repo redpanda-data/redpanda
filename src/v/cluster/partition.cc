@@ -31,6 +31,7 @@
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
+#include "ssx/future-util.h"
 #include "ssx/when_all.h"
 #include "storage/ntp_config.h"
 
@@ -1451,68 +1452,83 @@ partition::get_cloud_storage_manifest_view() {
 ss::future<result<model::offset, std::error_code>>
 partition::sync_kafka_start_offset_override(
   model::timeout_clock::duration timeout) {
-    if (is_read_replica_mode_enabled()) {
-        auto term = _raft->term();
-        if (!co_await _archival_meta_stm->sync(timeout)) {
-            if (term != _raft->term()) {
-                co_return errc::not_leader;
-            } else {
-                co_return errc::timeout;
+    try {
+        if (is_read_replica_mode_enabled()) {
+            auto term = _raft->term();
+            if (!co_await _archival_meta_stm->sync(timeout)) {
+                if (term != _raft->term()) {
+                    co_return errc::not_leader;
+                } else {
+                    co_return errc::timeout;
+                }
+            }
+            auto start_kafka_offset = _archival_meta_stm->manifest()
+                                        .get_start_kafka_offset_override();
+
+            co_return kafka::offset_cast(start_kafka_offset);
+        }
+
+        if (_log_eviction_stm) {
+            auto offset_res = co_await _log_eviction_stm
+                                ->sync_kafka_start_offset_override(timeout);
+            if (offset_res.has_failure()) {
+                co_return offset_res.as_failure();
+            }
+            if (offset_res.value() != kafka::offset{}) {
+                co_return kafka::offset_cast(offset_res.value());
             }
         }
+
+        if (!_archival_meta_stm) {
+            co_return model::offset{};
+        }
+
+        // There are a few cases in which the log_eviction_stm will return a
+        // kafka offset of `kafka::offset{}` for the start offset override.
+        // - The topic was remotely recovered.
+        // - A start offset override was never set.
+        // - The broker has restarted and the log_eviction_stm couldn't recover
+        //   the kafka offset for the start offset override.
+        //
+        // In all cases we'll need to fall back to the archival stm to figure
+        // out if a start offset override exists, and if so, what it is.
+        //
+        // For this we'll sync the archival stm a single time to ensure we have
+        // the most up-to-date manifest. From that point onwards the offset
+        // `_archival_meta_stm->manifest().get_start_kafka_offset_override()`
+        // will be correct without having to sync again. This is since the
+        // offset will not change until another offset override has been applied
+        // to the log eviction stm. And at that point the log eviction stm will
+        // be able to give us the correct offset override.
+        if (!_has_synced_archival_for_start_override) [[unlikely]] {
+            auto term = _raft->term();
+            if (!co_await _archival_meta_stm->sync(timeout)) {
+                if (term != _raft->term()) {
+                    co_return errc::not_leader;
+                } else {
+                    co_return errc::timeout;
+                }
+            }
+            _has_synced_archival_for_start_override = true;
+        }
+
         auto start_kafka_offset
           = _archival_meta_stm->manifest().get_start_kafka_offset_override();
-
         co_return kafka::offset_cast(start_kafka_offset);
-    }
-
-    if (_log_eviction_stm) {
-        auto offset_res = co_await _log_eviction_stm
-                            ->sync_kafka_start_offset_override(timeout);
-        if (offset_res.has_failure()) {
-            co_return offset_res.as_failure();
+    } catch (...) {
+        auto eptr = std::current_exception();
+        bool is_shutdown = ssx::is_shutdown_exception(eptr);
+        vlogl(
+          clusterlog,
+          is_shutdown ? ss::log_level::debug : ss::log_level::warn,
+          "ntp {}: exception in sync_kafka_start_offset_override: {}",
+          _raft->ntp(),
+          eptr);
+        if (is_shutdown) {
+            co_return errc::shutting_down;
         }
-        if (offset_res.value() != kafka::offset{}) {
-            co_return kafka::offset_cast(offset_res.value());
-        }
+        co_return errc::timeout;
     }
-
-    if (!_archival_meta_stm) {
-        co_return model::offset{};
-    }
-
-    // There are a few cases in which the log_eviction_stm will return a kafka
-    // offset of `kafka::offset{}` for the start offset override.
-    // - The topic was remotely recovered.
-    // - A start offset override was never set.
-    // - The broker has restarted and the log_eviction_stm couldn't recover the
-    //   kafka offset for the start offset override.
-    //
-    // In all cases we'll need to fall back to the archival stm to figure out if
-    // a start offset override exists, and if so, what it is.
-    //
-    // For this we'll sync the archival stm a single time to ensure we have the
-    // most up-to-date manifest. From that point onwards the offset
-    // `_archival_meta_stm->manifest().get_start_kafka_offset_override()` will
-    // be correct without having to sync again. This is since the offset will
-    // not change until another offset override has been applied to the log
-    // eviction stm. And at that point the log eviction stm will be able to give
-    // us the correct offset override.
-    if (!_has_synced_archival_for_start_override) [[unlikely]] {
-        auto term = _raft->term();
-        if (!co_await _archival_meta_stm->sync(timeout)) {
-            if (term != _raft->term()) {
-                co_return errc::not_leader;
-            } else {
-                co_return errc::timeout;
-            }
-        }
-        _has_synced_archival_for_start_override = true;
-    }
-
-    auto start_kafka_offset
-      = _archival_meta_stm->manifest().get_start_kafka_offset_override();
-    co_return kafka::offset_cast(start_kafka_offset);
 }
 
 model::offset partition::last_stable_offset() const {
