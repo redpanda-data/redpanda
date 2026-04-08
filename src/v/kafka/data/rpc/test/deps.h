@@ -104,6 +104,9 @@ public:
     kafka::leader_epoch leader_epoch() const final {
         throw std::runtime_error("unimplemented");
     }
+    std::optional<model::term_id> get_term(model::offset) const final {
+        throw std::runtime_error("unimplemented");
+    }
     ss::future<std::optional<model::offset>>
     get_leader_epoch_last_offset(kafka::leader_epoch) const final {
         throw std::runtime_error("unimplemented");

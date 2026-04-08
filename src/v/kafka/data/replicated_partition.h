@@ -93,6 +93,7 @@ public:
      * the leader election starts.
      */
     kafka::leader_epoch leader_epoch() const final;
+    std::optional<model::term_id> get_term(model::offset) const final;
 
     ss::future<error_code> validate_fetch_offset(
       model::offset, bool, model::timeout_clock::time_point) final;

@@ -136,6 +136,12 @@ kafka::leader_epoch cloud_topic_partition::leader_epoch() const {
     return kafka::leader_epoch(static_cast<int32_t>(term()));
 }
 
+std::optional<model::term_id>
+cloud_topic_partition::get_term(model::offset) const {
+    // TODO: implement for cloud topics (CORE-12700)
+    return std::nullopt;
+}
+
 ss::future<storage::translating_reader>
 cloud_topic_partition::make_reader(kafka::log_reader_config cfg) {
     auto config = kafka_to_cloud_topic_log_reader_config(cfg);

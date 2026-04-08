@@ -383,7 +383,7 @@ class ListOffsetsLeaderEpochTest(RedpandaTest):
         )
 
     @cluster(num_nodes=3)
-    @parametrize(expect_fix=False)
+    @parametrize(expect_fix=True)
     def test_list_offsets_epoch(self, expect_fix):
         """Verify ListOffsets returns the correct leader epoch for each
         timestamp query type.
