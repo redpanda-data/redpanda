@@ -437,3 +437,47 @@ class ListOffsetsLeaderEpochTest(RedpandaTest):
                 f"Bug expected: timequery epoch should be current "
                 f"({current_epoch}), got {epoch}"
             )
+
+    @cluster(num_nodes=3)
+    def test_offset_commit_accepts_lower_epoch(self):
+        """Verify the server accepts offset commits with a lower epoch
+        than the previously committed epoch.
+
+        This confirms there is no epoch-based rejection in the offset
+        commit path.  The server's try_upsert_offset only compares the
+        raft log_offset of the commit record, not committed_leader_epoch.
+
+        Sequence:
+        1. Produce 12 records (so the topic/partition exists)
+        2. Commit offset=0 with epoch=4 (simulates buggy rpk seek)
+        3. Commit offset=12 with epoch=1 (correct, lower epoch)
+        4. Verify the server stored offset=12, epoch=1
+
+        No leadership transfers needed — the server does not validate
+        the committed epoch against the partition's actual leader epoch.
+        """
+        rpk = RpkTool(self.redpanda)
+        group = "epoch-ordering-test"
+
+        # Produce records so the topic/partition is valid
+        for i in range(12):
+            rpk.produce("epoch-test", f"key-{i}", f"val-{i}")
+
+        # Commit offset=0 with a high epoch — this is what a buggy
+        # rpk seek does today via ListOffsets.
+        self._offset_commit(group, "epoch-test", 0, offset=0, leader_epoch=4)
+        offset, epoch = self._offset_fetch(group, "epoch-test", 0)
+        self.logger.info(f"After high-epoch commit: offset={offset}, epoch={epoch}")
+        assert offset == 0 and epoch == 4
+
+        # Now commit offset=12 with a lower epoch — this is what a
+        # fixed ListOffsets would produce.
+        self._offset_commit(group, "epoch-test", 0, offset=12, leader_epoch=1)
+        offset, epoch = self._offset_fetch(group, "epoch-test", 0)
+        self.logger.info(f"After low-epoch commit: offset={offset}, epoch={epoch}")
+        assert offset == 12, (
+            f"Server should accept lower-epoch commit: expected offset 12, got {offset}"
+        )
+        assert epoch == 1, (
+            f"Server should store the lower epoch: expected 1, got {epoch}"
+        )
