@@ -712,18 +712,28 @@ parse_gcs_batch_delete_response(
     while ((part = parts.get_part()).has_value()) {
         iobuf_parser part_parser{std::move(part).value()};
         auto mime = util::mime_header::from(part_parser);
+        // Parse the sub-response before checking Content-ID so error
+        // details are available for logging even when correlation fails.
+        // Note: this throws on truly malformed parts (not valid HTTP),
+        // which will fail the entire batch. That's acceptable — if the
+        // response is so broken we can't parse it, there's nothing
+        // useful to extract.
+        auto subrequest = util::multipart_subresponse::from(part_parser);
         auto maybe_content_id = mime.content_id<size_t>(convert_content_id);
         if (!maybe_content_id.has_value()) {
-            vlog(
-              s3_log.debug,
-              "MIME header missing 'Content-ID' from batch response, skipping "
-              "part");
+            auto err = subrequest.error(parse_gcs_error_reason);
+            auto lvl = err.has_value() ? ss::log_level::warn
+                                       : ss::log_level::debug;
+            vlogl(
+              s3_log,
+              lvl,
+              "batch_delete_response: MIME header missing 'Content-ID' "
+              "from batch response, skipping part. Sub-response "
+              "error: {}",
+              err);
             continue;
         }
         content_ids_seen.insert(maybe_content_id.value());
-        // having stripped off the leading MIME headers, we should have a
-        // complete HTTP response at the front of the parser
-        auto subrequest = util::multipart_subresponse::from(part_parser);
 
         if (maybe_content_id.value() >= keys.size()) {
             vlog(
