@@ -22,3 +22,6 @@ e3c23b96330a88fba88b6f1bd4f1fa68086e53fb
 
 # ruff check . --select F401 --fix
 77f53ca22fb2ed2fe6cfba40ca6923928e8d8988
+
+# llvm 22
+85b842bccfaf8ced278b9f1784f715ef1dbfec0c
