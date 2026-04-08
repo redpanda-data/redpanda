@@ -307,11 +307,12 @@ topic_reconciler::maybe_create_update_mirror_topic(
         // against that stored in the table, so I need to go from
         // string name to actual type
         try {
-            if (utils::maybe_append_update(
-                  update,
-                  source_topic_config_name,
-                  source_topic_config_value,
-                  local_topic_config)) {
+            if (
+              utils::maybe_append_update(
+                update,
+                source_topic_config_name,
+                source_topic_config_value,
+                local_topic_config)) {
                 config_updated = true;
             }
         } catch (const std::exception& e) {

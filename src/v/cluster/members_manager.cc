@@ -198,9 +198,10 @@ ss::future<> members_manager::handle_raft0_cfg_update(
     absl::flat_hash_set<model::node_id> fully_removed_nodes;
 
     // skip if configuration does not contain brokers
-    if (unlikely(
-          cfg.is_with_brokers()
-          && update_offset < _first_node_operation_command_offset)) {
+    if (
+      unlikely(
+        cfg.is_with_brokers()
+        && update_offset < _first_node_operation_command_offset)) {
         vlog(
           clusterlog.info,
           "processing raft-0 configuration at offset: {} with brokers: {}",
@@ -374,8 +375,9 @@ members_manager::apply_update(model::record_batch b) {
             update_offset,
             id);
 
-          if (auto it = _in_progress_updates.find(id);
-              it != _in_progress_updates.end()) {
+          if (
+            auto it = _in_progress_updates.find(id);
+            it != _in_progress_updates.end()) {
               auto update_type = it->second.type;
               // We could have started decommissioning the node while we
               // were finishing reallocations for node addition or
@@ -686,8 +688,9 @@ ss::future<> members_manager::apply_snapshot(
 
     std::optional<model::maintenance_state> old_self_maintenance_state;
     std::optional<model::maintenance_state> new_self_maintenance_state;
-    if (auto it = _members_table.local().nodes().find(_self.id());
-        it != _members_table.local().nodes().end()) {
+    if (
+      auto it = _members_table.local().nodes().find(_self.id());
+      it != _members_table.local().nodes().end()) {
         old_self_maintenance_state = it->second.state.get_maintenance_state();
     }
     if (auto it = snap.nodes.find(_self.id()); it != snap.nodes.end()) {
@@ -1337,9 +1340,10 @@ members_manager::handle_join_request(const join_node_request req) {
             }
             // if node was removed from the cluster doesn't allow it to rejoin
             // with the same UUID
-            if (_members_table.local()
-                  .get_removed_node_metadata_ref(it->second)
-                  .has_value()) {
+            if (
+              _members_table.local()
+                .get_removed_node_metadata_ref(it->second)
+                .has_value()) {
                 vlog(
                   clusterlog.warn,
                   "Preventing decommissioned node {} with UUID {} from joining "

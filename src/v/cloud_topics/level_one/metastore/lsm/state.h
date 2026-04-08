@@ -111,9 +111,8 @@ struct lsm_state
         auto serde_fields() {
             return std::tie(buf, last_seqno, database_epoch);
         }
-        friend bool
-        operator==(const serialized_manifest&, const serialized_manifest&)
-          = default;
+        friend bool operator==(
+          const serialized_manifest&, const serialized_manifest&) = default;
         serialized_manifest share();
         lsm::sequence_number get_last_seqno() const { return last_seqno; }
         lsm::internal::database_epoch get_database_epoch() const {

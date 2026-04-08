@@ -293,8 +293,9 @@ infer_backend_from_uri(const access_point_uri& uri) {
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,
   model::cloud_credentials_source cloud_storage_credentials_source) {
-    if (auto v = config::shard_local_cfg().cloud_storage_backend.value();
-        v != model::cloud_storage_backend::unknown) {
+    if (
+      auto v = config::shard_local_cfg().cloud_storage_backend.value();
+      v != model::cloud_storage_backend::unknown) {
         vlog(
           client_config_log.info,
           "cloud_storage_backend is explicitly set to {}",

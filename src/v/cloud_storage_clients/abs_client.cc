@@ -156,13 +156,15 @@ parse_json_rest_error_response(boost::beast::http::status result, iobuf buf) {
     std::optional<ss::sstring> member;
     if (auto error_it = doc.FindMember("error"); error_it != doc.MemberEnd()) {
         const auto& error = error_it->value;
-        if (auto code_it = error.FindMember("code");
-            code_it != error.MemberEnd()) {
+        if (
+          auto code_it = error.FindMember("code");
+          code_it != error.MemberEnd()) {
             code = code_it->value.GetString();
         }
 
-        if (auto member_it = error.FindMember("member");
-            member_it != error.MemberEnd()) {
+        if (
+          auto member_it = error.FindMember("member");
+          member_it != error.MemberEnd()) {
             member = member_it->value.GetString();
         }
     }
@@ -257,8 +259,9 @@ parse_batch_delete_response(
             continue;
         }
 
-        if (auto maybe_error_message = subrequest.error(error_code_name);
-            maybe_error_message.has_value()) {
+        if (
+          auto maybe_error_message = subrequest.error(error_code_name);
+          maybe_error_message.has_value()) {
             result.undeleted_keys.push_back({
               .key = keys[maybe_content_id.value()],
               .reason = std::move(maybe_error_message).value(),
@@ -466,8 +469,8 @@ abs_request_creator::make_batch_delete_request(
         subrequest_header.target(fmt::format("/{}/{}", name(), key().string()));
         subrequest_header.insert(delete_snapshot_name, delete_snapshot_value);
         util::url_encode_target(subrequest_header);
-        if (auto ec = add_auth(subrequest_header, true /* omit_version */);
-            ec) {
+        if (
+          auto ec = add_auth(subrequest_header, true /* omit_version */); ec) {
             return ec;
         }
 
@@ -1168,9 +1171,10 @@ ss::future<> abs_client::do_put_object(
     const auto status = response_stream->get_headers().result();
     using enum boost::beast::http::status;
 
-    if (const auto is_no_content_and_accepted = accept_no_content
-                                                && status == no_content;
-        status != created && !is_no_content_and_accepted) {
+    if (
+      const auto is_no_content_and_accepted = accept_no_content
+                                              && status == no_content;
+      status != created && !is_no_content_and_accepted) {
         const auto content_type = util::get_response_content_type(
           response_stream->get_headers());
         auto buf = co_await http::drain(std::move(response_stream));
@@ -1508,10 +1512,11 @@ abs_client::do_test_set_expiry_on_dummy_file(
     const auto& headers = response_stream->get_headers();
 
     if (headers.result() == boost::beast::http::status::bad_request) {
-        if (auto error_code_it = headers.find(error_code_name);
-            error_code_it != headers.end()
-            && error_code_it->value()
-                 == hierarchical_namespace_not_enabled_error_code) {
+        if (
+          auto error_code_it = headers.find(error_code_name);
+          error_code_it != headers.end()
+          && error_code_it->value()
+               == hierarchical_namespace_not_enabled_error_code) {
             // if there is a match of error code, we can proceed, otherwise
             // fallthrough
             co_return storage_account_info{.is_hns_enabled = false};

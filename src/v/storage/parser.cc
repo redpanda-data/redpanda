@@ -146,8 +146,9 @@ static ss::future<result<model::record_batch_header>> read_header_impl(
     }
     auto header = batch_header_from_disk_iobuf(std::move(b));
 
-    if (auto computed_crc = model::internal_header_only_crc(header);
-        unlikely(header.header_crc != computed_crc)) {
+    if (
+      auto computed_crc = model::internal_header_only_crc(header);
+      unlikely(header.header_crc != computed_crc)) {
         if (!recovery) {
             vlog(
               stlog.error,
@@ -232,10 +233,11 @@ static constexpr std::array<parser_errc, 3> benign_error_codes{
    parser_errc::fallocated_file_read_zero_bytes_for_header}};
 
 ss::future<result<size_t>> continuous_batch_parser::consume() {
-    if (unlikely(!std::any_of(
-          benign_error_codes.begin(),
-          benign_error_codes.end(),
-          [v = _err](parser_errc e) { return e == v; }))) {
+    if (
+      unlikely(!std::any_of(
+        benign_error_codes.begin(),
+        benign_error_codes.end(),
+        [v = _err](parser_errc e) { return e == v; }))) {
         return ss::make_ready_future<result<size_t>>(_err);
     }
     return ss::repeat([this] {
@@ -258,10 +260,11 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
               // support partial reads
               return result<size_t>(_bytes_consumed);
           }
-          if (std::any_of(
-                benign_error_codes.begin(),
-                benign_error_codes.end(),
-                [v = _err](parser_errc e) { return e == v; })) {
+          if (
+            std::any_of(
+              benign_error_codes.begin(),
+              benign_error_codes.end(),
+              [v = _err](parser_errc e) { return e == v; })) {
               return result<size_t>(_bytes_consumed);
           }
           return result<size_t>(_err);

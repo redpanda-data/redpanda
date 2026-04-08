@@ -157,8 +157,9 @@ avro_compatibility_result check_compatible(
                 std::vector<std::string_view> missing;
                 for (size_t w_idx = 0; w_idx < writer.names(); ++w_idx) {
                     size_t r_idx{0};
-                    if (const auto& n = writer.nameAt(int(w_idx));
-                        !reader.nameIndex(n, r_idx)) {
+                    if (
+                      const auto& n = writer.nameAt(int(w_idx));
+                      !reader.nameIndex(n, r_idx)) {
                         missing.emplace_back(n);
                     }
                 }

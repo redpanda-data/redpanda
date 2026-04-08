@@ -562,9 +562,10 @@ public:
             compile_types(ctx, *sub, *types_node);
         }
 
-        if (const auto defs_node = keywords.find(
-              keyword::definitions, {json_value_type::object});
-            new_ctx && defs_node) {
+        if (
+          const auto defs_node = keywords.find(
+            keyword::definitions, {json_value_type::object});
+          new_ctx && defs_node) {
             for (const auto& [k, v] : defs_node->GetObject()) {
                 if (!v.IsObject()) {
                     throw std::runtime_error(

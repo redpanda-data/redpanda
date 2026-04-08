@@ -338,8 +338,8 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
           mat.partition_manifest,
           prefix,
           one_week);
-    } else if (std::holds_alternative<size_bound_deletion_parameters>(
-                 retention)) {
+    } else if (
+      std::holds_alternative<size_bound_deletion_parameters>(retention)) {
         auto r = std::get<size_bound_deletion_parameters>(retention);
         vlog(
           _ctxlog.info,
@@ -350,8 +350,8 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
           mat.partition_manifest,
           prefix,
           r.bytes);
-    } else if (std::holds_alternative<time_bound_deletion_parameters>(
-                 retention)) {
+    } else if (
+      std::holds_alternative<time_bound_deletion_parameters>(retention)) {
         auto r = std::get<time_bound_deletion_parameters>(retention);
         vlog(
           _ctxlog.info,

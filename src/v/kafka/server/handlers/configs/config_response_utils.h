@@ -49,8 +49,7 @@ struct metadata_cache_info {
     virtual ~metadata_cache_info() = default;
     virtual model::compression get_default_compression() const = 0;
     virtual model::cleanup_policy_bitflags
-    get_default_cleanup_policy_bitflags() const
-      = 0;
+    get_default_cleanup_policy_bitflags() const = 0;
     virtual size_t get_default_compacted_topic_segment_size() const = 0;
     virtual size_t get_default_segment_size() const = 0;
     virtual std::optional<std::chrono::milliseconds>
@@ -58,43 +57,38 @@ struct metadata_cache_info {
     virtual std::optional<size_t> get_default_retention_bytes() const = 0;
     virtual model::timestamp_type get_default_timestamp_type() const = 0;
     virtual uint32_t get_default_batch_max_bytes() const = 0;
-    virtual model::shadow_indexing_mode get_default_shadow_indexing_mode() const
-      = 0;
+    virtual model::shadow_indexing_mode
+    get_default_shadow_indexing_mode() const = 0;
     virtual std::optional<size_t>
     get_default_retention_local_target_bytes() const = 0;
     virtual std::chrono::milliseconds
-    get_default_retention_local_target_ms() const
-      = 0;
+    get_default_retention_local_target_ms() const = 0;
     virtual std::optional<std::chrono::milliseconds>
     get_default_segment_ms() const = 0;
     virtual std::optional<std::chrono::milliseconds>
     get_default_delete_retention_ms() const = 0;
     virtual bool get_default_record_key_schema_id_validation() const = 0;
     virtual pandaproxy::schema_registry::subject_name_strategy
-    get_default_record_key_subject_name_strategy() const
-      = 0;
+    get_default_record_key_subject_name_strategy() const = 0;
     virtual bool get_default_record_value_schema_id_validation() const = 0;
     virtual pandaproxy::schema_registry::subject_name_strategy
-    get_default_record_value_subject_name_strategy() const
-      = 0;
+    get_default_record_value_subject_name_strategy() const = 0;
     virtual std::optional<size_t>
     get_default_initial_retention_local_target_bytes() const = 0;
     virtual std::optional<std::chrono::milliseconds>
     get_default_initial_retention_local_target_ms() const = 0;
-    virtual std::chrono::milliseconds get_default_iceberg_target_lag_ms() const
-      = 0;
+    virtual std::chrono::milliseconds
+    get_default_iceberg_target_lag_ms() const = 0;
     virtual std::optional<double>
     get_default_min_cleanable_dirty_ratio() const = 0;
-    virtual std::chrono::milliseconds get_default_min_compaction_lag_ms() const
-      = 0;
-    virtual std::chrono::milliseconds get_default_max_compaction_lag_ms() const
-      = 0;
     virtual std::chrono::milliseconds
-    get_default_message_timestamp_before_max_ms() const
-      = 0;
+    get_default_min_compaction_lag_ms() const = 0;
     virtual std::chrono::milliseconds
-    get_default_message_timestamp_after_max_ms() const
-      = 0;
+    get_default_max_compaction_lag_ms() const = 0;
+    virtual std::chrono::milliseconds
+    get_default_message_timestamp_before_max_ms() const = 0;
+    virtual std::chrono::milliseconds
+    get_default_message_timestamp_after_max_ms() const = 0;
 };
 /// This is the adapter to use cluster::metadata_cache
 struct metadata_cache_adapter : public metadata_cache_info {

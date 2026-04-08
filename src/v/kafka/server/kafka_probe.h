@@ -155,8 +155,8 @@ public:
 
     void record_batch(uint64_t size, model::compression compression) {
         _batch_size.record(size);
-        if (auto idx = (size_t)compression;
-            idx < _bytes_by_compression.size()) {
+        if (
+          auto idx = (size_t)compression; idx < _bytes_by_compression.size()) {
             // NOLINTNEXTLINE:clang-tidy(cppcoreguidelines-pro-bounds-constant-array-index)
             _bytes_by_compression[idx] += size;
         }

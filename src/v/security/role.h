@@ -61,8 +61,8 @@ public:
     static role_member_view from_principal(const security::acl_principal& p);
 
 private:
-    friend bool operator==(const role_member_view&, const role_member_view&)
-      = default;
+    friend bool
+    operator==(const role_member_view&, const role_member_view&) = default;
     friend std::ostream& operator<<(std::ostream&, const role_member_view&);
 
     template<typename H>

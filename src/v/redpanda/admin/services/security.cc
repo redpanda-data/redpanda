@@ -326,8 +326,9 @@ security_service_impl::create_scram_credential(
       = convert_to_security_scram_credential(pb_cred);
 
     auto& cred_store = _controller->get_credential_store().local();
-    if (auto cred_opt = cred_store.get<security::scram_credential>(name);
-        cred_opt.has_value() && cred_opt.value() == credential) {
+    if (
+      auto cred_opt = cred_store.get<security::scram_credential>(name);
+      cred_opt.has_value() && cred_opt.value() == credential) {
         vlog(
           securitylog.debug,
           "User {} already exists with matching credential",

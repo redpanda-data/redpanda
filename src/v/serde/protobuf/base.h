@@ -150,9 +150,8 @@ public:
     std::optional<field>
     lookup_field_by_path(std::span<std::string_view> field_path);
     // A virtual method to convert a field path into numbers.
-    virtual std::optional<std::vector<int32_t>>
-    convert_field_path_to_numbers(std::span<std::string_view> field_path) const
-      = 0;
+    virtual std::optional<std::vector<int32_t>> convert_field_path_to_numbers(
+      std::span<std::string_view> field_path) const = 0;
     // The same as `lookup_field_by_path`, except using field numbers instead of
     // a field path.
     virtual std::optional<field>

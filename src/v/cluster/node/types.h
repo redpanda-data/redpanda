@@ -110,8 +110,8 @@ struct local_state
             return std::tie(
               data_target_size, data_current_size, data_reclaimable_size);
         }
-        friend bool operator==(const log_data_state&, const log_data_state&)
-          = default;
+        friend bool
+        operator==(const log_data_state&, const log_data_state&) = default;
         friend std::ostream& operator<<(std::ostream&, const log_data_state&);
     };
     std::optional<log_data_state> log_data_size{std::nullopt};

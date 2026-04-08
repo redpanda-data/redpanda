@@ -106,8 +106,8 @@ parse_header(ss::input_stream<char>& src) {
             /// User provided unsupported an invalid key that does not map
             /// to any known kafka requests, code will throw when it eventually
             /// reaches the request router
-        } else if (flex_versions::is_flexible_request(
-                     header->key, header->version)) {
+        } else if (
+          flex_versions::is_flexible_request(header->key, header->version)) {
             auto [tags, bytes_read] = co_await parse_tags(src);
             header->tags = std::move(tags);
             header->tags_size_bytes = bytes_read;

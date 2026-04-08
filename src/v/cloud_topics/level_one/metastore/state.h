@@ -86,8 +86,7 @@ struct compaction_state
           serde::compat_version<0>> {
         friend bool operator==(
           const cleaned_range_with_tombstones&,
-          const cleaned_range_with_tombstones&)
-          = default;
+          const cleaned_range_with_tombstones&) = default;
         auto operator<=>(const cleaned_range_with_tombstones&) const = default;
         auto serde_fields() {
             return std::tie(
@@ -105,8 +104,8 @@ struct compaction_state
     using tombstone_range_set_t
       = absl::btree_set<cleaned_range_with_tombstones>;
 
-    friend bool operator==(const compaction_state&, const compaction_state&)
-      = default;
+    friend bool
+    operator==(const compaction_state&, const compaction_state&) = default;
     auto serde_fields() {
         return std::tie(cleaned_ranges, cleaned_ranges_with_tombstones);
     }
@@ -189,8 +188,8 @@ public:
 struct partition_state
   : public serde::
       envelope<partition_state, serde::version<0>, serde::compat_version<0>> {
-    friend bool operator==(const partition_state&, const partition_state&)
-      = default;
+    friend bool
+    operator==(const partition_state&, const partition_state&) = default;
     auto serde_fields() {
         return std::tie(
           extents,

@@ -55,10 +55,10 @@ public:
     ntp_archiver_upload_result() = default;
     ntp_archiver_upload_result(const ntp_archiver_upload_result&) = default;
     ntp_archiver_upload_result(ntp_archiver_upload_result&&) = default;
-    ntp_archiver_upload_result& operator=(const ntp_archiver_upload_result&)
-      = default;
-    ntp_archiver_upload_result& operator=(ntp_archiver_upload_result&&)
-      = default;
+    ntp_archiver_upload_result&
+    operator=(const ntp_archiver_upload_result&) = default;
+    ntp_archiver_upload_result&
+    operator=(ntp_archiver_upload_result&&) = default;
     ~ntp_archiver_upload_result() = default;
 
     /// Result without the value (error or success)

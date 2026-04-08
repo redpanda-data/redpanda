@@ -37,8 +37,9 @@ sleep_abortable(typename Clock::duration dur, AbortSource&... src) {
         explicit as_callback(as_state& st)
           : state(st.weak_from_this()) {}
         void operator()() noexcept {
-            if (auto st = state.get();
-                st != nullptr && !st->as.abort_requested()) {
+            if (
+              auto st = state.get();
+              st != nullptr && !st->as.abort_requested()) {
                 st->as.request_abort();
             }
         }

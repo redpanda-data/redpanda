@@ -2060,8 +2060,7 @@ TEST_F(
         // Reset close semaphore.
         auto& resources = disk_log->resources();
         storage::testing_details::storage_resources_accessor::
-          inflight_close_flush_sem(resources)
-          = adjustable_semaphore(1);
+          inflight_close_flush_sem(resources) = adjustable_semaphore(1);
     }
 
     restart(should_wipe::no);

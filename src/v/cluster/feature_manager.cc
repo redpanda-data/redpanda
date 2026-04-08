@@ -768,8 +768,9 @@ feature_manager::write_action(cluster::feature_update_action action) {
 void feature_manager::set_node_to_latest_version(const model::node_id node_id) {
     const cluster_version latest
       = features::feature_table::get_latest_logical_version();
-    if (const version_map::iterator i = _node_versions.find(node_id);
-        i != _node_versions.end()) {
+    if (
+      const version_map::iterator i = _node_versions.find(node_id);
+      i != _node_versions.end()) {
         if (i->second == latest) {
             return; // already there
         }

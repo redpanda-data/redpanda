@@ -53,8 +53,8 @@ struct group_offsets
         topic_partitions copy() const { return {topic, partitions.copy()}; }
 
         auto serde_fields() { return std::tie(topic, partitions); }
-        friend bool operator==(const topic_partitions&, const topic_partitions&)
-          = default;
+        friend bool
+        operator==(const topic_partitions&, const topic_partitions&) = default;
     };
 
     // The consumer group ID.
@@ -73,8 +73,8 @@ struct group_offsets
             offsets | std::views::transform(&topic_partitions::copy)}};
     }
 
-    friend bool operator==(const group_offsets&, const group_offsets&)
-      = default;
+    friend bool
+    operator==(const group_offsets&, const group_offsets&) = default;
 };
 
 struct group_offsets_snapshot
@@ -98,9 +98,8 @@ struct group_offsets_snapshot
 
     auto serde_fields() { return std::tie(offsets_topic_pid, groups); }
 
-    friend bool
-    operator==(const group_offsets_snapshot&, const group_offsets_snapshot&)
-      = default;
+    friend bool operator==(
+      const group_offsets_snapshot&, const group_offsets_snapshot&) = default;
 };
 
 struct get_group_offsets_request

@@ -84,9 +84,8 @@ struct ntp_leader_revision
       , leader_id(leader_id)
       , revision(revision) {}
 
-    friend bool
-    operator==(const ntp_leader_revision&, const ntp_leader_revision&)
-      = default;
+    friend bool operator==(
+      const ntp_leader_revision&, const ntp_leader_revision&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_leader_revision& r) {
@@ -193,9 +192,8 @@ struct get_leadership_reply
       : leaders(std::move(leaders))
       , success(success) {}
 
-    friend bool
-    operator==(const get_leadership_reply&, const get_leadership_reply&)
-      = default;
+    friend bool operator==(
+      const get_leadership_reply&, const get_leadership_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_leadership_reply& r) {

@@ -288,9 +288,9 @@ partition_manifest::compute_start_kafka_offset_local() const {
         // If start offset points outside a segment, then we cannot
         // translate it.  If there are any segments ahead of it, then
         // those may be considered the start of the remote log.
-        if (auto front_it = _segments.begin();
-            front_it != segments_end
-            && front_it->base_offset >= _start_offset) {
+        if (
+          auto front_it = _segments.begin();
+          front_it != segments_end && front_it->base_offset >= _start_offset) {
             local_start_offset = front_it->base_offset - front_it->delta_offset;
         }
     }

@@ -130,16 +130,14 @@ public:
       cloud_storage::cloud_storage_api&,
       retry_chain_node&,
       report_generation_frequency,
-      report_format)
-      = 0;
+      report_format) = 0;
 
     virtual ss::future<op_result<bool>> inventory_configuration_exists(
-      cloud_storage::cloud_storage_api& remote, retry_chain_node& parent_rtc)
-      = 0;
+      cloud_storage::cloud_storage_api& remote,
+      retry_chain_node& parent_rtc) = 0;
 
     virtual ss::future<op_result<report_metadata>> fetch_latest_report_metadata(
-      cloud_storage::cloud_storage_api&, retry_chain_node&) const noexcept
-      = 0;
+      cloud_storage::cloud_storage_api&, retry_chain_node&) const noexcept = 0;
 
     virtual cloud_storage_clients::bucket_name bucket() const = 0;
 };

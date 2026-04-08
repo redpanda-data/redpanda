@@ -368,10 +368,11 @@ static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
                     : make_error_topic_response(move_topic_name(), ec));
                 continue;
             }
-            if (auto md = ctx.metadata_cache().get_topic_metadata(
-                  model::topic_namespace_view(
-                    model::kafka_namespace, *topic.name));
-                md) {
+            if (
+              auto md = ctx.metadata_cache().get_topic_metadata(
+                model::topic_namespace_view(
+                  model::kafka_namespace, *topic.name));
+              md) {
                 auto src_topic_response = make_topic_response(
                   ctx, request, *md, is_node_isolated);
                 src_topic_response.name = move_topic_name();

@@ -36,8 +36,8 @@ public:
     gzip_stream_decompressor(ss::input_stream<char> stream, size_t chunk_size);
 
     gzip_stream_decompressor(const gzip_stream_decompressor&) = delete;
-    gzip_stream_decompressor& operator=(const gzip_stream_decompressor&)
-      = delete;
+    gzip_stream_decompressor&
+    operator=(const gzip_stream_decompressor&) = delete;
 
     gzip_stream_decompressor(gzip_stream_decompressor&&) = delete;
     gzip_stream_decompressor& operator=(gzip_stream_decompressor&&) = delete;

@@ -58,16 +58,13 @@ struct archival_metadata_stm_base_fixture
     using simple_raft_fixture::wait_for_confirmed_leader;
 
     archival_metadata_stm_base_fixture(
-      const archival_metadata_stm_base_fixture&)
-      = delete;
+      const archival_metadata_stm_base_fixture&) = delete;
     archival_metadata_stm_base_fixture&
-    operator=(const archival_metadata_stm_base_fixture&)
-      = delete;
+    operator=(const archival_metadata_stm_base_fixture&) = delete;
     archival_metadata_stm_base_fixture(archival_metadata_stm_base_fixture&&)
       = delete;
     archival_metadata_stm_base_fixture&
-    operator=(archival_metadata_stm_base_fixture&&)
-      = delete;
+    operator=(archival_metadata_stm_base_fixture&&) = delete;
 
     static cloud_storage_clients::s3_configuration
     get_s3_configuration(uint16_t port) {

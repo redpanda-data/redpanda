@@ -44,9 +44,8 @@ struct broker_authn_endpoint {
     net::unresolved_address address;
     std::optional<broker_authn_method> authn_method;
 
-    friend bool
-    operator==(const broker_authn_endpoint&, const broker_authn_endpoint&)
-      = default;
+    friend bool operator==(
+      const broker_authn_endpoint&, const broker_authn_endpoint&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& os, const broker_authn_endpoint& ep);

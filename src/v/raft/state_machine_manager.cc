@@ -110,10 +110,11 @@ batch_applicator::operator()(model::record_batch batch) {
     /**
      * If any of the STMs applied batch successfully update _max_last_applied
      */
-    if (std::any_of(
-          results.begin(),
-          results.end(),
-          std::bind_front(std::equal_to<>(), applied_successfully::yes))) {
+    if (
+      std::any_of(
+        results.begin(),
+        results.end(),
+        std::bind_front(std::equal_to<>(), applied_successfully::yes))) {
         _max_last_applied = last_offset;
     }
 

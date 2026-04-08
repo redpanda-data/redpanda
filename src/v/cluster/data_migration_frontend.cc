@@ -258,9 +258,10 @@ ss::future<check_ntp_states_reply> frontend::check_ntp_states_on_foreign_node(
 ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
     validate_migration_shard();
 
-    if (std::visit(
-          [](const auto& migration) { return !empty(migration.groups); },
-          migration)) {
+    if (
+      std::visit(
+        [](const auto& migration) { return !empty(migration.groups); },
+        migration)) {
         auto deadline = model::timeout_clock::now() + _operation_timeout;
         if (!co_await _group_proxy->assure_topic_exists(deadline)) {
             vlog(

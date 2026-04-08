@@ -431,8 +431,9 @@ TEST(JsonSchema, Nested2) {
           std::holds_alternative<iceberg::list_type>(
             result.value().fields[5]->type));
 
-        if (std::holds_alternative<iceberg::list_type>(
-              result.value().fields[5]->type)) {
+        if (
+          std::holds_alternative<iceberg::list_type>(
+            result.value().fields[5]->type)) {
             auto& item_type = std::get<iceberg::list_type>(
                                 result.value().fields[5]->type)
                                 .element_field;

@@ -1207,9 +1207,9 @@ TEST_F_CORO(
             .bootstrap_servers = {net::unresolved_address{"localhost", 9093}}}};
 
         update_cmd.link_config.topic_metadata_mirroring_cfg
-          .topic_properties_to_mirror
-          = ::cluster_link::model::topic_metadata_mirroring_config::
-            properties_set{"redpanda.remote.readreplica"};
+          .topic_properties_to_mirror = ::cluster_link::model::
+          topic_metadata_mirroring_config::properties_set{
+            "redpanda.remote.readreplica"};
 
         EXPECT_EQ(
           co_await update_cluster_link_configuration(*id, update_cmd.copy()),

@@ -743,8 +743,9 @@ parse_gcs_batch_delete_response(
           maybe_content_id,
           keys[maybe_content_id.value()]);
 
-        if (auto maybe_error_message = subrequest.error(parse_gcs_error_reason);
-            maybe_error_message.has_value()) {
+        if (
+          auto maybe_error_message = subrequest.error(parse_gcs_error_reason);
+          maybe_error_message.has_value()) {
             // Extract error message from response if available
             // GCS error responses may contain error details in the body
             result.undeleted_keys.push_back({
@@ -1201,9 +1202,10 @@ ss::future<> s3_client::do_put_object(
                                                iobuf&& res) {
                     auto status = ref->get_headers().result();
                     using enum boost::beast::http::status;
-                    if (const auto is_no_content_and_accepted
-                        = status == no_content && accept_no_content;
-                        status != ok && !is_no_content_and_accepted) {
+                    if (
+                      const auto is_no_content_and_accepted
+                      = status == no_content && accept_no_content;
+                      status != ok && !is_no_content_and_accepted) {
                         vlog(
                           s3_log.warn,
                           "S3 PUT request failed for key {}: {} {:l}",
@@ -1394,8 +1396,9 @@ iobuf_to_delete_objects_result(iobuf&& buf) {
     auto root = util::iobuf_to_ptree(std::move(buf), s3_log);
     auto result = client::delete_objects_result{};
     try {
-        if (auto error_code = root.get_optional<ss::sstring>("Error.Code");
-            error_code) {
+        if (
+          auto error_code = root.get_optional<ss::sstring>("Error.Code");
+          error_code) {
             // This is an error response. S3 can reply with 200 error code and
             // error response in the body.
             constexpr const char* empty = "";
@@ -1478,8 +1481,9 @@ auto s3_client::do_delete_objects(
               }
               auto parse_result = iobuf_to_delete_objects_result(
                 std::move(res));
-              if (std::holds_alternative<client::delete_objects_result>(
-                    parse_result)) {
+              if (
+                std::holds_alternative<client::delete_objects_result>(
+                  parse_result)) {
                   return ss::make_ready_future<delete_objects_result>(
                     std::get<client::delete_objects_result>(parse_result));
               }
@@ -1953,8 +1957,9 @@ ss::future<> s3_multipart_state::complete_multipart_upload() {
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
     auto response_buf = co_await http::drain(std::move(response_stream));
     auto response_tree = util::iobuf_to_ptree(std::move(response_buf), s3_log);
-    if (auto error_code = response_tree.get_optional<std::string>("Error.Code");
-        error_code) {
+    if (
+      auto error_code = response_tree.get_optional<std::string>("Error.Code");
+      error_code) {
         // Use std::string for ptree extraction since ss::sstring's stream
         // extraction operator reads only until whitespace, which truncates
         // multi-word error messages.

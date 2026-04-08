@@ -465,9 +465,10 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
             broker = std::move(reply.broker);
             node_uuid = reply.node_uuid;
         }
-        if (const auto [i, inserted] = node_ids.try_emplace(
-              std::move(node_uuid), broker.id());
-            !inserted) {
+        if (
+          const auto [i, inserted] = node_ids.try_emplace(
+            std::move(node_uuid), broker.id());
+          !inserted) {
             vlog(clusterlog.error, "Duplicate node UUID: {}", i->first);
             failed = true;
         }

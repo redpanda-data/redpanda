@@ -52,8 +52,9 @@ parse_header(ss::input_stream<char>& in) {
         }
         iobuf_parser parser(std::move(b));
         auto h = reflection::adl<header>{}.from(parser);
-        if (auto got = checksum_header_only(h);
-            unlikely(h.header_checksum != got)) {
+        if (
+          auto got = checksum_header_only(h);
+          unlikely(h.header_checksum != got)) {
             vlog(
               rpclog.info,
               "rpc header missmatching checksums. expected:{}, got:{} - {}",

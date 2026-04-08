@@ -150,8 +150,9 @@ std::error_code cluster_recovery_table::apply(
 std::optional<partition_bootstrap_params>
 cluster_recovery_table::get_partition_bootstrap_params(
   const model::ntp& ntp) const {
-    if (auto it = _pending_bootstrap_params.find(ntp);
-        it != _pending_bootstrap_params.end()) {
+    if (
+      auto it = _pending_bootstrap_params.find(ntp);
+      it != _pending_bootstrap_params.end()) {
         return it->second;
     }
     return std::nullopt;

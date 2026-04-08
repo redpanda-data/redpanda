@@ -108,10 +108,11 @@ auto tuple_map(Fn&& map_fn, auto&& first_tuple, auto&& second_tuple) {
       [&]<typename... Ts>(Ts&&... first_param) {
           return std::apply(
             [&]<typename... Us>(Us&&... second_param) {
-                if constexpr (std::is_void_v<std::invoke_result_t<
-                                Fn&&,
-                                decltype(std::get<0>(first_tuple)),
-                                decltype(std::get<0>(second_tuple))>>) {
+                if constexpr (
+                  std::is_void_v<std::invoke_result_t<
+                    Fn&&,
+                    decltype(std::get<0>(first_tuple)),
+                    decltype(std::get<0>(second_tuple))>>) {
                     (std::invoke(
                        map_fn,
                        std::forward<Ts>(first_param),
@@ -556,9 +557,10 @@ public:
         auto maybe_hint = [&]() -> std::optional<hint_vec_t> {
             // escape hatch: disable the use of _hints if their value causes
             // std::out_of_bound exceptions.
-            if (unlikely(
-                  config::shard_local_cfg()
-                    .storage_ignore_cstore_hints.value())) {
+            if (
+              unlikely(
+                config::shard_local_cfg()
+                  .storage_ignore_cstore_hints.value())) {
                 return std::nullopt;
             }
 
@@ -574,9 +576,10 @@ public:
             // The hint can only be applied within the same column_store_frame
             // instance. If the hint belongs to the previous frame we need to
             // materialize without optimization.
-            if (_base_offset
-                  .get_frame_iterator_by_element_index(base_offset_iter.index())
-                  ->is_applicable(hint_bo)) {
+            if (
+              _base_offset
+                .get_frame_iterator_by_element_index(base_offset_iter.index())
+                ->is_applicable(hint_bo)) {
                 return hint_vec;
             }
 
@@ -711,9 +714,10 @@ public:
         // manually as size,[(key,value)...]
         auto field_writer = [&out]<typename FieldType>(FieldType& f) {
             if constexpr (std::same_as<FieldType, hint_map_t>) {
-                if (unlikely(
-                      f.size()
-                      > std::numeric_limits<serde::serde_size_t>::max())) {
+                if (
+                  unlikely(
+                    f.size()
+                    > std::numeric_limits<serde::serde_size_t>::max())) {
                     throw serde::serde_exception(fmt_with_ctx(
                       ssx::sformat,
                       "serde: {} size {} exceeds serde_size_t",
@@ -841,12 +845,10 @@ private:
 };
 
 segment_meta_materializing_iterator::segment_meta_materializing_iterator(
-  segment_meta_materializing_iterator&&)
-  = default;
+  segment_meta_materializing_iterator&&) = default;
 segment_meta_materializing_iterator&
 segment_meta_materializing_iterator::operator=(
-  segment_meta_materializing_iterator&&)
-  = default;
+  segment_meta_materializing_iterator&&) = default;
 segment_meta_materializing_iterator::segment_meta_materializing_iterator(
   std::unique_ptr<impl> i)
   : _impl(std::move(i)) {}
@@ -968,8 +970,9 @@ public:
               model::offset::min());
 
             auto& buffer_last_seg = _write_buffer.crbegin()->second;
-            if (likely(
-                  buffer_last_seg.committed_offset >= last_committed_offset)) {
+            if (
+              likely(
+                buffer_last_seg.committed_offset >= last_committed_offset)) {
                 // return last one in _write_buffer
                 return buffer_last_seg;
             }
@@ -1113,8 +1116,7 @@ segment_meta_cstore::~segment_meta_cstore() = default;
 segment_meta_cstore::segment_meta_cstore(segment_meta_cstore&&) noexcept
   = default;
 segment_meta_cstore&
-segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept
-  = default;
+segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept = default;
 
 bool segment_meta_cstore::operator==(const segment_meta_cstore& oth) const {
     if (size() != oth.size()) {

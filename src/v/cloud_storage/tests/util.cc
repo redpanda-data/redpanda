@@ -1087,8 +1087,8 @@ void topic_manifest_serialize_v1_json(
     }
     if (!m._topic_config->properties.retention_duration.is_disabled()) {
         w.Key("retention_duration");
-        if (m._topic_config->properties.retention_duration
-              .has_optional_value()) {
+        if (
+          m._topic_config->properties.retention_duration.has_optional_value()) {
             w.Int64(
               m._topic_config->properties.retention_duration.value().count());
         } else {

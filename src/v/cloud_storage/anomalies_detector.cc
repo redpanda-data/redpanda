@@ -136,8 +136,9 @@ ss::future<anomalies_detector::result> anomalies_detector::run(
         if (spill) {
             // Check adjacent segments which have a manifest
             // boundary between them.
-            if (auto last_in_spill = spill->last_segment();
-                last_in_spill && first_seg_previous_manifest) {
+            if (
+              auto last_in_spill = spill->last_segment();
+              last_in_spill && first_seg_previous_manifest) {
                 scrub_segment_meta(
                   *first_seg_previous_manifest,
                   last_in_spill,
@@ -246,8 +247,9 @@ anomalies_detector::check_manifest(
     std::optional<segment_meta> previous_seg_meta;
     auto manifest_end = manifest.end();
     if (scrub_from && manifest.get_last_offset() > scrub_from) {
-        if (auto iter = manifest.segment_containing(*scrub_from);
-            iter != manifest_end) {
+        if (
+          auto iter = manifest.segment_containing(*scrub_from);
+          iter != manifest_end) {
             previous_seg_meta = *iter;
             seg_iter = std::move(++iter);
         }
@@ -354,8 +356,8 @@ anomalies_detector::result::operator+=(anomalies_detector::result&& other) {
 
 existence_query_context::existence_query_context(
   bool always_check_for_segments, model::ntp ntp)
-  : is_inv_scrub_enabled{config::shard_local_cfg()
-                           .cloud_storage_inventory_based_scrub_enabled()}
+  : is_inv_scrub_enabled{
+      config::shard_local_cfg().cloud_storage_inventory_based_scrub_enabled()}
   , force_segment_existence_check{always_check_for_segments} {
     if (is_inv_scrub_enabled) {
         hashes.emplace(

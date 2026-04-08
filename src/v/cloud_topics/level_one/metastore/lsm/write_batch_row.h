@@ -20,8 +20,8 @@ namespace cloud_topics::l1 {
 struct write_batch_row
   : public serde::
       envelope<write_batch_row, serde::version<0>, serde::compat_version<0>> {
-    friend bool operator==(const write_batch_row&, const write_batch_row&)
-      = default;
+    friend bool
+    operator==(const write_batch_row&, const write_batch_row&) = default;
     auto serde_fields() { return std::tie(key, value); }
 
     // NOTE: user-space key.

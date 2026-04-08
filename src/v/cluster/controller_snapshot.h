@@ -134,8 +134,8 @@ struct topics_t
         replicas_revision_map replicas_revisions;
         model::revision_id last_update_finished_revision;
 
-        friend bool operator==(const partition_t&, const partition_t&)
-          = default;
+        friend bool
+        operator==(const partition_t&, const partition_t&) = default;
 
         auto serde_fields() {
             return std::tie(
@@ -248,8 +248,8 @@ struct metrics_reporter_t
       serde::compat_version<0>> {
     metrics_reporter_cluster_info cluster_info;
 
-    friend bool operator==(const metrics_reporter_t&, const metrics_reporter_t&)
-      = default;
+    friend bool
+    operator==(const metrics_reporter_t&, const metrics_reporter_t&) = default;
 
     auto serde_fields() { return std::tie(cluster_info); }
 };
@@ -272,8 +272,8 @@ struct cluster_recovery_t
     std::vector<cluster_recovery_state> recovery_states;
     pending_bootstrap_params_t pending_bootstrap_params;
 
-    friend bool operator==(const cluster_recovery_t&, const cluster_recovery_t&)
-      = default;
+    friend bool
+    operator==(const cluster_recovery_t&, const cluster_recovery_t&) = default;
 
     auto serde_fields() {
         return std::tie(recovery_states, pending_bootstrap_params);
@@ -286,8 +286,8 @@ struct client_quotas_t
     absl::node_hash_map<client_quota::entity_key, client_quota::entity_value>
       quotas;
 
-    friend bool operator==(const client_quotas_t&, const client_quotas_t&)
-      = default;
+    friend bool
+    operator==(const client_quotas_t&, const client_quotas_t&) = default;
 
     auto serde_fields() { return std::tie(quotas); }
 };
@@ -300,8 +300,8 @@ struct data_migrations_t
       node_hash_map<data_migrations::id, data_migrations::migration_metadata>
         migrations;
 
-    friend bool operator==(const data_migrations_t&, const data_migrations_t&)
-      = default;
+    friend bool
+    operator==(const data_migrations_t&, const data_migrations_t&) = default;
 
     auto serde_fields() { return std::tie(next_id, migrations); }
 };
@@ -316,8 +316,8 @@ struct cluster_link_t
     chunked_hash_map<::cluster_link::model::id_t, model::revision_id>
       link_revisions;
 
-    friend bool operator==(const cluster_link_t&, const cluster_link_t&)
-      = default;
+    friend bool
+    operator==(const cluster_link_t&, const cluster_link_t&) = default;
 
     auto serde_fields() { return std::tie(links, link_revisions); }
 };
@@ -342,9 +342,8 @@ struct controller_snapshot
     controller_snapshot_parts::data_migrations_t data_migrations;
     controller_snapshot_parts::cluster_link_t cluster_links;
 
-    friend bool
-    operator==(const controller_snapshot&, const controller_snapshot&)
-      = default;
+    friend bool operator==(
+      const controller_snapshot&, const controller_snapshot&) = default;
 
     ss::future<> serde_async_write(iobuf&);
     ss::future<> serde_async_read(iobuf_parser&, const serde::header);

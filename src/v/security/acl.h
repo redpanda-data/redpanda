@@ -458,8 +458,8 @@ public:
       , _name(std::move(name))
       , _pattern(pattern) {}
 
-    friend bool operator==(const resource_pattern&, const resource_pattern&)
-      = default;
+    friend bool
+    operator==(const resource_pattern&, const resource_pattern&) = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const resource_pattern& e) {
@@ -633,8 +633,8 @@ public:
     struct pattern_match
       : public serde::
           envelope<pattern_match, serde::version<0>, serde::compat_version<0>> {
-        friend bool operator==(const pattern_match&, const pattern_match&)
-          = default;
+        friend bool
+        operator==(const pattern_match&, const pattern_match&) = default;
 
         friend std::ostream& operator<<(std::ostream&, const pattern_match&);
 
@@ -698,9 +698,8 @@ public:
 
     friend void write_v0(iobuf& out, resource_pattern_filter filter);
 
-    friend bool
-    operator==(const resource_pattern_filter&, const resource_pattern_filter&)
-      = default;
+    friend bool operator==(
+      const resource_pattern_filter&, const resource_pattern_filter&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const resource_pattern_filter&);
@@ -771,8 +770,8 @@ public:
           std::move(h), f._principal, f._host, f._operation, f._permission);
     }
 
-    friend bool operator==(const acl_entry_filter&, const acl_entry_filter&)
-      = default;
+    friend bool
+    operator==(const acl_entry_filter&, const acl_entry_filter&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const acl_entry_filter&);
 
@@ -833,8 +832,8 @@ public:
     const resource_pattern_filter& pattern() const { return _pattern; }
     const acl_entry_filter& entry() const { return _acl; }
 
-    friend bool operator==(const acl_binding_filter&, const acl_binding_filter&)
-      = default;
+    friend bool
+    operator==(const acl_binding_filter&, const acl_binding_filter&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const acl_binding_filter&);
 

@@ -32,8 +32,8 @@ class condition_variable {
 public:
     /// Constructs a condition_variable object.
     condition_variable() noexcept = default;
-    condition_variable& operator=(const condition_variable& rhs) noexcept
-      = delete;
+    condition_variable&
+    operator=(const condition_variable& rhs) noexcept = delete;
     condition_variable& operator=(condition_variable&& rhs) noexcept = delete;
     condition_variable(const condition_variable& rhs) noexcept = delete;
     condition_variable(condition_variable&& rhs) noexcept = delete;

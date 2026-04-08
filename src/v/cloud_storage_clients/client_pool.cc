@@ -205,9 +205,10 @@ ss::future<client_pool::client_lease> client_pool::acquire(
         // starts, and we have not had a response from the credentials API yet,
         // but we have scheduled an upload. This wait ensures that when we call
         // the storage API we have a set of valid credentials.
-        if (std::optional<ssx::semaphore_units> u = ss::try_get_units(
-              _pool_ready_barrier, 1);
-            !u.has_value()) {
+        if (
+          std::optional<ssx::semaphore_units> u = ss::try_get_units(
+            _pool_ready_barrier, 1);
+          !u.has_value()) {
             const auto ready_deadline = std::min(
               deadline.value_or(ss::lowres_clock::time_point::max()),
               ss::lowres_clock::now() + pool_ready_timeout);

@@ -32,9 +32,8 @@ struct offsets_lookup_request
 
     auto serde_fields() { return std::tie(node_id, ntps); }
 
-    friend bool
-    operator==(const offsets_lookup_request&, const offsets_lookup_request&)
-      = default;
+    friend bool operator==(
+      const offsets_lookup_request&, const offsets_lookup_request&) = default;
 };
 
 struct offsets_lookup_reply
@@ -65,9 +64,8 @@ struct offsets_lookup_reply
 
     auto serde_fields() { return std::tie(node_id, ntp_and_offset); }
 
-    friend bool
-    operator==(const offsets_lookup_reply&, const offsets_lookup_reply&)
-      = default;
+    friend bool operator==(
+      const offsets_lookup_reply&, const offsets_lookup_reply&) = default;
 };
 
 } // namespace cluster::cloud_metadata

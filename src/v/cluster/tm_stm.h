@@ -136,8 +136,8 @@ public:
           , ranges(std::move(ranges))
           , transactions(std::move(txs)) {}
 
-        friend bool operator==(const draining_txs&, const draining_txs&)
-          = default;
+        friend bool
+        operator==(const draining_txs&, const draining_txs&) = default;
 
         auto serde_fields() { return std::tie(id, ranges, transactions); }
 
@@ -182,9 +182,8 @@ public:
           , included_transactions(std::move(it))
           , draining(std::move(dr)) {}
 
-        friend bool
-        operator==(const locally_hosted_txs&, const locally_hosted_txs&)
-          = default;
+        friend bool operator==(
+          const locally_hosted_txs&, const locally_hosted_txs&) = default;
 
         auto serde_fields() {
             return std::tie(

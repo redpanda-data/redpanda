@@ -306,8 +306,7 @@ public:
     constexpr underlying operator()() const { return _value; };
 
     friend constexpr bool
-    operator==(const partition_risk&, const partition_risk&)
-      = default;
+    operator==(const partition_risk&, const partition_risk&) = default;
 
     friend constexpr partition_risk
     operator&(const partition_risk x, const partition_risk y) {

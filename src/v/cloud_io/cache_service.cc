@@ -207,8 +207,9 @@ ss::future<> cache::clean_up_at_start() {
         auto filepath_to_remove = file_item.path;
 
         // delete only tmp files that are left from previous RedPanda run
-        if (std::string_view(filepath_to_remove)
-              .ends_with(cache_tmp_file_extension)) {
+        if (
+          std::string_view(filepath_to_remove)
+            .ends_with(cache_tmp_file_extension)) {
             try {
                 co_await delete_file_and_empty_parents(filepath_to_remove);
                 deleted_bytes += file_item.size;
@@ -574,8 +575,9 @@ ss::future<> cache::trim(
           exhaustive_result.deleted_size, size_to_delete);
         objects_to_delete -= std::min(
           exhaustive_result.deleted_count, objects_to_delete);
-        if ((size_to_delete > undeletable_bytes
-             || objects_to_delete > undeletable_objects)) {
+        if (
+          (size_to_delete > undeletable_bytes
+           || objects_to_delete > undeletable_objects)) {
             const auto msg = fmt::format(
               "trim: failed to free sufficient space in exhaustive trim, {} "
               "bytes, {} objects still require deletion",
@@ -720,8 +722,9 @@ ss::future<cache::trim_result> cache::do_trim(
         }
 
         // skip tmp files since someone may be writing to it
-        if (std::string_view(file_stat.path)
-              .ends_with(cache_tmp_file_extension)) {
+        if (
+          std::string_view(file_stat.path)
+            .ends_with(cache_tmp_file_extension)) {
             return true;
         }
 
@@ -1226,8 +1229,8 @@ ss::future<> cache::put(
         probe.put_ended();
     });
     auto filename = normal_key_path.filename();
-    if (std::string_view(filename.native())
-          .ends_with(cache_tmp_file_extension)) {
+    if (
+      std::string_view(filename.native()).ends_with(cache_tmp_file_extension)) {
         throw std::invalid_argument(
           fmt::format(
             "Cache file key {} is ending with tmp extension {}.",
@@ -1601,9 +1604,10 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
                         / std::filesystem::relative(
                           std::filesystem::path(file_stat.path), _cache_dir);
 
-        if (auto estimate = _access_time_tracker.get(rel_path.native());
-            estimate.has_value()
-            && estimate->time_point() != file_stat.access_time) {
+        if (
+          auto estimate = _access_time_tracker.get(rel_path.native());
+          estimate.has_value()
+          && estimate->time_point() != file_stat.access_time) {
             vlog(
               log.trace,
               "carryover file {} was accessed ({}) since the last trim ({}), "

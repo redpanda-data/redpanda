@@ -238,8 +238,8 @@ struct legacy_transform_metadata
     model::offset source_ptr;
     legacy_transform_offset_options_2 offset_options;
     friend bool operator==(
-      const legacy_transform_metadata&, const legacy_transform_metadata&)
-      = default;
+      const legacy_transform_metadata&,
+      const legacy_transform_metadata&) = default;
     auto serde_fields() {
         return std::tie(
           name,

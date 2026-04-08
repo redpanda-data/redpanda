@@ -66,9 +66,8 @@ struct persist_manifest_update
       serde::version<0>,
       serde::compat_version<0>> {
     auto serde_fields() { return std::tie(expected_uuid, manifest); }
-    friend bool
-    operator==(const persist_manifest_update&, const persist_manifest_update&)
-      = default;
+    friend bool operator==(
+      const persist_manifest_update&, const persist_manifest_update&) = default;
 
     static std::expected<persist_manifest_update, lsm_update_error> build(
       const lsm_state&, domain_uuid, lsm_state::serialized_manifest manifest);
@@ -88,9 +87,8 @@ struct set_domain_uuid_update
       set_domain_uuid_update,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend bool
-    operator==(const set_domain_uuid_update&, const set_domain_uuid_update&)
-      = default;
+    friend bool operator==(
+      const set_domain_uuid_update&, const set_domain_uuid_update&) = default;
     auto serde_fields() { return std::tie(uuid); }
 
     static std::expected<set_domain_uuid_update, lsm_update_error>
@@ -111,9 +109,8 @@ struct reset_manifest_update
       serde::version<0>,
       serde::compat_version<0>> {
     auto serde_fields() { return std::tie(new_uuid, new_manifest); }
-    friend bool
-    operator==(const reset_manifest_update&, const reset_manifest_update&)
-      = default;
+    friend bool operator==(
+      const reset_manifest_update&, const reset_manifest_update&) = default;
 
     static std::expected<reset_manifest_update, lsm_update_error> build(
       const lsm_state&,

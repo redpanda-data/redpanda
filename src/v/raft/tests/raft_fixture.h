@@ -113,8 +113,7 @@ struct stm_raft_fixture : raft_fixture {
     absl::flat_hash_map<raft::vnode, stm_shptrs_t> node_stms;
 
     virtual stm_shptrs_t create_stms(
-      state_machine_manager_builder& builder, raft_node_instance& node)
-      = 0;
+      state_machine_manager_builder& builder, raft_node_instance& node) = 0;
 };
 
 std::ostream& operator<<(std::ostream& o, msg_type type);

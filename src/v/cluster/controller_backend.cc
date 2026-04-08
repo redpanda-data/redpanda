@@ -509,8 +509,9 @@ controller_backend::calculate_learner_initial_offset(
      * Initial learner start offset only makes sense for partitions with cloud
      * storage data
      */
-    if (auto tp_cfg = p->get_topic_config();
-        tp_cfg.has_value() && tp_cfg->get().is_internal()) {
+    if (
+      auto tp_cfg = p->get_topic_config();
+      tp_cfg.has_value() && tp_cfg->get().is_internal()) {
         vlog(clusterlog.trace, "{} is part of an internal topic", p->ntp());
         return std::nullopt;
     }
@@ -1336,8 +1337,9 @@ controller_backend::reconcile_partition_reconfiguration(
           "(leader: {})",
           partition->ntp(),
           leader);
-        if (can_finish_update(
-              leader, update.get_state(), update.get_resulting_replicas())) {
+        if (
+          can_finish_update(
+            leader, update.get_state(), update.get_resulting_replicas())) {
             auto ec = co_await dispatch_update_finished(
               partition->ntp(), update.get_resulting_replicas());
             if (ec) {

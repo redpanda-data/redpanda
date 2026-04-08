@@ -28,8 +28,8 @@ class random_access_file_reader {
 public:
     random_access_file_reader() = default;
     random_access_file_reader(const random_access_file_reader&) = delete;
-    random_access_file_reader& operator=(const random_access_file_reader&)
-      = delete;
+    random_access_file_reader&
+    operator=(const random_access_file_reader&) = delete;
     random_access_file_reader(random_access_file_reader&&) = delete;
     random_access_file_reader& operator=(random_access_file_reader&&) = delete;
     virtual ~random_access_file_reader() = default;

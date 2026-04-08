@@ -112,8 +112,9 @@ inventory_consumer::process_paths(chunked_vector<ss::sstring> paths) {
 }
 
 void inventory_consumer::process_path(ss::sstring path) {
-    if (auto maybe_ntp = ntp_from_path(path);
-        maybe_ntp.has_value() && _ntps.contains(maybe_ntp.value())) {
+    if (
+      auto maybe_ntp = ntp_from_path(path);
+      maybe_ntp.has_value() && _ntps.contains(maybe_ntp.value())) {
         const auto& ntp = maybe_ntp.value();
         auto hash = xxhash_64(path.data(), path.size());
 

@@ -99,9 +99,8 @@ struct topic_configuration
 
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 
-    friend bool
-    operator==(const topic_configuration&, const topic_configuration&)
-      = default;
+    friend bool operator==(
+      const topic_configuration&, const topic_configuration&) = default;
 };
 
 using topic_configuration_vector = chunked_vector<topic_configuration>;

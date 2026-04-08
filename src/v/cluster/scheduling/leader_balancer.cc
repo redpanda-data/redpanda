@@ -140,8 +140,9 @@ void leader_balancer::on_leadership_change(
     const auto& group = assignment->group;
 
     // Update in flight state
-    if (auto it = _in_flight_changes.find(group);
-        it != _in_flight_changes.end()) {
+    if (
+      auto it = _in_flight_changes.find(group);
+      it != _in_flight_changes.end()) {
         vlog(
           clusterlog.trace,
           "transfer of group {} finished, removing from in-flight set",
@@ -1045,8 +1046,9 @@ leader_balancer::index_type leader_balancer::build_index(
              * then assume that leadership will be transferred to the target
              * node and balance based off of that.
              */
-            if (auto it = _in_flight_changes.find(partition.group);
-                it != _in_flight_changes.end()) {
+            if (
+              auto it = _in_flight_changes.find(partition.group);
+              it != _in_flight_changes.end()) {
                 const auto& assignment = it->second.value;
                 index[assignment.to][partition.group] = std::move(replicas);
                 continue;
@@ -1094,8 +1096,9 @@ leader_balancer::index_type leader_balancer::build_index(
              */
             bool needs_mute = false;
             if (!leader_core) {
-                if (auto it = _last_leader.find(partition.group);
-                    it != _last_leader.end()) {
+                if (
+                  auto it = _last_leader.find(partition.group);
+                  it != _last_leader.end()) {
                     leader_core = it->second.shard;
                 } else {
                     /*

@@ -309,8 +309,8 @@ private:
             }
         }
 
-        if constexpr (::detail::
-                        is_specialization_of_v<I, std::chrono::duration>) {
+        if constexpr (
+          ::detail::is_specialization_of_v<I, std::chrono::duration>) {
             return fmt::format("{}", guess.count());
         } else if constexpr (std::is_arithmetic_v<I>) {
             return fmt::format("{}", guess);

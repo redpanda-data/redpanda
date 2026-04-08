@@ -24,11 +24,11 @@ public:
     compaction_scheduler_probe() = default;
 
     compaction_scheduler_probe(const compaction_scheduler_probe&) = delete;
-    compaction_scheduler_probe& operator=(const compaction_scheduler_probe&)
-      = delete;
+    compaction_scheduler_probe&
+    operator=(const compaction_scheduler_probe&) = delete;
     compaction_scheduler_probe(compaction_scheduler_probe&&) = delete;
-    compaction_scheduler_probe& operator=(compaction_scheduler_probe&&)
-      = delete;
+    compaction_scheduler_probe&
+    operator=(compaction_scheduler_probe&&) = delete;
     ~compaction_scheduler_probe() = default;
 
     void setup_metrics();

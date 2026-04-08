@@ -29,8 +29,7 @@ struct retry_policy {
     // 2. has failed and can be retried
     // 3. has failed and cannot be retried
     virtual result_t
-    should_retry(ss::future<http::downloaded_response> response_f) const
-      = 0;
+    should_retry(ss::future<http::downloaded_response> response_f) const = 0;
 
     // If the ready future did not fail, this method checks the response http
     // status

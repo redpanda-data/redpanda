@@ -19,8 +19,8 @@ namespace archival {
 
 class retention_strategy {
 public:
-    virtual bool done(const cloud_storage::partition_manifest::segment_meta&)
-      = 0;
+    virtual bool
+    done(const cloud_storage::partition_manifest::segment_meta&) = 0;
 
     virtual ss::sstring name() const = 0;
 

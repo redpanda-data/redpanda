@@ -26,8 +26,8 @@ struct partition_field {
     ss::sstring name;
     transform transform;
 
-    friend bool operator==(const partition_field&, const partition_field&)
-      = default;
+    friend bool
+    operator==(const partition_field&, const partition_field&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const partition_field&);
 };
@@ -47,8 +47,8 @@ struct partition_spec {
 
     const partition_field* get_field(nested_field::id_t source_id) const;
 
-    friend bool operator==(const partition_spec&, const partition_spec&)
-      = default;
+    friend bool
+    operator==(const partition_spec&, const partition_spec&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const partition_spec&);
 

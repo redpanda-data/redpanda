@@ -356,9 +356,10 @@ struct service::impl {
     }
 
     void update_group_claim_policy() {
-        if (auto r = parse_group_claim_path(
-              _group_claim_path(), _nested_group_behavior());
-            !r) {
+        if (
+          auto r = parse_group_claim_path(
+            _group_claim_path(), _nested_group_behavior());
+          !r) {
             vlog(
               seclog.error,
               "Group claim path failed to parse ({}): {}",

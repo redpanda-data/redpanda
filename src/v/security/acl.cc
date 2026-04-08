@@ -54,8 +54,9 @@ extract_principal_and_type(std::string_view principal) {
 
 void acl_entry_set::insert(acl_entry entry) {
     auto [it, ins] = _entries.insert(std::move(entry));
-    if (const auto& principal = it->principal();
-        ins && principal.type() == principal_type::role) {
+    if (
+      const auto& principal = it->principal();
+      ins && principal.type() == principal_type::role) {
         _role_cache[principal.name_view()] += 1;
     }
 }
@@ -130,25 +131,28 @@ std::optional<security::acl_match> acl_matches::find(
   const acl_host& host,
   acl_permission perm) const {
     for (const auto& entries : prefixes) {
-        if (auto entry = entries.acl_entry_set.get().find(
-              operation, principal, host, perm);
-            entry.has_value()) {
+        if (
+          auto entry = entries.acl_entry_set.get().find(
+            operation, principal, host, perm);
+          entry.has_value()) {
             return {{entries.resource, *entry}};
         }
     }
 
     if (wildcards) {
-        if (auto entry = wildcards->acl_entry_set.get().find(
-              operation, principal, host, perm);
-            entry.has_value()) {
+        if (
+          auto entry = wildcards->acl_entry_set.get().find(
+            operation, principal, host, perm);
+          entry.has_value()) {
             return {{wildcards->resource, *entry}};
         }
     }
 
     if (literals) {
-        if (auto entry = literals->acl_entry_set.get().find(
-              operation, principal, host, perm);
-            entry.has_value()) {
+        if (
+          auto entry = literals->acl_entry_set.get().find(
+            operation, principal, host, perm);
+          entry.has_value()) {
             return {{literals->resource, *entry}};
         }
     }
@@ -246,8 +250,9 @@ std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
                   if (filter.first.entry().matches(entry)) {
                       auto binding = acl_binding(resource, entry);
                       auto [it, _] = deleted.emplace(binding, filter.second);
-                      if (const auto& p = it->first.entry().principal();
-                          !dry_run && p.type() == principal_type::role) {
+                      if (
+                        const auto& p = it->first.entry().principal();
+                        !dry_run && p.type() == principal_type::role) {
                           maybe_roles.emplace_back(p);
                       }
                       return !dry_run;
@@ -561,8 +566,9 @@ resource_pattern_filter::to_resource_patterns() const {
     }
 
     if (_pattern) {
-        if (std::holds_alternative<resource_pattern_filter::pattern_match>(
-              *_pattern)) {
+        if (
+          std::holds_alternative<resource_pattern_filter::pattern_match>(
+            *_pattern)) {
             return {};
         }
         return {
@@ -665,9 +671,10 @@ void write_v0(iobuf& out, resource_pattern_filter filter) {
 
     std::optional<serialized_pattern_type> pattern;
     if (filter.pattern()) {
-        if (std::holds_alternative<
-              security::resource_pattern_filter::pattern_match>(
-              *filter.pattern())) {
+        if (
+          std::holds_alternative<
+            security::resource_pattern_filter::pattern_match>(
+            *filter.pattern())) {
             pattern = serialized_pattern_type::match;
         } else {
             auto source_pattern = std::get<security::pattern_type>(
@@ -754,8 +761,9 @@ void write_other_version(iobuf& out, Writer writer) {
     writer();
 
     const auto written_size = out.size_bytes() - size_before;
-    if (unlikely(
-          written_size > std::numeric_limits<serde::serde_size_t>::max())) {
+    if (
+      unlikely(
+        written_size > std::numeric_limits<serde::serde_size_t>::max())) {
         throw serde::serde_exception("envelope too big");
     }
     const auto size = ss::cpu_to_le(

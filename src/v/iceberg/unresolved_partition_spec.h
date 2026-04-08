@@ -38,8 +38,8 @@ struct unresolved_partition_spec {
     bool is_valid_for_default_spec() const;
 
     friend bool operator==(
-      const unresolved_partition_spec&, const unresolved_partition_spec&)
-      = default;
+      const unresolved_partition_spec&,
+      const unresolved_partition_spec&) = default;
 
     unresolved_partition_spec copy() const {
         return {

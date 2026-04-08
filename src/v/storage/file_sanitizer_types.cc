@@ -91,17 +91,19 @@ from_json(const json::Value& key, const json::Value& value) {
         op_config.batch_type = batch_type;
     }
 
-    if (auto it = value.FindMember("failure_probability");
-        it != value.MemberEnd()) {
+    if (
+      auto it = value.FindMember("failure_probability");
+      it != value.MemberEnd()) {
         op_config.failure_probability = it->value.GetDouble();
     }
 
-    if (auto it = value.FindMember("delay_probability");
-        it != value.MemberEnd()) {
+    if (
+      auto it = value.FindMember("delay_probability");
+      it != value.MemberEnd()) {
         op_config.delay_probability = it->value.GetDouble();
 
-        if (auto it = value.FindMember("min_delay_ms");
-            it != value.MemberEnd()) {
+        if (
+          auto it = value.FindMember("min_delay_ms"); it != value.MemberEnd()) {
             op_config.min_delay_ms = it->value.GetInt();
         } else {
             throw std::runtime_error(
@@ -109,8 +111,8 @@ from_json(const json::Value& key, const json::Value& value) {
               "'delay_probability', but no 'min_delay_ms'");
         }
 
-        if (auto it = value.FindMember("max_delay_ms");
-            it != value.MemberEnd()) {
+        if (
+          auto it = value.FindMember("max_delay_ms"); it != value.MemberEnd()) {
             op_config.max_delay_ms = it->value.GetInt();
         } else {
             throw std::runtime_error(

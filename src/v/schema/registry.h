@@ -63,13 +63,11 @@ public:
 
     virtual ss::future<pandaproxy::schema_registry::schema_definition>
       get_schema_definition(
-        pandaproxy::schema_registry::context_schema_id) const
-      = 0;
+        pandaproxy::schema_registry::context_schema_id) const = 0;
     virtual ss::future<pandaproxy::schema_registry::stored_schema>
       get_subject_schema(
         pandaproxy::schema_registry::context_subject,
-        std::optional<pandaproxy::schema_registry::schema_version>) const
-      = 0;
+        std::optional<pandaproxy::schema_registry::schema_version>) const = 0;
     virtual ss::future<pandaproxy::schema_registry::context_schema_id>
       create_schema(pandaproxy::schema_registry::subject_schema) = 0;
 };

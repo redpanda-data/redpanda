@@ -35,8 +35,8 @@ struct transfer_leadership_request
     raft::group_id target_group() const { return group; }
 
     friend bool operator==(
-      const transfer_leadership_request&, const transfer_leadership_request&)
-      = default;
+      const transfer_leadership_request&,
+      const transfer_leadership_request&) = default;
 
     auto serde_fields() { return std::tie(group, target, timeout); }
 
@@ -53,8 +53,8 @@ struct transfer_leadership_reply
     raft::errc result;
 
     friend bool operator==(
-      const transfer_leadership_reply&, const transfer_leadership_reply&)
-      = default;
+      const transfer_leadership_reply&,
+      const transfer_leadership_reply&) = default;
 
     auto serde_fields() { return std::tie(success, result); }
 

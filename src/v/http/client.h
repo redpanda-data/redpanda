@@ -82,8 +82,7 @@ public:
     virtual ss::future<downloaded_response> request_and_collect_response(
       boost::beast::http::request_header<>&& request,
       std::optional<iobuf> payload = std::nullopt,
-      ss::lowres_clock::duration timeout = default_connect_timeout)
-      = 0;
+      ss::lowres_clock::duration timeout = default_connect_timeout) = 0;
 
     virtual ss::future<> shutdown_and_stop() = 0;
 

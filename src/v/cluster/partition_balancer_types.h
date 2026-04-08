@@ -66,8 +66,8 @@ struct partition_balancer_violations
 
         auto serde_fields() { return std::tie(id, unavailable_since); }
 
-        friend bool operator==(const unavailable_node&, const unavailable_node&)
-          = default;
+        friend bool
+        operator==(const unavailable_node&, const unavailable_node&) = default;
     };
 
     struct full_node
@@ -101,8 +101,7 @@ struct partition_balancer_violations
 
     friend bool operator==(
       const partition_balancer_violations&,
-      const partition_balancer_violations&)
-      = default;
+      const partition_balancer_violations&) = default;
 
     bool is_empty() const {
         return unavailable_nodes.empty() && full_nodes.empty();
@@ -174,8 +173,8 @@ struct reallocation_failure_details
 
     auto serde_fields() { return std::tie(replica_to_move, reason, error); }
     friend bool operator==(
-      const reallocation_failure_details&, const reallocation_failure_details&)
-      = default;
+      const reallocation_failure_details&,
+      const reallocation_failure_details&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const reallocation_failure_details& rep);
@@ -192,11 +191,9 @@ struct partition_balancer_overview_reply
     partition_balancer_overview_reply(partition_balancer_overview_reply&&)
       = default;
     partition_balancer_overview_reply&
-    operator=(const partition_balancer_overview_reply&)
-      = delete;
+    operator=(const partition_balancer_overview_reply&) = delete;
     partition_balancer_overview_reply&
-    operator=(partition_balancer_overview_reply&&)
-      = default;
+    operator=(partition_balancer_overview_reply&&) = default;
 
     errc error;
     model::timestamp last_tick_time;
@@ -227,8 +224,7 @@ struct partition_balancer_overview_reply
 
     friend bool operator==(
       const partition_balancer_overview_reply&,
-      const partition_balancer_overview_reply&)
-      = default;
+      const partition_balancer_overview_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const partition_balancer_overview_reply& rep);

@@ -423,8 +423,8 @@ public:
               schema,
               {0},
               gen_config);
-        } else if constexpr (std::
-                               is_same_v<T, ::testing::avro_generator_config>) {
+        } else if constexpr (
+          std::is_same_v<T, ::testing::avro_generator_config>) {
             _batch_data = co_await generate_avro_batches(
               records_per_batch,
               batches,

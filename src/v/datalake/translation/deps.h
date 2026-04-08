@@ -132,8 +132,7 @@ public:
 
     virtual ss::future<coordinator::fetch_latest_translated_offset_reply>
       fetch_latest_translated_offset(
-        coordinator::fetch_latest_translated_offset_request)
-      = 0;
+        coordinator::fetch_latest_translated_offset_request) = 0;
 
     static std::unique_ptr<coordinator_api>
     make_default_coordinator_api(coordinator::frontend&);
@@ -183,8 +182,7 @@ public:
     virtual ss::future<std::optional<kafka::offset>> wait_for_data_to_translate(
       std::optional<kafka::offset> last_translated_offset,
       ss::lowres_clock::time_point deadline,
-      ss::abort_source&)
-      = 0;
+      ss::abort_source&) = 0;
 
     virtual ss::future<std::optional<model::record_batch_reader>>
     make_log_reader(kafka::offset, ss::abort_source&) = 0;
@@ -198,8 +196,7 @@ public:
       std::optional<model::timestamp> translation_timestamp,
       model::term_id,
       model::timeout_clock::duration timeout,
-      ss::abort_source&)
-      = 0;
+      ss::abort_source&) = 0;
 
     static std::unique_ptr<data_source>
       make_default_data_source(ss::lw_shared_ptr<cluster::partition>);
@@ -233,9 +230,8 @@ public:
     /**
      * Translates using the record reader until aborted.
      */
-    virtual ss::future<>
-    translate_now(model::record_batch_reader, kafka::offset, ss::abort_source&)
-      = 0;
+    virtual ss::future<> translate_now(
+      model::record_batch_reader, kafka::offset, ss::abort_source&) = 0;
 
     /**
      * Flushes all the buffered state guaranteeing release of resources.
@@ -347,8 +343,7 @@ public:
      * discarded.
      */
     virtual void
-      notify_inflight_translation_iteration(std::optional<kafka::offset>)
-      = 0;
+      notify_inflight_translation_iteration(std::optional<kafka::offset>) = 0;
 
     /**
      * Returns an estimated timestamp for the batch with requested

@@ -520,8 +520,7 @@ struct record_batch_header
 
         friend bool operator==(
           const record_batch_header::context&,
-          const record_batch_header::context&)
-          = default;
+          const record_batch_header::context&) = default;
     };
 
     /// \brief every thing below this field gets CRC, except `context`
@@ -925,8 +924,8 @@ public:
     void for_each_record(Func f) const {
         auto it = record_batch_copy_iterator::create(*this);
         while (it.has_next()) {
-            if constexpr (std::is_void_v<
-                            std::invoke_result_t<Func, model::record>>) {
+            if constexpr (
+              std::is_void_v<std::invoke_result_t<Func, model::record>>) {
                 f(it.next());
             } else {
                 ss::stop_iteration s = f(it.next());
@@ -971,10 +970,10 @@ public:
     ss::future<> for_each_record_async(Func f) const {
         auto it = record_batch_copy_iterator::create(*this);
         while (it.has_next()) {
-            if constexpr (std::is_same_v<
-                            ss::futurize_t<
-                              std::invoke_result_t<Func, model::record>>,
-                            ss::future<ss::stop_iteration>>) {
+            if constexpr (
+              std::is_same_v<
+                ss::futurize_t<std::invoke_result_t<Func, model::record>>,
+                ss::future<ss::stop_iteration>>) {
                 ss::stop_iteration s = co_await ss::futurize_invoke(
                   f, it.next());
                 if (s == ss::stop_iteration::yes) {

@@ -48,8 +48,8 @@ struct base_intrusive_list_hook
       boost::intrusive::link_mode<LinkModeType>> {
     base_intrusive_list_hook() = default;
     base_intrusive_list_hook(const base_intrusive_list_hook&) = delete;
-    base_intrusive_list_hook& operator=(const base_intrusive_list_hook&)
-      = delete;
+    base_intrusive_list_hook&
+    operator=(const base_intrusive_list_hook&) = delete;
     base_intrusive_list_hook(base_intrusive_list_hook&&) = delete;
     base_intrusive_list_hook& operator=(base_intrusive_list_hook&&) = delete;
     ~base_intrusive_list_hook() = default;

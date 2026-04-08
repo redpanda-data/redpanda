@@ -204,8 +204,8 @@ struct scram_credentials
     /// This records the time point when the password was last updated
     ::model::timestamp password_last_updated;
 
-    friend bool operator==(const scram_credentials&, const scram_credentials&)
-      = default;
+    friend bool
+    operator==(const scram_credentials&, const scram_credentials&) = default;
     auto serde_fields() {
         return std::tie(username, password, mechanism, password_last_updated);
     }
@@ -316,8 +316,8 @@ struct connection_config
           default_fetch_partition_max_bytes);
     }
 
-    friend bool operator==(const connection_config&, const connection_config&)
-      = default;
+    friend bool
+    operator==(const connection_config&, const connection_config&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -374,9 +374,8 @@ struct mirror_topic_metadata
         return start_offset_ts.value_or(earliest_offset_ts);
     }
 
-    friend bool
-    operator==(const mirror_topic_metadata&, const mirror_topic_metadata&)
-      = default;
+    friend bool operator==(
+      const mirror_topic_metadata&, const mirror_topic_metadata&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -444,8 +443,8 @@ struct resource_name_filter_pattern
     ss::sstring pattern;
 
     friend bool operator==(
-      const resource_name_filter_pattern&, const resource_name_filter_pattern&)
-      = default;
+      const resource_name_filter_pattern&,
+      const resource_name_filter_pattern&) = default;
 
     auto serde_fields() { return std::tie(pattern_type, filter, pattern); }
 
@@ -489,8 +488,7 @@ struct topic_metadata_mirroring_config
 
     friend bool operator==(
       const topic_metadata_mirroring_config&,
-      const topic_metadata_mirroring_config&)
-      = default;
+      const topic_metadata_mirroring_config&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -520,8 +518,7 @@ struct schema_registry_sync_config
           serde::compat_version<0>> {
         friend bool operator==(
           const shadow_entire_schema_registry&,
-          const shadow_entire_schema_registry&)
-          = default;
+          const shadow_entire_schema_registry&) = default;
 
         auto serde_fields() { return std::tie(); }
 
@@ -537,8 +534,8 @@ struct schema_registry_sync_config
     auto serde_fields() { return std::tie(sync_schema_registry_topic_mode); }
 
     friend bool operator==(
-      const schema_registry_sync_config&, const schema_registry_sync_config&)
-      = default;
+      const schema_registry_sync_config&,
+      const schema_registry_sync_config&) = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 };
@@ -563,8 +560,7 @@ struct consumer_groups_mirroring_config
 
     friend bool operator==(
       const consumer_groups_mirroring_config&,
-      const consumer_groups_mirroring_config&)
-      = default;
+      const consumer_groups_mirroring_config&) = default;
 
     auto serde_fields() { return std::tie(is_enabled, task_interval, filters); }
 
@@ -691,9 +687,8 @@ struct acl_resource_filter
     acl_pattern pattern_type;
     ss::sstring name;
 
-    friend bool
-    operator==(const acl_resource_filter&, const acl_resource_filter&)
-      = default;
+    friend bool operator==(
+      const acl_resource_filter&, const acl_resource_filter&) = default;
 
     auto serde_fields() { return std::tie(resource_type, pattern_type, name); }
 };
@@ -706,8 +701,8 @@ struct acl_access_filter
     acl_permission_type permission_type;
     ss::sstring host;
 
-    friend bool operator==(const acl_access_filter&, const acl_access_filter&)
-      = default;
+    friend bool
+    operator==(const acl_access_filter&, const acl_access_filter&) = default;
 
     auto serde_fields() {
         return std::tie(principal, operation, permission_type, host);
@@ -748,8 +743,7 @@ struct security_settings_sync_config
 
     friend bool operator==(
       const security_settings_sync_config&,
-      const security_settings_sync_config&)
-      = default;
+      const security_settings_sync_config&) = default;
 
     auto serde_fields() {
         return std::tie(is_enabled, task_interval, acl_filters);
@@ -776,8 +770,8 @@ struct link_configuration
     /// Configuration for syncing schema registry
     schema_registry_sync_config schema_registry_sync_cfg;
 
-    friend bool operator==(const link_configuration&, const link_configuration&)
-      = default;
+    friend bool
+    operator==(const link_configuration&, const link_configuration&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -883,9 +877,8 @@ struct add_mirror_topic_cmd
     /// Initial state of the topic
     mirror_topic_metadata metadata;
 
-    friend bool
-    operator==(const add_mirror_topic_cmd&, const add_mirror_topic_cmd&)
-      = default;
+    friend bool operator==(
+      const add_mirror_topic_cmd&, const add_mirror_topic_cmd&) = default;
 
     auto serde_fields() { return std::tie(topic, metadata); }
 
@@ -912,8 +905,7 @@ struct update_mirror_topic_status_cmd
 
     friend bool operator==(
       const update_mirror_topic_status_cmd&,
-      const update_mirror_topic_status_cmd&)
-      = default;
+      const update_mirror_topic_status_cmd&) = default;
 
     auto serde_fields() { return std::tie(topic, status, force_update); }
 };
@@ -935,8 +927,7 @@ struct update_mirror_topic_properties_cmd
 
     friend bool operator==(
       const update_mirror_topic_properties_cmd&,
-      const update_mirror_topic_properties_cmd&)
-      = default;
+      const update_mirror_topic_properties_cmd&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -958,9 +949,8 @@ struct delete_mirror_topic_cmd
     /// Name of the topic
     ::model::topic topic;
 
-    friend bool
-    operator==(const delete_mirror_topic_cmd&, const delete_mirror_topic_cmd&)
-      = default;
+    friend bool operator==(
+      const delete_mirror_topic_cmd&, const delete_mirror_topic_cmd&) = default;
 
     auto serde_fields() { return std::tie(topic); }
 
@@ -978,8 +968,7 @@ struct update_cluster_link_configuration_cmd
 
     friend bool operator==(
       const update_cluster_link_configuration_cmd&,
-      const update_cluster_link_configuration_cmd&)
-      = default;
+      const update_cluster_link_configuration_cmd&) = default;
 
     auto serde_fields() { return std::tie(connection, link_config); }
 
@@ -1001,8 +990,8 @@ struct task_status_report
       is_controller_locked_task_t::no};
     ::model::node_id node_id;
     ss::shard_id shard;
-    friend bool operator==(const task_status_report&, const task_status_report&)
-      = default;
+    friend bool
+    operator==(const task_status_report&, const task_status_report&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -1024,9 +1013,8 @@ struct link_task_status_report
     name_t link_name;
     chunked_hash_map<ss::sstring, task_status_report> task_status_reports;
 
-    friend bool
-    operator==(const link_task_status_report&, const link_task_status_report&)
-      = default;
+    friend bool operator==(
+      const link_task_status_report&, const link_task_status_report&) = default;
 
     auto serde_fields() { return std::tie(link_name, task_status_reports); }
 };
@@ -1041,8 +1029,7 @@ struct cluster_link_task_status_report
 
     friend bool operator==(
       const cluster_link_task_status_report&,
-      const cluster_link_task_status_report&)
-      = default;
+      const cluster_link_task_status_report&) = default;
 
     auto serde_fields() { return std::tie(link_reports); }
 };
@@ -1062,8 +1049,7 @@ struct aggregated_shadow_topic_report {
 
     friend bool operator==(
       const aggregated_shadow_topic_report&,
-      const aggregated_shadow_topic_report&)
-      = default;
+      const aggregated_shadow_topic_report&) = default;
 };
 using report_result_t = std::expected<aggregated_shadow_topic_report, errc>;
 
@@ -1075,9 +1061,8 @@ struct delete_shadow_link_cmd
     name_t link_name;
     bool force{false};
 
-    friend bool
-    operator==(const delete_shadow_link_cmd&, const delete_shadow_link_cmd&)
-      = default;
+    friend bool operator==(
+      const delete_shadow_link_cmd&, const delete_shadow_link_cmd&) = default;
 
     auto serde_fields() { return std::tie(link_name, force); }
 
@@ -1096,8 +1081,8 @@ struct shadow_topic_report_request
     ::model::topic topic_name;
 
     friend bool operator==(
-      const shadow_topic_report_request&, const shadow_topic_report_request&)
-      = default;
+      const shadow_topic_report_request&,
+      const shadow_topic_report_request&) = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 
@@ -1118,8 +1103,7 @@ struct shadow_topic_partition_leader_report
 
     friend bool operator==(
       const shadow_topic_partition_leader_report&,
-      const shadow_topic_partition_leader_report&)
-      = default;
+      const shadow_topic_partition_leader_report&) = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 
@@ -1150,8 +1134,8 @@ struct shadow_topic_report_response
     errc err_code;
 
     friend bool operator==(
-      const shadow_topic_report_response&, const shadow_topic_report_response&)
-      = default;
+      const shadow_topic_report_response&,
+      const shadow_topic_report_response&) = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 
@@ -1170,8 +1154,7 @@ struct shadow_link_status_report_request
 
     friend bool operator==(
       const shadow_link_status_report_request&,
-      const shadow_link_status_report_request&)
-      = default;
+      const shadow_link_status_report_request&) = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 
@@ -1191,8 +1174,7 @@ struct shadow_link_status_topic_response
 
     friend bool operator==(
       const shadow_link_status_topic_response&,
-      const shadow_link_status_topic_response&)
-      = default;
+      const shadow_link_status_topic_response&) = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 
@@ -1215,8 +1197,7 @@ struct shadow_link_status_report_response
 
     friend bool operator==(
       const shadow_link_status_report_response&,
-      const shadow_link_status_report_response&)
-      = default;
+      const shadow_link_status_report_response&) = default;
 
     fmt::iterator format_to(fmt::iterator) const;
 

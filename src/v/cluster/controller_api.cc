@@ -437,8 +437,9 @@ controller_api::get_decommission_allocation_failures(model::node_id node) {
       });
 
     cluster::partition_balancer_overview_reply overview;
-    if (std::holds_alternative<cluster::partition_balancer_overview_reply>(
-          result)) {
+    if (
+      std::holds_alternative<cluster::partition_balancer_overview_reply>(
+        result)) {
         overview = std::move(
           std::get<cluster::partition_balancer_overview_reply>(result));
     } else if (std::holds_alternative<model::node_id>(result)) {

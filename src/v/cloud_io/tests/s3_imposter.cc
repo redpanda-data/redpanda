@@ -225,8 +225,9 @@ struct s3_imposter_fixture::content_handler {
           request.content_length,
           request._method);
 
-        if (auto maybe_resp = fixture.should_fail_request(ri);
-            maybe_resp.has_value()) {
+        if (
+          auto maybe_resp = fixture.should_fail_request(ri);
+          maybe_resp.has_value()) {
             vlog(
               fixt_log.debug,
               "S3 imposter request {} - {} - {} marked as failed, response {}",

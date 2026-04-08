@@ -195,15 +195,16 @@ public:
     parquet_ostream_factory() = default;
     parquet_ostream_factory(const parquet_ostream_factory&) = default;
     parquet_ostream_factory(parquet_ostream_factory&&) = delete;
-    parquet_ostream_factory& operator=(const parquet_ostream_factory&)
-      = default;
+    parquet_ostream_factory&
+    operator=(const parquet_ostream_factory&) = default;
     parquet_ostream_factory& operator=(parquet_ostream_factory&&) = delete;
 
     virtual ~parquet_ostream_factory() = default;
 
     virtual ss::future<std::unique_ptr<parquet_ostream>> create_writer(
-      const iceberg::struct_type&, ss::output_stream<char>, writer_mem_tracker&)
-      = 0;
+      const iceberg::struct_type&,
+      ss::output_stream<char>,
+      writer_mem_tracker&) = 0;
 };
 
 /**
@@ -225,8 +226,7 @@ public:
     virtual ss::future<writer_error> add_data_struct(
       iceberg::struct_value /* data */,
       int64_t /* approx_size */,
-      ss::abort_source&)
-      = 0;
+      ss::abort_source&) = 0;
 
     /**
      * Returns the total bytes buffered in the writer pending flush.
@@ -247,10 +247,10 @@ public:
     parquet_file_writer_factory() = default;
     parquet_file_writer_factory(const parquet_file_writer_factory&) = delete;
     parquet_file_writer_factory(parquet_file_writer_factory&&) = default;
-    parquet_file_writer_factory& operator=(const parquet_file_writer_factory&)
-      = delete;
-    parquet_file_writer_factory& operator=(parquet_file_writer_factory&&)
-      = default;
+    parquet_file_writer_factory&
+    operator=(const parquet_file_writer_factory&) = delete;
+    parquet_file_writer_factory&
+    operator=(parquet_file_writer_factory&&) = default;
     virtual ~parquet_file_writer_factory() = default;
 
     virtual ss::future<

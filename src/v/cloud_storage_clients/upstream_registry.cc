@@ -32,8 +32,9 @@ upstream_key make_upstream_key(
         return key;
     }
 
-    if (auto s3_cfg = std::get_if<s3_configuration>(&cfg);
-        !s3_cfg || s3_cfg->is_gcs) {
+    if (
+      auto s3_cfg = std::get_if<s3_configuration>(&cfg);
+      !s3_cfg || s3_cfg->is_gcs) {
         throw std::invalid_argument(
           "Cannot specify bucket params for non-S3 cloud storage "
           "configurations");

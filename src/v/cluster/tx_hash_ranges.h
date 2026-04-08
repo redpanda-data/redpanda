@@ -58,8 +58,8 @@ struct tx_hash_range
       : first(f)
       , last(l) {}
 
-    friend bool operator==(const tx_hash_range&, const tx_hash_range&)
-      = default;
+    friend bool
+    operator==(const tx_hash_range&, const tx_hash_range&) = default;
 
     auto serde_fields() { return std::tie(first, last); }
 
@@ -104,8 +104,8 @@ struct tx_hash_ranges_set
     tx_hash_ranges_set(std::vector<tx_hash_range>&& hr)
       : ranges(hr) {}
 
-    friend bool operator==(const tx_hash_ranges_set&, const tx_hash_ranges_set&)
-      = default;
+    friend bool
+    operator==(const tx_hash_ranges_set&, const tx_hash_ranges_set&) = default;
 
     auto serde_fields() { return std::tie(ranges); }
 

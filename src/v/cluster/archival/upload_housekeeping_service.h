@@ -193,10 +193,10 @@ public:
 
     upload_housekeeping_service(const upload_housekeeping_service&) = delete;
     upload_housekeeping_service(upload_housekeeping_service&&) = delete;
-    upload_housekeeping_service& operator=(const upload_housekeeping_service&)
-      = delete;
-    upload_housekeeping_service& operator=(upload_housekeeping_service&&)
-      = delete;
+    upload_housekeeping_service&
+    operator=(const upload_housekeeping_service&) = delete;
+    upload_housekeeping_service&
+    operator=(upload_housekeeping_service&&) = delete;
 
     ~upload_housekeeping_service();
 

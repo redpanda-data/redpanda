@@ -2399,24 +2399,25 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
                        const list_transactions_request& req,
                        const cluster::tx_metadata& tx) -> bool {
         if (!req.data.producer_id_filters.empty()) {
-            if (std::none_of(
-                  req.data.producer_id_filters.begin(),
-                  req.data.producer_id_filters.end(),
-                  [pid = tx.pid.get_id()](const auto& provided_pid) {
-                      return pid == provided_pid;
-                  })) {
+            if (
+              std::none_of(
+                req.data.producer_id_filters.begin(),
+                req.data.producer_id_filters.end(),
+                [pid = tx.pid.get_id()](const auto& provided_pid) {
+                    return pid == provided_pid;
+                })) {
                 return false;
             }
         }
 
         if (!req.data.state_filters.empty()) {
-            if (std::none_of(
-                  req.data.state_filters.begin(),
-                  req.data.state_filters.end(),
-                  [status = tx.get_kafka_status()](
-                    const auto& provided_status) {
-                      return status == provided_status;
-                  })) {
+            if (
+              std::none_of(
+                req.data.state_filters.begin(),
+                req.data.state_filters.end(),
+                [status = tx.get_kafka_status()](const auto& provided_status) {
+                    return status == provided_status;
+                })) {
                 return false;
             }
         }

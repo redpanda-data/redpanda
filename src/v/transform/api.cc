@@ -711,8 +711,9 @@ ss::future<std::error_code> service::deploy_transform(
     // expose this option through the API anyway, and already-serialized
     // transform metadata (i.e. legacy deployments) won't traverse this code.
     // Otherwise, respect whatever offset was specifified in the request.
-    if (std::holds_alternative<model::transform_offset_options::latest_offset>(
-          meta.offset_options.position)) {
+    if (
+      std::holds_alternative<model::transform_offset_options::latest_offset>(
+        meta.offset_options.position)) {
         meta.offset_options = model::transform_offset_options{
           // Set the transform to start processing new records starting now,
           // this is the default expectations for developers, as once deploy

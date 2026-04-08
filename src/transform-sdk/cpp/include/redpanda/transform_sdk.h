@@ -39,8 +39,8 @@ struct simple_named_type {
 
 private:
     friend bool operator==(
-      const simple_named_type<type, Tag>&, const simple_named_type<type, Tag>&)
-      = default;
+      const simple_named_type<type, Tag>&,
+      const simple_named_type<type, Tag>&) = default;
     type _val;
 };
 
@@ -319,8 +319,8 @@ struct subject_schema {
     schema_version version;
     schema_id id;
 
-    friend bool operator==(const subject_schema&, const subject_schema&)
-      = default;
+    friend bool
+    operator==(const subject_schema&, const subject_schema&) = default;
 };
 
 /**
@@ -332,8 +332,8 @@ public:
     schema_registry_client(const schema_registry_client&) = delete;
     schema_registry_client& operator=(const schema_registry_client&) = delete;
     schema_registry_client(schema_registry_client&&) noexcept = delete;
-    schema_registry_client& operator=(schema_registry_client&&) noexcept
-      = delete;
+    schema_registry_client&
+    operator=(schema_registry_client&&) noexcept = delete;
     virtual ~schema_registry_client() = default;
 
     /**
@@ -347,8 +347,7 @@ public:
      */
     [[nodiscard]] virtual std::expected<subject_schema, std::error_code>
     lookup_schema_by_version(
-      std::string_view subject, schema_version version) const
-      = 0;
+      std::string_view subject, schema_version version) const = 0;
 
     /**
      * Look up the latest version of a schema (by subject)

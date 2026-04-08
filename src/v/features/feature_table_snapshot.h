@@ -42,9 +42,8 @@ struct feature_state_snapshot
 
     auto serde_fields() { return std::tie(name, state); }
 
-    friend bool
-    operator==(const feature_state_snapshot&, const feature_state_snapshot&)
-      = default;
+    friend bool operator==(
+      const feature_state_snapshot&, const feature_state_snapshot&) = default;
 };
 
 /**
@@ -77,9 +76,8 @@ struct feature_table_snapshot
     /// Key for storing the snapshot in the shard 0 kvstore.
     static bytes kvstore_key();
 
-    friend bool
-    operator==(const feature_table_snapshot&, const feature_table_snapshot&)
-      = default;
+    friend bool operator==(
+      const feature_table_snapshot&, const feature_table_snapshot&) = default;
 };
 
 } // namespace features

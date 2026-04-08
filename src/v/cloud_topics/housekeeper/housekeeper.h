@@ -47,42 +47,39 @@ public:
         virtual ~l0_metadata_storage() = default;
 
         // Get the current start offset for the partition.
-        virtual kafka::offset get_start_offset(const model::topic_id_partition&)
-          = 0;
+        virtual kafka::offset
+        get_start_offset(const model::topic_id_partition&) = 0;
 
         // Get the current last reconciled offset for the partition.
         virtual kafka::offset
-        get_last_reconciled_offset(const model::topic_id_partition&)
-          = 0;
+        get_last_reconciled_offset(const model::topic_id_partition&) = 0;
 
         // Update the start offset to the partition, this must be an
         // idempotent operation.
         virtual ss::future<> set_start_offset(
-          const model::topic_id_partition&, kafka::offset, ss::abort_source*)
-          = 0;
+          const model::topic_id_partition&,
+          kafka::offset,
+          ss::abort_source*) = 0;
 
         // Get the highest start offset we're allowed to prefix truncate to.
         virtual kafka::offset
-        get_max_allowed_start_offset(const model::topic_id_partition&)
-          = 0;
+        get_max_allowed_start_offset(const model::topic_id_partition&) = 0;
 
         virtual std::optional<cloud_topics::cluster_epoch>
         estimate_inactive_epoch(const model::topic_id_partition&) noexcept = 0;
 
         virtual ss::future<std::optional<cloud_topics::cluster_epoch>>
         get_current_cluster_epoch(
-          const model::topic_id_partition&, ss::abort_source*) noexcept
-          = 0;
+          const model::topic_id_partition&, ss::abort_source*) noexcept = 0;
 
         virtual ss::future<> advance_epoch(
           const model::topic_id_partition& tidp,
           cloud_topics::cluster_epoch,
-          ss::abort_source*) noexcept
-          = 0;
+          ss::abort_source*) noexcept = 0;
 
         virtual ss::future<> sync_to_next_placeholder(
-          const model::topic_id_partition& tidp, ss::abort_source*) noexcept
-          = 0;
+          const model::topic_id_partition& tidp,
+          ss::abort_source*) noexcept = 0;
     };
 
     // A wrapper around a source of configuration for a give topic id +

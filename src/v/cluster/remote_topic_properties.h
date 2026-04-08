@@ -35,9 +35,8 @@ struct remote_topic_properties
         return std::tie(remote_revision, remote_partition_count);
     }
 
-    friend bool
-    operator==(const remote_topic_properties&, const remote_topic_properties&)
-      = default;
+    friend bool operator==(
+      const remote_topic_properties&, const remote_topic_properties&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const remote_topic_properties&);

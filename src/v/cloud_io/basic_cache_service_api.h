@@ -96,8 +96,8 @@ class basic_cache_service_api {
 public:
     basic_cache_service_api() = default;
     basic_cache_service_api(const basic_cache_service_api&) = default;
-    basic_cache_service_api& operator=(const basic_cache_service_api&)
-      = default;
+    basic_cache_service_api&
+    operator=(const basic_cache_service_api&) = default;
     basic_cache_service_api(basic_cache_service_api&&) = default;
     basic_cache_service_api& operator=(basic_cache_service_api&&) = default;
     virtual ~basic_cache_service_api() = default;
@@ -110,8 +110,7 @@ public:
     virtual ss::future<std::optional<cache_item_stream>> get_stream(
       std::filesystem::path key,
       size_t read_buffer_size = default_read_buffer_size,
-      unsigned int read_ahead = default_read_ahead)
-      = 0;
+      unsigned int read_ahead = default_read_ahead) = 0;
 
     /// Get a range of a cached value as a stream if it exists
     ///
@@ -125,8 +124,7 @@ public:
       uint64_t offset,
       uint64_t length,
       size_t read_buffer_size = default_read_buffer_size,
-      unsigned int read_ahead = default_read_ahead)
-      = 0;
+      unsigned int read_ahead = default_read_ahead) = 0;
 
     /// Add new value to the cache, overwrite if it's already exist
     ///
@@ -142,8 +140,7 @@ public:
       ss::input_stream<char>& data,
       basic_space_reservation_guard<Clock>& reservation,
       size_t write_buffer_size = default_write_buffer_size,
-      unsigned int write_behind = default_write_behind)
-      = 0;
+      unsigned int write_behind = default_write_behind) = 0;
 
     /// \brief Checks if the value is cached
     ///

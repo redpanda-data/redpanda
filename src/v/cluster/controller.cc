@@ -844,8 +844,8 @@ ss::future<> controller::start(
               _raft0,
               _tp_state.local(),
               offsets_uploader);
-            if (config::shard_local_cfg()
-                  .enable_cluster_metadata_upload_loop()) {
+            if (
+              config::shard_local_cfg().enable_cluster_metadata_upload_loop()) {
                 _metadata_uploader->start();
             }
             _recovery_backend

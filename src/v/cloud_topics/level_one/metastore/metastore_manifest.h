@@ -26,8 +26,8 @@ struct metastore_manifest
       metastore_manifest,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend bool operator==(const metastore_manifest&, const metastore_manifest&)
-      = default;
+    friend bool
+    operator==(const metastore_manifest&, const metastore_manifest&) = default;
     auto serde_fields() { return std::tie(partitioning_strategy, domains); }
 
     // TODO: in the future, this may have a fancier mapping.

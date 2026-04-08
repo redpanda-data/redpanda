@@ -60,9 +60,10 @@ inv_ops::maybe_create_inventory_configuration(
         co_return inventory_creation_result::already_exists;
     }
 
-    if (const auto create_res = co_await create_inventory_configuration(
-          remote, parent);
-        create_res.has_value()) {
+    if (
+      const auto create_res = co_await create_inventory_configuration(
+        remote, parent);
+      create_res.has_value()) {
         co_return inventory_creation_result::success;
     }
 

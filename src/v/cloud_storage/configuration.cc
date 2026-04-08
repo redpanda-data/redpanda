@@ -24,14 +24,15 @@ cloud_storage_clients::default_overrides get_default_overrides() {
     overrides.max_idle_time
       = config::shard_local_cfg()
           .cloud_storage_max_connection_idle_time_ms.value();
-    if (auto optep
-        = config::shard_local_cfg().cloud_storage_api_endpoint.value();
-        optep.has_value()) {
+    if (
+      auto optep = config::shard_local_cfg().cloud_storage_api_endpoint.value();
+      optep.has_value()) {
         overrides.endpoint = cloud_storage_clients::endpoint_url(*optep);
     }
     overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
-    if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
-        cert.has_value()) {
+    if (
+      auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
+      cert.has_value()) {
         overrides.trust_file = cloud_storage_clients::ca_trust_file(
           std::filesystem::path(*cert));
     }

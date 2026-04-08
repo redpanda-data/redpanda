@@ -150,12 +150,13 @@ ss::future<uuid_t> self_test_frontend::start_test(
     using nid_set_t = absl::flat_hash_set<model::node_id>;
     const nid_set_t ids_set{ids.begin(), ids.end()};
     const nid_set_t brokers_set{brokers.begin(), brokers.end()};
-    if (std::any_of(
-          ids_set.begin(),
-          ids_set.end(),
-          [&brokers_set](const model::node_id& id) {
-              return !brokers_set.contains(id);
-          })) {
+    if (
+      std::any_of(
+        ids_set.begin(),
+        ids_set.end(),
+        [&brokers_set](const model::node_id& id) {
+            return !brokers_set.contains(id);
+        })) {
         throw self_test_exception(
           "Request to start self test contained "
           "node_ids that aren't part of the cluster");

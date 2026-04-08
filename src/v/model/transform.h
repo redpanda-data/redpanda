@@ -221,8 +221,8 @@ struct transform_metadata
 
     model::compression compression_mode{model::compression::none};
 
-    friend bool operator==(const transform_metadata&, const transform_metadata&)
-      = default;
+    friend bool
+    operator==(const transform_metadata&, const transform_metadata&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const transform_metadata&);
 
@@ -347,8 +347,8 @@ struct transform_report
     // input topic.
     absl::btree_map<model::partition_id, processor> processors;
 
-    friend bool operator==(const transform_report&, const transform_report&)
-      = default;
+    friend bool
+    operator==(const transform_report&, const transform_report&) = default;
 
     auto serde_fields() { return std::tie(metadata, processors); }
 

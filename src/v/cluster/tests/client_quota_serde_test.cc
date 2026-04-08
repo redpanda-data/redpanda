@@ -53,8 +53,8 @@ public:
 
     auto serde_fields() { return std::tie(parts); }
 
-    friend bool operator==(const legacy_entity_key&, const legacy_entity_key&)
-      = default;
+    friend bool
+    operator==(const legacy_entity_key&, const legacy_entity_key&) = default;
     friend std::ostream& operator<<(std::ostream&, const legacy_entity_key&);
 
     template<typename H>

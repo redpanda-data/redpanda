@@ -39,14 +39,13 @@ public:
     virtual ss::future<::cluster::cluster_link::errc>
     upsert_link(model::metadata md, ::model::timeout_clock::time_point) = 0;
 
-    virtual ss::future<::cluster::cluster_link::errc>
-    delete_link(model::name_t, bool force, ::model::timeout_clock::time_point)
-      = 0;
+    virtual ss::future<::cluster::cluster_link::errc> delete_link(
+      model::name_t, bool force, ::model::timeout_clock::time_point) = 0;
 
     virtual model::metadata_ptr find_link_by_id(model::id_t) const = 0;
 
-    virtual model::metadata_ptr find_link_by_name(const model::name_t&) const
-      = 0;
+    virtual model::metadata_ptr
+    find_link_by_name(const model::name_t&) const = 0;
 
     virtual std::optional<model::id_t>
     find_link_id_by_name(const model::name_t&) const = 0;
@@ -59,21 +58,18 @@ public:
     virtual ss::future<::cluster::cluster_link::errc> add_mirror_topic(
       model::id_t,
       model::add_mirror_topic_cmd,
-      ::model::timeout_clock::time_point)
-      = 0;
+      ::model::timeout_clock::time_point) = 0;
 
     virtual ss::future<::cluster::cluster_link::errc> update_mirror_topic_state(
       model::id_t,
       model::update_mirror_topic_status_cmd,
-      ::model::timeout_clock::time_point)
-      = 0;
+      ::model::timeout_clock::time_point) = 0;
 
     virtual ss::future<::cluster::cluster_link::errc>
       update_mirror_topic_properties(
         model::id_t,
         model::update_mirror_topic_properties_cmd,
-        ::model::timeout_clock::time_point)
-      = 0;
+        ::model::timeout_clock::time_point) = 0;
 
     virtual std::optional<chunked_hash_map<
       ::model::topic,
@@ -84,8 +80,7 @@ public:
       update_cluster_link_configuration(
         model::id_t,
         model::update_cluster_link_configuration_cmd,
-        ::model::timeout_clock::time_point)
-      = 0;
+        ::model::timeout_clock::time_point) = 0;
 
     virtual ss::future<std::expected<
       ::cluster_link::model::aggregated_shadow_topic_report,
@@ -98,8 +93,7 @@ public:
     virtual ss::future<::cluster::cluster_link::errc> delete_shadow_topic(
       model::id_t,
       model::delete_mirror_topic_cmd,
-      ::model::timeout_clock::time_point)
-      = 0;
+      ::model::timeout_clock::time_point) = 0;
 };
 
 /**
@@ -120,8 +114,7 @@ public:
       model::id_t link_id,
       manager* manager,
       model::metadata_ptr config,
-      std::unique_ptr<kafka::client::cluster> cluster_connection)
-      = 0;
+      std::unique_ptr<kafka::client::cluster> cluster_connection) = 0;
 };
 
 /**
@@ -170,10 +163,10 @@ public:
     partition_metadata_provider() = default;
     partition_metadata_provider(const partition_metadata_provider&) = delete;
     partition_metadata_provider(partition_metadata_provider&&) = delete;
-    partition_metadata_provider& operator=(const partition_metadata_provider&)
-      = delete;
-    partition_metadata_provider& operator=(partition_metadata_provider&&)
-      = delete;
+    partition_metadata_provider&
+    operator=(const partition_metadata_provider&) = delete;
+    partition_metadata_provider&
+    operator=(partition_metadata_provider&&) = delete;
     virtual ~partition_metadata_provider() = default;
 
     /**
@@ -199,8 +192,7 @@ public:
     make_default(ss::sharded<cluster::security_frontend>*);
 
     virtual ss::future<std::vector<cluster::errc>> create_acls(
-      std::vector<security::acl_binding>, ::model::timeout_clock::duration)
-      = 0;
+      std::vector<security::acl_binding>, ::model::timeout_clock::duration) = 0;
 };
 
 class kafka_rpc_client_service {
@@ -208,8 +200,8 @@ public:
     kafka_rpc_client_service() = default;
     kafka_rpc_client_service(const kafka_rpc_client_service&) = delete;
     kafka_rpc_client_service(kafka_rpc_client_service&&) = delete;
-    kafka_rpc_client_service& operator=(const kafka_rpc_client_service&)
-      = delete;
+    kafka_rpc_client_service&
+    operator=(const kafka_rpc_client_service&) = delete;
     kafka_rpc_client_service& operator=(kafka_rpc_client_service&&) = delete;
     virtual ~kafka_rpc_client_service() = default;
 

@@ -124,8 +124,9 @@ uint64_t auth_refresh_bg_op::token_refresh_count() const noexcept {
 }
 
 cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
-    if (auto creds = std::get_if<cloud_roles::credentials>(&_source_config);
-        creds) {
+    if (
+      auto creds = std::get_if<cloud_roles::credentials>(&_source_config);
+      creds) {
         return *creds;
     } else {
         throw std::runtime_error(

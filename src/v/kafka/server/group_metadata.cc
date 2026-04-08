@@ -325,8 +325,9 @@ iobuf maybe_unwrap_from_iobuf(iobuf buffer) {
     // peek first 4-byte
     auto deserialized_size = reflection::from_iobuf<int32_t>(parser.peek(4));
 
-    if (unlikely(
-          buffer.size_bytes() == static_cast<size_t>(deserialized_size) + 4)) {
+    if (
+      unlikely(
+        buffer.size_bytes() == static_cast<size_t>(deserialized_size) + 4)) {
         vlog(kafka::klog.debug, "Unwrapping group metadata key from iobuf");
         // unwrap from iobuf
         return reflection::from_iobuf<iobuf>(std::move(buffer));

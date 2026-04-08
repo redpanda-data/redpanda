@@ -73,8 +73,8 @@ public:
     /// Make deep copy
     index_columns copy() const;
 
-    friend bool operator==(const index_columns&, const index_columns&)
-      = default;
+    friend bool
+    operator==(const index_columns&, const index_columns&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const index_columns&);
 

@@ -60,13 +60,14 @@ std::optional<gssapi_name> gssapi_name::parse(std::string_view principal_name) {
 
     re2::StringPiece primary, host_name, realm;
 
-    if (re2::RE2::FullMatch(
-          principal_name,
-          gssapi_name_regex,
-          &primary,
-          nullptr,
-          &host_name,
-          &realm)) {
+    if (
+      re2::RE2::FullMatch(
+        principal_name,
+        gssapi_name_regex,
+        &primary,
+        nullptr,
+        &host_name,
+        &realm)) {
         return gssapi_name(
           ss::sstring(spv(primary)),
           ss::sstring(spv(host_name)),

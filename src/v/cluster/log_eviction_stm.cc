@@ -294,8 +294,9 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
 }
 
 ss::future<> log_eviction_stm::do_apply(const model::record_batch& batch) {
-    if (likely(
-          batch.header().type != model::record_batch_type::prefix_truncate)) {
+    if (
+      likely(
+        batch.header().type != model::record_batch_type::prefix_truncate)) {
         co_return;
     }
     /// The work done within apply() must be deterministic that way the start

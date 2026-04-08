@@ -94,9 +94,10 @@ void populate_results_with_users(
   const security::credential_store& store) {
     using type = typename Iter::value_type;
     std::transform(begin, end, out_it, [&store](const type& item) {
-        if (const auto& cred = store.get<security::scram_credential>(
-              security::credential_user{item.name()});
-            cred.has_value()) {
+        if (
+          const auto& cred = store.get<security::scram_credential>(
+            security::credential_user{item.name()});
+          cred.has_value()) {
             return describe_user_scram_credentials_result{
               .user = item.name,
               .credential_infos = {

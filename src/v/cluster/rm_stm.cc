@@ -1293,9 +1293,10 @@ model::offset rm_stm::last_stable_offset() {
     auto next_to_apply = model::next_offset(last_applied);
 
     // scenario 1: still bootstrapping
-    if (unlikely(
-          !_bootstrap_committed_offset
-          || last_applied < _bootstrap_committed_offset.value())) {
+    if (
+      unlikely(
+        !_bootstrap_committed_offset
+        || last_applied < _bootstrap_committed_offset.value())) {
         // To preserve the monotonicity of LSO from a client perspective,
         // we return this unknown offset marker that is translated to
         // an appropriate retry-able Kafka error code for clients.

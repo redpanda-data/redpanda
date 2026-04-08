@@ -32,8 +32,8 @@ struct manifest_metadata {
     format_version format_version;
     manifest_content_type manifest_content_type;
 
-    friend bool operator==(const manifest_metadata&, const manifest_metadata&)
-      = default;
+    friend bool
+    operator==(const manifest_metadata&, const manifest_metadata&) = default;
 
     manifest_metadata copy() const;
 };

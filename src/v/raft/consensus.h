@@ -470,10 +470,10 @@ public:
             other._parent = nullptr;
         }
         inflight_appends_guard(const inflight_appends_guard& other) = delete;
-        inflight_appends_guard& operator=(inflight_appends_guard&& other)
-          = delete;
-        inflight_appends_guard& operator=(const inflight_appends_guard& other)
-          = delete;
+        inflight_appends_guard&
+        operator=(inflight_appends_guard&& other) = delete;
+        inflight_appends_guard&
+        operator=(const inflight_appends_guard& other) = delete;
         ~inflight_appends_guard() noexcept { mark_finished(); }
 
     private:
@@ -735,9 +735,10 @@ private:
             // since we are not going to introduce the node in ADL versions of
             // replies it may be not initialzed, in this case just ignore the
             // check
-            if (unlikely(
-                  reply.value().node_id != vnode{}
-                  && reply.value().node_id.id() != requested_node_id)) {
+            if (
+              unlikely(
+                reply.value().node_id != vnode{}
+                && reply.value().node_id.id() != requested_node_id)) {
                 vlog(
                   _ctxlog.warn,
                   "received {} reply from a node that id does not match the "

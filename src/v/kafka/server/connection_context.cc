@@ -464,10 +464,11 @@ ss::future<> connection_context::process_one_request() {
      * 2. during auth phase
      * 3. handshake was v0
      */
-    if (unlikely(
-          sasl()
-          && sasl()->state() == security::sasl_server::sasl_state::authenticate
-          && sasl()->handshake_v0())) {
+    if (
+      unlikely(
+        sasl()
+        && sasl()->state() == security::sasl_server::sasl_state::authenticate
+        && sasl()->handshake_v0())) {
         try {
             co_return co_await handle_auth_v0(*sz);
         } catch (...) {
@@ -496,9 +497,10 @@ ss::future<> connection_context::process_one_request() {
      * enabled for this physical connection.
      */
     if (_server.enable_mpx_extensions()) {
-        if (unlikely(
-              is_first_request()
-              && h->client_id == multi_proxy_initial_client_id)) {
+        if (
+          unlikely(
+            is_first_request()
+            && h->client_id == multi_proxy_initial_client_id)) {
             vlog(
               klog.debug, "enabling virtualized connections on {}", conn->addr);
             _is_virtualized_connection = true;
@@ -1198,8 +1200,8 @@ connection_context::client_protocol_state::do_process_responses(
     // the negative while under pressure.
     auto response_size = msg.size();
     auto request_key = resp_and_res.resources->request_data.request_key;
-    if (connection_ctx->_kafka_throughput_controlled_api_keys().at(
-          request_key)) {
+    if (
+      connection_ctx->_kafka_throughput_controlled_api_keys().at(request_key)) {
         // see the comment in dispatch_method_once()
         if (likely(connection_ctx->_snc_quota_context)) {
             connection_ctx->_server.snc_quota_mgr().record_response(

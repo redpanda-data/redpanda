@@ -234,8 +234,9 @@ ss::future<> shard_balancer::init_shard_placement(
         // topic_table is still the source of truth
         co_await _shard_placement.initialize_from_topic_table(_topics, _self);
 
-        if (_features.is_preparing(
-              features::feature::node_local_core_assignment)) {
+        if (
+          _features.is_preparing(
+            features::feature::node_local_core_assignment)) {
             // We may have joined or restarted while the feature is still in the
             // preparing state. Enable persistence here before we get new
             // controller updates to avoid races with activation of the feature.
@@ -444,8 +445,8 @@ void shard_balancer::maybe_assign(
     if (log_revision) {
         // partition is expected to exist on this node, choose its shard.
 
-        if (_features.is_active(
-              features::feature::node_local_core_assignment)) {
+        if (
+          _features.is_active(features::feature::node_local_core_assignment)) {
             vassert(
               _shard_placement.is_persistence_enabled(),
               "expected persistence to be enabled");

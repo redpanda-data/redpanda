@@ -551,8 +551,9 @@ ss::future<std::optional<model::node_id>>
 client::compute_wasm_binary_ntp_leader() {
     auto leader = _leaders->get_leader_node(model::wasm_binaries_internal_ntp);
     if (!leader.has_value()) {
-        if (_topic_metadata->find_topic_cfg(
-              model::topic_namespace_view(model::wasm_binaries_internal_ntp))) {
+        if (
+          _topic_metadata->find_topic_cfg(
+            model::topic_namespace_view(model::wasm_binaries_internal_ntp))) {
             co_return std::nullopt;
         }
         bool success = co_await try_create_wasm_binary_ntp();

@@ -221,8 +221,8 @@ private:
         remote_entry_ref(const remote_entry_ref&) = delete;
         remote_entry_ref& operator=(const remote_entry_ref&) = delete;
         remote_entry_ref(remote_entry_ref&&) noexcept = default;
-        remote_entry_ref& operator=(remote_entry_ref&& other) noexcept
-          = default;
+        remote_entry_ref&
+        operator=(remote_entry_ref&& other) noexcept = default;
 
         ~remote_entry_ref() = default;
     };

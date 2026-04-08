@@ -59,9 +59,8 @@ const model::topic_namespace& extract_tp_ns(const T& t) {
         return t;
     } else if constexpr (has_tp_ns<T>) {
         return t.tp_ns;
-    } else if constexpr (std::same_as<
-                           T,
-                           cluster::custom_assignable_topic_configuration>) {
+    } else if constexpr (
+      std::same_as<T, cluster::custom_assignable_topic_configuration>) {
         return t.cfg.tp_ns;
     } else {
         static_assert(always_false_v<T>, "couldn't extract tp_ns");

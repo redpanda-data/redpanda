@@ -82,8 +82,9 @@ public:
         }
 
         // report unknown server error if we aborted before making any attempt
-        if (auto errc = ec.value_or(kafka::error_code::unknown_server_error);
-            errc != kafka::error_code::none) {
+        if (
+          auto errc = ec.value_or(kafka::error_code::unknown_server_error);
+          errc != kafka::error_code::none) {
             vlog(
               adtlog.warn,
               "{} audit records dropped, shutting down. Last error: {}",
@@ -227,8 +228,9 @@ public:
         }
 
         // report unknown server error if we aborted before making any attempt
-        if (auto errc = ec.value_or(kafka::error_code::unknown_server_error);
-            errc != kafka::error_code::none) {
+        if (
+          auto errc = ec.value_or(kafka::error_code::unknown_server_error);
+          errc != kafka::error_code::none) {
             vlog(
               adtlog.warn,
               "{} audit records dropped, shutting down. Last error: {}",

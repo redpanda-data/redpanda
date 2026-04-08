@@ -60,7 +60,11 @@ static std::string_view sha_for_verb(boost::beast::http::verb verb) {
 }
 
 apply_aws_credentials::apply_aws_credentials(aws_credentials credentials)
-  : _signature{credentials.service, credentials.region, credentials.access_key_id, credentials.secret_access_key}
+  : _signature{
+      credentials.service,
+      credentials.region,
+      credentials.access_key_id,
+      credentials.secret_access_key}
   , _session_token{credentials.session_token} {}
 
 std::error_code

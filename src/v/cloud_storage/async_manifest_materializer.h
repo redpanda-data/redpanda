@@ -36,13 +36,13 @@ public:
       const partition_manifest*);
 
     async_manifest_materializer(const async_manifest_materializer&) = delete;
-    async_manifest_materializer& operator=(const async_manifest_materializer&)
-      = delete;
+    async_manifest_materializer&
+    operator=(const async_manifest_materializer&) = delete;
 
     // rtc node is not movable, so we can't move the materializer
     async_manifest_materializer(async_manifest_materializer&&) = delete;
-    async_manifest_materializer& operator=(async_manifest_materializer&&)
-      = delete;
+    async_manifest_materializer&
+    operator=(async_manifest_materializer&&) = delete;
 
     ~async_manifest_materializer() = default;
 

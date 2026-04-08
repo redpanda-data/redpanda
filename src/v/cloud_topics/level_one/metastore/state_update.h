@@ -77,8 +77,8 @@ struct add_objects_update
       add_objects_update,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend bool operator==(const add_objects_update&, const add_objects_update&)
-      = default;
+    friend bool
+    operator==(const add_objects_update&, const add_objects_update&) = default;
     auto serde_fields() { return std::tie(new_objects, new_terms); }
 
     static constexpr auto key{update_key::add_objects};
@@ -109,8 +109,8 @@ struct compaction_state_update
     struct cleaned_range
       : public serde::
           envelope<cleaned_range, serde::version<0>, serde::compat_version<0>> {
-        friend bool operator==(const cleaned_range&, const cleaned_range&)
-          = default;
+        friend bool
+        operator==(const cleaned_range&, const cleaned_range&) = default;
         auto serde_fields() {
             return std::tie(base_offset, last_offset, has_tombstones);
         }
@@ -148,9 +148,8 @@ struct replace_objects_update
       replace_objects_update,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend bool
-    operator==(const replace_objects_update&, const replace_objects_update&)
-      = default;
+    friend bool operator==(
+      const replace_objects_update&, const replace_objects_update&) = default;
     auto serde_fields() { return std::tie(new_objects, compaction_updates); }
 
     static constexpr auto key{update_key::replace_objects};
@@ -177,9 +176,8 @@ struct set_start_offset_update
       set_start_offset_update,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend bool
-    operator==(const set_start_offset_update&, const set_start_offset_update&)
-      = default;
+    friend bool operator==(
+      const set_start_offset_update&, const set_start_offset_update&) = default;
     auto serde_fields() { return std::tie(tp, new_start_offset); }
 
     static constexpr auto key{update_key::set_start_offset};
@@ -202,9 +200,8 @@ struct remove_objects_update
       remove_objects_update,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend bool
-    operator==(const remove_objects_update&, const remove_objects_update&)
-      = default;
+    friend bool operator==(
+      const remove_objects_update&, const remove_objects_update&) = default;
     auto serde_fields() { return std::tie(objects); }
     static constexpr auto key{update_key::remove_objects};
 
@@ -225,9 +222,8 @@ struct remove_topics_update
       remove_topics_update,
       serde::version<0>,
       serde::compat_version<0>> {
-    friend bool
-    operator==(const remove_topics_update&, const remove_topics_update&)
-      = default;
+    friend bool operator==(
+      const remove_topics_update&, const remove_topics_update&) = default;
     auto serde_fields() { return std::tie(topics); }
     static constexpr auto key{update_key::remove_topics};
 
@@ -246,8 +242,8 @@ struct preregister_objects_update
       serde::version<0>,
       serde::compat_version<0>> {
     friend bool operator==(
-      const preregister_objects_update&, const preregister_objects_update&)
-      = default;
+      const preregister_objects_update&,
+      const preregister_objects_update&) = default;
     auto serde_fields() { return std::tie(object_ids, registered_at); }
 
     static constexpr auto key{update_key::preregister_objects};
@@ -266,8 +262,7 @@ struct expire_preregistered_objects_update
       serde::compat_version<0>> {
     friend bool operator==(
       const expire_preregistered_objects_update&,
-      const expire_preregistered_objects_update&)
-      = default;
+      const expire_preregistered_objects_update&) = default;
     auto serde_fields() { return std::tie(object_ids); }
 
     static constexpr auto key{update_key::expire_preregistered_objects};

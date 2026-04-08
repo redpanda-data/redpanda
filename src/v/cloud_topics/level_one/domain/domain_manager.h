@@ -121,8 +121,7 @@ public:
     read_debug_rows(
       std::optional<ss::sstring> seek_key,
       std::optional<ss::sstring> last_key,
-      uint32_t max_rows)
-      = 0;
+      uint32_t max_rows) = 0;
 
     virtual ss::future<
       std::expected<partition_validation_result, partition_validator::error>>

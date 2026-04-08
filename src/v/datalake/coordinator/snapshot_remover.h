@@ -27,8 +27,7 @@ public:
         shutting_down,
     };
     virtual ss::future<checked<std::nullopt_t, errc>> remove_expired_snapshots(
-      model::topic, const topics_state&, model::timestamp) const
-      = 0;
+      model::topic, const topics_state&, model::timestamp) const = 0;
     virtual ~snapshot_remover() = default;
 };
 

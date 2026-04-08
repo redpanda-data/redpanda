@@ -175,14 +175,11 @@ public:
     auto execute_for_all_results(
       const table_metadata& table,
       const std::optional<std::function<bool(const snapshot&)>>&
-        snapshot_matcher
-      = std::nullopt,
+        snapshot_matcher = std::nullopt,
       const std::optional<std::function<bool(const manifest_file&)>>&
-        manifest_file_matcher
-      = std::nullopt,
+        manifest_file_matcher = std::nullopt,
       const std::optional<std::function<bool(const manifest&)>>&
-        manifest_matcher
-      = std::nullopt) {
+        manifest_matcher = std::nullopt) {
         metadata_query_executor executor(io, table);
         metadata_query<result_type::snapshot> q_s{
           .snapshot_matcher = snapshot_matcher,

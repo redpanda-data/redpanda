@@ -47,14 +47,12 @@ public:
     list_objects(
       seastar::abort_source*,
       std::optional<cloud_storage_clients::object_key> prefix = std::nullopt,
-      std::optional<ss::sstring> continuation_token = std::nullopt)
-      = 0;
+      std::optional<ss::sstring> continuation_token = std::nullopt) = 0;
 
     virtual seastar::future<std::expected<void, cloud_io::upload_result>>
     delete_objects(
       seastar::abort_source*,
-      chunked_vector<cloud_storage_clients::client::list_bucket_item>)
-      = 0;
+      chunked_vector<cloud_storage_clients::client::list_bucket_item>) = 0;
 };
 
 /*
