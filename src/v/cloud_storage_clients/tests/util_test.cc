@@ -284,6 +284,32 @@ TEST(MultipartParser, EmptyBuffer) {
     EXPECT_FALSE(part.has_value());
 }
 
+TEST(MultipartParser, PartialDelimiterOverlapWithRealBoundary) {
+    using namespace cloud_storage_clients;
+
+    // The part body contains "--b-" which partially matches the delimiter
+    // "--boundary". The third '-' breaks the match at _delim[3]='o' but is
+    // also _delim[0]='-', so the parser must re-check it as the potential
+    // start of a new delimiter match.
+    std::string_view multipart_data = "--boundary\r\n"
+                                      "Content-ID: 0\r\n"
+                                      "\r\n"
+                                      "data--b-more\r\n"
+                                      "--boundary--\r\n";
+
+    auto buf = iobuf::from(multipart_data);
+
+    util::multipart_response_parser parser(
+      std::move(buf), ss::sstring("--boundary"));
+
+    auto part1 = parser.get_part();
+    ASSERT_TRUE(part1.has_value());
+    EXPECT_THAT(
+      part1.value().linearize_to_string(), testing::HasSubstr("data--b-more"));
+
+    EXPECT_FALSE(parser.get_part().has_value());
+}
+
 // ============================================================================
 // multipart_subresponse tests
 // ============================================================================

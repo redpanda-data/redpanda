@@ -389,9 +389,24 @@ std::optional<iobuf> multipart_response_parser::get_part() {
             continue;
         }
         // unlikely, but we may have skipped some bytes that appeared to be
-        // part of a delimiter.
-        part_len += delim_idx + 1;
+        // part of a delimiter. Re-check the current character against the
+        // start of the delimiter, as in advance_to_first_boundary.
+        // NOTE: this is not full string search — it only handles overlap with
+        // _delim[0], not longer prefix/suffix overlaps. Fine in practice
+        // because RFC 2046 boundaries start with "--" and real server
+        // boundaries don't have repeated prefixes.
+        auto matched_prefix_len = delim_idx;
         delim_idx = 0;
+        if (c == _delim[0]) {
+            // The character that broke the match is also the start of a
+            // potential new match. Only commit the previously matched
+            // prefix to the part length; keep c out of the content until
+            // we know whether this new match succeeds.
+            part_len += matched_prefix_len;
+            delim_idx = 1;
+            continue;
+        }
+        part_len += matched_prefix_len + 1;
         auto [is_lf, _] = line_feed.try_put(c);
         // eat up any leading CRLFs so the resulting part starts on text
         if (!part_start.has_value()) [[unlikely]] {
