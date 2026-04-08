@@ -10,7 +10,7 @@ require (
 	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.19.1-20251208213618-d95eb1f5bf36.2
 	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.11-20260206121607-b7882624f6ea.1
 	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.11-20251216164002-601698cfe71d.1
-	buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20260311180302-ddc363cdd034.1
+	buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20260330205833-126381c18bff.1
 	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20260219182640-53f7e728e222.2
 	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.11-20260219182640-53f7e728e222.1
 	buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.19.1-20251022210437-a5dd600d04b6.2
@@ -50,7 +50,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.65.0
 	github.com/redpanda-data/common-go/proto v0.0.0-20260223115805-73fb9bd9c2c0
-	github.com/redpanda-data/common-go/rpadmin v0.2.4
+	github.com/redpanda-data/common-go/rpadmin v0.2.5
 	github.com/redpanda-data/common-go/rpsr v0.1.4
 	github.com/redpanda-data/protoc-gen-go-mcp v0.0.0-20250930092048-a98b94b5957a
 	github.com/rs/xid v1.6.0
@@ -76,8 +76,8 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20260311181403-84a4fc48630c
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319171110-e3a33c96fb44
+	google.golang.org/genproto/googleapis/api v0.0.0-20260406210006-6f92a3bedf2d
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -90,7 +90,7 @@ require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1 // indirect
 	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.36.11-20260102203250-6467306b4f62.1 // indirect
 	buf.build/gen/go/redpandadata/ai-gateway/protocolbuffers/go v1.36.11-20260203101113-1c7702ddb57a.1 // indirect
-	buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20260311180302-ddc363cdd034.2 // indirect
+	buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20260330205833-126381c18bff.2 // indirect
 	buf.build/gen/go/redpandadata/otel/protocolbuffers/go v1.36.11-20251216164002-58c749b888d8.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.1.0 // indirect
