@@ -6,7 +6,7 @@
 
 tools_dir="$(cd -- "$(dirname -- "$(realpath "${BASH_SOURCE[0]}")")" &>/dev/null && pwd)"
 
-export BAZEL_TOOL_TRAMPOLINE_TARGET="@current_llvm_toolchain_llvm//:bin/$(basename "$0")"
+export BAZEL_TOOL_TRAMPOLINE_TARGET="@clang-22_llvm_toolchain//:bin/$(basename "$0")"
 
 if [[ ${BAZEL_TRAMPOLINE_DEBUG:-0} -gt 0 ]]; then
   echo "DEBUG: clang-tool.sh: CWD        : $(pwd)" >&2
