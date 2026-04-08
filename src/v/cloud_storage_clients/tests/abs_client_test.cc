@@ -459,6 +459,55 @@ TEST_F(abs_client_fixture, test_batch_delete_not_found) {
     EXPECT_TRUE(result.value().undeleted_keys.empty());
 }
 
+// Verify that batch delete sub-requests do not include x-ms-version.
+// Azure rejects sub-requests with this header
+// (SubRequestCannotHaveVersionHeader). This was a bug when using OAuth
+// credentials, whose add_auth previously set x-ms-version unconditionally.
+TEST(abs_batch_delete_subrequest, no_version_header_in_subrequests) {
+    auto conf = make_test_configuration("test-version-check");
+    auto oauth_creds = ss::make_lw_shared(
+      cloud_roles::make_credentials_applier(
+        cloud_roles::abs_oauth_credentials{
+          .oauth_token = cloud_roles::oauth_token_str{"test-token"}}));
+
+    abs_request_creator requestor(conf, oauth_creds);
+    auto keys = chunked_vector<object_key>{
+      object_key{"blob0"}, object_key{"blob1"}};
+    auto result = requestor.make_batch_delete_request(
+      plain_bucket_name{"container"}, keys);
+    ASSERT_TRUE(result.has_value());
+
+    auto& [header, body_stream] = result.value();
+
+    // The outer request header should have x-ms-version
+    auto outer_version = header.find("x-ms-version");
+    EXPECT_NE(outer_version, header.end());
+
+    // Read the full body and check that sub-requests don't contain x-ms-version
+    ss::sstring body_str;
+    while (!body_stream.eof()) {
+        auto buf = body_stream.read().get();
+        body_str.append(buf.get(), buf.size());
+    }
+
+    // Split on boundary to get individual sub-requests. Each sub-request
+    // after the MIME headers contains an HTTP request line and headers.
+    // x-ms-version must not appear in any sub-request.
+    size_t pos = 0;
+    size_t subrequest_count = 0;
+    while ((pos = body_str.find("DELETE ", pos)) != ss::sstring::npos) {
+        auto end = body_str.find("\r\n\r\n", pos);
+        auto subrequest_headers = body_str.substr(
+          pos, end != ss::sstring::npos ? end - pos : ss::sstring::npos);
+        EXPECT_EQ(subrequest_headers.find("x-ms-version"), ss::sstring::npos)
+          << "Sub-request " << subrequest_count
+          << " contains x-ms-version header";
+        ++subrequest_count;
+        pos += 7;
+    }
+    EXPECT_EQ(subrequest_count, keys.size());
+}
+
 TEST_F(abs_client_fixture, test_batch_delete_server_error) {
     set_up("test-servererror");
     auto keys = chunked_vector<object_key>{object_key{"key1"}};
