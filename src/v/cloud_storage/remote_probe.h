@@ -228,6 +228,8 @@ public:
 
     void index_download() { ++_cnt_index_downloads; }
 
+    void batch_delete_error() { ++_cnt_batch_delete_errors; }
+
     auto client_acquisition() {
         return _client_acquisition_latency.auto_measure();
     }
@@ -316,6 +318,8 @@ private:
     uint64_t _cnt_topic_mount_manifest_uploads{0};
     /// Number of topic_mount manifest downloads
     uint64_t _cnt_topic_mount_manifest_downloads{0};
+    /// Number of failed batch delete requests
+    uint64_t _cnt_batch_delete_errors{0};
 
     hist_t _client_acquisition_latency;
     hist_t _segment_download_latency;

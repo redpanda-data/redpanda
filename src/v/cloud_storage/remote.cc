@@ -559,7 +559,12 @@ ss::future<upload_result> remote::delete_objects(
         std::move(keys),
         parent,
         make_notify_cb(api_activity_type::segment_delete, parent))
-      .then([h = std::move(holder)](upload_result r) { return r; });
+      .then([this, h = std::move(holder)](upload_result r) {
+          if (r == upload_result::failed && is_batch_delete_supported()) {
+              _probe.batch_delete_error();
+          }
+          return r;
+      });
 }
 
 template ss::future<upload_result>
