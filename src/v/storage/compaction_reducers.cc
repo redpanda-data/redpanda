@@ -235,10 +235,11 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
                            &ret,
                            &offset_deltas](model::record record) {
         // contains the key
-        if (std::count(
-              offset_deltas.begin(),
-              offset_deltas.end(),
-              record.offset_delta())) {
+        if (
+          std::count(
+            offset_deltas.begin(),
+            offset_deltas.end(),
+            record.offset_delta())) {
             /*
              * TODO when we further optimize lazy record materialization ot
              * make use of views we can avoid this re-encoding by copying or
@@ -370,18 +371,19 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
     // do not set broker_timestamp in this index, leave the operation to the
     // caller who has more context
     bool filterable_batch = compaction::is_filterable(batch.header().type);
-    if (_idx.maybe_index(
-          _acc,
-          segment_index::default_data_buffer_step,
-          start_pos,
-          batch.base_offset(),
-          batch.last_offset(),
-          batch.header().first_timestamp,
-          batch.header().max_timestamp,
-          std::nullopt,
-          _internal_topic
-            || batch.header().type == model::record_batch_type::raft_data,
-          filterable_batch ? batch.header().record_count : 0)) {
+    if (
+      _idx.maybe_index(
+        _acc,
+        segment_index::default_data_buffer_step,
+        start_pos,
+        batch.base_offset(),
+        batch.last_offset(),
+        batch.header().first_timestamp,
+        batch.header().max_timestamp,
+        std::nullopt,
+        _internal_topic
+          || batch.header().type == model::record_batch_type::raft_data,
+        filterable_batch ? batch.header().record_count : 0)) {
         _acc = 0;
     }
     co_await _appender->append(batch);

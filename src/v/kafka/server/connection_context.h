@@ -141,9 +141,8 @@ struct virtual_connection_id {
         return H::combine(
           std::move(h), id.virtual_cluster_id, id.connection_id);
     }
-    friend bool
-    operator==(const virtual_connection_id&, const virtual_connection_id&)
-      = default;
+    friend bool operator==(
+      const virtual_connection_id&, const virtual_connection_id&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const virtual_connection_id& id);

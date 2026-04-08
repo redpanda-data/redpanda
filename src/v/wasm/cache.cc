@@ -134,13 +134,12 @@ private:
 class factory_creation_lock_guard {
 public:
     factory_creation_lock_guard(const factory_creation_lock_guard&) = delete;
-    factory_creation_lock_guard& operator=(const factory_creation_lock_guard&)
-      = delete;
+    factory_creation_lock_guard&
+    operator=(const factory_creation_lock_guard&) = delete;
     factory_creation_lock_guard(factory_creation_lock_guard&&) noexcept
       = default;
     factory_creation_lock_guard&
-    operator=(factory_creation_lock_guard&&) noexcept
-      = default;
+    operator=(factory_creation_lock_guard&&) noexcept = default;
 
     static ss::future<factory_creation_lock_guard> acquire(
       absl::btree_map<model::offset, std::unique_ptr<ssx::mutex>>* mu_map,

@@ -91,10 +91,11 @@ bool is_supported(std::string_view name) {
        topic_property_message_timestamp_after_max_ms,
        topic_property_redpanda_storage_mode});
 
-    if (std::any_of(
-          supported_configs.begin(),
-          supported_configs.end(),
-          [name](std::string_view p) { return name == p; })) {
+    if (
+      std::any_of(
+        supported_configs.begin(),
+        supported_configs.end(),
+        [name](std::string_view p) { return name == p; })) {
         return true;
     }
 
@@ -354,9 +355,10 @@ ss::future<response_ptr> create_topics_handler::handle(
           std::back_inserter(response.data.topics),
           [&ctx](const creatable_topic& t) {
               auto result = generate_successfull_result(t);
-              if (ctx.metadata_cache().contains(
-                    model::topic_namespace_view{
-                      model::kafka_namespace, t.name})) {
+              if (
+                ctx.metadata_cache().contains(
+                  model::topic_namespace_view{
+                    model::kafka_namespace, t.name})) {
                   result.error_code = error_code::topic_already_exists;
                   return result;
               }

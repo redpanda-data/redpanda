@@ -405,8 +405,9 @@ backend::set_entities_status(id migration_id, entities_status status) {
                   std::move(status.groups),
                   [&rev_map, &requests, migration_id](group_offsets& group) {
                       kafka::group_id gid{group.group_id};
-                      if (auto it = rev_map.find(gid);
-                          likely(it != rev_map.end())) {
+                      if (
+                        auto it = rev_map.find(gid);
+                        likely(it != rev_map.end())) {
                           auto pid = it->second;
                           requests[pid].groups.push_back(std::move(group));
                       } else {

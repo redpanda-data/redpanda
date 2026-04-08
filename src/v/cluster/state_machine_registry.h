@@ -51,8 +51,7 @@ public:
     virtual void create(
       raft::state_machine_manager_builder&,
       raft::consensus*,
-      const stm_instance_config& cfg)
-      = 0;
+      const stm_instance_config& cfg) = 0;
 
     virtual ~state_machine_factory() = default;
 };

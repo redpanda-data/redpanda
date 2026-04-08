@@ -1118,10 +1118,10 @@ public:
 
         size_t count = 0;
         for (const auto& key : deleted_) {
-            if (std::ranges::any_of(
-                  compressed_prefixes, [&key](const auto& pfx) {
-                      return key.starts_with(pfx().string());
-                  })) {
+            if (
+              std::ranges::any_of(compressed_prefixes, [&key](const auto& pfx) {
+                  return key.starts_with(pfx().string());
+              })) {
                 ++count;
             }
         }

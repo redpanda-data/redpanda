@@ -59,8 +59,8 @@ public:
       , struct_field_map_(other.struct_field_map_) {}
 
     json_conversion_ir(json_conversion_ir&& other) noexcept = default;
-    json_conversion_ir& operator=(json_conversion_ir&& other) noexcept
-      = default;
+    json_conversion_ir&
+    operator=(json_conversion_ir&& other) noexcept = default;
 
     ~json_conversion_ir() = default;
 

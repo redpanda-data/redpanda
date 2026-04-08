@@ -68,9 +68,8 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const avro_incompatibility& v);
 
-    friend bool
-    operator==(const avro_incompatibility&, const avro_incompatibility&)
-      = default;
+    friend bool operator==(
+      const avro_incompatibility&, const avro_incompatibility&) = default;
 
     // Useful for unit testing
     template<typename H>
@@ -121,9 +120,8 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const proto_incompatibility& v);
 
-    friend bool
-    operator==(const proto_incompatibility&, const proto_incompatibility&)
-      = default;
+    friend bool operator==(
+      const proto_incompatibility&, const proto_incompatibility&) = default;
 
     // Helpful for unit testing
     template<typename H>
@@ -219,9 +217,8 @@ public:
     friend std::ostream&
     operator<<(std::ostream& os, const json_incompatibility& v);
 
-    friend bool
-    operator==(const json_incompatibility&, const json_incompatibility&)
-      = default;
+    friend bool operator==(
+      const json_incompatibility&, const json_incompatibility&) = default;
 
     // Helpful for unit testing
     template<typename H>

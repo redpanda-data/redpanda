@@ -50,8 +50,8 @@ class hard_constraint {
 public:
     struct impl {
         virtual hard_constraint_evaluator make_evaluator(
-          const allocated_partition&, std::optional<model::node_id> prev) const
-          = 0;
+          const allocated_partition&,
+          std::optional<model::node_id> prev) const = 0;
 
         virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
@@ -90,8 +90,7 @@ public:
     struct impl {
         virtual soft_constraint_evaluator make_evaluator(
           const allocated_partition& partition,
-          std::optional<model::node_id> prev) const
-          = 0;
+          std::optional<model::node_id> prev) const = 0;
         virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
     };
@@ -372,8 +371,8 @@ struct simple_allocation_request {
     simple_allocation_request() = delete;
     simple_allocation_request(const simple_allocation_request&) = delete;
     simple_allocation_request(simple_allocation_request&&) = default;
-    simple_allocation_request& operator=(const simple_allocation_request&)
-      = delete;
+    simple_allocation_request&
+    operator=(const simple_allocation_request&) = delete;
     simple_allocation_request& operator=(simple_allocation_request&&) = default;
     ~simple_allocation_request() = default;
 

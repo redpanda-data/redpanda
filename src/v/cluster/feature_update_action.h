@@ -41,9 +41,8 @@ struct feature_update_action
     ss::sstring feature_name;
     action_t action;
 
-    friend bool
-    operator==(const feature_update_action&, const feature_update_action&)
-      = default;
+    friend bool operator==(
+      const feature_update_action&, const feature_update_action&) = default;
 
     auto serde_fields() { return std::tie(feature_name, action); }
 

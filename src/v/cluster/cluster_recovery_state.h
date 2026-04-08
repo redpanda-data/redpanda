@@ -52,9 +52,8 @@ public:
           stage == recovery_stage::complete || stage == recovery_stage::failed);
     }
 
-    friend bool
-    operator==(const cluster_recovery_state&, const cluster_recovery_state&)
-      = default;
+    friend bool operator==(
+      const cluster_recovery_state&, const cluster_recovery_state&) = default;
 
     // Current stage of this recovery.
     recovery_stage stage{recovery_stage::initialized};

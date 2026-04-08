@@ -35,9 +35,8 @@ struct offsets_upload_request
 
     auto serde_fields() { return std::tie(cluster_uuid, offsets_ntp, meta_id); }
 
-    friend bool
-    operator==(const offsets_upload_request&, const offsets_upload_request&)
-      = default;
+    friend bool operator==(
+      const offsets_upload_request&, const offsets_upload_request&) = default;
 };
 
 struct offsets_upload_reply
@@ -52,16 +51,14 @@ struct offsets_upload_reply
 
     auto serde_fields() { return std::tie(ec, uploaded_paths); }
 
-    friend bool
-    operator==(const offsets_upload_reply&, const offsets_upload_reply&)
-      = default;
+    friend bool operator==(
+      const offsets_upload_reply&, const offsets_upload_reply&) = default;
 };
 
 class offsets_upload_requestor {
 public:
-    virtual ss::future<offsets_upload_reply>
-      request_upload(offsets_upload_request, model::timeout_clock::duration)
-      = 0;
+    virtual ss::future<offsets_upload_reply> request_upload(
+      offsets_upload_request, model::timeout_clock::duration) = 0;
 };
 
 } // namespace cluster::cloud_metadata

@@ -75,8 +75,7 @@ public:
       model::transform_metadata,
       processor::state_callback,
       probe*,
-      memory_limits*)
-      = 0;
+      memory_limits*) = 0;
 };
 
 template<typename ClockType>

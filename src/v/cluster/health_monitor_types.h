@@ -101,8 +101,8 @@ struct followers_stats
     auto serde_fields() { return std::tie(in_sync, out_of_sync, down); }
 
     friend std::ostream& operator<<(std::ostream&, const followers_stats&);
-    friend bool operator==(const followers_stats&, const followers_stats&)
-      = default;
+    friend bool
+    operator==(const followers_stats&, const followers_stats&) = default;
 };
 struct partition_status
   : serde::
@@ -170,8 +170,8 @@ struct partition_status
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
-    friend bool operator==(const partition_status&, const partition_status&)
-      = default;
+    friend bool
+    operator==(const partition_status&, const partition_status&) = default;
 };
 
 using partition_statuses_t = chunked_vector<partition_status>;
@@ -343,9 +343,8 @@ struct cluster_health_report
     friend std::ostream&
     operator<<(std::ostream&, const cluster_health_report&);
 
-    friend bool
-    operator==(const cluster_health_report&, const cluster_health_report&)
-      = default;
+    friend bool operator==(
+      const cluster_health_report&, const cluster_health_report&) = default;
 
     cluster_health_report copy() const;
 
@@ -502,8 +501,8 @@ struct partitions_filter
 
     ns_map_t namespaces;
 
-    friend bool operator==(const partitions_filter&, const partitions_filter&)
-      = default;
+    friend bool
+    operator==(const partitions_filter&, const partitions_filter&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const partitions_filter&);
 
@@ -521,8 +520,8 @@ struct node_report_filter
 
     partitions_filter ntp_filters;
 
-    friend bool operator==(const node_report_filter&, const node_report_filter&)
-      = default;
+    friend bool
+    operator==(const node_report_filter&, const node_report_filter&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const node_report_filter&);
 
@@ -543,9 +542,8 @@ struct cluster_report_filter
     friend std::ostream&
     operator<<(std::ostream&, const cluster_report_filter&);
 
-    friend bool
-    operator==(const cluster_report_filter&, const cluster_report_filter&)
-      = default;
+    friend bool operator==(
+      const cluster_report_filter&, const cluster_report_filter&) = default;
 
     auto serde_fields() { return std::tie(node_report_filter, nodes); }
 };
@@ -566,9 +564,8 @@ public:
     explicit get_node_health_request(model::node_id target_node_id)
       : _target_node_id(target_node_id) {}
 
-    friend bool
-    operator==(const get_node_health_request&, const get_node_health_request&)
-      = default;
+    friend bool operator==(
+      const get_node_health_request&, const get_node_health_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_request&);
@@ -596,9 +593,8 @@ struct get_node_health_reply
     errc error = cluster::errc::success;
     std::optional<node_health_report_serde> report;
 
-    friend bool
-    operator==(const get_node_health_reply&, const get_node_health_reply&)
-      = default;
+    friend bool operator==(
+      const get_node_health_reply&, const get_node_health_reply&) = default;
 
     get_node_health_reply copy() const {
         return {
@@ -633,8 +629,8 @@ struct get_cluster_health_request
     int8_t decoded_version = current_version;
 
     friend bool operator==(
-      const get_cluster_health_request&, const get_cluster_health_request&)
-      = default;
+      const get_cluster_health_request&,
+      const get_cluster_health_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const get_cluster_health_request&);

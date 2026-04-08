@@ -894,8 +894,8 @@ public:
             return false;
         }
 
-        if constexpr (std::
-                        is_same_v<delta_alg, details::delta_delta<value_t>>) {
+        if constexpr (
+          std::is_same_v<delta_alg, details::delta_delta<value_t>>) {
             // check possible only with a monotonic frame
             if (!(_tail->get_initial_value() <= hint.initial
                   && hint.initial <= _tail->get_last_value())) {
@@ -1419,8 +1419,9 @@ public:
         // std::list is not part of the serde-enabled types, save is as
         // size,elements
         const auto frames_size = _frames.size();
-        if (unlikely(
-              frames_size > std::numeric_limits<serde::serde_size_t>::max())) {
+        if (
+          unlikely(
+            frames_size > std::numeric_limits<serde::serde_size_t>::max())) {
             throw serde::serde_exception(fmt_with_ctx(
               ssx::sformat,
               "serde: {}::_frames size {} exceeds serde_size_t",

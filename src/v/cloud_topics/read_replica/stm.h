@@ -74,9 +74,8 @@ struct update_metadata_update
 
     fmt::iterator format_to(fmt::iterator it) const;
 
-    friend bool
-    operator==(const update_metadata_update&, const update_metadata_update&)
-      = default;
+    friend bool operator==(
+      const update_metadata_update&, const update_metadata_update&) = default;
 
     bool can_apply(const state&) const;
 };

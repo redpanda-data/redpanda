@@ -53,8 +53,8 @@ struct p12_container {
     ss::sstring p12_path;
     ss::sstring p12_password;
 
-    friend bool operator==(const p12_container&, const p12_container&)
-      = default;
+    friend bool
+    operator==(const p12_container&, const p12_container&) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const p12_container& p);
 };

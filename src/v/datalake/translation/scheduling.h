@@ -33,8 +33,8 @@ class scheduling_notifications {
 public:
     scheduling_notifications() = default;
     scheduling_notifications(const scheduling_notifications&) = delete;
-    scheduling_notifications& operator=(const scheduling_notifications&)
-      = delete;
+    scheduling_notifications&
+    operator=(const scheduling_notifications&) = delete;
     scheduling_notifications(scheduling_notifications&&) = delete;
     scheduling_notifications& operator=(scheduling_notifications&&) = delete;
     virtual ~scheduling_notifications() = default;

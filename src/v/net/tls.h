@@ -34,8 +34,8 @@ struct key_cert_path {
     std::filesystem::path key;
     std::filesystem::path cert;
     fmt::iterator format_to(fmt::iterator it) const;
-    friend bool operator==(const key_cert_path&, const key_cert_path&)
-      = default;
+    friend bool
+    operator==(const key_cert_path&, const key_cert_path&) = default;
 };
 /**
  * Key/cert pair content in PEM format

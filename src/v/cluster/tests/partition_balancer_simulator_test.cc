@@ -595,8 +595,8 @@ private:
         model::node_id from;
         model::node_id to;
 
-        friend bool operator==(const recovery_stream&, const recovery_stream&)
-          = default;
+        friend bool
+        operator==(const recovery_stream&, const recovery_stream&) = default;
     };
 
     void perform_recovery_step(const recovery_stream& rs) {

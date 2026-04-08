@@ -4088,8 +4088,8 @@ reply_result consensus::lightweight_heartbeat(
     /**
      * If leader has changed force full heartbeat
      */
-    if (unlikely(
-          !_leader_id.has_value() || (_leader_id->id() != source_node))) {
+    if (
+      unlikely(!_leader_id.has_value() || (_leader_id->id() != source_node))) {
         vlog(
           _ctxlog.trace,
           "requesting full heartbeat from {}, leadership changed",
@@ -4110,8 +4110,9 @@ reply_result consensus::lightweight_heartbeat(
         return reply_result::failure;
     }
 
-    if (unlikely(
-          _follower_recovery_state && _follower_recovery_state->is_active())) {
+    if (
+      unlikely(
+        _follower_recovery_state && _follower_recovery_state->is_active())) {
         // If for some reason the leader is sending us lightweight heartbeats
         // after we allowed recovery, notify it by forcing a full heartbeat.
         return reply_result::failure;

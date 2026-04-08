@@ -121,9 +121,10 @@ level_zero_log_reader_impl::read_some(
     // the 'empty' state. It doesn't make any difference if the reader is in
     // the 'materialized' state. If we're in 'ready' state we risk to go out
     // of sync with cached metadata so it's safer to hydrate.
-    if (auto cached = maybe_read_batches_from_cache(
-          model::offset_cast(committed_kafka));
-        !cached.empty()) {
+    if (
+      auto cached = maybe_read_batches_from_cache(
+        model::offset_cast(committed_kafka));
+      !cached.empty()) {
         co_return cached;
     }
 

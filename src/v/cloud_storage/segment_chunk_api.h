@@ -153,8 +153,7 @@ public:
 
     virtual ss::future<> evict(
       std::vector<segment_chunks::chunk_map_t::iterator> chunks,
-      retry_chain_logger& rtc)
-      = 0;
+      retry_chain_logger& rtc) = 0;
 
 protected:
     virtual ss::future<> close_files(

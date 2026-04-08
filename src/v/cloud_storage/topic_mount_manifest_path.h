@@ -51,8 +51,7 @@ public:
 
     friend bool operator==(
       const topic_mount_manifest_path& lhs,
-      const topic_mount_manifest_path& rhs)
-      = default;
+      const topic_mount_manifest_path& rhs) = default;
 
 private:
     model::cluster_uuid _cluster_uuid;

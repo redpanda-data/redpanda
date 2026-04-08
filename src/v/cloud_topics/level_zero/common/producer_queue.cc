@@ -169,8 +169,8 @@ producer_ticket::~producer_ticket() = default;
 
 producer_ticket::producer_ticket(producer_ticket&&) noexcept = default;
 
-producer_ticket& producer_ticket::operator=(producer_ticket&&) noexcept
-  = default;
+producer_ticket&
+producer_ticket::operator=(producer_ticket&&) noexcept = default;
 
 ss::future<> producer_ticket::redeem() { return _impl->redeem(); }
 ss::future<> producer_ticket::redeem(ss::abort_source& as) {

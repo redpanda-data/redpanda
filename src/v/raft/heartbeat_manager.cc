@@ -76,9 +76,10 @@ void heartbeat_manager::fetch_heartbeats_for_raft_group(
             continue;
         }
 
-        if (unlikely(
-              !_enable_lw_heartbeat()
-              && follower_metadata.has_inflight_appends())) {
+        if (
+          unlikely(
+            !_enable_lw_heartbeat()
+            && follower_metadata.has_inflight_appends())) {
             // Revert back to old behavior of heartbeat suppression during
             // inflight appends as we cannot make use of lw heartbeats
             // optitmization. This is unlikely in practice  because lw
@@ -101,11 +102,12 @@ void heartbeat_manager::fetch_heartbeats_for_raft_group(
         const auto raft_metadata = raft_group->meta();
 
         // lightweight heartbeat optimization, requires less data
-        if (should_lw_heartbeat(
-              raft_group,
-              follower_metadata,
-              raft_metadata,
-              raft_group->flushed_offset())) {
+        if (
+          should_lw_heartbeat(
+            raft_group,
+            follower_metadata,
+            raft_metadata,
+            raft_group->flushed_offset())) {
             raft_group->_probe->lw_heartbeat();
             // we do not fill the dirty offset and follower request
             // sequence here as those fields are not used to process

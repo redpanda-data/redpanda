@@ -262,9 +262,10 @@ seq_writer::do_write_subject_version(
         auto record_offset = write_at;
 
         // If context isn't materialized yet, prepend CONTEXT record
-        if (auto is_materialized = co_await _store.is_context_materialized(
-              sub.ctx);
-            !is_materialized) {
+        if (
+          auto is_materialized = co_await _store.is_context_materialized(
+            sub.ctx);
+          !is_materialized) {
             vlog(srlog.debug, "Writing CONTEXT record for ctx={}", sub.ctx);
             auto ctx_key = context_key{
               .seq{record_offset}, .node{_node_id}, .ctx{sub.ctx}};
@@ -518,8 +519,9 @@ ss::future<std::optional<bool>>
 seq_writer::do_delete_context(context ctx, model::offset write_at) {
     vlog(srlog.debug, "delete_context ctx={} offset={}", ctx, write_at);
 
-    if (auto is_materialized = co_await _store.is_context_materialized(ctx);
-        !is_materialized) {
+    if (
+      auto is_materialized = co_await _store.is_context_materialized(ctx);
+      !is_materialized) {
         throw as_exception(
           error_info{
             error_code::subject_not_found,

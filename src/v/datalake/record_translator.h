@@ -35,8 +35,7 @@ public:
     friend std::ostream& operator<<(std::ostream&, const errc&);
 
     virtual record_type
-    build_type(std::optional<shared_resolved_type_t> val_type)
-      = 0;
+    build_type(std::optional<shared_resolved_type_t> val_type) = 0;
     virtual ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
@@ -45,8 +44,7 @@ public:
       std::optional<iobuf> parsable_val,
       model::timestamp ts,
       model::timestamp_type ts_t,
-      const chunked_vector<model::record_header>& headers)
-      = 0;
+      const chunked_vector<model::record_header>& headers) = 0;
     virtual ~record_translator() = default;
 };
 

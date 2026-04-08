@@ -196,7 +196,8 @@ public class AvroMessaging implements KafkaMessagingInterface {
   createRecord(Schema schema, String fieldName, int val) {
     GenericData.Record record = new GenericData.Record(schema);
 
-    record.put(fieldName, val);
+    record.put(fieldName, val)
+    ;
 
     return record;
   }

@@ -263,11 +263,9 @@ std::optional<adjacent_segment_run> adjacent_segment_scanner::scan_manifest(
             // We're looking for the remote segment
             break;
         }
-        if (run.maybe_add_segment(
-              manifest,
-              *it,
-              max_segment_size,
-              archiver.remote_path_provider())) {
+        if (
+          run.maybe_add_segment(
+            manifest, *it, max_segment_size, archiver.remote_path_provider())) {
             // We have found a run with the size close to max_segment_size
             // and can proceed early.
             break;

@@ -42,9 +42,8 @@ public:
     const ss::sstring& mechanism() const { return _mechanism; }
 
 private:
-    friend bool
-    operator==(const ephemeral_credential&, const ephemeral_credential&)
-      = default;
+    friend bool operator==(
+      const ephemeral_credential&, const ephemeral_credential&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const ephemeral_credential&);
 

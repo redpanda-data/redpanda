@@ -94,14 +94,12 @@ public:
       std::optional<char> = std::nullopt,
       std::optional<cloud_storage_clients::client::item_filter> = std::nullopt,
       std::optional<size_t> = std::nullopt,
-      std::optional<ss::sstring> = std::nullopt)
-      = 0;
+      std::optional<ss::sstring> = std::nullopt) = 0;
     virtual ss::future<download_result> object_exists(
       const cloud_storage_clients::bucket_name&,
       const cloud_storage_clients::object_key&,
       retry_chain_node&,
-      existence_check_type)
-      = 0;
+      existence_check_type) = 0;
     virtual ss::future<download_result> download_stream(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& path,
@@ -110,8 +108,7 @@ public:
       const std::string_view stream_label,
       const download_metrics& metrics,
       std::optional<cloud_storage_clients::http_byte_range> byte_range
-      = std::nullopt)
-      = 0;
+      = std::nullopt) = 0;
     virtual ss::future<result<
       cloud_storage_clients::multipart_upload_ref,
       cloud_storage_clients::error_outcome>>
@@ -119,8 +116,7 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& key,
       size_t part_size,
-      retry_chain_node& parent)
-      = 0;
+      retry_chain_node& parent) = 0;
     virtual ~cloud_storage_api() = default;
 };
 

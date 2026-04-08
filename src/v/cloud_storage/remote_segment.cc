@@ -843,8 +843,9 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 co_await hydration.hydrate(_wait_list.size());
                 err = hydration.current_error();
                 if (!err) {
-                    if (auto mat_res = co_await hydration.materialize();
-                        !mat_res) {
+                    if (
+                      auto mat_res = co_await hydration.materialize();
+                      !mat_res) {
                         continue;
                     }
                 }
@@ -1092,8 +1093,9 @@ ss::future<> remote_segment::hydrate(model::opt_abort_source_t as) {
 
 ss::future<> remote_segment::hydrate_chunk(chunk_start_offset_t start_offset) {
     const auto path_to_start = get_path_to_chunk(start_offset);
-    if (const auto status = co_await _cache.is_cached(path_to_start);
-        status == cloud_io::cache_element_status::available) {
+    if (
+      const auto status = co_await _cache.is_cached(path_to_start);
+      status == cloud_io::cache_element_status::available) {
         vlog(
           _ctxlog.debug,
           "skipping chunk hydration for chunk path {}, it is already in "
@@ -1324,8 +1326,8 @@ public:
 
         // The segment can be scanned from the begining so we should skip
         // irrelevant batches.
-        if (unlikely(
-              rp_to_kafka(header.last_offset()) < _config.start_offset)) {
+        if (
+          unlikely(rp_to_kafka(header.last_offset()) < _config.start_offset)) {
             vlog(
               _ctxlog.debug,
               "[{}] accept_batch_start skip because "
@@ -1649,11 +1651,12 @@ void hydration_loop_state::add_request(
   hydration_request::kind path_kind) {
     // Do not re-add the path. A path may be added conditionally in a
     // loop, we should only add it the first time it is requested.
-    if (auto it = std::find_if(
-          _states.cbegin(),
-          _states.cend(),
-          [&p](const auto& st) { return st.path == p; });
-        it != _states.end()) {
+    if (
+      auto it = std::find_if(
+        _states.cbegin(),
+        _states.cend(),
+        [&p](const auto& st) { return st.path == p; });
+      it != _states.end()) {
         return;
     }
 

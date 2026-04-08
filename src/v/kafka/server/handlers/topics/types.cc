@@ -166,8 +166,9 @@ get_enum_value(const config_map_t& config, std::string_view key) {
 
 static std::optional<config::leaders_preference>
 get_leaders_preference(const config_map_t& config) {
-    if (auto it = config.find(topic_property_leaders_preference);
-        it != config.end()) {
+    if (
+      auto it = config.find(topic_property_leaders_preference);
+      it != config.end()) {
         return config::leaders_preference::parse(it->second);
     }
     return std::nullopt;

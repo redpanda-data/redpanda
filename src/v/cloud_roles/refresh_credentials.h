@@ -196,9 +196,10 @@ refresh_credentials make_refresh_credentials(
     if (endpoint) {
         host = endpoint->host();
     }
-    if (auto cfg_host
-        = config::shard_local_cfg().cloud_storage_credentials_host();
-        cfg_host.has_value()) {
+    if (
+      auto cfg_host
+      = config::shard_local_cfg().cloud_storage_credentials_host();
+      cfg_host.has_value()) {
         vlog(
           clrl_log.info,
           "overriding default cloud roles credentials host {} with {} set "

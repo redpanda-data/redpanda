@@ -237,10 +237,10 @@ private:
 
         partition_shutdown_state(partition_shutdown_state&&) = delete;
         partition_shutdown_state(const partition_shutdown_state&) = delete;
-        partition_shutdown_state& operator=(partition_shutdown_state&&)
-          = delete;
-        partition_shutdown_state& operator=(const partition_shutdown_state&)
-          = delete;
+        partition_shutdown_state&
+        operator=(partition_shutdown_state&&) = delete;
+        partition_shutdown_state&
+        operator=(const partition_shutdown_state&) = delete;
         ~partition_shutdown_state() = default;
 
         void update(partition_shutdown_stage);

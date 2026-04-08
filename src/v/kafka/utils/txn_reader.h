@@ -33,10 +33,10 @@ public:
     aborted_transaction_tracker() = default;
     aborted_transaction_tracker(const aborted_transaction_tracker&) = delete;
     aborted_transaction_tracker(aborted_transaction_tracker&&) = delete;
-    aborted_transaction_tracker& operator=(const aborted_transaction_tracker&)
-      = delete;
-    aborted_transaction_tracker& operator=(aborted_transaction_tracker&&)
-      = delete;
+    aborted_transaction_tracker&
+    operator=(const aborted_transaction_tracker&) = delete;
+    aborted_transaction_tracker&
+    operator=(aborted_transaction_tracker&&) = delete;
     virtual ~aborted_transaction_tracker() = default;
 
     // Create the default tracker that uses a partition proxy and the

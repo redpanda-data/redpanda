@@ -63,9 +63,10 @@ public:
             _base_offset = batch.base_offset();
             _first_timestamp = batch.header().first_timestamp;
         }
-        if (unlikely(
-              !_first_tx_batch_offset
-              && batch.header().attrs.is_transactional())) {
+        if (
+          unlikely(
+            !_first_tx_batch_offset
+            && batch.header().attrs.is_transactional())) {
             _first_tx_batch_offset = batch.base_offset();
         }
         _last_offset = batch.last_offset();

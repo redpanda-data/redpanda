@@ -82,8 +82,8 @@ struct leaders_preference
     friend std::ostream& operator<<(std::ostream&, const leaders_preference&);
     friend std::istream& operator>>(std::istream&, leaders_preference&);
 
-    friend bool operator==(const leaders_preference&, const leaders_preference&)
-      = default;
+    friend bool
+    operator==(const leaders_preference&, const leaders_preference&) = default;
 
     auto serde_fields() { return std::tie(type, racks); }
 };

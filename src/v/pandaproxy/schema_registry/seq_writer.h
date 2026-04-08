@@ -147,8 +147,8 @@ private:
             }
             return ss::with_semaphore(
               seq._write_sem, 1, [&seq, f, base_backoff]() {
-                  if (auto waiters = seq._wait_for_sem.waiters();
-                      waiters != 0) {
+                  if (
+                    auto waiters = seq._wait_for_sem.waiters(); waiters != 0) {
                       vlog(
                         srlog.debug,
                         "sequenced_write acquired write_sem with {} "

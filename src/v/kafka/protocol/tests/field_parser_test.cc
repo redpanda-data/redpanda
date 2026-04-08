@@ -97,9 +97,8 @@ void write_flex(T& type, iobuf& buf) {
               writer.write(ts.field_b);
               writer.write_tags(kafka::tagged_fields{});
           });
-    } else if constexpr (std::is_same_v<
-                           T,
-                           std::optional<std::vector<test_struct>>>) {
+    } else if constexpr (
+      std::is_same_v<T, std::optional<std::vector<test_struct>>>) {
         writer.write_nullable_flex_array(
           type, [](test_struct& ts, kafka::protocol::encoder& writer) {
               writer.write_flex(ts.field_a);
@@ -135,9 +134,8 @@ T read_flex(iobuf buf) {
             (void)reader.read_tags();
             return v;
         });
-    } else if constexpr (std::is_same_v<
-                           T,
-                           std::optional<std::vector<test_struct>>>) {
+    } else if constexpr (
+      std::is_same_v<T, std::optional<std::vector<test_struct>>>) {
         return reader.read_nullable_flex_array(
           [](kafka::protocol::decoder& reader) {
               test_struct v;

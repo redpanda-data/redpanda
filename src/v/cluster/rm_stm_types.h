@@ -172,8 +172,8 @@ struct producer_partition_transaction_state
         return timeout.value_or(std::chrono::milliseconds::max());
     }
 
-    bool operator==(const producer_partition_transaction_state&) const
-      = default;
+    bool
+    operator==(const producer_partition_transaction_state&) const = default;
 
     bool is_in_progress() const;
 

@@ -238,8 +238,9 @@ ss::future<schema_resolution_result> resolve_schema_id_extended(
       subject());
 
     // First, try default context with the provided subject
-    if (context_subject ctx_sub{default_context, subject};
-        co_await store.has_version(ctx_sub, id, include_deleted::yes)) {
+    if (
+      context_subject ctx_sub{default_context, subject};
+      co_await store.has_version(ctx_sub, id, include_deleted::yes)) {
         vlog(
           srlog.debug,
           "Schema ID {} was found in default context with subject '{}'",
@@ -257,8 +258,9 @@ ss::future<schema_resolution_result> resolve_schema_id_extended(
             continue;
         }
 
-        if (context_subject ctx_sub{ctx, subject};
-            co_await store.has_version(ctx_sub, id, include_deleted::yes)) {
+        if (
+          context_subject ctx_sub{ctx, subject};
+          co_await store.has_version(ctx_sub, id, include_deleted::yes)) {
             vlog(
               srlog.debug,
               "Schema ID {} was found in context '{}' with subject '{}'",
@@ -1209,8 +1211,9 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
           ctx_sub, version);
     } else {
         // Refuse to soft-delete the same thing twice
-        if (co_await rq.service().schema_store().is_subject_version_deleted(
-              ctx_sub, version)) {
+        if (
+          co_await rq.service().schema_store().is_subject_version_deleted(
+            ctx_sub, version)) {
             throw as_exception(soft_deleted(ctx_sub, version));
         }
 

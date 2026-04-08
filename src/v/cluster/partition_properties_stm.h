@@ -74,8 +74,8 @@ private:
             return std::tie(writes_disabled, writes_revision_id);
         }
         friend bool operator==(
-          const update_writes_disabled_cmd&, const update_writes_disabled_cmd&)
-          = default;
+          const update_writes_disabled_cmd&,
+          const update_writes_disabled_cmd&) = default;
     };
 
     struct state_snapshot
@@ -92,8 +92,8 @@ private:
         auto serde_fields() {
             return std::tie(writes_disabled, update_offset, writes_revision_id);
         }
-        friend bool operator==(const state_snapshot&, const state_snapshot&)
-          = default;
+        friend bool
+        operator==(const state_snapshot&, const state_snapshot&) = default;
     };
 
     struct raft_snapshot
@@ -106,8 +106,8 @@ private:
             return std::tie(writes_disabled, writes_revision_id);
         }
 
-        friend bool operator==(const raft_snapshot&, const raft_snapshot&)
-          = default;
+        friend bool
+        operator==(const raft_snapshot&, const raft_snapshot&) = default;
     };
 
     struct local_snapshot

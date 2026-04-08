@@ -135,8 +135,8 @@ class upload_housekeeping_probe {
 public:
     upload_housekeeping_probe();
     upload_housekeeping_probe(const upload_housekeeping_probe&) = delete;
-    upload_housekeeping_probe& operator=(const upload_housekeeping_probe&)
-      = delete;
+    upload_housekeeping_probe&
+    operator=(const upload_housekeeping_probe&) = delete;
     upload_housekeeping_probe(upload_housekeeping_probe&&) = delete;
     upload_housekeeping_probe& operator=(upload_housekeeping_probe&&) = delete;
     ~upload_housekeeping_probe() = default;

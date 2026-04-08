@@ -106,8 +106,9 @@ public:
 
     ss::future<bool>
     maybe_create_metastore_topic(std::optional<int> num_partitions) {
-        if (_controller->get_topics_state().local().contains(
-              model::l1_metastore_nt)) {
+        if (
+          _controller->get_topics_state().local().contains(
+            model::l1_metastore_nt)) {
             co_return true;
         }
         co_return co_await create_domains_topic(num_partitions);
@@ -130,8 +131,9 @@ private:
         auto backoff = make_exponential_backoff_policy<ss::lowres_clock>(
           1s, 10s);
         while (!_as.abort_requested()) {
-            if (_controller->get_topics_state().local().contains(
-                  model::l1_metastore_nt)) {
+            if (
+              _controller->get_topics_state().local().contains(
+                model::l1_metastore_nt)) {
                 if (co_await ensure_domains_replication_factor()) {
                     break;
                 }

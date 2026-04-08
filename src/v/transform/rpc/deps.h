@@ -100,16 +100,14 @@ public:
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
         kafka::partition_proxy*)> fn,
       kafka::data::rpc::require_leader
-      = kafka::data::rpc::require_leader::yes) override
-      = 0;
+      = kafka::data::rpc::require_leader::yes) override = 0;
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
         kafka::partition_proxy*)>,
       kafka::data::rpc::require_leader
-      = kafka::data::rpc::require_leader::yes) override
-      = 0;
+      = kafka::data::rpc::require_leader::yes) override = 0;
 
     ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>
     get_offsets_from_shard(
@@ -119,8 +117,7 @@ public:
         ss::future<result<kafka::data::rpc::partition_offsets, cluster::errc>>(
           kafka::partition_proxy*)>,
       kafka::data::rpc::require_leader
-      = kafka::data::rpc::require_leader::yes) override
-      = 0;
+      = kafka::data::rpc::require_leader::yes) override = 0;
 
     virtual ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
     invoke_on_shard(
@@ -128,36 +125,38 @@ public:
       const model::ktp& ktp,
       ss::noncopyable_function<
         ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
-          kafka::partition_proxy*)>)
-      = 0;
+          kafka::partition_proxy*)>) = 0;
     virtual ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
     invoke_on_shard(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<
         ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
-          kafka::partition_proxy*)>)
-      = 0;
+          kafka::partition_proxy*)>) = 0;
 
     virtual ss::future<transform::rpc::find_coordinator_response>
     invoke_on_shard(
-      ss::shard_id, const model::ntp&, transform::rpc::find_coordinator_request)
-      = 0;
+      ss::shard_id,
+      const model::ntp&,
+      transform::rpc::find_coordinator_request) = 0;
 
     virtual ss::future<transform::rpc::offset_commit_response> invoke_on_shard(
-      ss::shard_id, const model::ntp&, transform::rpc::offset_commit_request)
-      = 0;
+      ss::shard_id,
+      const model::ntp&,
+      transform::rpc::offset_commit_request) = 0;
 
     virtual ss::future<transform::rpc::offset_fetch_response> invoke_on_shard(
-      ss::shard_id, const model::ntp&, transform::rpc::offset_fetch_request)
-      = 0;
+      ss::shard_id,
+      const model::ntp&,
+      transform::rpc::offset_fetch_request) = 0;
 
     virtual ss::future<result<model::transform_offsets_map, cluster::errc>>
     list_committed_offsets_on_shard(ss::shard_id, const model::ntp&) = 0;
 
     virtual ss::future<cluster::errc> delete_committed_offsets_on_shard(
-      ss::shard_id, const model::ntp&, absl::btree_set<model::transform_id>)
-      = 0;
+      ss::shard_id,
+      const model::ntp&,
+      absl::btree_set<model::transform_id>) = 0;
 };
 
 }; // namespace transform::rpc

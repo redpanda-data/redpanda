@@ -43,8 +43,8 @@ ss::future<std::unique_ptr<ss::http::reply>> flexible_function_handler::handle(
   std::unique_ptr<ss::http::reply> rep) {
     return _f_handle(std::move(req), std::move(rep))
       .then([this](std::unique_ptr<ss::http::reply> rep) {
-          if (_content_type_overrides.contains(
-                rep->get_header("Content-Type"))) {
+          if (
+            _content_type_overrides.contains(rep->get_header("Content-Type"))) {
               rep->done();
           } else if (_content_type == "xml") {
               // Because `application/xml` is not implemented as a mapping

@@ -613,9 +613,10 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
 }
 
 ss::future<> ntp_archiver::upload_until_abort() {
-    if (unlikely(
-          config::shard_local_cfg()
-            .cloud_storage_disable_upload_loop_for_tests.value())) {
+    if (
+      unlikely(
+        config::shard_local_cfg()
+          .cloud_storage_disable_upload_loop_for_tests.value())) {
         vlog(_rtclog.warn, "Skipping upload loop start");
         co_return;
     }
@@ -734,9 +735,10 @@ ss::future<> ntp_archiver::upload_until_abort() {
             }
         }
 
-        if (auto ec = co_await maybe_repair_manifest(
-              ss::lowres_clock::now() + sync_timeout);
-            ec) {
+        if (
+          auto ec = co_await maybe_repair_manifest(
+            ss::lowres_clock::now() + sync_timeout);
+          ec) {
             vlog(_rtclog.warn, "Failed to repair manifest: {}, retrying", ec);
             continue;
         }
@@ -807,9 +809,10 @@ ss::future<> ntp_archiver::upload_until_abort() {
 }
 
 ss::future<> ntp_archiver::sync_manifest_until_abort() {
-    if (unlikely(
-          config::shard_local_cfg()
-            .cloud_storage_disable_read_replica_loop_for_tests.value())) {
+    if (
+      unlikely(
+        config::shard_local_cfg()
+          .cloud_storage_disable_read_replica_loop_for_tests.value())) {
         vlog(_rtclog.warn, "Skipping read replica sync loop start");
         co_return;
     }
@@ -3114,8 +3117,9 @@ ss::future<> ntp_archiver::apply_spillover() {
     // Check the spillover invariant.
     // The start_offset of the manifest must be equal to the begin_offset of
     // the first segment in the manifest.
-    if (auto so = manifest().get_start_offset();
-        so.has_value() && !manifest().empty()) {
+    if (
+      auto so = manifest().get_start_offset();
+      so.has_value() && !manifest().empty()) {
         auto fo = manifest().begin()->base_offset;
         if (fo != so.value()) {
             vlog(

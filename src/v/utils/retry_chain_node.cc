@@ -336,8 +336,9 @@ basic_retry_chain_node<Clock>::basic_retry_chain_node(
       "Initial backoff {} is too large",
       backoff);
 
-    if (auto parent = get_parent();
-        parent != nullptr && parent->_deadline != time_point::min()) {
+    if (
+      auto parent = get_parent();
+      parent != nullptr && parent->_deadline != time_point::min()) {
         _deadline = std::min(_deadline, parent->_deadline);
     }
     auto len = get_len();

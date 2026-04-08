@@ -209,8 +209,9 @@ public:
 
         // Optimistically check the cache in case just the id matches
         // This is true for Avro with TopicNameStrategy
-        if (_api->_schema_id_cache.local().has(
-              topic, field, sns, id, std::nullopt)) {
+        if (
+          _api->_schema_id_cache.local().has(
+            topic, field, sns, id, std::nullopt)) {
             vlog(
               srlog.debug,
               "validating: topic: {}, field: {}, cache hit",
@@ -248,8 +249,9 @@ public:
                 co_return false;
             }
 
-            if (_api->_schema_id_cache.local().has(
-                  topic, field, sns, id, offsets)) {
+            if (
+              _api->_schema_id_cache.local().has(
+                topic, field, sns, id, offsets)) {
                 vlog(
                   srlog.debug,
                   "validating: topic: {}, field: {}, cache hit",

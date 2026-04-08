@@ -107,18 +107,14 @@ public:
       const muted_index& mi);
 
     even_topic_distribution_constraint(
-      even_topic_distribution_constraint&&) noexcept
-      = default;
+      even_topic_distribution_constraint&&) noexcept = default;
     even_topic_distribution_constraint&
-    operator=(even_topic_distribution_constraint&&) noexcept
-      = default;
+    operator=(even_topic_distribution_constraint&&) noexcept = default;
 
     even_topic_distribution_constraint(
-      const even_topic_distribution_constraint&)
-      = delete;
+      const even_topic_distribution_constraint&) = delete;
     even_topic_distribution_constraint&
-    operator=(const even_topic_distribution_constraint&)
-      = delete;
+    operator=(const even_topic_distribution_constraint&) = delete;
 
     ~even_topic_distribution_constraint() override = default;
 
@@ -198,12 +194,12 @@ public:
     }
 
     even_shard_load_constraint(even_shard_load_constraint&&) noexcept = default;
-    even_shard_load_constraint& operator=(even_shard_load_constraint&&) noexcept
-      = default;
+    even_shard_load_constraint&
+    operator=(even_shard_load_constraint&&) noexcept = default;
 
     even_shard_load_constraint(const even_shard_load_constraint&) = delete;
-    even_shard_load_constraint& operator=(const even_shard_load_constraint&)
-      = delete;
+    even_shard_load_constraint&
+    operator=(const even_shard_load_constraint&) = delete;
 
     ~even_shard_load_constraint() override = default;
 

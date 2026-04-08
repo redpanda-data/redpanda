@@ -1009,8 +1009,9 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
     // a final sanity check to ensure that the size of the new segment
     // is smaller than that of the replaced one. Skip the upload if that's
     // not the case.
-    if (auto to_replace = _manifest.find(starting_offset);
-        to_replace != _manifest.end()) {
+    if (
+      auto to_replace = _manifest.find(starting_offset);
+      to_replace != _manifest.end()) {
         if (
           is_reupload_mode(_mode)
           && to_replace->committed_offset == final_offset

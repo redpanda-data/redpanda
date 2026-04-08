@@ -243,10 +243,11 @@ ss::future<netcheck_response>
 self_test_backend::netcheck(model::node_id source, iobuf&& iob) {
     static const auto reset_threshold = 200ms;
     auto now = ss::lowres_clock::now();
-    if (likely(
-          _prev_nc.source == source
-          || _prev_nc.source == previous_netcheck_entity::unassigned
-          || ((_prev_nc.last_request + reset_threshold) < now))) {
+    if (
+      likely(
+        _prev_nc.source == source
+        || _prev_nc.source == previous_netcheck_entity::unassigned
+        || ((_prev_nc.last_request + reset_threshold) < now))) {
         _prev_nc = previous_netcheck_entity{
           .source = source, .last_request = now};
         co_return netcheck_response{.bytes_read = iob.size_bytes()};

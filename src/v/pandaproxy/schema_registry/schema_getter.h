@@ -22,8 +22,7 @@ public:
     virtual ss::future<stored_schema> get_subject_schema(
       context_subject sub,
       std::optional<schema_version> version,
-      include_deleted inc_dec)
-      = 0;
+      include_deleted inc_dec) = 0;
     virtual ss::future<schema_definition>
     get_schema_definition(context_schema_id id) = 0;
     virtual ss::future<std::optional<schema_definition>>

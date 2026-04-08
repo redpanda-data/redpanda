@@ -96,8 +96,8 @@ public:
     ~replicated_object_builder() override {}
     replicated_object_builder(const replicated_object_builder&) = delete;
     replicated_object_builder(replicated_object_builder&&) = delete;
-    replicated_object_builder& operator=(const replicated_object_builder&)
-      = delete;
+    replicated_object_builder&
+    operator=(const replicated_object_builder&) = delete;
     replicated_object_builder& operator=(replicated_object_builder&&) = delete;
 
     ss::future<std::expected<object_id, error>>

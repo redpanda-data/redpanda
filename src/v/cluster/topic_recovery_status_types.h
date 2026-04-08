@@ -37,8 +37,8 @@ struct topic_downloads
           tp_ns, pending_downloads, successful_downloads, failed_downloads);
     }
 
-    friend bool operator==(const topic_downloads&, const topic_downloads&)
-      = default;
+    friend bool
+    operator==(const topic_downloads&, const topic_downloads&) = default;
 };
 
 struct recovery_request_params
@@ -56,9 +56,8 @@ struct recovery_request_params
         return std::tie(topic_names_pattern, retention_bytes, retention_ms);
     }
 
-    friend bool
-    operator==(const recovery_request_params&, const recovery_request_params&)
-      = default;
+    friend bool operator==(
+      const recovery_request_params&, const recovery_request_params&) = default;
 };
 
 std::ostream& operator<<(std::ostream&, const recovery_request_params&);
@@ -73,8 +72,8 @@ struct single_status
 
     bool is_active() const;
 
-    friend bool operator==(const single_status&, const single_status&)
-      = default;
+    friend bool
+    operator==(const single_status&, const single_status&) = default;
 };
 
 struct status_response
@@ -85,8 +84,8 @@ struct status_response
 
     bool is_active() const;
 
-    friend bool operator==(const status_response&, const status_response&)
-      = default;
+    friend bool
+    operator==(const status_response&, const status_response&) = default;
 };
 
 } // namespace cluster

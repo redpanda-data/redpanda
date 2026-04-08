@@ -1127,9 +1127,10 @@ struct adl<security::resource_pattern_filter> {
     void to(iobuf& out, const security::resource_pattern_filter& b) {
         std::optional<pattern_type> pattern;
         if (b.pattern()) {
-            if (std::holds_alternative<
-                  security::resource_pattern_filter::pattern_match>(
-                  *b.pattern())) {
+            if (
+              std::holds_alternative<
+                security::resource_pattern_filter::pattern_match>(
+                *b.pattern())) {
                 pattern = pattern_type::match;
             } else {
                 auto source_pattern = std::get<security::pattern_type>(
@@ -1391,10 +1392,10 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
           = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
         updates.record_value_schema_id_validation_compat
           = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
-        updates.record_value_subject_name_strategy
-          = adl<cluster::property_update<std::optional<
-            pandaproxy::schema_registry::subject_name_strategy>>>{}
-              .from(in);
+        updates
+          .record_value_subject_name_strategy = adl<cluster::property_update<
+          std::optional<pandaproxy::schema_registry::subject_name_strategy>>>{}
+                                                  .from(in);
         updates.record_value_subject_name_strategy_compat
           = adl<cluster::property_update<std::optional<
             pandaproxy::schema_registry::subject_name_strategy>>>{}

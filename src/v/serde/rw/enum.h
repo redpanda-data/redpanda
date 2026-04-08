@@ -50,9 +50,10 @@ void tag_invoke(
     using Type = std::decay_t<T>;
 
     const auto val = read_nested<serde_enum_serialized_t>(in, bytes_left_limit);
-    if (unlikely(
-          std::cmp_greater(
-            val, std::numeric_limits<std::underlying_type_t<Type>>::max()))) {
+    if (
+      unlikely(
+        std::cmp_greater(
+          val, std::numeric_limits<std::underlying_type_t<Type>>::max()))) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
           "enum value {} too large for {}",

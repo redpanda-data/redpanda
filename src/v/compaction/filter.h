@@ -62,8 +62,7 @@ private:
     // placeholder batch if `offset_deltas` is empty.
     virtual ss::future<std::optional<model::record_batch>>
     filter_batch_with_offset_deltas(
-      model::record_batch b, std::vector<int32_t> offset_deltas) const
-      = 0;
+      model::record_batch b, std::vector<int32_t> offset_deltas) const = 0;
 
     // Computes offset deltas from the batch to keep, and then filters the
     // provided batch.

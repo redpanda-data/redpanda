@@ -40,11 +40,10 @@ public:
     topic_manifest_upload_manager(const topic_manifest_upload_manager&)
       = delete;
     topic_manifest_upload_manager&
-    operator=(const topic_manifest_upload_manager&)
-      = delete;
+    operator=(const topic_manifest_upload_manager&) = delete;
     topic_manifest_upload_manager(topic_manifest_upload_manager&&) = delete;
-    topic_manifest_upload_manager& operator=(topic_manifest_upload_manager&&)
-      = delete;
+    topic_manifest_upload_manager&
+    operator=(topic_manifest_upload_manager&&) = delete;
 
     // Called on leadership change or properties change.
     // If partition is non-null, starts an upload loop or signals re-upload if

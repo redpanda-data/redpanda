@@ -65,8 +65,7 @@ public:
     kafka::list_partition_reassignments_response list_partition_reassignments(
       kafka::client::transport& client,
       std::optional<chunked_vector<kafka::list_partition_reassignments_topics>>
-        topics
-      = std::nullopt) {
+        topics = std::nullopt) {
         kafka::list_partition_reassignments_request req;
         req.data.topics = std::move(topics);
         return client.dispatch(std::move(req), kafka::api_version(0)).get();

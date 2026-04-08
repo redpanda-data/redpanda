@@ -212,8 +212,9 @@ void reconciler<Clock>::detach(const model::ntp& ntp) {
         _sources.erase(it);
 
         // Clean up topic scheduler if no partitions remain.
-        if (auto sched_it = _topic_schedulers.find(topic_id);
-            sched_it != _topic_schedulers.end()) {
+        if (
+          auto sched_it = _topic_schedulers.find(topic_id);
+          sched_it != _topic_schedulers.end()) {
             if (--sched_it->second.partition_count == 0) {
                 _topic_schedulers.erase(sched_it);
             }
@@ -242,8 +243,9 @@ ss::future<> reconciler<Clock>::reconciliation_loop() {
             co_return;
         }
 
-        if (config::shard_local_cfg()
-              .cloud_topics_disable_reconciliation_loop()) {
+        if (
+          config::shard_local_cfg()
+            .cloud_topics_disable_reconciliation_loop()) {
             vlog(lg.debug, "Reconciliation loop disabled, skipping iteration");
             continue;
         }

@@ -620,13 +620,11 @@ public:
     cluster_link_manager_test_fixture(const cluster_link_manager_test_fixture&)
       = delete;
     cluster_link_manager_test_fixture&
-    operator=(const cluster_link_manager_test_fixture&)
-      = delete;
+    operator=(const cluster_link_manager_test_fixture&) = delete;
     cluster_link_manager_test_fixture(cluster_link_manager_test_fixture&&)
       = delete;
     cluster_link_manager_test_fixture&
-    operator=(cluster_link_manager_test_fixture&&)
-      = delete;
+    operator=(cluster_link_manager_test_fixture&&) = delete;
 
     ss::future<> wire_up_and_start(std::unique_ptr<link_factory>);
 

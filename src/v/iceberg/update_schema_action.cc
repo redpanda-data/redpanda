@@ -50,8 +50,9 @@ ss::future<action::action_outcome> update_schema_action::build_updates() && {
     //     IDs assigned
     //   - those carry-over IDs are all strictly <= table.last
     // so we start column ID assignment for any new fields at table.last + 1
-    if (auto schm_res = new_schema_.assign_fresh_ids(table_.last_column_id + 1);
-        schm_res.has_error()) {
+    if (
+      auto schm_res = new_schema_.assign_fresh_ids(table_.last_column_id + 1);
+      schm_res.has_error()) {
         co_return errc::unexpected_state;
     }
     auto last_column_id = new_schema_.highest_field_id();

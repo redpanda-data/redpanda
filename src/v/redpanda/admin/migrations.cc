@@ -544,8 +544,9 @@ cluster::data_migrations::entities_status
 parse_migrated_entities_status(json::Value& json) {
     cluster::data_migrations::entities_status ret;
 
-    if (auto it = json.FindMember(consumer_groups_data_key);
-        it != json.MemberEnd()) {
+    if (
+      auto it = json.FindMember(consumer_groups_data_key);
+      it != json.MemberEnd()) {
         auto consumer_groups_array = it->value.GetArray();
         ret.groups.reserve(consumer_groups_array.Size());
         for (auto& group : consumer_groups_array) {

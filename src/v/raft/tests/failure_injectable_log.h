@@ -28,8 +28,8 @@ public:
       ss::shared_ptr<storage::log> underlying_log) noexcept;
 
     failure_injectable_log(failure_injectable_log&&) noexcept = delete;
-    failure_injectable_log& operator=(failure_injectable_log&&) noexcept
-      = delete;
+    failure_injectable_log&
+    operator=(failure_injectable_log&&) noexcept = delete;
     failure_injectable_log(const failure_injectable_log&) = delete;
     failure_injectable_log& operator=(const failure_injectable_log&) = delete;
     ~failure_injectable_log() noexcept final = default;

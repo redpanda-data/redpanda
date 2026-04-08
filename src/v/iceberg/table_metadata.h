@@ -125,8 +125,8 @@ struct table_metadata {
         return snaps_by_id;
     }
 
-    friend bool operator==(const table_metadata&, const table_metadata&)
-      = default;
+    friend bool
+    operator==(const table_metadata&, const table_metadata&) = default;
 };
 
 } // namespace iceberg

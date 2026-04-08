@@ -126,8 +126,9 @@ validate_http_authn_mechanisms(const std::vector<ss::sstring>& mechanisms) {
 
     // Validate results
     for (const auto& m : mechanisms) {
-        if (std::ranges::none_of(
-              supported, [&m](const auto& s) { return s == m; })) {
+        if (std::ranges::none_of(supported, [&m](const auto& s) {
+                return s == m;
+            })) {
             return ssx::sformat(
               "'{}' is not a supported HTTP authentication mechanism", m);
         }
@@ -194,19 +195,20 @@ std::optional<ss::sstring>
 validate_audit_excluded_topics(const std::vector<ss::sstring>& vs) {
     bool is_kafka_audit_topic = false;
     std::optional<ss::sstring> is_invalid_topic_name = std::nullopt;
-    if (std::any_of(
-          vs.begin(),
-          vs.end(),
-          [&is_kafka_audit_topic,
-           &is_invalid_topic_name](const ss::sstring& topic_name) {
-              auto t = model::topic{topic_name};
-              if (t == model::kafka_audit_logging_topic) {
-                  is_kafka_audit_topic = true;
-              } else if (model::validate_kafka_topic_name(t)) {
-                  is_invalid_topic_name = topic_name;
-              }
-              return is_kafka_audit_topic || is_invalid_topic_name.has_value();
-          })) {
+    if (
+      std::any_of(
+        vs.begin(),
+        vs.end(),
+        [&is_kafka_audit_topic,
+         &is_invalid_topic_name](const ss::sstring& topic_name) {
+            auto t = model::topic{topic_name};
+            if (t == model::kafka_audit_logging_topic) {
+                is_kafka_audit_topic = true;
+            } else if (model::validate_kafka_topic_name(t)) {
+                is_invalid_topic_name = topic_name;
+            }
+            return is_kafka_audit_topic || is_invalid_topic_name.has_value();
+        })) {
         if (is_kafka_audit_topic) {
             return ss::format(
               "Unable to exclude audit log '{}' from auditing",
@@ -222,8 +224,9 @@ validate_audit_excluded_topics(const std::vector<ss::sstring>& vs) {
 
 std::optional<ss::sstring>
 validate_api_endpoint(const std::optional<ss::sstring>& os) {
-    if (auto non_empty_string_opt = validate_non_empty_string_opt(os);
-        non_empty_string_opt.has_value()) {
+    if (
+      auto non_empty_string_opt = validate_non_empty_string_opt(os);
+      non_empty_string_opt.has_value()) {
         return non_empty_string_opt;
     }
 
@@ -398,8 +401,9 @@ validate_consumer_group_metrics(const std::vector<ss::sstring>& metrics) {
 
     // Validate results
     for (const auto& m : metrics) {
-        if (std::ranges::none_of(
-              supported, [&m](const auto& s) { return s == m; })) {
+        if (std::ranges::none_of(supported, [&m](const auto& s) {
+                return s == m;
+            })) {
             return ssx::sformat("'{}' is not a valid consumer group metric", m);
         }
     }
@@ -417,8 +421,9 @@ validate_cloud_storage_cluster_name(const std::optional<ss::sstring>& input) {
         return std::nullopt;
     }
 
-    if (auto non_empty_string_opt = validate_non_empty_string_opt(input);
-        non_empty_string_opt.has_value()) {
+    if (
+      auto non_empty_string_opt = validate_non_empty_string_opt(input);
+      non_empty_string_opt.has_value()) {
         return non_empty_string_opt;
     }
 

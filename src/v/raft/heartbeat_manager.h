@@ -97,8 +97,8 @@ public:
         follower_request_meta(const follower_request_meta&) = delete;
         follower_request_meta(follower_request_meta&&) noexcept = default;
         follower_request_meta& operator=(const follower_request_meta&) = delete;
-        follower_request_meta& operator=(follower_request_meta&&) noexcept
-          = delete;
+        follower_request_meta&
+        operator=(follower_request_meta&&) noexcept = delete;
 
         consensus_ptr c;
         follower_req_seq seq;

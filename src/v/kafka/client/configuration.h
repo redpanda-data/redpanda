@@ -77,8 +77,8 @@ struct tls_configuration {
 
     fmt::iterator format_to(fmt::iterator it) const;
 
-    friend bool operator==(const tls_configuration&, const tls_configuration&)
-      = default;
+    friend bool
+    operator==(const tls_configuration&, const tls_configuration&) = default;
 };
 
 struct sasl_configuration {
@@ -88,8 +88,8 @@ struct sasl_configuration {
 
     fmt::iterator format_to(fmt::iterator it) const;
 
-    friend bool operator==(const sasl_configuration&, const sasl_configuration&)
-      = default;
+    friend bool
+    operator==(const sasl_configuration&, const sasl_configuration&) = default;
 };
 
 /**

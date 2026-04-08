@@ -50,10 +50,10 @@ struct committed_offset {
     model::partition_id partition;
     kafka::offset offset;
 
-    friend auto operator<=>(const committed_offset&, const committed_offset&)
-      = default;
-    friend bool operator==(const committed_offset&, const committed_offset&)
-      = default;
+    friend auto
+    operator<=>(const committed_offset&, const committed_offset&) = default;
+    friend bool
+    operator==(const committed_offset&, const committed_offset&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& os, const committed_offset& co) {

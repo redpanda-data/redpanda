@@ -93,9 +93,8 @@ struct configuration_update
     bool is_to_add(const vnode&) const;
     bool is_to_remove(const vnode&) const;
 
-    friend bool
-    operator==(const configuration_update&, const configuration_update&)
-      = default;
+    friend bool operator==(
+      const configuration_update&, const configuration_update&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -327,9 +326,8 @@ public:
 
     void set_version(version_t v) { _version = v; }
 
-    friend bool
-    operator==(const group_configuration&, const group_configuration&)
-      = default;
+    friend bool operator==(
+      const group_configuration&, const group_configuration&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const group_configuration&);
 
@@ -342,17 +340,16 @@ public:
         // Deprecated: broker based manipulation methods
         virtual void add_broker(model::broker, model::revision_id) = 0;
         virtual void
-          replace_brokers(std::vector<broker_revision>, model::revision_id)
-          = 0;
+          replace_brokers(std::vector<broker_revision>, model::revision_id) = 0;
         virtual void remove_broker(model::node_id) = 0;
 
         virtual void
-          add(vnode, model::revision_id, std::optional<model::offset>)
-          = 0;
+          add(vnode, model::revision_id, std::optional<model::offset>) = 0;
         virtual void remove(vnode, model::revision_id) = 0;
         virtual void replace(
-          std::vector<vnode>, model::revision_id, std::optional<model::offset>)
-          = 0;
+          std::vector<vnode>,
+          model::revision_id,
+          std::optional<model::offset>) = 0;
 
         /**
          * Discards the old configuration, after this operation joint

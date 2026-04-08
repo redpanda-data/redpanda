@@ -176,8 +176,8 @@ parse_json_response_and_validate(std::string_view schema, iobuf resp) {
     }
 
     auto& err_obj = validator.GetError();
-    if (auto m_it = err_obj.FindMember("required");
-        m_it != err_obj.MemberEnd()) {
+    if (
+      auto m_it = err_obj.FindMember("required"); m_it != err_obj.MemberEnd()) {
         // some missing fields, return a list (note, this might hide other
         // problems. but missing fields is likely more important)
         auto missing_fields_array = m_it->value["missing"].GetArray();

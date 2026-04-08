@@ -61,8 +61,8 @@ public:
               serde::version<0>,
               serde::compat_version<0>> {
             friend bool operator==(
-              const client_id_default_match&, const client_id_default_match&)
-              = default;
+              const client_id_default_match&,
+              const client_id_default_match&) = default;
 
             auto serde_fields() { return std::tie(); }
 
@@ -83,9 +83,8 @@ public:
               user_default_match,
               serde::version<0>,
               serde::compat_version<0>> {
-            friend bool
-            operator==(const user_default_match&, const user_default_match&)
-              = default;
+            friend bool operator==(
+              const user_default_match&, const user_default_match&) = default;
 
             auto serde_fields() { return std::tie(); }
 
@@ -106,9 +105,8 @@ public:
               client_id_match,
               serde::version<0>,
               serde::compat_version<0>> {
-            friend bool
-            operator==(const client_id_match&, const client_id_match&)
-              = default;
+            friend bool operator==(
+              const client_id_match&, const client_id_match&) = default;
 
             friend std::ostream&
             operator<<(std::ostream&, const client_id_match&);
@@ -131,8 +129,8 @@ public:
               user_match,
               serde::version<0>,
               serde::compat_version<0>> {
-            friend bool operator==(const user_match&, const user_match&)
-              = default;
+            friend bool
+            operator==(const user_match&, const user_match&) = default;
 
             friend std::ostream& operator<<(std::ostream&, const user_match&);
 
@@ -156,8 +154,8 @@ public:
               serde::version<0>,
               serde::compat_version<0>> {
             friend bool operator==(
-              const client_id_prefix_match&, const client_id_prefix_match&)
-              = default;
+              const client_id_prefix_match&,
+              const client_id_prefix_match&) = default;
 
             friend std::ostream&
             operator<<(std::ostream&, const client_id_prefix_match&);
@@ -349,8 +347,8 @@ struct entity_value_diff
         uint64_t value{};
     };
 
-    friend bool operator==(const entity_value_diff&, const entity_value_diff&)
-      = default;
+    friend bool
+    operator==(const entity_value_diff&, const entity_value_diff&) = default;
     friend std::ostream& operator<<(std::ostream&, const entity_value_diff&);
 
     auto serde_fields() { return std::tie(entries); }
@@ -374,9 +372,8 @@ struct alter_delta_cmd_data
 
     auto serde_fields() { return std::tie(ops); }
 
-    friend bool
-    operator==(const alter_delta_cmd_data&, const alter_delta_cmd_data&)
-      = default;
+    friend bool operator==(
+      const alter_delta_cmd_data&, const alter_delta_cmd_data&) = default;
 };
 
 constexpr std::string_view to_string_view(entity_value_diff::key e) {
@@ -423,9 +420,8 @@ struct alter_quotas_request
 
     auto serde_fields() { return std::tie(cmd_data, timeout); }
 
-    friend bool
-    operator==(const alter_quotas_request&, const alter_quotas_request&)
-      = default;
+    friend bool operator==(
+      const alter_quotas_request&, const alter_quotas_request&) = default;
 };
 
 struct alter_quotas_response
@@ -436,9 +432,8 @@ struct alter_quotas_response
     cluster::errc ec;
     auto serde_fields() { return std::tie(ec); }
 
-    friend bool
-    operator==(const alter_quotas_response&, const alter_quotas_response&)
-      = default;
+    friend bool operator==(
+      const alter_quotas_response&, const alter_quotas_response&) = default;
 };
 
 } // namespace cluster::client_quota

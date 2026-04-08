@@ -42,11 +42,9 @@ public:
 
     segment_meta_materializing_iterator() = default;
     segment_meta_materializing_iterator(
-      const segment_meta_materializing_iterator&)
-      = delete;
+      const segment_meta_materializing_iterator&) = delete;
     segment_meta_materializing_iterator&
-    operator=(const segment_meta_materializing_iterator&)
-      = delete;
+    operator=(const segment_meta_materializing_iterator&) = delete;
     segment_meta_materializing_iterator(segment_meta_materializing_iterator&&);
     segment_meta_materializing_iterator&
     operator=(segment_meta_materializing_iterator&&);

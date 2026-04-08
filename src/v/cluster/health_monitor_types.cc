@@ -50,8 +50,9 @@ bool partitions_filter::matches(
             return true;
         }
 
-        if (auto topic_it = topics_map.find(tp_ns.tp);
-            topic_it != topics_map.end()) {
+        if (
+          auto topic_it = topics_map.find(tp_ns.tp);
+          topic_it != topics_map.end()) {
             auto& [_, partitions] = *topic_it;
             return partitions.empty() || partitions.contains(p_id);
         }

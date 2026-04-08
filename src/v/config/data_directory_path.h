@@ -27,9 +27,8 @@ struct data_directory_path {
     std::filesystem::path path;
     ss::sstring as_sstring() const { return path.string(); }
 
-    friend bool
-    operator==(const data_directory_path&, const data_directory_path&)
-      = default;
+    friend bool operator==(
+      const data_directory_path&, const data_directory_path&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const config::data_directory_path& p) {

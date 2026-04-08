@@ -144,18 +144,19 @@ void segment_index::maybe_track(
     _last_batch_max_timestamp = std::max(
       hdr.first_timestamp, hdr.max_timestamp);
 
-    if (_state.maybe_index(
-          _acc,
-          _step,
-          filepos,
-          hdr.base_offset,
-          hdr.last_offset(),
-          hdr.first_timestamp,
-          hdr.max_timestamp,
-          to_optional_model_timestamp(new_broker_ts),
-          path().is_internal_topic()
-            || hdr.type == model::record_batch_type::raft_data,
-          compaction::is_filterable(hdr.type) ? hdr.record_count : 0)) {
+    if (
+      _state.maybe_index(
+        _acc,
+        _step,
+        filepos,
+        hdr.base_offset,
+        hdr.last_offset(),
+        hdr.first_timestamp,
+        hdr.max_timestamp,
+        to_optional_model_timestamp(new_broker_ts),
+        path().is_internal_topic()
+          || hdr.type == model::record_batch_type::raft_data,
+        compaction::is_filterable(hdr.type) ? hdr.record_count : 0)) {
         _acc = 0;
     }
     _needs_persistence = true;

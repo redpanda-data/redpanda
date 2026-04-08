@@ -105,8 +105,9 @@ void group_tx_tracker_stm::maybe_end_tx(
 
 ss::future<> group_tx_tracker_stm::do_apply(const model::record_batch& b) {
     // fast path, check without a scheduling point.
-    if (unlikely(!_feature_table.local().is_active(
-          features::feature::group_tx_fence_dedicated_batch_type))) {
+    if (
+      unlikely(!_feature_table.local().is_active(
+        features::feature::group_tx_fence_dedicated_batch_type))) {
         // This is only relevant for upgrades from 24.1.x to 24.2.x where a
         // mixed mode cluster has this feature disabled until the upgrade is
         // done. Holding off stm updates ensures that max_removable offset

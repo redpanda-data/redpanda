@@ -119,8 +119,8 @@ private:
 
     std::optional<std::pair<model::ntp, ss::shard_id>>
     shard_for(const group_id& group) {
-        if (auto p_id = coordinator_mapper().local().partition_for(group);
-            p_id) {
+        if (
+          auto p_id = coordinator_mapper().local().partition_for(group); p_id) {
             model::ntp ntp(
               model::kafka_namespace,
               model::kafka_consumer_offsets_topic,

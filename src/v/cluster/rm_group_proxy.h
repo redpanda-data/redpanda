@@ -30,8 +30,7 @@ public:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration,
-      model::partition_id)
-      = 0;
+      model::partition_id) = 0;
 
     virtual ss::future<begin_group_tx_reply>
       begin_group_tx_locally(begin_group_tx_request) = 0;
@@ -40,8 +39,7 @@ public:
       kafka::group_id,
       model::producer_identity,
       model::tx_seq,
-      model::timeout_clock::duration)
-      = 0;
+      model::timeout_clock::duration) = 0;
 
     virtual ss::future<commit_group_tx_reply>
       commit_group_tx_locally(commit_group_tx_request) = 0;
@@ -50,8 +48,7 @@ public:
       kafka::group_id,
       model::producer_identity,
       model::tx_seq,
-      model::timeout_clock::duration)
-      = 0;
+      model::timeout_clock::duration) = 0;
 
     virtual ss::future<abort_group_tx_reply>
       abort_group_tx_locally(abort_group_tx_request) = 0;

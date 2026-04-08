@@ -151,9 +151,10 @@ ss::future<> write_async(iobuf& out, T t) {
                  checksum_placeholder = std::move(
                    checksum_placeholder)]() mutable {
                     const auto written_size = out.size_bytes() - size_before;
-                    if (unlikely(
-                          written_size
-                          > std::numeric_limits<serde_size_t>::max())) {
+                    if (
+                      unlikely(
+                        written_size
+                        > std::numeric_limits<serde_size_t>::max())) {
                         throw serde_exception{"envelope too big"};
                     }
                     const auto size = ss::cpu_to_le(

@@ -80,9 +80,8 @@ struct partition_selection {
     static std::optional<partition_selection>
       from_string_view(std::string_view);
 
-    friend bool
-    operator==(const partition_selection&, const partition_selection&)
-      = default;
+    friend bool operator==(
+      const partition_selection&, const partition_selection&) = default;
 };
 
 std::ostream& operator<<(std::ostream& o, const partition_selection& p);
@@ -91,8 +90,8 @@ struct label_selection {
     ss::sstring key;
     ss::sstring value;
 
-    friend bool operator==(const label_selection&, const label_selection&)
-      = default;
+    friend bool
+    operator==(const label_selection&, const label_selection&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const label_selection& l);
 };
@@ -113,9 +112,8 @@ struct debug_bundle_parameters {
     std::optional<ss::sstring> k8s_namespace;
     std::optional<std::vector<label_selection>> label_selector;
 
-    friend bool
-    operator==(const debug_bundle_parameters&, const debug_bundle_parameters&)
-      = default;
+    friend bool operator==(
+      const debug_bundle_parameters&, const debug_bundle_parameters&) = default;
 };
 
 /// The state of the debug bundle process
@@ -147,8 +145,8 @@ struct debug_bundle_status_data {
     chunked_vector<ss::sstring> cerr;
 
     friend bool operator==(
-      const debug_bundle_status_data& lhs, const debug_bundle_status_data& rhs)
-      = default;
+      const debug_bundle_status_data& lhs,
+      const debug_bundle_status_data& rhs) = default;
 };
 } // namespace debug_bundle
 

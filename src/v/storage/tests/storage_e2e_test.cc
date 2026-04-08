@@ -5951,8 +5951,7 @@ TEST_F(storage_test_fixture, log_compaction_enable_sliding_window) {
     // by setting the compaction_reserved_memory in the memory group to 0.
     auto& mem_groups = memory_groups();
     testing::system_memory_groups_accessor::compaction_reserved_memory(
-      mem_groups)
-      = 0;
+      mem_groups) = 0;
     storage::log_manager mgr = make_log_manager();
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
     SUCCEED() << fmt::format("Configuration: {}", mgr.config());
@@ -6344,8 +6343,7 @@ TEST_F(storage_test_fixture, find_sliding_ranges) {
             if (segment_fields[i].base_offset_override.has_value()) {
                 // Override the base offset of the segment, if specified
                 storage::testing_details::offset_tracker_accessor::base_offset(
-                  ot)
-                  = *segment_fields[i].base_offset_override;
+                  ot) = *segment_fields[i].base_offset_override;
             }
         }
 

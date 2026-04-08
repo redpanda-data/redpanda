@@ -76,8 +76,8 @@ struct manifest_entry {
     std::optional<sequence_number> sequence_number;
     std::optional<file_sequence_number> file_sequence_number;
     data_file data_file;
-    friend bool operator==(const manifest_entry&, const manifest_entry&)
-      = default;
+    friend bool
+    operator==(const manifest_entry&, const manifest_entry&) = default;
     manifest_entry copy() const;
 };
 

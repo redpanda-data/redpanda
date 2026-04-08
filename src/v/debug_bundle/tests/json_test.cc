@@ -106,8 +106,8 @@ TYPED_TEST(JsonTypeTest, BasicType) {
           = R"({"username": "user", "password": "pass", "mechanism": "SCRAM-SHA-256"})";
         this->expected = scram_creds{
           .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}};
-    } else if constexpr (std::
-                           is_same_v<TypeParam, debug_bundle_authn_options>) {
+    } else if constexpr (
+      std::is_same_v<TypeParam, debug_bundle_authn_options>) {
         this->json_input
           = R"({"username": "user", "password": "pass", "mechanism": "SCRAM-SHA-256"})";
         this->expected = TypeParam{scram_creds{
@@ -168,12 +168,12 @@ TYPED_TEST(JsonTypeTest, BasicType) {
             .k8s_namespace = "k8s-namespace",
             .label_selector = std::vector<label_selection>{
               {"test/key1", "value1"}, {"key2", "value2"}}};
-    } else if constexpr (detail::
-                           is_specialization_of_v<TypeParam, std::vector>) {
+    } else if constexpr (
+      detail::is_specialization_of_v<TypeParam, std::vector>) {
         this->json_input = R"([1,2,3])";
         this->expected = {1, 2, 3};
-    } else if constexpr (detail::
-                           is_specialization_of_v<TypeParam, absl::btree_set>) {
+    } else if constexpr (
+      detail::is_specialization_of_v<TypeParam, absl::btree_set>) {
         this->json_input = R"([1,2,3])";
         this->expected = {1, 2, 3};
     } else if constexpr (std::is_same_v<TypeParam, bool>) {
@@ -242,8 +242,8 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
         this->json_input = R"({"credential": "user:pass:SCRAM-SHA-256"})";
         this->expected = scram_creds{
           .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}};
-    } else if constexpr (std::
-                           is_same_v<TypeParam, debug_bundle_authn_options>) {
+    } else if constexpr (
+      std::is_same_v<TypeParam, debug_bundle_authn_options>) {
         this->json_input = R"(42)";
         this->expected = TypeParam{scram_creds{
           .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}}};
@@ -254,12 +254,12 @@ TYPED_TEST(JsonTypeTest, TypeIsInvalid) {
     } else if constexpr (std::is_same_v<TypeParam, debug_bundle_parameters>) {
         this->json_input = R"("")";
         this->expected = debug_bundle_parameters{};
-    } else if constexpr (detail::
-                           is_specialization_of_v<TypeParam, std::vector>) {
+    } else if constexpr (
+      detail::is_specialization_of_v<TypeParam, std::vector>) {
         this->json_input = R"(42)";
         this->expected = {1, 2, 3};
-    } else if constexpr (detail::
-                           is_specialization_of_v<TypeParam, absl::btree_set>) {
+    } else if constexpr (
+      detail::is_specialization_of_v<TypeParam, absl::btree_set>) {
         this->json_input = R"(42)";
         this->expected = {1, 2, 3};
     } else if constexpr (std::is_same_v<TypeParam, bool>) {
@@ -298,8 +298,8 @@ TYPED_TEST(JsonTypeTest, ValidateControlCharacters) {
           = R"({"username": "user\r", "password": "pass", "mechanism": "SCRAM-SHA-256"})";
         this->expected = scram_creds{
           .username{"user"}, .password{"pass"}, .mechanism{"SCRAM-SHA-256"}};
-    } else if constexpr (std::
-                           is_same_v<TypeParam, debug_bundle_authn_options>) {
+    } else if constexpr (
+      std::is_same_v<TypeParam, debug_bundle_authn_options>) {
         this->json_input
           = R"({"username": "user", "password": "\fpass", "mechanism": "SCRAM-SHA-256"})";
         this->expected = TypeParam{scram_creds{

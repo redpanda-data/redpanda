@@ -92,8 +92,8 @@ batch_cache::get(const model::topic_id_partition& tidp, model::offset o) {
         return std::nullopt;
     }
     _gate.check();
-    if (auto it = _entries.find(tidp);
-        it != _entries.end() && it->second.index) {
+    if (
+      auto it = _entries.find(tidp); it != _entries.end() && it->second.index) {
         auto& index = *it->second.index;
         auto rb = index.get(o);
         if (rb.has_value()) {

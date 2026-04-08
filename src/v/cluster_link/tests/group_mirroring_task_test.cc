@@ -240,8 +240,7 @@ public:
             for (auto& [p, offset] : partitions) {
                 metadata
                   .offsets[::model::topic(topic)][::model::partition_id(p)]
-                  .committed_offset
-                  = kafka::offset(offset);
+                  .committed_offset = kafka::offset(offset);
             }
         }
     }

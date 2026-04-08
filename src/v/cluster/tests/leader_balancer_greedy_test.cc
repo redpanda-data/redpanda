@@ -152,8 +152,7 @@ topic_leaders run_to_convergence(
   topic_leaders current_leaders,
   const group_locations& locations_by_group) {
     while (std::optional<cluster::leader_balancer_strategy::reassignment>
-             reassignment
-           = balancer.find_movement({})) {
+             reassignment = balancer.find_movement({})) {
         balancer.apply_movement(*reassignment);
         group_locations::const_iterator location = locations_by_group.find(
           reassignment->group);

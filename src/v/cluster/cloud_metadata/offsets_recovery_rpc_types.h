@@ -59,9 +59,8 @@ struct offsets_recovery_reply
 
     auto serde_fields() { return std::tie(ec); }
 
-    friend bool
-    operator==(const offsets_recovery_reply&, const offsets_recovery_reply&)
-      = default;
+    friend bool operator==(
+      const offsets_recovery_reply&, const offsets_recovery_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const offsets_recovery_reply& r) {
@@ -75,8 +74,7 @@ public:
     virtual ss::future<error_outcome> recover(
       retry_chain_node& parent_retry,
       const cloud_storage_clients::bucket_name& bucket,
-      std::vector<std::vector<cloud_storage::remote_segment_path>>)
-      = 0;
+      std::vector<std::vector<cloud_storage::remote_segment_path>>) = 0;
     virtual ~offsets_recovery_requestor() = default;
 };
 

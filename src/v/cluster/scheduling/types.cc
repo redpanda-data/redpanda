@@ -100,8 +100,9 @@ model::broker_shard allocated_partition::add_replica(
     }
 
     model::broker_shard replica{.node_id = node};
-    if (auto it = _original_node2shard->find(node);
-        it != _original_node2shard->end()) {
+    if (
+      auto it = _original_node2shard->find(node);
+      it != _original_node2shard->end()) {
         // this is an original replica, preserve the shard
         replica.shard = it->second;
         _state->add_final_count(replica);

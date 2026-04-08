@@ -28,8 +28,7 @@ public:
 
     ss::future<std::unique_ptr<kafka::client::cluster>> create_client_cluster(
       std::optional<std::unique_ptr<kafka::client::broker_factory>>
-        broker_factory
-      = std::nullopt);
+        broker_factory = std::nullopt);
 
     topic_assignment make_assignment(
       const model::topic& topic,

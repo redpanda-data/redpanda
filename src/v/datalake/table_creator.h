@@ -27,12 +27,10 @@ public:
     virtual ss::future<checked<std::nullopt_t, errc>> ensure_table(
       const model::topic&,
       model::revision_id topic_revision,
-      record_schema_components) const
-      = 0;
+      record_schema_components) const = 0;
 
     virtual ss::future<checked<std::nullopt_t, errc>> ensure_dlq_table(
-      const model::topic&, model::revision_id topic_revision) const
-      = 0;
+      const model::topic&, model::revision_id topic_revision) const = 0;
 
     virtual ~table_creator() = default;
 };

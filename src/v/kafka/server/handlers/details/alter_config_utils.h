@@ -255,8 +255,9 @@ ss::future<chunked_vector<R>> do_alter_topics_configuration(
     if (found != err_map.end()) {
         for (const auto& tpv : found->second) {
             const auto& topic = tpv.tp;
-            if (auto it = requested_kv_map.find(topic);
-                it != requested_kv_map.end()) {
+            if (
+              auto it = requested_kv_map.find(topic);
+              it != requested_kv_map.end()) {
                 vlog(
                   klog.info,
                   "Successfully altered topic properties for {}: [{}]",

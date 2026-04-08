@@ -531,11 +531,10 @@ public:
                 ([&] {
                     if (next_op_idx == Is) {
                         next_op = cstore_operation{std::in_place_index<Is>};
-                        if constexpr (requires(
-                                        std::variant_alternative_t<
-                                          Is,
-                                          cstore_operation> op,
-                                        Tape t) { op.setup(t); }) {
+                        if constexpr (
+                          requires(
+                            std::variant_alternative_t<Is, cstore_operation> op,
+                            Tape t) { op.setup(t); }) {
                             // call setup if op has it
                             std::get<Is>(next_op).setup(tape);
                         }

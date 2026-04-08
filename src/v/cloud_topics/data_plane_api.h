@@ -68,8 +68,7 @@ public:
       model::ntp ntp,
       cluster_epoch min_epoch,
       staged_write reservation,
-      model::timeout_clock::time_point deadline)
-      = 0;
+      model::timeout_clock::time_point deadline) = 0;
 
     // Materialize extents from the L0 read pipeline.
     // `output_size_estimate` must not exceed `materialize_max_bytes()`.
@@ -82,8 +81,7 @@ public:
       chunked_vector<extent_meta> metadata,
       model::timeout_clock::time_point timeout,
       model::opt_abort_source_t,
-      allow_materialization_failure allow_mat_failure)
-      = 0;
+      allow_materialization_failure allow_mat_failure) = 0;
 
     /// Return the maximum bytes that may be requested in a single
     /// materialize() call. This reflects the read pipeline's memory quota.
@@ -92,9 +90,8 @@ public:
     virtual size_t materialize_max_bytes() const = 0;
 
     /// Cache materialized record batch
-    virtual void
-    cache_put(const model::topic_id_partition&, const model::record_batch& b)
-      = 0;
+    virtual void cache_put(
+      const model::topic_id_partition&, const model::record_batch& b) = 0;
 
     /// Retrieve materialized record batch from cache
     virtual std::optional<model::record_batch>
@@ -104,8 +101,7 @@ public:
     /// inserted batches extend the contiguous range tracked by the monitor.
     virtual void cache_put_ordered(
       const model::topic_id_partition&,
-      chunked_vector<model::record_batch> batches)
-      = 0;
+      chunked_vector<model::record_batch> batches) = 0;
 
     /// Retrieve current cluster epoch
     virtual ss::future<std::optional<cloud_topics::cluster_epoch>>
@@ -123,8 +119,7 @@ public:
       model::offset offset,
       model::offset last_known,
       model::timeout_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> as)
-      = 0;
+      std::optional<std::reference_wrapper<ss::abort_source>> as) = 0;
 };
 
 } // namespace cloud_topics

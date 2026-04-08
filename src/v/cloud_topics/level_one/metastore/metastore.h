@@ -243,8 +243,7 @@ public:
     // equal to the given timestamp, that starts at or after the provided
     // offset. If no such timestamp exists, returns `out_of_range`.
     virtual ss::future<std::expected<object_response, errc>> get_first_ge(
-      const model::topic_id_partition&, kafka::offset, model::timestamp)
-      = 0;
+      const model::topic_id_partition&, kafka::offset, model::timestamp) = 0;
 
     // Finds the kafka offset such that if data was truncated before this offset
     // where the total amount of data left would be ~size (within the
@@ -358,9 +357,8 @@ public:
     // Similar to replace_objects(), but with additional constraints based on
     // compaction metadata. See get_compaction_info() for more details on
     // expected usage.
-    virtual ss::future<std::expected<void, errc>>
-    compact_objects(const object_metadata_builder&, const compaction_map_t&)
-      = 0;
+    virtual ss::future<std::expected<void, errc>> compact_objects(
+      const object_metadata_builder&, const compaction_map_t&) = 0;
 
     // All the information required to query a `compaction_info_response` from
     // the metastore. Parameters are used for call to `get_compaction_info()`.
@@ -509,8 +507,7 @@ public:
       kafka::offset,
       kafka::offset,
       size_t,
-      include_object_metadata)
-      = 0;
+      include_object_metadata) = 0;
 
     // Returns a number of extents in the offset range `[start, end]`
     // inclusively, and in descending offset order. Useful for backward

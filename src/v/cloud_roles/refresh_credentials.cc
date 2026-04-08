@@ -165,8 +165,9 @@ refresh_credentials::impl::impl(
   , _region{std::move(region)}
   , _as{as}
   , _retry_params{retry_params} {
-    if (auto address_override = load_and_validate_env_var(override_address);
-        address_override) {
+    if (
+      auto address_override = load_and_validate_env_var(override_address);
+      address_override) {
         auto address = parse_address(address_override.value());
         vlog(
           clrl_log.debug,

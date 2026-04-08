@@ -41,8 +41,7 @@ public:
 
     virtual void configure_server(
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
-      ss::tls::reload_callback&& cb = {})
-      = 0;
+      ss::tls::reload_callback&& cb = {}) = 0;
 
     rpc::transport_configuration client_config(
       std::optional<ss::tls::credentials_builder> credentials

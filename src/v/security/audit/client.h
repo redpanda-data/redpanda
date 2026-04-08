@@ -154,8 +154,7 @@ protected:
       model::record_batch,
       model::partition_id,
       audit_probe&,
-      ss::timer<>::time_point timeout = ss::timer<>::time_point::max())
-      = 0;
+      ss::timer<>::time_point timeout = ss::timer<>::time_point::max()) = 0;
     virtual ss::future<> client_shutdown() = 0;
     virtual ss::future<> do_configure() = 0;
 

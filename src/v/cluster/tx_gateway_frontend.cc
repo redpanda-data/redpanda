@@ -713,9 +713,10 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
       tx_id,
       transaction_timeout_ms);
 
-    if (unlikely(
-          transaction_timeout_ms
-          > config::shard_local_cfg().transaction_max_timeout_ms())) {
+    if (
+      unlikely(
+        transaction_timeout_ms
+        > config::shard_local_cfg().transaction_max_timeout_ms())) {
         vlog(
           txlog.warn,
           "[tx_id={}] Transactional timeout requested {}ms exceeds configured "

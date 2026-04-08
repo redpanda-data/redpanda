@@ -93,11 +93,9 @@ struct client_id_matcher_type {
 
 throughput_control_group::throughput_control_group() = default;
 throughput_control_group::throughput_control_group(
-  throughput_control_group&&) noexcept
-  = default;
-throughput_control_group&
-throughput_control_group::operator=(throughput_control_group&&) noexcept
-  = default;
+  throughput_control_group&&) noexcept = default;
+throughput_control_group& throughput_control_group::operator=(
+  throughput_control_group&&) noexcept = default;
 throughput_control_group::~throughput_control_group() noexcept = default;
 
 throughput_control_group::throughput_control_group(

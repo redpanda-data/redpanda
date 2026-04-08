@@ -105,8 +105,9 @@ authorizer::authorizer(
 }
 
 void authorizer::add_bindings(const std::vector<acl_binding>& bindings) {
-    if (unlikely(
-          seclog.is_shard_zero() && seclog.is_enabled(ss::log_level::debug))) {
+    if (
+      unlikely(
+        seclog.is_shard_zero() && seclog.is_enabled(ss::log_level::debug))) {
         for (const auto& binding : bindings) {
             vlog(seclog.debug, "Adding ACL binding: {}", binding);
         }
@@ -373,9 +374,10 @@ std::optional<security::acl_match> authorizer::acl_any_implied_ops_allowed(
                       auto begin,
                       auto end) -> std::optional<security::acl_match> {
         for (; begin != end; ++begin) {
-            if (auto entry = acls.find(
-                  *begin, principal, host, acl_permission::allow);
-                entry.has_value()) {
+            if (
+              auto entry = acls.find(
+                *begin, principal, host, acl_permission::allow);
+              entry.has_value()) {
                 return entry;
             }
         }

@@ -2018,9 +2018,10 @@ void config_multi_property_validation(
     }
 
     // cloud_storage_cache_size/size_percent validation
-    if (auto invalid_cache = cloud_io::cache::validate_cache_config(
-          updated_config);
-        invalid_cache.has_value()) {
+    if (
+      auto invalid_cache = cloud_io::cache::validate_cache_config(
+        updated_config);
+      invalid_cache.has_value()) {
         auto name = ss::sstring(updated_config.cloud_storage_cache_size.name());
         errors[name] = invalid_cache.value();
     }
@@ -2232,8 +2233,9 @@ admin_server::patch_cluster_config_handler(
                       yaml_name,
                       property.format_raw(yaml_value),
                       validation_err.value().error_message());
-                } else if (auto restricted_err = property.check_restricted(val);
-                           restricted_err.has_value() && should_sanction) {
+                } else if (
+                  auto restricted_err = property.check_restricted(val);
+                  restricted_err.has_value() && should_sanction) {
                     errors[yaml_name] = restricted_err.value().error_message();
                     vlog(
                       adminlog.warn,
@@ -3609,8 +3611,9 @@ admin_server::get_partition_balancer_status_handler(
       });
 
     cluster::partition_balancer_overview_reply overview;
-    if (std::holds_alternative<cluster::partition_balancer_overview_reply>(
-          result)) {
+    if (
+      std::holds_alternative<cluster::partition_balancer_overview_reply>(
+        result)) {
         overview = std::move(
           std::get<cluster::partition_balancer_overview_reply>(result));
     } else if (std::holds_alternative<model::node_id>(result)) {
@@ -3964,9 +3967,10 @@ admin_server::get_cluster_partitions_handler(
     std::sort(topics.begin(), topics.end());
 
     std::optional<cluster::cluster_health_report> health_report;
-    if (_controller->get_topics_frontend()
-          .local()
-          .node_local_core_assignment_enabled()) {
+    if (
+      _controller->get_topics_frontend()
+        .local()
+        .node_local_core_assignment_enabled()) {
         // We'll need to get core assignments from the health report
         auto hr_result = co_await _controller->get_health_monitor()
                            .local()
@@ -4045,9 +4049,10 @@ admin_server::get_cluster_partitions_topic_handler(
       topics_state.get_topic_disabled_set(ns_tp),
       disabled_filter);
 
-    if (_controller->get_topics_frontend()
-          .local()
-          .node_local_core_assignment_enabled()) {
+    if (
+      _controller->get_topics_frontend()
+        .local()
+        .node_local_core_assignment_enabled()) {
         // We'll need to get core assignments from the health report
         auto hr_result = co_await _controller->get_health_monitor()
                            .local()
@@ -4395,9 +4400,10 @@ admin_server::query_automated_recovery(std::unique_ptr<ss::http::request> req) {
           cluster::map_log_to_response(std::move(status_log)), extended);
     }
 
-    if (auto status = co_await _topic_recovery_status_frontend.local().status(
-          controller_leader.value());
-        status.has_value()) {
+    if (
+      auto status = co_await _topic_recovery_status_frontend.local().status(
+        controller_leader.value());
+      status.has_value()) {
         co_return serialize_topic_recovery_status(status.value(), extended);
     }
 

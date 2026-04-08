@@ -296,8 +296,8 @@ struct partition_metadata
     std::optional<model::node_id> leader_node;
 
     friend std::ostream& operator<<(std::ostream&, const partition_metadata&);
-    friend bool operator==(const partition_metadata&, const partition_metadata&)
-      = default;
+    friend bool
+    operator==(const partition_metadata&, const partition_metadata&) = default;
 
     auto serde_fields() { return std::tie(id, replicas, leader_node); }
 };
@@ -355,8 +355,8 @@ struct topic_namespace {
         return tp == other.tp && ns == other.ns;
     }
 
-    friend bool operator==(const topic_namespace&, const topic_namespace&)
-      = default;
+    friend bool
+    operator==(const topic_namespace&, const topic_namespace&) = default;
 
     bool operator<(const topic_namespace_view& other) const {
         return topic_namespace_view(*this) < other;
@@ -438,8 +438,8 @@ struct topic_metadata
     std::vector<partition_metadata> partitions;
 
     friend std::ostream& operator<<(std::ostream&, const topic_metadata&);
-    friend bool operator==(const topic_metadata&, const topic_metadata&)
-      = default;
+    friend bool
+    operator==(const topic_metadata&, const topic_metadata&) = default;
 
     auto serde_fields() { return std::tie(tp_ns, partitions); }
 };

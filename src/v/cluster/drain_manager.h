@@ -56,8 +56,8 @@ public:
         std::optional<size_t> failed;
 
         friend std::ostream& operator<<(std::ostream&, const drain_status&);
-        friend bool operator==(const drain_status&, const drain_status&)
-          = default;
+        friend bool
+        operator==(const drain_status&, const drain_status&) = default;
 
         auto serde_fields() {
             return std::tie(
