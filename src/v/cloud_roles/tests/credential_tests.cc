@@ -111,8 +111,9 @@ BOOST_AUTO_TEST_CASE(test_azure_oauth_headers) {
         bh::request_header<> h{};
         BOOST_REQUIRE(!applier.add_auth(h));
         BOOST_REQUIRE_EQUAL(h.at("Authorization"), "Bearer a-token");
-        BOOST_REQUIRE_EQUAL(
-          h.at("x-ms-version"), cloud_roles::azure_storage_api_version);
+        // x-ms-version is set by abs_request_creator::add_auth, not by
+        // the credentials layer.
+        BOOST_REQUIRE(h.find("x-ms-version") == h.end());
     }
 
     applier.reset_creds(
@@ -122,7 +123,6 @@ BOOST_AUTO_TEST_CASE(test_azure_oauth_headers) {
         bh::request_header<> h{};
         BOOST_REQUIRE(!applier.add_auth(h));
         BOOST_REQUIRE_EQUAL(h.at("Authorization"), "Bearer second-token");
-        BOOST_REQUIRE_EQUAL(
-          h.at("x-ms-version"), cloud_roles::azure_storage_api_version);
+        BOOST_REQUIRE(h.find("x-ms-version") == h.end());
     }
 }
