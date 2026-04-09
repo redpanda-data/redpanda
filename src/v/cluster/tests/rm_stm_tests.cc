@@ -1200,3 +1200,63 @@ FIXTURE_TEST(test_raft_snapshot_roundtrip, rm_stm_test_fixture) {
         BOOST_REQUIRE((bool)offset_r);
     }
 }
+
+// Ensures that a transaction whose begin marker is in a local snapshot, but
+// whose data batches aren't is still able to be committed and aborted after a
+// restart.
+FIXTURE_TEST(
+  test_local_snapshot_preserves_open_tx_producer, rm_stm_test_fixture) {
+    start_and_disable_auto_abort();
+    auto* stm = _stm.get();
+
+    auto pid1 = model::producer_identity{1, 0};
+    auto pid2 = model::producer_identity{2, 0};
+    auto tx_seq = model::tx_seq{0};
+
+    BOOST_REQUIRE(stm->begin_tx(pid1, tx_seq, timeout, model::partition_id(0))
+                    .get()
+                    .has_value());
+    BOOST_REQUIRE(stm->begin_tx(pid2, tx_seq, timeout, model::partition_id(0))
+                    .get()
+                    .has_value());
+
+    // Take a local snapshot after the fences but before data batches.
+    // Both producers have open transactions (status=initialized) but no
+    // finished_requests.
+    stm->write_local_snapshot().get();
+
+    // Replicate data batches for both producers.
+    auto r1 = replicate_all(*stm, make_batches(pid1, 0, 5, true)).get();
+    BOOST_REQUIRE(r1.has_value());
+    auto r2 = replicate_all(*stm, make_batches(pid2, 0, 5, true)).get();
+    BOOST_REQUIRE(r2.has_value());
+    auto last_data_offset = r2.value().last_offset;
+
+    // Restart the entire raft group. On start, the STM loads the local
+    // snapshot from disk and replays the log from the snapshot offset.
+    restart_stm_and_raft();
+    stm = _stm.get();
+
+    // Ensure the producers weren't lost from restarting.
+    BOOST_REQUIRE(producers().contains(pid1.get_id()));
+    BOOST_REQUIRE(producers().contains(pid2.get_id()));
+
+    // Ensure the LSO is held back by the open transactions.
+    auto lso = stm->last_stable_offset();
+    BOOST_REQUIRE_NE(lso, model::invalid_lso);
+    BOOST_REQUIRE_LE(lso, model::offset(last_data_offset()));
+
+    // Ensure pid1's transaction can be committed
+    auto commit_result = stm->commit_tx(pid1, tx_seq, 2'000ms).get();
+    BOOST_REQUIRE_EQUAL(commit_result, cluster::tx::errc::none);
+
+    // Ensure pid2's transaction can be aborted
+    auto abort_result
+      = stm->abort_tx(pid2, tx_seq, model::timeout_clock::duration{2'000ms})
+          .get();
+    BOOST_REQUIRE_EQUAL(abort_result, cluster::tx::errc::none);
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [stm, last_data_offset]() {
+        return model::offset(last_data_offset()) < stm->last_stable_offset();
+    });
+}
