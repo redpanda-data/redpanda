@@ -168,6 +168,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/lsm",
         "//src/v/lsm/core:exceptions",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal:options",

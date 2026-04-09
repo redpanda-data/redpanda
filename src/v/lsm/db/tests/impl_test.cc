@@ -12,6 +12,7 @@
 #include "lsm/core/internal/options.h"
 #include "lsm/db/impl.h"
 #include "lsm/io/memory_persistence.h"
+#include "lsm/lsm.h"
 #include "random/generators.h"
 #include "ssx/clock.h"
 #include "test_utils/async.h"
@@ -154,6 +155,7 @@ public:
         _underlying_data_persistence->close().get();
         _meta_persistence->close().get();
         _shadow.clear();
+        _deleted_keys.clear();
     }
 
     void write_at_least(size_t size, lsm::db::impl* db = nullptr) {
@@ -179,6 +181,7 @@ public:
         db->apply(std::move(batch)).get();
         // Only apply writes if db write was a success
         for (auto& [k, v] : shadow_batch) {
+            _deleted_keys.erase(k);
             _shadow.insert_or_assign(k, std::move(v));
         }
     }
@@ -210,6 +213,7 @@ public:
         db->apply(std::move(batch)).get();
         for (auto& k : keys_to_delete) {
             _shadow.erase(k);
+            _deleted_keys.insert(k);
         }
     }
 
@@ -232,12 +236,14 @@ public:
         if (!db) {
             db = _db.get();
         }
+        std::vector<std::string> errors;
+
+        // Validate via iterator (range scan path).
         auto iter = db->create_iterator({.snapshot = snapshot}).get();
         auto it = shadow.begin();
-        std::vector<std::string> errors;
         for (iter->seek_to_first().get(); iter->valid(); iter->next().get()) {
             if (it == shadow.end()) {
-                errors.emplace_back("extra elements");
+                errors.emplace_back("iter: extra elements");
                 break;
             }
             bool key_eq = it->first == iter->key().user_key();
@@ -258,8 +264,44 @@ public:
             ++it;
         }
         if (it != shadow.end()) {
-            errors.emplace_back("missing elements");
+            errors.emplace_back("iter: missing elements");
         }
+
+        // Validate via point lookups (get() path). Construct the lookup
+        // key the same way snapshot::get() / database::get() does.
+        auto get_seqno = snapshot ? snapshot->seqno()
+                                  : lsm::internal::sequence_number::max();
+        for (const auto& [user_key, entry] : shadow) {
+            auto lookup_key = lsm::internal::key::encode({
+              .key = lsm::user_key_view(user_key),
+              .seqno = get_seqno,
+              .type = lsm::internal::value_type::tombstone,
+            });
+            auto result = db->get(lookup_key).get();
+            if (result.is_missing()) {
+                errors.push_back(fmt::format("get: key {} missing", user_key));
+            } else if (result.is_tombstone()) {
+                errors.push_back(
+                  fmt::format("get: key {} unexpectedly tombstoned", user_key));
+            }
+        }
+        for (const auto& user_key : _deleted_keys) {
+            if (shadow.contains(user_key)) {
+                continue;
+            }
+            auto lookup_key = lsm::internal::key::encode({
+              .key = lsm::user_key_view(user_key),
+              .seqno = get_seqno,
+              .type = lsm::internal::value_type::tombstone,
+            });
+            auto result = db->get(lookup_key).get();
+            if (!result.is_missing() && !result.is_tombstone()) {
+                errors.push_back(
+                  fmt::format(
+                    "get: deleted key {} returned a value", user_key));
+            }
+        }
+
         if (errors.empty()) {
             return testing::AssertionSuccess();
         }
@@ -313,6 +355,7 @@ public:
 
 protected:
     shadow_map _shadow;
+    std::set<ss::sstring> _deleted_keys;
     ss::lw_shared_ptr<lsm::internal::options> _options;
     std::unique_ptr<lsm::io::data_persistence> _underlying_data_persistence;
     lsm::io::memory_persistence_controller _meta_persistence_controller;
@@ -385,6 +428,12 @@ TEST_F(ImplTest, RandomizedWithDeletes) {
         EXPECT_TRUE(matches_shadow());
         delete_random_keys();
         EXPECT_TRUE(matches_shadow());
+
+        // Also test after flushes, with and without a snapshot.
+        _db->flush().get();
+        EXPECT_TRUE(matches_shadow());
+        auto snap = _db->create_snapshot();
+        EXPECT_TRUE(matches_shadow(_shadow, snap->get()));
     }
 }
 
@@ -591,6 +640,53 @@ TEST_F(ImplTest, GetFindsKeysWithDifferentSeqno) {
     // This would previously skip the file containing "aaa" at seqno 1.
     auto result = _db->get("aaa@2"_key).get();
     EXPECT_FALSE(result.is_missing());
+}
+
+// Regression test: snapshot::get() must detect tombstones in SST files.
+TEST_F(ImplTest, SnapshotGetDetectsTombstoneInSST) {
+    using lsm::sequence_number;
+    auto data_persistence = lsm::io::make_memory_data_persistence();
+    lsm::io::memory_persistence_controller meta_ctl;
+    auto meta_persistence = lsm::io::make_memory_metadata_persistence(
+      &meta_ctl);
+    auto db = lsm::database::open(
+                lsm::options{},
+                {
+                  .data = std::move(data_persistence),
+                  .metadata = std::move(meta_persistence),
+                })
+                .get();
+
+    // Write a value and then tombstone it.
+    {
+        auto wb = db.create_write_batch();
+        wb.put("foo", iobuf::from("bar"), sequence_number(1));
+        db.apply(std::move(wb)).get();
+    }
+    {
+        auto wb = db.create_write_batch();
+        wb.remove("foo", sequence_number(2));
+        db.apply(std::move(wb)).get();
+    }
+
+    // Flush so both the value and tombstone move to an SST file.
+    db.flush(ssx::instant::infinite_future()).get();
+    ASSERT_EQ(db.max_persisted_seqno(), sequence_number(2));
+
+    auto snap = db.create_snapshot();
+
+    // Iterator correctly sees no live keys (extents/terms path).
+    {
+        auto iter = snap.create_iterator().get();
+        iter.seek_to_first().get();
+        EXPECT_FALSE(iter.valid()) << "iterator should see no live keys";
+    }
+
+    // snapshot::get() must also return nullopt for the deleted key.
+    auto result = snap.get("foo").get();
+    EXPECT_FALSE(result.has_value())
+      << "snapshot::get() should not find a deleted key";
+    db.close().get();
 }
 
 TEST_F(ImplTest, RefreshOnWritableDbThrows) {
