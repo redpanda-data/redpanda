@@ -317,24 +317,12 @@ static ss::future<read_result> do_read_from_ntp(
               preferred_replica);
         }
     }
-    auto res_fut = co_await ss::coroutine::as_future(read_from_partition(
-      std::move(*kafka_partition),
-      maybe_lso.value(),
-      ntp_config.cfg,
-      deadline));
-    if (res_fut.failed()) {
-        auto ex = res_fut.get_exception();
-        if (ssx::is_shutdown_exception(ex)) {
-            co_return make_errored_read_result(
-              md_cache, ntp_config.ktp(), error_code::not_leader_for_partition);
-        }
-        std::rethrow_exception(ex);
-    }
+    auto result = co_await read_from_partition(
+      std::move(*kafka_partition), maybe_lso.value(), ntp_config.cfg, deadline);
 
     // Note that units can be both increased and decreassed here. Increases
     // happen because there is no strict limit on read size when reading the
     // obligatory batch.
-    auto result = std::move(res_fut.get());
     memory_units.adjust_units(result.data_size_bytes());
     result.memory_units = std::move(memory_units);
     co_return result;
@@ -555,6 +543,22 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
                       res.delta_from_tip_ms.value());
                 }
 
+                results[cfg_idx] = std::move(res);
+            })
+            .handle_exception([&, cfg_idx](const std::exception_ptr& e) {
+                bool is_shutdown = ssx::is_shutdown_exception(e);
+                // Return not_leader_for_partition error to force clients retry
+                // for potential transient errors.
+                auto ec = error_code::not_leader_for_partition;
+                vlogl(
+                  klog,
+                  is_shutdown ? ss::log_level::debug : ss::log_level::warn,
+                  "ntp {}: caught unhandled exception {} in fetch path",
+                  ntp_cfg.ktp(),
+                  e);
+                auto res = make_errored_read_result(
+                  md_cache, ntp_cfg.ktp(), ec);
+                res.partition = ntp_cfg.ktp().get_partition();
                 results[cfg_idx] = std::move(res);
             });
       });
