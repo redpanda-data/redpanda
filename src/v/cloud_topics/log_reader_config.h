@@ -30,7 +30,7 @@ struct cloud_topic_log_reader_config {
       size_t min_bytes,
       size_t max_bytes,
       std::optional<model::record_batch_type> type_filter,
-      std::optional<model::timestamp> time,
+      std::optional<model::timestamp> first_timestamp,
       model::opt_abort_source_t as,
       model::opt_client_address_t client_addr = std::nullopt,
       bool strict_max_bytes = false)
@@ -39,7 +39,7 @@ struct cloud_topic_log_reader_config {
       , min_bytes(min_bytes)
       , max_bytes(max_bytes)
       , type_filter(type_filter)
-      , first_timestamp(time)
+      , first_timestamp(first_timestamp)
       , abort_source(as)
       , client_address(std::move(client_addr))
       , strict_max_bytes(strict_max_bytes) {}
@@ -50,6 +50,7 @@ struct cloud_topic_log_reader_config {
     cloud_topic_log_reader_config(
       kafka::offset start_offset,
       kafka::offset max_offset,
+      std::optional<model::timestamp> first_timestamp = std::nullopt,
       model::opt_abort_source_t as = std::nullopt,
       model::opt_client_address_t client_addr = std::nullopt)
       : cloud_topic_log_reader_config(
@@ -58,7 +59,7 @@ struct cloud_topic_log_reader_config {
           0,
           std::numeric_limits<size_t>::max(),
           std::nullopt,
-          std::nullopt,
+          first_timestamp,
           as,
           std::move(client_addr),
           false) {}

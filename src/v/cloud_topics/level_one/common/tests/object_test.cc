@@ -197,6 +197,36 @@ TEST(L1ObjectsIndex, TimestampSearch) {
     }
 }
 
+// Regression test: file_position_before_max_timestamp must not crash when the
+// partition's index is empty. This can happen when the partition data is
+// smaller than the indexing interval.
+TEST(L1ObjectsIndex, TimestampSearchEmptyIndex) {
+    footer index;
+    auto tidp = model::topic_id_partition{
+      model::topic_id(uuid_t::create()), model::partition_id(0)};
+    index.partitions.emplace(
+      tidp,
+      footer::partition{
+        .file_position = 0,
+        .length = 200,
+        .indexes = {},
+        .first_offset = 0_o,
+        .last_offset = 10_o,
+        .max_timestamp = 1000_t,
+      });
+
+    // Any timestamp within range should return the partition start.
+    auto result = index.file_position_before_max_timestamp(tidp, 500_t);
+    EXPECT_EQ(result, (footer::seek_result{.file_position = 0, .length = 200}));
+
+    result = index.file_position_before_max_timestamp(tidp, 1000_t);
+    EXPECT_EQ(result, (footer::seek_result{.file_position = 0, .length = 200}));
+
+    // Timestamp beyond the partition max should return npos.
+    result = index.file_position_before_max_timestamp(tidp, 1001_t);
+    EXPECT_EQ(result, footer::npos);
+}
+
 TEST(L1Objects, OffsetSearch) {
     auto test_topic_id = model::topic_id(uuid_t::create());
     auto specs_by_tidp = std::vector<batches_by_tidp>{

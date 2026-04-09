@@ -424,8 +424,28 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
   const object_info& object,
   kafka::offset offset,
   model::timeout_clock::time_point /*deadline*/) {
-    auto seek_res = object.footer.file_position_before_kafka_offset(
-      _tidp, offset);
+    // When a timestamp hint is available, use the footer's timestamp index
+    // to narrow the seek position. Both offset and timestamp constraints
+    // must hold, so we start at whichever position is further into the
+    // file.
+    auto seek_res = [&] {
+        auto offset_seek = object.footer.file_position_before_kafka_offset(
+          _tidp, offset);
+        if (!_config.first_timestamp) {
+            return offset_seek;
+        }
+        auto time_seek = object.footer.file_position_before_max_timestamp(
+          _tidp, *_config.first_timestamp);
+        if (time_seek == l1::footer::npos) {
+            return offset_seek;
+        }
+        if (offset_seek == l1::footer::npos) {
+            return time_seek;
+        }
+        return time_seek.file_position > offset_seek.file_position
+                 ? time_seek
+                 : offset_seek;
+    }();
     if (seek_res == l1::footer::npos) {
         // Perhaps this object spans offsets in the metastore but has
         // no data because of compaction.
