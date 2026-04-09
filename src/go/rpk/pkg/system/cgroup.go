@@ -62,8 +62,8 @@ func calculateEffectiveCpus(cpuList string) (uint64, error) {
 		return 0, errors.New("no CPUs assigned to process")
 	}
 	cpus := 0
-	ranges := strings.Split(cpuList, ",")
-	for _, r := range ranges {
+	ranges := strings.SplitSeq(cpuList, ",")
+	for r := range ranges {
 		if r == "" {
 			return 0, fmt.Errorf("missing value in cpu list '%s'", cpuList)
 		}

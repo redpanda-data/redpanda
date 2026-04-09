@@ -230,7 +230,7 @@ func compareValues(original, updated reflect.Value, path string, changedPaths *[
 	}
 
 	// Dereference pointers
-	if original.Kind() == reflect.Ptr {
+	if original.Kind() == reflect.Pointer {
 		if original.IsNil() && updated.IsNil() {
 			return
 		}

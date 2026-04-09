@@ -1334,7 +1334,7 @@ func TestParamsHelpComplete(t *testing.T) {
 	h := ParamsHelp()
 	m := maps.Clone(xflags)
 	delete(m, xCloudEnvironment) // We leave this out of the list and docs on purpose.
-	for _, line := range strings.Split(h, "\n") {
+	for line := range strings.SplitSeq(h, "\n") {
 		key := strings.Split(line, "=")[0]
 		delete(m, key)
 	}
@@ -1347,7 +1347,7 @@ func TestParamsListComplete(t *testing.T) {
 	h := ParamsList()
 	m := maps.Clone(xflags)
 	delete(m, xCloudEnvironment) // We leave this out of the list and docs on purpose.
-	for _, line := range strings.Split(h, "\n") {
+	for line := range strings.SplitSeq(h, "\n") {
 		key := strings.Split(line, "=")[0]
 		delete(m, key)
 	}

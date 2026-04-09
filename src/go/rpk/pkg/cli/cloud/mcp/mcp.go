@@ -479,8 +479,8 @@ Use --install to configure the MCP client instead of serving stdio.`,
 // makePathPretty replaces home directory with ~/.
 func makePathPretty(path string) string {
 	if homeDir, err := os.UserHomeDir(); err == nil {
-		if strings.HasPrefix(path, homeDir) {
-			return "~" + strings.TrimPrefix(path, homeDir)
+		if after, ok := strings.CutPrefix(path, homeDir); ok {
+			return "~" + after
 		}
 	}
 	return path

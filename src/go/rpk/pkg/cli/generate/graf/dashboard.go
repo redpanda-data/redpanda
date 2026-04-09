@@ -68,9 +68,9 @@ type Option struct {
 }
 
 type Current struct {
-	Tags  []string    `json:"tags,omitempty"`
-	Text  string      `json:"text"`
-	Value interface{} `json:"value"`
+	Tags  []string `json:"tags,omitempty"`
+	Text  string   `json:"text"`
+	Value any      `json:"value"`
 }
 
 type GridPos struct {

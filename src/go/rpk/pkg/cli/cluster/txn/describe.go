@@ -81,7 +81,7 @@ If no transactional IDs are requested, all transactional IDs are printed.
 				"start-timestamp",
 				"timeout",
 			}
-			common := func(x kadm.DescribedTransaction) []interface{} {
+			common := func(x kadm.DescribedTransaction) []any {
 				return out.StructFields(struct {
 					Coordinator    int32
 					TxnID          string

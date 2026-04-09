@@ -196,8 +196,8 @@ func parseReferenceFlag(fs afero.Fs, referenceFlag string) ([]sr.SchemaReference
 	}
 	var references []sr.SchemaReference
 	if strings.Contains(referenceFlag, ":") {
-		split := strings.Split(referenceFlag, ",")
-		for _, v := range split {
+		split := strings.SplitSeq(referenceFlag, ",")
+		for v := range split {
 			match := referenceRegex.FindStringSubmatch(v)
 			if len(match) == 0 {
 				return nil, fmt.Errorf("unexpected format %q, please use name:subject:version format", referenceFlag)

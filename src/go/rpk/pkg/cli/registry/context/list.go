@@ -57,10 +57,7 @@ func listCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				results []ctxResult
 			)
 			for _, c := range contexts {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-
+				wg.Go(func() {
 					subject := schemaregistry.QualifySubject(c, sr.GlobalSubject)
 
 					modeCtx := sr.WithParams(cmd.Context(), sr.DefaultToGlobal)
@@ -83,7 +80,7 @@ func listCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 						mode:          modeStr,
 						compatibility: compatStr,
 					})
-				}()
+				})
 			}
 			wg.Wait()
 

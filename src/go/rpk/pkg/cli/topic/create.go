@@ -73,7 +73,7 @@ the cleanup.policy=compact config option set.
 			for k, v := range configs {
 				reqConfig := kmsg.NewCreateTopicsRequestTopicConfig()
 				reqConfig.Name = k
-				reqConfig.Value = kmsg.StringPtr(v)
+				reqConfig.Value = new(v)
 				reqConfigs = append(reqConfigs, reqConfig)
 			}
 			for _, topic := range topics {

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -541,17 +542,10 @@ func MaybePrintAuthSwitchMessage(priorAuth *RpkCloudAuth, currentAuth *RpkCloudA
 // IsLikelyCloudCluster checks if the broker URLs indicate this is a cloud
 // cluster.
 func IsLikelyCloudCluster(p *RpkProfile) bool {
-	for _, broker := range p.KafkaAPI.Brokers {
-		if isLikelyCloudBrokerURL(broker) {
-			return true
-		}
+	if slices.ContainsFunc(p.KafkaAPI.Brokers, isLikelyCloudBrokerURL) {
+		return true
 	}
-	for _, addr := range p.AdminAPI.Addresses {
-		if isLikelyCloudBrokerURL(addr) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(p.AdminAPI.Addresses, isLikelyCloudBrokerURL)
 }
 
 // isLikelyCloudBrokerURL checks if a broker URL matches known cloud cluster

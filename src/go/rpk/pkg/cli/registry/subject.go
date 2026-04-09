@@ -149,9 +149,7 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cob
 
 			for _, subject := range subjects {
 				qualified := schemaregistry.QualifySubject(*schemaCtx, subject)
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					var versions []int
 					var err error
 					if isPermanent {
@@ -178,7 +176,7 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cob
 						versions,
 						errStr,
 					})
-				}()
+				})
 			}
 			wg.Wait()
 			if isText, _, s, err := f.Format(results); !isText {

@@ -49,7 +49,7 @@ func stopCluster(ctx context.Context, c containerutil.Client) error {
 	wg.Add(len(nodes))
 	for _, node := range nodes {
 		var mu sync.Mutex
-		printf := func(msg string, args ...interface{}) {
+		printf := func(msg string, args ...any) {
 			mu.Lock()
 			defer mu.Unlock()
 			fmt.Printf(msg+"\n", args...)

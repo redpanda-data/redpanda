@@ -149,7 +149,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.my_object",
 			value: `{"name":"test","enabled":true}`,
 			check: func(st *testing.T, y *RedpandaYaml) {
-				require.Exactly(st, map[string]interface{}{
+				require.Exactly(st, map[string]any{
 					"name":    "test",
 					"enabled": true,
 				}, y.Redpanda.Other["my_object"])
@@ -697,7 +697,7 @@ schema_registry: {}
 				y := testRedpandaYaml()
 				size := 536870912
 				if y.Redpanda.Other == nil {
-					y.Redpanda.Other = make(map[string]interface{})
+					y.Redpanda.Other = make(map[string]any)
 				}
 				y.Redpanda.Other["log_segment_size"] = &size
 				return y

@@ -8,7 +8,6 @@
 // by the Apache License, Version 2.0
 
 //go:build linux
-// +build linux
 
 package redpanda
 

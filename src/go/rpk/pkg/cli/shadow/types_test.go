@@ -406,7 +406,7 @@ func TestShadowLinkConfigDrift(t *testing.T) {
 
 	// Use regular reflection to walk the Go struct.
 	shadowConfigMap := make(map[string]string)
-	shadowConfigType := reflect.TypeOf(ShadowLinkConfig{})
+	shadowConfigType := reflect.TypeFor[ShadowLinkConfig]()
 	walkType(shadowConfigType, "", shadowConfigMap, excludedPatterns)
 
 	// Compare the two maps
@@ -480,8 +480,8 @@ func protoKindToString(kind protoreflect.Kind) string {
 }
 
 func walkType(v reflect.Type, parentName string, m map[string]string, excludedPatterns []*regexp.Regexp) {
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
+	for field := range v.Fields() {
+		field := field
 		if field.IsExported() {
 			fullName := strings.Split(field.Tag.Get("json"), ",")[0]
 			if parentName != "" && fullName != "" {

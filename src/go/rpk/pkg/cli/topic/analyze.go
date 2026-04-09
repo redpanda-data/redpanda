@@ -740,7 +740,7 @@ func (cr *collectResult) printSummaries(cfg printConfig) error {
 		tw := out.NewTable(append([]string{"TOPIC"}, percentileNames...)...)
 		defer tw.Flush()
 		for _, ps := range pss {
-			vals := []interface{}{}
+			vals := []any{}
 			for _, pv := range ps.batchesPerSecond {
 				vals = append(vals, pv.value)
 			}
@@ -749,7 +749,7 @@ func (cr *collectResult) printSummaries(cfg printConfig) error {
 				out.Die("empty vals")
 			}
 
-			tw.Print(append([]interface{}{ps.topic}, vals...)...)
+			tw.Print(append([]any{ps.topic}, vals...)...)
 		}
 	})
 
@@ -757,7 +757,7 @@ func (cr *collectResult) printSummaries(cfg printConfig) error {
 		tw := out.NewTable(append([]string{"TOPIC"}, percentileNames...)...)
 		defer tw.Flush()
 		for _, ps := range pss {
-			vals := []interface{}{}
+			vals := []any{}
 			for _, pv := range ps.batchSizes {
 				vals = append(vals, pv.value)
 			}
@@ -765,7 +765,7 @@ func (cr *collectResult) printSummaries(cfg printConfig) error {
 				out.Die("empty vals")
 			}
 
-			tw.Print(append([]interface{}{ps.topic}, vals...)...)
+			tw.Print(append([]any{ps.topic}, vals...)...)
 		}
 	})
 	return nil

@@ -91,9 +91,9 @@ func connectVersion(ctx context.Context, connectPath string) (redpanda.Version, 
 	//   Date: <Build date>
 	versionPrefix := "Version: "
 	var versionStr string
-	for _, l := range strings.Split(sb.String(), "\n") {
-		if strings.HasPrefix(l, versionPrefix) {
-			versionStr = strings.TrimPrefix(l, versionPrefix)
+	for l := range strings.SplitSeq(sb.String(), "\n") {
+		if after, ok := strings.CutPrefix(l, versionPrefix); ok {
+			versionStr = after
 			break
 		}
 	}

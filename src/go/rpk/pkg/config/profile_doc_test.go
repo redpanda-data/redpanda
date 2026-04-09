@@ -303,7 +303,7 @@ func TestNeedsQuoting(t *testing.T) {
 func TestIsEmptyValue(t *testing.T) {
 	tests := []struct {
 		name     string
-		value    interface{}
+		value    any
 		expected bool
 	}{
 		{"empty string", "", true},
@@ -333,7 +333,7 @@ func TestProfileFieldDocsCompleteness(t *testing.T) {
 	// profileFieldDocs, excludedFields, or noCommentFields. When adding new
 	// fields to RpkProfile, you must add documentation for them.
 	var missing []string
-	collectUndocumentedFields(reflect.TypeOf(RpkProfile{}), "", &missing)
+	collectUndocumentedFields(reflect.TypeFor[RpkProfile](), "", &missing)
 
 	if len(missing) > 0 {
 		t.Errorf("The following fields are missing documentation in profileFieldDocs, excludedFields, or noCommentFields:\n  %s",
@@ -344,15 +344,15 @@ func TestProfileFieldDocsCompleteness(t *testing.T) {
 // collectUndocumentedFields recursively collects all YAML field paths that are
 // not documented.
 func collectUndocumentedFields(t reflect.Type, pathPrefix string, missing *[]string) {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
 		return
 	}
 
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
+		field := field
 
 		// Skip unexported fields
 		if !field.IsExported() {
@@ -394,7 +394,7 @@ func collectUndocumentedFields(t reflect.Type, pathPrefix string, missing *[]str
 
 		// Recurse into nested structs
 		fieldType := field.Type
-		if fieldType.Kind() == reflect.Ptr {
+		if fieldType.Kind() == reflect.Pointer {
 			fieldType = fieldType.Elem()
 		}
 		if fieldType.Kind() == reflect.Struct {

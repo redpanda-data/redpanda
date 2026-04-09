@@ -185,7 +185,7 @@ func printBrokerList(resp []brokerResponse, hasUUIDs, detailed bool) {
 		tw := out.NewTable(headers...)
 		defer tw.Flush()
 		for _, b := range resp {
-			row := []interface{}{
+			row := []any{
 				b.NodeID,
 				fmtString(b.Host),
 				fmtIntPtr(b.Port),
@@ -255,21 +255,21 @@ func formatOutput(s string) string {
 	return s
 }
 
-func fmtString(s string) interface{} {
+func fmtString(s string) any {
 	if s == "" {
 		return "-"
 	}
 	return s
 }
 
-func fmtIntPtr(p *int) interface{} {
+func fmtIntPtr(p *int) any {
 	if p == nil {
 		return "-"
 	}
 	return *p
 }
 
-func fmtBoolPtr(p *bool) interface{} {
+func fmtBoolPtr(p *bool) any {
 	if p == nil {
 		return "-"
 	}
