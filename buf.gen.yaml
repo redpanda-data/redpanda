@@ -3,7 +3,7 @@ managed:
   enabled: false
 inputs:
   # You can get the full commit sha from https://buf.build/redpandadata/core/docs
-  - module: buf.build/redpandadata/core:126381c18bff4945b4796cf4baebbcb6
+  - module: buf.build/redpandadata/core:36db7bac51c24fa2814cb010af7e2575
     paths:
       - redpanda/core/admin/v2/shadow_link.proto
       - redpanda/core/common/v1/acl.proto

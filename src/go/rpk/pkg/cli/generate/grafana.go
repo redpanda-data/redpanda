@@ -28,6 +28,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate/graf"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
@@ -756,7 +757,7 @@ func fetchMetrics(
 	if err != nil {
 		return nil, err
 	}
-	parser := &expfmt.TextParser{}
+	parser := expfmt.NewTextParser(model.UTF8Validation)
 	return parser.TextToMetricFamilies(bytes.NewBuffer(bs))
 }
 

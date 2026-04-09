@@ -280,7 +280,6 @@ use_repo(
     "com_github_actgardner_gogen_avro_v10",
     "com_github_alecaivazis_survey_v2",
     "com_github_avast_retry_go",
-    "com_github_aws_aws_sdk_go_v2",
     "com_github_aws_aws_sdk_go_v2_config",
     "com_github_aws_aws_sdk_go_v2_feature_ec2_imds",
     "com_github_beevik_ntp",
