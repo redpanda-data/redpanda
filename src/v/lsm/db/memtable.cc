@@ -186,10 +186,6 @@ void memtable::merge(ss::lw_shared_ptr<memtable> other) {
 }
 
 lookup_result memtable::get(internal::key_view key) {
-    dassert(
-      key.type() == internal::value_type::value,
-      "when getting from the memtable, keys must be of value type",
-      key.decode());
     auto it = _table.lower_bound(key.without_type());
     if (it != _table.end() && it->first.user_key() == key.user_key()) {
         if (it->first.type() == internal::value_type::tombstone) {

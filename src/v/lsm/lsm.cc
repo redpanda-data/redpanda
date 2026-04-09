@@ -194,7 +194,7 @@ ss::future<std::optional<iobuf>> database::get(std::string_view target) {
     auto key = internal::key::encode({
       .key = lsm::user_key_view(target),
       .seqno = internal::sequence_number::max(),
-      .type = internal::value_type::value,
+      .type = internal::value_type::tombstone,
     });
     auto result = co_await _impl->get(key);
     co_return std::move(result).take_value();
@@ -277,7 +277,7 @@ ss::future<std::optional<iobuf>> snapshot::get(std::string_view target) {
     auto key = internal::key::encode({
       .key = lsm::user_key_view(target),
       .seqno = _snap->seqno(),
-      .type = internal::value_type::value,
+      .type = internal::value_type::tombstone,
     });
     auto result = co_await _db->get(key);
     co_return std::move(result).take_value();
