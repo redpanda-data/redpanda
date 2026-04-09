@@ -28,6 +28,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.context.cloud_storage import ReadReplicaSourceMode, get_read_replica_sources
 from rptest.services.admin import Admin
+from rptest.clients.admin.v2 import Admin as AdminV2, metastore_pb, ntp_pb
 from rptest.services.cluster import cluster
 from rptest.services.kafka import KafkaServiceAdapter
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
@@ -701,6 +702,112 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             0,
             int(time.time() + datetime.timedelta(days=1).total_seconds()) * 1000,
         )
+        assert offset == -1, f"Expected -1, got {offset}"
+
+
+class CloudTopicsTimeQueryTest(RedpandaTest):
+    """Test time queries on cloud topics (direct-to-S3 storage mode)."""
+
+    record_size = 4096
+    max_object_size = 4 * 1024 * 1024
+
+    base_ts = int(time.time() - 600) * 1000
+
+    def setUp(self):
+        pass
+
+    def _set_up_cluster(self):
+        self.redpanda.set_extra_rp_conf(
+            {
+                "cloud_topics_enabled": True,
+                "enable_cluster_metadata_upload_loop": False,
+                "cloud_topics_long_term_flush_interval": 1000,
+                "cloud_topics_reconciliation_max_object_size": self.max_object_size,
+                "disable_batch_cache": True,
+                "enable_leader_balancer": False,
+                "log_retention_ms": -1,
+            }
+        )
+        si_settings = SISettings(
+            self.test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+        self.redpanda.set_si_settings(si_settings)
+        self.redpanda.start()
+
+    @cluster(num_nodes=4)
+    def test_timequery(self):
+        self._set_up_cluster()
+
+        topic_name = "tqtopic"
+        # Produce enough data to span multiple L1 objects so timequeries
+        # exercise cross-object lookup in the metastore.
+        num_objects = 4
+        msg_count = (self.max_object_size * num_objects) // self.record_size
+
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(
+            topic=topic_name,
+            partitions=1,
+            replicas=3,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                "message.timestamp.type": "CreateTime",
+                "retention.ms": "-1",
+            },
+        )
+
+        producer = KgoVerifierProducer(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topic=topic_name,
+            msg_size=self.record_size,
+            msg_count=msg_count,
+            batch_max_bytes=self.record_size * 10,
+            fake_timestamp_ms=self.base_ts,
+        )
+        producer.start()
+        producer.wait()
+
+        p = next(rpk.describe_topic(topic_name))
+        assert p.high_watermark == msg_count
+
+        admin = AdminV2(self.redpanda)
+
+        def is_reconciled():
+            metastore = admin.metastore()
+            req = metastore_pb.GetOffsetsRequest(
+                partition=ntp_pb.TopicPartition(topic=topic_name, partition=0)
+            )
+            next_offset = metastore.get_offsets(req=req).offsets.next_offset
+            return next_offset >= msg_count
+
+        wait_until(
+            is_reconciled,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="Data not reconciled to metastore",
+            retry_on_exc=True,
+        )
+
+        timestamps = {i: self.base_ts + i for i in range(msg_count)}
+
+        kcat = KafkaCat(self.redpanda)
+
+        step = msg_count // num_objects // 10
+        for o in range(0, msg_count, step):
+            ts = timestamps[o]
+            self.logger.info(f"Querying ts={ts} (expect offset={o})")
+            offset = kcat.query_offset(topic_name, 0, ts)
+            assert offset == o, f"Expected {o}, got {offset}"
+
+        offset = kcat.query_offset(topic_name, 0, self.base_ts - 1000)
+        assert offset == 0, f"Expected 0, got {offset}"
+
+        offset = kcat.query_offset(topic_name, 0, timestamps[msg_count - 1] + 1000)
         assert offset == -1, f"Expected -1, got {offset}"
 
 
