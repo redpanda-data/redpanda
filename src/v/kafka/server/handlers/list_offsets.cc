@@ -16,6 +16,7 @@
 #include "kafka/data/partition_proxy.h"
 #include "kafka/data/replicated_partition.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/request_context.h"
@@ -118,11 +119,17 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
               ktp.get_partition(), maybe_start_ofs.error());
         }
 
+        // TODO: get_term returns nullopt for cloud/tiered storage partitions
+        // (CORE-12700). In that case leader_epoch_from_term returns -1,
+        // which is better than the previous bug (returning the current
+        // leader epoch) but not the correct historical epoch.
+        auto start_epoch = leader_epoch_from_term(
+          kafka_partition->get_term(maybe_start_ofs.value()));
         co_return list_offsets_response::make_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           maybe_start_ofs.value(),
-          kafka_partition->leader_epoch());
+          start_epoch);
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {
         co_return list_offsets_response::make_partition(
@@ -140,7 +147,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           model::offset(-1),
-          kafka_partition->leader_epoch());
+          kafka::invalid_leader_epoch);
     }
 
     auto res_fut = co_await ss::coroutine::as_future(kafka_partition->timequery(
@@ -163,7 +170,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     auto res = res_fut.get();
     if (res) {
         co_return list_offsets_response::make_partition(
-          id, res->time, res->offset, kafka_partition->leader_epoch());
+          id, res->time, res->offset, leader_epoch_from_term(res->term));
     }
     co_return list_offsets_response::make_partition(id, error_code::none);
 }

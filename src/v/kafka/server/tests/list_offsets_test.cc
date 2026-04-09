@@ -189,6 +189,138 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
       == kafka::leader_epoch(-1));
 }
 
+FIXTURE_TEST(list_offsets_leader_epoch, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
+
+    auto base_ts = model::timestamp{10000};
+    auto ntp = make_data(base_ts);
+    auto shard = app.shard_table.local().shard_for(ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
+        return app.partition_manager.invoke_on(
+          *shard, [ntp](cluster::partition_manager& mgr) {
+              auto partition = mgr.get(ntp);
+              return partition
+                     && partition->committed_offset() >= model::offset(1);
+          });
+    }).get();
+
+    // Record the epoch of the data we just produced.
+    auto initial_epoch = app.partition_manager
+                           .invoke_on(
+                             *shard,
+                             [ntp](cluster::partition_manager& mgr) {
+                                 auto partition = mgr.get(ntp);
+                                 return partition->raft()->term();
+                             })
+                           .get();
+
+    // Bump the term without producing new data.  On a single-node
+    // cluster the node immediately re-elects itself at a higher term.
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp, this](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(ntp);
+            partition->raft()->step_down("bump epoch for test").get();
+            wait_for_leader(ntp.to_ntp(), 10s).get();
+        })
+      .get();
+
+    auto current_epoch = app.partition_manager
+                           .invoke_on(
+                             *shard,
+                             [ntp](cluster::partition_manager& mgr) {
+                                 auto partition = mgr.get(ntp);
+                                 return partition->raft()->term();
+                             })
+                           .get();
+
+    BOOST_REQUIRE(current_epoch > initial_epoch);
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    auto initial_leader_epoch = kafka::leader_epoch(initial_epoch());
+    auto current_leader_epoch = kafka::leader_epoch(current_epoch());
+
+    // Helper to send a ListOffsets request at v4 and return the
+    // partition response.
+    auto list_offset = [&client, &ntp](auto timestamp) {
+        kafka::list_offsets_request req;
+        req.data.topics.emplace_back(
+          kafka::list_offset_topic{
+            .name = ntp.get_topic(),
+            .partitions = {{
+              .partition_index = ntp.get_partition(),
+              .timestamp = timestamp,
+            }},
+          });
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(4)).get();
+        BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
+        return std::move(resp.data.topics[0].partitions[0]);
+    };
+
+    // Earliest: should return the record epoch, not the current epoch.
+    {
+        auto p = list_offset(kafka::list_offsets_request::earliest_timestamp);
+        BOOST_CHECK(p.offset == model::offset(0));
+        BOOST_CHECK_EQUAL(p.leader_epoch, initial_leader_epoch);
+    }
+
+    // Latest: should return the current leader epoch.
+    {
+        auto p = list_offset(kafka::list_offsets_request::latest_timestamp);
+        BOOST_CHECK(p.offset > model::offset(0));
+        BOOST_CHECK_EQUAL(p.leader_epoch, current_leader_epoch);
+    }
+
+    // Timequery: should return the record epoch, not the current epoch.
+    {
+        auto p = list_offset(base_ts);
+        BOOST_CHECK(p.offset == model::offset(0));
+        BOOST_CHECK_EQUAL(p.leader_epoch, initial_leader_epoch);
+    }
+
+    client.stop().then([&client] { client.shutdown(); }).get();
+}
+
+FIXTURE_TEST(list_offsets_empty_partition_epoch, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
+
+    // Create an empty topic — no records produced.
+    model::ntp ntp(
+      model::kafka_namespace,
+      model::topic(random_generators::gen_alphanum_string(8)),
+      model::partition_id(0));
+    add_topic(model::topic_namespace_view{ntp}, 1).get();
+    wait_for_partition_offset(ntp, model::offset(0)).get();
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    // Timequery on an empty partition: max_offset < min_offset triggers
+    // the empty partition path which should return leader_epoch=-1.
+    kafka::list_offsets_request req;
+    req.data.topics.emplace_back(
+      kafka::list_offset_topic{
+        .name = ntp.tp.topic,
+        .partitions = {{
+          .partition_index = ntp.tp.partition,
+          .timestamp = model::timestamp(0),
+        }},
+      });
+    auto resp = client.dispatch(std::move(req), kafka::api_version(4)).get();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
+    auto& p = resp.data.topics[0].partitions[0];
+    BOOST_CHECK(p.offset == model::offset(-1));
+    BOOST_CHECK(p.leader_epoch == kafka::leader_epoch(-1));
+}
+
 kafka::produce_request
 make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
     chunked_vector<kafka::produce_request::partition> partitions;
