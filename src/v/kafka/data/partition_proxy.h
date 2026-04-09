@@ -65,6 +65,7 @@ public:
         virtual checked<model::offset, error_code>
         last_stable_offset() const = 0;
         virtual kafka::leader_epoch leader_epoch() const = 0;
+        virtual std::optional<model::term_id> get_term(model::offset) const = 0;
         virtual ss::future<std::optional<model::offset>>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
 
@@ -157,6 +158,10 @@ public:
     cluster::partition_probe& probe() { return _impl->probe(); }
 
     kafka::leader_epoch leader_epoch() const { return _impl->leader_epoch(); }
+
+    std::optional<model::term_id> get_term(model::offset o) const {
+        return _impl->get_term(o);
+    }
 
     ss::future<std::optional<model::offset>>
     get_leader_epoch_last_offset(kafka::leader_epoch epoch) const {

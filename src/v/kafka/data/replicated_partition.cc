@@ -201,6 +201,16 @@ kafka::leader_epoch replicated_partition::leader_epoch() const {
     return leader_epoch_from_term(_partition->raft()->confirmed_term());
 }
 
+std::optional<model::term_id>
+replicated_partition::get_term(model::offset o) const {
+    auto log_offset = _translator->to_log_offset(o);
+    auto term = _partition->get_term(log_offset);
+    if (term == model::term_id{}) {
+        return std::nullopt;
+    }
+    return term;
+}
+
 // TODO: use previous translation speed up lookup
 ss::future<storage::translating_reader>
 replicated_partition::make_reader(kafka::log_reader_config cfg) {

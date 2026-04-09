@@ -121,6 +121,11 @@ kafka::leader_epoch partition_proxy::leader_epoch() const {
     return kafka::leader_epoch(static_cast<int32_t>(term()));
 }
 
+std::optional<model::term_id> partition_proxy::get_term(model::offset) const {
+    // TODO: implement for read replicas (CORE-12700)
+    return std::nullopt;
+}
+
 ss::future<std::optional<model::offset>>
 partition_proxy::get_leader_epoch_last_offset(kafka::leader_epoch epoch) const {
     auto snap_res = co_await get_snapshot();

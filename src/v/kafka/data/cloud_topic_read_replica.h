@@ -78,6 +78,7 @@ public:
 
     // Returns the leader epoch from the source partition's term.
     kafka::leader_epoch leader_epoch() const final;
+    std::optional<model::term_id> get_term(model::offset) const final;
 
     // Queries the cloud database for the last offset in the given epoch.
     ss::future<std::optional<model::offset>>
