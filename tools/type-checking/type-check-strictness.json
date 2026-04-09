@@ -377,6 +377,7 @@
         "rptest/tests/leaders_redirect_test.py",
         "rptest/tests/license_enforcement_test.py",
         "rptest/tests/limits_test.py",
+        "rptest/tests/list_offsets_epoch_test.py",
         "rptest/tests/log_compaction_test.py",
         "rptest/tests/lw_heartbeats_test.py",
         "rptest/tests/metrics_test.py",
