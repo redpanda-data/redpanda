@@ -735,7 +735,7 @@ redpanda_cc_btest(
 
 redpanda_cc_gtest(
     name = "group_tx_compaction_test",
-    timeout = "moderate",
+    timeout = "short",
     srcs = [
         "group_tx_compaction_test.cc",
     ],
@@ -747,6 +747,7 @@ redpanda_cc_gtest(
         "//src/v/model/tests:random",
         "//src/v/raft",
         "//src/v/redpanda/tests:fixture",
+        "//src/v/ssx:semaphore",
         "//src/v/storage",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:scoped_config",
