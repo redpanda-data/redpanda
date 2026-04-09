@@ -949,14 +949,9 @@ configuration::configuration()
       "Maximum number of active producer sessions per shard. Each shard "
       "tracks producer IDs using an LRU (Least Recently Used) eviction "
       "policy. When the configured limit is exceeded, the least recently "
-      "used producer IDs are evicted from the cache. IMPORTANT: The default "
-      "value is unlimited, which can lead to unbounded memory growth and "
-      "out-of-memory (OOM) crashes in production environments with heavy "
-      "producer usage, especially when using transactions or idempotent "
-      "producers. It is strongly recommended to set a reasonable limit in "
-      "production deployments.",
+      "used producer IDs are evicted from the cache.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::numeric_limits<uint64_t>::max(),
+      100000,
       {.min = 1})
   , max_transactions_per_coordinator(
       *this,
@@ -968,7 +963,7 @@ configuration::configuration()
       "invalid producer epoch or invalid_producer_id_mapping error (depends on "
       "the transaction execution phase).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::numeric_limits<uint64_t>::max(),
+      10000,
       {.min = 1})
   , enable_idempotence(
       *this,
