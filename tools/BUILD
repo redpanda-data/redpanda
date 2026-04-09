@@ -28,6 +28,7 @@ buildifier(
 DEV_CLUSTER_PYTHON_DEPS = [
     "@python_deps//aioboto3",
     "@python_deps//boto3",
+    "@python_deps//cryptography",
     "@python_deps//psutil",
     "@python_deps//pyyaml",
     "@python_deps//s3transfer",

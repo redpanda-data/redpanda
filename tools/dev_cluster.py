@@ -19,11 +19,14 @@
 #
 #   bazel run --config=fastbuild //tools:dev_cluster
 #   bazel run --config=fastbuild //tools:dev_cluster -- --nodes 1
+#   bazel run --config=fastbuild //tools:dev_cluster -- --tls
 #   bazel run --config=release //tools:dev_cluster -- --nodes 1 -- --logger-log-level=io=debug
 #
 import argparse
 import asyncio
 import dataclasses
+import datetime
+import ipaddress
 import json
 import os
 import pathlib
@@ -109,6 +112,180 @@ class NodeConfig:
     redpanda: RedpandaConfig
     pandaproxy: PandaproxyConfig
     schema_registry: SchemaRegistryConfig
+
+
+@dataclasses.dataclass
+class TLSConfig:
+    """Paths to TLS certificate files for a single node."""
+
+    ca_crt: Path
+    node_key: Path
+    node_crt: Path
+
+
+class TLSCertificateGenerator:
+    """
+    Generates a self-signed CA and per-node server certificates using the
+    ``cryptography`` library — no openssl CLI required.
+
+    All files are written under *base_dir*/tls/ (CA) and
+    *node_dir*/tls/ (per-node).
+    """
+
+    def __init__(self, base_dir: Path) -> None:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        self._x509 = x509
+        self._hashes = hashes
+        self._serialization = serialization
+        self._rsa = rsa
+        self._NameOID = NameOID
+
+        self._tls_dir = base_dir / "tls"
+        self._tls_dir.mkdir(parents=True, exist_ok=True)
+        self._ca_crt_path = self._tls_dir / "ca.crt"
+
+        self._ca_key, self._ca_cert = self._generate_ca()
+
+    @property
+    def ca_crt(self) -> Path:
+        return self._ca_crt_path
+
+    def _write_key(self, key: Any, path: Path) -> None:
+        path.write_bytes(
+            key.private_bytes(
+                encoding=self._serialization.Encoding.PEM,
+                format=self._serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=self._serialization.NoEncryption(),
+            )
+        )
+
+    def _write_cert(self, cert: Any, path: Path) -> None:
+        path.write_bytes(cert.public_bytes(self._serialization.Encoding.PEM))
+
+    def _generate_ca(self) -> tuple[Any, Any]:
+        key = self._rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = self._x509.Name(
+            [
+                self._x509.NameAttribute(self._NameOID.ORGANIZATION_NAME, "Redpanda"),
+                self._x509.NameAttribute(self._NameOID.COMMON_NAME, "Dev Cluster CA"),
+            ]
+        )
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (
+            self._x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(self._x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=365))
+            .add_extension(
+                self._x509.BasicConstraints(ca=True, path_length=None),
+                critical=True,
+            )
+            .add_extension(
+                self._x509.KeyUsage(
+                    digital_signature=False,
+                    content_commitment=False,
+                    key_encipherment=False,
+                    data_encipherment=False,
+                    key_agreement=False,
+                    key_cert_sign=True,
+                    crl_sign=True,
+                    encipher_only=False,
+                    decipher_only=False,
+                ),
+                critical=True,
+            )
+            .add_extension(
+                self._x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                critical=False,
+            )
+            .sign(key, self._hashes.SHA256())
+        )
+
+        self._write_key(key, self._tls_dir / "ca.key")
+        self._write_cert(cert, self._ca_crt_path)
+        return key, cert
+
+    def generate_node_cert(
+        self, node_index: int, host: str, node_dir: Path
+    ) -> TLSConfig:
+        tls_dir = node_dir / "tls"
+        tls_dir.mkdir(parents=True, exist_ok=True)
+
+        key_path = tls_dir / "node.key"
+        crt_path = tls_dir / "node.crt"
+        ca_crt_path = tls_dir / "ca.crt"
+
+        key = self._rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = self._x509.Name(
+            [
+                self._x509.NameAttribute(self._NameOID.ORGANIZATION_NAME, "Redpanda"),
+                self._x509.NameAttribute(
+                    self._NameOID.COMMON_NAME, f"node-{node_index}"
+                ),
+            ]
+        )
+
+        san_names: list[Any] = [self._x509.DNSName(host)]
+        try:
+            san_names.append(self._x509.IPAddress(ipaddress.ip_address(host)))
+        except ValueError:
+            pass
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (
+            self._x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(self._ca_cert.subject)
+            .public_key(key.public_key())
+            .serial_number(self._x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=365))
+            .add_extension(
+                self._x509.SubjectAlternativeName(san_names),
+                critical=True,
+            )
+            .add_extension(
+                self._x509.BasicConstraints(ca=False, path_length=None),
+                critical=True,
+            )
+            .add_extension(
+                self._x509.KeyUsage(
+                    digital_signature=True,
+                    content_commitment=False,
+                    key_encipherment=True,
+                    data_encipherment=False,
+                    key_agreement=False,
+                    key_cert_sign=False,
+                    crl_sign=False,
+                    encipher_only=False,
+                    decipher_only=False,
+                ),
+                critical=True,
+            )
+            .add_extension(
+                self._x509.ExtendedKeyUsage(
+                    [
+                        self._x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
+                        self._x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
+                    ]
+                ),
+                critical=False,
+            )
+            .sign(self._ca_key, self._hashes.SHA256())
+        )
+
+        self._write_key(key, key_path)
+        self._write_cert(cert, crt_path)
+        shutil.copy2(self._ca_crt_path, ca_crt_path)
+
+        return TLSConfig(ca_crt=ca_crt_path, node_key=key_path, node_crt=crt_path)
 
 
 @dataclasses.dataclass
@@ -701,6 +878,12 @@ async def main() -> None:
         default=3000,
     )
     parser.add_argument(
+        "--tls",
+        action=argparse.BooleanOptionalAction,
+        help="enable TLS for all APIs (kafka, admin, rpc)",
+        default=False,
+    )
+    parser.add_argument(
         "--config-overrides",
         type=str,
         help="JSON dictionary of config overrides to apply to all nodes",
@@ -733,6 +916,10 @@ async def main() -> None:
         args.base_admin_port += args.port_offset
         args.base_schema_registry_port += args.port_offset
         args.base_pandaproxy_port += args.port_offset
+
+    tls_gen: TLSCertificateGenerator | None = None
+    if args.tls:
+        tls_gen = TLSCertificateGenerator(args.directory)
 
     # Use the first 3 nodes as seed servers
     rpc_addresses = [
@@ -797,6 +984,19 @@ async def main() -> None:
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in config overrides: {e}")
 
+        if tls_gen is not None:
+            tls_cfg = tls_gen.generate_node_cert(i, args.listen_address, node_dir)
+            tls_listener = dict(
+                enabled=True,
+                require_client_auth=False,
+                cert_file=str(tls_cfg.node_crt),
+                key_file=str(tls_cfg.node_key),
+                truststore_file=str(tls_cfg.ca_crt),
+            )
+            config_dict["redpanda"]["kafka_api_tls"] = [tls_listener]
+            config_dict["redpanda"]["admin_api_tls"] = [tls_listener]
+            config_dict["redpanda"]["rpc_server_tls"] = tls_listener
+
         with open(conf_file, "w") as f:
             yaml_dump(config_dict, f, indent=2)
 
@@ -814,6 +1014,27 @@ async def main() -> None:
         prepare_node(i, None if args.racks is None else args.racks[i])
         for i in range(args.nodes)
     ]
+
+    if tls_gen is not None:
+        kafka_port = args.base_kafka_port
+        admin_port = args.base_admin_port
+        print()
+        print("=" * 60)
+        print("TLS enabled for all APIs")
+        print(f"  CA certificate: {tls_gen.ca_crt}")
+        print()
+        print("Connect with rpk:")
+        print(
+            f"  rpk cluster info -X brokers={args.listen_address}:{kafka_port}"
+            f" -X tls.enabled=true -X tls.ca={tls_gen.ca_crt}"
+        )
+        print()
+        print("Connect with kafka CLI:")
+        print(f"  bootstrap.servers={args.listen_address}:{kafka_port}")
+        print("  security.protocol=SSL")
+        print(f"  ssl.truststore.location=<truststore derived from {tls_gen.ca_crt}>")
+        print("=" * 60)
+        print()
 
     minio = None
     minio_task = None
