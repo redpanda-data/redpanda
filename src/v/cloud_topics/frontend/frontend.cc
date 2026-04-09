@@ -518,16 +518,17 @@ ss::future<std::optional<storage::timequery_result>>
 frontend::refine_timequery_result(
   coarse_grained_timequery_result input,
   model::opt_abort_source_t abort_source) {
+    // Pass the timestamp so the L1 reader can use the footer's timestamp
+    // index to seek directly to the relevant position, avoiding unnecessary
+    // cloud IO. In the case of L0, we should only need to materialize a
+    // single batch here, because the local log is correct to the granularity of
+    // a batch (but not within a batch due to placeholders).
     cloud_topic_log_reader_config reader_cfg(
       /*start_offset=*/input.start_offset,
       /*max_offset=*/input.last_offset,
-      /*as=*/abort_source);
-    // TODO(perf): In the case of L0, we should only need to materialize a
-    // single batch here, because the local log is correct to the granularity of
-    // a batch (but not within a batch due to placeholders). For L1, we could be
-    // giving the reader a timestamp so it uses the L1 object indexes to seek
-    // to the correct spot within the index, this would allow us to optimize IO
-    // against the cloud.
+      /*first_timestamp=*/input.time,
+      /*as=*/abort_source,
+      /*client_addr=*/std::nullopt);
     auto reader = co_await make_reader(reader_cfg);
     auto generator = std::move(reader.reader).generator(model::no_timeout);
     auto query_interval = model::bounded_offset_interval::checked(

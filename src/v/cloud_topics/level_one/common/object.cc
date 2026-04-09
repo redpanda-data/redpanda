@@ -237,7 +237,7 @@ footer::seek_result footer::file_position_before_kafka_offset(
 }
 
 footer::seek_result footer::file_position_before_max_timestamp(
-  const model::topic_id_partition& tidp, model::timestamp target) {
+  const model::topic_id_partition& tidp, model::timestamp target) const {
     auto [begin, end] = partitions.equal_range(tidp);
     auto filtered = std::views::filter(
       std::ranges::subrange{begin, end}, [&target](const auto& entry) {
