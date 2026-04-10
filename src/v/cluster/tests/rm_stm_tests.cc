@@ -20,7 +20,9 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
+#include "raft/consensus.h"
 #include "raft/consensus_utils.h"
+#include "raft/tests/raft_fixture_base.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/batch_generators.h"
@@ -1259,4 +1261,110 @@ FIXTURE_TEST(
     RPTEST_REQUIRE_EVENTUALLY(10s, [stm, last_data_offset]() {
         return model::offset(last_data_offset()) < stm->last_stable_offset();
     });
+}
+
+// 3-node fixture for testing rm_stm behavior on follower restart.
+struct rm_stm_multinode_fixture : raft::raft_fixture_base {
+    static constexpr auto large_timeout = std::chrono::minutes(30);
+
+    void setup() {
+        raft_fixture_base::start().get();
+        producer_state_manager
+          .start(
+            config::mock_binding(std::numeric_limits<uint64_t>::max()),
+            config::mock_binding(std::chrono::milliseconds(large_timeout)),
+            config::mock_binding(std::numeric_limits<size_t>::max()))
+          .get();
+        producer_state_manager
+          .invoke_on_all([](cluster::tx::producer_state_manager& mgr) {
+              return mgr.start();
+          })
+          .get();
+        for (auto i = 0; i < 3; ++i) {
+            add_node(model::node_id(i), model::revision_id(0));
+        }
+        for (auto& [_, n] : nodes()) {
+            do_start_node(*n);
+        }
+    }
+
+    void teardown() {
+        raft_fixture_base::stop().get();
+        producer_state_manager.stop().get();
+    }
+
+    void do_start_node(raft::raft_node_instance& n) {
+        n.initialise(all_vnodes()).get();
+        raft::state_machine_manager_builder builder;
+        builder.create_stm<cluster::rm_stm>(
+          ::logger,
+          n.raft().get(),
+          tx_gateway_frontend,
+          n.get_feature_table(),
+          producer_state_manager,
+          std::nullopt);
+        n.start(std::move(builder)).get();
+        get_stm(n)->testing_only_disable_auto_abort();
+    }
+
+    ss::shared_ptr<cluster::rm_stm> get_stm(raft::raft_node_instance& n) {
+        return n.raft()->stm_manager()->get<cluster::rm_stm>();
+    }
+
+    bool is_bootstrapped(ss::shared_ptr<cluster::rm_stm> stm) {
+        return stm->_bootstrap_committed_offset.has_value();
+    }
+
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    ss::sharded<cluster::tx::producer_state_manager> producer_state_manager;
+};
+
+// Regression test: verifies that apply_local_snapshot sets _apply_watermark
+// so that last_stable_offset() does not return invalid_lso after loading a
+// snapshot that contains an open transaction. Uses a 3-node raft group and
+// restarts a follower — a follower doesn't write leader-election config
+// batches, so _apply_watermark is only set by apply_local_snapshot().
+FIXTURE_TEST(
+  test_local_snapshot_sets_apply_watermark_for_open_tx,
+  rm_stm_multinode_fixture) {
+    setup();
+    auto cleanup = ss::defer([this] { teardown(); });
+
+    auto leader_id = wait_for_leader(10s).get();
+    auto leader_stm = get_stm(node(leader_id));
+
+    auto pid = model::producer_identity{1, 0};
+    auto tx_seq = model::tx_seq{0};
+    BOOST_REQUIRE(
+      leader_stm->begin_tx(pid, tx_seq, large_timeout, model::partition_id(0))
+        .get()
+        .has_value());
+
+    auto r = replicate_all(*leader_stm, ::make_batches(pid, 0, 5, true)).get();
+    BOOST_REQUIRE(r.has_value());
+    auto committed = node(leader_id).raft()->committed_offset();
+
+    // Pick a follower, wait for it to apply, then take a snapshot.
+    auto follower_id = *random_follower_id();
+    auto follower_stm = get_stm(node(follower_id));
+    follower_stm->wait(committed, model::timeout_clock::now() + 10s).get();
+    follower_stm->write_local_snapshot().get();
+
+    // Restart the follower preserving its data directory.
+    auto data_dir = node(follower_id).raft()->log()->config().base_directory();
+    stop_node(follower_id).get();
+    add_node(follower_id, model::revision_id(0), std::move(data_dir));
+    do_start_node(node(follower_id));
+    follower_stm = get_stm(node(follower_id));
+
+    // Wait for restarted follower STM to bootstrap and apply local snapshot.
+    RPTEST_REQUIRE_EVENTUALLY(
+      10s, [this, &follower_stm] { return is_bootstrapped(follower_stm); });
+    follower_stm->wait(committed, model::timeout_clock::now() + 10s).get();
+
+    // Without _apply_watermark = hdr.offset in apply_local_snapshot(),
+    // the watermark stays at 0 and the open transaction's first offset
+    // exceeds it, causing last_stable_offset() to return invalid_lso.
+    auto lso = follower_stm->last_stable_offset();
+    BOOST_REQUIRE_NE(lso, model::invalid_lso);
 }
