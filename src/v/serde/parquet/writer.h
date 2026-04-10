@@ -57,6 +57,11 @@ public:
         // Row groups are flushed to disk internally if they exceed this size.
         static constexpr int64_t default_row_group_size = 128_MiB;
         int64_t row_group_size = default_row_group_size;
+
+        // Max byte length for byte array column statistics. Values exceeding
+        // this are truncated with is_exact=false. Default matches Arrow/Spark.
+        static constexpr int32_t default_max_stats_length = 16;
+        int32_t max_stats_truncate_length = default_max_stats_length;
     };
 
     // Create a new parquet file writer using the given options that
