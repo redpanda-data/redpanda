@@ -60,7 +60,8 @@ TEST(Utf8TruncateMin, ThreeByteBoundary) {
     // Limit 3: fits exactly.
     EXPECT_EQ(utf8_truncate_min(euro, 3), euro);
     // Multi-codepoint: "a€b" (5 bytes), limit 4 → "a€" (4 bytes).
-    std::string s = "a\xE2\x82\xAC" "b";
+    std::string s = "a\xE2\x82\xAC"
+                    "b";
     EXPECT_EQ(utf8_truncate_min(s, 4), "a\xE2\x82\xAC");
     EXPECT_EQ(utf8_truncate_min(s, 3), "a"); // "€" starts at byte 1, needs 3
 }
@@ -71,7 +72,8 @@ TEST(Utf8TruncateMin, FourByteBoundary) {
     EXPECT_EQ(utf8_truncate_min(emoji, 3), "");
     EXPECT_EQ(utf8_truncate_min(emoji, 4), emoji);
     // "a😀b" (6 bytes), limit 5 → "a😀" (5 bytes).
-    std::string s = "a\xF0\x9F\x98\x80" "b";
+    std::string s = "a\xF0\x9F\x98\x80"
+                    "b";
     EXPECT_EQ(utf8_truncate_min(s, 5), "a\xF0\x9F\x98\x80");
     EXPECT_EQ(utf8_truncate_min(s, 4), "a"); // 😀 starts at 1, needs 4 bytes
 }
@@ -97,7 +99,8 @@ TEST(Utf8TruncateMax, LastAsciiIsMaxBeforeSurrogateSkip) {
     // Its UTF-8 encoding is 0xED 0x9F 0xBF.
     // next_cp = U+D800 (surrogate) → skip to U+E000.
     // U+E000 encodes to 0xEE 0x80 0x80.
-    std::string s = "a\xED\x9F\xBF" "extra";
+    std::string s = "a\xED\x9F\xBF"
+                    "extra";
     auto r = utf8_truncate_max(s, 4);
     ASSERT_TRUE(r.has_value());
     EXPECT_EQ(*r, std::string("a\xEE\x80\x80"));
@@ -106,7 +109,8 @@ TEST(Utf8TruncateMax, LastAsciiIsMaxBeforeSurrogateSkip) {
 TEST(Utf8TruncateMax, TwoByteCodpointIncrement) {
     // "aé" = "a" + U+00E9 (0xC3 0xA9), 3 bytes.
     // Increment U+00E9 → U+00EA (ê) = 0xC3 0xAA.
-    std::string s = "a\xC3\xA9" "extra";
+    std::string s = "a\xC3\xA9"
+                    "extra";
     auto r = utf8_truncate_max(s, 3);
     ASSERT_TRUE(r.has_value());
     EXPECT_EQ(*r, std::string("a\xC3\xAA"));
@@ -117,7 +121,8 @@ TEST(Utf8TruncateMax, TwoByteCodpointOverflow) {
     // Incrementing byte-by-byte (wrong) would give 0xC3 0xC0, which is
     // invalid UTF-8. The correct result increments U+00FF → U+0100 (Ā)
     // encoded as 0xC4 0x80.
-    std::string s = "a\xC3\xBF" "extra";
+    std::string s = "a\xC3\xBF"
+                    "extra";
     auto r = utf8_truncate_max(s, 3);
     ASSERT_TRUE(r.has_value());
     EXPECT_EQ(*r, std::string("a\xC4\x80"));
@@ -141,7 +146,8 @@ TEST(Utf8TruncateMax, FallbackToPreviousCodepoint) {
     // "a" + U+10FFFF (4 bytes), total 5 bytes.
     // U+10FFFF is the max codepoint; can't increment it.
     // Fall back to 'a' → 'b'.
-    std::string s = "a\xF4\x8F\xBF\xBF" "extra";
+    std::string s = "a\xF4\x8F\xBF\xBF"
+                    "extra";
     auto r = utf8_truncate_max(s, 5);
     ASSERT_TRUE(r.has_value());
     EXPECT_EQ(*r, "b");
@@ -165,7 +171,8 @@ TEST(Utf8TruncateMax, UpperBoundIsStrictlyGreater) {
 TEST(Utf8TruncateMax, SingleMaxAscii) {
     // The prefix is a single 0x7F (DEL), the max 1-byte codepoint.
     // next_cp = U+0080, encoded as 0xC2 0x80.
-    std::string s = "\x7F" "extra";
+    std::string s = "\x7F"
+                    "extra";
     auto r = utf8_truncate_max(s, 1);
     ASSERT_TRUE(r.has_value());
     EXPECT_EQ(*r, std::string("\xC2\x80"));

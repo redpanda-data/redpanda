@@ -58,6 +58,8 @@ public:
                   element,
                   {
                     .compress = _opts.compress,
+                    .max_stats_truncate_length
+                    = _opts.max_stats_truncate_length,
                   }),
               });
         });

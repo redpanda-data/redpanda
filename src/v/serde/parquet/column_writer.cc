@@ -12,11 +12,13 @@
 #include "serde/parquet/column_writer.h"
 
 #include "absl/numeric/int128.h"
+#include "bytes/iobuf_parser.h"
 #include "compression/compression.h"
 #include "container/chunked_vector.h"
 #include "hashing/crc32.h"
 #include "serde/parquet/column_stats_collector.h"
 #include "serde/parquet/encoding.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/util/variant_utils.hh>
@@ -48,6 +50,65 @@ public:
 };
 
 namespace {
+
+std::pair<iobuf, bool>
+truncate_min(iobuf value, int32_t max_len, bool is_utf8) {
+    if (max_len <= 0 || static_cast<int32_t>(value.size_bytes()) <= max_len) {
+        return {std::move(value), true};
+    }
+    if (!is_utf8) {
+        iobuf_parser parser(std::move(value));
+        return {parser.copy(max_len), false};
+    }
+    // Read one extra byte so utf8_truncate_min's "string fits" fast path
+    // doesn't fire and it properly scans for a codepoint boundary.
+    auto read_len = std::min(
+      value.size_bytes(), static_cast<size_t>(max_len) + 1);
+    iobuf_parser parser(std::move(value));
+    auto buf = parser.read_bytes(read_len);
+    auto sv = std::string_view(
+      reinterpret_cast<const char*>(buf.data()), buf.size());
+    auto prefix = utf8_truncate_min(sv, static_cast<size_t>(max_len));
+    iobuf result;
+    result.append(prefix.data(), prefix.size());
+    return {std::move(result), false};
+}
+
+std::optional<std::pair<iobuf, bool>>
+truncate_max(iobuf value, int32_t max_len, bool is_utf8) {
+    if (max_len <= 0 || static_cast<int32_t>(value.size_bytes()) <= max_len) {
+        return {{std::move(value), true}};
+    }
+    if (!is_utf8) {
+        iobuf_parser parser(std::move(value));
+        auto prefix = parser.read_bytes(max_len);
+        for (int i = static_cast<int>(prefix.size()) - 1; i >= 0; --i) {
+            if (prefix[i] < 0xFF) {
+                prefix[i]++;
+                iobuf result;
+                result.append(prefix.data(), i + 1);
+                return {{std::move(result), false}};
+            }
+        }
+        // All prefix bytes are 0xFF — no valid truncated upper bound.
+        return std::nullopt;
+    }
+    // Same +1 trick: give utf8_truncate_max a string longer than max_len so
+    // it takes the truncation path rather than the "string fits" fast path.
+    auto read_len = std::min(
+      value.size_bytes(), static_cast<size_t>(max_len) + 1);
+    iobuf_parser parser(std::move(value));
+    auto buf = parser.read_bytes(read_len);
+    auto sv = std::string_view(
+      reinterpret_cast<const char*>(buf.data()), buf.size());
+    auto opt = utf8_truncate_max(sv, static_cast<size_t>(max_len));
+    if (opt) {
+        iobuf result;
+        result.append(opt->data(), opt->size());
+        return {{std::move(result), false}};
+    }
+    return std::nullopt;
+}
 
 void extend_crc32(crc::crc32& crc, const iobuf& buf) {
     for (const auto& frag : buf) {
@@ -137,20 +198,31 @@ public:
         using bound_type = decltype(_flushed_stats)::bound_ref_type;
         std::optional<statistics::bound> max_bound;
         if (bound_type max = _current_page_stats.max()) {
-            // TODO: consider truncating large values instead of writing them
-            // (is_exact=false)
-            max_bound.emplace(
-              /*value=*/encode_for_stats(*max),
-              /*is_exact=*/true);
+            if constexpr (std::is_same_v<value_type, byte_array_value>) {
+                if (
+                  auto truncated = truncate_max(
+                    encode_for_stats(*max),
+                    _opts.max_stats_truncate_length,
+                    _opts.is_utf8_string)) {
+                    auto [val, is_exact] = std::move(*truncated);
+                    max_bound.emplace(std::move(val), is_exact);
+                }
+            } else {
+                max_bound.emplace(encode_for_stats(*max), true);
+            }
             _flushed_stats.record_value(*max);
         }
         std::optional<statistics::bound> min_bound;
         if (bound_type min = _current_page_stats.min()) {
-            // TODO: consider truncating large values instead of writing them
-            // (is_exact=false)
-            min_bound.emplace(
-              /*value=*/encode_for_stats(*min),
-              /*is_exact=*/true);
+            if constexpr (std::is_same_v<value_type, byte_array_value>) {
+                auto [val, is_exact] = truncate_min(
+                  encode_for_stats(*min),
+                  _opts.max_stats_truncate_length,
+                  _opts.is_utf8_string);
+                min_bound.emplace(std::move(val), is_exact);
+            } else {
+                min_bound.emplace(encode_for_stats(*min), true);
+            }
             _flushed_stats.record_value(*min);
         }
         _flushed_stats.record_null(_current_page_stats.null_count());
@@ -218,14 +290,29 @@ public:
         };
         using bound_type = decltype(_flushed_stats)::bound_ref_type;
         if (bound_type max = _flushed_stats.max()) {
-            full_stats.max.emplace(
-              /*value=*/encode_for_stats(*max),
-              /*is_exact=*/true);
+            if constexpr (std::is_same_v<value_type, byte_array_value>) {
+                if (
+                  auto truncated = truncate_max(
+                    encode_for_stats(*max),
+                    _opts.max_stats_truncate_length,
+                    _opts.is_utf8_string)) {
+                    auto [val, is_exact] = std::move(*truncated);
+                    full_stats.max.emplace(std::move(val), is_exact);
+                }
+            } else {
+                full_stats.max.emplace(encode_for_stats(*max), true);
+            }
         }
         if (bound_type min = _flushed_stats.min()) {
-            full_stats.min.emplace(
-              /*value=*/encode_for_stats(*min),
-              /*is_exact=*/true);
+            if constexpr (std::is_same_v<value_type, byte_array_value>) {
+                auto [val, is_exact] = truncate_min(
+                  encode_for_stats(*min),
+                  _opts.max_stats_truncate_length,
+                  _opts.is_utf8_string);
+                full_stats.min.emplace(std::move(val), is_exact);
+            } else {
+                full_stats.min.emplace(encode_for_stats(*min), true);
+            }
         }
         _flushed_stats.reset();
         _total_memory_usage = 0;
@@ -320,6 +407,8 @@ make_impl(const schema_element& e, byte_array_type t, options opts) {
           fixed_byte_array_value,
           ordering::fixed_byte_array>>(e, opts);
     }
+    opts.is_utf8_string = std::holds_alternative<string_type>(e.logical_type)
+                          || std::holds_alternative<enum_type>(e.logical_type);
     return std::make_unique<
       buffered_column_writer<byte_array_value, ordering::byte_array>>(e, opts);
 }

@@ -48,6 +48,13 @@ public:
     struct options {
         // If true, use zstd compression for the column data.
         bool compress;
+        // Max byte length for BYTE_ARRAY column statistics truncation.
+        // 0 disables truncation. Fixed-size types are always written exactly.
+        int32_t max_stats_truncate_length = 4096;
+        // Set automatically from the column's logical type (string/enum).
+        // When true, truncation respects UTF-8 character boundaries so that
+        // truncated bounds are always valid UTF-8 strings.
+        bool is_utf8_string = false;
     };
 
     explicit column_writer(const schema_element&, options);
