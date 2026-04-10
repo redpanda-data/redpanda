@@ -489,18 +489,14 @@ bool partition_manifest::contains(const segment_name& name) const {
     return _segments.contains(maybe_key->base_offset);
 }
 
-bool partition_manifest::segment_with_offset_range_exists(
-  model::offset base, model::offset committed) const {
-    if (auto iter = find(base); iter != end()) {
-        const auto expected_committed
-          = _segments.get_committed_offset_column().at_index(iter.index());
-
-        // false when committed offset doesn't match
-        return committed == *expected_committed;
-    } else {
-        // base offset doesn't match any segment
+bool partition_manifest::segment_with_same_identity_exists(
+  const partition_manifest::value& meta) const {
+    auto iter = find(meta.base_offset);
+    if (iter == end() || iter->committed_offset != meta.committed_offset) {
         return false;
     }
+    return generate_remote_segment_name(*iter)
+           == generate_remote_segment_name(meta);
 }
 
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
@@ -2768,12 +2764,10 @@ void partition_manifest::process_anomalies(
         }
 
         if (meta.committed_offset >= get_start_offset()) {
-            // The segment might have been missing because it was merged with
-            // something else. If the offset range doesn't match a segment
-            // exactly, discard the anomaly. Only segments from the STM
-            // manifest may be merged/reuploaded.
-            return !segment_with_offset_range_exists(
-              meta.base_offset, meta.committed_offset);
+            // The segment might have been missing because it was merged
+            // with something else or replaced by a compacted reupload.
+            // Only segments from the STM manifest may be merged/reuploaded.
+            return !segment_with_same_identity_exists(meta);
         } else {
             // Segment belongs to the archive. No reuploads are done here.
             return false;
@@ -2790,10 +2784,11 @@ void partition_manifest::process_anomalies(
           }
 
           if (anomaly_meta.at.committed_offset >= get_start_offset()) {
-              // Similarly to the missing segment case, if the boundaries of the
-              // segment where the anomaly was detected changed, drop it.
-              return !segment_with_offset_range_exists(
-                anomaly_meta.at.base_offset, anomaly_meta.at.committed_offset);
+              // Similarly to the missing segment case, if the boundaries
+              // of the segment where the anomaly was detected changed or
+              // the segment was replaced (e.g., compacted reupload),
+              // drop the anomaly.
+              return !segment_with_same_identity_exists(anomaly_meta.at);
           } else {
               return false;
           }
