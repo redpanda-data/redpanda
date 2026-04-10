@@ -1235,6 +1235,7 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture_base",
         "//src/v/random:generators",
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",

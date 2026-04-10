@@ -37,6 +37,7 @@
 #include <string_view>
 
 struct rm_stm_test_fixture;
+struct rm_stm_multinode_fixture;
 
 namespace cluster {
 
@@ -456,6 +457,7 @@ private:
     ss::rwlock _lso_lock;
 
     friend struct ::rm_stm_test_fixture;
+    friend struct ::rm_stm_multinode_fixture;
 };
 
 class rm_stm_factory : public state_machine_factory {
