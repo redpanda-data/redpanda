@@ -107,6 +107,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/serde/parquet:metadata",
         "@seastar",
     ],
 )
@@ -256,6 +257,7 @@ redpanda_cc_library(
     ],
     visibility = [":__subpackages__"],
     deps = [
+        "//src/v/serde/parquet:metadata",
         "//src/v/utils:named_type",
         "@fmt",
     ],
@@ -416,6 +418,9 @@ redpanda_cc_library(
     ],
     hdrs = [
         "local_parquet_file_writer.h",
+    ],
+    implementation_deps = [
+        "//src/v/serde/parquet:metadata",
     ],
     visibility = [":__subpackages__"],
     deps = [

@@ -13,6 +13,7 @@
 #include "datalake/base_types.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
+#include "serde/parquet/metadata.h"
 
 #include <seastar/core/iostream.hh>
 
@@ -187,7 +188,8 @@ public:
      */
     virtual ss::future<> flush() = 0;
 
-    virtual ss::future<writer_error> finish() = 0;
+    virtual ss::future<result<serde::parquet::file_metadata, writer_error>>
+    finish() = 0;
 };
 
 class parquet_ostream_factory {

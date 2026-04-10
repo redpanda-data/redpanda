@@ -87,7 +87,7 @@ public:
 
     ss::future<result<local_file_metadata, writer_error>> finish() override {
         return ss::make_ready_future<result<local_file_metadata, writer_error>>(
-          _result);
+          std::move(_result));
     }
 
 private:
@@ -137,10 +137,10 @@ public:
 
     ss::future<result<local_file_metadata, writer_error>> finish() override {
         auto result = co_await _writer->finish();
-        if (result != writer_error::ok) {
-            co_return result;
+        if (result.has_error()) {
+            co_return result.error();
         }
-        co_return _result;
+        co_return std::move(_result);
     }
 
 private:
