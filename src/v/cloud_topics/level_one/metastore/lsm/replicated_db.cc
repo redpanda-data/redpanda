@@ -17,7 +17,6 @@
 #include "cloud_topics/logger.h"
 #include "config/configuration.h"
 #include "lsm/io/cloud_cache_persistence.h"
-#include "lsm/io/cloud_persistence.h"
 #include "lsm/io/persistence.h"
 #include "lsm/proto/manifest.proto.h"
 #include "model/batch_builder.h"

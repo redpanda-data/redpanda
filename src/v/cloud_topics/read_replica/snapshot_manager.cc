@@ -17,7 +17,6 @@
 #include "cloud_topics/read_replica/snapshot_metastore.h"
 #include "config/configuration.h"
 #include "lsm/io/cloud_cache_persistence.h"
-#include "lsm/io/cloud_persistence.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
 

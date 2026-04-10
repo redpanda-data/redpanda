@@ -224,7 +224,6 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/metastore:domain_uuid",
         "//src/v/config",
         "//src/v/lsm/io:cloud_cache_persistence",
-        "//src/v/lsm/io:cloud_persistence",
         "//src/v/model:batch_builder",
         "//src/v/serde",
         "//src/v/ssx:clock",
@@ -259,7 +258,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/lsm",
-        "//src/v/lsm/io:cloud_persistence",
+        "//src/v/lsm/io:cloud_cache_persistence",
         "//src/v/model:batch_builder",
         "//src/v/serde",
     ],

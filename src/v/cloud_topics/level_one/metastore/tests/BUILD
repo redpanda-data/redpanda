@@ -90,7 +90,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/level_one/metastore/tests:state_utils",
         "//src/v/cloud_topics/tests:cluster_fixture",
         "//src/v/lsm",
-        "//src/v/lsm/io:cloud_persistence",
+        "//src/v/lsm/io:cloud_cache_persistence",
         "//src/v/lsm/io:memory_persistence",
         "//src/v/model",
         "//src/v/serde",

@@ -34,7 +34,6 @@ redpanda_cc_gtest(
         "//src/v/cloud_storage_clients",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/io:cloud_cache_persistence",
-        "//src/v/lsm/io:cloud_persistence",
         "//src/v/lsm/io:disk_persistence",
         "//src/v/lsm/io:memory_persistence",
         "//src/v/lsm/io:persistence",

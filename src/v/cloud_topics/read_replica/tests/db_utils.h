@@ -18,7 +18,7 @@
 #include "cloud_topics/level_one/metastore/lsm/state_update.h"
 #include "cloud_topics/level_one/metastore/lsm/write_batch_row.h"
 #include "container/chunked_hash_map.h"
-#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/lsm.h"
 #include "model/fundamental.h"
 #include "ssx/time.h"
@@ -35,7 +35,7 @@ namespace cloud_topics::read_replica::test_utils {
 // Opens or retrieves a cached writer database for the given domain.
 inline ss::future<lsm::database*> get_or_create_writer_db(
   l1::domain_uuid domain,
-  const std::filesystem::path& staging_base,
+  cloud_io::cache* cache,
   cloud_io::remote* remote,
   const cloud_storage_clients::bucket_name& bucket,
   chunked_hash_map<l1::domain_uuid, std::unique_ptr<lsm::database>>& dbs) {
@@ -48,8 +48,8 @@ inline ss::future<lsm::database*> get_or_create_writer_db(
     auto cloud_prefix = l1::domain_cloud_prefix(domain);
     cloud_storage_clients::object_key domain_prefix{cloud_prefix};
 
-    auto data_persist = co_await lsm::io::open_cloud_data_persistence(
-      staging_base, remote, bucket, domain_prefix, ss::sstring(domain()));
+    auto data_persist = co_await lsm::io::open_cloud_cache_data_persistence(
+      cache, remote, bucket, domain_prefix);
     auto meta_persist = co_await lsm::io::open_cloud_metadata_persistence(
       remote, bucket, domain_prefix);
 

@@ -18,7 +18,7 @@
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"
-#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/proto/manifest.proto.h"
 #include "ssx/sleep_abortable.h"
 

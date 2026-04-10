@@ -20,7 +20,6 @@
 #include "config/node_config.h"
 #include "gmock/gmock.h"
 #include "lsm/io/cloud_cache_persistence.h"
-#include "lsm/io/cloud_persistence.h"
 #include "lsm/io/persistence.h"
 #include "model/fundamental.h"
 #include "raft/tests/raft_fixture.h"

@@ -92,7 +92,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/metastore/lsm:state_reader",
         "//src/v/cloud_topics/level_one/metastore/lsm:state_update",
         "//src/v/config",
-        "//src/v/lsm/io:cloud_persistence",
+        "//src/v/lsm/io:cloud_cache_persistence",
         "//src/v/lsm/proto:manifest_redpanda_proto",
         "//src/v/model:batch_builder",
         "//src/v/ssx:future_util",

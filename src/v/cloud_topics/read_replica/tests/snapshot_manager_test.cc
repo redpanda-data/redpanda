@@ -8,13 +8,16 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_io/cache_service.h"
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/read_replica/snapshot_manager.h"
 #include "cloud_topics/read_replica/snapshot_metastore.h"
 #include "cloud_topics/read_replica/tests/db_utils.h"
+#include "config/configuration.h"
 #include "lsm/lsm.h"
+#include "storage/disk.h"
 #include "test_utils/tmp_dir.h"
 
 #include <seastar/core/coroutine.hh>
@@ -44,9 +47,32 @@ public:
           .cloud_storage_readreplica_manifest_sync_timeout_ms.set_value(500ms);
         staging_dir_ = std::make_unique<temporary_dir>("snapshot_manager_test");
 
-        // Writer and reader use separate staging directories - they communicate
-        // only through S3.
-        writer_staging_dir_ = staging_dir_->get_path() / "writer";
+        auto cache_dir = staging_dir_->get_path() / "cache";
+        cloud_io::cache::initialize(cache_dir).get();
+        writer_cache_
+          .start(
+            cache_dir,
+            30_GiB,
+            config::mock_binding<double>(0.0),
+            config::mock_binding<uint64_t>(100_MiB),
+            config::mock_binding<std::optional<double>>(std::nullopt),
+            config::mock_binding<uint32_t>(100000),
+            config::mock_binding<uint16_t>(3))
+          .get();
+        writer_cache_
+          .invoke_on_all([](cloud_io::cache& c) { return c.start(); })
+          .get();
+        writer_cache_
+          .invoke_on(
+            ss::shard_id{0},
+            [](cloud_io::cache& c) {
+                c.notify_disk_status(
+                  100ULL * 1024 * 1024 * 1024,
+                  50ULL * 1024 * 1024 * 1024,
+                  storage::disk_space_alert::ok);
+            })
+          .get();
+
         reader_staging_dir_ = staging_dir_->get_path() / "reader";
         snapshot_mgr_ = std::make_unique<read_replica::snapshot_manager>(
           reader_staging_dir_, &sr_->remote.local(), nullptr);
@@ -61,6 +87,7 @@ public:
             snapshot_mgr_->stop().get();
             snapshot_mgr_.reset();
         }
+        writer_cache_.stop().get();
         sr_.reset();
     }
 
@@ -69,7 +96,7 @@ public:
     write_data(l1::domain_uuid domain, kafka::offset base, kafka::offset last) {
         auto* db = co_await read_replica::test_utils::get_or_create_writer_db(
           domain,
-          writer_staging_dir_,
+          &writer_cache_.local(),
           &sr_->remote.local(),
           bucket_name,
           writer_dbs_);
@@ -113,7 +140,7 @@ public:
 
 protected:
     std::unique_ptr<temporary_dir> staging_dir_;
-    std::filesystem::path writer_staging_dir_;
+    ss::sharded<cloud_io::cache> writer_cache_;
     std::filesystem::path reader_staging_dir_;
     std::unique_ptr<cloud_io::scoped_remote> sr_;
     std::unique_ptr<read_replica::snapshot_manager> snapshot_mgr_;

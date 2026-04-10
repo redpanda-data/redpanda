@@ -24,7 +24,6 @@
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "config/node_config.h"
 #include "lsm/io/cloud_cache_persistence.h"
-#include "lsm/io/cloud_persistence.h"
 #include "lsm/io/persistence.h"
 #include "model/fundamental.h"
 #include "raft/tests/raft_fixture.h"
@@ -223,6 +222,7 @@ term_state_update_t make_terms(
 
 // Creates a manifest in cloud storage under the given domain UUID prefix.
 void flush_as_manifest(
+  cloud_io::cache* cache,
   cloud_io::remote* remote,
   const cloud_storage_clients::bucket_name& bucket,
   domain_uuid uuid,
@@ -231,16 +231,11 @@ void flush_as_manifest(
   term_state_update_t new_terms) {
     auto domain_prefix = cloud_storage_clients::object_key{
       domain_cloud_prefix(uuid)};
-    temporary_dir tmp("test");
     auto cloud_db = lsm::database::open(
                       {.database_epoch = db_epoch},
                       lsm::io::persistence{
-                        .data = lsm::io::open_cloud_data_persistence(
-                                  tmp.get_path(),
-                                  remote,
-                                  bucket,
-                                  domain_prefix,
-                                  ss::sstring(uuid()))
+                        .data = lsm::io::open_cloud_cache_data_persistence(
+                                  cache, remote, bucket, domain_prefix)
                                   .get(),
                         .metadata = lsm::io::open_cloud_metadata_persistence(
                                       remote, bucket, domain_prefix)
@@ -897,6 +892,7 @@ TEST_F(DbDomainManagerTest, TestBasicRestoreDomain) {
     auto new_objects = make_new_objects(tp, kafka::offset(0), 3, 10);
     auto new_terms = make_terms(tp, kafka::offset(0), model::term_id(1));
     flush_as_manifest(
+      &test_cache.local(),
       &sr->remote.local(),
       bucket_name,
       restore_uuid,
@@ -938,6 +934,7 @@ TEST_F(DbDomainManagerTest, TestRestoreWithConcurrentReads) {
     auto new_objects = make_new_objects(tp, kafka::offset(0), 3, 10);
     auto new_terms = make_terms(tp, kafka::offset(0), model::term_id(1));
     flush_as_manifest(
+      &test_cache.local(),
       &sr->remote.local(),
       bucket_name,
       restore_uuid,

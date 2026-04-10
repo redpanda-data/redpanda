@@ -16,7 +16,6 @@
 #include "cloud_storage_clients/types.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/io/cloud_cache_persistence.h"
-#include "lsm/io/cloud_persistence.h"
 #include "lsm/io/disk_persistence.h"
 #include "lsm/io/memory_persistence.h"
 #include "lsm/io/persistence.h"
@@ -265,51 +264,6 @@ TEST_P(PersistenceTest, RandomAccessReaderComprehensive) {
     persistence->remove_file({}).get();
 }
 
-// Mock cloud data persistence that owns s3_imposter and proxies to the real
-// cloud_data_persistence implementation. This allows cloud persistence to be
-// tested within the parameterized test framework.
-class mock_cloud_data_persistence : public data_persistence {
-public:
-    mock_cloud_data_persistence(
-      std::unique_ptr<s3_imposter_fixture> fixture,
-      std::unique_ptr<cloud_io::scoped_remote> sr,
-      std::unique_ptr<data_persistence> impl)
-      : fixture_(std::move(fixture))
-      , sr_(std::move(sr))
-      , impl_(std::move(impl)) {}
-
-    ss::future<std::unique_ptr<sequential_file_writer>>
-    open_sequential_writer(lsm_internal::file_handle handle) override {
-        return impl_->open_sequential_writer(handle);
-    }
-
-    ss::future<optional_pointer<random_access_file_reader>>
-    open_random_access_reader(lsm_internal::file_handle handle) override {
-        return impl_->open_random_access_reader(handle);
-    }
-
-    ss::future<> remove_file(lsm_internal::file_handle handle) override {
-        co_await impl_->remove_file(handle);
-        // We also need to remove the expectation from the s3 imposter as well
-        fixture_->remove_expectations(
-          chunked_vector<ss::sstring>::single(
-            fmt::format(
-              "test-prefix/{}", lsm_internal::sst_file_name(handle))));
-    }
-
-    ss::coroutine::experimental::generator<lsm_internal::file_handle>
-    list_files() override {
-        return impl_->list_files();
-    }
-
-    ss::future<> close() override { return impl_->close(); }
-
-private:
-    std::unique_ptr<s3_imposter_fixture> fixture_;
-    std::unique_ptr<cloud_io::scoped_remote> sr_;
-    std::unique_ptr<data_persistence> impl_;
-};
-
 // Wrapper for cloud_cache persistence that owns the cache and s3 imposter
 // lifecycle alongside the real implementation.
 class mock_cloud_cache_data_persistence : public data_persistence {
@@ -374,25 +328,6 @@ INSTANTIATE_TEST_SUITE_P(
         return open_disk_data_persistence(tmpdir / std::string_view(subdir));
     },
     []() -> ss::future<std::unique_ptr<data_persistence>> {
-        std::filesystem::path tmpdir = std::getenv("TEST_TMPDIR");
-        auto staging_subdir = ss::sstring(uuid_t::create());
-        auto staging = tmpdir / std::string_view(staging_subdir);
-
-        auto fixture = std::make_unique<s3_imposter_fixture>();
-        fixture->set_expectations_and_listen({});
-        auto sr = cloud_io::scoped_remote::create(10, fixture->conf);
-
-        auto impl = co_await open_cloud_data_persistence(
-          staging,
-          &sr->remote.local(),
-          fixture->bucket_name,
-          cloud_storage_clients::object_key("test-prefix"),
-          "test-prefix");
-
-        co_return std::make_unique<mock_cloud_data_persistence>(
-          std::move(fixture), std::move(sr), std::move(impl));
-    },
-    []() -> ss::future<std::unique_ptr<data_persistence>> {
         auto fixture = std::make_unique<s3_imposter_fixture>();
         fixture->set_expectations_and_listen({});
         auto sr = cloud_io::scoped_remote::create(10, fixture->conf);
@@ -440,8 +375,6 @@ INSTANTIATE_TEST_SUITE_P(
       case 1:
           return "disk";
       case 2:
-          return "cloud";
-      case 3:
           return "cloud_cache";
       default:
           return "unknown";

@@ -14,7 +14,7 @@
 #include "cloud_topics/level_one/metastore/lsm/lsm_update.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "lsm/core/exceptions.h"
-#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/io/persistence.h"
 #include "lsm/lsm.h"
 #include "lsm/proto/manifest.proto.h"

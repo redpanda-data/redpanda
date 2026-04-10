@@ -158,9 +158,6 @@ public:
         test_remote_label_ = cloud_storage::remote_label{
           model::cluster_uuid{uuid_t::create()}};
 
-        writer_staging_dir_ = std::filesystem::path{"state_refresh_loop_test"}
-                              / "writer";
-
         // Call base class SetUpAsync to initialize raft fixture
         raft::raft_fixture::SetUpAsync().get();
 
@@ -255,7 +252,7 @@ public:
       model::term_id term) {
         auto* db = co_await test_utils::get_or_create_writer_db(
           domain,
-          writer_staging_dir_,
+          &test_cache_.local(),
           &sr_->remote.local(),
           bucket_name,
           writer_dbs_);
@@ -286,7 +283,7 @@ protected:
     std::unique_ptr<cloud_io::scoped_remote> sr_;
     chunked_hash_map<l1::domain_uuid, std::unique_ptr<lsm::database>>
       writer_dbs_;
-    std::filesystem::path writer_staging_dir_;
+
     model::topic_id_partition test_tidp_;
     cloud_storage::remote_label test_remote_label_;
 };

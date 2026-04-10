@@ -43,7 +43,6 @@ redpanda_cc_gtest(
         "//src/v/config",
         "//src/v/container:chunked_vector",
         "//src/v/lsm/io:cloud_cache_persistence",
-        "//src/v/lsm/io:cloud_persistence",
         "//src/v/lsm/io:persistence",
         "//src/v/model",
         "//src/v/raft/tests:raft_fixture",

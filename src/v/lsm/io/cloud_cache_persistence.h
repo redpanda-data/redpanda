@@ -24,4 +24,11 @@ ss::future<std::unique_ptr<data_persistence>> open_cloud_cache_data_persistence(
   cloud_storage_clients::bucket_name bucket,
   cloud_storage_clients::object_key prefix);
 
+/// Open a metadata persistence backed by cloud storage.
+ss::future<std::unique_ptr<metadata_persistence>>
+open_cloud_metadata_persistence(
+  cloud_io::remote* remote,
+  cloud_storage_clients::bucket_name bucket,
+  cloud_storage_clients::object_key prefix);
+
 } // namespace lsm::io
