@@ -31,6 +31,7 @@ redpanda_cc_library(
     hdrs = [
         "metadata.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":schema",
         "//src/v/base",
@@ -71,6 +72,7 @@ redpanda_cc_library(
     hdrs = [
         "encoding.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":schema",
         ":value",

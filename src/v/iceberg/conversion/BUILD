@@ -225,6 +225,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "stats_parquet",
+    srcs = ["stats_parquet.cc"],
+    hdrs = ["stats_parquet.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/iceberg:datatypes",
+        "//src/v/serde/parquet:metadata",
+        "//src/v/serde/parquet:schema",
+    ],
+)
+
+redpanda_cc_library(
     name = "time_rfc3339",
     srcs = [
         "time_rfc3339.cc",
