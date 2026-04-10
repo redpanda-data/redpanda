@@ -74,7 +74,8 @@ struct data_file
           table_schema_id,
           partition_spec_id,
           partition_key,
-          column_stats);
+          column_stats,
+          split_offsets);
     }
     ss::sstring remote_path = "";
     size_t row_count = 0;
@@ -94,6 +95,10 @@ struct data_file
     // Added in version 2.
     std::optional<chunked_vector<column_stat_entry>> column_stats;
 
+    // Row group byte offsets within the parquet file, used by parallel
+    // readers to split work across row group boundaries.
+    std::optional<chunked_vector<int64_t>> split_offsets;
+
     data_file copy() const {
         data_file ret{
           .remote_path = remote_path,
@@ -111,6 +116,9 @@ struct data_file
                 stats_copy.push_back(e.copy());
             }
             ret.column_stats = std::move(stats_copy);
+        }
+        if (split_offsets) {
+            ret.split_offsets = split_offsets->copy();
         }
         return ret;
     }

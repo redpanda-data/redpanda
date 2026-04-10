@@ -789,6 +789,12 @@ TEST_F(FileCommitterTest, TestColumnStatsPropagateToManifest) {
             .null_value_count = 100,
           });
         file.column_stats = std::move(stats);
+
+        chunked_vector<int64_t> offsets;
+        offsets.push_back(100);
+        offsets.push_back(5000);
+        file.split_offsets = std::move(offsets);
+
         e.data.files.emplace_back(std::move(file));
     }
     state.topic_to_state[topic] = std::move(t_state);
@@ -841,4 +847,10 @@ TEST_F(FileCommitterTest, TestColumnStatsPropagateToManifest) {
         EXPECT_EQ(it->second, expected);
     }
     EXPECT_EQ(df.upper_bounds->find(field_id_t{2}), df.upper_bounds->end());
+
+    // split_offsets
+    ASSERT_TRUE(df.split_offsets.has_value());
+    ASSERT_EQ(df.split_offsets->size(), 2);
+    EXPECT_EQ((*df.split_offsets)[0], 100);
+    EXPECT_EQ((*df.split_offsets)[1], 5000);
 }

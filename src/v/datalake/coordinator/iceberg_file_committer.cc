@@ -317,6 +317,9 @@ public:
                         file.upper_bounds = std::move(upper);
                     }
                 }
+                if (f.split_offsets) {
+                    file.split_offsets = f.split_offsets->copy();
+                }
                 // For files created by a legacy Redpanda version that only
                 // supported hourly partitioning, choose current schema and
                 // spec ids.

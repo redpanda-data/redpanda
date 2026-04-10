@@ -257,6 +257,17 @@ upload_files(
           .column_stats = extract_column_stats(file.local_file),
         };
 
+        if (file.local_file.parquet_metadata) {
+            chunked_vector<int64_t> offsets;
+            for (const auto& rg :
+                 file.local_file.parquet_metadata->row_groups) {
+                offsets.push_back(rg.file_offset);
+            }
+            if (!offsets.empty()) {
+                uploaded.split_offsets = std::move(offsets);
+            }
+        }
+
         if (!is_custom_partitioning_enabled) {
             // Upgrade is still in progress, write out the hour value for old
             // versions.
