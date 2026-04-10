@@ -29,6 +29,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/timer.hh>
 
 #include <memory>
 #include <optional>
@@ -103,11 +104,24 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    void setup_metrics_for_tests() { _probe.setup_metrics(); }
     const reconciler_probe& get_probe_for_tests() const { return _probe; }
     size_t topic_scheduler_count_for_tests() const {
         return _topic_schedulers.size();
     }
+    bool has_active_reconciliation_for_tests() const {
+        for (const auto& [_, state_ptr] : _topic_schedulers) {
+            if (state_ptr->reconciling) {
+                return true;
+            }
+        }
+        return false;
+    }
+    ss::future<> flush_for_tests();
+
+    /// Trigger one reconciliation round for every attached topic, then
+    /// wait for all fibers to complete.  Requires the reconciliation
+    /// loop to be disabled (cloud_topics_disable_reconciliation_loop).
+    ss::future<> reconcile_all_for_tests();
 
     void attach_partition(
       const model::ntp&,
@@ -116,13 +130,6 @@ public:
       ss::lw_shared_ptr<cluster::partition>);
     void attach_source(ss::shared_ptr<source>);
     void detach(const model::ntp&);
-
-    /*
-     * One round of reconciliation in which data from one or more sources
-     * may be reconciled into an L1 object. Operates on the set of currently
-     * attached partitions.
-     */
-    ss::future<> reconcile();
 
 private:
     // NB: Partition attachment is the only part using ntps instead of
@@ -137,7 +144,9 @@ private:
     struct topic_scheduler_state {
         adaptive_interval<Clock> scheduler;
         typename Clock::time_point last_reconciled;
-        size_t partition_count{0};
+        ss::timer<Clock> timer;
+        bool reconciling{false};
+        chunked_hash_map<model::ntp, ss::shared_ptr<source>> sources;
 
         topic_scheduler_state(
           config::binding<std::chrono::milliseconds> min_interval,
@@ -148,7 +157,11 @@ private:
           config::binding<size_t> max_object_size);
     };
 
-    chunked_hash_map<model::topic_id, topic_scheduler_state> _topic_schedulers;
+    // Wrapped in unique_ptr because topic_scheduler_state is neither
+    // copyable (ss::timer) nor move-assignable (config::binding),
+    // but unique_ptr is move-assignable, satisfying chunked_hash_map.
+    chunked_hash_map<model::topic_id, std::unique_ptr<topic_scheduler_state>>
+      _topic_schedulers;
 
 private:
     /*
@@ -197,8 +210,18 @@ private:
         chunked_vector<commit_info> commits;
     };
 
-    // Top-level background worker that drives reconciliation.
-    ss::future<> reconciliation_loop();
+    // Timer callback for per-topic reconciliation. Spawns a short-lived
+    // fiber that reconciles one topic. When force_for_tests is true, the
+    // disable_reconciliation_loop config check is skipped.
+    void start_topic_round(model::topic_id tid, bool force_for_tests = false);
+
+    // Complete a topic round: clear the reconciling flag, adapt the
+    // interval, and either re-arm the timer or erase the scheduler
+    // if no sources remain.
+    void finish_topic_round(model::topic_id tid, size_t bytes_produced);
+
+    // Arm the timer for a topic based on its adaptive interval.
+    void arm_timer(topic_scheduler_state& state);
 
     /*
      * Reconcile a set of sources into an object with id `oid`.
@@ -265,25 +288,11 @@ private:
       std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder);
 
     /*
-     * Partition sources by topic for reconciliation.
-     */
-    chunked_vector<chunked_vector<ss::shared_ptr<source>>>
-    partition_sources_by_topic(chunked_vector<ss::shared_ptr<source>> sources);
-
-    /*
      * Get or create a scheduler state for the given topic.
      * New topics are initialized with last_reconciled = time_point::min()
      * making them immediately due for reconciliation.
      */
     topic_scheduler_state& get_or_create_topic_scheduler(model::topic_id tid);
-
-    /*
-     * Compute the time to wait until the next topic is due for reconciliation.
-     * Returns duration::zero() if any topic is already due.
-     * Returns min_interval if sources exist but no schedulers yet.
-     * Returns max_interval if no sources exist.
-     */
-    typename Clock::duration compute_next_wait() const;
 
     /*
      * Reconcile a set of sources. Creates a metadata builder, maps sources to
@@ -299,6 +308,7 @@ private:
     cluster::metadata_cache* _metadata_cache;
     ss::gate _gate;
     ss::abort_source _as;
+    bool _started{false};
     reconciler_probe _probe;
     ss::scheduling_group _reconciler_sg;
     // Captured at construction so that changing the config at runtime

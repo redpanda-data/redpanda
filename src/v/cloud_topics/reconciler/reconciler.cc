@@ -35,6 +35,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/util/log.hh>
 
 #include <algorithm>
@@ -100,74 +101,41 @@ typename reconciler<Clock>::topic_scheduler_state&
 reconciler<Clock>::get_or_create_topic_scheduler(model::topic_id tid) {
     auto it = _topic_schedulers.find(tid);
     if (it != _topic_schedulers.end()) {
-        return it->second;
+        return *it->second;
     }
 
-    auto [inserted_it, _] = _topic_schedulers.emplace(
-      std::piecewise_construct,
-      std::forward_as_tuple(tid),
-      std::forward_as_tuple(
-        config::shard_local_cfg()
-          .cloud_topics_reconciliation_min_interval.bind(),
-        config::shard_local_cfg()
-          .cloud_topics_reconciliation_max_interval.bind(),
-        config::shard_local_cfg()
-          .cloud_topics_reconciliation_target_fill_ratio.bind(),
-        config::shard_local_cfg()
-          .cloud_topics_reconciliation_speedup_blend.bind(),
-        config::shard_local_cfg()
-          .cloud_topics_reconciliation_slowdown_blend.bind(),
-        config::shard_local_cfg()
-          .cloud_topics_reconciliation_max_object_size.bind()));
-    return inserted_it->second;
-}
-
-template<class Clock>
-typename Clock::duration reconciler<Clock>::compute_next_wait() const {
-    auto default_wait = typename Clock::duration(
-      config::shard_local_cfg().cloud_topics_reconciliation_max_interval());
-
-    if (_topic_schedulers.empty()) {
-        if (_sources.empty()) {
-            return default_wait;
-        }
-        // We have sources but no schedulers yet - they'll be created in
-        // reconcile(). Return min_interval to create them promptly.
-        return typename Clock::duration(
-          config::shard_local_cfg().cloud_topics_reconciliation_min_interval());
-    }
-
-    auto now = Clock::now();
-    auto min_wait = Clock::duration::max();
-
-    for (const auto& [_, scheduler_state] : _topic_schedulers) {
-        auto next_due = scheduler_state.last_reconciled
-                        + scheduler_state.scheduler.current_interval();
-
-        if (next_due <= now) {
-            return Clock::duration::zero();
-        }
-
-        auto wait = next_due - now;
-        min_wait = std::min(min_wait, wait);
-    }
-
-    return std::min(min_wait, default_wait);
+    auto state = std::make_unique<topic_scheduler_state>(
+      config::shard_local_cfg().cloud_topics_reconciliation_min_interval.bind(),
+      config::shard_local_cfg().cloud_topics_reconciliation_max_interval.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_target_fill_ratio.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_speedup_blend.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_slowdown_blend.bind(),
+      config::shard_local_cfg()
+        .cloud_topics_reconciliation_max_object_size.bind());
+    state->timer.set_callback([this, tid] { start_topic_round(tid); });
+    auto [inserted_it, _2] = _topic_schedulers.emplace(tid, std::move(state));
+    return *inserted_it->second;
 }
 
 template<class Clock>
 ss::future<> reconciler<Clock>::start() {
     _probe.setup_metrics();
-    ssx::spawn_with_gate(_gate, [this] {
-        return ss::with_scheduling_group(
-          _reconciler_sg, [this] { return reconciliation_loop(); });
-    });
+    _started = true;
+    for (auto& [_, state] : _topic_schedulers) {
+        arm_timer(*state);
+    }
     co_return;
 }
 
 template<class Clock>
 ss::future<> reconciler<Clock>::stop() {
     _as.request_abort();
+    for (auto& [_, state] : _topic_schedulers) {
+        state->timer.cancel();
+    }
     co_await _gate.close();
 }
 
@@ -194,7 +162,13 @@ void reconciler<Clock>::attach_source(ss::shared_ptr<source> src) {
 
     auto& scheduler_state = get_or_create_topic_scheduler(
       src->topic_id_partition().topic_id);
-    ++scheduler_state.partition_count;
+    scheduler_state.sources.emplace(src->ntp(), src);
+
+    if (
+      _started && !scheduler_state.timer.armed()
+      && !scheduler_state.reconciling) {
+        arm_timer(scheduler_state);
+    }
 }
 
 template<class Clock>
@@ -215,224 +189,17 @@ void reconciler<Clock>::detach(const model::ntp& ntp) {
         if (
           auto sched_it = _topic_schedulers.find(topic_id);
           sched_it != _topic_schedulers.end()) {
-            if (--sched_it->second.partition_count == 0) {
-                _topic_schedulers.erase(sched_it);
+            sched_it->second->sources.erase(ntp);
+            if (sched_it->second->sources.empty()) {
+                sched_it->second->timer.cancel();
+                // If a reconciliation fiber is in-flight, keep the entry
+                // alive — the fiber will clean up on completion.
+                if (!sched_it->second->reconciling) {
+                    _topic_schedulers.erase(sched_it);
+                }
             }
         }
     }
-}
-
-template<class Clock>
-ss::future<> reconciler<Clock>::reconciliation_loop() {
-    /*
-     * Polling is not particularly efficient, and in practice, we'll probably
-     * want to look into receiving upcalls from partitions announcing that new
-     * data is available.
-     * TODO: Investigate performance of polling and alternatives to polling.
-     */
-
-    auto deferred = ss::defer(
-      [] { vlog(lg.debug, "Reconciliation loop exiting"); });
-    while (!_gate.is_closed()) {
-        auto next_wait = compute_next_wait();
-
-        try {
-            co_await ss::sleep_abortable<Clock>(next_wait, _as);
-        } catch (const ss::sleep_aborted&) {
-            // If the sleep was aborted, we can exit our loop
-            co_return;
-        }
-
-        if (
-          config::shard_local_cfg()
-            .cloud_topics_disable_reconciliation_loop()) {
-            vlog(lg.debug, "Reconciliation loop disabled, skipping iteration");
-            continue;
-        }
-
-        // clang-format off
-        /*
-         * Error Handling
-         *
-         * The reconciler uses nested exception boundaries to ensure proper
-         * cleanup and partial failure recovery. One object's failure prevents
-         * reconciliation of its partitions for this round, but not other
-         * partitions'.
-         *
-         * reconciliation_loop()
-         * └─ try/catch → catches unhandled exceptions, logs, better luck next time
-         *    └─ reconcile()
-         *       └─ FOR EACH OBJECT:
-         *          └─ as_future(reconcile_partitions) → catches all exceptions
-         *             └─ reconcile_partitions(oid, partitions)
-         *                ├─ make_context(oid) → returns error if multipart
-         *                │    upload initiation fails
-         *                │
-         *                ├─ as_future(build_object)
-         *                │  └─ can throw in builder->finish() or in
-         *                │     build_from_reader() (write failures propagate
-         *                │     since the byte stream can't skip a failed
-         *                │     part). On success, finish() +
-         *                │     close_builder() closes the multipart stream,
-         *                │     completing the upload.
-         *                │
-         *                └─ GUARANTEED CLEANUP (always executed):
-         *                   ├─ ctx.cleanup_upload() → aborts multipart if
-         *                   │    not finalized (no-op on success)
-         *                   └─ ctx.close_builder() → closes object builder
-         *
-         * Failure Scopes:
-         * - Single object failures:
-         *   • Multipart upload initiation fails
-         *   • No data in partitions (empty object)
-         *   • Build exceptions (including write/part upload failures)
-         *   • Individual partition reader creation failures
-         *   • Object-level metadata failure
-         *
-         * - Reconciliation round failures:
-         *   • Final metastore batch commit failure
-         *   • Any unhandled exception in reconcile()
-         *
-         * - Reconciliation loop termination:
-         *   • Shutdown exceptions only
-         *
-         * Resource Guarantees:
-         * - Builder is ALWAYS closed if created
-         * - Multipart upload is ALWAYS finalized (completed or aborted)
-         * - Failures in one object don't leak resources or affect others
-         * - Reconciliation will try again next schedule point after failure,
-         *   except for shutdown
-         */
-        // clang-format on
-        try {
-            co_await reconcile();
-        } catch (...) {
-            const auto is_shutdown = ssx::is_shutdown_exception(
-              std::current_exception());
-            vlogl(
-              lg,
-              is_shutdown ? ss::log_level::debug : ss::log_level::info,
-              "Recoverable error during reconciliation: {}",
-              std::current_exception());
-        }
-    }
-}
-
-template<class Clock>
-ss::future<> reconciler<Clock>::reconcile() {
-    chunked_vector<ss::shared_ptr<source>> sources;
-    // Make a copy of the sources to not worry about concurrent modification.
-    for (auto& [_, src] : _sources) {
-        sources.push_back(src);
-    }
-    vlog(
-      lg.debug,
-      "Reconciliation loop tick with {} attached partitions",
-      sources.size());
-    if (sources.empty()) {
-        co_return;
-    }
-
-    auto topics = partition_sources_by_topic(std::move(sources));
-
-    // Filter to only topics that are due for reconciliation.
-    auto now = Clock::now();
-    chunked_vector<chunked_vector<ss::shared_ptr<source>>> due_topics;
-
-    // No yield points between the source copy and here, so the scheduler
-    // map must be in sync with sources: one scheduler per distinct topic.
-    vassert(
-      topics.size() == _topic_schedulers.size(),
-      "Topic scheduler count ({}) doesn't match source topic count ({})",
-      _topic_schedulers.size(),
-      topics.size());
-
-    for (auto& topic_sources : topics) {
-        vassert(!topic_sources.empty(), "Empty topic source set");
-        auto topic_id = topic_sources.front()->topic_id_partition().topic_id;
-        auto sched_it = _topic_schedulers.find(topic_id);
-        if (sched_it == _topic_schedulers.end()) {
-            continue;
-        }
-        auto next_due = sched_it->second.last_reconciled
-                        + sched_it->second.scheduler.current_interval();
-
-        if (now >= next_due) {
-            due_topics.push_back(std::move(topic_sources));
-        }
-    }
-
-    vlog(
-      lg.debug,
-      "Reconciling {} due topics of {} total",
-      due_topics.size(),
-      topics.size());
-
-    if (due_topics.empty()) {
-        co_return;
-    }
-
-    // Reconcile due topics concurrently. Total parallel objects is bounded
-    // by the semaphore. The concurrency bound here is set to ensure we can
-    // saturate that bound without potentially launching a future for every
-    // due topic.
-    auto parallelism
-      = config::shard_local_cfg().cloud_topics_reconciliation_parallelism();
-    size_t num_domains
-      = config::shard_local_cfg().cloud_topics_num_metastore_partitions();
-    if (_metadata_cache) {
-        auto md = _metadata_cache->get_topic_metadata_ref(
-          model::l1_metastore_nt);
-        if (md) {
-            num_domains = md->get().get_configuration().partition_count;
-        }
-    }
-    auto max_concurrent_topics = (parallelism + num_domains - 1) / num_domains;
-    co_await ss::max_concurrent_for_each(
-      std::make_move_iterator(due_topics.begin()),
-      std::make_move_iterator(due_topics.end()),
-      max_concurrent_topics,
-      [this, now](
-        this auto,
-        chunked_vector<ss::shared_ptr<source>> topic_sources) -> ss::future<> {
-          auto topic_id = topic_sources.front()->topic_id_partition().topic_id;
-          auto bytes = co_await reconcile_source_set(std::move(topic_sources));
-
-          // Update the topic's scheduler state. Adapt based on max object
-          // size produced. Note that we slow down if there's nothing to
-          // reconcile or if all objects failed. This is a sort of retry
-          // with backoff mechanism. The scheduler may have been removed
-          // if sources were detached during reconciliation.
-          auto sched_it = _topic_schedulers.find(topic_id);
-          if (sched_it != _topic_schedulers.end()) {
-              sched_it->second.scheduler.adapt(bytes);
-              sched_it->second.last_reconciled = now;
-          }
-      });
-}
-
-template<class Clock>
-chunked_vector<chunked_vector<ss::shared_ptr<source>>>
-reconciler<Clock>::partition_sources_by_topic(
-  chunked_vector<ss::shared_ptr<source>> sources) {
-    chunked_hash_map<model::topic_id, chunked_vector<ss::shared_ptr<source>>>
-      topic_id_to_sources;
-    for (auto& src : sources) {
-        auto& src_vec = topic_id_to_sources[src->topic_id_partition().topic_id];
-        src_vec.push_back(std::move(src));
-    }
-
-    vlog(
-      lg.debug,
-      "Partitioned sources into {} topics",
-      topic_id_to_sources.size());
-
-    chunked_vector<chunked_vector<ss::shared_ptr<source>>> result;
-    result.reserve(topic_id_to_sources.size());
-    for (auto& [_, src_vec] : topic_id_to_sources) {
-        result.push_back(std::move(src_vec));
-    }
-    return result;
 }
 
 template<class Clock>
@@ -989,6 +756,122 @@ reconciler<Clock>::commit_objects(
             return std::unexpected(std::move(err));
         })
       .value_or(std::expected<void, reconcile_error>{});
+}
+
+template<class Clock>
+void reconciler<Clock>::arm_timer(topic_scheduler_state& state) {
+    auto next_due = state.last_reconciled + state.scheduler.current_interval();
+    auto now = Clock::now();
+    if (next_due <= now) {
+        state.timer.arm(typename Clock::duration(0));
+    } else {
+        state.timer.arm(next_due - now);
+    }
+}
+
+template<class Clock>
+void reconciler<Clock>::start_topic_round(
+  model::topic_id tid, bool force_for_tests) {
+    auto it = _topic_schedulers.find(tid);
+    if (it == _topic_schedulers.end() || it->second->reconciling) {
+        return;
+    }
+
+    if (
+      !force_for_tests
+      && config::shard_local_cfg().cloud_topics_disable_reconciliation_loop()) {
+        vlog(lg.debug, "Reconciliation disabled, skipping topic {}", tid);
+        arm_timer(*it->second);
+        return;
+    }
+
+    it->second->reconciling = true;
+
+    ssx::spawn_with_gate(_gate, [this, tid]() {
+        return ss::with_scheduling_group(
+          _reconciler_sg, [this, tid](this auto) -> ss::future<> {
+              // Gather sources for this topic from the scheduler state.
+              chunked_vector<ss::shared_ptr<source>> topic_sources;
+              if (
+                auto sit = _topic_schedulers.find(tid);
+                sit != _topic_schedulers.end()) {
+                  topic_sources.reserve(sit->second->sources.size());
+                  for (const auto& [_, src] : sit->second->sources) {
+                      topic_sources.push_back(src);
+                  }
+              }
+
+              size_t bytes = 0;
+              try {
+                  bytes = co_await reconcile_source_set(
+                    std::move(topic_sources));
+              } catch (...) {
+                  const auto is_shutdown = ssx::is_shutdown_exception(
+                    std::current_exception());
+                  vlogl(
+                    lg,
+                    is_shutdown ? ss::log_level::debug : ss::log_level::info,
+                    "Recoverable error during reconciliation of topic {}: {}",
+                    tid,
+                    std::current_exception());
+              }
+              finish_topic_round(tid, bytes);
+          });
+    });
+}
+
+template<class Clock>
+void reconciler<Clock>::finish_topic_round(
+  model::topic_id tid, size_t bytes_produced) {
+    auto it = _topic_schedulers.find(tid);
+    if (it == _topic_schedulers.end()) {
+        return;
+    }
+    it->second->reconciling = false;
+    if (it->second->sources.empty()) {
+        _topic_schedulers.erase(it);
+        return;
+    }
+    it->second->scheduler.adapt(bytes_produced);
+    it->second->last_reconciled = Clock::now();
+    arm_timer(*it->second);
+}
+
+template<class Clock>
+ss::future<> reconciler<Clock>::flush_for_tests() {
+    using namespace std::chrono_literals;
+    // Use a real-time deadline so that in-flight fibers with lowres_clock
+    // retry backoff sleeps have time to complete.
+    auto deadline = ss::lowres_clock::now() + 10s;
+    while (ss::lowres_clock::now() < deadline) {
+        if (!has_active_reconciliation_for_tests()) {
+            co_return;
+        }
+        co_await ss::sleep(1ms);
+    }
+}
+
+template<class Clock>
+ss::future<> reconciler<Clock>::reconcile_all_for_tests() {
+    vassert(
+      config::shard_local_cfg().cloud_topics_disable_reconciliation_loop(),
+      "reconcile_all_for_tests requires the reconciliation loop to be "
+      "disabled");
+    // Cancel any armed timers so we don't race with timer callbacks.
+    for (auto& [_, state] : _topic_schedulers) {
+        state->timer.cancel();
+    }
+    // Collect topic IDs before iterating — start_topic_round may modify
+    // the map on completion.
+    chunked_vector<model::topic_id> tids;
+    tids.reserve(_topic_schedulers.size());
+    for (const auto& [tid, _] : _topic_schedulers) {
+        tids.push_back(tid);
+    }
+    for (const auto& tid : tids) {
+        start_topic_round(tid, /*force_for_tests=*/true);
+    }
+    co_await flush_for_tests();
 }
 
 // Explicit template instantiations.

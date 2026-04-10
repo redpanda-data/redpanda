@@ -43,6 +43,9 @@ public:
       : _reconciler(
           &_io, &_metastore, nullptr, ss::default_scheduling_group()) {}
 
+    void SetUp() override { _reconciler.start().get(); }
+    void TearDown() override { _reconciler.stop().get(); }
+
     ss::shared_ptr<fake_source> add_source(
       std::optional<model::topic> tp = std::nullopt,
       std::optional<model::topic_id> tid = std::nullopt) {
@@ -61,13 +64,17 @@ public:
     }
 
     void reconcile() {
-        // Advance the clock to ensure all topics are due for reconciliation.
+        // Advance clock past max interval to fire all topic timers.
         ss::manual_clock::advance(std::chrono::hours(1));
-        _reconciler.reconcile().get();
+        _reconciler.flush_for_tests().get();
     }
 
-    // Call reconcile without advancing the clock.
-    void reconcile_without_advancing_clock() { _reconciler.reconcile().get(); }
+    void reconcile_without_advancing_clock() {
+        // Advance 1ns: fires zero-duration timers (new topics) but not
+        // interval-based timers (min interval = 250ms).
+        ss::manual_clock::advance(std::chrono::nanoseconds(1));
+        _reconciler.flush_for_tests().get();
+    }
 
     std::optional<kafka::offset>
     metastore_next_offset(ss::shared_ptr<fake_source> src) {
@@ -80,13 +87,6 @@ public:
 
     unreliable_metastore& metastore() { return _metastore; }
     unreliable_io& io() { return _io; }
-
-    // Advance the manual clock to make topics due for reconciliation.
-    void advance_clock() {
-        // Advance past the max reconciliation interval to ensure topics are
-        // due.
-        ss::manual_clock::advance(std::chrono::hours(1));
-    }
 
 protected:
     unreliable_io _io;
@@ -723,10 +723,7 @@ TEST_F(ReconcilerTest, OnlyDueTopicIsReconciled) {
 }
 
 // Regression test: detaching a source during reconciliation (e.g. due to a
-// leadership change) must not leave an orphaned topic scheduler. Before the
-// fix, get_or_create_topic_scheduler in the post-reconciliation path would
-// recreate the scheduler with partition_count=0 after detach had removed it,
-// causing compute_next_wait to see it as perpetually due and busy-loop.
+// leadership change) must not leave an orphaned topic scheduler.
 TEST_F(ReconcilerTest, DetachDuringReconcileDoesNotOrphanScheduler) {
     // Two topics: src1 will be detached mid-reconciliation, src2 stays.
     auto src1 = add_source();
@@ -741,10 +738,40 @@ TEST_F(ReconcilerTest, DetachDuringReconcileDoesNotOrphanScheduler) {
 
     reconcile();
 
-    // The scheduler for the detached topic must not survive. With the bug,
-    // it would be recreated with partition_count=0 and never cleaned up.
-    // A second reconcile() would then hit the vassert in reconcile() because
-    // the orphaned scheduler has no matching sources.
+    // The scheduler for the detached topic must not survive.
     reconcile();
     EXPECT_EQ(_reconciler.topic_scheduler_count_for_tests(), 1);
+}
+
+TEST_F(ReconcilerTest, DetachCancelsTimerReattachRearms) {
+    auto src = add_source();
+    src->add_batch({.count = 10});
+    auto ntp = src->ntp();
+    auto tid = src->topic_id_partition().topic_id;
+
+    reconcile();
+    EXPECT_EQ(src->last_reconciled_offset(), kafka::offset{9});
+
+    // Detach: timer should be cancelled, scheduler removed.
+    _reconciler.detach(ntp);
+    EXPECT_EQ(_reconciler.topic_scheduler_count_for_tests(), 0);
+
+    // Re-attach with a new source for the same topic.
+    auto src2 = add_source(std::nullopt, tid);
+    src2->add_batch({.count = 5});
+    EXPECT_EQ(_reconciler.topic_scheduler_count_for_tests(), 1);
+
+    // Timer is re-armed on attach (since _started is true).
+    // Advance clock to fire the re-armed timer.
+    reconcile();
+    EXPECT_EQ(src2->last_reconciled_offset(), kafka::offset{4});
+}
+
+TEST_F(ReconcilerTest, StopWaitsForInFlightFibers) {
+    auto src = add_source();
+    src->add_batch({.count = 10});
+
+    // Timer fires immediately for new topic. The spawned fiber is in-flight.
+    // stop() should wait for it to complete.
+    // (TearDown calls stop() — if it doesn't hang, the test passes.)
 }

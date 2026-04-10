@@ -37,7 +37,8 @@ namespace {
 
 class ReconcilerMetricsTest : public testing::Test {
 public:
-    ReconcilerMetricsTest() { _reconciler.setup_metrics_for_tests(); }
+    void SetUp() override { _reconciler.start().get(); }
+    void TearDown() override { _reconciler.stop().get(); }
 
     ss::shared_ptr<fake_source> add_source(
       std::optional<model::topic> tp = std::nullopt,
@@ -57,9 +58,8 @@ public:
     }
 
     void reconcile() {
-        // Advance the clock to ensure all topics are due for reconciliation.
         ss::manual_clock::advance(std::chrono::hours(1));
-        _reconciler.reconcile().get();
+        _reconciler.flush_for_tests().get();
     }
 
     unreliable_io& io() { return _io; }
