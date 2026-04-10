@@ -1812,7 +1812,7 @@ configuration::configuration()
       "compaction_ctrl_max_shares",
       "Maximum number of I/O and CPU shares that compaction process can use.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1000)
+      300)
   , compaction_ctrl_backlog_size(
       *this,
       "compaction_ctrl_backlog_size",
