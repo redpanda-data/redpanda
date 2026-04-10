@@ -303,7 +303,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "G21akrZz7lt26dMKLVJ0IvM1AUCU8dzDuF6Uksw4ifQ=",
+        "bzlTransitiveDigest": "vcNCB+3mFvULOfqQCOJWODG5W7KJHTHwyn54J0r5aO8=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -483,9 +483,9 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:seastar.BUILD",
-              "sha256": "9c572c5111ef6b4f0afc6ba358696c0e2a78e118bc3c3617cf6454a9d98970de",
-              "strip_prefix": "seastar-617d3c421a949f449942d7ce0d275af0997efb48",
-              "url": "https://github.com/redpanda-data/seastar/archive/617d3c421a949f449942d7ce0d275af0997efb48.tar.gz"
+              "sha256": "42b799f95944401ebd289aa6839d034e9506dc7457303701d73903d0c5097e60",
+              "strip_prefix": "seastar-e5f91e1ec63c02af0a5e28ead22e329dfe6d0836",
+              "url": "https://github.com/pgellert/seastar/archive/e5f91e1ec63c02af0a5e28ead22e329dfe6d0836.tar.gz"
             }
           },
           "unordered_dense": {
@@ -1017,7 +1017,7 @@
     },
     "@@rules_apple+//apple:apple.bzl%provisioning_profile_repository_extension": {
       "general": {
-        "bzlTransitiveDigest": "l8RKpoHR7zGm/jAf9MjCgnfCV0G4HzOsM8aQwFTjH/w=",
+        "bzlTransitiveDigest": "hDzbh+WIiAvCEUYZMndgeIO3vBcMhyqJKruJJ9nVQkc=",
         "usagesDigest": "vsJl8Rw5NL+5Ag2wdUDoTeRF/5klkXO8545Iy7U1Q08=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -1066,6 +1066,16 @@
           ],
           [
             "rules_cc+",
+            "cc_compatibility_proxy",
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
+          ],
+          [
+            "rules_cc+",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
             "rules_cc",
             "rules_cc+"
           ],
@@ -4167,7 +4177,7 @@
     },
     "@@rules_rust+//crate_universe/private:internal_extensions.bzl%cu_nr": {
       "general": {
-        "bzlTransitiveDigest": "EEGkTefVGEP/2phgEvJ89Zb0Y5ni/qLP4QxeqnLq0Ao=",
+        "bzlTransitiveDigest": "kpf68imtNI7puIfWsTZkjSjvjnKLn7yaT8EPPoIBQeQ=",
         "usagesDigest": "WcrwUq7tMYKrrQoXBAJOrk0OAZY0JyWHpnidg71TX10=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -4267,6 +4277,16 @@
           ],
           [
             "rules_cc+",
+            "cc_compatibility_proxy",
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
+          ],
+          [
+            "rules_cc+",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
             "rules_cc",
             "rules_cc+"
           ],
