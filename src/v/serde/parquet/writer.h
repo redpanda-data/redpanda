@@ -13,6 +13,7 @@
 
 #include "base/units.h"
 #include "container/chunked_vector.h"
+#include "serde/parquet/metadata.h"
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
 
@@ -107,7 +108,7 @@ public:
     // class.
     //
     // The resulting future must be awaited before destroying this object.
-    ss::future<> close();
+    ss::future<file_metadata> close();
 
 private:
     class impl;

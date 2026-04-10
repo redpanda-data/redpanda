@@ -135,7 +135,6 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":column_writer",
-        ":metadata",
         ":shredder",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
@@ -144,6 +143,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":metadata",
         ":schema",
         ":value",
         "//src/v/base",
