@@ -2013,6 +2013,8 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               snapshot_opt.value());
         }
     }
+
+    _apply_watermark = hdr.offset;
     co_return raft::local_snapshot_applied::yes;
 }
 
