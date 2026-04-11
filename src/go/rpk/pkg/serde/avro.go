@@ -58,48 +58,47 @@ func newAvroDecoder(schema *avro.Schema) (serdeFunc, error) {
 // generateAvroSchema parses the schema and its references, returning a
 // compiled schema that can be used for encoding and decoding.
 func generateAvroSchema(ctx context.Context, cl *sr.Client, schema *sr.Schema) (*avro.Schema, error) {
-	if len(schema.References) == 0 {
-		s, err := avro.Parse(schema.Schema)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse schema: %v", err)
-		}
-		return s, nil
-	}
 	cache := &avro.SchemaCache{}
-	seen := make(map[string]bool)
-	if err := parseAvroReferences(ctx, cl, cache, schema, seen); err != nil {
-		return nil, fmt.Errorf("unable to parse references: %v", err)
+	if err := parseAvroReferences(ctx, cl, cache, schema, make(map[string]bool), make(map[string]bool)); err != nil {
+		return nil, fmt.Errorf("unable to parse references: %w", err)
 	}
 	s, err := cache.Parse(schema.Schema)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse schema: %v", err)
+		return nil, fmt.Errorf("unable to parse schema: %w", err)
 	}
 	return s, nil
 }
 
 // parseAvroReferences recursively parses all schema references into the cache
-// so they are available when parsing the parent schema. The seen map tracks
-// already-fetched subject+version pairs to avoid redundant registry requests.
-func parseAvroReferences(ctx context.Context, cl *sr.Client, cache *avro.SchemaCache, schema *sr.Schema, seen map[string]bool) error {
+// so they are available when parsing the parent schema. stack tracks
+// references currently being walked for cycle detection; parsed tracks
+// references already added to the cache to avoid redundant work on shared
+// subgraphs.
+func parseAvroReferences(ctx context.Context, cl *sr.Client, cache *avro.SchemaCache, schema *sr.Schema, stack, parsed map[string]bool) error {
 	for _, ref := range schema.References {
 		key := fmt.Sprintf("%s-%d", ref.Subject, ref.Version)
-		if seen[key] {
+		if stack[key] {
+			return fmt.Errorf("circular avro schema reference detected for subject %q version %d", ref.Subject, ref.Version)
+		}
+		if parsed[key] {
 			continue
 		}
-		seen[key] = true
+		stack[key] = true
 		r, err := cl.SchemaByVersion(ctx, ref.Subject, ref.Version)
 		if err != nil {
-			return fmt.Errorf("unable to get reference schema with subject %q and version %v: %v", ref.Subject, ref.Version, err)
+			return fmt.Errorf("unable to get reference schema with subject %q and version %d: %w", ref.Subject, ref.Version, err)
 		}
 		refSchema := r.Schema
 		if len(refSchema.References) > 0 {
-			if err := parseAvroReferences(ctx, cl, cache, &refSchema, seen); err != nil {
-				return fmt.Errorf("unable to parse schema with subject %q and version %v: %v", ref.Subject, ref.Version, err)
+			if err := parseAvroReferences(ctx, cl, cache, &refSchema, stack, parsed); err != nil {
+				return fmt.Errorf("unable to parse schema with subject %q and version %d: %w", ref.Subject, ref.Version, err)
 			}
 		}
 		if _, err := cache.Parse(refSchema.Schema); err != nil {
-			return fmt.Errorf("unable to parse schema with subject %q and version %v: %v", ref.Subject, ref.Version, err)
+			return fmt.Errorf("unable to parse schema with subject %q and version %d: %w", ref.Subject, ref.Version, err)
 		}
+		delete(stack, key)
+		parsed[key] = true
 	}
 	return nil
 }
