@@ -124,6 +124,46 @@ These are injected into Bazel via `new_local_repository` rules that point to
 Nix store paths. C++ static libraries must be compiled with clang/libc++ to
 match the Bazel toolchain ABI.
 
+### Profile-Guided Optimization (PGO)
+
+Redpanda uses [Profile-Guided Optimization](https://www.redpanda.com/blog/supercharging-streaming-profile-guided-optimization)
+to significantly improve throughput and latency in production builds.
+PGO works by first building an instrumented binary that records branch
+and call frequency data during execution, then rebuilding with that
+profile data so the compiler can optimize the hot code paths.
+
+Without PGO, builds are functionally correct but miss the performance
+optimizations that the official release pipeline provides.
+
+The Nix build provides an automated 3-phase PGO pipeline:
+
+1. **Instrument** (`--config=pgo-instrument`) — build with LLVM profiling
+   instrumentation and LTO enabled.
+2. **Train** — run a single-node Redpanda instance in developer mode with
+   rpk-based produce/consume workloads (~15k messages across multiple
+   topics and message sizes) to generate LLVM profile data.
+3. **Optimize** (`--config=pgo-optimize --fdo_optimize=...`) — rebuild
+   using the collected profile data to optimize hot code paths.
+
+The lightweight training exercises the core hot paths: Kafka protocol
+handling, Raft consensus, batch processing, and log segment storage.
+It uses ~15k messages with varying sizes (small strings, key-value pairs,
+and larger payloads) across multiple topics with different partition counts.
+This could be extended in the future with mixed message types, schema
+registry workloads, and Iceberg format translation to cover additional
+code paths.
+
+For production deployments requiring maximum optimization, you can supply
+profiles generated from the full `tools/pgo_bolt/train_pgo.py` pipeline
+(which runs OpenMessagingBenchmark at 20k msgs/sec against a 3-node
+cluster) via `lib.mkRedpandaPgo`:
+
+```nix
+# In a downstream flake:
+optimized = inputs.redpanda.lib.x86_64-linux.mkRedpandaPgo
+  "${./path/to/pgo_profile.profdata}";
+```
+
 ### Bazel Cache Persistence
 
 The `redpanda-cached` target passes `--output_base=/var/cache/bazel-nix/output_base`
@@ -201,6 +241,9 @@ date > nix/entropy                     # Nix cache (changes derivation hash)
 | `redpanda` | `nix build .#redpanda` | Build without persistent cache |
 | `redpanda-cached` | `nix build .#redpanda-cached` | Build with persistent Bazel cache |
 | `rpk` | `nix build .#rpk` | Build the rpk Go CLI only |
+| `redpanda-pgo` | `nix build .#redpanda-pgo` | PGO-optimized build (automated training) |
+| `redpanda-pgo-cached` | `nix build .#redpanda-pgo-cached` | PGO-optimized with persistent cache |
+| `redpanda-pgo-instrument` | `nix build .#redpanda-pgo-instrument` | Instrumented binary for external profiling |
 
 ### OCI Container Images
 
@@ -284,6 +327,7 @@ Generates `.bazelrc.nix` with Nix-specific Bazel settings.
 | `nix/redpanda.nix` | Main C++ server build derivation (~1100 lines) |
 | `nix/rpk.nix` | Go CLI package (`buildGoModule`, stripped with `-s -w` ldflags) |
 | `nix/shell.nix` | Development shell with clang, LLVM, Python, JDK, autotools |
+| `nix/pgo-train.nix` | Lightweight PGO training derivation (single-node rpk workloads) |
 | `nix/bench.nix` | Benchmark and cache-clearing targets |
 | `nix/test-images.nix` | OCI container image smoke test (`nix run .#test-images`) |
 | `nix/redpanda-image.nix` | OCI container image for the redpanda server |

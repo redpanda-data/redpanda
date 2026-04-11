@@ -33,6 +33,49 @@
 
           rpk = pkgs.callPackage ./nix/rpk.nix { };
 
+          # PGO (Profile-Guided Optimization) variants.
+          # Instrumented binary for external profiling workflows.
+          redpanda-pgo-instrument = pkgs.callPackage ./nix/redpanda.nix {
+            pgoMode = "instrument";
+          };
+
+          # Automated PGO: instrument -> lightweight training -> optimized build.
+          redpanda-pgo = let
+            instrumented = pkgs.callPackage ./nix/redpanda.nix {
+              pgoMode = "instrument";
+            };
+            profile = pkgs.callPackage ./nix/pgo-train.nix {
+              redpandaInstrumented = instrumented;
+              rpkDrv = rpk;
+            };
+          in pkgs.callPackage ./nix/redpanda.nix {
+            pgoMode = "optimize";
+            pgoProfilePath = "${profile}/pgo_profile.profdata";
+          };
+
+          # Cached PGO variants for repeat builders.
+          redpanda-pgo-cached = let
+            instrumented = pkgs.callPackage ./nix/redpanda.nix {
+              pgoMode = "instrument";
+              bazelCacheDir = "/var/cache/bazel-nix";
+            };
+            profile = pkgs.callPackage ./nix/pgo-train.nix {
+              redpandaInstrumented = instrumented;
+              rpkDrv = rpk;
+            };
+          in pkgs.callPackage ./nix/redpanda.nix {
+            pgoMode = "optimize";
+            pgoProfilePath = "${profile}/pgo_profile.profdata";
+            bazelCacheDir = "/var/cache/bazel-nix";
+          };
+
+          # Helper for external profile workflow: build an optimized binary
+          # using pre-generated .profdata from the full train_pgo.py pipeline.
+          mkRedpandaPgo = profilePath: pkgs.callPackage ./nix/redpanda.nix {
+            pgoMode = "optimize";
+            pgoProfilePath = profilePath;
+          };
+
           mkApp = drv: {
             type = "app";
             program = "${drv}/bin/${drv.name}";
@@ -42,7 +85,14 @@
         in
         {
           packages = {
-            inherit redpanda rpk redpanda-cached;
+            inherit
+              redpanda
+              rpk
+              redpanda-cached
+              redpanda-pgo
+              redpanda-pgo-instrument
+              redpanda-pgo-cached
+              ;
             default = redpanda;
 
             # OCI container images (use plain redpanda so they work without
@@ -72,6 +122,10 @@
           };
 
           devShells.default = pkgs.callPackage ./nix/shell.nix { };
+
+          lib = {
+            inherit mkRedpandaPgo;
+          };
 
           checks = {
             rpk-version = pkgs.runCommand "rpk-version-check" { } ''

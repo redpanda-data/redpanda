@@ -52,7 +52,12 @@
   lndir,
   protobuf,
   bazelCacheDir ? "",
+  pgoMode ? "off", # "off" | "instrument" | "optimize"
+  pgoProfilePath ? null, # path to .profdata file (required when pgoMode == "optimize")
 }:
+
+assert builtins.elem pgoMode [ "off" "instrument" "optimize" ];
+assert pgoMode == "optimize" -> pgoProfilePath != null;
 
 let
   version = "0.0.0-dev";
@@ -640,6 +645,17 @@ REPOS_PATCH
   in "${bazel}/bin/bazel-8.5.0-${os}-${arch}";
   targets = [ "//src/v/redpanda:redpanda" ];
 
+  # PGO (Profile-Guided Optimization) flags.
+  # Phase 1 (instrument): build with profiling instrumentation enabled.
+  # Phase 3 (optimize): rebuild using collected profile data.
+  # See .bazelrc for the underlying config definitions.
+  pgoArgs = lib.optionals (pgoMode == "instrument") [
+    "--config=pgo-instrument"
+  ] ++ lib.optionals (pgoMode == "optimize") [
+    "--config=pgo-optimize"
+    "--fdo_optimize=${pgoProfilePath}"
+  ];
+
   # ── Nixify pipeline configuration ──
   # Imported from nixify-rules.nix — centralizes all fixup config.
   nixifyRules = import ./nixify-rules.nix {
@@ -1094,6 +1110,7 @@ stdenv.mkDerivation {
       build \
       --verbose_failures \
       ${lib.escapeShellArgs commonArgs} \
+      ${lib.escapeShellArgs pgoArgs} \
       ${lib.escapeShellArgs targets}
 
     # Shut down the persistent server
