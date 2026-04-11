@@ -30,6 +30,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:state_accessors",
         "//src/v/cloud_topics/frontend",
         "//src/v/cloud_topics/level_one/metastore",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
         "//src/v/cluster",
         "//src/v/config",

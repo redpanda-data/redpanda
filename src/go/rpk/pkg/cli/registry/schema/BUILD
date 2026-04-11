@@ -14,6 +14,7 @@ go_library(
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry/schema",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/go/rpk/pkg/cli/registry/context",
         "//src/go/rpk/pkg/config",
         "//src/go/rpk/pkg/out",
         "//src/go/rpk/pkg/schemaregistry",

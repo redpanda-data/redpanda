@@ -9,13 +9,12 @@
 
 import concurrent.futures
 import math
-import re
 import time
 from collections import Counter
 from typing import Any, Callable
 from ducktape.cluster.cluster import ClusterNode
 import numpy
-from ducktape.mark import ignore, parametrize  # type: ignore[reportUnknownVariableType]
+from ducktape.mark import parametrize
 from ducktape.utils.util import TimeoutError, wait_until
 
 from rptest.clients.rpk import RpkException, RpkTool
@@ -74,11 +73,6 @@ STRESS_DATA_SIZE = 1024 * 1024 * 1024 * 100
 # counts.
 STOP_TIMEOUT = 60 * 5
 CLOUD_TOPICS_STOP_TIMEOUT = 60 * 10
-
-# TODO: suppress this log in the reconciler
-METASTORE_TRANSPORT_LOG_ALLOW_LIST = [
-    re.compile(r"reconciler - .*std::runtime_error .*metastore::errc::transport_error"),
-]
 
 
 class ManyPartitionsTest(PreallocNodesTest):
@@ -521,7 +515,12 @@ class ManyPartitionsTest(PreallocNodesTest):
                 str(scale.local_retention_after_warmup),
             )
 
-    def _write_and_random_read(self, scale: ScaleParameters, topic_names: list[str]):
+    def _write_and_random_read(
+        self,
+        scale: ScaleParameters,
+        topic_names: list[str],
+        skip_rand_reads: bool = False,
+    ):
         """
         This is a relatively low intensity test, that covers random
         and sequential reads & validates correctness of offsets in the
@@ -646,22 +645,23 @@ class ManyPartitionsTest(PreallocNodesTest):
             err_msg="Waiting for producer checkpoints",
         )
 
-        rand_ios = 100
-        rand_parallel = 100
-        if self.redpanda.dedicated_nodes:
-            rand_parallel = 10
-            rand_ios = 10
+        if not skip_rand_reads:
+            rand_ios = 100
+            rand_parallel = 100
+            if self.redpanda.dedicated_nodes:
+                rand_parallel = 10
+                rand_ios = 10
 
-        rand_consumer = KgoVerifierMultiRandomConsumer(
-            self.test_context,
-            self.redpanda,
-            stress_params,
-            rand_read_msgs=rand_ios,
-            parallel=rand_parallel,
-            custom_node=[self.preallocated_nodes[1]],
-        )
-        rand_consumer.start(clean=False)
-        rand_consumer.wait()
+            rand_consumer = KgoVerifierMultiRandomConsumer(
+                self.test_context,
+                self.redpanda,
+                stress_params,
+                rand_read_msgs=rand_ios,
+                parallel=rand_parallel,
+                custom_node=[self.preallocated_nodes[1]],
+            )
+            rand_consumer.start(clean=False)
+            rand_consumer.wait()
 
         fast_producer.stop()
         self.logger.info("Write+randread stress test complete, verifying sequentially")
@@ -851,7 +851,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
     @cluster(
         num_nodes=12,
-        log_allow_list=RESTART_LOG_ALLOW_LIST + METASTORE_TRANSPORT_LOG_ALLOW_LIST,
+        log_allow_list=RESTART_LOG_ALLOW_LIST,
     )
     @parametrize(
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
@@ -867,10 +867,9 @@ class ManyPartitionsTest(PreallocNodesTest):
             topic_partitions_per_shard=topic_partitions_per_shard,
         )
 
-    @ignore  # TODO: Evaluate parameters and turn this back on
     @cluster(
         num_nodes=12,
-        log_allow_list=RESTART_LOG_ALLOW_LIST + METASTORE_TRANSPORT_LOG_ALLOW_LIST,
+        log_allow_list=RESTART_LOG_ALLOW_LIST,
     )
     @parametrize(
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
@@ -1093,13 +1092,23 @@ class ManyPartitionsTest(PreallocNodesTest):
                 f"Open files after initial elections on {node_name}: {file_count}"
             )
 
-        if scale.tiered_storage_enabled:
+        if scale.tiered_storage_enabled and not cloud_topics_enabled:
+            # Skip warmup when cloud topics are also enabled: the goal of the
+            # combo test is mixed-mode coexistence under load, not re-proving
+            # tiered storage handles millions of segments (already covered by
+            # test_many_partitions_tiered_storage).  Skipping saves ~25 min.
             self.logger.info("Entering tiered storage warmup")
             for tn in regular_topic_names:
                 self._tiered_storage_warmup(scale, tn)
 
         self.logger.info("Entering initial traffic test, writes + random reads")
-        self._write_and_random_read(scale, topic_names)
+        # When both tiered storage and cloud topics are enabled, skip random
+        # reads entirely: cloud topic random reads hit object store with high
+        # latency at this partition scale, and each path is already covered by
+        # its dedicated test.  The sequential consumer group verify still
+        # validates both read paths.
+        skip_rand_reads = cloud_topics_enabled and scale.tiered_storage_enabled
+        self._write_and_random_read(scale, topic_names, skip_rand_reads)
 
         # Start kgo-repeater
 
@@ -1181,6 +1190,11 @@ class ManyPartitionsTest(PreallocNodesTest):
 
             soak_time_seconds = 60
             soak_await_bytes = soak_time_seconds * scale.expect_bandwidth
+            if cloud_topics_enabled and tiered_storage_enabled:
+                # Cloud topics and tiered storage compete for things like
+                # cloud storage clients and overall bucket request limits,
+                # so dial back the soak time.
+                soak_await_bytes = int(soak_await_bytes * 0.5)
             soak_await_msgs = int(soak_await_bytes / repeater_msg_size)
             # Add some leeway to avoid flakiness
             soak_timeout = int(soak_time_seconds * 1.25)

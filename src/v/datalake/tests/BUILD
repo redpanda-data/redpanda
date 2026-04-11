@@ -274,6 +274,7 @@ redpanda_cc_bench(
     srcs = [
         "record_multiplexer_bench.cc",
     ],
+    test_regex = ".*_linear_1_field_small",
     deps = [
         ":catalog_and_registry_fixture",
         ":record_generator",

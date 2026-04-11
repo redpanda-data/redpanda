@@ -87,7 +87,7 @@ class PartitionBalancerService(EndToEndTest):
 
         def all_partitions_ready():
             try:
-                partitions = list(rpk.describe_topic(topic.name))
+                partitions = list(rpk.describe_topic(topic.name, timeout=5))
             except RpkException:
                 return False
             return (len(partitions) == num_partitions, partitions)

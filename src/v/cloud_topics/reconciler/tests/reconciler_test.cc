@@ -40,7 +40,8 @@ namespace {
 class ReconcilerTest : public testing::Test {
 public:
     ReconcilerTest()
-      : _reconciler(&_io, &_metastore, ss::default_scheduling_group()) {}
+      : _reconciler(
+          &_io, &_metastore, nullptr, ss::default_scheduling_group()) {}
 
     ss::shared_ptr<fake_source> add_source(
       std::optional<model::topic> tp = std::nullopt,
@@ -719,4 +720,31 @@ TEST_F(ReconcilerTest, OnlyDueTopicIsReconciled) {
     // Now advance clock and reconcile - topic1 should now be reconciled.
     reconcile();
     EXPECT_EQ(src1->last_reconciled_offset(), kafka::offset{19});
+}
+
+// Regression test: detaching a source during reconciliation (e.g. due to a
+// leadership change) must not leave an orphaned topic scheduler. Before the
+// fix, get_or_create_topic_scheduler in the post-reconciliation path would
+// recreate the scheduler with partition_count=0 after detach had removed it,
+// causing compute_next_wait to see it as perpetually due and busy-loop.
+TEST_F(ReconcilerTest, DetachDuringReconcileDoesNotOrphanScheduler) {
+    // Two topics: src1 will be detached mid-reconciliation, src2 stays.
+    auto src1 = add_source();
+    src1->add_batch({.count = 10});
+    auto src2 = add_source();
+    src2->add_batch({.count = 10});
+
+    // Detach src1 when it's read during reconciliation. This simulates
+    // a leadership change firing during an async reconciliation pass.
+    auto ntp1 = src1->ntp();
+    src1->set_on_make_reader([this, ntp1] { _reconciler.detach(ntp1); });
+
+    reconcile();
+
+    // The scheduler for the detached topic must not survive. With the bug,
+    // it would be recreated with partition_count=0 and never cleaned up.
+    // A second reconcile() would then hit the vassert in reconcile() because
+    // the orphaned scheduler has no matching sources.
+    reconcile();
+    EXPECT_EQ(_reconciler.topic_scheduler_count_for_tests(), 1);
 }

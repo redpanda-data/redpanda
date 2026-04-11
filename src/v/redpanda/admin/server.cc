@@ -59,6 +59,7 @@
 #include "json/stringbuffer.h"
 #include "json/validator.h"
 #include "json/writer.h"
+#include "kafka/data/partition_proxy.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -4668,16 +4669,16 @@ admin_server::get_partition_cloud_storage_status(
 
     auto status = co_await _partition_manager.invoke_on(
       *shard,
-      [&ntp](const auto& pm)
-        -> std::optional<cluster::partition_cloud_storage_status> {
+      [&ntp](this auto, const auto& pm)
+        -> ss::future<std::optional<cluster::partition_cloud_storage_status>> {
           const auto& partitions = pm.partitions();
           auto partition_iter = partitions.find(ntp);
 
           if (partition_iter == partitions.end()) {
-              return std::nullopt;
+              co_return std::nullopt;
           }
-
-          return partition_iter->second->get_cloud_storage_status();
+          auto pp = kafka::make_partition_proxy(partition_iter->second);
+          co_return co_await pp.get_cloud_storage_status();
       });
 
     if (!status) {

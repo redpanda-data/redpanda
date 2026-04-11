@@ -78,6 +78,11 @@ public:
     ss::future<get_topic_state_reply>
       get_topic_state(get_topic_state_request, local_only = local_only::no);
 
+    /// Convenience overload that handles partition routing automatically.
+    /// Groups topics by coordinator partition and aggregates results.
+    ss::future<get_topic_state_reply>
+    get_topic_state(chunked_vector<model::topic> topics_filter);
+
     ss::future<reset_topic_state_reply>
       reset_topic_state(reset_topic_state_request, local_only = local_only::no);
 

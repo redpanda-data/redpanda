@@ -53,6 +53,7 @@ enum class feature : std::uint64_t {
     coordinated_compaction = 1ULL << 10U,
     cloud_retention = 1ULL << 11U,
     group_based_authorization = 1ULL << 12U,
+    cloud_topics = 1ULL << 13U,
     node_isolation = 1ULL << 19U,
     group_offset_retention = 1ULL << 20U,
     membership_change_controller_cmds = 1ULL << 22U,
@@ -539,6 +540,12 @@ inline constexpr std::array feature_schema{
     release_version::v26_1_1,
     "ordered_leaders_pinning",
     feature::ordered_leaders_pinning,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v26_1_1,
+    "cloud_topics",
+    feature::cloud_topics,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

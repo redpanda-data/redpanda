@@ -516,3 +516,44 @@ TEST_CORO(write_pipeline_test, max_requests_limit) {
 
     ASSERT_TRUE_CORO(accessor.write_requests_pending(0));
 }
+
+TEST_CORO(write_pipeline_test, enqueue_foreign_request_accounts_bytes) {
+    // Verify that enqueue_foreign_request updates _stage_bytes for
+    // the destination stage. This was previously missing, causing
+    // the scheduler to underreport cross-shard work.
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+
+    auto stage1 = pipeline.register_write_pipeline_stage();
+    auto stage2 = pipeline.register_write_pipeline_stage();
+
+    ASSERT_EQ_CORO(pipeline.stage_bytes(stage2.id()), 0);
+
+    const auto timeout = ss::manual_clock::now() + 10s;
+
+    auto make_chunk = [&]() -> ss::future<cloud_topics::l0::serialized_chunk> {
+        chunked_vector<model::record_batch> batches;
+        auto data = co_await model::test::make_random_batches(
+          {.count = 1, .records = 5});
+        std::ranges::move(std::move(data), std::back_inserter(batches));
+        co_return co_await cloud_topics::l0::serialize_batches(
+          std::move(batches));
+    };
+
+    auto chunk = co_await make_chunk();
+    auto req
+      = std::make_unique<cloud_topics::l0::write_request<ss::manual_clock>>(
+        model::controller_ntp, min_epoch, std::move(chunk), timeout);
+    auto expected_size = req->size_bytes();
+
+    // enqueue_foreign_request should account bytes at the next stage
+    stage1.enqueue_foreign_request(*req, false);
+
+    ASSERT_EQ_CORO(pipeline.stage_bytes(stage2.id()), expected_size);
+
+    // Pull from stage2 — bytes should be released
+    auto res = stage2.pull_write_requests(std::numeric_limits<size_t>::max());
+    ASSERT_EQ_CORO(res.requests.size(), 1);
+    ASSERT_EQ_CORO(pipeline.stage_bytes(stage2.id()), 0);
+
+    res.requests.front().set_value(chunked_vector<cloud_topics::extent_meta>{});
+}

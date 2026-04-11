@@ -64,6 +64,9 @@ public:
     /// Returns true if there are no waiters.
     bool empty() const { return _waiters.empty(); }
 
+    /// Returns the last notified offset.
+    Offset last_applied() const { return _last_applied; }
+
     /// Notify waiters of an offset.
     void notify(Offset offset) {
         _last_applied = std::max(offset, _last_applied);

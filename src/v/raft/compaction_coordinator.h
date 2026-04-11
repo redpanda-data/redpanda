@@ -34,7 +34,7 @@ using namespace std::chrono_literals;
  * - calculates maximum tombstone removal offset (MTRO) and maximum transaction
  * removal offset (MXRO) on the leader;
  * - propagates MTRO and MXRO to followers;
- * - lets @storage::stm_manager know about the current MTRO and MXRO.
+ * - lets @storage::stm_hookset know about the current MTRO and MXRO.
  *
  * MCCO, MXFO, MTRO and MXRO are not inclusive, i.e. denote first
  * non-cleanly-compacted and first non-tombstone-removable offsets respectively.

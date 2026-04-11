@@ -118,6 +118,11 @@ public:
 
     l0::producer_queue& producer_queue();
 
+    // Register this reader with the STM so that it's state isn't GC'd.
+    //
+    // The provided pointer must be kept *stable* during it's entire lifetime.
+    void register_reader(active_reader_state*);
+
     /// Estimate the total bytes of cloud data addressable by the level-zero
     /// log for this partition.
     uint64_t estimated_data_size() const noexcept;

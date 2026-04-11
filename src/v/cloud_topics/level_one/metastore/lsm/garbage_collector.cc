@@ -89,7 +89,10 @@ db_garbage_collector::remove_unreferenced_batch(
   replicated_database* db,
   ss::abort_source* as,
   size_t batch_size,
-  std::optional<object_id> start_point) {
+  std::optional<object_id> start_point,
+  model::timestamp prereg_expiry_cutoff,
+  model::timestamp deletion_delay_cutoff,
+  chunked_vector<object_id>& to_expire_out) {
     auto persisted_seqno = db->db().max_persisted_seqno();
     if (!persisted_seqno.has_value()) {
         // Nothing has been persisted yet, cannot remove anything.
@@ -113,6 +116,7 @@ db_garbage_collector::remove_unreferenced_batch(
     }
     auto object_gen = object_range_res.value().get_rows();
     chunked_vector<object_id> to_remove;
+    size_t batch_expire_count = 0;
     std::optional<object_id> next_batch_start{std::nullopt};
     while (auto obj_ref_opt = co_await object_gen()) {
         if (as->abort_requested()) {
@@ -137,6 +141,25 @@ db_garbage_collector::remove_unreferenced_batch(
         auto& obj_entry = obj_row.val.object;
         auto obj_key = object_row_key::decode(obj_row.key);
         auto oid = obj_key->oid;
+
+        if (obj_entry.is_preregistration) {
+            if (obj_entry.last_updated < prereg_expiry_cutoff) {
+                vlog(
+                  cd_log.debug,
+                  "Expiring stale preregistered L1 object: {}",
+                  oid);
+                to_expire_out.emplace_back(oid);
+                ++batch_expire_count;
+                if (to_remove.size() + batch_expire_count == batch_size) {
+                    if (auto next = next_uuid(oid()); next.has_value()) {
+                        next_batch_start = object_id(*next);
+                    }
+                    break;
+                }
+            }
+            continue;
+        }
+
         if (obj_entry.removed_data_size > obj_entry.total_data_size) {
             vlog(
               cd_log.error,
@@ -149,11 +172,12 @@ db_garbage_collector::remove_unreferenced_batch(
             // but don't block the rest of GC.
             continue;
         }
-        // TODO: also consider some timestamp of last update to the object?
-        if (obj_entry.removed_data_size == obj_entry.total_data_size) {
+        if (
+          obj_entry.removed_data_size == obj_entry.total_data_size
+          && obj_entry.last_updated <= deletion_delay_cutoff) {
             vlog(cd_log.debug, "Deleting L1 object: {}", oid);
             to_remove.emplace_back(oid);
-            if (to_remove.size() == batch_size) {
+            if (to_remove.size() + batch_expire_count == batch_size) {
                 // Set an explicit next starting object if we had more than one
                 // batch of objects so we can make incremental progress.
                 // NOTE: nullopt if UUID_MAX (extremely unlikely overflow)
@@ -164,10 +188,15 @@ db_garbage_collector::remove_unreferenced_batch(
             }
         }
     }
-    if (to_remove.empty()) {
+    if (to_remove.empty() && batch_expire_count == 0) {
         vlog(cd_log.debug, "No objects eligible for garbage collection");
         co_return std::nullopt;
     }
+
+    if (to_remove.empty()) {
+        co_return next_batch_start;
+    }
+
     auto del_res = co_await io_->delete_objects(to_remove.copy(), as);
     if (!del_res.has_value()) {
         co_return std::unexpected(
@@ -192,20 +221,32 @@ db_garbage_collector::remove_unreferenced_batch(
     co_return next_batch_start;
 }
 
-ss::future<std::expected<void, db_garbage_collector::error>>
+ss::future<
+  std::expected<chunked_vector<object_id>, db_garbage_collector::error>>
 db_garbage_collector::remove_unreferenced_objects(
-  replicated_database* db, ss::abort_source* as, size_t batch_size) {
+  replicated_database* db,
+  ss::abort_source* as,
+  size_t batch_size,
+  model::timestamp prereg_expiry_cutoff,
+  model::timestamp deletion_delay_cutoff) {
+    chunked_vector<object_id> to_expire;
     std::optional<object_id> next_start;
     while (!as->abort_requested()) {
         auto batch_res = co_await remove_unreferenced_batch(
-          db, as, batch_size, next_start);
+          db,
+          as,
+          batch_size,
+          next_start,
+          prereg_expiry_cutoff,
+          deletion_delay_cutoff,
+          to_expire);
         if (!batch_res.has_value()) {
             co_return std::unexpected(batch_res.error());
         }
         next_start = batch_res.value();
         if (!next_start.has_value()) {
             // Nothing left to remove.
-            co_return std::expected<void, error>{};
+            co_return to_expire;
         }
     }
     co_return std::unexpected(

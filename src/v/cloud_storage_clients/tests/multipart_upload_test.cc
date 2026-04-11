@@ -290,3 +290,115 @@ SEASTAR_THREAD_TEST_CASE(test_multipart_upload_complete_error_in_body) {
                       == "We encountered an internal error. Please try again.";
       });
 }
+
+SEASTAR_THREAD_TEST_CASE(test_multipart_upload_put_after_abort_is_noop) {
+    s3_imposter_fixture imposter;
+
+    imposter.set_expectations_and_listen({
+      // CreateMultipartUpload
+      {.url = "abort-put-key?uploads", .body = R"xml(<?xml version="1.0"?>
+<InitiateMultipartUploadResult>
+    <UploadId>test-upload-id-ap</UploadId>
+</InitiateMultipartUploadResult>)xml"},
+
+      // UploadPart 1
+      {.url = "abort-put-key?partNumber=1&uploadId=test-upload-id-ap",
+       .body = std::nullopt},
+
+      // AbortMultipartUpload
+      {.url = "abort-put-key?uploadId=test-upload-id-ap", .body = ""},
+    });
+
+    auto conf = imposter.get_configuration();
+    const client_pool_builder pool_builder{conf};
+
+    ss::sharded<client_pool> pool;
+    auto stop_guard = pool_builder.connections_per_shard(1).build(pool).get();
+
+    const auto test_bucket = bucket_name_parts{
+      .name = plain_bucket_name(imposter.bucket_name)};
+    const auto key = object_key("abort-put-key");
+    auto timeout = std::chrono::seconds(30);
+
+    ss::abort_source as;
+    auto lease = pool.local().acquire(test_bucket, as).get();
+
+    auto state_result = lease.client
+                          ->initiate_multipart_upload(
+                            test_bucket.name, key, test_part_size, timeout)
+                          .get();
+
+    BOOST_REQUIRE(state_result.has_value());
+    auto upload = ss::make_shared<multipart_upload>(
+      std::move(state_result.value()), test_part_size, test_log);
+
+    // Write enough data to trigger multipart initialization
+    auto data = ::tests::random_iobuf(6_MiB);
+    upload->put(std::move(data)).get();
+
+    // Abort the upload
+    upload->abort().get();
+
+    const auto requests_after_abort = imposter.get_requests().size();
+
+    // put() after abort should be a no-op: no exception, no extra requests
+    data = ::tests::random_iobuf(1_MiB);
+    upload->put(std::move(data)).get();
+
+    BOOST_CHECK_EQUAL(imposter.get_requests().size(), requests_after_abort);
+
+    // complete() after abort should also be a no-op
+    upload->complete().get();
+
+    BOOST_CHECK_EQUAL(imposter.get_requests().size(), requests_after_abort);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_multipart_upload_put_after_complete_is_noop) {
+    s3_imposter_fixture imposter;
+
+    // Use the small file path for a simpler setup
+    imposter.set_expectations_and_listen({
+      {.url = "complete-put-key", .body = std::nullopt},
+    });
+
+    auto conf = imposter.get_configuration();
+    const client_pool_builder pool_builder{conf};
+
+    ss::sharded<client_pool> pool;
+    auto stop_guard = pool_builder.connections_per_shard(1).build(pool).get();
+
+    const auto test_bucket = bucket_name_parts{
+      .name = plain_bucket_name(imposter.bucket_name)};
+    const auto key = object_key("complete-put-key");
+    auto timeout = std::chrono::seconds(30);
+
+    ss::abort_source as;
+    auto lease = pool.local().acquire(test_bucket, as).get();
+
+    auto state_result = lease.client
+                          ->initiate_multipart_upload(
+                            test_bucket.name, key, test_part_size, timeout)
+                          .get();
+
+    BOOST_REQUIRE(state_result.has_value());
+    auto upload = ss::make_shared<multipart_upload>(
+      std::move(state_result.value()), test_part_size, test_log);
+
+    // Write small data and complete
+    auto data = ::tests::random_iobuf(1_MiB);
+    upload->put(std::move(data)).get();
+    upload->complete().get();
+
+    const auto requests_after_complete = imposter.get_requests().size();
+
+    // put() after complete should be a no-op: no exception, no extra requests
+    data = ::tests::random_iobuf(1_MiB);
+    upload->put(std::move(data)).get();
+
+    BOOST_CHECK_EQUAL(imposter.get_requests().size(), requests_after_complete);
+
+    // abort() after complete should also be a no-op
+    upload->abort().get();
+
+    BOOST_CHECK_EQUAL(imposter.get_requests().size(), requests_after_complete);
+}

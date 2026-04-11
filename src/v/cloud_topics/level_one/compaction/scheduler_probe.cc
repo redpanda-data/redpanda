@@ -38,8 +38,8 @@ void compaction_scheduler_probe::setup_metrics() {
           [this] { return _compaction_queue_length; },
           sm::description(
             "Length of the compaction queue for this compaction scheduler")),
-        sm::make_gauge(
-          "log_compactions",
+        sm::make_counter(
+          "log_compactions_total",
           [this] { return _log_compactions; },
           sm::description(
             "Number of compaction rounds performed across all shards")),

@@ -284,9 +284,6 @@ public:
     }
 
     bool is_read_replica_mode_enabled() const {
-        if (cloud_topic_enabled()) {
-            return false;
-        }
         return _overrides != nullptr && _overrides->read_replica
                && _overrides->read_replica.value();
     }

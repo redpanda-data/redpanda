@@ -15,7 +15,7 @@ import time
 from logging import Logger
 from typing import Callable
 
-from ducktape.mark import parametrize
+from ducktape.mark import matrix, parametrize
 from ducktape.mark.resource import cluster as ducktape_cluster
 from ducktape.tests.test import Test
 from kafkatest.services.kafka import KafkaService
@@ -26,12 +26,19 @@ from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.context.cloud_storage import ReadReplicaSourceMode, get_read_replica_sources
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kafka import KafkaServiceAdapter
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import RedpandaService, SISettings, make_redpanda_service
+from rptest.services.redpanda import (
+    CloudStorageType,
+    RedpandaService,
+    SISettings,
+    get_cloud_storage_type,
+    make_redpanda_service,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     segments_count,
@@ -768,7 +775,17 @@ class TestReadReplicaTimeQuery(RedpandaTest):
     topic_name = "panda-topic"
     base_ts = int(time.time() - 600) * 1000
 
-    def __init__(self, test_context):
+    def __init__(
+        self,
+        test_context,
+        mode: ReadReplicaSourceMode = ReadReplicaSourceMode.TIERED_STORAGE,
+    ):
+        # Enable cloud_topics on both clusters regardless of mode
+        extra_rp_conf = {
+            "cloud_topics_long_term_flush_interval": 1000,
+            "cloud_topics_enabled": True,
+        }
+
         super(TestReadReplicaTimeQuery, self).__init__(
             test_context=test_context,
             si_settings=SISettings(
@@ -776,24 +793,36 @@ class TestReadReplicaTimeQuery(RedpandaTest):
                 log_segment_size=TestReadReplicaTimeQuery.log_segment_size,
                 cloud_storage_segment_max_upload_interval_sec=5,
             ),
+            extra_rp_conf=extra_rp_conf,
         )
+
+        self.mode = mode
+
+        # Read replica shouldn't have its own bucket.
+        # For cloud topics mode, disable metastore flush loop and level zero GC
+        rr_extra_conf = {
+            "enable_cluster_metadata_upload_loop": False,
+            "cloud_topics_disable_metastore_flush_loop_for_tests": True,
+            "cloud_topics_disable_level_zero_gc_for_tests": True,
+            "cloud_topics_enabled": True,
+        }
 
         self.rr_settings = SISettings(
             test_context,
             bypass_bucket_creation=True,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
         )
+        self.rr_extra_conf = rr_extra_conf
 
         self.rr_cluster = None
 
     def start_read_replica_cluster(self, num_brokers) -> None:
         # NOTE: the RRR cluster won't have a bucket, so don't upload.
-        extra_rp_conf = dict(enable_cluster_metadata_upload_loop=False)
         self.rr_cluster = make_redpanda_service(
             self.test_context,
             num_brokers=num_brokers,
             si_settings=self.rr_settings,
-            extra_rp_conf=extra_rp_conf,
+            extra_rp_conf=self.rr_extra_conf,
         )
         self.rr_cluster.start(start_si=False)
 
@@ -810,12 +839,21 @@ class TestReadReplicaTimeQuery(RedpandaTest):
         return True
 
     def setup_clusters(self, num_messages=0, partition_count=1) -> None:
-        spec = TopicSpec(
-            name=self.topic_name,
-            partition_count=partition_count,
-            redpanda_remote_write=True,
-            replication_factor=3,
-        )
+        # Create topic spec based on mode
+        if self.mode == ReadReplicaSourceMode.CLOUD_TOPICS:
+            spec = TopicSpec(
+                name=self.topic_name,
+                partition_count=partition_count,
+                replication_factor=3,
+                redpanda_storage_mode=TopicSpec.STORAGE_MODE_CLOUD,
+            )
+        else:
+            spec = TopicSpec(
+                name=self.topic_name,
+                partition_count=partition_count,
+                redpanda_remote_write=True,
+                replication_factor=3,
+            )
 
         DefaultClient(self.redpanda).create_topic(spec)
 
@@ -864,7 +902,14 @@ class TestReadReplicaTimeQuery(RedpandaTest):
         assert matches, f"Expected offset {offset_src}, got {offset_rr}"
 
     @ducktape_cluster(num_nodes=7)
-    def test_timequery(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        mode=get_read_replica_sources(),
+    )
+    def test_timequery(
+        self, cloud_storage_type: CloudStorageType, mode: ReadReplicaSourceMode
+    ):
+        self.mode = mode
         num_messages = 1000
         self.setup_clusters(num_messages, 3)
 

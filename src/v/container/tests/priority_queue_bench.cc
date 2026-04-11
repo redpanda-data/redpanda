@@ -20,10 +20,17 @@
 #include <cstddef>
 #include <queue>
 #include <type_traits>
+#include <vector>
+
+constexpr size_t inner_iters_for(size_t size) {
+    return std::max<size_t>(1, 10000 / std::max<size_t>(1, size));
+}
 
 template<typename PriorityQueue, size_t Size>
 struct PriorityQueueBenchTest {
     using value_type = typename PriorityQueue::value_type;
+    static constexpr size_t inner_iters = inner_iters_for(Size);
+    const chunked_vector<value_type> test_data = make_test_data();
 
     static auto make_random_value() {
         if constexpr (std::is_integral_v<value_type>) {
@@ -63,106 +70,150 @@ struct PriorityQueueBenchTest {
         return pq;
     }
 
+    // No start/stop — trivial setup only, framework handles timing.
     [[gnu::noinline]]
     void run_push_test() {
-        auto test_data = make_test_data();
         PriorityQueue pq;
-        perf_tests::start_measuring_time();
         for (const auto& val : test_data) {
             pq.push(val);
         }
-        perf_tests::stop_measuring_time();
         perf_tests::do_not_optimize(pq);
     }
 
     [[gnu::noinline]]
-    void run_push_rvalue_test() {
-        auto test_data = make_test_data();
-        PriorityQueue pq;
+    size_t run_push_rvalue_test() {
+        std::vector<chunked_vector<value_type>> inputs;
+        inputs.reserve(inner_iters);
+        for (size_t i = 0; i < inner_iters; ++i) {
+            inputs.push_back(make_test_data());
+        }
         perf_tests::start_measuring_time();
-        for (auto& val : std::move(test_data)) {
-            pq.push(std::move(val));
+        for (auto& td : inputs) {
+            PriorityQueue pq;
+            for (auto& val : std::move(td)) {
+                pq.push(std::move(val));
+            }
+            perf_tests::do_not_optimize(pq);
         }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(pq);
+        return inner_iters;
     }
 
+    // No start/stop — trivial setup only, framework handles timing.
     [[gnu::noinline]]
     void run_push_range_test() {
-        auto test_data = make_test_data();
         PriorityQueue pq;
-        perf_tests::start_measuring_time();
         pq.push_range(test_data);
-        perf_tests::stop_measuring_time();
         perf_tests::do_not_optimize(pq);
     }
 
     [[gnu::noinline]]
-    void run_push_rvalue_range_test() {
-        auto test_data = make_test_data();
-        PriorityQueue pq;
+    size_t run_push_rvalue_range_test() {
+        std::vector<chunked_vector<value_type>> inputs;
+        inputs.reserve(inner_iters);
+        for (size_t i = 0; i < inner_iters; ++i) {
+            inputs.push_back(make_test_data());
+        }
         perf_tests::start_measuring_time();
-        pq.push_range(std::move(test_data));
+        for (auto& td : inputs) {
+            PriorityQueue pq;
+            pq.push_range(std::move(td));
+            perf_tests::do_not_optimize(pq);
+        }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(pq);
+        return inner_iters;
     }
 
     [[gnu::noinline]]
-    ss::future<> run_async_push_rvalue_range_test() {
-        auto test_data = make_test_data();
-        PriorityQueue pq;
+    ss::future<size_t> run_async_push_rvalue_range_test() {
+        std::vector<chunked_vector<value_type>> inputs;
+        inputs.reserve(inner_iters);
+        for (size_t i = 0; i < inner_iters; ++i) {
+            inputs.push_back(make_test_data());
+        }
         perf_tests::start_measuring_time();
-        co_await pq.async_push_range(std::move(test_data));
+        for (auto& td : inputs) {
+            PriorityQueue pq;
+            co_await pq.async_push_range(std::move(td));
+            perf_tests::do_not_optimize(pq);
+        }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(pq);
+        co_return inner_iters;
     }
 
     [[gnu::noinline]]
-    void run_pop_test() {
-        PriorityQueue pq = make_filled();
+    size_t run_pop_test() {
+        std::vector<PriorityQueue> inputs;
+        inputs.reserve(inner_iters);
+        for (size_t i = 0; i < inner_iters; ++i) {
+            inputs.push_back(make_filled());
+        }
         perf_tests::start_measuring_time();
-        while (!pq.empty()) {
-            if constexpr (!std::is_void_v<decltype(pq.pop())>) {
-                // bounded_priority_queue::pop() returns a value
-                auto x = pq.pop();
-                perf_tests::do_not_optimize(x);
-            } else {
-                // std::priority_queue::pop() returns void
-                auto x = pq.top();
-                pq.pop();
-                perf_tests::do_not_optimize(x);
+        for (auto& pq : inputs) {
+            while (!pq.empty()) {
+                if constexpr (!std::is_void_v<decltype(pq.pop())>) {
+                    auto x = pq.pop();
+                    perf_tests::do_not_optimize(x);
+                } else {
+                    auto x = pq.top();
+                    pq.pop();
+                    perf_tests::do_not_optimize(x);
+                }
             }
         }
         perf_tests::stop_measuring_time();
+        return inner_iters;
     }
 
     [[gnu::noinline]]
-    void run_extract_sorted_test() {
-        PriorityQueue pq = make_filled();
+    size_t run_extract_sorted_test() {
+        std::vector<PriorityQueue> inputs;
+        inputs.reserve(inner_iters);
+        for (size_t i = 0; i < inner_iters; ++i) {
+            inputs.push_back(make_filled());
+        }
         perf_tests::start_measuring_time();
-        auto x = std::move(pq).extract_sorted();
+        for (auto& pq : inputs) {
+            auto x = std::move(pq).extract_sorted();
+            perf_tests::do_not_optimize(x);
+        }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(x);
+        return inner_iters;
     }
 
     [[gnu::noinline]]
-    ss::future<> run_async_extract_sorted_test() {
-        PriorityQueue pq;
-        co_await pq.async_push_range(make_test_data());
+    ss::future<size_t> run_async_extract_sorted_test() {
+        std::vector<PriorityQueue> inputs;
+        inputs.reserve(inner_iters);
+        for (size_t i = 0; i < inner_iters; ++i) {
+            PriorityQueue pq;
+            pq.push_range(make_test_data());
+            inputs.push_back(std::move(pq));
+        }
         perf_tests::start_measuring_time();
-        auto x = co_await std::move(pq).async_extract_sorted();
+        for (auto& pq : inputs) {
+            auto x = co_await std::move(pq).async_extract_sorted();
+            perf_tests::do_not_optimize(x);
+        }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(x);
+        co_return inner_iters;
     }
 
     [[gnu::noinline]]
-    void run_sort_extract_heap_test() {
-        PriorityQueue pq = make_filled();
+    size_t run_sort_extract_heap_test() {
+        std::vector<PriorityQueue> inputs;
+        inputs.reserve(inner_iters);
+        for (size_t i = 0; i < inner_iters; ++i) {
+            inputs.push_back(make_filled());
+        }
         perf_tests::start_measuring_time();
-        auto x = std::move(pq).extract_heap();
-        std::ranges::sort(x);
+        for (auto& pq : inputs) {
+            auto x = std::move(pq).extract_heap();
+            std::ranges::sort(x);
+            perf_tests::do_not_optimize(x);
+        }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(x);
+        return inner_iters;
     }
 };
 
@@ -170,23 +221,37 @@ template<typename PriorityQueue, size_t InputSize, size_t Cap>
 struct BoundedPriorityQueueBenchTest
   : PriorityQueueBenchTest<PriorityQueue, InputSize> {
     [[gnu::noinline]]
-    void run_push_rvalue_range_test() {
-        auto test_data = this->make_test_data();
-        PriorityQueue pq{Cap};
+    size_t run_push_rvalue_range_test() {
+        std::vector<chunked_vector<typename PriorityQueue::value_type>> inputs;
+        inputs.reserve(this->inner_iters);
+        for (size_t i = 0; i < this->inner_iters; ++i) {
+            inputs.push_back(this->make_test_data());
+        }
         perf_tests::start_measuring_time();
-        pq.push_range(std::move(test_data));
+        for (auto& td : inputs) {
+            PriorityQueue pq{Cap};
+            pq.push_range(std::move(td));
+            perf_tests::do_not_optimize(pq);
+        }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(pq);
+        return this->inner_iters;
     }
 
     [[gnu::noinline]]
-    ss::future<> run_async_push_rvalue_range_test() {
-        auto test_data = this->make_test_data();
-        PriorityQueue pq{Cap};
+    ss::future<size_t> run_async_push_rvalue_range_test() {
+        std::vector<chunked_vector<typename PriorityQueue::value_type>> inputs;
+        inputs.reserve(this->inner_iters);
+        for (size_t i = 0; i < this->inner_iters; ++i) {
+            inputs.push_back(this->make_test_data());
+        }
         perf_tests::start_measuring_time();
-        co_await pq.async_push_range(std::move(test_data));
+        for (auto& td : inputs) {
+            PriorityQueue pq{Cap};
+            co_await pq.async_push_range(std::move(td));
+            perf_tests::do_not_optimize(pq);
+        }
         perf_tests::stop_measuring_time();
-        perf_tests::do_not_optimize(pq);
+        co_return this->inner_iters;
     }
 };
 
@@ -204,7 +269,7 @@ struct BoundedPriorityQueueBenchTest
     }                                                                          \
     PERF_TEST_F(                                                               \
       PriorityQueueBenchTest_##container##_##element##_##size, Pop) {          \
-        run_pop_test();                                                        \
+        return run_pop_test();                                                 \
     }
 
 #define PRIORITY_QUEUE_MOVE_TEST(container, element, size)                     \
@@ -212,12 +277,12 @@ struct BoundedPriorityQueueBenchTest
       : public PriorityQueueBenchTest<container<element>, size> {};            \
     PERF_TEST_F(                                                               \
       PriorityQueueRValueBenchTest_##container##_##element##_##size, Push) {   \
-        run_push_rvalue_test();                                                \
+        return run_push_rvalue_test();                                         \
     }                                                                          \
     PERF_TEST_F(                                                               \
       PriorityQueueRValueBenchTest_##container##_##element##_##size,           \
       PushRange) {                                                             \
-        run_push_rvalue_range_test();                                          \
+        return run_push_rvalue_range_test();                                   \
     }                                                                          \
     PERF_TEST_F(                                                               \
       PriorityQueueRValueBenchTest_##container##_##element##_##size,           \
@@ -231,12 +296,12 @@ struct BoundedPriorityQueueBenchTest
     PERF_TEST_F(                                                               \
       PriorityQueueSortBenchTest_##container##_##element##_##size,             \
       ExtractSorted) {                                                         \
-        run_extract_sorted_test();                                             \
+        return run_extract_sorted_test();                                      \
     }                                                                          \
     PERF_TEST_F(                                                               \
       PriorityQueueSortBenchTest_##container##_##element##_##size,             \
       SortExtractHeap) {                                                       \
-        run_sort_extract_heap_test();                                          \
+        return run_sort_extract_heap_test();                                   \
     }                                                                          \
     PERF_TEST_F(                                                               \
       PriorityQueueSortBenchTest_##container##_##element##_##size,             \
@@ -256,7 +321,7 @@ struct BoundedPriorityQueueBenchTest
     PERF_TEST_F(                                                                         \
       BoundedPriorityQueueBenchTest_##container##_##element##_##input_size##_##capacity, \
       PushRange) {                                                                       \
-        run_push_rvalue_range_test();                                                    \
+        return run_push_rvalue_range_test();                                             \
     }                                                                                    \
     PERF_TEST_F(                                                                         \
       BoundedPriorityQueueBenchTest_##container##_##element##_##input_size##_##capacity, \

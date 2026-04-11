@@ -399,7 +399,9 @@ class LogSearchCloud(LogSearch):
             for logfile in logfiles:
                 if node.name in logfile and "redpanda-configurator" not in logfile:
                     self.logger.info(f"Inspecting '{logfile}'")
-                    lines_result = node.nodeshell(f"cat {logfile} | grep {expr}")
+                    lines_result = node.nodeshell(
+                        f"cat {logfile} | grep {expr} || [[ $? == 1 ]]"
+                    )
                     lines = (
                         [str(line) for line in lines_result]
                         if isinstance(lines_result, list)

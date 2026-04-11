@@ -385,6 +385,14 @@ class LeaderPinningConfig:
         return "racks"
 
 
+@dataclass
+class RackPreference:
+    """Encodes expected rack placement for a topic's leaders."""
+
+    racks: list[str]
+    is_ordered: bool
+
+
 class LeadershipPinningTest(RedpandaTest):
     def __init__(self, test_context):
         super(LeadershipPinningTest, self).__init__(
@@ -440,8 +448,8 @@ class LeadershipPinningTest(RedpandaTest):
     def wait_for_racks(
         self,
         partition_counts: Dict[str, int],
-        topic2expected_racks: Dict[str, list[str]],
-        is_ordered: bool,
+        topic2expected_racks: Dict[str, RackPreference],
+        dead_racks: list[str] | None = None,
         check_balance: bool = True,
         timeout_sec: int = 60,
     ) -> None:
@@ -457,16 +465,17 @@ class LeadershipPinningTest(RedpandaTest):
         Args:
             partition_counts: Dict mapping topic names to expected partition counts
                              e.g., {"foo": 60, "bar": 20}
-            topic2expected_racks: Dict mapping topic names to lists of expected rack IDs
-                                 e.g., {"foo": ["A"], "bar": ["C"]}
-            is_ordered: swaps the validation logic from spread across all provided racks (false)
-                        to preference the first rack in the list proided (true)
+            topic2expected_racks: Dict mapping topic names to RackPreference instances
+                                 encoding expected racks and whether the preference is ordered
+            dead_racks: racks that are currently down, filtered from each
+                        topic's expected racks before validation
             check_balance: If True, also verify even distribution within racks
             timeout_sec: Maximum time to wait for conditions to be met (default: 60)
 
         Raises:
             TimeoutError: If the conditions are not met within timeout_sec
         """
+        excluded = set(dead_racks) if dead_racks else set()
 
         def predicate():
             t2n2l = self._get_topic2node2leaders()
@@ -493,15 +502,18 @@ class LeadershipPinningTest(RedpandaTest):
                     )
                     return False
 
-                expected_racks = topic2expected_racks.get(topic, list())
+                pref = topic2expected_racks.get(
+                    topic, RackPreference(racks=[], is_ordered=False)
+                )
+                effective_racks = [r for r in pref.racks if r not in excluded]
                 rack2leaders = self._rack_counts(node2leaders)
 
                 if not check_leader_placement(
-                    is_ordered, expected_racks, set(rack2leaders.keys())
+                    pref.is_ordered, effective_racks, set(rack2leaders.keys())
                 ):
                     self.logger.debug(
-                        f"leader rack expectations failed for topic {topic}, is_ordered: {is_ordered} "
-                        f"expected: {expected_racks}, actual: {list(rack2leaders.keys())}"
+                        f"leader rack expectations failed for topic {topic}, is_ordered: {pref.is_ordered} "
+                        f"expected: {effective_racks}, actual: {list(rack2leaders.keys())}"
                     )
                     return False
 
@@ -551,10 +563,11 @@ class LeadershipPinningTest(RedpandaTest):
             },
         )
 
+        topic_pref = {topic: RackPreference(racks=preference, is_ordered=True)}
+
         self.wait_for_racks(
             partition_counts,
-            {topic: preference},
-            is_ordered=True,
+            topic_pref,
             timeout_sec=90,
         )
 
@@ -562,8 +575,8 @@ class LeadershipPinningTest(RedpandaTest):
         self.redpanda.stop_node(node_e)
         self.wait_for_racks(
             partition_counts,
-            {topic: ["D", "C", "B", "A"]},
-            is_ordered=True,
+            topic_pref,
+            dead_racks=["E"],
             timeout_sec=60,
         )
 
@@ -571,16 +584,16 @@ class LeadershipPinningTest(RedpandaTest):
         self.redpanda.stop_node(node_d)
         self.wait_for_racks(
             partition_counts,
-            {topic: ["C", "B", "A"]},
-            is_ordered=True,
+            topic_pref,
+            dead_racks=["E", "D"],
             timeout_sec=60,
         )
 
         self.redpanda.start_node(node_e)
         self.wait_for_racks(
             partition_counts,
-            {topic: ["E", "C", "B", "A"]},
-            is_ordered=True,
+            topic_pref,
+            dead_racks=["D"],
             timeout_sec=90,
         )
 
@@ -588,8 +601,8 @@ class LeadershipPinningTest(RedpandaTest):
         self.redpanda.stop_node(node_b)
         self.wait_for_racks(
             partition_counts,
-            {topic: ["E", "C", "A"]},
-            is_ordered=True,
+            topic_pref,
+            dead_racks=["D", "B"],
             timeout_sec=60,
         )
 
@@ -622,8 +635,7 @@ class LeadershipPinningTest(RedpandaTest):
 
         self.wait_for_racks(
             partition_counts,
-            {topic: ["A", "B"]},
-            is_ordered=True,
+            {topic: RackPreference(racks=["A", "B"], is_ordered=True)},
             timeout_sec=90,
         )
 
@@ -631,8 +643,7 @@ class LeadershipPinningTest(RedpandaTest):
 
         self.wait_for_racks(
             partition_counts,
-            {topic: ["A", "B"]},
-            is_ordered=False,
+            {topic: RackPreference(racks=["A", "B"], is_ordered=False)},
             timeout_sec=60,
         )
 
@@ -642,8 +653,7 @@ class LeadershipPinningTest(RedpandaTest):
 
         self.wait_for_racks(
             partition_counts,
-            {topic: ["A", "B"]},
-            is_ordered=True,
+            {topic: RackPreference(racks=["A", "B"], is_ordered=True)},
             timeout_sec=60,
         )
 
@@ -651,8 +661,7 @@ class LeadershipPinningTest(RedpandaTest):
 
         self.wait_for_racks(
             partition_counts,
-            {topic: ["A", "B"]},
-            is_ordered=False,
+            {topic: RackPreference(racks=["A", "B"], is_ordered=False)},
             timeout_sec=60,
         )
 
@@ -710,11 +719,16 @@ class LeadershipPinningTest(RedpandaTest):
             config={"redpanda.leaders.preference": f"{config.preference_str}: C"},
         )
 
+        ordered = config.is_ordered
+        all_racks = sorted(set(self.RACK_LAYOUT))
+
         # bigger timeout to allow balancer to activate, health reports to propagate, etc.
         self.wait_for_racks(
             partition_counts,
-            {"foo": ["A"], "bar": ["C"]},
-            is_ordered=config.is_ordered,
+            {
+                "foo": RackPreference(racks=["A"], is_ordered=ordered),
+                "bar": RackPreference(racks=["C"], is_ordered=ordered),
+            },
             timeout_sec=90,
         )
 
@@ -726,8 +740,10 @@ class LeadershipPinningTest(RedpandaTest):
 
         self.wait_for_racks(
             partition_counts,
-            {"foo": ["A"], "bar": ["B", "C"]},
-            is_ordered=config.is_ordered,
+            {
+                "foo": RackPreference(racks=["A"], is_ordered=ordered),
+                "bar": RackPreference(racks=["B", "C"], is_ordered=ordered),
+            },
             timeout_sec=60,
         )
 
@@ -744,20 +760,27 @@ class LeadershipPinningTest(RedpandaTest):
 
         self.wait_for_racks(
             partition_counts,
-            {"foo": ["A"], "bar": ["C"]},
-            is_ordered=config.is_ordered,
+            {
+                "foo": RackPreference(racks=["A"], is_ordered=ordered),
+                "bar": RackPreference(racks=["B", "C"], is_ordered=ordered),
+            },
+            dead_racks=["B"],
             timeout_sec=60,
         )
 
         self.logger.info("explicitly disabling for topic")
         rpk.alter_topic_config("foo", "redpanda.leaders.preference", "none")
 
-        # There is cross-talk between partition counts of foo and bar, so we don't
-        # require balanced counts.
+        # foo's preference is now "none" so it is unordered regardless of test
+        # config. There is cross-talk between partition counts of foo and bar,
+        # so we don't require balanced counts.
         self.wait_for_racks(
             partition_counts,
-            {"foo": ["A", "C"], "bar": ["C"]},
-            is_ordered=config.is_ordered,
+            {
+                "foo": RackPreference(racks=all_racks, is_ordered=False),
+                "bar": RackPreference(racks=["B", "C"], is_ordered=ordered),
+            },
+            dead_racks=["B"],
             check_balance=False,
             timeout_sec=60,
         )
@@ -770,8 +793,11 @@ class LeadershipPinningTest(RedpandaTest):
 
         self.wait_for_racks(
             partition_counts,
-            {"foo": ["A"], "bar": ["A"]},
-            is_ordered=config.is_ordered,
+            {
+                "foo": RackPreference(racks=["A"], is_ordered=ordered),
+                "bar": RackPreference(racks=["A"], is_ordered=ordered),
+            },
+            dead_racks=["B"],
             timeout_sec=60,
         )
 
@@ -785,8 +811,10 @@ class LeadershipPinningTest(RedpandaTest):
         self.redpanda.set_cluster_config({"default_leaders_preference": "none"})
         self.wait_for_racks(
             partition_counts,
-            {"foo": ["A", "B", "C"], "bar": ["A", "B", "C"]},
-            is_ordered=False,
+            {
+                "foo": RackPreference(racks=all_racks, is_ordered=False),
+                "bar": RackPreference(racks=all_racks, is_ordered=False),
+            },
             check_balance=False,
             timeout_sec=90,
         )
@@ -895,8 +923,10 @@ class LeadershipPinningTest(RedpandaTest):
         # bigger timeout to allow balancer to activate, health reports to propagate, etc.
         self.wait_for_racks(
             partition_counts,
-            {"foo": ["A"], "bar": ["C"]},
-            is_ordered=config.is_ordered,
+            {
+                "foo": RackPreference(racks=["A"], is_ordered=config.is_ordered),
+                "bar": RackPreference(racks=["C"], is_ordered=config.is_ordered),
+            },
             timeout_sec=90,
         )
 

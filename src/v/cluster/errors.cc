@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/compiler_utils.h"
 #include "cluster/errc.h"
 
 #include <iostream>
@@ -186,6 +187,10 @@ std::ostream& operator<<(std::ostream& o, cluster::errc err) {
         return o << "cluster::errc::topic_id_already_exists";
     case errc::feature_sanctioned:
         return o << "cluster::errc::feature_sanctioned";
+        REDPANDA_BEGIN_IGNORE_DEPRECATIONS
+    case errc::inconsistent_stm_update:
+        return o << "cluster::errc::inconsistent_stm_update (deprecated)";
+        REDPANDA_END_IGNORE_DEPRECATIONS
     }
 
     // fallback path: we don't expect it, but this is better than just falling

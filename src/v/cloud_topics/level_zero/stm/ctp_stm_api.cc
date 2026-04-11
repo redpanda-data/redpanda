@@ -321,4 +321,8 @@ uint64_t ctp_stm_api::estimated_data_size() const noexcept {
     return _stm->state().estimated_data_size();
 }
 
+void ctp_stm_api::register_reader(active_reader_state* state) {
+    return _stm->register_reader(state);
+}
+
 }; // namespace cloud_topics

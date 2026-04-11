@@ -90,7 +90,7 @@ meta_to_rpc_compact_update(const metastore::compaction_update& update) {
 // objects up by the appropriate metastore topic partition.
 class replicated_object_builder : public metastore::object_metadata_builder {
 public:
-    replicated_object_builder(leader_router& fe)
+    explicit replicated_object_builder(leader_router& fe)
       : object_metadata_builder()
       , fe_(fe) {}
     ~replicated_object_builder() override {}
@@ -100,9 +100,9 @@ public:
       = delete;
     replicated_object_builder& operator=(replicated_object_builder&&) = delete;
 
-    std::expected<object_id, error>
+    ss::future<std::expected<object_id, error>>
     get_or_create_object_for(const model::topic_id_partition&) override;
-    std::expected<object_id, error>
+    ss::future<std::expected<object_id, error>>
     create_object_for(const model::topic_id_partition&) override;
     std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
@@ -112,6 +112,9 @@ public:
     bool is_empty() const override;
 
 private:
+    ss::future<std::expected<object_id, error>>
+    get_or_request_from_pool(model::partition_id metastore_pid);
+
     friend class cloud_topics::l1::replicated_metastore;
 
     struct partitioned_objects {
@@ -122,42 +125,74 @@ private:
         chunked_vector<metastore::object_metadata> finished_objects_;
     };
     leader_router& fe_;
+    // TODO: let callers decide.
+    static constexpr size_t pool_refill_size = 1;
+    chunked_hash_map<model::partition_id, chunked_vector<object_id>> pool_;
     chunked_hash_map<model::partition_id, partitioned_objects> partitions_;
 };
 
-std::expected<object_id, replicated_object_builder::error>
+ss::future<std::expected<object_id, replicated_object_builder::error>>
+replicated_object_builder::get_or_request_from_pool(
+  model::partition_id metastore_pid) {
+    auto& pool = pool_[metastore_pid];
+    if (pool.empty()) {
+        auto req = rpc::preregister_objects_request{
+          .metastore_partition = metastore_pid,
+          .count = static_cast<uint32_t>(pool_refill_size),
+        };
+        auto reply_fut = co_await ss::coroutine::as_future(
+          fe_.preregister_objects(std::move(req)));
+        if (reply_fut.failed()) {
+            auto ex = reply_fut.get_exception();
+            co_return std::unexpected(
+              error{fmt::format("preregister_objects() failed: {}", ex)});
+        }
+        auto reply = reply_fut.get();
+        if (reply.ec != rpc::errc::ok) {
+            co_return std::unexpected(
+              error{fmt::format("preregister_objects() error: {}", reply.ec)});
+        }
+        if (reply.object_ids.empty()) {
+            co_return std::unexpected(
+              error{fmt::format("preregister_objects() missing object IDs")});
+        }
+        pool = std::move(reply.object_ids);
+    }
+    auto oid = pool.back();
+    pool.pop_back();
+    if (pool.empty()) {
+        pool_.erase(metastore_pid);
+    }
+    partitions_[metastore_pid].pending_objects_[oid] = {};
+    co_return oid;
+}
+
+ss::future<std::expected<object_id, replicated_object_builder::error>>
 replicated_object_builder::get_or_create_object_for(
   const model::topic_id_partition& tidp) {
     auto metastore_pid = fe_.metastore_partition(tidp);
     if (!metastore_pid) {
-        return std::unexpected(
+        co_return std::unexpected(
           error{"could not determine metastore partition for "
                 "get_or_create_object_for()"});
     }
     auto& partition_objects = partitions_[*metastore_pid];
-
-    if (partition_objects.pending_objects_.empty()) {
-        auto oid = create_object_id();
-        partition_objects.pending_objects_[oid] = {};
-        return oid;
+    if (!partition_objects.pending_objects_.empty()) {
+        co_return partition_objects.pending_objects_.begin()->first;
     }
-    return partition_objects.pending_objects_.begin()->first;
+    co_return co_await get_or_request_from_pool(*metastore_pid);
 }
 
-std::expected<object_id, replicated_object_builder::error>
+ss::future<std::expected<object_id, replicated_object_builder::error>>
 replicated_object_builder::create_object_for(
   const model::topic_id_partition& tidp) {
     auto metastore_pid = fe_.metastore_partition(tidp);
     if (!metastore_pid) {
-        return std::unexpected(
+        co_return std::unexpected(
           error{
             "could not determine metastore partition for create_object_for()"});
     }
-    auto& partition_objects = partitions_[*metastore_pid];
-
-    auto oid = create_object_id();
-    partition_objects.pending_objects_[oid] = {};
-    return oid;
+    co_return co_await get_or_request_from_pool(*metastore_pid);
 }
 
 std::expected<void, replicated_object_builder::error>
@@ -245,7 +280,21 @@ rpc_to_meta_extent_metadata(chunked_vector<rpc::extent_metadata> v) {
     metastore::extent_metadata_vec res;
     res.reserve(v.size());
     for (auto& e : v) {
-        res.emplace_back(e.base_offset, e.last_offset, e.max_timestamp);
+        std::optional<metastore::extent_object_info> obj_info;
+        if (e.object_info.has_value()) {
+            obj_info = metastore::extent_object_info{
+              .oid = e.object_info->oid,
+              .footer_pos = e.object_info->footer_pos,
+              .object_size = e.object_info->object_size,
+            };
+        }
+        res.push_back(
+          metastore::extent_metadata{
+            .base_offset = e.base_offset,
+            .last_offset = e.last_offset,
+            .max_timestamp = e.max_timestamp,
+            .object_info = std::move(obj_info),
+          });
     }
     return res;
 }
@@ -320,6 +369,7 @@ replicated_metastore::get_size(const model::topic_id_partition& tidp) {
 
     metastore::size_response resp;
     resp.size = reply.size;
+    resp.num_extents = reply.num_extents;
     co_return resp;
 }
 
@@ -441,23 +491,26 @@ replicated_metastore::replace_objects(
 ss::future<std::expected<void, metastore::errc>>
 replicated_metastore::set_start_offset(
   const model::topic_id_partition& tidp, kafka::offset offset) {
-    rpc::set_start_offset_request req;
-    req.tp = tidp;
-    req.start_offset = offset;
+    while (true) {
+        rpc::set_start_offset_request req;
+        req.tp = tidp;
+        req.start_offset = offset;
 
-    auto reply_fut = co_await ss::coroutine::as_future(
-      fe_.set_start_offset(std::move(req)));
-    if (reply_fut.failed()) {
-        auto ex = reply_fut.get_exception();
-        vlog(cd_log.warn, "Error while sending request: {}", ex);
-        co_return std::unexpected(metastore::errc::transport_error);
+        auto reply_fut = co_await ss::coroutine::as_future(
+          fe_.set_start_offset(std::move(req)));
+        if (reply_fut.failed()) {
+            auto ex = reply_fut.get_exception();
+            vlog(cd_log.warn, "Error while sending request: {}", ex);
+            co_return std::unexpected(metastore::errc::transport_error);
+        }
+        auto reply = reply_fut.get();
+        if (reply.ec != rpc::errc::ok) {
+            co_return std::unexpected(rpc_to_meta_errc(reply.ec));
+        }
+        if (!reply.has_more) {
+            co_return std::expected<void, metastore::errc>{};
+        }
     }
-    auto reply = reply_fut.get();
-    if (reply.ec != rpc::errc::ok) {
-        co_return std::unexpected(rpc_to_meta_errc(reply.ec));
-    }
-
-    co_return std::expected<void, metastore::errc>{};
 }
 
 ss::future<std::expected<metastore::topic_removal_response, metastore::errc>>
@@ -831,7 +884,8 @@ replicated_metastore::get_extent_metadata_forwards(
   const model::topic_id_partition& tidp,
   kafka::offset min_offset,
   kafka::offset max_offset,
-  size_t max_num_extents) {
+  size_t max_num_extents,
+  include_object_metadata include_object_metadata) {
     static constexpr auto o = rpc::get_extent_metadata_request::order::forwards;
 
     rpc::get_extent_metadata_request req;
@@ -840,6 +894,7 @@ replicated_metastore::get_extent_metadata_forwards(
     req.max_offset = max_offset;
     req.max_num_extents = max_num_extents;
     req.o = o;
+    req.include_object_metadata = bool(include_object_metadata);
 
     auto reply_fut = co_await ss::coroutine::as_future(
       fe_.get_extent_metadata(std::move(req)));

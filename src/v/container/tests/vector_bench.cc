@@ -24,6 +24,10 @@ template<typename Vector, size_t Size>
 struct VectorBenchTest {
     using value_type = typename Vector::value_type;
 
+    static constexpr size_t inner_iters = std::max<size_t>(
+      1, 10000 / std::max<size_t>(1, Size));
+    static constexpr size_t access_inner_iters = 100;
+
     const value_type val = make_value();
     const Vector filled = make_filled();
 
@@ -57,43 +61,46 @@ struct VectorBenchTest {
     }();
 
     [[gnu::noinline]]
-    void run_sort_test() {
-        auto v = copy(filled);
-        std::sort(v.begin(), v.end());
+    size_t run_sort_test() {
+        for (size_t iter = 0; iter < inner_iters; ++iter) {
+            auto v = copy(filled);
+            std::sort(v.begin(), v.end());
+            perf_tests::do_not_optimize(v);
+        }
+        return inner_iters;
     }
 
     [[gnu::noinline]]
-    void run_fifo_test() {
-        Vector v;
-        for (size_t i = 0; i < Size; ++i) {
-            // NOLINTNEXTLINE(performance-inefficient-vector-operation)
-            v.push_back(val);
+    size_t run_lifo_test() {
+        for (size_t iter = 0; iter < inner_iters; ++iter) {
+            Vector v;
+            for (size_t i = 0; i < Size; ++i) {
+                v.push_back(val);
+            }
+            while (!v.empty()) {
+                v.pop_back();
+            }
         }
-        perf_tests::do_not_optimize(v);
+        return inner_iters;
     }
 
     [[gnu::noinline]]
-    void run_lifo_test() {
-        Vector v;
-        for (size_t i = 0; i < Size; ++i) {
-            v.push_back(val);
+    size_t run_fill_test() {
+        for (size_t iter = 0; iter < inner_iters; ++iter) {
+            Vector v = make_filled();
+            perf_tests::do_not_optimize(v);
         }
-        while (!v.empty()) {
-            v.pop_back();
-        }
+        return inner_iters;
     }
 
     [[gnu::noinline]]
-    void run_fill_test() {
-        Vector v = make_filled();
-        perf_tests::do_not_optimize(v);
-    }
-
-    [[gnu::noinline]]
-    void run_random_access_test() {
-        for (size_t index : indexes) {
-            perf_tests::do_not_optimize(filled[index]);
+    size_t run_random_access_test() {
+        for (size_t iter = 0; iter < access_inner_iters; ++iter) {
+            for (size_t index : indexes) {
+                perf_tests::do_not_optimize(filled[index]);
+            }
         }
+        return access_inner_iters;
     }
 };
 
@@ -102,20 +109,17 @@ struct VectorBenchTest {
     class VectorBenchTest_##container##_##element##_##size                     \
       : public VectorBenchTest<container<element>, size> {};                   \
     PERF_TEST_F(VectorBenchTest_##container##_##element##_##size, Sort) {      \
-        run_sort_test();                                                       \
-    }                                                                          \
-    PERF_TEST_F(VectorBenchTest_##container##_##element##_##size, Fifo) {      \
-        run_fifo_test();                                                       \
+        return run_sort_test();                                                \
     }                                                                          \
     PERF_TEST_F(VectorBenchTest_##container##_##element##_##size, Lifo) {      \
-        run_lifo_test();                                                       \
+        return run_lifo_test();                                                \
     }                                                                          \
     PERF_TEST_F(VectorBenchTest_##container##_##element##_##size, Fill) {      \
-        run_fill_test();                                                       \
+        return run_fill_test();                                                \
     }                                                                          \
     PERF_TEST_F(                                                               \
       VectorBenchTest_##container##_##element##_##size, RandomAccess) {        \
-        run_random_access_test();                                              \
+        return run_random_access_test();                                       \
     }
 // NOLINTEND(*-macro-*)
 

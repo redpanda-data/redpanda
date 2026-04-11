@@ -70,3 +70,15 @@ filegroup(
     srcs = ["bench_wrapper.py"],
     visibility = ["//visibility:public"],
 )
+
+bool_flag(
+    name = "antithesis",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "antithesis_enabled",
+    flag_values = {
+        ":antithesis": "true",
+    },
+)

@@ -827,7 +827,8 @@ ss::future<> controller::start(
         .partition_autobalancing_min_size_threshold.bind(),
       config::shard_local_cfg().node_status_interval.bind(),
       config::shard_local_cfg().raft_learner_recovery_rate.bind(),
-      config::shard_local_cfg().partition_autobalancing_topic_aware.bind());
+      config::shard_local_cfg().partition_autobalancing_topic_aware.bind(),
+      config::shard_local_cfg().health_monitor_max_metadata_age.bind());
     co_await _partition_balancer.invoke_on(
       partition_balancer_backend::shard, &partition_balancer_backend::start);
 

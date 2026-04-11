@@ -84,6 +84,11 @@
             "name": "restore_domain",
             "input_type": "restore_domain_request",
             "output_type": "restore_domain_reply"
+        },
+        {
+            "name": "preregister_objects",
+            "input_type": "preregister_objects_request",
+            "output_type": "preregister_objects_reply"
         }
     ]
 }

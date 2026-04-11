@@ -43,6 +43,9 @@ redpanda_cc_library(
     srcs = ["metastore.cc"],
     hdrs = ["metastore.h"],
     implementation_deps = [
+        "//src/v/cloud_topics/level_one/metastore/lsm:debug_reader",
+        "//src/v/cloud_topics/level_one/metastore/lsm:debug_serde",
+        "//src/v/cloud_topics/level_one/metastore/lsm:debug_writer",
         "//src/v/redpanda/admin/services:utils",
     ],
     deps = [

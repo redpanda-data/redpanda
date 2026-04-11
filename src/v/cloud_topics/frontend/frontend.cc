@@ -159,12 +159,17 @@ get_aborted_transactions_local(
     auto source = co_await p.aborted_transactions(
       offsets.begin_rp, offsets.end_rp);
 
+    // We trim beginning of aborted ranges to raft_start_offset because we
+    // don't have offset translation info for earlier offsets. This mirrors
+    // the logic in replicated_partition::aborted_transactions_local().
+    auto trim_at = p.raft_start_offset();
+
     std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
         target.emplace_back(
           range.pid,
-          ot_state->from_log_offset(range.first),
+          ot_state->from_log_offset(std::max(trim_at, range.first)),
           ot_state->from_log_offset(range.last));
     }
 
@@ -329,17 +334,17 @@ std::optional<model::topic_id_partition> frontend::topic_id_partition() const {
 
 std::unique_ptr<model::record_batch_reader::impl>
 frontend::make_l0_reader(const cloud_topic_log_reader_config& cfg) const {
-    return std::make_unique<level_zero_log_reader_impl>(
+    auto rdr = std::make_unique<level_zero_log_reader_impl>(
       cfg, _partition, _data_plane);
+    rdr->register_with_stm(_ctp_stm_api.get());
+    return rdr;
 }
 
-ss::future<size_t> frontend::size_bytes() {
-    auto l0_size = _ctp_stm_api->estimated_data_size();
-
+ss::future<std::optional<l1::metastore::size_response>> frontend::l1_size() {
     // If we have never reconciled there is no L1 data to query.
     auto lro = _ctp_stm_api->get_last_reconciled_offset();
     if (lro < kafka::offset{0}) {
-        co_return l0_size;
+        co_return std::nullopt;
     }
 
     auto ct_state = _partition->get_cloud_topics_state();
@@ -347,7 +352,7 @@ ss::future<size_t> frontend::size_bytes() {
 
     auto tidp = topic_id_partition();
     if (!tidp) {
-        co_return 0;
+        co_return std::nullopt;
     }
     auto size_res = co_await l1_metastore->get_size(*tidp);
     if (!size_res.has_value()) {
@@ -356,6 +361,23 @@ ss::future<size_t> frontend::size_bytes() {
           "Could not fetch L1 partition size for {}: {}",
           tidp,
           size_res.error());
+        co_return std::nullopt;
+    }
+
+    co_return size_res.value();
+}
+
+ss::future<size_t> frontend::size_bytes() {
+    auto l0_size = get_l0_size_estimate();
+
+    // If we have never reconciled there is no L1 data to query.
+    auto lro = _ctp_stm_api->get_last_reconciled_offset();
+    if (lro < kafka::offset{0}) {
+        co_return l0_size;
+    }
+
+    auto l1_size_res = co_await l1_size();
+    if (!l1_size_res) {
         /*
          * If we can't get an estimate of L1 we return 0 without reporting L0.
          * The rationale here is that if we are going to have size estimates
@@ -365,7 +387,7 @@ ss::future<size_t> frontend::size_bytes() {
         co_return 0;
     }
 
-    co_return size_res.value().size + l0_size;
+    co_return l0_size + l1_size_res.value().size;
 }
 
 std::unique_ptr<model::record_batch_reader::impl> frontend::make_l1_reader(
@@ -375,9 +397,16 @@ std::unique_ptr<model::record_batch_reader::impl> frontend::make_l1_reader(
     auto l1_metastore = ct_state->local().get_l1_metastore();
     auto l1_io = ct_state->local().get_l1_io();
     auto l1_reader_probe = ct_state->local().get_l1_reader_probe();
+    auto l1_cache = ct_state->local().get_l1_reader_cache();
 
     return std::make_unique<level_one_log_reader_impl>(
-      cfg, _partition->ntp(), tidp, l1_metastore, l1_io, l1_reader_probe);
+      cfg,
+      _partition->ntp(),
+      tidp,
+      l1_metastore,
+      l1_io,
+      l1_reader_probe,
+      l1_cache);
 }
 
 ss::future<std::optional<storage::timequery_result>>
@@ -619,21 +648,37 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     auto fence_fut = co_await ss::coroutine::as_future(
       ctp_stm_api->fence_epoch(upload_res.value().front().id.epoch));
     if (fence_fut.failed()) {
+        auto not_leader = !partition->is_leader();
         auto e = fence_fut.get_exception();
-        vlogl(
-          cd_log,
-          ssx::is_shutdown_exception(e) ? ss::log_level::debug
-                                        : ss::log_level::warn,
-          "Failed to fence epoch {} for ntp {}, error: {}",
-          upload_res.value().front().id.epoch,
-          ntp,
-          e);
+        if (not_leader) {
+            vlog(
+              cd_log.debug,
+              "Failed to fence epoch {} for ntp {}, not a leader",
+              upload_res.value().front().id.epoch,
+              ntp);
+        } else {
+            vlogl(
+              cd_log,
+              ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                            : ss::log_level::warn,
+              "Failed to fence epoch {} for ntp {}, error: {}",
+              upload_res.value().front().id.epoch,
+              ntp,
+              e);
+        }
         co_return default_errc;
     }
     auto fence = std::move(fence_fut.get());
     if (!fence.has_value()) {
-        vlog(
-          cd_log.warn,
+        auto no_window = fence.error().window_min == fence.error().window_max;
+        // NOTE: we might see the error when the partition is just created
+        // or right after the leadership transfer. This is transient state
+        // and is expected so we're logging this on DEBUG level. If the
+        // fence is not acquired during the steady state operation the log
+        // message is more useful and is logged on WARN level.
+        vlogl(
+          cd_log,
+          no_window ? ss::log_level::debug : ss::log_level::warn,
           "Failed to fence epoch {} for ntp {}, ctp window is [{}, {}]",
           upload_res.value().front().id.epoch,
           ntp,
@@ -684,22 +729,13 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
         // which case it's not stored) or from the log replay. The
         // simplest solution in this case is to skip caching.
         if (res.value().last_term >= model::term_id{0}) {
-            // Topic config may already be gone if the topic is being
-            // deleted; skip caching in that case.
             auto tidp = get_topic_id_partition(partition);
             if (tidp) {
                 update_batches(
                   cache_batches,
                   kafka::offset_cast(res.value().last_offset),
                   res.value().last_term);
-                for (const auto& b : cache_batches) {
-                    vlog(
-                      cd_log.trace,
-                      "Putting batch to cache: {}, term: {}",
-                      b.base_offset(),
-                      b.term());
-                    api->cache_put(*tidp, b);
-                }
+                api->cache_put_ordered(*tidp, std::move(cache_batches));
             }
         } else {
             vlog(
@@ -762,15 +798,24 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
     auto fence_fut = co_await ss::coroutine::as_future(
       _ctp_stm_api->fence_epoch(res.value().front().id.epoch));
     if (fence_fut.failed()) {
+        auto not_leader = !_partition->is_leader();
         auto e = fence_fut.get_exception();
-        vlogl(
-          cd_log,
-          ssx::is_shutdown_exception(e) ? ss::log_level::debug
-                                        : ss::log_level::warn,
-          "Failed to fence epoch {} for ntp {}, error: {}",
-          res.value().front().id.epoch,
-          ntp(),
-          fence_fut.get_exception());
+        if (not_leader) {
+            vlog(
+              cd_log.debug,
+              "Failed to fence epoch {} for ntp {}, not a leader",
+              res.value().front().id.epoch,
+              ntp());
+        } else {
+            vlogl(
+              cd_log,
+              ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                            : ss::log_level::warn,
+              "Failed to fence epoch {} for ntp {}, error: {}",
+              res.value().front().id.epoch,
+              ntp(),
+              e);
+        }
         std::rethrow_exception(e);
     }
     auto fence = std::move(fence_fut.get());
@@ -803,20 +848,10 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
     }
     auto ret_offset = model::offset(result.value().last_offset());
     if (!rb_copy.empty()) {
-        // Topic config may already be gone if the topic is being
-        // deleted; skip caching in that case.
         auto tidp = topic_id_partition();
         if (tidp) {
             update_batches(rb_copy, ret_offset, result.value().last_term);
-            for (const auto& b : rb_copy) {
-                vlog(
-                  cd_log.trace,
-                  "Putting batch for {} to cache: {}, term: {}",
-                  ntp(),
-                  b.base_offset(),
-                  b.term());
-                _data_plane->cache_put(*tidp, b);
-            }
+            _data_plane->cache_put_ordered(*tidp, std::move(rb_copy));
         }
     }
     co_return ret_offset;

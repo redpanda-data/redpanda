@@ -144,13 +144,17 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
 
     // Test mode default
     BOOST_REQUIRE_EQUAL(
-      c._store.get_mode(pps::default_context).get(), pps::mode::read_write);
+      c._store.get_mode(pps::default_context, pps::default_to_global::yes)
+        .get(),
+      pps::mode::read_write);
 
     // Test mode READONLY
     BOOST_REQUIRE_NO_THROW(
       c(make_record_batch(mode_key_0, mode_value_ro, base_offset++)).get());
     BOOST_REQUIRE_EQUAL(
-      c._store.get_mode(pps::default_context).get(), pps::mode::read_only);
+      c._store.get_mode(pps::default_context, pps::default_to_global::yes)
+        .get(),
+      pps::mode::read_only);
 
     // Test mode no subject, no fallback
     BOOST_REQUIRE_EXCEPTION(
@@ -177,7 +181,9 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     BOOST_REQUIRE_NO_THROW(
       c(make_record_batch(mode_key_0, mode_value_rw, base_offset++)).get());
     BOOST_REQUIRE_EQUAL(
-      c._store.get_mode(pps::default_context).get(), pps::mode::read_write);
+      c._store.get_mode(pps::default_context, pps::default_to_global::yes)
+        .get(),
+      pps::mode::read_write);
 
     // test mode subject override
     BOOST_REQUIRE_NO_THROW(

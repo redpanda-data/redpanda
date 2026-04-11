@@ -39,6 +39,7 @@ public:
     }
 
     void add_stats(const compaction::stats& stats) {
+        _batches_processed += stats.batches_processed;
         _batches_removed += stats.batches_discarded;
         _records_removed += stats.records_discarded;
         _tombstones_removed += stats.expired_tombstones_discarded;
@@ -47,6 +48,7 @@ public:
 private:
     hist_t _compaction_runs;
 
+    uint64_t _batches_processed{0};
     uint64_t _batches_removed{0};
     uint64_t _records_removed{0};
     uint64_t _tombstones_removed{0};

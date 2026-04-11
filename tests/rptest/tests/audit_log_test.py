@@ -3496,7 +3496,7 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
 
         # Context-level access with only sr_subject ACL should fail
         result = self.sr_client.get_config_subject(
-            subject=context_only, auth=self.user_auth
+            subject=context_only, fallback=True, auth=self.user_auth
         )
         self.assert_equal(result.status_code, 403)
 
@@ -3505,14 +3505,14 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
 
         # Context-level: audit should show registry resource
         result = self.sr_client.get_config_subject(
-            subject=context_only, auth=self.user_auth
+            subject=context_only, fallback=True, auth=self.user_auth
         )
         self.assert_equal(result.status_code, 200)
 
         records = self.find_matching_record(
             lambda record: self.match_api_record(
                 record,
-                path=f"config/{context_only}",
+                path=f"config/{context_only}?defaultToGlobal=true",
                 resources={"name": "", "type": "registry"},
                 status_id=StatusID.SUCCESS,
                 operation="get_config_subject",

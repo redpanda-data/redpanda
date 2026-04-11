@@ -344,3 +344,19 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "minimum_interval_timer",
+    srcs = [
+        "minimum_interval_timer.cc",
+    ],
+    hdrs = [
+        "minimum_interval_timer.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":future_util",
+        "//src/v/base",
+        "@seastar",
+    ],
+)

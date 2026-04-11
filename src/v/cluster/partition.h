@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
-#include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/fwd.h"
 #include "cluster/fwd.h"
@@ -402,10 +401,6 @@ public:
     ss::sharded<cloud_topics::state_accessors>*
     get_cloud_topics_state() noexcept;
 
-    // If this is a cloud topics partition then the max GC eligible epoch (if
-    // any) is returned.
-    std::optional<int64_t> cloud_topic_max_gc_eligible_epoch() const;
-
 private:
     ss::future<>
     replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
@@ -432,7 +427,6 @@ private:
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::shared_ptr<partition_properties_stm> _partition_properties_stm;
     ss::sharded<cloud_topics::state_accessors>* _cloud_topics_state;
-    ss::shared_ptr<cloud_topics::ctp_stm> _ctp_stm;
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<features::feature_table>& _feature_table;

@@ -235,7 +235,7 @@ private:
     /* RPC and raft0 actions */
     ss::future<> send_rpc(model::node_id node_id);
     ss::future<check_ntp_states_reply>
-    check_ntp_states_locally(check_ntp_states_request&& req);
+    check_ntp_states_locally(check_ntp_states_request req);
     void to_advance_if_done(mrstate_cit_t it);
     ss::future<> advance(id migration_id, state sought_state);
     void spawn_advances();

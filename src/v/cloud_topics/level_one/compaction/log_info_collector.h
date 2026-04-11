@@ -58,7 +58,7 @@ public:
 
 // Default max_compactible_offset_provider, which uses the `shard_table` and
 // `partition_manager` to access a partition's `lowest_pinned_data_offset()`
-// through its `stm_manager()`. Batches cross-shard calls by grouping NTPs
+// through its `stm_hookset()`. Batches cross-shard calls by grouping NTPs
 // by their owning shard.
 class max_compactible_offset_provider_impl
   : public max_compactible_offset_provider {

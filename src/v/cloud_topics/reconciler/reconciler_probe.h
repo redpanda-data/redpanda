@@ -11,6 +11,7 @@
 #pragma once
 
 #include "metrics/metrics.h"
+#include "utils/hdr_hist.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -62,7 +63,7 @@ public:
         return _metastore_add_objects_duration.internal_histogram_logform();
     }
     auto get_object_size_bytes_for_tests() const {
-        return _object_size_bytes.internal_histogram_logform();
+        return _object_size_bytes.seastar_histogram_logform();
     }
 
 private:
@@ -79,7 +80,7 @@ private:
     hist_t _l0_read_duration;
     hist_t _object_build_duration;
     hist_t _metastore_add_objects_duration;
-    hist_t _object_size_bytes;
+    hdr_hist _object_size_bytes;
 };
 
 } // namespace cloud_topics::reconciler

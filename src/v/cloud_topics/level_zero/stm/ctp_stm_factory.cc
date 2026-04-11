@@ -17,7 +17,8 @@ namespace cloud_topics::l0 {
 
 bool ctp_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
-    return ntp_cfg.cloud_topic_enabled();
+    return ntp_cfg.cloud_topic_enabled()
+           && !ntp_cfg.is_read_replica_mode_enabled();
 }
 
 void ctp_stm_factory::create(
@@ -26,7 +27,7 @@ void ctp_stm_factory::create(
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<cloud_topics::ctp_stm>(
       cloud_topics::cd_log, raft);
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace cloud_topics::l0

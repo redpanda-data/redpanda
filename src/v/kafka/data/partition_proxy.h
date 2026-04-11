@@ -12,6 +12,7 @@
 
 #include "base/outcome.h"
 #include "cluster/fwd.h"
+#include "cluster/types.h"
 #include "kafka/data/log_reader_config.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/types.h"
@@ -99,6 +100,8 @@ public:
         virtual size_t local_size_bytes() const = 0;
         virtual ss::future<std::optional<size_t>> cloud_size_bytes() const = 0;
         virtual model::offset offset_lag() const = 0;
+        virtual ss::future<cluster::partition_cloud_storage_status>
+        get_cloud_storage_status() const = 0;
     };
 
     explicit partition_proxy(std::unique_ptr<impl> impl) noexcept
@@ -211,6 +214,11 @@ public:
      * zero. It's calculated as the highwater mark minus the dirty offset.
      */
     model::offset offset_lag() const { return _impl->offset_lag(); }
+
+    ss::future<cluster::partition_cloud_storage_status>
+    get_cloud_storage_status() const {
+        return _impl->get_cloud_storage_status();
+    }
 
 private:
     std::unique_ptr<impl> _impl;

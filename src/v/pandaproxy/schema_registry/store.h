@@ -605,12 +605,32 @@ public:
     }
 
     ///\brief Get the mode of a context.
-    result<mode> get_mode(const context& ctx) const {
-        auto it = _context_stores.find(ctx);
-        if (it == _context_stores.end() || !it->second._mode.has_value()) {
-            return mode::read_write;
+    result<mode>
+    get_mode(const context& ctx, default_to_global fallback) const {
+        // Check context's own mode
+        if (auto it = _context_stores.find(ctx);
+            it != _context_stores.end() && it->second._mode.has_value()) {
+            return it->second._mode.value();
         }
-        return *it->second._mode;
+
+        // Default and global contexts always return a value, never
+        // an error. Other contexts enter this block only when
+        // fallback is enabled; otherwise they reach the
+        // error return below. Within this block, non-global contexts
+        // consult global_context first, and if that has no value,
+        // return the hard-coded default.
+        if (fallback || ctx == default_context || ctx == global_context) {
+            if (fallback && ctx != global_context) {
+                if (auto global_it = _context_stores.find(global_context);
+                    global_it != _context_stores.end()
+                    && global_it->second._mode.has_value()) {
+                    return *global_it->second._mode;
+                }
+            }
+            return default_top_level_mode;
+        }
+
+        return mode_not_found(ctx);
     }
 
     ///\brief Get the mode for a subject, or fallback to global.
@@ -619,8 +639,12 @@ public:
         auto sub_it = get_subject_iter(sub, include_deleted::yes);
         if (sub_it && (sub_it.assume_value())->second.mode.has_value()) {
             return (sub_it.assume_value())->second.mode.value();
-        } else if (fallback) {
-            return get_mode(sub.ctx);
+        }
+        // Fall through to context-level mode.
+        // global_context subjects always fall through; other contexts only fall
+        // through when fallback is set.
+        if (sub.ctx == global_context || fallback) {
+            return get_mode(sub.ctx, fallback);
         }
         return mode_not_found(sub);
     }
@@ -667,37 +691,64 @@ public:
     result<chunked_vector<seq_marker>>
     get_context_mode_written_at(const context& ctx) const {
         auto it = _context_stores.find(ctx);
-        if (it == _context_stores.end()) {
-            return chunked_vector<seq_marker>{};
+        if (
+          it == _context_stores.end() || it->second._mode_written_at.empty()) {
+            return not_found({ctx, subject{""}});
         }
+
         return it->second._mode_written_at.copy();
     }
 
     ///\brief Get the compatibility level of a context.
-    result<compatibility_level> get_compatibility(const context& ctx) const {
-        auto it = _context_stores.find(ctx);
-        if (
-          it == _context_stores.end()
-          || !it->second._compatibility.has_value()) {
-            return compatibility_level::backward;
+    result<compatibility_level>
+    get_compatibility(const context& ctx, default_to_global fallback) const {
+        // Check context's own config
+        if (auto it = _context_stores.find(ctx);
+            it != _context_stores.end()
+            && it->second._compatibility.has_value()) {
+            return it->second._compatibility.value();
         }
-        return *it->second._compatibility;
+
+        // Default and global contexts always return a value, never
+        // an error. Other contexts enter this block only when
+        // fallback is enabled; otherwise they reach the
+        // error return below. Within this block, non-global contexts
+        // consult global_context first, and if that has no value,
+        // return the hard-coded default.
+        if (fallback || ctx == default_context || ctx == global_context) {
+            if (fallback && ctx != global_context) {
+                if (auto global_it = _context_stores.find(global_context);
+                    global_it != _context_stores.end()
+                    && global_it->second._compatibility.has_value()) {
+                    return *global_it->second._compatibility;
+                }
+            }
+            return default_top_level_compat;
+        }
+
+        return compatibility_not_found(ctx);
     }
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
     result<compatibility_level> get_compatibility(
       const context_subject& sub, default_to_global fallback) const {
+        // Check subject's own config (if the subject exists)
         auto sub_it_res = get_subject_iter(sub, include_deleted::no);
-        if (sub_it_res.has_error()) {
-            return compatibility_not_found(sub);
+        if (sub_it_res.has_value()) {
+            auto sub_it = std::move(sub_it_res).assume_value();
+            auto compat = sub_it->second.compatibility;
+            if (compat) {
+                return compat.value();
+            }
         }
-        auto sub_it = std::move(sub_it_res).assume_value();
-        auto compat = sub_it->second.compatibility;
-        if (compat) {
-            return compat.value();
-        } else if (fallback) {
-            return get_compatibility(sub.ctx);
+
+        // Fall through to context-level compatibility.
+        // global_context subjects always fall through; other contexts only fall
+        // through when fallback is set.
+        if (sub.ctx == global_context || fallback) {
+            return get_compatibility(sub.ctx, fallback);
         }
+
         return compatibility_not_found(sub);
     }
 
@@ -747,9 +798,12 @@ public:
     result<chunked_vector<seq_marker>>
     get_context_config_written_at(const context& ctx) const {
         auto it = _context_stores.find(ctx);
-        if (it == _context_stores.end()) {
-            return chunked_vector<seq_marker>{};
+        if (
+          it == _context_stores.end()
+          || it->second._config_written_at.empty()) {
+            return not_found({ctx, subject{""}});
         }
+
         return it->second._config_written_at.copy();
     }
 

@@ -36,24 +36,28 @@ term_state_update_t make_terms_update(const metastore::term_offset_map_t& m) {
 }
 } // namespace
 
-std::expected<object_id, simple_object_builder::error>
+ss::future<std::expected<object_id, simple_object_builder::error>>
 simple_object_builder::get_or_create_object_for(
-  const model::topic_id_partition&) {
+  const model::topic_id_partition& tidp) {
     // The simple metastore isn't partitioned at all, so have all partitions
     // blindly share any existing object.
     if (pending_objects_.empty()) {
-        auto oid = create_object_id();
-        pending_objects_[oid] = {};
-        return oid;
+        co_return co_await create_object_for(tidp);
     }
-    return pending_objects_.begin()->first;
+    co_return pending_objects_.begin()->first;
 }
 
-std::expected<object_id, simple_object_builder::error>
+ss::future<std::expected<object_id, simple_object_builder::error>>
 simple_object_builder::create_object_for(const model::topic_id_partition&) {
     auto oid = create_object_id();
+    preregister_objects_update prereg{
+      .registered_at = model::timestamp::now(),
+    };
+    prereg.object_ids.push_back(oid);
+    auto res = prereg.apply(*state_);
+    vassert(res.has_value(), "preregister_objects_update::apply must succeed");
     pending_objects_[oid] = {};
-    return oid;
+    co_return oid;
 }
 
 std::expected<void, simple_object_builder::error>
@@ -139,7 +143,24 @@ ss::future<std::expected<
   std::unique_ptr<metastore::object_metadata_builder>,
   metastore::errc>>
 simple_metastore::object_builder() {
-    co_return std::make_unique<simple_object_builder>();
+    co_return std::make_unique<simple_object_builder>(&state_);
+}
+
+void simple_metastore::preregister_objects(
+  const chunked_vector<object_id>& object_ids) {
+    preregister_objects_update prereg{
+      .registered_at = model::timestamp::now(),
+    };
+    for (const auto& oid : object_ids) {
+        if (!state_.objects.contains(oid)) {
+            prereg.object_ids.push_back(oid);
+        }
+    }
+    if (prereg.object_ids.empty()) {
+        return;
+    }
+    auto res = prereg.apply(state_);
+    vassert(res.has_value(), "preregister_objects_update::apply must succeed");
 }
 
 ss::future<std::expected<metastore::offsets_response, metastore::errc>>
@@ -178,6 +199,7 @@ simple_metastore::get_size(
     const auto& prt = prt_ref->get();
     return size_response{
       .size = prt.calculate_size(),
+      .num_extents = prt.extents.size(),
     };
 }
 
@@ -761,9 +783,15 @@ simple_metastore::get_extent_metadata_forwards(
   const model::topic_id_partition& tp,
   kafka::offset min_offset,
   kafka::offset max_offset,
-  size_t max_num_extents) {
+  size_t max_num_extents,
+  include_object_metadata include_object_metadata) {
     co_return get_extent_metadata_forwards(
-      state_, tp, min_offset, max_offset, max_num_extents);
+      state_,
+      tp,
+      min_offset,
+      max_offset,
+      max_num_extents,
+      include_object_metadata);
 }
 
 std::expected<metastore::extent_metadata_response, metastore::errc>
@@ -772,7 +800,8 @@ simple_metastore::get_extent_metadata_forwards(
   const model::topic_id_partition& tp,
   kafka::offset min_offset,
   kafka::offset max_offset,
-  size_t max_num_extents) {
+  size_t max_num_extents,
+  include_object_metadata include_object_metadata) {
     auto prt_ref = state.partition_state(tp);
 
     if (!prt_ref.has_value()) {
@@ -788,15 +817,36 @@ simple_metastore::get_extent_metadata_forwards(
     auto min_it = std::ranges::lower_bound(
       prt.extents, min_offset, std::less<>{}, &extent::last_offset);
     for (auto it = min_it; it != prt.extents.end(); ++it) {
-        auto& extent = *it;
-        if (extent.base_offset > max_offset) {
+        auto& ext = *it;
+        if (ext.base_offset > max_offset) {
             break;
         }
 
-        extents.push_back(
-          {.base_offset = extent.base_offset,
-           .last_offset = extent.last_offset,
-           .max_timestamp = extent.max_timestamp});
+        extent_metadata em{
+          .base_offset = ext.base_offset,
+          .last_offset = ext.last_offset,
+          .max_timestamp = ext.max_timestamp};
+
+        if (include_object_metadata) {
+            auto object_it = state.objects.find(ext.oid);
+            if (object_it == state.objects.end()) {
+                vlog(
+                  cd_log.error,
+                  "Missing object metadata for oid {} in extent "
+                  "({}~{})",
+                  ext.oid,
+                  ext.base_offset,
+                  ext.last_offset);
+                return std::unexpected(errc::out_of_range);
+            }
+            em.object_info = extent_object_info{
+              .oid = ext.oid,
+              .footer_pos = object_it->second.footer_pos,
+              .object_size = object_it->second.object_size,
+            };
+        }
+
+        extents.push_back(std::move(em));
 
         if (extents.size() >= max_num_extents) {
             end_of_stream = false;
@@ -851,15 +901,15 @@ simple_metastore::get_extent_metadata_backwards(
                      ? std::make_reverse_iterator(prt.extents.end())
                      : std::make_reverse_iterator(std::next(max_it));
     for (auto it = max_rit; it != prt.extents.rend(); ++it) {
-        auto& extent = *it;
-        if (extent.last_offset < min_offset) {
+        auto& ext = *it;
+        if (ext.last_offset < min_offset) {
             break;
         }
 
         extents.push_back(
-          {.base_offset = extent.base_offset,
-           .last_offset = extent.last_offset,
-           .max_timestamp = extent.max_timestamp});
+          {.base_offset = ext.base_offset,
+           .last_offset = ext.last_offset,
+           .max_timestamp = ext.max_timestamp});
 
         if (extents.size() >= max_num_extents) {
             end_of_stream = false;

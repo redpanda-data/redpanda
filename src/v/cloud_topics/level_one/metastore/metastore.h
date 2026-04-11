@@ -22,6 +22,7 @@
 #include <seastar/core/future.hh>
 
 #include <expected>
+#include <optional>
 
 namespace cloud_storage {
 struct remote_label;
@@ -112,7 +113,7 @@ public:
         // appropriate for the given partition. Potentially shares the object
         // with another partition, if the object is allowed by the metastore to
         // be shared by the other partition.
-        virtual std::expected<object_id, error>
+        virtual ss::future<std::expected<object_id, error>>
         get_or_create_object_for(const model::topic_id_partition&) = 0;
 
         // Creates a new object for the given partition. It is guaranteed that
@@ -123,7 +124,7 @@ public:
         // this particular `object_metadata_builder` only invoke
         // `create_object_for()` and `finish()` for the provided `object_id`
         // within a tightly bounded scope.
-        virtual std::expected<object_id, error>
+        virtual ss::future<std::expected<object_id, error>>
         create_object_for(const model::topic_id_partition&) = 0;
 
         // Removes a pending object from the builder. The object must be in the
@@ -179,7 +180,9 @@ public:
 
     struct size_response {
         // The total size of the partition in bytes.
-        size_t size;
+        size_t size{0};
+        // The number of extents in the partition.
+        size_t num_extents{0};
     };
     // Returns the size of the partition in bytes.
     virtual ss::future<std::expected<size_response, errc>>
@@ -443,12 +446,32 @@ public:
     virtual ss::future<std::expected<compaction_info_map, errc>>
     get_compaction_infos(const chunked_vector<compaction_info_spec>&) = 0;
 
+    struct extent_object_info {
+        object_id oid;
+        size_t footer_pos{0};
+        size_t object_size{0};
+    };
+
     struct extent_metadata {
         kafka::offset base_offset;
         kafka::offset last_offset;
         model::timestamp max_timestamp;
+        // Only populated when include_object_metadata is set.
+        std::optional<extent_object_info> object_info;
 
         fmt::iterator format_to(fmt::iterator it) const {
+            if (object_info.has_value()) {
+                return fmt::format_to(
+                  it,
+                  "{{offsets:({}~{}), max_timestamp:{}, oid:{}, "
+                  "footer_pos:{}, object_size:{}}}",
+                  base_offset,
+                  last_offset,
+                  max_timestamp,
+                  object_info->oid,
+                  object_info->footer_pos,
+                  object_info->object_size);
+            }
             return fmt::format_to(
               it,
               "{{offsets:({}~{}), max_timestamp:{}}}",
@@ -468,15 +491,25 @@ public:
         bool end_of_stream{true};
     };
 
+    using include_object_metadata
+      = ss::bool_class<struct include_object_metadata_tag>;
+
     // Returns a number of extents in the offset range `[start, end]`
     // inclusively, and in ascending offset order. Useful for forward
     // iteration over an extent-aligned offset range- that is, for an extent
     // metastore state of `[[0, 9],[10,19],[20,29]]`, and a request like
     // `get_extent_metadata_ge([0, 15])`, the returned extents will be `[[0, 9],
     // [10, 19]]`.
+    //
+    // When include_object_metadata is yes, each extent_metadata in the
+    // response will also have oid, footer_pos, and object_size populated.
     virtual ss::future<std::expected<extent_metadata_response, errc>>
     get_extent_metadata_forwards(
-      const model::topic_id_partition&, kafka::offset, kafka::offset, size_t)
+      const model::topic_id_partition&,
+      kafka::offset,
+      kafka::offset,
+      size_t,
+      include_object_metadata)
       = 0;
 
     // Returns a number of extents in the offset range `[start, end]`
@@ -485,6 +518,9 @@ public:
     // metastore state of `[[0, 9],[10,19],[20,29]]`, and a request like
     // `get_extent_metadata_le([0, 15])`, the returned extents will be `[[10,
     // 19], [0, 9]]`.
+    //
+    // NOTE: unlike get_extent_metadata_forwards, this method does not
+    // support include_object_metadata. Add it here if needed.
     virtual ss::future<std::expected<extent_metadata_response, errc>>
     get_extent_metadata_backwards(
       const model::topic_id_partition&, kafka::offset, kafka::offset, size_t)

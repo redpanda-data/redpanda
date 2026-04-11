@@ -73,10 +73,15 @@ private:
     ss::future<std::expected<void, topic_manifest_uploader::error>>
     upload_once() {
         auto topic_cfg_opt = _partition->get_topic_config();
-        vassert(
-          topic_cfg_opt.has_value(),
-          "Expected topic config to be set on partition 0: {}",
-          _tidp);
+        if (!topic_cfg_opt.has_value()) {
+            // Topic config may not yet be set if we raced with partition
+            // creation. Retry after backoff.
+            co_return std::unexpected(
+              topic_manifest_uploader::error{
+                topic_manifest_uploader::errc::io_error,
+                fmt::format(
+                  "topic config not yet set on partition 0: {}", _tidp)});
+        }
 
         // Tweak the replication factor based on the current number of
         // replicas, matching the behavior in tiered storage.

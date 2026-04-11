@@ -142,10 +142,10 @@ compaction_sink::initialize(compaction::sliding_window_reducer::source& src) {
 
 ss::future<>
 compaction_sink::initialize_builder(kafka::offset object_base_offset) {
-    auto oid_res = _metadata_builder->create_object_for(_tp);
+    auto oid_res = co_await _metadata_builder->create_object_for(_tp);
     if (!oid_res.has_value()) {
         vlog(
-          compaction_log.error,
+          compaction_log.warn,
           "Failed to create object for tidp {}: {}",
           _tp,
           oid_res.error());
@@ -159,7 +159,7 @@ compaction_sink::initialize_builder(kafka::offset object_base_offset) {
     if (!upload_res.has_value()) {
         std::ignore = _metadata_builder->remove_pending_object(oid);
         vlog(
-          compaction_log.error,
+          compaction_log.warn,
           "Failed to create multipart upload for object {}, tidp {}: {}",
           oid,
           _tp,
@@ -246,6 +246,13 @@ ss::future<> compaction_sink::flush(kafka::offset object_last_offset) {
     vassert(
       std::distance(first, last) == 1,
       "Expected one partition range in builder.");
+    dassert(
+      object_base_offset <= object_last_offset,
+      "Compaction sink produced inverted extent for tidp {}: base_offset {} "
+      "> last_offset {}",
+      _tp,
+      object_base_offset,
+      object_last_offset);
     auto ntp_md = metastore::object_metadata::ntp_metadata{
       .tidp = _tp,
       .base_offset = object_base_offset,
@@ -394,17 +401,35 @@ ss::future<> compaction_sink::compact_objects_with_update(
     }
 }
 
-ss::future<> compaction_sink::finalize() {
+ss::future<> compaction_sink::finalize(bool success) {
     if (!_metadata_builder) {
         co_return;
     }
 
     if (_inflight_object) {
-        if (!_processed_extents.empty()) {
+        if (success && !_processed_extents.empty()) {
             auto last_offset
               = _processed_extents.make_reverse_stream().next().last_offset;
             co_await flush(last_offset);
         } else {
+            // On the exceptional path, the inflight object may either:
+            // 1. Have a base offset > the last processed extent's last offset.
+            //    E.g., iterating over extents [[0,9], [10,19]], a new object is
+            //    rolled with `object_base_offset=15`, an exception is thrown
+            //    and caught, and we call `sink->finalize()` with
+            //    `last_offset=9`. Flushing would give us an object with offsets
+            //    [15,9], violating the offset space.
+            // 2. Have partially-processed extent data that extends beyond what
+            //    `_processed_extents` tracks. E.g., iterating over extents
+            //    [[0,9], [10,19]] with `object_base_offset=0`, we iterate up to
+            //    offset 15 in the second extent, an exception is thrown and and
+            //    caught, and we call `sink->finalize()` with `last_offset=9`.
+            //    Flushing would give us an object with offsets [0,9], even
+            //    though the inflight object now contains data for the offset
+            //    space [0,15].
+            // In either case, discard the inflight object in the exceptional
+            // path to avoid uploading an object whose contents don't match the
+            // recorded metadata.
             auto inflight_object = std::exchange(_inflight_object, nullptr);
             co_await discard_object(
               std::move(inflight_object->upload),

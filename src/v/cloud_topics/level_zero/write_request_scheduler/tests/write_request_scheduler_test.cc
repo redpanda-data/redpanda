@@ -549,6 +549,8 @@ public:
     void set_next_stage_backlog(size_t shard, size_t bytes) {
         next_stage_counters[shard]->store(bytes);
     }
+
+    l0::write_request_scheduler_probe probe{true};
 };
 
 TEST_F(scheduler_context_test, test_initial_state) {
@@ -767,9 +769,10 @@ TEST_F(scheduler_context_test, test_try_schedule_upload_triggers_split) {
     auto ctx = make_context(4);
 
     // Group has 4 shards, max_buffer_size = 4 MiB
-    // Split threshold = 4 MiB × 4 = 16 MiB
-    constexpr size_t max_buffer_size = 4 * 1024 * 1024;              // 4 MiB
-    constexpr size_t expected_split_threshold = max_buffer_size * 4; // 16 MiB
+    // Split threshold = 2 × 4 MiB × 4 = 32 MiB
+    constexpr size_t max_buffer_size = 4 * 1024 * 1024; // 4 MiB
+    constexpr size_t expected_split_threshold = 2 * max_buffer_size
+                                                * 4; // 32 MiB
 
     // Set high next stage backlog to trigger split
     set_next_stage_backlog(0, expected_split_threshold + 1);
@@ -785,7 +788,7 @@ TEST_F(scheduler_context_test, test_try_schedule_upload_triggers_split) {
 
     // Shard 0 is first in group, should evaluate and trigger split
     auto result = ctx->try_schedule_upload(
-      ss::shard_id(0), max_buffer_size, 100ms, clock_type::now());
+      ss::shard_id(0), max_buffer_size, 100ms, clock_type::now(), probe);
 
     // After split, shards 0,1 should be in group 0, shards 2,3 in group 2
     EXPECT_EQ(ctx->shard_to_group[0].load(), l0::group_id{0});
@@ -818,7 +821,8 @@ TEST_F(scheduler_context_test, test_try_schedule_upload_triggers_merge) {
       ss::shard_id(0),
       500, // max_buffer_size
       100ms,
-      clock_type::now());
+      clock_type::now(),
+      probe);
 
     // After merge, all shards should be in group 0
     EXPECT_EQ(ctx->shard_to_group[0].load(), l0::group_id{0});
@@ -840,7 +844,7 @@ TEST_F(scheduler_context_test, test_round_robin_within_group) {
 
     // Round-robin counter starts at 0, so shard 0 should be selected first
     auto result0 = ctx->try_schedule_upload(
-      ss::shard_id(0), 500, 100ms, clock_type::now());
+      ss::shard_id(0), 500, 100ms, clock_type::now(), probe);
     EXPECT_EQ(result0.action, l0::schedule_action::upload);
 
     // Release the lock before checking next shard (simulates upload completion)
@@ -848,11 +852,11 @@ TEST_F(scheduler_context_test, test_round_robin_within_group) {
 
     // After upload, ix is incremented, so shard 1 should be selected next
     auto result1_skip = ctx->try_schedule_upload(
-      ss::shard_id(0), 500, 100ms, clock_type::now());
+      ss::shard_id(0), 500, 100ms, clock_type::now(), probe);
     EXPECT_EQ(result1_skip.action, l0::schedule_action::skip);
 
     auto result1 = ctx->try_schedule_upload(
-      ss::shard_id(1), 500, 100ms, clock_type::now());
+      ss::shard_id(1), 500, 100ms, clock_type::now(), probe);
     EXPECT_EQ(result1.action, l0::schedule_action::upload);
 }
 
@@ -933,6 +937,8 @@ public:
     void add_next_stage_backlog(size_t shard, size_t bytes) {
         next_stage_counters[shard]->fetch_add(bytes);
     }
+
+    l0::write_request_scheduler_probe probe{true};
 
     // Simulate ingestion: add random bytes to current stage backlog
     void simulate_ingestion() {
@@ -1050,7 +1056,8 @@ TEST_F(scheduler_context_fuzz_test, test_random_workload) {
               ss::shard_id(shard),
               max_buffer_size,
               scheduling_interval,
-              simulated_time);
+              simulated_time,
+              probe);
 
             if (result.action == l0::schedule_action::upload) {
                 // Deposit bytes from current stage to next stage
@@ -1105,7 +1112,8 @@ TEST_F(scheduler_context_fuzz_test, test_high_load_causes_splits) {
               ss::shard_id(shard),
               max_buffer_size,
               scheduling_interval,
-              simulated_time);
+              simulated_time,
+              probe);
 
             if (result.action == l0::schedule_action::upload) {
                 deposit_to_next_stage(*ctx, result.gid);
@@ -1187,7 +1195,8 @@ TEST_F(scheduler_context_fuzz_test, test_low_load_causes_merges) {
               ss::shard_id(shard),
               max_buffer_size,
               scheduling_interval,
-              simulated_time);
+              simulated_time,
+              probe);
 
             if (result.action == l0::schedule_action::upload) {
                 deposit_to_next_stage(*ctx, result.gid);

@@ -22,7 +22,8 @@ ss::future<std::unique_ptr<data_persistence>> open_cloud_data_persistence(
   std::filesystem::path staging_directory,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
-  cloud_storage_clients::object_key prefix);
+  cloud_storage_clients::object_key prefix,
+  ss::sstring staging_prefix);
 
 // Open a metadata persistence object in the given bucket at the prefix.
 ss::future<std::unique_ptr<metadata_persistence>>

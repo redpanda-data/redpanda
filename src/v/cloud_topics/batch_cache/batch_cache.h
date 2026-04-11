@@ -58,9 +58,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    // Put element into the batch cache. The element shouldn't be dirty.
-    // The code that uses this class should only use this to cache committed
-    // entries.
+    // Put element into the batch cache.
     void
     put(const model::topic_id_partition& tidp, const model::record_batch& b);
 
@@ -78,7 +76,17 @@ public:
       model::timeout_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> as);
 
+    /// Put batches into the cache and notify the offset monitor when the
+    /// inserted batches extend the contiguous range tracked by the monitor.
+    void put_ordered(
+      const model::topic_id_partition& tidp,
+      chunked_vector<model::record_batch> batches);
+
 private:
+    /// Signal that batches up to \p last_offset have been inserted for \p tidp.
+    /// Wakes readers blocked in wait_for_offset.
+    void
+    notify(const model::topic_id_partition& tidp, model::offset last_offset);
     // Remove dead index entries
     ss::future<> cleanup_index_entries();
 

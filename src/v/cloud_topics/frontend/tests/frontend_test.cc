@@ -63,7 +63,8 @@ public:
        size_t output_size_estimate,
        chunked_vector<extent_meta> metadata,
        model::timeout_clock::time_point timeout,
-       model::opt_abort_source_t),
+       model::opt_abort_source_t,
+       allow_materialization_failure allow_mat_failure),
       (override));
 
     MOCK_METHOD(
@@ -76,6 +77,12 @@ public:
       std::optional<model::record_batch>,
       cache_get,
       (const model::topic_id_partition&, model::offset o),
+      (override));
+
+    MOCK_METHOD(
+      void,
+      cache_put_ordered,
+      (const model::topic_id_partition&, chunked_vector<model::record_batch>),
       (override));
 
     MOCK_METHOD(
@@ -151,7 +158,9 @@ TEST_F(frontend_fixture, test_replicate_epoch) {
 
     cloud_topics::frontend frontend(std::move(partition), _data_plane.get());
 
-    EXPECT_CALL(*_data_plane, cache_put(_, _)).Times(2);
+    ON_CALL(*_data_plane, cache_put_ordered(_, _))
+      .WillByDefault([](const auto&, auto) {});
+    EXPECT_CALL(*_data_plane, cache_put_ordered(_, _)).Times(2);
     using stage_result = std::expected<staged_write, std::error_code>;
     EXPECT_CALL(*_data_plane, stage_write(_))
       .WillOnce(Return(ss::as_ready_future(stage_result{})))

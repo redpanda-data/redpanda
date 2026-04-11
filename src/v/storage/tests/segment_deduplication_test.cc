@@ -414,7 +414,7 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
     for (auto& seg : segs) {
         storage::internal::self_compact_segment(
           seg,
-          disk_log.stm_manager(),
+          disk_log.stm_hookset(),
           cfg,
           pb,
           disk_log.readers(),
@@ -428,7 +428,7 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
     auto partial_o = build_offset_map(
                        cfg,
                        segs,
-                       disk_log.stm_manager(),
+                       disk_log.stm_hookset(),
                        disk_log.resources(),
                        disk_log.get_probe(),
                        partial_map,
@@ -441,7 +441,7 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
     auto all_segs_o = build_offset_map(
                         cfg,
                         segs,
-                        disk_log.stm_manager(),
+                        disk_log.stm_hookset(),
                         disk_log.resources(),
                         disk_log.get_probe(),
                         all_segs_map,
@@ -475,7 +475,7 @@ TEST(BuildOffsetMap, TestBuildMapWithMissingCompactedIndex) {
     auto o = build_offset_map(
                cfg,
                segs,
-               disk_log.stm_manager(),
+               disk_log.stm_hookset(),
                disk_log.resources(),
                disk_log.get_probe(),
                missing_index_map,
@@ -515,7 +515,7 @@ TEST(DeduplicateSegmentsTest, TestBadReader) {
     auto map_start_offset = build_offset_map(
                               cfg,
                               segs,
-                              disk_log.stm_manager(),
+                              disk_log.stm_hookset(),
                               disk_log.resources(),
                               disk_log.get_probe(),
                               all_segs_map,
@@ -549,7 +549,7 @@ TEST(DeduplicateSegmentsTest, TestBadReader) {
         first_seg,
         *appender,
         *compacted_idx_writer,
-        disk_log.stm_manager(),
+        disk_log.stm_hookset(),
         disk_log.get_probe(),
         storage::internal::should_apply_delta_time_offset(b.feature_table()),
         b.feature_table(),

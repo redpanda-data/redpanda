@@ -35,10 +35,11 @@ class Descriptor;
 
 namespace datalake {
 
-class schema_cache {
+template<typename Key, typename Value>
+class datalake_cache {
 public:
-    using key_t = pandaproxy::schema_registry::schema_id;
-    using val_t = pandaproxy::schema_registry::valid_schema;
+    using key_t = Key;
+    using val_t = Value;
 
     virtual ss::optimized_optional<ss::shared_ptr<val_t>>
     get_value(const key_t&) = 0;
@@ -47,15 +48,18 @@ public:
     virtual void start() = 0;
     virtual void stop() = 0;
 
-    virtual ~schema_cache() = default;
+    virtual ~datalake_cache() = default;
 };
 
-class chunked_schema_cache : public schema_cache {
+template<typename Key, typename Value>
+class chunked_datalake_cache : public datalake_cache<Key, Value> {
 public:
+    using key_t = Key;
+    using val_t = Value;
     using cache_t = utils::chunked_kv_cache<key_t, val_t>;
 
-    explicit chunked_schema_cache(cache_t::config config);
-    ~chunked_schema_cache() override = default;
+    explicit chunked_datalake_cache(typename cache_t::config config);
+    ~chunked_datalake_cache() override = default;
 
     ss::optimized_optional<ss::shared_ptr<val_t>>
     get_value(const key_t&) override;
@@ -70,6 +74,13 @@ private:
 
     void setup_metrics();
 };
+
+using schema_cache = datalake_cache<
+  pandaproxy::schema_registry::schema_id,
+  pandaproxy::schema_registry::valid_schema>;
+using chunked_schema_cache = chunked_datalake_cache<
+  pandaproxy::schema_registry::schema_id,
+  pandaproxy::schema_registry::valid_schema>;
 
 using shared_schema_t
   = ss::shared_ptr<pandaproxy::schema_registry::valid_schema>;
@@ -111,12 +122,19 @@ struct resolved_type {
     // Iceberg-compatible type. Note, the field IDs may not necessarily
     // correspond to their final IDs in the catalog.
     iceberg::field_type type;
-
-    resolved_type copy() const;
 };
 
+using shared_resolved_type_t = ss::shared_ptr<const resolved_type>;
+
+// Note that the resolved type cache needs to be keyed by the
+// `schema_identifier` which can only be fully determined once the schema is
+// known. Hence the resolved type can't be stored inline to the schema cache.
+using resolved_type_cache = datalake_cache<schema_identifier, resolved_type>;
+using chunked_resolved_type_cache
+  = chunked_datalake_cache<schema_identifier, resolved_type>;
+
 struct type_and_buf {
-    std::optional<resolved_type> type;
+    std::optional<shared_resolved_type_t> type;
 
     // Part of a record field (key or value) that conforms to the given Iceberg
     // field type.
@@ -140,7 +158,7 @@ public:
     virtual ss::future<checked<type_and_buf, errc>>
     resolve_buf_type(std::optional<iobuf> b) const = 0;
     // TODO(iceberg): This should be it's own interface.
-    virtual ss::future<checked<resolved_type, errc>>
+    virtual ss::future<checked<shared_resolved_type_t, errc>>
       resolve_identifier(schema_identifier) const = 0;
     virtual ~type_resolver() = default;
 };
@@ -152,7 +170,7 @@ public:
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(std::optional<iobuf> b) const override;
 
-    ss::future<checked<resolved_type, errc>>
+    ss::future<checked<shared_resolved_type_t, errc>>
       resolve_identifier(schema_identifier) const override;
     ~binary_type_resolver() override = default;
 };
@@ -162,7 +180,7 @@ public:
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(std::optional<iobuf> b) const override;
 
-    ss::future<checked<resolved_type, errc>>
+    ss::future<checked<shared_resolved_type_t, errc>>
       resolve_identifier(schema_identifier) const override;
     ~test_binary_type_resolver() override = default;
     void set_fail_requests(type_resolver::errc e) { injected_error_ = e; }
@@ -177,20 +195,25 @@ class record_schema_resolver : public type_resolver {
 public:
     explicit record_schema_resolver(
       schema::registry& sr,
-      std::optional<std::reference_wrapper<schema_cache>> sc = std::nullopt)
+      std::optional<std::reference_wrapper<schema_cache>> sc = std::nullopt,
+      std::optional<std::reference_wrapper<resolved_type_cache>> rc
+      = std::nullopt)
       : sr_(sr)
-      , cache_(sc) {}
+      , cache_(sc)
+      , resolved_type_cache_(rc) {}
 
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(std::optional<iobuf> b) const override;
 
-    ss::future<checked<resolved_type, errc>>
+    ss::future<checked<shared_resolved_type_t, errc>>
       resolve_identifier(schema_identifier) const override;
     ~record_schema_resolver() override = default;
 
 private:
     schema::registry& sr_;
     std::optional<std::reference_wrapper<schema_cache>> cache_;
+    std::optional<std::reference_wrapper<resolved_type_cache>>
+      resolved_type_cache_;
 };
 
 // latest_subject_schema_resolver is a schema resolver that uses the latest
@@ -206,7 +229,8 @@ public:
       pandaproxy::schema_registry::subject subject,
       std::optional<ss::sstring> protobuf_message_name,
       config::binding<std::chrono::milliseconds> cache_ttl,
-      std::optional<std::reference_wrapper<schema_cache>> sc);
+      std::optional<std::reference_wrapper<schema_cache>> sc,
+      std::optional<std::reference_wrapper<resolved_type_cache>> rc);
     latest_subject_schema_resolver(const latest_subject_schema_resolver&)
       = delete;
     latest_subject_schema_resolver(latest_subject_schema_resolver&&) = delete;
@@ -220,7 +244,7 @@ public:
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(std::optional<iobuf> b) const override;
 
-    ss::future<checked<resolved_type, errc>>
+    ss::future<checked<shared_resolved_type_t, errc>>
       resolve_identifier(schema_identifier) const override;
 
 private:
@@ -229,13 +253,15 @@ private:
     std::optional<ss::sstring> protobuf_message_name_;
     config::binding<std::chrono::milliseconds> cache_ttl_;
     std::optional<std::reference_wrapper<schema_cache>> cache_;
+    std::optional<std::reference_wrapper<resolved_type_cache>>
+      resolved_type_cache_;
 
     class schema_lookup_cache {
     public:
         schema_lookup_cache() = default;
 
         schema_lookup_cache(
-          checked<resolved_type, type_resolver::errc> entry,
+          checked<shared_resolved_type_t, type_resolver::errc> entry,
           ss::lowres_clock::time_point timestamp)
           : entry_(std::move(entry))
           , last_update_(timestamp) {}
@@ -252,12 +278,13 @@ private:
             return timestamp - last_update_;
         }
 
-        const checked<resolved_type, type_resolver::errc>& entry() const {
+        const checked<shared_resolved_type_t, type_resolver::errc>&
+        entry() const {
             return entry_;
         }
 
     private:
-        checked<resolved_type, type_resolver::errc> entry_
+        checked<shared_resolved_type_t, type_resolver::errc> entry_
           = errc::registry_error;
         ss::lowres_clock::time_point last_update_;
     };

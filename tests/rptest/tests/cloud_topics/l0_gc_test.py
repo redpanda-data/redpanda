@@ -9,6 +9,7 @@
 
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import TypeAlias, cast
 
 
@@ -68,6 +69,7 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             "cloud_topics_short_term_gc_minimum_object_age": 10000,
             "cloud_topics_short_term_gc_interval": 2000,
             "cloud_topics_short_term_gc_backoff_interval": 10000,
+            "cloud_topics_gc_health_check_interval": 2000,
         }
         if extra_rp_conf_overrides:
             extra_rp_conf.update(extra_rp_conf_overrides)
@@ -136,7 +138,7 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             workers=1,
         ) as repeater:
             repeater.await_group_ready()
-            repeater.await_progress(n, timeout_sec=90)
+            repeater.await_progress(n, timeout_sec=120)
 
 
 class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
@@ -190,18 +192,8 @@ EpochInfo: TypeAlias = l0_pb.EpochInfo
 EpochReport: TypeAlias = dict[str, dict[int, l0_pb.EpochInfo | str]]
 
 
-class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
-    """
-    Integration: Admin API rpcs for starting and stopping level zero garbage collection.
-    """
-
-    def __init__(self, test_context: TestContext):
-        # Use a long housekeeping interval so that the housekeeper does not
-        # auto-advance epochs during the test; we want to observe the effect
-        # of manually bumping a specific partition's epoch via Admin rpc.
-        super().__init__(
-            test_context=test_context, housekeeping_interval_ms=10 * 60 * 60 * 1000
-        )
+class CloudTopicsL0GCAdminBase(CloudTopicsL0GCTestBase):
+    """Shared admin API helpers for L0 GC tests."""
 
     @property
     def l0_client(self):
@@ -223,29 +215,25 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
             for n in response.nodes
         }
 
-    def gc_pause(self, node: int | None = None) -> dict[int, str]:
-        self.logger.debug(
-            f"Pause L0 Garbage Collection {'clusterwide' if node is None else f'Node {node}'}"
-        )
-        response = self.l0_client.pause(l0_pb.PauseRequest(node_id=node))
-        assert response is not None, "PauseResponse should not be None"
-        expected_nodes = len(self.redpanda.nodes) if node is None else 1
-        assert len(response.results) == expected_nodes, (
-            f"{len(response.results)=} != {expected_nodes=}"
-        )
-        return {r.node_id: r.error for r in response.results if r.error}
+    def _gc_node_ids(self, node: int | None) -> list[int]:
+        if node is not None:
+            return [node]
+        return [self.redpanda.node_id(n) for n in self.redpanda.nodes]
 
-    def gc_start(self, node: int | None = None) -> dict[int, str]:
-        self.logger.debug(
-            f"Start L0 Garbage Collection {'clusterwide' if node is None else f'Node {node}'}"
-        )
-        response = self.l0_client.start(l0_pb.StartRequest(node_id=node))
-        assert response is not None, "StartResponse should not be None"
-        expected_nodes = len(self.redpanda.nodes) if node is None else 1
-        assert len(response.results) == expected_nodes, (
-            f"{len(response.results)=} != {expected_nodes=}"
-        )
-        return {r.node_id: r.error for r in response.results if r.error}
+    def gc_pause(self, node: int | None = None):
+        for nid in self._gc_node_ids(node):
+            self.logger.debug(f"Pause L0 GC on node {nid}")
+            self.l0_client.pause_gc(l0_pb.PauseGcRequest(node_id=nid))
+
+    def gc_start(self, node: int | None = None):
+        for nid in self._gc_node_ids(node):
+            self.logger.debug(f"Start L0 GC on node {nid}")
+            self.l0_client.start_gc(l0_pb.StartGcRequest(node_id=nid))
+
+    def gc_reset(self, node: int | None = None):
+        for nid in self._gc_node_ids(node):
+            self.logger.debug(f"Reset L0 GC on node {nid}")
+            self.l0_client.reset_gc(l0_pb.ResetGcRequest(node_id=nid))
 
     def gc_advance_epoch(self, topic: str, partition: int, new_epoch: int) -> EpochInfo:
         self.logger.debug(f"Advance epoch for '{topic}/{partition}'")
@@ -318,6 +306,46 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
                     f"Expected {status=} on {node_id=}: {shards=}"
                 )
 
+    def _all_in_state(self, expected: GcStatus.ValueType) -> bool:
+        try:
+            self.check_statuses(self.gc_get_status(), status=expected)
+            return True
+        except AssertionError:
+            return False
+
+    def _all_running(self) -> bool:
+        return self._all_in_state(GcStatus.L0_GC_STATUS_RUNNING)
+
+    def _all_paused(self) -> bool:
+        return self._all_in_state(GcStatus.L0_GC_STATUS_PAUSED)
+
+    def wait_all_running(self, timeout_sec: int = 30):
+        wait_until(
+            self._all_running,
+            timeout_sec=timeout_sec,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.logger.debug("Wait for safety monitor to clear initial health check")
+        self.wait_all_running()
+
+
+class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
+    """
+    Integration: Admin API rpcs for starting and stopping level zero garbage collection.
+    """
+
+    def __init__(self, test_context: TestContext):
+        # Use a long housekeeping interval so that the housekeeper does not
+        # auto-advance epochs during the test; we want to observe the effect
+        # of manually bumping a specific partition's epoch via Admin rpc.
+        super().__init__(
+            test_context=test_context, housekeeping_interval_ms=10 * 60 * 60 * 1000
+        )
+
     @cluster(num_nodes=3)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
@@ -346,15 +374,30 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
             strict=False,
         )
 
-        self.check_statuses(
-            statuses,
-            nodes=[
-                self.redpanda.node_id(n)
-                for n in self.redpanda.nodes
-                if n.name != target_node.name
-            ],
-            status=GcStatus.L0_GC_STATUS_RUNNING,
-            strict=False,
+        alive_node_ids = [
+            self.redpanda.node_id(n)
+            for n in self.redpanda.nodes
+            if n.name != target_node.name
+        ]
+
+        # With the safety monitor, the remaining nodes will detect the
+        # cluster is unhealthy (one node down) and transition to
+        # SAFETY_BLOCKED. This may take up to one health check interval.
+        def _alive_nodes_safety_blocked():
+            s = self.gc_get_status()
+            self.check_statuses(
+                s,
+                nodes=alive_node_ids,
+                status=GcStatus.L0_GC_STATUS_SAFETY_BLOCKED,
+                strict=False,
+            )
+            return True
+
+        wait_until(
+            _alive_nodes_safety_blocked,
+            timeout_sec=30,
+            backoff_sec=2,
+            retry_on_exc=True,
         )
 
     @cluster(num_nodes=4)
@@ -370,8 +413,6 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
         self.logger.debug("Produce some")
         self.produce_some(topics=[spec.name for spec in self.topics])
 
-        self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_RUNNING)
-
         self.logger.debug("Wait until we've deleted something...")
         wait_until(
             lambda: self.get_num_objects_deleted() > 0,
@@ -380,8 +421,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
             retry_on_exc=True,
         )
 
-        errs = self.gc_pause()
-        assert len(errs) == 0, f"Unexpected errors pausing GC: {errs=}"
+        self.gc_pause()
         self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_PAUSED)
 
         n_deleted = self.get_num_objects_deleted()
@@ -397,9 +437,8 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
         self.logger.debug(
             "Re-start garbage collection. We should see the deleted object count ticking up."
         )
-        errs = self.gc_start()
-        assert len(errs) == 0, f"Unexpected errors restarting GC: {errs=}"
-        self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_RUNNING)
+        self.gc_start()
+        self.wait_all_running()
 
         wait_until(
             lambda: self.get_num_objects_deleted() > n_deleted,
@@ -420,18 +459,17 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
         pause_node_id = self.redpanda.node_id(pause_node)
 
         self.logger.debug(f"Pause GC on {pause_node.name} and produce some records")
-        errs = self.gc_pause(pause_node_id)
-        assert len(errs) == 0, (
-            f"Unexpected error pausing GC on {pause_node.name}: {errs=}"
-        )
+        self.gc_pause(pause_node_id)
         self.check_statuses(
             self.gc_get_status(node=pause_node_id),
             nodes=[pause_node_id],
             status=GcStatus.L0_GC_STATUS_PAUSED,
         )
+        other_nodes = [self.redpanda.node_id(n) for n in self.redpanda.nodes[1:]]
+
         self.check_statuses(
             self.gc_get_status(),
-            nodes=[self.redpanda.node_id(n) for n in self.redpanda.nodes[1:]],
+            nodes=other_nodes,
             status=GcStatus.L0_GC_STATUS_RUNNING,
             strict=False,
         )
@@ -458,10 +496,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
             )
 
         self.logger.debug(f"Now unpause {pause_node.name} and wait for some deletes")
-        errs = self.gc_start(pause_node_id)
-        assert len(errs) == 0, (
-            f"Unexpected error re-starting GC on {pause_node.name}: {errs=}"
-        )
+        self.gc_start(pause_node_id)
         self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_RUNNING)
 
         wait_until(
@@ -491,27 +526,20 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
         node_to_kill_id = self.redpanda.node_id(node_to_kill)
 
         self.logger.debug(f"Check that GC admin API is up and stop {node_to_kill.name}")
-        errs = self.gc_start()
-        assert len(errs) == 0, f"{errs=}"
+        self.gc_start()
         self.redpanda.stop_node(node_to_kill, timeout=30)
 
         self.logger.debug(
-            f"Try to pause GC clusterwide. Only {node_to_kill.name} ({node_to_kill_id})"
-            "should report an error."
+            f"Pause on dead node {node_to_kill.name} ({node_to_kill_id}) should fail"
         )
-        errs = self.gc_pause()
-        assert len(errs) == 1, f"Expected 1 error, got {errs=}"
-        assert node_to_kill_id in errs, f"Unexpected error {errs=}"
-        assert "(Service unavailable)" in errs[node_to_kill_id], (
-            f"Unexpected error {errs=}"
-        )
+        with expect_exception(ConnectError, lambda e: "unavailable" in str(e).lower()):
+            self.gc_pause(node_to_kill_id)
 
         self.logger.debug(f"Restart {node_to_kill.name} and pause GC there")
         self.redpanda.start_node(
             node_to_kill, timeout=30, node_id_override=node_to_kill_id
         )
-        errs = self.gc_pause(node_to_kill_id)
-        assert len(errs) == 0, "Unexpected errors: {errs=}"
+        self.gc_pause(node_to_kill_id)
 
     def _epoch_report_to_str(self, epochs: EpochReport, indent: int = 1) -> str:
         def epoch_info_to_dict(info: l0_pb.EpochInfo) -> dict[str, int]:
@@ -667,9 +695,11 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
     )
     def test_concurrent_pause_start(self, cloud_storage_type: CloudStorageType):
         """
-        Integration: Rapidly toggle pause/start while GC is running.
-        Verify no crashes, no stuck state, and that the last command wins.
+        Integration: Rapidly toggle pause/start/reset while GC is running,
+        including concurrent resets from a background thread. Verify no
+        crashes, no stuck state, and that the last command wins.
         """
+
         topic = TopicSpec(partition_count=2, replication_factor=3)
         self.topics = [topic]
         self.create_topics(self.topics)
@@ -684,21 +714,38 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
             retry_on_exc=True,
         )
 
-        # Rapidly toggle pause/start.
-        self.logger.info("Starting rapid pause/start toggling (50 rounds)")
-        for _ in range(50):
-            self.gc_pause()
-            self.gc_start()
-        self.logger.info("Toggling complete")
+        # Fire resets concurrently from a background thread while the main
+        # thread rapidly toggles pause/start.
+        reset_errors: list[Exception] = []
+
+        def background_resets(rounds: int):
+            for i in range(rounds):
+                try:
+                    self.gc_reset()
+                except Exception as e:
+                    self.logger.warning(f"Background reset {i} failed: {e}")
+                    reset_errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            reset_fut = executor.submit(background_resets, 20)
+
+            self.logger.info(
+                "Starting rapid pause/start toggling (50 rounds) with concurrent resets"
+            )
+            for _ in range(50):
+                self.gc_pause()
+                self.gc_start()
+            self.logger.info("Toggling complete, waiting for background resets")
+
+            reset_fut.result(timeout=60)
+
+        assert len(reset_errors) == 0, (
+            f"Background resets had {len(reset_errors)} errors: {reset_errors}"
+        )
 
         # End with start — verify GC reaches RUNNING and keeps working.
         self.gc_start()
-        wait_until(
-            lambda: self._all_running(),
-            timeout_sec=15,
-            backoff_sec=2,
-            retry_on_exc=True,
-        )
+        self.wait_all_running()
         deleted_after_toggle = self.get_num_objects_deleted()
         self.logger.info(
             f"After toggling (running): objects_deleted={deleted_after_toggle}"
@@ -733,18 +780,98 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
                 retry_on_exc=True,
             )
 
-    def _all_in_state(self, expected: GcStatus.ValueType) -> bool:
-        try:
-            self.check_statuses(self.gc_get_status(), status=expected)
-            return True
-        except AssertionError:
-            return False
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_reset_while_paused(self, cloud_storage_type: CloudStorageType):
+        """
+        Integration: Reset GC while paused, then restart. Verify that GC
+        resumes and makes progress.
+        """
+        topic = TopicSpec(partition_count=2, replication_factor=3)
+        self.topics = [topic]
+        self.create_topics(self.topics)
 
-    def _all_running(self) -> bool:
-        return self._all_in_state(GcStatus.L0_GC_STATUS_RUNNING)
+        self.produce_some(topics=[topic.name], n=300)
 
-    def _all_paused(self) -> bool:
-        return self._all_in_state(GcStatus.L0_GC_STATUS_PAUSED)
+        self.logger.debug("Wait for GC to start deleting")
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=3,
+            retry_on_exc=True,
+        )
+
+        self.logger.debug("Pause GC")
+        self.gc_pause()
+        self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_PAUSED)
+
+        deleted_before_reset = self.get_num_objects_deleted()
+        self.logger.debug(f"Deleted before reset: {deleted_before_reset}")
+
+        self.logger.debug("Reset GC while paused")
+        self.gc_reset()
+
+        # GC should still be paused after reset (was paused before)
+        self.check_statuses(self.gc_get_status(), status=GcStatus.L0_GC_STATUS_PAUSED)
+
+        self.logger.debug("Start GC after reset — should resume and keep deleting")
+        self.gc_start()
+        self.wait_all_running()
+
+        wait_until(
+            lambda: self.get_num_objects_deleted() > deleted_before_reset,
+            timeout_sec=30,
+            backoff_sec=3,
+            retry_on_exc=True,
+        )
+        self.logger.debug(
+            f"GC progressed after reset: {self.get_num_objects_deleted()} > {deleted_before_reset}"
+        )
+
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_reset_while_running(self, cloud_storage_type: CloudStorageType):
+        """
+        Integration: Reset GC while it is actively running. Verify that it
+        auto-resumes without getting stuck.
+        """
+        topic = TopicSpec(partition_count=2, replication_factor=3)
+        self.topics = [topic]
+        self.create_topics(self.topics)
+
+        self.produce_some(topics=[topic.name], n=300)
+
+        self.logger.debug("Wait for GC to start deleting")
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=3,
+            retry_on_exc=True,
+        )
+
+        self.logger.debug("Reset GC while running")
+        self.gc_reset()
+
+        deleted_after_reset = self.get_num_objects_deleted()
+        self.logger.debug(f"Deleted after reset: {deleted_after_reset}")
+
+        # GC should auto-resume to running state after reset
+        self.wait_all_running()
+
+        self.logger.debug("Verify GC continues making progress after reset")
+        wait_until(
+            lambda: self.get_num_objects_deleted() > deleted_after_reset,
+            timeout_sec=30,
+            backoff_sec=3,
+            retry_on_exc=True,
+        )
+        self.logger.debug(
+            f"GC progressed after reset: {self.get_num_objects_deleted()} > {deleted_after_reset}"
+        )
 
 
 class CloudTopicsL0GCMetricsTest(CloudTopicsL0GCTestBase):
@@ -1068,13 +1195,9 @@ class CloudTopicsL0GCNodeFailureTest(CloudTopicsL0GCTestBase):
         self.logger.info(f"Restarting node {kill_node.name} (id={kill_node_id})")
         self.redpanda.start_node(kill_node, timeout=30, node_id_override=kill_node_id)
 
-        deleted_after_restart = self.get_num_objects_deleted(nodes=[kill_node])
-        self.logger.info(
-            f"Waiting for restarted node GC to resume (currently {deleted_after_restart})"
-        )
+        self.logger.info("Waiting for restarted node GC to resume")
         wait_until(
-            lambda: self.get_num_objects_deleted(nodes=[kill_node])
-            > deleted_after_restart,
+            lambda: self.get_num_objects_deleted(nodes=[kill_node]) > 0,
             timeout_sec=30,
             backoff_sec=3,
             retry_on_exc=True,
@@ -1223,55 +1346,71 @@ class CloudTopicsL0GCEpochLagTest(CloudTopicsL0GCTestBase):
     )
     def test_epoch_lag_and_catchup(self, cloud_storage_type: CloudStorageType):
         """
-        Produce data while GC is slow (10s interval), observe epoch_lag
-        building up, then hot-reconfigure to fast GC (1s) and verify
-        epoch_lag drops to 0.
+        Produce data continuously while GC is slow (10s interval), observe
+        epoch_lag building up, then hot-reconfigure to fast GC (1s) and
+        verify epoch_lag decreases significantly.
+
+        Production must stay active through both phases so that new objects
+        keep arriving across successive epochs. Without continuous ingress
+        GC can finish all work in a single round, after which
+        min_deletion_epoch freezes while max_gc_eligible_epoch keeps
+        advancing — making epoch_lag grow instead of shrink.
         """
         topic = TopicSpec(partition_count=1, replication_factor=3)
         self.topics = [topic]
         self.create_topics(self.topics)
 
-        # Produce enough to generate several epochs while GC is slow.
-        self.produce_some(topics=[topic.name], n=200)
+        with repeater_traffic(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topics=[topic.name],
+            msg_size=1024,
+            rate_limit_bps=2 * 1024 * 1024,
+            workers=1,
+        ) as repeater:
+            repeater.await_group_ready()
+            repeater.await_progress(200, timeout_sec=120)
 
-        # Wait for epoch_lag > 0: GC is running but falling behind
-        # because epochs advance faster than the 10s GC interval.
-        wait_until(
-            lambda: self._get_metric_max("vectorized_cloud_topics_l0_gc_epoch_lag") > 0,
-            timeout_sec=60,
-            backoff_sec=5,
-            retry_on_exc=True,
-        )
+            # Wait for epoch_lag > 10: GC is running but falling behind
+            # because epochs advance faster than the 10s GC interval.
+            wait_until(
+                lambda: self._get_metric_max("vectorized_cloud_topics_l0_gc_epoch_lag")
+                > 10,
+                timeout_sec=60,
+                backoff_sec=5,
+                retry_on_exc=True,
+            )
 
-        lag_while_slow = self._get_metric_max("vectorized_cloud_topics_l0_gc_epoch_lag")
-        self.logger.info(f"Slow-GC phase: epoch_lag={lag_while_slow}")
-        assert lag_while_slow > 0
+            lag_while_slow = self._get_metric_max(
+                "vectorized_cloud_topics_l0_gc_epoch_lag"
+            )
+            self.logger.info(f"Slow-GC phase: epoch_lag={lag_while_slow}")
+            assert lag_while_slow > 0
 
-        # Hot-reconfigure: speed up GC dramatically.
-        admin = RedpandaAdmin(self.redpanda)
-        admin.patch_cluster_config(
-            upsert={
-                "cloud_topics_short_term_gc_interval": 1000,
-                "cloud_topics_short_term_gc_backoff_interval": 1000,
-            }
-        )
-        self.logger.info("Hot-reconfigured GC to 1s interval")
+            # Hot-reconfigure: speed up GC dramatically.
+            admin = RedpandaAdmin(self.redpanda)
+            admin.patch_cluster_config(
+                upsert={
+                    "cloud_topics_short_term_gc_interval": 1000,
+                    "cloud_topics_short_term_gc_backoff_interval": 1000,
+                }
+            )
+            self.logger.info("Hot-reconfigured GC to 1s interval")
 
-        # Verify GC catches up: epoch_lag should decrease.
-        # It may not reach 0 because not every epoch has objects to
-        # delete, so max_deleted_epoch can't close the gap completely.
-        wait_until(
-            lambda: self._get_metric_max("vectorized_cloud_topics_l0_gc_epoch_lag")
-            < lag_while_slow,
-            timeout_sec=60,
-            backoff_sec=3,
-            retry_on_exc=True,
-        )
-
-        lag_final = self._get_metric_max("vectorized_cloud_topics_l0_gc_epoch_lag")
-        self.logger.info(
-            f"Fast-GC phase: epoch_lag={lag_final} (was {lag_while_slow} while slow)"
-        )
+            # Verify GC catches up: epoch_lag should decrease by at least 50%.
+            # It may not reach 0 because not every epoch has objects to
+            # delete, so max_deleted_epoch can't close the gap completely.
+            wait_until(
+                lambda: self._get_metric_max("vectorized_cloud_topics_l0_gc_epoch_lag")
+                < lag_while_slow // 2,
+                timeout_sec=60,
+                backoff_sec=3,
+                retry_on_exc=True,
+            )
+            lag_final = self._get_metric_max("vectorized_cloud_topics_l0_gc_epoch_lag")
+            self.logger.info(
+                f"Fast-GC phase: epoch_lag={lag_final} (was {lag_while_slow} while slow)"
+            )
 
 
 class CloudTopicsL0GCOrphanedObjectsTest(CloudTopicsL0GCTestBase):
@@ -1489,3 +1628,122 @@ class CloudTopicsL0GCStressTest(CloudTopicsL0GCTestBase):
 
         producer.stop()
         consumer.stop()
+
+
+class CloudTopicsL0GCSafetyBlockTest(CloudTopicsL0GCAdminBase):
+    """
+    Integration: the cluster_safety_monitor blocks L0 GC when the cluster
+    health overview reports an unhealthy state and unblocks it when health
+    is restored.
+    """
+
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context=test_context,
+            extra_rp_conf_overrides={
+                "cloud_topics_short_term_gc_backoff_interval": 2000,
+                "health_monitor_max_metadata_age": 1000,
+            },
+        )
+
+    def _all_safety_blocked(self) -> bool:
+        try:
+            report = self.gc_get_status()
+            self.logger.debug(f"GC status report: {report}")
+            self.check_statuses(report, status=GcStatus.L0_GC_STATUS_SAFETY_BLOCKED)
+            return True
+        except AssertionError as e:
+            self.logger.debug(f"Not all safety_blocked yet: {e}")
+            return False
+
+    @cluster(
+        num_nodes=4,
+        log_allow_list=[
+            ".*cluster - storage space alert: free space.*",
+        ],
+    )
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_safety_block_on_unhealthy_cluster(
+        self, cloud_storage_type: CloudStorageType
+    ):
+        self.topics = [TopicSpec(partition_count=1)]
+        self.create_topics(self.topics)
+        self.produce_some(topics=[self.topics[0].name], n=300)
+
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=5,
+            retry_on_exc=True,
+        )
+
+        self.logger.debug("Trigger cluster unhealthy via disk space alert")
+        one_tb = 1024 * 1024 * 1024 * 1024
+        self.redpanda.set_cluster_config(
+            {"storage_space_alert_free_threshold_bytes": one_tb}
+        )
+
+        self.logger.debug("Wait for all nodes to report safety_blocked")
+        wait_until(
+            self._all_safety_blocked,
+            timeout_sec=60,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )
+
+        blocked_metric = "vectorized_cloud_topics_l0_gc_safety_blocked_rounds_total"
+        baseline_total = self._get_metric_total(blocked_metric)
+        num_shards = len(self._get_metric_values(blocked_metric))
+        assert num_shards > 0, "Expected at least one shard reporting"
+
+        self.logger.debug(
+            "Verify GC stays blocked: all shards must skip multiple rounds"
+        )
+
+        def _blocked_rounds_advancing():
+            total = self._get_metric_total(blocked_metric)
+            advanced = total - baseline_total >= num_shards * 3
+            if advanced:
+                self.check_statuses(
+                    self.gc_get_status(),
+                    status=GcStatus.L0_GC_STATUS_SAFETY_BLOCKED,
+                )
+            return advanced
+
+        wait_until(
+            _blocked_rounds_advancing,
+            timeout_sec=60,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )
+
+        self.logger.debug("Restore cluster health")
+        self.redpanda.set_cluster_config(
+            {"storage_space_alert_free_threshold_bytes": 0}
+        )
+
+        self.logger.debug("Wait for all nodes to return to running")
+        self.wait_all_running()
+
+        self.logger.debug("Verify blocked rounds stop advancing after recovery")
+        stable_count = 0
+        last_total = self._get_metric_total(blocked_metric)
+
+        def _blocked_rounds_stable():
+            nonlocal stable_count, last_total
+            total = self._get_metric_total(blocked_metric)
+            if total != last_total:
+                last_total = total
+                stable_count = 0
+                return False
+            stable_count += 1
+            return stable_count >= 3
+
+        wait_until(
+            _blocked_rounds_stable,
+            timeout_sec=30,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )

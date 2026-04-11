@@ -242,6 +242,8 @@ ALL_TOPIC_PROPERTIES = [
 class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
     def __init__(self, test_ctx: TestContext):
         self.test_context = test_ctx
+        self.fi = None
+        self.admin_fuzz = None
         super().__init__(
             test_ctx,
             num_brokers=5,
@@ -286,6 +288,15 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
             ),
         )
 
+    def teardown(self) -> None:
+        if self.fi:
+            self.fi.stop()
+            self.fi = None
+        if self.admin_fuzz:
+            self.admin_fuzz.stop()
+            self.admin_fuzz = None
+        return super().teardown()
+
     def setup_scale(self):
         # TODO: adjust scale for CDT tests
         if is_debug_mode():
@@ -314,9 +325,8 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
         self.create_link_with_request(req)
 
         lock = threading.Lock()
-        fi = None
         if failures:
-            fi = FailureInjectorBackgroundThread(
+            self.fi = FailureInjectorBackgroundThread(
                 self.redpanda,
                 self.logger,
                 max_suspend_duration_seconds=4,
@@ -324,7 +334,7 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
                 min_inter_failure_time=20,
                 max_inter_failure_time=40,
             )
-            fi.start()
+            self.fi.start()
 
         manager = ClusterLinkingWorkloadManager(
             self.test_context,
@@ -382,7 +392,7 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
 
         manager.start_all(progress_timeout=120)
 
-        admin_fuzz = AdminOperationsFuzzer(
+        self.admin_fuzz = AdminOperationsFuzzer(
             self.source_cluster.service,
             min_replication=3,
             operations_interval=3,
@@ -390,7 +400,7 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
             retries=10,
         )
 
-        admin_fuzz.start()
+        self.admin_fuzz.start()
         active_node_idxs = {self.redpanda.idx(n) for n in self.redpanda.nodes}
 
         # main workload loop
@@ -409,13 +419,15 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
             self.logger.info(f"starting operation {i + 1}/{self.total_node_ops}")
             executor.execute_operation(op)
 
-        admin_fuzz.wait(20, 180)
-        admin_fuzz.stop()
+        self.admin_fuzz.wait(20, 180)
+        self.admin_fuzz.stop()
+        self.admin_fuzz = None
 
         results = manager.wait_and_verify_all()
 
-        if fi:
-            fi.stop()
+        if self.fi:
+            self.fi.stop()
+            self.fi = None
 
         for r in results:
             assert r.is_success, f"Workload manager failed: {r.error}"

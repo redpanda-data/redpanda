@@ -73,12 +73,16 @@ public:
 
     // Materialize extents from the L0 read pipeline.
     // `output_size_estimate` must not exceed `materialize_max_bytes()`.
+    // When `allow_mat_failure` is yes, download_not_found (404)
+    // errors for individual extents are tolerated: the missing extents are
+    // skipped and the result contains fewer batches than requested.
     virtual ss::future<result<chunked_vector<model::record_batch>>> materialize(
       model::ntp ntp,
       size_t output_size_estimate,
       chunked_vector<extent_meta> metadata,
       model::timeout_clock::time_point timeout,
-      model::opt_abort_source_t)
+      model::opt_abort_source_t,
+      allow_materialization_failure allow_mat_failure)
       = 0;
 
     /// Return the maximum bytes that may be requested in a single
@@ -95,6 +99,13 @@ public:
     /// Retrieve materialized record batch from cache
     virtual std::optional<model::record_batch>
     cache_get(const model::topic_id_partition&, model::offset o) = 0;
+
+    /// Put batches into the cache and notify the offset monitor when the
+    /// inserted batches extend the contiguous range tracked by the monitor.
+    virtual void cache_put_ordered(
+      const model::topic_id_partition&,
+      chunked_vector<model::record_batch> batches)
+      = 0;
 
     /// Retrieve current cluster epoch
     virtual ss::future<std::optional<cloud_topics::cluster_epoch>>

@@ -81,6 +81,18 @@ public:
     ss::future<std::expected<database_stats, rpc::errc>>
     get_database_stats() override;
 
+    ss::future<rpc::preregister_objects_reply>
+      preregister_objects(rpc::preregister_objects_request) override;
+
+    ss::future<std::expected<void, rpc::errc>>
+      write_debug_rows(chunked_vector<write_batch_row>) override;
+
+    ss::future<std::expected<read_debug_rows_result, rpc::errc>>
+    read_debug_rows(
+      std::optional<ss::sstring> seek_key,
+      std::optional<ss::sstring> last_key,
+      uint32_t max_rows) override;
+
 private:
     std::optional<ss::gate::holder> maybe_gate();
     ss::future<> gc_loop();

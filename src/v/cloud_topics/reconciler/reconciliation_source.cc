@@ -12,10 +12,12 @@
 
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/frontend.h"
+#include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/log_reader_config.h"
 #include "cloud_topics/logger.h"
 #include "cluster/partition.h"
+#include "config/configuration.h"
 #include "kafka/utils/txn_reader.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
@@ -59,6 +61,16 @@ public:
       : source(std::move(ntp), tidp)
       , _fe(ss::make_lw_shared<frontend>(partition, dp_api))
       , _partition(std::move(partition)) {}
+
+    bool has_pending_data() override {
+        auto lro = last_reconciled_offset();
+        auto lso = _fe->last_stable_offset();
+        if (!lso.has_value()) {
+            // LSO is invalid.
+            return false;
+        }
+        return lso.value() > kafka::next_offset(lro);
+    }
 
     kafka::offset last_reconciled_offset() override {
         ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());
@@ -117,6 +129,9 @@ public:
           /*type_filter=*/std::nullopt,
           /*time=*/std::nullopt,
           /*as=*/*input_cfg.as);
+        cfg.allow_mat_failure = allow_materialization_failure(
+          config::shard_local_cfg()
+            .cloud_topics_allow_materialization_failure());
         if (cfg.max_offset < cfg.start_offset) {
             co_return model::make_empty_record_batch_reader();
         }

@@ -79,22 +79,31 @@ level_zero_log_reader_impl::read_some(
         co_return chunked_circular_buffer<model::record_batch>{};
     }
 
+    // Like the storage layer log reader, stop when we've consumed all
+    // committed data. The Kafka fetch handler owns the waiting policy
+    // via the visible_offset_monitor / max_wait_ms.
+    auto ot_state = _ctp->get_offset_translator_state();
+    auto committed_kafka = ot_state->from_log_offset(
+      _ctp->raft()->committed_offset());
+    if (_next_offset > model::offset_cast(committed_kafka)) {
+        vlog(
+          _log.debug,
+          "next offset {} beyond committed kafka offset {}, "
+          "end of stream",
+          _next_offset,
+          committed_kafka);
+        set_end_of_stream();
+        co_return chunked_circular_buffer<model::record_batch>{};
+    }
+
     // Wait briefly for the write path to cache the batch we need.
     // This closes the race window between replicate() completing (HWM
     // advance) and cache_put() running on the write continuation.
     if (cache_enabled() && _ctp->is_leader()) {
         auto tidp = require_topic_id_partition();
         auto wait_deadline = model::timeout_clock::now()
-                             + std::chrono::milliseconds(25);
+                             + std::chrono::milliseconds(500);
         try {
-            // Translate committed_offset from raft-space to kafka-space.
-            // The batch cache monitor tracks kafka offsets (put() notifies
-            // with kafka offsets), so the seed must also be in kafka-space.
-            // Using a raft offset here would over-seed the monitor by the
-            // offset delta, causing the wait to resolve immediately.
-            auto ot_state = _ctp->get_offset_translator_state();
-            auto committed_kafka = ot_state->from_log_offset(
-              _ctp->raft()->committed_offset());
             co_await _ct_api->cache_wait(
               tidp,
               kafka::offset_cast(_next_offset),
@@ -112,7 +121,9 @@ level_zero_log_reader_impl::read_some(
     // the 'empty' state. It doesn't make any difference if the reader is in
     // the 'materialized' state. If we're in 'ready' state we risk to go out
     // of sync with cached metadata so it's safer to hydrate.
-    if (auto cached = maybe_read_batches_from_cache(); !cached.empty()) {
+    if (auto cached = maybe_read_batches_from_cache(
+          model::offset_cast(committed_kafka));
+        !cached.empty()) {
         co_return cached;
     }
 
@@ -175,7 +186,8 @@ level_zero_log_reader_impl::read_some(
 }
 
 chunked_circular_buffer<model::record_batch>
-level_zero_log_reader_impl::maybe_read_batches_from_cache() {
+level_zero_log_reader_impl::maybe_read_batches_from_cache(
+  kafka::offset committed_kafka) {
     chunked_circular_buffer<model::record_batch> ret;
     if (!cache_enabled()) {
         return ret;
@@ -187,18 +199,12 @@ level_zero_log_reader_impl::maybe_read_batches_from_cache() {
      * Fetch batches from the cache starting at `_next_offset` until we hit a
      * gap or a control batch and must then fetch the data from object storage.
      */
-    while (_next_offset <= _config.max_offset) {
+    auto max_offset = std::min(_config.max_offset, committed_kafka);
+    while (_next_offset <= max_offset) {
         auto batch = _ct_api->cache_get(tidp, kafka::offset_cast(_next_offset));
         if (!batch.has_value()) {
             break;
         }
-
-        vlog(
-          _log.trace,
-          "Loaded batch from cache for {}: {} @ term {}",
-          _next_offset,
-          batch.value().base_offset(),
-          batch.value().term());
 
         auto batch_size = batch.value().size_bytes();
         if (is_over_limit_with_bytes(batch_size)) {
@@ -351,11 +357,6 @@ level_zero_log_reader_impl::materialize_batches(
                 auto cached = _ct_api->cache_get(
                   tidp, kafka::offset_cast(meta->base_offset));
                 if (cached.has_value()) {
-                    vlog(
-                      _log.trace,
-                      "Cache hit for extent at offset {} during "
-                      "materialize",
-                      meta->base_offset);
                     unhydrated_it->data = local_log_batch::cached_batch{
                       .batch = std::move(cached.value())};
                     continue;
@@ -386,7 +387,8 @@ level_zero_log_reader_impl::materialize_batches(
           materialize_bytes,
           std::move(to_materialize),
           deadline,
-          _config.abort_source);
+          _config.abort_source,
+          _config.allow_mat_failure);
         if (!mat_res.has_value()) {
             if (mat_res.error() == errc::shutting_down) {
                 vlog(_log.debug, "Materialize aborted due to shutdown");
@@ -402,7 +404,10 @@ level_zero_log_reader_impl::materialize_batches(
               mat_res.error().message()));
         }
         batches = std::move(mat_res.value());
-        if (batches.size() != materialize_count) {
+        auto count_ok = bool(_config.allow_mat_failure)
+                          ? batches.size() <= materialize_count
+                          : batches.size() == materialize_count;
+        if (!count_ok) {
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
               "Materialized unexpected number of batches: {}, expected: {}",
@@ -411,7 +416,10 @@ level_zero_log_reader_impl::materialize_batches(
         }
     }
     // Merge our selected subset of unhydrated batches with the materialized
-    // batches, preserving control batches from the local log.
+    // batches, preserving control batches from the local log. When
+    // allow_mat_failure is set, some extents may have been skipped: the
+    // materialized batches are a subsequence of the query (same offset
+    // order), so sequential offset comparison identifies which were skipped.
     auto batches_it = batches.begin();
     chunked_circular_buffer<model::record_batch> hydrated;
     auto range_to_materialize = std::ranges::subrange(
@@ -421,10 +429,27 @@ level_zero_log_reader_impl::materialize_batches(
             _config.abort_source.value().get().check();
         }
         auto& local_batch_header = local_batch.header;
-        model::record_batch batch = ss::visit(
+        auto maybe_batch = ss::visit(
           local_batch.data,
-          [this, &local_batch_header, &batches_it, &tidp](
-            const cloud_topics::extent_meta&) {
+          [this, &local_batch_header, &batches_it, &batches, &tidp](
+            const cloud_topics::extent_meta& meta)
+            -> std::optional<model::record_batch> {
+              if (
+                batches_it == batches.end()
+                || batches_it->base_offset()
+                     != kafka::offset_cast(meta.base_offset)) {
+                  if (!bool(_config.allow_mat_failure)) {
+                      throw std::runtime_error(fmt_with_ctx(
+                        fmt::format,
+                        "Materialized batch offset mismatch: expected "
+                        "{}, got {}",
+                        kafka::offset_cast(meta.base_offset),
+                        batches_it == batches.end()
+                          ? model::offset{}
+                          : batches_it->base_offset()));
+                  }
+                  return std::nullopt;
+              }
               model::record_batch batch = apply_placeholder_to_batch(
                 local_batch_header, std::move(*batches_it));
               ++batches_it;
@@ -440,19 +465,23 @@ level_zero_log_reader_impl::materialize_batches(
               }
               return batch;
           },
-          [&local_batch_header](local_log_batch::payload& payload) {
+          [&local_batch_header](local_log_batch::payload& payload)
+            -> std::optional<model::record_batch> {
               return model::record_batch(
                 local_batch_header,
                 std::move(payload),
                 model::record_batch::tag_ctor_ng{});
           },
-          [](local_log_batch::cached_batch& cb) {
+          [](local_log_batch::cached_batch& cb)
+            -> std::optional<model::record_batch> {
               // Cache hit resolved during the collection loop above.
               // The batch is already fully formed (apply_placeholder_to_batch
               // was applied before cache_put on the path that populated it).
               return std::move(cb.batch);
           });
-        hydrated.push_back(std::move(batch));
+        if (maybe_batch.has_value()) {
+            hydrated.push_back(std::move(*maybe_batch));
+        }
         co_await ss::coroutine::maybe_yield();
     }
     vassert(
@@ -488,6 +517,10 @@ bool level_zero_log_reader_impl::cache_enabled() const {
 
 void level_zero_log_reader_impl::print(std::ostream& o) {
     o << "cloud_topics_reader";
+}
+
+void level_zero_log_reader_impl::register_with_stm(ctp_stm_api* api) {
+    api->register_reader(&_state);
 }
 
 void level_zero_log_reader_impl::set_end_of_stream() { _end_of_stream = true; }

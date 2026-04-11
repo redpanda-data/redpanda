@@ -30,7 +30,7 @@ topic_purger::topic_purger(
 
 ss::future<std::expected<void, topic_purger::error>>
 topic_purger::purge_tombstoned_topics(ss::abort_source* as) {
-    static constexpr auto max_topics_per_req = 100;
+    static constexpr auto max_topics_per_req = 10;
     static constexpr auto max_failed_metastore_attempts = 5;
     static constexpr auto max_concurrent_purges = 10;
     while (true) {

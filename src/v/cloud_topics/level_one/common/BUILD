@@ -91,6 +91,7 @@ redpanda_cc_library(
     visibility = [
         "//src/v/cloud_topics:__pkg__",
         "//src/v/cloud_topics/level_one:__subpackages__",
+        "//src/v/cloud_topics/read_replica:__pkg__",
     ],
     deps = [
         ":abstract_io",

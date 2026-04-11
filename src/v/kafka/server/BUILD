@@ -48,6 +48,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:chunked_vector",
         "//src/v/datalake:partition_spec_parser",
+        "//src/v/features",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:describe_configs",
         "//src/v/kafka/protocol:logger",

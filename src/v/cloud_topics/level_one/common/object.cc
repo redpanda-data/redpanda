@@ -472,16 +472,21 @@ public:
         vassert(_closed, "L1 object readers must be closed unconditionally");
     }
 
-    ss::future<result> read_next() final {
+    ss::future<peek_result> peek() final {
+        if (_peeked) {
+            co_return *_peeked;
+        }
         if (_saw_footer) {
-            // After the footer we have 4 bytes for the size of the footer, so
-            // we need to make sure that we don't try and interpret those bytes
-            // as a `data_type`.
-            co_return eof{};
+            // _saw_footer is set when peek() encounters the footer tag but
+            // peek() will reach here only after the footer is read and _peeked
+            // is cleared.
+            _peeked = eof{};
+            co_return *_peeked;
         }
         auto dt_buf = co_await _input.read_exactly(sizeof(data_type));
         if (dt_buf.empty() && _input.eof()) {
-            co_return eof{};
+            _peeked = eof{};
+            co_return *_peeked;
         }
         if (dt_buf.size() != sizeof(data_type)) {
             throw std::runtime_error(
@@ -492,17 +497,63 @@ public:
         }
         auto dt = from_bytes<data_type>(dt_buf.get());
         switch (dt) {
-        case data_type::kafka_batch:
-            co_return co_await read_next_batch();
+        case data_type::kafka_batch: {
+            _peeked = co_await read_batch_header();
+            co_return *_peeked;
+        }
         case data_type::partition_marker:
-            co_return co_await read_next_serde<model::topic_id_partition>();
+            _peeked = partition_tag{};
+            co_return *_peeked;
         case data_type::footer:
             _saw_footer = true;
-            co_return co_await read_next_serde<footer>();
+            _peeked = footer_tag{};
+            co_return *_peeked;
         }
         throw std::runtime_error(
           fmt::format(
             "unknown data type in object: {}", std::to_underlying(dt)));
+    }
+
+    ss::future<result> read_next() final {
+        co_await peek();
+        auto peeked = *_peeked;
+        _peeked.reset();
+        co_return co_await ss::visit(
+          peeked,
+          [this](const model::record_batch_header& hdr) {
+              auto expected_size = hdr.size_bytes
+                                   - model::packed_record_batch_header_size;
+              return read_iobuf_exactly(_input, expected_size)
+                .then([hdr, expected_size](auto records) {
+                    if (records.size_bytes() != expected_size) {
+                        return ss::make_exception_future<result>(
+                          std::runtime_error(
+                            fmt::format(
+                              "expected {} bytes of record data, got {}",
+                              expected_size,
+                              records.size_bytes())));
+                    }
+                    return ss::make_ready_future<result>(result(
+                      model::record_batch(
+                        hdr,
+                        std::move(records),
+                        model::record_batch::tag_ctor_ng{})));
+                });
+          },
+          [this](const partition_tag&) {
+              return read_next_serde<model::topic_id_partition>().then(
+                [](auto v) {
+                    return ss::make_ready_future<result>(std::move(v));
+                });
+          },
+          [this](const footer_tag&) {
+              return read_next_serde<footer>().then([](auto v) {
+                  return ss::make_ready_future<result>(std::move(v));
+              });
+          },
+          [](const eof&) {
+              return ss::make_ready_future<result>(result(eof{}));
+          });
     }
 
     ss::future<> close() final {
@@ -528,7 +579,7 @@ private:
         co_return co_await serde::read_async<T>(parser);
     }
 
-    ss::future<model::record_batch> read_next_batch() {
+    ss::future<model::record_batch_header> read_batch_header() {
         ss::temporary_buffer<char> hdr_buf = co_await _input.read_exactly(
           batch_header_size);
         if (hdr_buf.size() != batch_header_size) {
@@ -545,13 +596,11 @@ private:
             field = from_bytes<T>(hdr_buf.get());
             hdr_buf.trim_front(field_size);
         });
-        auto records = co_await read_iobuf_exactly(
-          _input, hdr.size_bytes - model::packed_record_batch_header_size);
-        co_return model::record_batch(
-          hdr, std::move(records), model::record_batch::tag_ctor_ng{});
+        co_return hdr;
     }
 
     ss::input_stream<char> _input;
+    std::optional<peek_result> _peeked;
     bool _saw_footer = false;
     bool _closed = false;
 };

@@ -49,13 +49,13 @@ class LevelZeroServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
-    def call_start(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartResponse]:
-        """Low-level method to call Start, granting access to errors and metadata"""
-        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/Start'
-        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartResponse, extra_headers, timeout_seconds)
+    def call_start_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcResponse]:
+        """Low-level method to call StartGc, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/StartGc'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcResponse, extra_headers, timeout_seconds)
 
-    def start(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartResponse:
-        response = self.call_start(req, extra_headers, timeout_seconds)
+    def start_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcResponse:
+        response = self.call_start_gc(req, extra_headers, timeout_seconds)
         err = response.error()
         if err is not None:
             raise err
@@ -64,13 +64,28 @@ class LevelZeroServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
-    def call_pause(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseResponse]:
-        """Low-level method to call Pause, granting access to errors and metadata"""
-        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/Pause'
-        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseResponse, extra_headers, timeout_seconds)
+    def call_pause_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcResponse]:
+        """Low-level method to call PauseGc, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/PauseGc'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcResponse, extra_headers, timeout_seconds)
 
-    def pause(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseResponse:
-        response = self.call_pause(req, extra_headers, timeout_seconds)
+    def pause_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcResponse:
+        response = self.call_pause_gc(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    def call_reset_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcResponse]:
+        """Low-level method to call ResetGc, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/ResetGc'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcResponse, extra_headers, timeout_seconds)
+
+    def reset_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcResponse:
+        response = self.call_reset_gc(req, extra_headers, timeout_seconds)
         err = response.error()
         if err is not None:
             raise err
@@ -145,13 +160,13 @@ class AsyncLevelZeroServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
-    async def call_start(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartResponse]:
-        """Low-level method to call Start, granting access to errors and metadata"""
-        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/Start'
-        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartResponse, extra_headers, timeout_seconds)
+    async def call_start_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcResponse]:
+        """Low-level method to call StartGc, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/StartGc'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcResponse, extra_headers, timeout_seconds)
 
-    async def start(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartResponse:
-        response = await self.call_start(req, extra_headers, timeout_seconds)
+    async def start_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcResponse:
+        response = await self.call_start_gc(req, extra_headers, timeout_seconds)
         err = response.error()
         if err is not None:
             raise err
@@ -160,13 +175,28 @@ class AsyncLevelZeroServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
-    async def call_pause(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseResponse]:
-        """Low-level method to call Pause, granting access to errors and metadata"""
-        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/Pause'
-        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseResponse, extra_headers, timeout_seconds)
+    async def call_pause_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcResponse]:
+        """Low-level method to call PauseGc, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/PauseGc'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcResponse, extra_headers, timeout_seconds)
 
-    async def pause(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseResponse:
-        response = await self.call_pause(req, extra_headers, timeout_seconds)
+    async def pause_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcResponse:
+        response = await self.call_pause_gc(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    async def call_reset_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcResponse]:
+        """Low-level method to call ResetGc, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/ResetGc'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcResponse, extra_headers, timeout_seconds)
+
+    async def reset_gc(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcResponse:
+        response = await self.call_reset_gc(req, extra_headers, timeout_seconds)
         err = response.error()
         if err is not None:
             raise err
@@ -226,10 +256,13 @@ class LevelZeroServiceProtocol(typing.Protocol):
     def get_status(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.GetStatusRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.GetStatusResponse]:
         ...
 
-    def start(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartResponse]:
+    def start_gc(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcResponse]:
         ...
 
-    def pause(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseResponse]:
+    def pause_gc(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcResponse]:
+        ...
+
+    def reset_gc(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcResponse]:
         ...
 
     def advance_epoch(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.AdvanceEpochRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.AdvanceEpochResponse]:
@@ -245,8 +278,9 @@ LEVEL_ZERO_SERVICE_PATH_PREFIX = '/redpanda.core.admin.internal.cloud_topics.v1.
 def wsgi_level_zero_service(implementation: LevelZeroServiceProtocol) -> WSGIApplication:
     app = ConnectWSGI()
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/GetStatus', implementation.get_status, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.GetStatusRequest)
-    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/Start', implementation.start, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartRequest)
-    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/Pause', implementation.pause, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/StartGc', implementation.start_gc, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.StartGcRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/PauseGc', implementation.pause_gc, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.PauseGcRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/ResetGc', implementation.reset_gc, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.ResetGcRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/AdvanceEpoch', implementation.advance_epoch, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.AdvanceEpochRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/GetEpochInfo', implementation.get_epoch_info, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.GetEpochInfoRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.LevelZeroService/GetSizeEstimate', implementation.get_size_estimate, proto.redpanda.core.admin.internal.cloud_topics.v1.level_zero_pb2.GetSizeEstimateRequest)

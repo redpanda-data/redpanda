@@ -125,6 +125,9 @@ public:
     /// files are written to cache.
     ss::future<> hydrate_chunk(chunk_start_offset_t start_offset);
 
+    /// Prefetch the first chunk of the segment using the chunks API.
+    ss::future<> prefetch_first_chunk();
+
     /// Loads the segment chunk file from cache into an open file handle. If the
     /// file is not present in cache, the returned file handle is unopened.
     ss::future<ss::file> materialize_chunk(chunk_start_offset_t);
@@ -430,6 +433,8 @@ public:
     bool reads_from_segment(const remote_segment& segm) const {
         return &segm == _seg.get();
     }
+
+    size_t get_segment_size() const { return _seg->get_segment_size(); }
 
     bool is_stopped() const { return _stopped; }
 

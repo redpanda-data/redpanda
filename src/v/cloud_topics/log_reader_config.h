@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/format_to.h"
+#include "cloud_topics/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "model/timestamp.h"
@@ -85,6 +86,19 @@ struct cloud_topic_log_reader_config {
     bool strict_max_bytes{false};
 
     bool skip_cache{false};
+
+    // When set, the reader tolerates download_not_found (404) errors during
+    // extent materialization. Failed extents are skipped and produce no
+    // batches, allowing the reconciler to advance past deleted L0 objects.
+    allow_materialization_failure allow_mat_failure;
+
+    // Number of objects to look ahead when fetching object metadata from
+    // the metastore. 0 (default) means no lookahead and is equivalent to 1:
+    // fetch one object's metadata at a time. Values > 1 batch-fetch multiple
+    // objects' metadata in a single metastore RPC.
+    //
+    // NB: Applies to the L1 reader only.
+    size_t lookahead_objects{0};
 
     fmt::iterator format_to(fmt::iterator it) const;
 };

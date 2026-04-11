@@ -34,13 +34,15 @@ public:
     manifest_io(
       cloud_io::remote& io, cloud_storage_clients::bucket_name bucket);
 
-    // Uploads manifest to: {cluster_uuid}/level_one/metastore.bin
+    // Uploads manifest to:
+    // level_one/meta/metastore/{cluster_uuid}/manifest.bin
     // Uses the local cluster's UUID from storage::api.
     ss::future<std::expected<size_t, error>> upload_metastore_manifest(
       const cloud_storage::remote_label& remote_label,
       metastore_manifest manifest);
 
-    // Downloads manifest from: {cluster_uuid}/level_one/metastore.bin
+    // Downloads manifest from:
+    // level_one/meta/metastore/{cluster_uuid}/manifest.bin
     ss::future<std::expected<metastore_manifest, error>>
     download_metastore_manifest(
       const cloud_storage::remote_label& remote_label);

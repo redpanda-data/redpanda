@@ -17,6 +17,7 @@
 #include "container/chunked_circular_buffer.h"
 #include "features/feature_table.h"
 #include "model/limits.h"
+#include "raft/fundamental.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/tests/batch_generators.h"
@@ -289,5 +290,74 @@ public:
           expected.second);
         RPTEST_EXPECT_EQ(log->dirty_segment_bytes(), expected.first);
         RPTEST_EXPECT_EQ(log->closed_segment_bytes(), expected.second);
+    }
+
+    // Utility class to enable/disable stm_hookset according to the log
+    // lifetime. In production raft layer does it.
+    //
+    // Limitations;
+    // 1) Other shared pointers to log (apart from the log manager) cannot
+    // outlive the log holder. Log manager must still be managing the log when
+    // the holder is destructed.
+    // 2) Log holder cannot be copied, only moved.
+    class log_holder final {
+    public:
+        log_holder() = default;
+        explicit log_holder(ss::shared_ptr<storage::log>&& log_ptr)
+          : _log_ptr(std::move(log_ptr)) {
+            _log_ptr->stm_hookset()->start();
+        }
+
+        log_holder(const log_holder&) = delete;
+        log_holder& operator=(const log_holder&) = delete;
+
+        log_holder(log_holder&& o) = default;
+
+        log_holder& operator=(log_holder&& o) noexcept {
+            if (this != &o) {
+                this->~log_holder();
+                new (this) log_holder(std::move(o));
+            }
+            return *this;
+        }
+
+        ~log_holder() {
+            if (!_log_ptr) {
+                // empty holder, nothing to stop
+                return;
+            }
+            // only us and log_manager, no escaped copies
+            vassert(
+              _log_ptr.use_count() == 2,
+              "there are {} shared_ptrs to log, expected 2",
+              _log_ptr.use_count());
+            _log_ptr->stm_hookset()->stop();
+        }
+
+        operator const ss::shared_ptr<storage::log>&() const {
+            return _log_ptr;
+        }
+        storage::log& operator*() const { return *_log_ptr; }
+        storage::log* get() const { return _log_ptr.get(); }
+        storage::log* operator->() const { return _log_ptr.get(); }
+
+    private:
+        ss::shared_ptr<storage::log> _log_ptr;
+    };
+
+    // Manage log and de-/activate stm_hookset for the log lifetime
+    log_holder manage_log(storage::log_manager& mgr, storage::ntp_config cfg) {
+        return log_holder(mgr.manage(std::move(cfg)).get());
+    }
+
+    log_holder manage_log(
+      storage::log_manager& mgr,
+      storage::ntp_config cfg,
+      raft::group_id group_id,
+      std::vector<model::record_batch_type> translator_batch_types) {
+        return log_holder(
+          mgr
+            .manage(std::move(cfg), group_id, std::move(translator_batch_types))
+            .get());
     }
 };

@@ -24,19 +24,19 @@ import (
 
 var supportedTypes = []string{"avro", "protobuf", "json"}
 
-func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema",
 		Args:  cobra.ExactArgs(0),
 		Short: "Manage your schema registry schemas",
 	}
 	cmd.AddCommand(
-		newCheckCompatibilityCommand(fs, p),
-		newCreateCommand(fs, p),
-		newDeleteCommand(fs, p),
-		newGetCommand(fs, p),
-		newListCommand(fs, p),
-		newReferencesCommand(fs, p),
+		newCheckCompatibilityCommand(fs, p, schemaCtx),
+		newCreateCommand(fs, p, schemaCtx),
+		newDeleteCommand(fs, p, schemaCtx),
+		newGetCommand(fs, p, schemaCtx),
+		newListCommand(fs, p, schemaCtx),
+		newReferencesCommand(fs, p, schemaCtx),
 	)
 	p.InstallFormatFlag(cmd)
 	return cmd

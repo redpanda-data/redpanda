@@ -15,10 +15,10 @@
 #include "cloud_topics/level_one/domain/simple_domain_manager.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/logger.h"
-#include "cloud_topics/types.h"
 #include "cluster/controller.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "ssx/when_all.h"
@@ -36,12 +36,14 @@ public:
       io* io,
       std::filesystem::path staging_dir,
       cloud_io::remote* remote,
-      cloud_storage_clients::bucket_name bucket)
+      cloud_storage_clients::bucket_name bucket,
+      ss::scheduling_group sg)
       : _controller(controller)
       , _object_io(io)
       , _staging_dir(std::move(staging_dir))
       , _remote(remote)
       , _bucket(std::move(bucket))
+      , _sg(sg)
       , _queue([](const std::exception_ptr& ex) {
           vlog(cd_log.error, "Unexpected domain supervisor error: {}", ex);
       }) {}
@@ -200,10 +202,11 @@ private:
           = tristate<std::chrono::milliseconds>();
         topic_props.cleanup_policy_bitflags
           = model::cleanup_policy_bitflags::none;
-        // NOTE: For now we just have a fixed number of domains for the entire
-        // cluster.
         co_return co_await create_topic(
-          tp_ns, num_partitions.value_or(default_num_l1_domains), topic_props);
+          tp_ns,
+          num_partitions.value_or(
+            config::shard_local_cfg().cloud_topics_num_metastore_partitions()),
+          topic_props);
     }
 
     ss::future<> update_topic(cluster::topic_properties_update update) {
@@ -326,7 +329,8 @@ private:
               _staging_dir,
               _remote,
               _bucket,
-              _object_io);
+              _object_io,
+              _sg);
         } else {
             domain_mgr = ss::make_shared<simple_domain_manager>(
               stm_manager->get<simple_stm>(), _object_io);
@@ -340,6 +344,7 @@ private:
     std::filesystem::path _staging_dir;
     cloud_io::remote* _remote;
     cloud_storage_clients::bucket_name _bucket;
+    ss::scheduling_group _sg;
 
     // Queue to process async work associated with starting and stopping domain
     // managers when handling partition notifications.
@@ -360,10 +365,16 @@ domain_supervisor::domain_supervisor(
   io* io,
   std::filesystem::path staging_dir,
   cloud_io::remote* remote,
-  cloud_storage_clients::bucket_name bucket)
+  cloud_storage_clients::bucket_name bucket,
+  ss::scheduling_group sg)
   : _impl(
       std::make_unique<impl>(
-        controller, io, std::move(staging_dir), remote, std::move(bucket))) {}
+        controller,
+        io,
+        std::move(staging_dir),
+        remote,
+        std::move(bucket),
+        sg)) {}
 
 domain_supervisor::~domain_supervisor() = default;
 

@@ -77,6 +77,24 @@ public:
         auto sync_res = co_await stm->sync(10s);
         ASSERT_TRUE_CORO(sync_res.has_value());
 
+        {
+            preregister_objects_update prereg;
+            prereg.registered_at = model::timestamp::now();
+            for (const auto& o : new_objects) {
+                prereg.object_ids.push_back(o.oid);
+            }
+            storage::record_batch_builder prereg_builder(
+              model::record_batch_type::l1_stm, model::offset{0});
+            prereg_builder.add_raw_kv(
+              serde::to_iobuf(preregister_objects_update::key),
+              serde::to_iobuf(std::move(prereg)));
+            auto prereg_repl = co_await stm->replicate_and_wait(
+              sync_res.value(), std::move(prereg_builder).build(), never_abort);
+            ASSERT_TRUE_CORO(prereg_repl.has_value());
+            sync_res = co_await stm->sync(10s);
+            ASSERT_TRUE_CORO(sync_res.has_value());
+        }
+
         auto update_res = add_objects_update::build(
           stm->state(), std::move(new_objects), std::move(terms));
         ASSERT_TRUE_CORO(update_res.has_value());

@@ -1031,13 +1031,21 @@ ss::future<> remote_segment::do_hydrate(
             // download failed, we may not be able to progress. So we
             // fallback to old format where the full segment was downloaded,
             // and try to hydrate again.
-            if (ex.path == _index_path && !_fallback_mode) {
-                vlog(
-                  _ctxlog.info,
-                  "failed to download index with error [{}], switching to "
-                  "fallback mode and retrying hydration.",
-                  ex);
-                switch_to_legacy_mode();
+            if (ex.path == _index_path) {
+                if (!_fallback_mode) {
+                    vlog(
+                      _ctxlog.info,
+                      "failed to download index with error [{}], switching to "
+                      "fallback mode and retrying hydration.",
+                      ex);
+                    switch_to_legacy_mode();
+                }
+                // In legacy mode the index is never downloaded. So if
+                // `_fallback_mode = fallback_mode::yes` here its because we are
+                // racing with a concurrent hydration request. Hence it should
+                // be fine to re-enter the wait list so we can be notified when
+                // the legacy hydration finishes.
+
                 return do_hydrate(as, deadline).then([] {
                     // This is an empty file to match the type returned by
                     // `fut`. The result is discarded immediately so it is
@@ -1047,9 +1055,7 @@ ss::future<> remote_segment::do_hydrate(
             }
 
             // If the download failure was something other than the index,
-            // OR if we are in the fallback mode already or if we are
-            // working with old format, rethrow the exception and let the
-            // upper layer handle it.
+            // rethrow the exception and let the upper layer handle it.
             return ss::make_exception_future<ss::file>(ex);
         })
       .discard_result();
@@ -1128,6 +1134,14 @@ ss::future<> remote_segment::hydrate_chunk(chunk_start_offset_t start_offset) {
 
     _probe.chunk_size(space_required);
     _ts_probe.on_chunks_hydration(1);
+}
+
+ss::future<> remote_segment::prefetch_first_chunk() {
+    if (!is_legacy_mode_engaged() && _chunks_api.has_value()) {
+        return _chunks_api->hydrate_chunk(chunk_start_offset_t{0})
+          .discard_result();
+    }
+    return ss::now();
 }
 
 ss::future<ss::file>

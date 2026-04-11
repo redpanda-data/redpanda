@@ -11,6 +11,8 @@
 
 #include "base/seastarx.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "container/chunked_vector.h"
+#include "model/timestamp.h"
 #include "utils/detailed_error.h"
 #include "utils/named_type.h"
 
@@ -43,22 +45,35 @@ public:
         io_error,
     };
     using error = detailed_error<errc>;
+
     explicit db_garbage_collector(io* io);
 
-    ss::future<std::expected<void, error>> remove_unreferenced_objects(
-      replicated_database*, ss::abort_source*, size_t batch_size);
+    // Removes all unreferenced objects from cloud storage, and collects stale
+    // preregistered objects that need expiry. Returns the list of object IDs
+    // whose is_preregistration flag should be cleared; the caller is
+    // responsible for writing those rows with appropriate locking.
+    ss::future<std::expected<chunked_vector<object_id>, error>>
+    remove_unreferenced_objects(
+      replicated_database*,
+      ss::abort_source*,
+      size_t batch_size,
+      model::timestamp prereg_expiry_cutoff,
+      model::timestamp deletion_delay_cutoff);
 
 private:
     // Removes the given batch size worth of objects, evaluating objects
     // starting from the given object. Returns the next object that needs to be
-    // evalulated, or std::nullopt if this batch finished all objects in the
-    // database.
+    // evaluated, or std::nullopt if this batch finished all objects in the
+    // database. Appends stale preregistered objects to to_expire_out.
     ss::future<std::expected<std::optional<object_id>, error>>
     remove_unreferenced_batch(
       replicated_database*,
       ss::abort_source*,
       size_t batch_size,
-      std::optional<object_id>);
+      std::optional<object_id>,
+      model::timestamp prereg_expiry_cutoff,
+      model::timestamp deletion_delay_cutoff,
+      chunked_vector<object_id>& to_expire_out);
 
     io* io_;
 };

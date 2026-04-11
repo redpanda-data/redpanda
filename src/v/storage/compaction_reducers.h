@@ -142,7 +142,7 @@ public:
       model::offset segment_last_offset,
       bool compaction_placeholder_enabled,
       bool unset_transaction_bit_enabled,
-      ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
+      ss::lw_shared_ptr<storage::stm_hookset> stm_mgr,
       compacted_index_writer* cidx = nullptr,
       bool inject_failure = false,
       ss::abort_source* as = nullptr)
@@ -194,7 +194,7 @@ private:
 
     segment_appender* _appender;
 
-    ss::lw_shared_ptr<storage::stm_manager> _stm_mgr;
+    ss::lw_shared_ptr<storage::stm_hookset> _stm_mgr;
 
     // Compacted index writer for the newly written segment. May not be
     // supplied if the compacted index isn't expected to change, e.g. when
@@ -253,7 +253,7 @@ class tx_reducer : public compaction_reducer {
 public:
     explicit tx_reducer(
       model::ntp ntp,
-      ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
+      ss::lw_shared_ptr<storage::stm_hookset> stm_mgr,
       chunked_vector<model::tx_range>&& txs,
       compacted_index_writer* w,
       bool tx_batch_compaction_enabled) noexcept
@@ -308,7 +308,7 @@ private:
     // end offset of the batch we consumed.
     absl::flat_hash_map<model::producer_identity, model::tx_range>
       _ongoing_aborted_txs;
-    ss::lw_shared_ptr<storage::stm_manager> _stm_mgr;
+    ss::lw_shared_ptr<storage::stm_hookset> _stm_mgr;
     stats _stats;
     // Set if a transactional stm is attached to this partition.
     std::optional<storage::stm_type> _transactional_stm_type;

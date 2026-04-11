@@ -257,7 +257,7 @@ std::optional<shard_placement_target> placement_target_on_node(
 
 partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     partition_state state{};
-    if (!partition || !partition->log() || !partition->log()->stm_manager())
+    if (!partition || !partition->log() || !partition->log()->stm_hookset())
       [[unlikely]] {
         return state;
     }
@@ -378,10 +378,10 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
 
 std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr ptr) {
     std::vector<partition_stm_state> result;
-    if (unlikely(!ptr) || unlikely(!ptr->log()->stm_manager())) {
+    if (unlikely(!ptr) || unlikely(!ptr->log()->stm_hookset())) {
         return result;
     }
-    const auto& stms = ptr->log()->stm_manager()->stms();
+    const auto& stms = ptr->log()->stm_hookset()->stms();
     result.reserve(stms.size());
     for (const auto& stm : stms) {
         partition_stm_state state;

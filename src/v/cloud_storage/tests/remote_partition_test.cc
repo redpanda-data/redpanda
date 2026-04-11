@@ -40,6 +40,7 @@
 #include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/boost_fixture.h"
+#include "test_utils/scoped_config.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
@@ -2540,4 +2541,196 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     BOOST_TEST_REQUIRE(timequery(*this, base, model::timestamp(100), 3 * 6));
     BOOST_TEST_REQUIRE(
       timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
+}
+
+// Test that small segment prefetch is disabled when config is 0
+FIXTURE_TEST(test_small_segment_prefetch_disabled, cloud_storage_fixture) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_prefetch_segments_max").set_value(uint16_t{0});
+
+    auto segments = setup_s3_imposter(*this, 5, 2);
+    auto base = segments.front().base_offset;
+    auto first_seg_max = segments.front().max_offset;
+
+    size_t max_segment_size = 0;
+    for (const auto& s : segments) {
+        max_segment_size = std::max(max_segment_size, s.bytes.size());
+    }
+    cfg.get("cloud_storage_cache_chunk_size")
+      .set_value((uint64_t)2 * max_segment_size);
+
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+    partition_probe probe(manifest.get_ntp());
+
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+    manifest_view->start().get();
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+    partition->start().get();
+
+    BOOST_REQUIRE_EQUAL(partition->materialized_segment_count(), 0);
+
+    cloud_log_reader_config reader_config(
+      model::offset_cast(base), model::offset_cast(first_seg_max));
+    auto reader = partition->make_reader(reader_config).get().reader;
+    auto headers = reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
+    BOOST_REQUIRE(!headers.empty());
+
+    // With prefetch disabled, we should only have the segment being read
+    // materialized (1 segment).
+    BOOST_REQUIRE_EQUAL(partition->materialized_segment_count(), 1);
+}
+
+// Test that small segment prefetch triggers when enabled and validates
+// that segments are materialized
+FIXTURE_TEST(test_small_segment_prefetch_enabled, cloud_storage_fixture) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_prefetch_segments_max").set_value(uint16_t{3});
+    // Set chunk prefetch to 0 to isolate small segment prefetch behavior
+    cfg.get("cloud_storage_chunk_prefetch").set_value(uint16_t{0});
+
+    auto segments = setup_s3_imposter(*this, 5, 2);
+    auto base = segments.front().base_offset;
+    auto first_seg_max = segments.front().max_offset;
+
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+    partition_probe probe(manifest.get_ntp());
+
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+    manifest_view->start().get();
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+    partition->start().get();
+
+    BOOST_REQUIRE_EQUAL(partition->materialized_segment_count(), 0);
+
+    // Read just the first segment this should trigger prefetch of subsequent
+    // small segments.
+    cloud_log_reader_config reader_config(
+      model::offset_cast(base), model::offset_cast(first_seg_max));
+    auto reader = partition->make_reader(reader_config).get().reader;
+    auto headers = reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
+    BOOST_REQUIRE_EQUAL(headers.size(), 2);
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        // 1 read, 3 prefetched
+        return partition->materialized_segment_count() == 4;
+    });
+}
+
+// Test that prefetch respects the segment count limit
+FIXTURE_TEST(test_small_segment_prefetch_count_limit, cloud_storage_fixture) {
+    scoped_config cfg;
+    // Limit prefetch to 2 segments
+    cfg.get("cloud_storage_prefetch_segments_max").set_value(uint16_t{2});
+    cfg.get("cloud_storage_chunk_prefetch").set_value(uint16_t{0});
+
+    // Create 10 small segments
+    auto segments = setup_s3_imposter(*this, 10, 2);
+    auto base = segments.front().base_offset;
+    auto first_seg_max = segments.front().max_offset;
+
+    size_t max_segment_size = 0;
+    for (const auto& s : segments) {
+        max_segment_size = std::max(max_segment_size, s.bytes.size());
+    }
+    cfg.get("cloud_storage_cache_chunk_size")
+      .set_value((uint64_t)2 * max_segment_size);
+
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+    partition_probe probe(manifest.get_ntp());
+
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+    manifest_view->start().get();
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+    partition->start().get();
+
+    BOOST_REQUIRE_EQUAL(partition->materialized_segment_count(), 0);
+
+    cloud_log_reader_config reader_config(
+      model::offset_cast(base), model::offset_cast(first_seg_max));
+    auto reader = partition->make_reader(reader_config).get().reader;
+    auto headers = reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
+    BOOST_REQUIRE(!headers.empty());
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        // 1 read, 2 pre-fetched
+        return partition->materialized_segment_count() == 3;
+    });
+}
+
+// Test that prefetch stops at large segments
+FIXTURE_TEST(
+  test_small_segment_prefetch_stops_at_large, cloud_storage_fixture) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_prefetch_segments_max").set_value(uint16_t{10});
+    cfg.get("cloud_storage_cache_chunk_size").set_value(uint64_t{1024});
+    cfg.get("cloud_storage_chunk_prefetch").set_value(uint16_t{0});
+
+    batch_t data_batch{1, model::record_batch_type::raft_data, {128}};
+    std::vector<batch_t> small_seg{data_batch, data_batch};
+    std::vector<batch_t> large_seg;
+    for (int i = 0; i < 20; i++) {
+        large_seg.push_back(data_batch);
+    }
+
+    std::vector<std::vector<batch_t>> raw_segments{
+      small_seg,
+      small_seg,
+      // Prefetching should stop here.
+      large_seg,
+      small_seg,
+      small_seg,
+    };
+
+    auto segments = setup_s3_imposter(*this, raw_segments);
+    auto base = segments.front().base_offset;
+    auto first_seg_max = segments.front().max_offset;
+
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+    partition_probe probe(manifest.get_ntp());
+
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+    manifest_view->start().get();
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+    partition->start().get();
+
+    BOOST_REQUIRE_EQUAL(partition->materialized_segment_count(), 0);
+
+    cloud_log_reader_config reader_config(
+      model::offset_cast(base), model::offset_cast(first_seg_max));
+    auto reader = partition->make_reader(reader_config).get().reader;
+    auto headers = reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
+    BOOST_REQUIRE(!headers.empty());
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        // 1 read, 1 pre-fetched
+        return partition->materialized_segment_count() == 2;
+    });
 }

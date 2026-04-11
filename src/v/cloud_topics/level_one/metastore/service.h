@@ -74,6 +74,9 @@ public:
     ss::future<restore_domain_reply>
     restore_domain(restore_domain_request, ::rpc::streaming_context&) override;
 
+    ss::future<preregister_objects_reply> preregister_objects(
+      preregister_objects_request, ::rpc::streaming_context&) override;
+
 private:
     ss::sharded<leader_router>* _leader_router;
 };

@@ -11,10 +11,16 @@
 #include "cloud_topics/level_one/metastore/lsm/lsm_update.h"
 #include "cloud_topics/level_one/metastore/lsm/state.h"
 #include "cloud_topics/level_one/metastore/lsm/write_batch_row.h"
+#include "serde/async.h"
 
 #include <gtest/gtest.h>
 
 using namespace cloud_topics::l1;
+
+// Verify that lsm_state and lsm_stm_snapshot use async serde writes to avoid
+// reactor stalls when serializing a large volatile_buffer.
+static_assert(serde::has_serde_async_write<lsm_state>);
+static_assert(serde::has_serde_async_write<lsm_stm_snapshot>);
 
 namespace {
 

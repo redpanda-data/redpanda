@@ -317,6 +317,14 @@ bool maybe_append_update(
           kafka::max_compaction_lag_ms_validator);
     }
 
+    if (config_name == kafka::topic_property_redpanda_storage_mode) {
+        return parse_and_set(
+          topic_config.tp_ns,
+          update.properties.storage_mode,
+          config_value,
+          std::make_optional(topic_config.properties.storage_mode));
+    }
+
     return false;
 }
 } // namespace cluster_link::utils

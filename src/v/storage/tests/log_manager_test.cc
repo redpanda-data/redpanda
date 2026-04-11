@@ -135,10 +135,17 @@ TEST(LogManagerTest, test_can_load_logs) {
     write_garbage(seg4->appender());
     seg4->close().get();
 
-    m.manage(config_from_ntp(ntps[0].ntp())).get();
-    m.manage(config_from_ntp(ntps[1].ntp())).get();
-    m.manage(config_from_ntp(ntps[2].ntp())).get();
-    m.manage(config_from_ntp(ntps[3].ntp())).get();
+    std::vector<ss::shared_ptr<storage::log>> logs;
+    for (size_t i = 0; i < 4; ++i) {
+        auto log = m.manage(config_from_ntp(ntps[i].ntp())).get();
+        log->stm_hookset()->start();
+        logs.push_back(std::move(log));
+    }
+    auto stop_stms = ss::defer([&logs] {
+        for (auto& log : logs) {
+            log->stm_hookset()->stop();
+        }
+    });
     EXPECT_EQ(4, m.size());
     EXPECT_EQ(m.get(ntps[0].ntp())->segment_count(), 0);
     EXPECT_EQ(m.get(ntps[1].ntp())->segment_count(), 0);

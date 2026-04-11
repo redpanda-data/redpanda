@@ -16,7 +16,7 @@
 
 namespace storage {
 using segment_list_t = chunked_vector<segment_set::type>;
-class stm_manager;
+class stm_hookset;
 
 // Adds the keys from the given compacted index reader to the map. Returns
 // true if the entire reader was successfully indexed, false if the index was
@@ -44,7 +44,7 @@ ss::future<bool> build_offset_map_for_segment(
 ss::future<model::offset> build_offset_map(
   const compaction::compaction_config& cfg,
   const segment_set& segs,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   storage::storage_resources&,
   storage::probe&,
   compaction::key_offset_map&,
@@ -58,7 +58,7 @@ ss::future<index_state> deduplicate_segment(
   ss::lw_shared_ptr<storage::segment> seg,
   segment_appender& appender,
   compacted_index_writer& cmp_idx_writer,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   storage::probe& probe,
   offset_delta_time should_offset_delta_times,
   ss::sharded<features::feature_table>&,

@@ -7,7 +7,7 @@ making behavior changes across the entire build.
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load(":internal.bzl", "redpanda_copts")
+load(":internal.bzl", "antithesis_deps", "redpanda_copts")
 
 # buildifier: disable=function-docstring-args
 def redpanda_cc_library(
@@ -64,7 +64,7 @@ def redpanda_cc_binary(
         defines = defines,
         local_defines = local_defines,
         visibility = visibility,
-        deps = deps,
+        deps = deps + antithesis_deps(),
         testonly = testonly,
         copts = redpanda_copts() + copts,
         linkopts = linkopts,

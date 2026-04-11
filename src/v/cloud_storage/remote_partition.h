@@ -151,6 +151,10 @@ public:
     // vs segment-based storage in the cache.
     cache_usage_target get_cache_usage_target() const;
 
+    /// Returns the number of currently materialized segments.
+    /// Used in unit tests
+    size_t materialized_segment_count() const { return _segments.size(); }
+
 private:
     friend struct materialized_segment_state;
 
@@ -207,6 +211,14 @@ private:
     /// iterator)
     iterator get_or_materialize_segment(
       const remote_segment_path& path, const segment_meta&, segment_units);
+
+    /// Prefetch small segments ahead of the current read position.
+    /// Called by the reader when transitioning segments.
+    void maybe_prefetch_small_segments(
+      const partition_manifest& manifest,
+      model::offset next_segment_base_offset,
+      size_t current_segment_size);
+    ss::future<> do_prefetch_small_segment(segment_meta meta);
 
     model::ntp _ntp;
     retry_chain_node _rtc;

@@ -135,7 +135,13 @@ std::expected<std::monostate, stm_update_error> add_objects_update::can_apply(
     }
     sorted_extents_by_tidp_t new_extents;
     for (const auto& o : new_objects) {
-        if (state.objects.contains(o.oid)) {
+        auto it = state.objects.find(o.oid);
+        if (it == state.objects.end()) {
+            return std::unexpected(
+              stm_update_error{
+                fmt::format("Object {} not pre-registered", o.oid)});
+        }
+        if (!it->second.is_preregistration) {
             return std::unexpected(
               stm_update_error{fmt::format("Object {} already exists", o.oid)});
         }
@@ -277,14 +283,14 @@ add_objects_update::apply(state& state) {
     sorted_extents_by_tidp_t extents_by_tp;
     for (const auto& o : new_objects) {
         o.collect_extents_by_tidp(&extents_by_tp);
-        state.objects.emplace(
-          o.oid,
-          object_entry{
-            .total_data_size = 0,
-            .removed_data_size = 0,
-            .footer_pos = o.footer_pos,
-            .object_size = o.object_size,
-          });
+        state.objects[o.oid] = object_entry{
+          .total_data_size = 0,
+          .removed_data_size = 0,
+          .footer_pos = o.footer_pos,
+          .object_size = o.object_size,
+          .last_updated = model::timestamp::now(),
+          .is_preregistration = false,
+        };
     }
     for (const auto& [tidp, extents] : extents_by_tp) {
         auto p_state = state.partition_state(tidp);
@@ -361,7 +367,13 @@ replace_objects_update::can_apply(const state& state) {
     }
     sorted_extents_by_tidp_t new_extents_by_tp;
     for (const auto& o : new_objects) {
-        if (state.objects.contains(o.oid)) {
+        auto it = state.objects.find(o.oid);
+        if (it == state.objects.end()) {
+            return std::unexpected(
+              stm_update_error{
+                fmt::format("Object {} not pre-registered", o.oid)});
+        }
+        if (!it->second.is_preregistration) {
             return std::unexpected(
               stm_update_error{fmt::format("Object {} already exists", o.oid)});
         }
@@ -536,14 +548,14 @@ replace_objects_update::apply(state& state) {
     sorted_extents_by_tidp_t new_extents_by_tp;
     for (const auto& o : new_objects) {
         o.collect_extents_by_tidp(&new_extents_by_tp);
-        state.objects.emplace(
-          o.oid,
-          object_entry{
-            .total_data_size = 0,
-            .removed_data_size = 0,
-            .footer_pos = o.footer_pos,
-            .object_size = o.object_size,
-          });
+        state.objects[o.oid] = object_entry{
+          .total_data_size = 0,
+          .removed_data_size = 0,
+          .footer_pos = o.footer_pos,
+          .object_size = o.object_size,
+          .last_updated = model::timestamp::now(),
+          .is_preregistration = false,
+        };
     }
 
     auto contiguous_intervals_by_tp
@@ -854,6 +866,48 @@ remove_topics_update::apply(state& state) {
             }
         }
         state.topic_to_state.erase(t_it);
+    }
+    return std::monostate{};
+}
+
+std::expected<std::monostate, stm_update_error>
+preregister_objects_update::can_apply(const state& s) {
+    for (const auto& oid : object_ids) {
+        if (s.objects.contains(oid)) {
+            return std::unexpected(
+              stm_update_error{fmt::format("object {} already exists", oid)});
+        }
+    }
+    return std::monostate{};
+}
+
+std::expected<std::monostate, stm_update_error>
+preregister_objects_update::apply(state& s) {
+    auto allowed = can_apply(s);
+    if (!allowed.has_value()) {
+        return std::unexpected(allowed.error());
+    }
+    for (const auto& oid : object_ids) {
+        s.objects[oid] = object_entry{
+          .last_updated = registered_at,
+          .is_preregistration = true,
+        };
+    }
+    return std::monostate{};
+}
+
+std::expected<std::monostate, stm_update_error>
+expire_preregistered_objects_update::can_apply(const state&) {
+    return std::monostate{};
+}
+
+std::expected<std::monostate, stm_update_error>
+expire_preregistered_objects_update::apply(state& s) {
+    for (const auto& oid : object_ids) {
+        auto it = s.objects.find(oid);
+        if (it != s.objects.end()) {
+            it->second.is_preregistration = false;
+        }
     }
     return std::monostate{};
 }

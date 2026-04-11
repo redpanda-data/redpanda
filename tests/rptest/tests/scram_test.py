@@ -17,8 +17,6 @@ import urllib.parse
 from enum import IntEnum
 from typing import List
 
-from typing_extensions import assert_never
-
 import requests
 from confluent_kafka import KafkaError, KafkaException
 from connectrpc.errors import ConnectError, ConnectErrorCode
@@ -28,9 +26,8 @@ from ducktape.mark import matrix, parametrize
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
+from typing_extensions import assert_never
 
-from rptest.util import expect_exception
-from rptest.utils.mode_checks import in_fips_environment
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
     security_pb2,
 )
@@ -57,8 +54,9 @@ from rptest.tests.sasl_reauth_test import (
     REAUTH_METRIC,
     get_sasl_metrics,
 )
-from rptest.util import expect_http_error
+from rptest.util import expect_exception, expect_http_error
 from rptest.utils.log_utils import wait_until_nag_is_set
+from rptest.utils.mode_checks import in_fips_environment
 from rptest.utils.utf8 import (
     generate_string_with_control_character,
 )
@@ -962,12 +960,17 @@ class SaslPlainTest(BaseScramTest):
         )
         with expect_exception(RpkException, lambda e: True):
             client.create_topic("test-topic")
-        warn_in_logs = self.redpanda.search_log_any("password less than 14 characters")
+
+        log_msg = "password length less than 14 characters"
         if in_fips_environment():
-            assert warn_in_logs, "request should have failed because of password length"
+            wait_until(
+                lambda: self.redpanda.search_log_any(log_msg),
+                timeout_sec=10,
+                err_msg="Expected to find warning about short password in logs",
+            )
         else:
-            assert not warn_in_logs, (
-                "warning about password length should not be present"
+            assert not self.redpanda.search_log_any(log_msg), (
+                "Warning about password length should not be present"
             )
 
 

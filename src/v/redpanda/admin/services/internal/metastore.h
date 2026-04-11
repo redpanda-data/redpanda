@@ -57,6 +57,14 @@ public:
         serde::pb::rpc::context,
         proto::admin::metastore::get_database_stats_request) override;
 
+    seastar::future<proto::admin::metastore::write_rows_response> write_rows(
+      serde::pb::rpc::context,
+      proto::admin::metastore::write_rows_request) override;
+
+    seastar::future<proto::admin::metastore::read_rows_response> read_rows(
+      serde::pb::rpc::context,
+      proto::admin::metastore::read_rows_request) override;
+
 private:
     admin::proxy::client _proxy_client;
     ss::sharded<cluster::topic_table>* _topic_table;

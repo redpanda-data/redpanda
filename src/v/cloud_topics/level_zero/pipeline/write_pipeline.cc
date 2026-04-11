@@ -221,7 +221,8 @@ write_pipeline<Clock>::get_write_requests(
         }
         result.requests.push_back(el);
     }
-    result.complete = pending.empty();
+    result.complete = std::none_of(
+      it, pending.end(), [stage](const auto& r) { return r.stage == stage; });
     vlog(
       cd_log.trace,
       "get_write_requests returned {} elements, containing {} ({}B)",
@@ -272,11 +273,12 @@ void write_pipeline<Clock>::stage::signal_next_stage() {
 template<class Clock>
 void write_pipeline<Clock>::stage::enqueue_foreign_request(
   write_request<Clock>& req, bool signal) {
-    // Foreign requests are proxied from another shard where their bytes
-    // were already accounted for. We place them directly at the next stage
-    // without any byte accounting.
     auto next = _parent->next_stage(_ps);
     req.stage = next;
+    if (next != unassigned_pipeline_stage) {
+        auto idx = static_cast<size_t>(next()->get_numeric_id());
+        _parent->_stage_bytes.at(idx) += req.size_bytes();
+    }
     _parent->get_pending().push_back(req);
     if (signal) {
         _parent->signal(next);

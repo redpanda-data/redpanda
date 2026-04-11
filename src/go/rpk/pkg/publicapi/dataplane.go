@@ -28,6 +28,7 @@ import (
 // the data plane endpoints of the Public API.
 type DataPlaneClientSet struct {
 	ACL           dataplanev1connect.ACLServiceClient
+	AIAgent       dataplanev1alpha3connect.AIAgentServiceClient
 	CloudStorage  dataplanev1connect.CloudStorageServiceClient
 	KafkaConnect  dataplanev1connect.KafkaConnectServiceClient
 	KnowledgeBase dataplanev1alpha3connect.KnowledgeBaseServiceClient
@@ -120,6 +121,7 @@ func NewDataPlaneClientSet(host, authToken string, opts ...connect.ClientOption)
 	dpCl.Quota = dataplanev1connect.NewQuotaServiceClient(httpCl, host, opts...)
 	dpCl.Security = dataplanev1connect.NewSecurityServiceClient(httpCl, host, opts...)
 	dpCl.Monitoring = dataplanev1connect.NewMonitoringServiceClient(httpCl, host, opts...)
+	dpCl.AIAgent = dataplanev1alpha3connect.NewAIAgentServiceClient(httpCl, host, opts...)
 	dpCl.KnowledgeBase = dataplanev1alpha3connect.NewKnowledgeBaseServiceClient(httpCl, host, opts...)
 	dpCl.ShadowLink = dataplanev1connect.NewShadowLinkServiceClient(httpCl, host, opts...)
 

@@ -56,10 +56,10 @@ struct bootstrap_fixture : raft::simple_record_fixture {
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
         _storage.start().get();
-        // ignore the get_log()
-        (void)_storage.log_mgr()
-          .manage(storage::ntp_config(_ntp, test_directory()))
-          .get();
+        auto log = _storage.log_mgr()
+                     .manage(storage::ntp_config(_ntp, test_directory()))
+                     .get();
+        log->stm_hookset()->start();
     }
 
     std::vector<storage::append_result> write_n(const std::size_t n) {
@@ -82,6 +82,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
     }
 
     ~bootstrap_fixture() {
+        get_log()->stm_hookset()->stop();
         _storage.stop().get();
         _feature_table.stop().get();
     }

@@ -635,19 +635,25 @@ BOOST_AUTO_TEST_CASE(test_store_global_compat) {
     pps::compatibility_level expected{pps::compatibility_level::backward};
     pps::store s;
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
+      s.get_compatibility(pps::default_context, pps::default_to_global::yes)
+        .value()
+      == expected);
 
     // duplicate should return false
     BOOST_REQUIRE(s.clear_compatibility(pps::default_context).value() == false);
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
+      s.get_compatibility(pps::default_context, pps::default_to_global::yes)
+        .value()
+      == expected);
 
     expected = pps::compatibility_level::full_transitive;
     BOOST_REQUIRE(
       s.set_compatibility(dummy_marker, pps::default_context, expected).value()
       == true);
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
+      s.get_compatibility(pps::default_context, pps::default_to_global::yes)
+        .value()
+      == expected);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
@@ -661,7 +667,8 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
       pps::compatibility_level::backward};
     pps::store s;
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == global_expected);
+      s.get_compatibility(pps::default_context, fallback).value()
+      == global_expected);
     s.insert({subject0, string_def0.share()});
 
     auto sub_expected = pps::compatibility_level::backward;
@@ -686,7 +693,8 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     BOOST_REQUIRE(
       s.get_compatibility(subject0, fallback).value() == sub_expected);
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == global_expected);
+      s.get_compatibility(pps::default_context, fallback).value()
+      == global_expected);
 
     // Clearing compatibility should fallback to global
     BOOST_REQUIRE(
@@ -715,7 +723,7 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat_fallback) {
 BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
     // Setting and getting a compatibility for a non-existant subject should
     // fail
-    auto fallback = pps::default_to_global::yes;
+    auto fallback = pps::default_to_global::no;
 
     pps::seq_marker dummy_marker;
     pps::compatibility_level expected{pps::compatibility_level::backward};
@@ -1023,11 +1031,14 @@ BOOST_AUTO_TEST_CASE(test_store_context_mode) {
     auto test_ctx = pps::context{".test"};
     pps::seq_marker dummy_marker;
     auto s = pps::store{pps::is_mutable::yes};
+    auto fallback = pps::default_to_global::yes;
 
     // Default mode is read_write
     BOOST_REQUIRE(
-      s.get_mode(pps::default_context).value() == pps::mode::read_write);
-    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::read_write);
+      s.get_mode(pps::default_context, fallback).value()
+      == pps::mode::read_write);
+    BOOST_REQUIRE(
+      s.get_mode(test_ctx, fallback).value() == pps::mode::read_write);
 
     // Set mode on default context
     BOOST_REQUIRE(s.set_mode(
@@ -1037,20 +1048,24 @@ BOOST_AUTO_TEST_CASE(test_store_context_mode) {
                      pps::force::no)
                     .value());
     BOOST_REQUIRE(
-      s.get_mode(pps::default_context).value() == pps::mode::read_only);
-    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::read_write);
+      s.get_mode(pps::default_context, fallback).value()
+      == pps::mode::read_only);
+    BOOST_REQUIRE(
+      s.get_mode(test_ctx, fallback).value() == pps::mode::read_write);
 
     // Set different mode on test context
     BOOST_REQUIRE(
       s.set_mode(dummy_marker, test_ctx, pps::mode::import, pps::force::no)
         .value());
     BOOST_REQUIRE(
-      s.get_mode(pps::default_context).value() == pps::mode::read_only);
-    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::import);
+      s.get_mode(pps::default_context, fallback).value()
+      == pps::mode::read_only);
+    BOOST_REQUIRE(s.get_mode(test_ctx, fallback).value() == pps::mode::import);
 
     // Clear mode returns to default
     BOOST_REQUIRE(s.clear_mode(test_ctx, pps::force::no).value());
-    BOOST_REQUIRE(s.get_mode(test_ctx).value() == pps::mode::read_write);
+    BOOST_REQUIRE(
+      s.get_mode(test_ctx, fallback).value() == pps::mode::read_write);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_context_mode_written_at) {
@@ -1058,11 +1073,10 @@ BOOST_AUTO_TEST_CASE(test_store_context_mode_written_at) {
     auto test_ctx = pps::context{".test"};
     auto s = pps::store{pps::is_mutable::yes};
 
-    // Initially no write markers
-    auto markers = s.get_context_mode_written_at(test_ctx).value();
-    BOOST_REQUIRE(markers.empty());
-    markers = s.get_context_mode_written_at(pps::default_context).value();
-    BOOST_REQUIRE(markers.empty());
+    // Initially context doesn't exist
+    BOOST_REQUIRE(s.get_context_mode_written_at(test_ctx).has_error());
+    BOOST_REQUIRE(
+      s.get_context_mode_written_at(pps::default_context).has_error());
 
     // Create distinct markers
     auto marker1 = pps::seq_marker{
@@ -1080,7 +1094,7 @@ BOOST_AUTO_TEST_CASE(test_store_context_mode_written_at) {
     BOOST_REQUIRE(
       s.set_mode(marker1, test_ctx, pps::mode::read_only, pps::force::no)
         .value());
-    markers = s.get_context_mode_written_at(test_ctx).value();
+    auto markers = s.get_context_mode_written_at(test_ctx).value();
     BOOST_REQUIRE_EQUAL(markers.size(), 1);
     BOOST_REQUIRE_EQUAL(markers[0], marker1);
 
@@ -1092,14 +1106,13 @@ BOOST_AUTO_TEST_CASE(test_store_context_mode_written_at) {
     BOOST_REQUIRE_EQUAL(markers[0], marker1);
     BOOST_REQUIRE_EQUAL(markers[1], marker2);
 
-    // Default context should still have no markers
-    markers = s.get_context_mode_written_at(pps::default_context).value();
-    BOOST_REQUIRE(markers.empty());
+    // Default context should still not exist
+    BOOST_REQUIRE(
+      s.get_context_mode_written_at(pps::default_context).has_error());
 
     // Clear mode clears all markers
     BOOST_REQUIRE(s.clear_mode(test_ctx, pps::force::no).value());
-    markers = s.get_context_mode_written_at(test_ctx).value();
-    BOOST_REQUIRE(markers.empty());
+    BOOST_REQUIRE(s.get_context_mode_written_at(test_ctx).has_error());
 }
 
 BOOST_AUTO_TEST_CASE(test_store_context_config) {
@@ -1107,13 +1120,14 @@ BOOST_AUTO_TEST_CASE(test_store_context_config) {
     auto test_ctx = pps::context{".test"};
     pps::seq_marker dummy_marker;
     auto s = pps::store{pps::is_mutable::yes};
+    auto fallback = pps::default_to_global::yes;
 
     // Default config is backward compatibility
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
+      s.get_compatibility(pps::default_context, fallback).value()
       == pps::compatibility_level::backward);
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
+      s.get_compatibility(test_ctx, fallback).value()
       == pps::compatibility_level::backward);
 
     // Set config on default context
@@ -1122,10 +1136,10 @@ BOOST_AUTO_TEST_CASE(test_store_context_config) {
          dummy_marker, pps::default_context, pps::compatibility_level::full)
         .value());
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
+      s.get_compatibility(pps::default_context, fallback).value()
       == pps::compatibility_level::full);
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
+      s.get_compatibility(test_ctx, fallback).value()
       == pps::compatibility_level::backward);
 
     // Set different config on test context
@@ -1133,15 +1147,16 @@ BOOST_AUTO_TEST_CASE(test_store_context_config) {
                      dummy_marker, test_ctx, pps::compatibility_level::none)
                     .value());
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
+      s.get_compatibility(pps::default_context, fallback).value()
       == pps::compatibility_level::full);
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value() == pps::compatibility_level::none);
+      s.get_compatibility(test_ctx, fallback).value()
+      == pps::compatibility_level::none);
 
     // Clear config returns to default
     BOOST_REQUIRE(s.clear_compatibility(test_ctx).value());
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
+      s.get_compatibility(test_ctx, fallback).value()
       == pps::compatibility_level::backward);
 }
 
@@ -1150,9 +1165,8 @@ BOOST_AUTO_TEST_CASE(test_store_context_config_written_at) {
     auto test_ctx = pps::context{".test"};
     pps::store s;
 
-    // Initially no write markers
-    auto markers = s.get_context_config_written_at(test_ctx).value();
-    BOOST_REQUIRE(markers.empty());
+    // Initially context doesn't exist
+    BOOST_REQUIRE(s.get_context_config_written_at(test_ctx).has_error());
 
     // Create distinct markers
     auto marker1 = pps::seq_marker{
@@ -1170,7 +1184,7 @@ BOOST_AUTO_TEST_CASE(test_store_context_config_written_at) {
     BOOST_REQUIRE(
       s.set_compatibility(marker1, test_ctx, pps::compatibility_level::full)
         .value());
-    markers = s.get_context_config_written_at(test_ctx).value();
+    auto markers = s.get_context_config_written_at(test_ctx).value();
     BOOST_REQUIRE_EQUAL(markers.size(), 1);
     BOOST_REQUIRE_EQUAL(markers[0], marker1);
 
@@ -1183,14 +1197,13 @@ BOOST_AUTO_TEST_CASE(test_store_context_config_written_at) {
     BOOST_REQUIRE_EQUAL(markers[0], marker1);
     BOOST_REQUIRE_EQUAL(markers[1], marker2);
 
-    // Default context should still have no markers
-    markers = s.get_context_config_written_at(pps::default_context).value();
-    BOOST_REQUIRE(markers.empty());
+    // Default context should still not exist
+    BOOST_REQUIRE(
+      s.get_context_config_written_at(pps::default_context).has_error());
 
     // Clear compatibility clears all markers
     BOOST_REQUIRE(s.clear_compatibility(test_ctx).value());
-    markers = s.get_context_config_written_at(test_ctx).value();
-    BOOST_REQUIRE(markers.empty());
+    BOOST_REQUIRE(s.get_context_config_written_at(test_ctx).has_error());
 }
 
 BOOST_AUTO_TEST_CASE(test_store_context_materialized) {

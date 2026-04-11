@@ -1,6 +1,19 @@
 load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
+    name = "throwing_compaction_sink",
+    hdrs = [
+        "throwing_compaction_sink.h",
+    ],
+    deps = [
+        "//src/v/cloud_topics/level_one/compaction:source_and_sink",
+        "//src/v/compaction:reducer",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "in_memory_sink",
     srcs = [
         "in_memory_sink.cc",
@@ -28,6 +41,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":in_memory_sink",
+        ":throwing_compaction_sink",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",

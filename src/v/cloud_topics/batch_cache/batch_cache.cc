@@ -10,6 +10,7 @@
 
 #include "cloud_topics/batch_cache/batch_cache.h"
 
+#include "cloud_topics/logger.h"
 #include "config/configuration.h"
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
@@ -72,10 +73,16 @@ void batch_cache::put(
     }
     entry.index->put(b, storage::batch_cache::is_dirty_entry::no);
     _probe.register_put(b.size_bytes());
-
-    // Notify any readers waiting for this offset.
     if (entry.monitor) {
         entry.monitor->notify(b.last_offset());
+    }
+}
+
+void batch_cache::notify(
+  const model::topic_id_partition& tidp, model::offset last_offset) {
+    auto it = _entries.find(tidp);
+    if (it != _entries.end() && it->second.monitor) {
+        it->second.monitor->notify(last_offset);
     }
 }
 
@@ -87,7 +94,8 @@ batch_cache::get(const model::topic_id_partition& tidp, model::offset o) {
     _gate.check();
     if (auto it = _entries.find(tidp);
         it != _entries.end() && it->second.index) {
-        auto rb = it->second.index->get(o);
+        auto& index = *it->second.index;
+        auto rb = index.get(o);
         if (rb.has_value()) {
             vassert(
               rb->term() > model::term_id{-1},
@@ -102,11 +110,11 @@ batch_cache::get(const model::topic_id_partition& tidp, model::offset o) {
               o);
             _probe.register_get(rb->size_bytes());
         } else {
+            // Offset was within the cached range but got evicted.
             _probe.register_miss();
         }
         return rb;
     }
-    _probe.register_miss();
     return std::nullopt;
 }
 
@@ -122,6 +130,61 @@ ss::future<> batch_cache::wait_for_offset(
         entry.monitor->notify(last_known);
     }
     return entry.monitor->wait(offset, deadline, as);
+}
+
+void batch_cache::put_ordered(
+  const model::topic_id_partition& tidp,
+  chunked_vector<model::record_batch> batches) {
+    if (batches.empty() || _lm == nullptr) {
+        return;
+    }
+    _gate.check();
+
+    auto first_base = batches.front().base_offset();
+    auto last = batches.back().last_offset();
+
+    // Insert all batches into the cache without notifying the monitor.
+    auto& entry = _entries[tidp];
+    if (!entry.index) {
+        auto cache_ix = _lm->create_cache(storage::with_cache::yes);
+        if (!cache_ix.has_value()) {
+            return;
+        }
+        entry.index = std::make_unique<storage::batch_cache_index>(
+          std::move(*cache_ix));
+    }
+    for (const auto& b : batches) {
+        vassert(
+          b.term() > model::term_id{-1},
+          "Batch without term in the cache: {}",
+          b.header());
+        entry.index->put(b, storage::batch_cache::is_dirty_entry::no);
+        _probe.register_put(b.size_bytes());
+    }
+
+    if (!entry.monitor) {
+        return;
+    }
+
+    auto prev = model::prev_offset(first_base);
+    if (prev <= entry.monitor->last_applied()) {
+        // The batch is contiguous with what the monitor has already seen.
+        // Scan forward past `last` in case earlier out-of-order puts left
+        // batches beyond this range that are now reachable.
+        auto end = entry.index->contiguous_end(model::next_offset(last));
+        entry.monitor->notify(std::max(last, end));
+        return;
+    }
+
+    // Check whether the index covers the gap between the monitor's position
+    // and this batch.
+    auto gap_start = model::next_offset(entry.monitor->last_applied());
+    if (entry.index->has_contiguous_coverage(gap_start, prev)) {
+        // The gap is closed. Scan forward past the inserted range to
+        // pick up any batches that arrived out of order earlier.
+        auto end = entry.index->contiguous_end(model::next_offset(last));
+        entry.monitor->notify(std::max(last, end));
+    }
 }
 
 ss::future<> batch_cache::cleanup_index_entries() {

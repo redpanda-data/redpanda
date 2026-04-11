@@ -22,7 +22,10 @@
 
 namespace storage {
 
-model::offset stm_manager::max_removable_local_log_offset() {
+model::offset stm_hookset::max_removable_local_log_offset() {
+    if (!has_started()) {
+        return model::offset::min();
+    }
     model::offset result = model::offset::max();
     for (const auto& stm : _stms) {
         auto mco = stm->max_removable_local_log_offset();
@@ -36,14 +39,27 @@ model::offset stm_manager::max_removable_local_log_offset() {
     return result;
 }
 
-model::offset stm_manager::tx_snapshot_offset() const {
+model::offset stm_hookset::tx_snapshot_offset() const {
+    if (!has_started()) {
+        vlog(
+          stlog.debug,
+          "attempt to get tx_snapshot_offset before stm_hookset is started");
+        return model::offset::min();
+    }
     if (_tx_stm) {
         return _tx_stm->last_locally_snapshotted_offset();
     }
     return model::offset::max();
 }
 
-std::optional<kafka::offset> stm_manager::lowest_pinned_data_offset() const {
+std::optional<kafka::offset> stm_hookset::lowest_pinned_data_offset() const {
+    if (!has_started()) {
+        vlog(
+          stlog.debug,
+          "attempt to get lowest_pinned_data_offset before stm_hookset is "
+          "started");
+        return kafka::offset::min();
+    }
     std::optional<kafka::offset> result;
     for (const auto& stm : _stms) {
         auto pinned = stm->lowest_pinned_data_offset();
@@ -54,24 +70,25 @@ std::optional<kafka::offset> stm_manager::lowest_pinned_data_offset() const {
     return result;
 }
 
-model::offset stm_manager::max_tombstone_remove_offset() const {
+model::offset stm_hookset::max_tombstone_remove_offset() const {
     return _max_tombstone_remove_offset;
 }
 
-void stm_manager::set_max_tombstone_remove_offset(model::offset o) {
+void stm_hookset::set_max_tombstone_remove_offset(model::offset o) {
     _max_tombstone_remove_offset = o;
 }
 
-model::offset stm_manager::max_tx_end_remove_offset() const {
+model::offset stm_hookset::max_tx_end_remove_offset() const {
     return _max_tx_end_remove_offset;
 }
 
-void stm_manager::set_max_tx_end_remove_offset(model::offset o) {
+void stm_hookset::set_max_tx_end_remove_offset(model::offset o) {
     _max_tx_end_remove_offset = o;
 }
 
-bool stm_manager::is_batch_in_idempotent_window(
+bool stm_hookset::is_batch_in_idempotent_window(
   const model::record_batch_header& hdr) const {
+    check_status("is_batch_in_idempotent_window");
     if (!_tx_stm) {
         return false;
     }

@@ -239,7 +239,7 @@ void stm_factory::create(
       raft,
       config::shard_local_cfg()
         .datalake_coordinator_snapshot_max_delay_secs.bind());
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace datalake::coordinator

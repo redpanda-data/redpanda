@@ -15,6 +15,7 @@ from ducktape.tests.test import TestContext
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.context.cloud_storage import ReadReplicaSourceMode, get_read_replica_sources
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
@@ -25,7 +26,6 @@ from rptest.services.redpanda import (
     SISettings,
     get_cloud_provider,
     get_cloud_storage_type,
-    get_cloud_storage_type_and_url_style,
     make_redpanda_service,
 )
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
@@ -175,8 +175,17 @@ class TestReadReplicaService(EndToEndTest):
     log_segment_size = 1048576  # 5MB
     topic_name = "panda-topic"
 
-    def __init__(self, test_context: TestContext):
-        extra_rp_conf = dict(cloud_storage_spillover_manifest_size=None)
+    def __init__(
+        self,
+        test_context: TestContext,
+        mode: ReadReplicaSourceMode = ReadReplicaSourceMode.TIERED_STORAGE,
+    ):
+        # Enable cloud_topics on both clusters regardless of mode
+        extra_rp_conf = dict(
+            cloud_storage_spillover_manifest_size=None,
+            cloud_topics_long_term_flush_interval=1000,
+            cloud_topics_enabled=True,
+        )
         super(TestReadReplicaService, self).__init__(
             test_context=test_context,
             si_settings=SISettings(
@@ -194,9 +203,19 @@ class TestReadReplicaService(EndToEndTest):
             extra_rp_conf=extra_rp_conf,
         )
 
-        # Read reaplica shouldn't have it's own bucket.
+        self.mode = mode
+
+        # Read replica shouldn't have its own bucket.
         # We're adding 'none' as a bucket name without creating
         # an actual bucket with such name.
+        # For cloud topics mode, disable metastore flush loop and level zero GC
+        extra_rr_conf = dict(
+            enable_cluster_metadata_upload_loop=False,
+            cloud_topics_disable_metastore_flush_loop_for_tests=True,
+            cloud_topics_disable_level_zero_gc_for_tests=True,
+            cloud_topics_enabled=True,
+        )
+
         self.rr_settings = SISettings(
             test_context,
             bypass_bucket_creation=True,
@@ -207,17 +226,17 @@ class TestReadReplicaService(EndToEndTest):
             cloud_storage_segment_max_upload_interval_sec=5,
             cloud_storage_housekeeping_interval_ms=10,
         )
+        self.rr_extra_conf = extra_rr_conf
         self.rr_topic_bucket = self.si_settings.cloud_storage_bucket
         self.second_cluster = None
 
     def start_second_cluster(self, num_brokers=3) -> None:
         # NOTE: the RRR cluster won't have a bucket, so don't upload.
-        extra_rp_conf = dict(enable_cluster_metadata_upload_loop=False)
         self.second_cluster = make_redpanda_service(
             self.test_context,
             num_brokers=num_brokers,
             si_settings=self.rr_settings,
-            extra_rp_conf=extra_rp_conf,
+            extra_rp_conf=self.rr_extra_conf,
         )
         self.second_cluster.start(start_si=False)
 
@@ -283,13 +302,21 @@ class TestReadReplicaService(EndToEndTest):
         )
         # Create original topic
         self.start_redpanda(num_source_brokers, si_settings=self.si_settings)
-        spec = TopicSpec(
-            name=self.topic_name,
-            partition_count=partition_count,
-            replication_factor=replication_factor,
-        )
+        # Create topic config based on mode
+        topic_config = {}
+        if self.mode == ReadReplicaSourceMode.CLOUD_TOPICS:
+            topic_config = {
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD
+            }
 
-        DefaultClient(self.redpanda).create_topic(spec)
+        # Use RPK to create topic with proper config
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(
+            topic=self.topic_name,
+            partitions=partition_count,
+            replicas=replication_factor,
+            config=topic_config,
+        )
 
         if num_messages > 0:
             self.start_producer()
@@ -357,12 +384,17 @@ class TestReadReplicaService(EndToEndTest):
 
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
-        partition_count=[5],
+        partition_count=[1],
         cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        mode=get_read_replica_sources(),
     )
     def test_identical_lwms_after_delete_records(
-        self, partition_count: int, cloud_storage_type: CloudStorageType
+        self,
+        partition_count: int,
+        cloud_storage_type: CloudStorageType,
+        mode: ReadReplicaSourceMode,
     ) -> None:
+        self.mode = mode
         self._setup_read_replica(
             partition_count=partition_count, num_messages=partition_count * 2000
         )
@@ -418,10 +450,15 @@ class TestReadReplicaService(EndToEndTest):
     @matrix(
         partition_count=[5],
         cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        mode=get_read_replica_sources(),
     )
     def test_identical_hwms(
-        self, partition_count: int, cloud_storage_type: CloudStorageType
+        self,
+        partition_count: int,
+        cloud_storage_type: CloudStorageType,
+        mode: ReadReplicaSourceMode,
     ) -> None:
+        self.mode = mode
         self._setup_read_replica(partition_count=partition_count, num_messages=1000)
         self.start_consumer()
         self.run_validation(min_records=1000)  # calls self.consumer.stop()
@@ -445,10 +482,18 @@ class TestReadReplicaService(EndToEndTest):
         wait_until(clusters_report_identical_hwms, timeout_sec=30, backoff_sec=1)
 
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
+    @matrix(
+        partition_count=[10],
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        mode=get_read_replica_sources(),
+    )
     def test_writes_forbidden(
-        self, partition_count: int, cloud_storage_type: CloudStorageType
+        self,
+        partition_count: int,
+        cloud_storage_type: CloudStorageType,
+        mode: ReadReplicaSourceMode,
     ) -> None:
+        self.mode = mode
         """
         Verify that the read replica cluster does not permit writes,
         and does not perform other data-modifying actions such as
@@ -490,13 +535,16 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[10],
-        cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(),
+        cloud_storage_type_and_url_style=[[CloudStorageType.S3, "path"]],
+        mode=get_read_replica_sources(),
     )
     def test_simple_end_to_end(
         self,
         partition_count: int,
         cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle],
+        mode: ReadReplicaSourceMode,
     ) -> None:
+        self.mode = mode
         data_timeout = 300
         self._setup_read_replica(
             num_messages=100000, partition_count=partition_count, producer_timeout=300
@@ -544,10 +592,15 @@ class TestReadReplicaService(EndToEndTest):
     @matrix(
         cloud_storage_type=[CloudStorageType.S3],
         cloud_storage_url_style=["path", "virtual_host"],
+        mode=get_read_replica_sources(),
     )
     def test_cross_region_end_to_end(
-        self, cloud_storage_type: CloudStorageType, cloud_storage_url_style: str
+        self,
+        cloud_storage_type: CloudStorageType,
+        cloud_storage_url_style: str,
+        mode: ReadReplicaSourceMode,
     ):
+        self.mode = mode
         bucket_region = self.rr_settings.cloud_storage_region
         bucket_endpoint = self.rr_settings.cloud_storage_api_endpoint
         self.rr_topic_bucket = f"{self.si_settings.cloud_storage_bucket}?region={bucket_region}&endpoint={bucket_endpoint}"
@@ -600,8 +653,14 @@ class TestReadReplicaService(EndToEndTest):
     # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
     @skip_fips_mode
     @cluster(num_nodes=10, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[10])
-    def test_partition_movement(self, partition_count: int) -> None:
+    @matrix(
+        partition_count=[10],
+        mode=get_read_replica_sources(),
+    )
+    def test_partition_movement(
+        self, partition_count: int, mode: ReadReplicaSourceMode
+    ) -> None:
+        self.mode = mode
         data_timeout = 300
         num_messages = 100000
         self._setup_read_replica(

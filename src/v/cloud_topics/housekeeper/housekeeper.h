@@ -144,6 +144,7 @@ private:
     ss::abort_source _as;
 
     std::optional<cloud_topics::cluster_epoch> _last_epoch;
+    std::optional<kafka::offset> _last_synced_start_offset;
 };
 
 } // namespace cloud_topics

@@ -127,7 +127,7 @@ ss::future<> seq_writer::check_mutable(
   const context& ctx, const std::optional<subject>& sub) {
     auto mode = sub ? co_await _store.get_mode(
                         {ctx, *sub}, default_to_global::yes)
-                    : co_await _store.get_mode(ctx);
+                    : co_await _store.get_mode(ctx, default_to_global::yes);
     if (mode == mode::read_only) {
         throw as_exception(mode_is_readonly(ctx, sub));
     }
@@ -322,7 +322,8 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
             existing = co_await _store.get_compatibility(
               sub, default_to_global::no);
         } else {
-            existing = co_await _store.get_compatibility(sub.ctx);
+            existing = co_await _store.get_compatibility(
+              sub.ctx, default_to_global::no);
         }
         if (existing == compat) {
             co_return false;
@@ -361,26 +362,22 @@ seq_writer::do_delete_config(context_subject ctx_sub) {
                                              : std::make_optional(ctx_sub.sub);
     co_await check_mutable(ctx_sub.ctx, sub_opt);
 
+    chunked_vector<seq_marker> sequences;
     try {
-        if (ctx_sub.is_context_only()) {
-            co_await _store.get_compatibility(ctx_sub.ctx);
-        } else {
-            co_await _store.get_compatibility(ctx_sub, default_to_global::no);
-        }
-
+        sequences = ctx_sub.is_context_only()
+                      ? co_await _store.get_context_config_written_at(
+                          ctx_sub.ctx)
+                      : co_await _store.get_subject_config_written_at(ctx_sub);
     } catch (const exception&) {
-        // subject config already blank
+        co_return false;
+    }
+
+    if (sequences.empty()) {
         co_return false;
     }
 
     batch_builder rb{model::offset{0}};
-    if (ctx_sub.is_context_only()) {
-        rb.add_tombstones(
-          ctx_sub, co_await _store.get_context_config_written_at(ctx_sub.ctx));
-    } else {
-        rb.add_tombstones(
-          ctx_sub, co_await _store.get_subject_config_written_at(ctx_sub));
-    }
+    rb.add_tombstones(ctx_sub, sequences);
 
     if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
         co_return true;
@@ -411,10 +408,10 @@ ss::future<std::optional<bool>> seq_writer::do_write_mode(
 
     try {
         // Check for no-op case
-        mode existing = !ctx_sub.is_context_only()
-                          ? co_await _store.get_mode(
-                              ctx_sub, default_to_global::no)
-                          : co_await _store.get_mode(ctx_sub.ctx);
+        mode existing
+          = !ctx_sub.is_context_only()
+              ? co_await _store.get_mode(ctx_sub, default_to_global::no)
+              : co_await _store.get_mode(ctx_sub.ctx, default_to_global::no);
         if (existing == m) {
             co_return false;
         }
@@ -484,22 +481,23 @@ seq_writer::write_mode(context_subject ctx_sub, mode mode, force f) {
 ss::future<std::optional<bool>>
 seq_writer::do_delete_mode(context_subject ctx_sub, model::offset write_at) {
     vlog(srlog.debug, "delete mode sub={} offset={}", ctx_sub, write_at);
-    // Report an error if the mode isn't registered
-    if (ctx_sub.is_context_only()) {
-        co_await _store.get_mode(ctx_sub.ctx);
-    } else {
-        co_await _store.get_mode(ctx_sub, default_to_global::no);
-    }
     _store.check_mode_mutability(force::no);
 
-    batch_builder rb{write_at};
-    if (ctx_sub.is_context_only()) {
-        rb.add_tombstones(
-          ctx_sub, co_await _store.get_context_mode_written_at(ctx_sub.ctx));
-    } else {
-        rb.add_tombstones(
-          ctx_sub, co_await _store.get_subject_mode_written_at(ctx_sub));
+    chunked_vector<seq_marker> sequences;
+    try {
+        sequences = ctx_sub.is_context_only()
+                      ? co_await _store.get_context_mode_written_at(ctx_sub.ctx)
+                      : co_await _store.get_subject_mode_written_at(ctx_sub);
+    } catch (const exception&) {
+        co_return false;
     }
+
+    if (sequences.empty()) {
+        co_return false;
+    }
+
+    batch_builder rb{write_at};
+    rb.add_tombstones(ctx_sub, sequences);
 
     if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
         co_return true;

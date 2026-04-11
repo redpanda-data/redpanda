@@ -134,9 +134,6 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
-    auto min_offset = model::offset(0);
-    auto max_offset = model::offset(std::numeric_limits<int64_t>::max());
-
     auto pid1 = model::producer_identity{1, 0};
     auto rreader = make_batches(pid1, 0, 5, false);
     auto offset_r = replicate_all(stm, std::move(rreader)).get();
@@ -144,7 +141,7 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
     BOOST_REQUIRE((bool)offset_r);
-    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    auto aborted_txs = get_aborted_txs().get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
@@ -167,12 +164,12 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
     }).get();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
 
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    aborted_txs = get_aborted_txs().get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     auto op = stm.commit_tx(pid2, tx_seq, 2'000ms).get();
     BOOST_REQUIRE_EQUAL(op, cluster::tx::errc::none);
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    aborted_txs = get_aborted_txs().get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
         return tx_offset < stm.last_stable_offset();
@@ -189,8 +186,6 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
     auto& stm = start_and_disable_auto_abort();
 
     auto tx_seq = model::tx_seq(0);
-    auto min_offset = model::offset(0);
-    auto max_offset = model::offset(std::numeric_limits<int64_t>::max());
 
     auto pid1 = model::producer_identity{1, 0};
     auto rreader = make_batches(pid1, 0, 5, false);
@@ -198,7 +193,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
     BOOST_REQUIRE((bool)offset_r);
-    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    auto aborted_txs = get_aborted_txs().get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
@@ -219,7 +214,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
         return first_offset < stm.last_stable_offset();
     }).get();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    aborted_txs = get_aborted_txs().get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get();
@@ -229,7 +224,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
                       _raft.get()->committed_offset(),
                       model::timeout_clock::now() + 2'000ms)
                     .get());
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    aborted_txs = get_aborted_txs().get();
 
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 1);
     BOOST_REQUIRE(
@@ -251,16 +246,13 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
     auto& stm = start_and_disable_auto_abort();
     auto tx_seq = model::tx_seq(0);
 
-    auto min_offset = model::offset(0);
-    auto max_offset = model::offset(std::numeric_limits<int64_t>::max());
-
     auto pid1 = model::producer_identity{1, 0};
     auto rreader = make_batches(pid1, 0, 5, false);
     auto offset_r = replicate_all(stm, std::move(rreader)).get();
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return stm.highest_producer_id() == pid1.get_id(); });
     BOOST_REQUIRE((bool)offset_r);
-    auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    auto aborted_txs = get_aborted_txs().get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
@@ -282,7 +274,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
         return first_offset < stm.last_stable_offset();
     }).get();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    aborted_txs = get_aborted_txs().get();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get();
@@ -292,7 +284,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
                       _raft.get()->committed_offset(),
                       model::timeout_clock::now() + 2'000ms)
                     .get());
-    aborted_txs = stm.aborted_transactions(min_offset, max_offset).get();
+    aborted_txs = get_aborted_txs().get();
 
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 1);
     BOOST_REQUIRE(
@@ -437,12 +429,6 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
 
     auto& segments = disk_log->segments();
 
-    // Few helpers to avoid repeated boiler plate code.
-
-    auto aborted_txs = [&](auto begin, auto end) {
-        return stm.aborted_transactions(begin, end).get();
-    };
-
     // Aborted transactions in a given segment index.
     auto aborted_txes_seg = [&](auto segment_index) {
         BOOST_REQUIRE_GE(segment_index, 0);
@@ -454,12 +440,13 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
           segment_index,
           offsets.get_base_offset(),
           offsets.get_dirty_offset());
-        return aborted_txs(
-          offsets.get_base_offset(), offsets.get_dirty_offset());
+        return stm
+          .aborted_transactions(
+            offsets.get_base_offset(), offsets.get_dirty_offset())
+          .get();
     };
 
-    BOOST_REQUIRE_EQUAL(
-      aborted_txs(model::offset::min(), model::offset::max()).size(), 0);
+    BOOST_REQUIRE_EQUAL(get_aborted_txs().get().size(), 0);
 
     // Begins a tx with random pid and writes a data batch.
     // Returns the associated pid.
@@ -666,13 +653,15 @@ void async_ser_verify(T type) {
 }
 
 cluster::tx::tx_snapshot_v4 make_tx_snapshot_v4() {
+    auto offset = model::random_offset_above(model::offset(1));
     return {
       .fenced = tests::random_frag_vector(model::random_producer_identity),
-      .ongoing = tests::random_frag_vector(model::random_tx_range),
+      .ongoing = tests::random_frag_vector(
+        model::random_tx_range_below, 20, offset),
       .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
       .aborted = tests::random_frag_vector(model::random_tx_range),
       .abort_indexes = tests::random_frag_vector(cluster::random_abort_index),
-      .offset = model::random_offset(),
+      .offset = offset,
       .seqs = tests::random_frag_vector(cluster::random_seq_entry),
       .tx_data = tests::random_frag_vector(cluster::random_tx_data_snapshot),
       .expiration = tests::random_frag_vector(
@@ -698,14 +687,15 @@ cluster::tx::tx_snapshot_v5 make_tx_snapshot_v5() {
         snapshots.push_back(std::move(old_snapshot));
     }
     cluster::tx::tx_snapshot_v5 snap;
-    snap.offset = model::random_offset();
-    snap.producers = std::move(snapshots),
-    snap.fenced = tests::random_frag_vector(model::random_producer_identity),
-    snap.ongoing = tests::random_frag_vector(model::random_tx_range),
-    snap.prepared = tests::random_frag_vector(cluster::random_prepare_marker),
-    snap.aborted = tests::random_frag_vector(model::random_tx_range),
-    snap.abort_indexes = tests::random_frag_vector(cluster::random_abort_index),
-    snap.tx_data = tests::random_frag_vector(cluster::random_tx_data_snapshot),
+    snap.offset = model::random_offset_above(model::offset(1));
+    snap.producers = std::move(snapshots);
+    snap.fenced = tests::random_frag_vector(model::random_producer_identity);
+    snap.ongoing = tests::random_frag_vector(
+      model::random_tx_range_below, 20, snap.offset);
+    snap.prepared = tests::random_frag_vector(cluster::random_prepare_marker);
+    snap.aborted = tests::random_frag_vector(model::random_tx_range);
+    snap.abort_indexes = tests::random_frag_vector(cluster::random_abort_index);
+    snap.tx_data = tests::random_frag_vector(cluster::random_tx_data_snapshot);
     snap.expiration = tests::random_frag_vector(
       cluster::random_expiration_snapshot);
     snap.highest_producer_id = model::random_producer_identity().get_id();
@@ -970,7 +960,7 @@ FIXTURE_TEST(test_tx_compaction_last_producer_batch, rm_stm_test_fixture) {
 
     auto log = _storage.local().log_mgr().get(_raft->ntp());
     BOOST_REQUIRE(log);
-    log->stm_manager()->add_stm(_stm);
+    log->stm_hookset()->add_stm(_stm);
 
     auto tx_seq_zero = model::tx_seq{0};
     auto produce = [&](auto pid, auto& seq, int count = 5) {

@@ -24,6 +24,7 @@ import pathlib
 from pathlib import Path
 import shutil
 import signal
+import subprocess
 import time
 from typing import Optional, Any
 
@@ -116,6 +117,47 @@ class NodeMetadata:
     config_dict: dict[str, Any]
 
 
+def cpuset_cpu(
+    hardware_core_count: int, stride: int, smp: int, node_index: int, core_index: int
+) -> int:
+    # Map a (node_index, core_index) pair to a physical CPU index using an
+    # interleaved layout that spaces assigned CPUs `stride` apart. This is
+    # useful for spreading nodes across physical cores so that co-located
+    # hyper-thread siblings or NUMA-adjacent cores are left unused between them.
+    #
+    # Example: 12 CPUs, stride=2, 3 nodes with smp=2
+    #
+    #   slot: 0  1 | 2  3 | 4  5
+    #    cpu: 0  2 | 4  6 | 8 10
+    #         n0   | n1   | n2
+    #
+    # With stride=1 the layout is contiguous, matching the default.
+    # Global slot for this node/core pair.
+    slot = (node_index * smp) + core_index
+    # Number of CPUs available per interleave group. With stride=16 on a
+    # 32-CPU machine there are 2 CPUs per group (0,16 / 1,17 / 2,18 / ...).
+    slots_per_group = hardware_core_count // stride
+    # Which interleave group this slot falls into.
+    group = slot // slots_per_group
+    # Position within that group.
+    index_in_group = slot % slots_per_group
+    return group + (index_in_group * stride)
+
+
+def cpuset_hardware_core_count() -> int:
+    try:
+        # this will also include offline CPUs (SMT etc.)
+        configured_count = int(subprocess.check_output(["nproc", "--all"]))
+        if configured_count > 0:
+            return int(configured_count)
+    except Exception:
+        pass
+
+    fallback_count = psutil.cpu_count(logical=True)
+    assert fallback_count
+    return fallback_count
+
+
 async def stream_until_eof(
     process: asyncio.subprocess.Process, name: str, stdout: bool, log_path: Path
 ) -> None:
@@ -203,6 +245,7 @@ class Prometheus:
         listen_address: str = "127.0.0.1",
         port: int = 3001,
         redpanda_admin_ports: list[int] = [],
+        scrape_interval: str = "5s",
     ) -> None:
         self.binary = binary
         self.directory = directory
@@ -210,6 +253,7 @@ class Prometheus:
         self.listen_address = listen_address
         self.port = port
         self.redpanda_admin_ports = redpanda_admin_ports
+        self.scrape_interval = scrape_interval
         self.process: asyncio.subprocess.Process
 
     def stop(self) -> None:
@@ -225,10 +269,10 @@ class Prometheus:
         data_dir.mkdir(parents=True, exist_ok=True)
 
         # Create a basic Prometheus configuration
-        config = {
+        config: dict[str, Any] = {
             "global": {
-                "scrape_interval": "5s",
-                "evaluation_interval": "5s",
+                "scrape_interval": self.scrape_interval,
+                "evaluation_interval": self.scrape_interval,
             },
             "scrape_configs": [
                 {
@@ -291,14 +335,16 @@ class Grafana:
         self,
         binary: Path,
         directory: Path,
-        port: int = 3000,
+        port: int,
         prometheus_url: str | None = None,
+        scrape_interval: str = "5s",
     ) -> None:
         self.binary = binary
         self.directory = directory
         self.stopped = False
         self.port = port
         self.prometheus_url = prometheus_url
+        self.scrape_interval = scrape_interval
         self.process: asyncio.subprocess.Process
 
     def stop(self) -> None:
@@ -339,6 +385,9 @@ class Grafana:
                         "url": self.prometheus_url,
                         "isDefault": True,
                         "editable": True,
+                        "jsonData": {
+                            "timeInterval": self.scrape_interval,
+                        },
                     }
                 ],
             }
@@ -408,16 +457,33 @@ class Redpanda:
         self,
         binary: Path,
         cores: int,
+        cpuset_stride: int,
         node_meta: NodeMetadata,
         extra_args: list[str],
         env: dict[str, str],
     ) -> None:
         self.binary = binary
         self.cores = cores
+        self.cpuset_stride = cpuset_stride
         self.node_meta = node_meta
         self.process: asyncio.subprocess.Process | None = None
         self.extra_args = extra_args
         self.env = env
+
+    def cpuset(self) -> str:
+        hardware_core_count = cpuset_hardware_core_count()
+        return ",".join(
+            str(
+                cpuset_cpu(
+                    hardware_core_count,
+                    self.cpuset_stride,
+                    self.cores,
+                    self.node_meta.index,
+                    core,
+                )
+            )
+            for core in range(self.cores)
+        )
 
     def stop(self) -> None:
         print(f"node-{self.node_meta.index}: dev_cluster stop requested")
@@ -435,9 +501,7 @@ class Redpanda:
         if not has_arg("-c", "--smp"):
             # Caller is required to pass a finite core count
             assert self.cores > 0
-            base_core = self.cores * self.node_meta.index
-
-            cores_args = f"--cpuset {base_core}-{base_core + self.cores - 1}"
+            cores_args = f"--cpuset {self.cpuset()}"
         else:
             cores_args = ""
 
@@ -534,7 +598,19 @@ async def main() -> None:
         "--cores", type=int, help="number of cores per node", default=None
     )
     parser.add_argument(
+        "--cpuset-stride",
+        type=int,
+        help="stride between assigned cpuset CPUs. 1 means no gaps",
+        default=1,
+    )
+    parser.add_argument(
         "-d", "--directory", type=Path, help="data directory", default=None
+    )
+    parser.add_argument(
+        "--delete-data-dir",
+        action=argparse.BooleanOptionalAction,
+        help="delete the data directory before starting",
+        default=False,
     )
     parser.add_argument("--base-rpc-port", type=int, help="rpc port", default=33145)
     parser.add_argument("--base-kafka-port", type=int, help="kafka port", default=9092)
@@ -595,6 +671,12 @@ async def main() -> None:
         default=True,
     )
     parser.add_argument(
+        "--scrape-interval",
+        type=str,
+        help="prometheus scrape interval (e.g. '1s', '5s', '15s')",
+        default="5s",
+    )
+    parser.add_argument(
         "--grafana",
         type=Path,
         help="path to grafana executable",
@@ -605,6 +687,12 @@ async def main() -> None:
         action=argparse.BooleanOptionalAction,
         help="whether to spin up an instance of grafana",
         default=True,
+    )
+    parser.add_argument(
+        "--grafana-port",
+        type=int,
+        help="grafana listening port",
+        default=3000,
     )
     parser.add_argument(
         "--config-overrides",
@@ -622,6 +710,15 @@ async def main() -> None:
 
     if args.directory is None:
         args.directory = Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", ".")) / "data"
+
+    if (
+        args.delete_data_dir
+        and args.directory.exists()
+        # safety check that we are dealing with a dev cluster data dir
+        and (args.directory / "node0/config.yaml").exists()
+    ):
+        print(f"Deleting existing data directory: {args.directory}")
+        shutil.rmtree(args.directory)
 
     # Apply port offset to all base ports
     if args.port_offset:
@@ -733,6 +830,7 @@ async def main() -> None:
             prometheus_dir,
             args.listen_address,
             redpanda_admin_ports=[args.base_admin_port + i for i in range(args.nodes)],
+            scrape_interval=args.scrape_interval,
         )
         prometheus_task = asyncio.create_task(prometheus.run())
 
@@ -750,7 +848,9 @@ async def main() -> None:
         grafana = Grafana(
             args.grafana,
             grafana_dir,
+            port=args.grafana_port,
             prometheus_url=prometheus_url,
+            scrape_interval=args.scrape_interval,
         )
         grafana_task = asyncio.create_task(grafana.run())
 
@@ -770,7 +870,17 @@ async def main() -> None:
             env["UBSAN_OPTIONS"] += f":suppressions={args.ubsan_suppression_file}"
     if args.lsan_suppression_file and "LSAN_OPTIONS" not in env:
         env["LSAN_OPTIONS"] = f"suppressions={args.lsan_suppression_file}"
-    nodes = [Redpanda(args.executable, cores, m, extra_args, env) for m in node_metas]
+    nodes = [
+        Redpanda(
+            args.executable,
+            cores,
+            args.cpuset_stride,
+            m,
+            extra_args,
+            env,
+        )
+        for m in node_metas
+    ]
 
     all_coros = [r.run() for r in nodes]
 

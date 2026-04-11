@@ -1,0 +1,7 @@
+#!/usr/bin/sh
+export LD_LIBRARY_PATH="{{ lib_dir }}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+{% for k, v in env.items() %}
+export {{ k }}={{ shquote(v) }}
+{% endfor %}
+
+exec {{ install_prefix }}/bin/{{ binary_name }} {{ runtime_args | map('shquote') | join(' ') }}

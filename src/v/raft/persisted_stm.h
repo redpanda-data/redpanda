@@ -183,7 +183,7 @@ public:
      */
     void write_local_snapshot_in_background() final;
     /**
-     * Called by storage::stm_manager to make sure that stm snapshot exists
+     * Called by storage::stm_hookset to make sure that stm snapshot exists
      * before evicting log.
      */
     ss::future<> ensure_local_snapshot_exists(model::offset) override;

@@ -17,6 +17,8 @@ redpanda_cc_library(
     deps = [
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
+        "@fmt",
+        "@seastar",
     ],
 )
 

@@ -24,6 +24,10 @@ namespace cluster {
 class controller;
 }
 
+namespace datalake::coordinator {
+class frontend;
+}
+
 namespace pandaproxy::rest {
 
 class api {
@@ -33,7 +37,8 @@ public:
       size_t max_memory,
       kafka::client::configuration& client_cfg,
       configuration& cfg,
-      cluster::controller*) noexcept;
+      cluster::controller*,
+      ss::sharded<datalake::coordinator::frontend>& dl_frontend) noexcept;
     ~api() noexcept;
 
     ss::future<> start();
@@ -53,6 +58,7 @@ private:
     configuration& _cfg;
     cluster::controller* _controller;
 
+    ss::sharded<datalake::coordinator::frontend>& _dl_frontend;
     ss::sharded<kafka::client::client> _client;
     ss::sharded<kafka_client_cache> _client_cache;
     ss::sharded<pandaproxy::rest::proxy> _proxy;

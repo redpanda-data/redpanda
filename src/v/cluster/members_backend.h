@@ -84,6 +84,7 @@ private:
     ss::future<> handle_updates();
     void handle_single_update(members_manager::node_update);
     void stop_node_decommissioning(model::node_id);
+    void stop_node_recommissioning(model::node_id id);
     void stop_node_addition(model::node_id id);
     void handle_reallocation_finished(model::node_id);
 

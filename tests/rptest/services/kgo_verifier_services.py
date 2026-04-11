@@ -1358,6 +1358,7 @@ class KgoVerifierMultiProducer(KgoVerifierMultiService):
                 msgs_per_producer_id=topic.msgs_per_producer_id,
                 max_buffered_records=topic.max_buffered_records,
                 tolerate_data_loss=topic.tolerate_data_loss,
+                tolerate_failed_produce=topic.tolerate_failed_produce,
                 tombstone_probability=topic.tombstone_probability,
                 validate_latest_values=validate_latest_values,
                 client_name=topic.client_name,

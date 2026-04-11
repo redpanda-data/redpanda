@@ -15,6 +15,7 @@
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/common/object_utils.h"
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
+#include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
 #include "cloud_topics/level_one/metastore/lsm/state_update.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
@@ -75,12 +76,17 @@ struct domain_manager_node {
           staging_directory.get_path(),
           remote,
           bucket,
-          &object_io);
+          &object_io,
+          ss::default_scheduling_group());
         if (start_gc) {
             mgr->start();
         }
         auto* ptr = mgr.get();
         managers.push_back(std::move(mgr));
+        if (managers.size() > 3) {
+            inactive_managers.push_back(std::move(managers.front()));
+            managers.pop_front();
+        }
         return ptr;
     }
 
@@ -91,6 +97,18 @@ struct domain_manager_node {
                 co_await mgr->stop_and_wait();
             } catch (...) {
                 // Ignore errors during teardown.
+                auto ex = std::current_exception();
+                vlog(dm_test_log.info, "Manager shutdown error: {}", ex);
+            }
+        }
+        for (auto& mgr : inactive_managers) {
+            try {
+                co_await mgr->stop_and_wait();
+            } catch (...) {
+                // Ignore errors during teardown.
+                auto ex = std::current_exception();
+                vlog(
+                  dm_test_log.info, "Inactive manager shutdown error: {}", ex);
             }
         }
     }
@@ -100,7 +118,19 @@ struct domain_manager_node {
     const cloud_storage_clients::bucket_name& bucket;
     temporary_dir staging_directory;
     file_io object_io;
+
+    // Active managers on this node. These managers may be operated on by
+    // callers. Not all of these managers are expected to actually work, e.g.
+    // managers from previous terms likely won't work. We keep around multiple
+    // to validate concurrency, but not too many (hence inactive_managers) to
+    // not make these tests too stressful.
+    //
+    // It is expected that the last manager in this list is typically
+    // functional.
     std::list<std::unique_ptr<db_domain_manager>> managers;
+
+    // Inactive managers, left around to destruct at the end of the test.
+    std::list<std::unique_ptr<db_domain_manager>> inactive_managers;
 };
 
 model::topic_id_partition
@@ -152,6 +182,26 @@ chunked_vector<new_object> make_new_objects(
     return objects;
 }
 
+chunked_vector<new_object> make_new_objects_with_ids(
+  const model::topic_id_partition& tp,
+  kafka::offset start_offset,
+  size_t offsets_per_object,
+  const chunked_vector<object_id>& object_ids) {
+    chunked_vector<new_object> objects;
+    objects.reserve(object_ids.size());
+
+    auto next_offset = start_offset;
+    for (const auto& oid : object_ids) {
+        auto base = next_offset;
+        auto last = kafka::offset(next_offset() + offsets_per_object - 1);
+        auto obj = make_new_object(tp, base, last);
+        obj.oid = oid;
+        objects.push_back(std::move(obj));
+        next_offset = kafka::next_offset(last);
+    }
+    return objects;
+}
+
 term_state_update_t make_terms(
   const model::topic_id_partition& tp,
   kafka::offset start_offset,
@@ -174,18 +224,41 @@ void flush_as_manifest(
   chunked_vector<new_object> new_objects,
   term_state_update_t new_terms) {
     auto domain_prefix = cloud_storage_clients::object_key{
-      fmt::format("{}", uuid)};
+      domain_cloud_prefix(uuid)};
     temporary_dir tmp("test");
     auto cloud_db = lsm::database::open(
                       {.database_epoch = db_epoch},
                       lsm::io::persistence{
                         .data = lsm::io::open_cloud_data_persistence(
-                                  tmp.get_path(), remote, bucket, domain_prefix)
+                                  tmp.get_path(),
+                                  remote,
+                                  bucket,
+                                  domain_prefix,
+                                  ss::sstring(uuid()))
                                   .get(),
                         .metadata = lsm::io::open_cloud_metadata_persistence(
                                       remote, bucket, domain_prefix)
                                       .get()})
                       .get();
+
+    // Pre-register the object IDs before building the add_objects rows.
+    preregister_objects_db_update prereg_update;
+    prereg_update.registered_at = model::timestamp::now();
+    for (const auto& obj : new_objects) {
+        prereg_update.object_ids.push_back(obj.oid);
+    }
+    {
+        auto prereg_reader = state_reader(cloud_db.create_snapshot());
+        chunked_vector<write_batch_row> prereg_rows;
+        auto prereg_res
+          = prereg_update.build_rows(prereg_reader, prereg_rows).get();
+        ASSERT_TRUE(prereg_res.has_value()) << prereg_res.error();
+        auto wb = cloud_db.create_write_batch();
+        for (auto& r : prereg_rows) {
+            wb.put(r.key, std::move(r.value), lsm::sequence_number{1});
+        }
+        cloud_db.apply(std::move(wb)).get();
+    }
 
     // Build the rows for the given new objects.
     add_objects_db_update update{
@@ -201,7 +274,7 @@ void flush_as_manifest(
     // Write them to the database and flush to make it recoverable.
     auto wb = cloud_db.create_write_batch();
     for (auto& r : rows) {
-        wb.put(r.key, std::move(r.value), lsm::sequence_number{1});
+        wb.put(r.key, std::move(r.value), lsm::sequence_number{2});
     }
     cloud_db.apply(std::move(wb)).get();
 
@@ -320,8 +393,16 @@ public:
                 managers.emplace_back(mgr.get());
             }
             for (auto* mgr : managers) {
+                auto prereg = co_await mgr->preregister_objects({
+                  .metastore_partition = model::partition_id(0),
+                  .count = 1,
+                });
+                if (prereg.ec != l1_rpc::errc::ok) {
+                    continue;
+                }
                 l1_rpc::add_objects_request req;
-                req.new_objects = make_new_objects(tp, expected_next, 1, 1);
+                req.new_objects = make_new_objects_with_ids(
+                  tp, expected_next, 1, prereg.object_ids);
                 req.new_terms = make_terms(
                   tp, expected_next, model::term_id(1));
                 futs.emplace_back(mgr->add_objects(std::move(req)));
@@ -406,9 +487,17 @@ public:
                 managers.emplace_back(mgr.get());
             }
             for (auto* mgr : managers) {
+                auto prereg = co_await mgr->preregister_objects({
+                  .metastore_partition = model::partition_id(0),
+                  .count = 1,
+                });
+                if (prereg.ec != l1_rpc::errc::ok) {
+                    continue;
+                }
                 l1_rpc::replace_objects_request req{
                   .metastore_partition = model::partition_id(0),
-                  .new_objects = make_new_objects(tp, offset_to_replace, 1, 1),
+                  .new_objects = make_new_objects_with_ids(
+                    tp, offset_to_replace, 1, prereg.object_ids),
                 };
                 futs.emplace_back(mgr->replace_objects(std::move(req)));
 
@@ -435,7 +524,7 @@ public:
                 co_await ss::maybe_yield();
             }
             co_await ss::when_all_succeed(std::move(futs));
-            co_await random_sleep_ms(100);
+            co_await random_sleep_ms(1000);
         }
     }
 
@@ -511,6 +600,28 @@ public:
         co_return true;
     }
 
+    // Preregisters objects and adds them via add_objects.
+    void add_preregistered_objects(
+      const model::topic_id_partition& tp,
+      kafka::offset start_offset,
+      size_t count,
+      size_t offsets_per_object,
+      model::term_id term) {
+        auto prereg_reply = initial_manager
+                              ->preregister_objects({
+                                .metastore_partition = model::partition_id(0),
+                                .count = static_cast<uint32_t>(count),
+                              })
+                              .get();
+        ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
+        l1_rpc::add_objects_request req;
+        req.new_objects = make_new_objects_with_ids(
+          tp, start_offset, offsets_per_object, prereg_reply.object_ids);
+        req.new_terms = make_terms(tp, start_offset, term);
+        auto reply = initial_manager->add_objects(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+
     std::array<std::unique_ptr<domain_manager_node>, num_nodes> dm_nodes;
     scoped_config cfg;
     std::unique_ptr<cloud_io::scoped_remote> sr;
@@ -541,7 +652,9 @@ TEST_P(DbDomainManagerTestWithParams, TestConcurrentUpdates) {
             futs.emplace_back(extent_validator_loop(*node, tp, done));
             futs.emplace_back(
               replacer_loop(*node, tp, expected_add_next, done));
-            if (args.with_flush_loop) {
+        }
+        if (args.with_flush_loop) {
+            for (int i = 0; i < 2; ++i) {
                 futs.emplace_back(flusher_loop(*node, done));
             }
         }
@@ -575,6 +688,10 @@ TEST_P(DbDomainManagerTestWithParams, TestConcurrentUpdates) {
 }
 
 TEST_P(DbDomainManagerTestWithParams, TestUpdatesWithDroppedAppends) {
+    cfg.get("cloud_topics_metastore_replication_timeout_ms")
+      .set_value(std::chrono::milliseconds(10s));
+    cfg.get("cloud_topics_metastore_lsm_apply_timeout_ms")
+      .set_value(std::chrono::milliseconds(30s));
     auto args = params();
     auto tp = make_tp();
     bool done = false;
@@ -656,16 +773,32 @@ TEST_F(DbDomainManagerTest, TestBasicAddObjects) {
     auto tp = make_tp();
     // Add [0, 29].
     {
+        auto prereg_reply = initial_manager
+                              ->preregister_objects({
+                                .metastore_partition = model::partition_id(0),
+                                .count = 3,
+                              })
+                              .get();
+        ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
         l1_rpc::add_objects_request req;
-        req.new_objects = make_new_objects(tp, kafka::offset(0), 3, 10);
+        req.new_objects = make_new_objects_with_ids(
+          tp, kafka::offset(0), 10, prereg_reply.object_ids);
         req.new_terms = make_terms(tp, kafka::offset(0), model::term_id(1));
         auto reply = initial_manager->add_objects(std::move(req)).get();
         ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
     }
     // Add [30, 59].
     {
+        auto prereg_reply = initial_manager
+                              ->preregister_objects({
+                                .metastore_partition = model::partition_id(0),
+                                .count = 3,
+                              })
+                              .get();
+        ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
         l1_rpc::add_objects_request req;
-        req.new_objects = make_new_objects(tp, kafka::offset(30), 3, 10);
+        req.new_objects = make_new_objects_with_ids(
+          tp, kafka::offset(30), 10, prereg_reply.object_ids);
         req.new_terms = make_terms(tp, kafka::offset(30), model::term_id(1));
         auto reply = initial_manager->add_objects(std::move(req)).get();
         ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
@@ -678,18 +811,34 @@ TEST_F(DbDomainManagerTest, TestBasicReplaceObjects) {
     auto tp = make_tp();
     // Add [0, 9] in several batches.
     for (int i = 0; i < 10; ++i) {
+        auto prereg_reply = initial_manager
+                              ->preregister_objects({
+                                .metastore_partition = model::partition_id(0),
+                                .count = 1,
+                              })
+                              .get();
+        ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
         l1_rpc::add_objects_request req;
-        req.new_objects = make_new_objects(tp, kafka::offset(i), 1, 1);
+        req.new_objects = make_new_objects_with_ids(
+          tp, kafka::offset(i), 1, prereg_reply.object_ids);
         req.new_terms = make_terms(tp, kafka::offset(i), model::term_id(1));
         auto reply = initial_manager->add_objects(std::move(req)).get();
         ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
     }
     validate_metadata(
       tp, kafka::offset(0), kafka::offset(10), exact_next::yes, 10);
-    // Replace [0, 9] in with one object.
+    // Replace [0, 9] with one object.
+    auto prereg_reply = initial_manager
+                          ->preregister_objects({
+                            .metastore_partition = model::partition_id(0),
+                            .count = 1,
+                          })
+                          .get();
+    ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
     l1_rpc::replace_objects_request req{
       .metastore_partition = model::partition_id(0),
-      .new_objects = make_new_objects(tp, kafka::offset(0), 1, 10),
+      .new_objects = make_new_objects_with_ids(
+        tp, kafka::offset(0), 10, prereg_reply.object_ids),
     };
     auto reply = initial_manager->replace_objects(std::move(req)).get();
     ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
@@ -837,11 +986,20 @@ chunked_vector<object_id> put_dummy_objects(
 TEST_F(DbDomainManagerTest, TestGarbageCollectionAfterRemoveTopic) {
     cfg.get("cloud_topics_long_term_garbage_collection_interval")
       .set_value(100ms);
+    cfg.get("cloud_topics_long_term_file_deletion_delay").set_value(0ms);
 
     auto tp = make_tp();
 
     // Create some object metadata and actually create dummy objects for them.
-    auto new_objects = make_new_objects(tp, kafka::offset(0), 4321, 10);
+    auto prereg_reply = initial_manager
+                          ->preregister_objects({
+                            .metastore_partition = model::partition_id(0),
+                            .count = 1234,
+                          })
+                          .get();
+    ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
+    auto new_objects = make_new_objects_with_ids(
+      tp, kafka::offset(0), 10, prereg_reply.object_ids);
     auto object_ids = put_dummy_objects(initial_leader->object_io, new_objects);
 
     // Verify objects exist in S3 using remote->object_exists.
@@ -858,13 +1016,18 @@ TEST_F(DbDomainManagerTest, TestGarbageCollectionAfterRemoveTopic) {
         ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
     }
 
-    // Remove the topic, marking the objects as removable.
+    // Remove the topic, retrying as needed since batching may return
+    // not_removed when extent counts exceed the batch limit.
     {
-        l1_rpc::remove_topics_request req;
-        req.topics.push_back(tp.topic_id);
-        auto reply = initial_manager->remove_topics(std::move(req)).get();
-        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
-        ASSERT_TRUE(reply.not_removed.empty());
+        chunked_vector<model::topic_id> remaining;
+        remaining.push_back(tp.topic_id);
+        while (!remaining.empty()) {
+            l1_rpc::remove_topics_request req;
+            req.topics = std::move(remaining);
+            auto reply = initial_manager->remove_topics(std::move(req)).get();
+            ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+            remaining = std::move(reply.not_removed);
+        }
     }
 
     // Allow for some time to GC, but no GC should happen until we flush.
@@ -882,12 +1045,75 @@ TEST_F(DbDomainManagerTest, TestGarbageCollectionAfterRemoveTopic) {
       30s, [&] { return all_objects_missing(object_ids); });
 }
 
+TEST_F(DbDomainManagerTest, TestGarbageCollectionDeletionDelay) {
+    cfg.get("cloud_topics_long_term_garbage_collection_interval")
+      .set_value(100ms);
+    cfg.get("cloud_topics_long_term_file_deletion_delay").set_value(5000ms);
+
+    auto tp = make_tp();
+
+    auto prereg_reply = initial_manager
+                          ->preregister_objects({
+                            .metastore_partition = model::partition_id(0),
+                            .count = 3,
+                          })
+                          .get();
+    ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
+    auto new_objects = make_new_objects_with_ids(
+      tp, kafka::offset(0), 10, prereg_reply.object_ids);
+    auto object_ids = put_dummy_objects(initial_leader->object_io, new_objects);
+
+    for (const auto& oid : object_ids) {
+        ASSERT_TRUE(object_exists(oid).get());
+    }
+
+    // Add and remove objects so the metastore thinks they are eligible for
+    // removal.
+    {
+        l1_rpc::add_objects_request req;
+        req.new_objects = std::move(new_objects);
+        req.new_terms = make_terms(tp, kafka::offset(0), model::term_id(1));
+        auto reply = initial_manager->add_objects(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+    {
+        l1_rpc::remove_topics_request req;
+        req.topics.push_back(tp.topic_id);
+        auto reply = initial_manager->remove_topics(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+        ASSERT_TRUE(reply.not_removed.empty());
+    }
+
+    ASSERT_EQ(initial_manager->flush_domain({}).get().ec, l1_rpc::errc::ok);
+
+    // Start GC. The deletion delay should prevent immediate removal.
+    initial_manager->start();
+
+    // Verify objects survive several GC cycles while the delay hasn't elapsed.
+    ss::sleep(1s).get();
+    for (const auto& oid : object_ids) {
+        EXPECT_TRUE(object_exists(oid).get());
+    }
+
+    // Objects should eventually be deleted once the delay elapses.
+    RPTEST_REQUIRE_EVENTUALLY(
+      30s, [&] { return all_objects_missing(object_ids); });
+}
+
 TEST_F(DbDomainManagerTest, TestGetSizeBasic) {
     auto tp = make_tp();
     // Add 3 objects, each with an extent of size 512 bytes.
     {
+        auto prereg_reply = initial_manager
+                              ->preregister_objects({
+                                .metastore_partition = model::partition_id(0),
+                                .count = 3,
+                              })
+                              .get();
+        ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
         l1_rpc::add_objects_request req;
-        req.new_objects = make_new_objects(tp, kafka::offset(0), 3, 10);
+        req.new_objects = make_new_objects_with_ids(
+          tp, kafka::offset(0), 10, prereg_reply.object_ids);
         req.new_terms = make_terms(tp, kafka::offset(0), model::term_id(1));
         auto reply = initial_manager->add_objects(std::move(req)).get();
         ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
@@ -904,8 +1130,16 @@ TEST_F(DbDomainManagerTest, TestGetSizeAfterReplace) {
     auto tp = make_tp();
     // Add 5 objects, each with an extent of size 512 bytes.
     for (int i = 0; i < 5; ++i) {
+        auto prereg_reply = initial_manager
+                              ->preregister_objects({
+                                .metastore_partition = model::partition_id(0),
+                                .count = 1,
+                              })
+                              .get();
+        ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
         l1_rpc::add_objects_request req;
-        req.new_objects = make_new_objects(tp, kafka::offset(i), 1, 1);
+        req.new_objects = make_new_objects_with_ids(
+          tp, kafka::offset(i), 1, prereg_reply.object_ids);
         req.new_terms = make_terms(tp, kafka::offset(i), model::term_id(1));
         auto reply = initial_manager->add_objects(std::move(req)).get();
         ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
@@ -920,9 +1154,18 @@ TEST_F(DbDomainManagerTest, TestGetSizeAfterReplace) {
     }
 
     // Replace all 5 extents with 1 extent (also 512 bytes).
+    auto replace_prereg_reply = initial_manager
+                                  ->preregister_objects({
+                                    .metastore_partition = model::partition_id(
+                                      0),
+                                    .count = 1,
+                                  })
+                                  .get();
+    ASSERT_EQ(replace_prereg_reply.ec, l1_rpc::errc::ok);
     l1_rpc::replace_objects_request replace_req{
       .metastore_partition = model::partition_id(0),
-      .new_objects = make_new_objects(tp, kafka::offset(0), 1, 5),
+      .new_objects = make_new_objects_with_ids(
+        tp, kafka::offset(0), 5, replace_prereg_reply.object_ids),
     };
     auto replace_reply
       = initial_manager->replace_objects(std::move(replace_req)).get();
@@ -943,4 +1186,160 @@ TEST_F(DbDomainManagerTest, TestGetSizeMissingPartition) {
     l1_rpc::get_size_request size_req{.tp = tp};
     auto size_reply = initial_manager->get_size(std::move(size_req)).get();
     ASSERT_EQ(size_reply.ec, l1_rpc::errc::missing_ntp);
+}
+
+TEST_F(DbDomainManagerTest, TestPreregisteredObjectExpiry) {
+    cfg.get("cloud_topics_preregistered_object_ttl").set_value(1ms);
+    cfg.get("cloud_topics_long_term_garbage_collection_interval")
+      .set_value(100ms);
+    cfg.get("cloud_topics_long_term_file_deletion_delay").set_value(0ms);
+
+    auto tp = make_tp();
+    auto prereg_reply = initial_manager
+                          ->preregister_objects({
+                            .metastore_partition = model::partition_id(0),
+                            .count = 1,
+                          })
+                          .get();
+    ASSERT_EQ(prereg_reply.ec, l1_rpc::errc::ok);
+
+    // Upload dummy objects to cloud storage so GC can physically delete them.
+    auto new_objects = make_new_objects_with_ids(
+      tp, kafka::offset(0), 1, prereg_reply.object_ids);
+    auto object_ids = put_dummy_objects(initial_leader->object_io, new_objects);
+    for (const auto& oid : object_ids) {
+        ASSERT_TRUE(object_exists(oid).get());
+    }
+
+    initial_manager->start();
+
+    // Eventually a flush should happen after expiry and the objects become
+    // eligible for removal.
+    RPTEST_REQUIRE_EVENTUALLY(30s, [&](this auto) -> ss::future<bool> {
+        co_await initial_manager->flush_domain({});
+
+        co_return co_await all_objects_missing(object_ids);
+    });
+}
+
+TEST_F(DbDomainManagerTest, TestSetStartOffsetBatchedExtentRemoval) {
+    auto tp = make_tp();
+
+    // Add 2500 extents (note, internally we remove 1000 at a time).
+    ASSERT_NO_FATAL_FAILURE(add_preregistered_objects(
+      tp, kafka::offset(0), 2500, 1, model::term_id(1)));
+
+    // Each call does one batch. The first calls should return has_more=true,
+    // and the final call has_more=false once the target is reached.
+    int rounds = 0;
+    bool has_more = true;
+    while (has_more) {
+        l1_rpc::set_start_offset_request set_req{
+          .tp = tp,
+          .start_offset = kafka::offset(2500),
+        };
+        auto set_reply
+          = initial_manager->set_start_offset(std::move(set_req)).get();
+        ASSERT_EQ(set_reply.ec, l1_rpc::errc::ok);
+        has_more = set_reply.has_more;
+        ++rounds;
+    }
+    // 2500 extents at 1000 per batch = 3 rounds.
+    ASSERT_EQ(rounds, 3);
+
+    l1_rpc::get_offsets_request verify_req{.tp = tp};
+    auto verify_reply
+      = initial_manager->get_offsets(std::move(verify_req)).get();
+    ASSERT_EQ(verify_reply.ec, l1_rpc::errc::ok);
+    ASSERT_EQ(verify_reply.start_offset, kafka::offset(2500));
+    ASSERT_EQ(verify_reply.next_offset, kafka::offset(2500));
+
+    l1_rpc::get_size_request size_req{.tp = tp};
+    auto size_reply = initial_manager->get_size(std::move(size_req)).get();
+    ASSERT_EQ(size_reply.ec, l1_rpc::errc::ok);
+    ASSERT_EQ(size_reply.size, 0);
+
+    // Sanity check: the term for the next offset should still be valid.
+    l1_rpc::get_term_for_offset_request term_req{
+      .tp = tp,
+      .offset = kafka::offset(2500),
+    };
+    auto term_reply
+      = initial_manager->get_term_for_offset(std::move(term_req)).get();
+    ASSERT_EQ(term_reply.ec, l1_rpc::errc::ok);
+    ASSERT_EQ(term_reply.term, model::term_id(1));
+}
+
+// Regression test: when the batch boundary falls in the middle of an extent,
+// set_start_offset must not delete that extent.
+TEST_F(DbDomainManagerTest, TestSetStartOffsetMidExtent) {
+    auto tp = make_tp();
+
+    // 1001 extents of 10 offsets each: [0,9], [10,19], ..., [10000,10009].
+    // Enough to exceed the 1000-extent batch limit.
+    ASSERT_NO_FATAL_FAILURE(add_preregistered_objects(
+      tp, kafka::offset(0), 1001, 10, model::term_id(1)));
+
+    // Target offset 9995 lands in the middle of extent [9990, 9999].
+    // The batch scans 1000 extents, ending at [9990,9999]. Without
+    // clamping, the intermediate offset would be next_offset(9999)=10000,
+    // which would incorrectly delete extent [9990,9999].
+    // Retry until all batches are processed.
+    bool has_more = true;
+    while (has_more) {
+        l1_rpc::set_start_offset_request set_req{
+          .tp = tp,
+          .start_offset = kafka::offset(9995),
+        };
+        auto set_reply
+          = initial_manager->set_start_offset(std::move(set_req)).get();
+        ASSERT_EQ(set_reply.ec, l1_rpc::errc::ok);
+        has_more = set_reply.has_more;
+    }
+
+    l1_rpc::get_offsets_request verify_req{.tp = tp};
+    auto verify_reply
+      = initial_manager->get_offsets(std::move(verify_req)).get();
+    ASSERT_EQ(verify_reply.ec, l1_rpc::errc::ok);
+    ASSERT_EQ(verify_reply.start_offset, kafka::offset(9995));
+    ASSERT_EQ(verify_reply.next_offset, kafka::offset(10010));
+}
+
+TEST_F(DbDomainManagerTest, TestRemoveTopicsBatchedExtentRemoval) {
+    auto small_tp = make_tp();
+    auto large_tp = make_tp();
+
+    // Add small partition.
+    ASSERT_NO_FATAL_FAILURE(add_preregistered_objects(
+      small_tp, kafka::offset(0), 50, 1, model::term_id(1)));
+
+    // Add large partition.
+    ASSERT_NO_FATAL_FAILURE(add_preregistered_objects(
+      large_tp, kafka::offset(0), 2500, 1, model::term_id(1)));
+
+    // Remove both topics, retrying as needed since batching may return
+    // not_removed topics when extent counts exceed the batch limit.
+    chunked_vector<model::topic_id> remaining;
+    remaining.push_back(small_tp.topic_id);
+    remaining.push_back(large_tp.topic_id);
+    while (!remaining.empty()) {
+        l1_rpc::remove_topics_request remove_req;
+        remove_req.topics = std::move(remaining);
+        auto remove_reply
+          = initial_manager->remove_topics(std::move(remove_req)).get();
+        ASSERT_EQ(remove_reply.ec, l1_rpc::errc::ok);
+        remaining = std::move(remove_reply.not_removed);
+    }
+
+    // Verify both partitions no longer exist.
+    {
+        l1_rpc::get_offsets_request req{.tp = small_tp};
+        auto reply = initial_manager->get_offsets(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::missing_ntp);
+    }
+    {
+        l1_rpc::get_offsets_request req{.tp = large_tp};
+        auto reply = initial_manager->get_offsets(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::missing_ntp);
+    }
 }

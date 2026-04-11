@@ -13,6 +13,7 @@
 #include "cloud_topics/level_one/common/file_io.h"
 #include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
+#include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
@@ -46,6 +47,11 @@ namespace l1 {
 class flush_loop_manager;
 class topic_purger_manager;
 } // namespace l1
+
+namespace read_replica {
+class snapshot_manager;
+class metadata_manager;
+} // namespace read_replica
 
 class app : public ssx::sharded_service_container {
 public:
@@ -96,6 +102,7 @@ private:
     ss::sstring _logger_name;
     ss::sharded<level_one_reader_probe> _l1_reader_probe;
     std::unique_ptr<data_plane_api> data_plane;
+    ss::sharded<l1_reader_cache> l1_reader_cache_;
     ss::sharded<state_accessors> state;
     ss::sharded<l1::file_io> l1_io;
     ss::sharded<l1::replicated_metastore> replicated_metastore;
@@ -110,6 +117,10 @@ private:
     ss::sharded<topic_manifest_upload_manager> topic_manifest_upload_mgr;
     std::unique_ptr<l1::compaction_scheduler> compaction_scheduler;
     ss::sharded<l0::cluster_services> cluster_services;
+
+    // Read replica components
+    ss::sharded<read_replica::snapshot_manager> rr_snapshot_manager_;
+    ss::sharded<read_replica::metadata_manager> rr_metadata_manager_;
 };
 
 } // namespace cloud_topics

@@ -626,6 +626,66 @@ TEST(L1Objects, BuilderSize) {
     EXPECT_EQ(final_size, finished.size_bytes);
 }
 
+TEST(L1Objects, PeekThenReadNext) {
+    auto tidp = model::topic_id_partition(
+      model::topic_id(uuid_t::create()), model::partition_id(0));
+    std::vector<batches_by_tidp> specs = {
+      {
+        .tidp = tidp,
+        .batches = {
+          {.base_offset = 0_o, .last_offset = 5_o, .max_timestamp = model::timestamp{100}},
+          {.base_offset = 6_o, .last_offset = 10_o, .max_timestamp = model::timestamp{200}},
+        },
+      },
+    };
+    auto [info, object] = make_object(specs);
+    auto reader = make_reader(object);
+    auto _ = ss::defer([&reader] { reader->close().get(); });
+
+    // Peek at partition marker — returns tag, not the full tidp.
+    auto p1 = reader->peek().get();
+    ASSERT_TRUE(std::holds_alternative<object_reader::partition_tag>(p1));
+
+    // Peek again — idempotent.
+    auto p1_again = reader->peek().get();
+    ASSERT_TRUE(std::holds_alternative<object_reader::partition_tag>(p1_again));
+
+    // read_next consumes the partition marker data from the stream.
+    auto r1 = reader->read_next().get();
+    ASSERT_TRUE(std::holds_alternative<model::topic_id_partition>(r1));
+
+    // Peek at first batch header.
+    auto p2 = reader->peek().get();
+    ASSERT_TRUE(std::holds_alternative<model::record_batch_header>(p2));
+    auto& hdr = std::get<model::record_batch_header>(p2);
+    EXPECT_EQ(hdr.base_offset, kafka::offset_cast(0_o));
+
+    // read_next consumes the body and returns full batch.
+    auto r2 = reader->read_next().get();
+    ASSERT_TRUE(std::holds_alternative<model::record_batch>(r2));
+    auto& batch = std::get<model::record_batch>(r2);
+    EXPECT_EQ(batch.base_offset(), kafka::offset_cast(0_o));
+    EXPECT_EQ(batch.last_offset(), kafka::offset_cast(5_o));
+
+    // Read the second batch without peek.
+    auto r3 = reader->read_next().get();
+    ASSERT_TRUE(std::holds_alternative<model::record_batch>(r3));
+    EXPECT_EQ(
+      std::get<model::record_batch>(r3).base_offset(), kafka::offset_cast(6_o));
+
+    // Peek at footer — returns tag, not the full footer.
+    auto p4 = reader->peek().get();
+    ASSERT_TRUE(std::holds_alternative<object_reader::footer_tag>(p4));
+
+    // read_next reads the footer data from the stream.
+    auto r4 = reader->read_next().get();
+    ASSERT_TRUE(std::holds_alternative<footer>(r4));
+
+    // Peek at eof.
+    auto p5 = reader->peek().get();
+    ASSERT_TRUE(std::holds_alternative<object_reader::eof>(p5));
+}
+
 namespace {
 
 std::pair<object_builder::object_info, iobuf>

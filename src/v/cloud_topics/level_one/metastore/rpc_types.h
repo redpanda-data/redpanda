@@ -17,8 +17,11 @@
 #include "serde/envelope.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"
+#include "serde/rw/optional.h"
 
 #include <fmt/format.h>
+
+#include <optional>
 
 namespace cloud_topics::l1::rpc {
 
@@ -192,11 +195,12 @@ struct get_offsets_request
 
 struct get_size_reply
   : serde::
-      envelope<get_size_reply, serde::version<0>, serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(ec, size); }
+      envelope<get_size_reply, serde::version<1>, serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(ec, size, num_extents); }
 
     errc ec;
     size_t size{0};
+    size_t num_extents{0};
 };
 struct get_size_request
   : serde::
@@ -207,16 +211,30 @@ struct get_size_request
     model::topic_id_partition tp;
 };
 
+struct extent_object_info
+  : serde::envelope<
+      extent_object_info,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(oid, footer_pos, object_size); }
+
+    object_id oid;
+    size_t footer_pos{0};
+    size_t object_size{0};
+};
+
 struct extent_metadata
   : serde::
       envelope<extent_metadata, serde::version<0>, serde::compat_version<0>> {
     auto serde_fields() {
-        return std::tie(base_offset, last_offset, max_timestamp);
+        return std::tie(base_offset, last_offset, max_timestamp, object_info);
     }
 
     kafka::offset base_offset;
     kafka::offset last_offset;
     model::timestamp max_timestamp;
+    // Only populated when include_object_metadata is set on the request.
+    std::optional<extent_object_info> object_info;
 };
 
 struct get_compaction_info_reply
@@ -308,11 +326,12 @@ struct get_end_offset_for_term_request
 struct set_start_offset_reply
   : serde::envelope<
       set_start_offset_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(ec); }
+    auto serde_fields() { return std::tie(ec, has_more); }
 
     errc ec;
+    bool has_more{false};
 };
 struct set_start_offset_request
   : serde::envelope<
@@ -395,7 +414,13 @@ struct get_extent_metadata_request
     enum class order { forwards, backwards };
 
     auto serde_fields() {
-        return std::tie(tp, min_offset, max_offset, o, max_num_extents);
+        return std::tie(
+          tp,
+          min_offset,
+          max_offset,
+          o,
+          max_num_extents,
+          include_object_metadata);
     }
 
     model::topic_id_partition tp;
@@ -403,6 +428,7 @@ struct get_extent_metadata_request
     kafka::offset max_offset;
     order o;
     size_t max_num_extents;
+    bool include_object_metadata{false};
 };
 
 struct restore_domain_reply
@@ -441,6 +467,27 @@ struct flush_domain_request
     using resp_t = flush_domain_reply;
     auto serde_fields() { return std::tie(metastore_partition); }
     model::partition_id metastore_partition;
+};
+
+struct preregister_objects_reply
+  : serde::envelope<
+      preregister_objects_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(ec, object_ids); }
+    errc ec{errc::ok};
+    chunked_vector<object_id> object_ids;
+};
+
+struct preregister_objects_request
+  : serde::envelope<
+      preregister_objects_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = preregister_objects_reply;
+    auto serde_fields() { return std::tie(metastore_partition, count); }
+    model::partition_id metastore_partition;
+    uint32_t count{0};
 };
 
 } //  namespace cloud_topics::l1::rpc

@@ -33,7 +33,6 @@
         "rptest/scale_tests/datalake_scale_test.py",
         "rptest/scale_tests/franzgo_bench.py",
         "rptest/scale_tests/large_controller_snapshot_test.py",
-        "rptest/scale_tests/list_kafka_connections_scale_test.py",
         "rptest/scale_tests/log_storage_target_size_test.py",
         "rptest/scale_tests/many_clients_test.py",
         "rptest/scale_tests/partition_balancer_scale_test.py",
@@ -458,6 +457,7 @@
         "rptest/e2e_tests/workloads/flink_table_transactions_basic.py",
         "rptest/e2e_tests/workloads/flink_transactions_scale.py",
         "rptest/e2e_tests/workloads/flink_transactions_topic_swarm.py",
-        "rptest/remote_scripts/payload_pb2.py"
+        "rptest/remote_scripts/payload_pb2.py",
+        "tools/controller_forced_reconfiguration/invoke_controller_reconfiguration.py"
     ]
 }

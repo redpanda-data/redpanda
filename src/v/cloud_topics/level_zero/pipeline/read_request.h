@@ -38,6 +38,8 @@ struct dataplane_query_result {
 struct dataplane_query {
     size_t output_size_estimate{0};
     chunked_vector<extent_meta> meta;
+    allow_materialization_failure allow_mat_failure
+      = allow_materialization_failure::no;
 };
 
 // This object is created for every fetch request.

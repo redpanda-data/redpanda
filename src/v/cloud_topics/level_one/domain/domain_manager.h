@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "cloud_topics/level_one/metastore/lsm/write_batch_row.h"
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "container/chunked_vector.h"
 
@@ -103,6 +104,24 @@ public:
 
     virtual ss::future<std::expected<database_stats, rpc::errc>>
     get_database_stats() = 0;
+
+    virtual ss::future<rpc::preregister_objects_reply>
+      preregister_objects(rpc::preregister_objects_request) = 0;
+
+    virtual ss::future<std::expected<void, rpc::errc>>
+      write_debug_rows(chunked_vector<write_batch_row>) = 0;
+
+    struct read_debug_rows_result {
+        chunked_vector<write_batch_row> rows;
+        std::optional<ss::sstring> next_key;
+    };
+
+    virtual ss::future<std::expected<read_debug_rows_result, rpc::errc>>
+    read_debug_rows(
+      std::optional<ss::sstring> seek_key,
+      std::optional<ss::sstring> last_key,
+      uint32_t max_rows)
+      = 0;
 };
 
 } // namespace cloud_topics::l1

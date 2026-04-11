@@ -129,6 +129,11 @@ struct rm_stm_test_fixture : simple_raft_fixture {
           .get();
     }
 
+    auto get_aborted_txs() {
+        return _stm->aborted_transactions(
+          model::offset::min(), _stm->last_applied_offset());
+    }
+
     ss::sharded<config::mock_property<size_t>> max_concurent_producers;
     ss::sharded<config::mock_property<std::chrono::milliseconds>>
       producer_expiration_ms;

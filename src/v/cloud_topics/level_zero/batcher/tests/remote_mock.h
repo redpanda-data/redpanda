@@ -88,6 +88,19 @@ public:
               ss::make_ready_future<cloud_io::upload_result>(res)));
     }
 
+    /// Accept any number of upload_object calls, recording keys and payloads.
+    void expect_upload_object_repeatedly(
+      cloud_io::upload_result res = cloud_io::upload_result::success) {
+        EXPECT_CALL(*this, upload_object(::testing::_))
+          .WillRepeatedly(
+            [this,
+             res](const cloud_io::basic_upload_request<ss::manual_clock>& req) {
+                keys.push_back(req.transfer_details.key);
+                payloads.push_back(iobuf_to_bytes(req.payload));
+                return ss::make_ready_future<cloud_io::upload_result>(res);
+            });
+    }
+
     static std::deque<ss::sstring>
     convert_bytes_to_string(const chunked_vector<bytes>& expected) {
         std::deque<ss::sstring> result;

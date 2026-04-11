@@ -11,6 +11,7 @@
 
 #include "base/format_to.h"
 #include "cloud_topics/frontend/errc.h"
+#include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/log_reader_config.h"
 #include "cloud_topics/types.h"
@@ -151,6 +152,7 @@ public:
 
     ss::future<std::error_code> linearizable_barrier();
 
+    ss::future<std::optional<l1::metastore::size_response>> l1_size();
     ss::future<size_t> size_bytes();
 
     /// Get the current cluster epoch

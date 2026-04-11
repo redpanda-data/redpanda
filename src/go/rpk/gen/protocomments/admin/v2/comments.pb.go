@@ -250,7 +250,7 @@ var Comments = map[string]string{
  - ` + "`" + `redpanda.remote.allowgaps` + "`" + `
  - ` + "`" + `redpanda.virtual.cluster.id` + "`" + `
  - ` + "`" + `redpanda.leaders.preference` + "`" + `
- - ` + "`" + `redpanda.cloud_topic.enabled` + "`" + `
+ - ` + "`" + `redpanda.storage.mode` + "`" + `
 
  This list is a list of properties in addition to the default properties
  that will be synced.  See ` + "`" + `exclude_default` + "`" + `.`,

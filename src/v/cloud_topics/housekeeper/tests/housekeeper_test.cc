@@ -197,6 +197,17 @@ T handle_error(
         std::to_underlying(result.error())));
 }
 
+class counting_metastore : public cloud_topics::l1::simple_metastore {
+public:
+    ss::future<std::expected<void, errc>> set_start_offset(
+      const model::topic_id_partition& tidp, kafka::offset o) override {
+        ++set_start_offset_calls;
+        return simple_metastore::set_start_offset(tidp, o);
+    }
+
+    size_t set_start_offset_calls{0};
+};
+
 } // namespace
 
 using namespace std::chrono_literals;
@@ -222,6 +233,10 @@ public:
 
     void set_max_allowed_start_offset(kafka::offset offset) {
         _l0_metastore.set_max_allowed_start_offset(offset);
+    }
+
+    size_t l1_set_start_offset_calls() const {
+        return _l1_metastore.set_start_offset_calls;
     }
 
     kafka::offset l1_start_offset() {
@@ -255,8 +270,11 @@ public:
           _tidp,
           decltype(term_map)::value_type::second_type::single(
             model::term_id{0}, result.next_offset));
+        auto oid = obj.oid;
         chunked_vector<decltype(obj)> objects;
         objects.push_back(std::move(obj));
+        _l1_metastore.preregister_objects(
+          chunked_vector<cloud_topics::l1::object_id>::single(oid));
         handle_error(_l1_metastore.add_objects(objects, term_map).get());
     }
 
@@ -286,7 +304,7 @@ private:
     model::topic_id_partition _tidp{
       model::create_topic_id(), model::partition_id{0}};
     fake_l0_metastore _l0_metastore{_tidp, kafka::offset{0}};
-    cloud_topics::l1::simple_metastore _l1_metastore;
+    counting_metastore _l1_metastore;
     std::unique_ptr<retention_config_impl> _config_impl;
 };
 
@@ -844,4 +862,22 @@ TEST_F(HousekeeperTest, BumpEpochMultipleIdleCycles) {
     ASSERT_EQ(advance_epoch_calls().size(), 1);
     EXPECT_EQ(advance_epoch_calls()[0], cloud_topics::cluster_epoch{10});
     EXPECT_EQ(sync_to_next_placeholder_calls(), 1);
+}
+
+TEST_F(HousekeeperTest, SyncStartOffsetSkipsRedundantRPC) {
+    auto housekeeper = make_housekeeper({});
+    add_object({.records = 100, .size = 1_MiB});
+    set_start_offset(kafka::offset{50});
+
+    housekeeper.do_housekeeping().get();
+    EXPECT_EQ(l1_set_start_offset_calls(), 1);
+
+    // No change — should skip the call.
+    housekeeper.do_housekeeping().get();
+    EXPECT_EQ(l1_set_start_offset_calls(), 1);
+
+    // Changed offset — should sync again.
+    set_start_offset(kafka::offset{75});
+    housekeeper.do_housekeeping().get();
+    EXPECT_EQ(l1_set_start_offset_calls(), 2);
 }

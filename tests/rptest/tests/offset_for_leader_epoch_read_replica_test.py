@@ -10,16 +10,21 @@
 import random
 import time
 
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.context.cloud_storage import ReadReplicaSourceMode, get_read_replica_sources
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
+    CloudStorageType,
     SISettings,
+    get_cloud_storage_type,
     make_redpanda_service,
 )
 from rptest.tests.end_to_end import EndToEndTest
@@ -31,10 +36,17 @@ class OffsetForLeaderEpochReadReplicaTest(EndToEndTest):
     # Generate at least 100 terms
     num_terms = 20
 
-    def __init__(self, test_context):
+    def __init__(
+        self,
+        test_context,
+        mode: ReadReplicaSourceMode = ReadReplicaSourceMode.TIERED_STORAGE,
+    ):
+        # Enable cloud_topics on both clusters regardless of mode
         self.extra_rp_conf = {
             "enable_leader_balancer": False,
             "log_compaction_interval_ms": 1000,
+            "cloud_topics_long_term_flush_interval": 1000,
+            "cloud_topics_enabled": True,
         }
         super(OffsetForLeaderEpochReadReplicaTest, self).__init__(
             test_context=test_context,
@@ -51,6 +63,17 @@ class OffsetForLeaderEpochReadReplicaTest(EndToEndTest):
             extra_rp_conf=self.extra_rp_conf,
         )
 
+        self.mode = mode
+
+        # Read replica shouldn't have its own bucket.
+        # For cloud topics mode, disable metastore flush loop and level zero GC
+        rr_extra_conf = {
+            "enable_cluster_metadata_upload_loop": False,
+            "cloud_topics_disable_metastore_flush_loop_for_tests": True,
+            "cloud_topics_disable_level_zero_gc_for_tests": True,
+            "cloud_topics_enabled": True,
+        }
+
         self.rr_settings = SISettings(
             test_context,
             bypass_bucket_creation=True,
@@ -60,6 +83,7 @@ class OffsetForLeaderEpochReadReplicaTest(EndToEndTest):
             cloud_storage_segment_max_upload_interval_sec=5,
             cloud_storage_housekeeping_interval_ms=10,
         )
+        self.rr_extra_conf = rr_extra_conf
 
         self.topic_name = "panda-topic"
         self.second_cluster = None
@@ -67,17 +91,24 @@ class OffsetForLeaderEpochReadReplicaTest(EndToEndTest):
 
     def start_second_cluster(self) -> None:
         # NOTE: the RRR cluster won't have a bucket, so don't upload.
-        extra_rp_conf = dict(enable_cluster_metadata_upload_loop=False)
         self.second_cluster = make_redpanda_service(
             self.test_context,
             num_brokers=3,
             si_settings=self.rr_settings,
-            extra_rp_conf=extra_rp_conf,
+            extra_rp_conf=self.rr_extra_conf,
         )
         self.second_cluster.start(start_si=False)
 
     def create_source_topic(self):
-        self.rpk_client().create_topic(self.topic_name, partitions=1, replicas=3)
+        # Create topic config based on mode
+        topic_config = {}
+        if self.mode == ReadReplicaSourceMode.CLOUD_TOPICS:
+            topic_config = {
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD
+            }
+        self.rpk_client().create_topic(
+            self.topic_name, partitions=1, replicas=3, config=topic_config
+        )
 
     def create_read_replica_topic(self) -> None:
         rpk_dst_cluster = RpkTool(self.second_cluster)
@@ -182,7 +213,14 @@ class OffsetForLeaderEpochReadReplicaTest(EndToEndTest):
             )
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_offset_for_leader_epoch(self):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        mode=get_read_replica_sources(),
+    )
+    def test_offset_for_leader_epoch(
+        self, cloud_storage_type: CloudStorageType, mode: ReadReplicaSourceMode
+    ):
+        self.mode = mode
         self.start_redpanda(num_nodes=3)
         self.create_source_topic()
         self.produce(self.topic_name, 1000)

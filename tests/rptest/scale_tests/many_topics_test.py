@@ -100,6 +100,10 @@ class ManyTopicsTest(RedpandaTest):
             "topic_partitions_memory_allocation_percent": self.PARTITIONS_MEMORY_ALLOCATION_PERCENT,
             "log_segment_size": 8000000,
             "log_segment_size_min": 8000000,
+            # With 40k topics the default of 50 concurrent moves means decommissioning
+            # a single node can take upwards of ~40 min, exceeding the test timeout.
+            # Bump it to avoid timeouts and shorten runs.
+            "partition_autobalancing_concurrent_moves": 500,
         }
 
         # Reduce per-partition log spam

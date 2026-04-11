@@ -12,10 +12,14 @@
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/log_reader_config.h"
 #include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
+
+#include <deque>
+#include <expected>
 
 namespace cloud_topics {
 
@@ -69,7 +73,8 @@ public:
       model::topic_id_partition tidp,
       l1::metastore* metastore,
       l1::io* io_interface,
-      level_one_reader_probe* probe = nullptr);
+      level_one_reader_probe* probe = nullptr,
+      l1_reader_cache* cache = nullptr);
 
     bool is_end_of_stream() const final;
 
@@ -85,18 +90,40 @@ private:
         kafka::offset last_offset;
     };
 
+    struct materialize_result {
+        chunked_circular_buffer<model::record_batch> batches;
+        std::optional<cached_l1_reader> reader;
+        kafka::offset last_object_offset;
+    };
+
     /*
      * Contacts the L1 metastore to retrieve metadata for an L1 object that
-     * contains the target offset.
+     * contains the target offset. Uses a lookahead buffer populated via
+     * get_extent_metadata_forwards — when lookahead_objects > 1, multiple
+     * objects are fetched at once; otherwise exactly one is fetched.
      */
     ss::future<std::optional<object_info>> lookup_object_for_offset(
       kafka::offset, model::timeout_clock::time_point deadline);
 
     /*
+     * Fills the lookahead buffer by fetching up to num_objects extents
+     * from the metastore starting at the given offset.
+     */
+    ss::future<>
+    fill_lookahead_buffer(kafka::offset offset, size_t num_objects);
+
+    /*
+     * Consumes the front entry of the lookahead buffer that covers the
+     * given offset, discarding any stale entries. Returns nullopt if the
+     * buffer is empty or has no applicable entry.
+     */
+    std::optional<l1::metastore::object_response>
+    consume_lookahead_buffer(kafka::offset offset);
+
+    /*
      * Materialize batches from the L1 object starting from the given offset.
      */
-    ss::future<chunked_circular_buffer<model::record_batch>>
-    materialize_batches_from_object_offset(
+    ss::future<materialize_result> materialize_batches_from_object_offset(
       const object_info&,
       kafka::offset,
       model::timeout_clock::time_point deadline);
@@ -128,6 +155,17 @@ private:
 
     ss::future<> close_reader_safe(l1::object_reader&);
 
+    /// Open an object reader at the start of an extent.
+    ss::future<std::expected<cached_l1_reader, l1::io::errc>> open_reader_at(
+      l1::object_id oid,
+      kafka::offset last_object_offset,
+      size_t extent_position,
+      size_t extent_size);
+
+    /// Return a reader to the cache if it has remaining data, otherwise
+    /// close it.
+    ss::future<> return_or_close(std::optional<cached_l1_reader> reader);
+
     void set_end_of_stream();
     bool _end_of_stream{false};
 
@@ -138,8 +176,14 @@ private:
     l1::metastore* _metastore;
     l1::io* _io;
     level_one_reader_probe* _probe;
+    l1_reader_cache* _cache;
     prefix_logger _log;
     size_t _bytes_consumed{0};
+
+    // Lookahead buffer of object metadata, ordered by ascending offset.
+    // Consumed front-to-back as the reader advances through objects.
+    // Populated with 1 entry (no prefetch) or N entries (prefetch).
+    std::deque<l1::metastore::object_response> _lookahead_buffer;
 };
 
 } // namespace cloud_topics

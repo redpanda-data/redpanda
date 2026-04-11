@@ -174,6 +174,19 @@ COMPILERS = {
         },
         "version": "21.1.6",
     },
+    "clang-22": {
+        "tars": {
+            "aarch64": {
+                "build_date": "2026-03-02",
+                "sha": "4fcc2b9cc39b98f63e63739a5229e0b73a2bc9b26d1f4681f12c2cf55ddcab6e",
+            },
+            "x86_64": {
+                "build_date": "2026-03-02",
+                "sha": "46eacaffa999ea1d0fcb83f28d3f1089363fbb389dfbcf043e6c5de7329dc0b3",
+            },
+        },
+        "version": "22.1.0",
+    },
 }
 
 [
@@ -254,6 +267,7 @@ go_deps.gazelle_override(
 )
 use_repo(
     go_deps,
+    "build_buf_gen_go_redpandadata_ai_gateway_connectrpc_go",
     "build_buf_gen_go_redpandadata_cloud_connectrpc_go",
     "build_buf_gen_go_redpandadata_cloud_protocolbuffers_go",
     "build_buf_gen_go_redpandadata_common_protocolbuffers_go",
@@ -477,4 +491,12 @@ http_archive(
     sha256 = "9d1f651d98a624dcfb09c213a8b77732bd08e037d32922b06c06e6027841e8ee",
     strip_prefix = "openmessaging-benchmark-0.0.1-SNAPSHOT",
     urls = ["https://vectorized-public.s3.amazonaws.com/dependencies/omb/omb_minimal_3c624daad47f16ae7036b67142c384d3e59150bf.tar.gz"],
+)
+
+http_archive(
+    name = "antithesis_sdk_cpp",
+    build_file = "//bazel/thirdparty:antithesis_sdk.BUILD",
+    sha256 = "e083cec08b4e173df23e0b07beda5509eddebc1f11d9adc71a8a39d0a229da97",
+    strip_prefix = "antithesis-sdk-cpp-0.4.7",
+    urls = ["https://github.com/antithesishq/antithesis-sdk-cpp/archive/refs/tags/0.4.7.tar.gz"],
 )

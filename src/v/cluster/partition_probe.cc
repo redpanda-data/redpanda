@@ -9,6 +9,7 @@
 
 #include "cluster/partition_probe.h"
 
+#include "cloud_topics/read_replica/stm.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/partition.h"
 #include "config/configuration.h"
@@ -221,8 +222,17 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "max_offset",
           [this] {
-              // TODO: merge code with replicated_partition.h?
+              // TODO: this code should instead probably be served with a
+              // partition_proxy::impl.
               if (_partition.is_read_replica_mode_enabled()) {
+                  auto& stm_mgr = _partition.raft()->stm_manager();
+                  auto ct_rr_stm
+                    = stm_mgr ? stm_mgr->get<cloud_topics::read_replica::stm>()
+                              : nullptr;
+                  if (ct_rr_stm) {
+                      return kafka::offset_cast(
+                        ct_rr_stm->get_state().next_offset);
+                  }
                   if (_partition.cloud_data_available()) {
                       return _partition.next_cloud_offset();
                   }

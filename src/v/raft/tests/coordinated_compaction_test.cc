@@ -107,9 +107,9 @@ public:
       raft_node_instance& n,
       model::offset max_collect_offset = model::offset::max()) {
         model::offset max_tombstone_remove_offset
-          = n.raft()->log()->stm_manager()->max_tombstone_remove_offset();
+          = n.raft()->log()->stm_hookset()->max_tombstone_remove_offset();
         model::offset max_tx_end_remove_offset
-          = n.raft()->log()->stm_manager()->max_tx_end_remove_offset();
+          = n.raft()->log()->stm_hookset()->max_tx_end_remove_offset();
         return {
           model::timestamp::max(),
           std::nullopt,

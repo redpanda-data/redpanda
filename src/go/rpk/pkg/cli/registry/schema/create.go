@@ -23,7 +23,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newCreateCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	var (
 		refs               string
 		schemaFile         string
@@ -104,7 +104,7 @@ Create a schema with metadata properties using JSON format (useful for special c
 			if mProperties != nil {
 				schemaMetadata = &sr.SchemaMetadata{Properties: mProperties}
 			}
-			subject := args[0]
+			subject := schemaregistry.QualifySubject(*schemaCtx, args[0])
 			schema := sr.Schema{
 				Schema:         string(file),
 				Type:           t,
@@ -112,8 +112,18 @@ Create a schema with metadata properties using JSON format (useful for special c
 				SchemaMetadata: schemaMetadata,
 			}
 
-			s, err := cl.CreateSchemaWithIDAndVersion(cmd.Context(), subject, schema, id, schemaVersion)
+			// Pass the subject param so the post-create lookup
+			// (SchemaUsagesByID) is scoped to the right context.
+			// This is needed both when --schema-context is set and
+			// when the user passes a raw qualified subject like
+			// ":.ctx:foo".
+			ctx := cmd.Context()
+			if *schemaCtx != "" || strings.HasPrefix(subject, ":") {
+				ctx = sr.WithParams(ctx, sr.Subject(subject))
+			}
+			s, err := cl.CreateSchemaWithIDAndVersion(ctx, subject, schema, id, schemaVersion)
 			out.MaybeDie(err, "unable to create schema: %v", err)
+			s.Subject = schemaregistry.StripContextQualifier(*schemaCtx, s.Subject)
 
 			err = printSubjectSchemaWithMetadata(f, true, len(mProperties) > 0, s)
 			out.MaybeDieErr(err)

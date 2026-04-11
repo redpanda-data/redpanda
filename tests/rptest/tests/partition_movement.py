@@ -192,9 +192,11 @@ class PartitionMovementMixin:
 
         assert movement_cancelled or movement_finished
 
-    def _do_move_and_verify(self, topic: str, partition: int, timeout_sec: int):
+    def _do_move_and_verify(
+        self, topic: str, partition: int, timeout_sec: int, x_core_only: bool = False
+    ):
         _, new_assignment = self._dispatch_random_partition_move(
-            topic=topic, partition=partition
+            topic=topic, partition=partition, x_core_only=x_core_only
         )
 
         self._wait_post_move(topic, partition, new_assignment, timeout_sec)

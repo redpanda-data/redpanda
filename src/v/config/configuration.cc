@@ -3086,6 +3086,13 @@ configuration::configuration()
       "Number of chunks to prefetch ahead of every downloaded chunk",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0)
+  , cloud_storage_prefetch_segments_max(
+      *this,
+      "cloud_storage_prefetch_segments_max",
+      "Maximum number of small segments (size <= chunk size) to prefetch ahead "
+      "during sequential reads. Set to 0 to disable cross-segment prefetch.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      3)
   , cloud_storage_cache_num_buckets(
       *this,
       "cloud_storage_cache_num_buckets",
@@ -4636,6 +4643,16 @@ configuration::configuration()
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       8,
       {.min = size_t{1}, .max = size_t{64}})
+  , cloud_topics_allow_materialization_failure(
+      *this,
+      "cloud_topics_allow_materialization_failure",
+      "When enabled, the reconciler tolerates missing L0 extent objects "
+      "(404 errors) during materialization. Failed extents are skipped, "
+      "producing L1 state with empty offset ranges where deleted data was. "
+      "Use this to recover partitions after accidental deletion of live "
+      "extent objects.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , cloud_topics_compaction_max_object_size(
       *this,
       "cloud_topics_compaction_max_object_size",
@@ -4716,6 +4733,28 @@ configuration::configuration()
       "when no progress is being made or errors are occurring.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1min)
+  , cloud_topics_gc_health_check_interval(
+      *this,
+      "cloud_topics_gc_health_check_interval",
+      "The interval at which the L0 garbage collector checks cluster health. "
+      "GC will not proceed while the cluster is unhealthy.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
+  , cloud_topics_metastore_replication_timeout_ms(
+      *this,
+      "cloud_topics_metastore_replication_timeout_ms",
+      "Timeout for L1 metastore Raft replication and waiting for the STM to "
+      "apply the replicated write batch.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30s)
+  , cloud_topics_metastore_lsm_apply_timeout_ms(
+      *this,
+      "cloud_topics_metastore_lsm_apply_timeout_ms",
+      "Timeout for applying a replicated write batch to the local LSM "
+      "database. This may take longer than usual when L0 compaction is "
+      "behind and writes are being throttled.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5min)
   , cloud_topics_parallel_fetch_enabled(
       *this,
       "cloud_topics_parallel_fetch_enabled",
@@ -4732,6 +4771,31 @@ configuration::configuration()
       "performance and lowering the cost.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       true)
+  , cloud_topics_preregistered_object_ttl(
+      *this,
+      "cloud_topics_preregistered_object_ttl",
+      "Time-to-live for pre-registered L1 objects before they are expired.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1h)
+  , cloud_topics_long_term_file_deletion_delay(
+      *this,
+      "cloud_topics_long_term_file_deletion_delay",
+      "Delay before deleting stale long term files, allowing concurrent "
+      "readers (e.g. read replica topics) to finish reading them before "
+      "removal.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1h)
+  , cloud_topics_num_metastore_partitions(
+      *this,
+      "cloud_topics_num_metastore_partitions",
+      "Number of partitions for the cloud topics metastore topic, used to "
+      "spread metastore load across the cluster. Higher values allow more "
+      "parallel metadata operations but reduce the amount of work each "
+      "partition can batch together. Only takes effect when the metastore "
+      "topic is first created.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      3,
+      {.min = 1})
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",

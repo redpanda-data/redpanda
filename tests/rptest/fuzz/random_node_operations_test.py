@@ -50,7 +50,7 @@ class RandomNodeOperationsTest(RandomNodeOperationsBase):
                     "kafka": "debug",
                     "reconciler": "debug",
                     "cloud_topics": "debug",
-                    "cloud_topics-compaction": "debug",
+                    "cloud_topics_compaction": "debug",
                 },
             ),
         )

@@ -1,13 +1,10 @@
-/*
- * Copyright 2025 Redpanda Data, Inc.
- *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
- *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
- */
+// Copyright (c) 2014 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found at https://github.com/google/leveldb/blob/main/LICENSE. See
+// https://github.com/google/leveldb/blob/main/AUTHORS for names of
+// contributors.
+//
+// Modifications copyright 2025 Redpanda Data, Inc.
 
 #include "lsm/db/impl.h"
 
@@ -24,12 +21,11 @@
 #include "lsm/io/persistence.h"
 #include "lsm/sst/block_cache.h"
 #include "ssx/clock.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/switch_to.hh>
-
-#include <fmt/format.h>
 
 #include <chrono>
 #include <exception>
@@ -75,6 +71,7 @@ ss::future<std::unique_ptr<impl>> impl::open(
         co_return db;
     }
     co_await db->_gc_actor.start();
+    db->maybe_schedule_compaction();
     vlog(log.trace, "open_end readonly=false");
     co_return db;
 }
@@ -259,8 +256,7 @@ ss::future<> impl::close() {
     vlog(log.trace, "close_start");
     _as.request_abort_ex(abort_requested_exception("database closing"));
     co_await _gc_actor.stop();
-    co_await std::exchange(_compaction_task, std::nullopt).value_or(ss::now());
-    co_await std::exchange(_flush_task, std::nullopt).value_or(ss::now());
+    co_await _gate.close();
     co_await _table_cache->close();
     co_await _persistence.data->close();
     co_await _persistence.metadata->close();
@@ -326,9 +322,11 @@ void impl::maybe_schedule_compaction() {
     if (_as.abort_requested() || _opts->readonly) {
         return;
     }
-    if (!_flush_task && _imm) {
+    if (!_is_flushing && _imm) {
         vlog(log.trace, "flush_task_start");
-        auto task = do_flush().then_wrapped([this](ss::future<> f) {
+        _is_flushing = true;
+        auto h = _gate.hold();
+        ssx::background = do_flush().then_wrapped([this, h](ss::future<> f) {
             if (f.failed()) {
                 auto ex = f.get_exception();
                 bool is_abort = is_abort_exception(ex);
@@ -338,7 +336,7 @@ void impl::maybe_schedule_compaction() {
                   is_abort,
                   ex);
                 if (is_abort) {
-                    _flush_task = std::nullopt;
+                    _is_flushing = false;
                     _background_work_finished_signal.broken(ex);
                     return;
                 }
@@ -349,46 +347,38 @@ void impl::maybe_schedule_compaction() {
             }
             // Check and see if the new manifest we wrote requires compaction
             // due to number files in L0 (or retry if there was an error).
-            _flush_task = std::nullopt;
+            _is_flushing = false;
             maybe_schedule_compaction();
         });
-        // It is possible in release mode tests that the above closure has
-        // executed already (because it's using in0memory IO). In this case we
-        // don't want to assign the flush task otherwise nothing would be able
-        // to remove it.
-        if (!task.available()) {
-            _flush_task = std::move(task);
-        }
     }
-    if (!_compaction_task && _versions->needs_compaction()) {
+    while (auto c = _versions->pick_compaction()) {
         vlog(log.trace, "compaction_task_start");
-        auto task = do_compaction().then_wrapped([this](ss::future<> f) {
-            if (f.failed()) {
-                auto ex = f.get_exception();
-                bool is_abort = is_abort_exception(ex);
-                vlog(
-                  log.warn,
-                  "compaction_task_end is_abort={} error=\"{}\"",
-                  is_abort,
-                  ex);
-                if (is_abort) {
-                    _compaction_task = std::nullopt;
-                    _background_work_finished_signal.broken(ex);
-                    return;
-                }
-            } else {
-                // Notify all waiters that work has been finished.
-                _background_work_finished_signal.broadcast();
-                vlog(log.trace, "compaction_task_end");
-            }
-            // Check and see if the new manifest we wrote requires compaction
-            // due to level size limits (or retry if there was an error).
-            _compaction_task = std::nullopt;
-            maybe_schedule_compaction();
-        });
-        if (!task.available()) {
-            _compaction_task = std::move(task);
-        }
+        auto h = _gate.hold();
+        ssx::background
+          = do_compaction(std::move(*c))
+              .then_wrapped([this, h](ss::future<> f) {
+                  if (f.failed()) {
+                      auto ex = f.get_exception();
+                      bool is_abort = is_abort_exception(ex);
+                      vlog(
+                        log.warn,
+                        "compaction_task_end is_abort={} error=\"{}\"",
+                        is_abort,
+                        ex);
+                      if (is_abort) {
+                          _background_work_finished_signal.broken(ex);
+                          return;
+                      }
+                  } else {
+                      // Notify all waiters that work has been finished.
+                      _background_work_finished_signal.broadcast();
+                      vlog(log.trace, "compaction_task_end");
+                  }
+                  // Check and see if the new manifest we wrote requires
+                  // compaction due to level size limits (or retry if there was
+                  // an error).
+                  maybe_schedule_compaction();
+              });
     }
 }
 
@@ -430,11 +420,7 @@ ss::future<> impl::do_flush() {
     _imm = std::nullopt;
 }
 
-ss::future<> impl::do_compaction() {
-    auto compact = _versions->pick_compaction();
-    if (!compact) {
-        co_return;
-    }
+ss::future<> impl::do_compaction(std::unique_ptr<compaction> compact) {
     co_await ss::coroutine::switch_to(_opts->compaction_scheduling_group);
     auto m = _opts->probe->compaction_latency.auto_measure();
     auto edit = co_await run_compaction_task(
@@ -442,7 +428,7 @@ ss::future<> impl::do_compaction() {
       &_snapshots,
       _versions.get(),
       _opts,
-      std::move(compact.value()),
+      compact.get(),
       &_as);
     m->stop();
     co_await apply_edits(std::move(edit));

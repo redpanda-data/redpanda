@@ -40,6 +40,7 @@
 #include <iterator>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <utility>
 
 namespace cluster {
@@ -258,8 +259,8 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::begin_tx(
   std::chrono::milliseconds transaction_timeout_ms,
   model::partition_id tm) {
     auto holder = _gate.hold();
-    auto state_lock = co_await _state_lock.hold_read_lock();
-    auto lso_lock_holder = co_await _lso_lock.hold_write_lock();
+    auto state_lock_holder = co_await _state_lock.hold_read_lock();
+    auto lso_lock_holder = co_await _lso_lock.hold_read_lock();
     if (!co_await sync(_sync_timeout())) {
         vlog(
           _ctx_log.trace,
@@ -325,8 +326,7 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::do_begin_tx(
         vlog(
           _ctx_log.trace,
           "processing name:begin_tx pid:{}, tx_seq:{}, "
-          "timeout:{}, coordinator:{} => not "
-          "a leader",
+          "timeout:{}, coordinator:{} => not a leader",
           pid,
           tx_seq,
           transaction_timeout_ms,
@@ -1281,14 +1281,16 @@ model::offset rm_stm::last_stable_offset() {
     //
     // We distinguish between (1) and (2) based on the offset
     // we save during first apply (_bootstrap_committed_offset).
-
-    // We always want to return only the `applied` state as it
-    // contains aborted transactions metadata that is consumed by
-    // the client to distinguish aborted data batch.
+    //
+    // If there are in-flight transactions we base our calculation on applied
+    // state. `_lso_lock` prevents LSO calculation when there is a transaction
+    // is open from STM ingestion point of view, but not yet in STM applied
+    // state.
     //
     // We optimize for the case where there are no inflight transactional
-    // batch to return the high water mark.
+    // batches to return the high water mark.
     auto last_applied = last_applied_offset();
+    auto next_to_apply = model::next_offset(last_applied);
 
     // scenario 1: still bootstrapping
     if (unlikely(
@@ -1313,8 +1315,8 @@ model::offset rm_stm::last_stable_offset() {
           last_applied);
         return _last_known_lso;
     }
-    auto lso_read_units = _lso_lock.try_hold_read_lock();
-    if (!lso_read_units) {
+    auto lso_recalc_holder = _lso_lock.try_hold_write_lock();
+    if (!lso_recalc_holder) {
         // LSO calculation is in progress, return last known LSO
         vlog(
           _ctx_log.trace,
@@ -1323,66 +1325,44 @@ model::offset rm_stm::last_stable_offset() {
           last_applied);
         return _last_known_lso;
     }
+
     // Check for any in-flight transactions.
     auto first_tx_start = model::offset::max();
     if (_is_tx_enabled && !_active_tx_producers.empty()) {
         const auto& earliest_open_tx_producer = _active_tx_producers.begin();
         const auto& tx_state = earliest_open_tx_producer->transaction_state();
-        if (tx_state) {
-            first_tx_start = tx_state->first;
-        } else {
+        if (!tx_state) {
             vlog(
               _ctx_log.error,
-              "[{}] Invalid transaction state for transactional producer, lso "
-              "may be incorrect",
+              "No transaction state for transactional producer: {}, lso may be "
+              "incorrect",
               *earliest_open_tx_producer);
+            return model::invalid_lso;
+        }
+        first_tx_start = tx_state->first;
+        if (first_tx_start > _apply_watermark) {
+            vlog(
+              _ctx_log.error,
+              "An in-flight transaction for producer [{}] found above "
+              "apply watermark [{}], lso may be incorrect",
+              *earliest_open_tx_producer,
+              _apply_watermark);
+            return model::invalid_lso;
         }
     }
 
     auto synced_leader = _raft->is_leader() && _raft->term() == _insync_term;
     model::offset lso{model::invalid_lso};
     auto last_visible_index = _raft->last_visible_index();
-    auto next_to_apply = model::next_offset(last_applied);
-    if (first_tx_start <= last_visible_index) {
-        // There are in flight transactions < high water mark that may
-        // not be applied yet. We still need to consider only applied
-        // transactions.
-        lso = std::min(first_tx_start, next_to_apply);
+    if (first_tx_start != model::offset::max()) {
+        // There is an open transaction
+        lso = first_tx_start;
     } else if (synced_leader) {
-        ////////////////  WARNING ///////////
-        // there is a real bug lurking here that overestimates the LSO beyond
-        // an open transaction.
-        //
-
-        // The problem manifests when the LSO is requested after successful
-        // replication of begin_tx batch but before the stm has applied it.
-        // In this case the LSO may be advanced beyond the begin_tx batch offset
-        // because the leader doesn't yet 'know' about the begin_tx batch and
-        // may not consider it in LSO calculation.
-
-        // Another problem is we do not let lso move backwards once
-        // computed (see _last_known_lso update below), So even if the
-        // stm has applied the begin_tx later, we will not correct
-        // the LSO to reflect the begin_tx presence.
-
-        // There is a test that caught this issue in rm_stm_tests which
-        // is disabled for now until we can fix the underlying problem.
-
-        // The impact of this overestimation is that compaction may compact
-        // away open transaction begin marker as it relies on LSO. The
-        // chances are rare but not impossible :(. if at that point the replica
-        // restarts and there are no further updates in the transaction, the
-        // transaction has no record of ever beginning.
-
-        // We need a better way to track in-flight transactions for the purposes
-        // of LSO calculation.
-
-        // An obvious solution is to clamp LSO to next_to_apply in all cases
-        // but it was tried in the past and caused performance regressions
-        // in non transaction workloads like write_caching, acks=0/1. So that
-        // is not a viable solution.
-
-        // no inflight transactions in (last_applied, last_visible_index]
+        // Thanks to _lso_lock held for write there's no transaction that has
+        // been opened in log, but its begin_tx batch hasn't been applied yet.
+        // Additionally, it means there's no unapplied abort batches, which
+        // guarantees that aborted_transactions() will return complete data for
+        // interval up to LSO
         lso = model::next_offset(last_visible_index);
     } else {
         // a follower or hasn't synced yet leader doesn't know about the
@@ -1412,6 +1392,27 @@ static void filter_intersecting(
 
 ss::future<chunked_vector<tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
+    auto lso = last_stable_offset();
+    if (lso == model::invalid_lso) {
+        auto lvi = _raft->last_visible_index();
+        if (to > lvi) {
+            throw std::runtime_error(
+              fmt::format(
+                "to: {} should be <= last_visible_index: {} when lso is "
+                "invalid",
+                to,
+                lvi));
+        }
+    } else {
+        if (to >= lso && to > last_applied()) {
+            throw std::runtime_error(
+              fmt::format(
+                "to: {} should be < lso: {} or <= last_applied: {}",
+                to,
+                lso,
+                last_applied()));
+        }
+    }
     auto gate_holder = _gate.hold();
     auto lock_holder = co_await _state_lock.hold_read_lock();
     co_return co_await do_aborted_transactions(from, to);
@@ -1777,6 +1778,7 @@ void rm_stm::apply_fence(model::producer_identity pid, model::record_batch b) {
 
 ss::future<> rm_stm::do_apply(const model::record_batch& b) {
     auto holder = _gate.hold();
+    _apply_watermark = b.last_offset();
     const auto& hdr = b.header();
     const auto bid = model::batch_identity::from(hdr);
 
@@ -2032,6 +2034,8 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
       version == tx_snapshot_v5::version || version == tx_snapshot_v6::version,
       "Unsupported snapshot version requested: {}",
       version);
+
+    auto units = co_await _state_lock.hold_read_lock();
 
     auto start_offset = _raft->start_offset();
     vlog(
@@ -2298,6 +2302,9 @@ rm_stm::take_raft_snapshot(model::offset last_included_offset) {
     // this is always called under apply lock, so we can be sure
     // that no concurrent modifications to the state are happening via apply
     // path.
+
+    // write lock is probably excessive here because the loop below is
+    // synchronous
     auto units = co_await _state_lock.hold_write_lock();
     tx::raft_snapshot snapshot;
     auto kafka_offset = from_log_offset(last_included_offset);
@@ -2332,8 +2339,10 @@ rm_stm::take_raft_snapshot(model::offset last_included_offset) {
 }
 
 ss::future<> rm_stm::apply_raft_snapshot(const iobuf& buf) {
+    auto holder = _gate.hold();
     auto local_buf = buf.copy();
     auto units = co_await _state_lock.hold_write_lock();
+    _apply_watermark = model::prev_offset(_raft->start_offset());
     vlog(
       _ctx_log.info,
       "Resetting all state, reason: log eviction, offset: {}",
@@ -2468,7 +2477,7 @@ void rm_stm_factory::create(
       _producer_state_manager,
       tcfg ? tcfg->properties.mpx_virtual_cluster_id : std::nullopt);
 
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace cluster

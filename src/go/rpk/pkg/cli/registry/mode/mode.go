@@ -19,16 +19,16 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mode",
 		Short: "Manage schema registry mode",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
-		getCommand(fs, p),
-		resetCommand(fs, p),
-		setCommand(fs, p),
+		getCommand(fs, p, schemaCtx),
+		resetCommand(fs, p, schemaCtx),
+		setCommand(fs, p, schemaCtx),
 	)
 	p.InstallFormatFlag(cmd)
 	return cmd

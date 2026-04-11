@@ -53,6 +53,20 @@ class CloudStorageCheck:
 
 
 def assert_cloud_storage_usage(test):
+    # Wait for the partition manifest to be fully uploaded to S3 before
+    # comparing. Without this, a compacted segment reupload may have
+    # updated the in-memory manifest (via the STM) while the S3 manifest
+    # still reflects the old, larger segment sizes.
+    wait_until(
+        lambda: not test.admin.get_partition_cloud_storage_status(test.topic, 0)[
+            "metadata_update_pending"
+        ],
+        timeout_sec=60,
+        backoff_sec=1,
+        err_msg="Timed out waiting for partition manifest upload to S3",
+        retry_on_exc=True,
+    )
+
     bucket_view = BucketView(test.redpanda)
     manifest_usage = bucket_view.cloud_log_size_for_ntp(test.topic, 0)
     test.logger.debug(f"Cloud log usage inferred from manifests: {manifest_usage}")

@@ -1548,7 +1548,7 @@ void backend::handle_shard_update(
 }
 
 ss::future<check_ntp_states_reply>
-backend::check_ntp_states_locally(check_ntp_states_request&& req) {
+backend::check_ntp_states_locally(check_ntp_states_request req) {
     vlog(dm_log.debug, "processing node request {}", req);
     check_ntp_states_reply reply;
     co_await ssx::async_for_each(

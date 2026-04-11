@@ -72,7 +72,7 @@ in_memory_sink::operator()(model::record_batch b, model::compression c) {
     co_return ss::stop_iteration::no;
 }
 
-ss::future<> in_memory_sink::finalize() {
+ss::future<> in_memory_sink::finalize(bool /*success*/) {
     co_await maybe_flush_object_builder();
     co_return;
 }

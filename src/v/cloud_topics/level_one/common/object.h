@@ -321,6 +321,12 @@ public:
     // A marker struct that indicates we've reached the end of the file.
     struct eof {};
 
+    /// Tag returned by peek() when the next item is a partition marker.
+    struct partition_tag {};
+
+    /// Tag returned by peek() when the next item is a footer.
+    struct footer_tag {};
+
     object_reader() = default;
     object_reader(const object_reader&) = delete;
     object_reader(object_reader&&) = delete;
@@ -357,11 +363,25 @@ public:
     using result = std::
       variant<model::topic_id_partition, model::record_batch, footer, eof>;
 
+    /// Discriminator returned by peek(). For batches, contains the
+    /// header. For all other item types, contains a lightweight tag.
+    using peek_result = std::
+      variant<model::record_batch_header, partition_tag, footer_tag, eof>;
+
     // Read the "next" item from the L1 object.
     //
     // The next item can be either a partition marker
     // (model::topic_id_partition) or a data batch (model::record_batch).
     virtual ss::future<result> read_next() = 0;
+
+    /// Peek at the next item's discriminator. For batches, reads the
+    /// data_type byte and fixed-width header from the stream. For all
+    /// other item types, reads only the data_type byte; the remaining
+    /// data is left in the stream for read_next() to consume.
+    ///
+    /// Idempotent: calling peek() multiple times without an intervening
+    /// read_next() returns the same result without further I/O.
+    virtual ss::future<peek_result> peek() = 0;
 
     // Close the reader, releasing any resources it holds.
     //

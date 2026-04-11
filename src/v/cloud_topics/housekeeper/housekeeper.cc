@@ -190,6 +190,9 @@ ss::future<> housekeeper::sync_start_offset() {
         co_return;
     }
     auto start_offset = _l0_metastore->get_start_offset(_tidp);
+    if (_last_synced_start_offset == start_offset) {
+        co_return;
+    }
     vlog(cd_log.debug, "Setting {} start offset to {}", _tidp, start_offset);
     auto result = co_await _l1_metastore->set_start_offset(_tidp, start_offset);
     if (!result.has_value()) {
@@ -198,7 +201,9 @@ ss::future<> housekeeper::sync_start_offset() {
           "Failed to sync start offset to L1 for {}: {}",
           _tidp,
           result.error());
+        co_return;
     }
+    _last_synced_start_offset = start_offset;
 }
 
 } // namespace cloud_topics

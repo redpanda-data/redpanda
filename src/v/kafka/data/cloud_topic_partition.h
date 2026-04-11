@@ -97,6 +97,8 @@ public:
     size_t local_size_bytes() const override;
     ss::future<std::optional<size_t>> cloud_size_bytes() const override;
     model::offset offset_lag() const override;
+    ss::future<cluster::partition_cloud_storage_status>
+    get_cloud_storage_status() const override;
 
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;

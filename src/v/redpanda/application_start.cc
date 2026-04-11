@@ -12,6 +12,7 @@
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/level_one/metastore/simple_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_factory.h"
+#include "cloud_topics/read_replica/stm.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_manager.h"
 #include "cluster/archival/upload_controller.h"
@@ -89,6 +90,7 @@ void application::start_runtime_services(
             config::shard_local_cfg().iceberg_enabled());
           if (config::shard_local_cfg().cloud_topics_enabled()) {
               pm.register_factory<cloud_topics::l0::ctp_stm_factory>();
+              pm.register_factory<cloud_topics::read_replica::stm_factory>();
               if (ct_test_cfg.use_lsm_metastore) {
                   pm.register_factory<cloud_topics::l1::lsm_stm_factory>();
               } else {

@@ -100,7 +100,7 @@ struct partitions_validator {
       = kafka::error_code::invalid_partitions;
     static constexpr const char* error_message = "Partitions count is invalid";
 
-    static bool is_valid(const test_request& r) {
+    static bool is_valid(const test_request& r, features::feature_table*) {
         return r.num_partitions > 0 && r.num_partitions < 10;
     }
 };
@@ -110,7 +110,7 @@ struct r_factor_validator {
       = kafka::error_code::invalid_replication_factor;
     static constexpr const char* error_message = "RF is invalid";
 
-    static bool is_valid(const test_request& r) {
+    static bool is_valid(const test_request& r, features::feature_table*) {
         return r.replication_factor > 0 && r.replication_factor <= 5;
     }
 };

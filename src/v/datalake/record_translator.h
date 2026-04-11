@@ -34,12 +34,14 @@ public:
     };
     friend std::ostream& operator<<(std::ostream&, const errc&);
 
-    virtual record_type build_type(std::optional<resolved_type> val_type) = 0;
+    virtual record_type
+    build_type(std::optional<shared_resolved_type_t> val_type)
+      = 0;
     virtual ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,
-      const std::optional<resolved_type>& val_type,
+      const std::optional<shared_resolved_type_t>& val_type,
       std::optional<iobuf> parsable_val,
       model::timestamp ts,
       model::timestamp_type ts_t,
@@ -50,12 +52,13 @@ public:
 
 class key_value_translator : public record_translator {
 public:
-    record_type build_type(std::optional<resolved_type> val_type) override;
+    record_type
+    build_type(std::optional<shared_resolved_type_t> val_type) override;
     ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,
-      const std::optional<resolved_type>& val_type,
+      const std::optional<shared_resolved_type_t>& val_type,
       std::optional<iobuf> parsable_val,
       model::timestamp ts,
       model::timestamp_type ts_t,
@@ -65,12 +68,13 @@ public:
 
 class structured_data_translator : public record_translator {
 public:
-    record_type build_type(std::optional<resolved_type> val_type) override;
+    record_type
+    build_type(std::optional<shared_resolved_type_t> val_type) override;
     ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,
-      const std::optional<resolved_type>& val_type,
+      const std::optional<shared_resolved_type_t>& val_type,
       std::optional<iobuf> parsable_val,
       model::timestamp ts,
       model::timestamp_type ts_t,
@@ -84,12 +88,13 @@ public:
 // mode with a topic config! Instead, callers should explicitly choose.
 class default_translator : public record_translator {
 public:
-    record_type build_type(std::optional<resolved_type> val_type) override;
+    record_type
+    build_type(std::optional<shared_resolved_type_t> val_type) override;
     ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,
-      const std::optional<resolved_type>& val_type,
+      const std::optional<shared_resolved_type_t>& val_type,
       std::optional<iobuf> parsable_val,
       model::timestamp ts,
       model::timestamp_type ts_t,

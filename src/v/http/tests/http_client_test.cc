@@ -160,9 +160,9 @@ started_client_and_server(const net::base_transport::configuration& conf) {
     };
 }
 
-template<typename Header, typename Host>
-static void header_set_host(Header& header, Host& h) {
-    auto host = fmt::format("{}", h);
+template<typename Header>
+static void header_set_host(Header& header, const net::unresolved_address& h) {
+    auto host = fmt::format("{}:{}", h.host(), h.port());
     header.insert(boost::beast::http::field::host, host);
 }
 

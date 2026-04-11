@@ -350,7 +350,7 @@ var defaultLoggers = []string{
 	"cloud_roles",
 	"cloud_storage",
 	"cloud_topics",
-	"cloud_topics-compaction",
+	"cloud_topics_compaction",
 	"cluster",
 	"compaction_ctrl",
 	"compression",

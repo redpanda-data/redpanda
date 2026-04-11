@@ -72,6 +72,22 @@ service MetastoreService {
             authz: SUPERUSER
         };
     }
+
+    // Write or delete arbitrary rows in the LSM metastore database.
+    // Enables manual repair and debugging of metastore state.
+    rpc WriteRows(WriteRowsRequest) returns (WriteRowsResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // Read rows from the LSM metastore database, decoding raw key/value
+    // pairs into typed protobuf messages. Supports pagination.
+    rpc ReadRows(ReadRowsRequest) returns (ReadRowsResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 // GetOffsetsRequest is the request for looking up the offsets in the metastore
@@ -149,4 +165,162 @@ message LsmFile {
     string smallest_key_info = 4;
     // Largest key in the file (human-readable string representation).
     string largest_key_info = 5;
+}
+
+// Key for a metadata row (partition-level metadata).
+message MetadataKey {
+    string topic_id = 1;
+    int32 partition_id = 2;
+}
+
+// Key for an extent row (pointer into an L1 object).
+message ExtentKey {
+    string topic_id = 1;
+    int32 partition_id = 2;
+    int64 base_offset = 3;
+}
+
+// Key for a term row (term-to-offset mapping).
+message TermKey {
+    string topic_id = 1;
+    int32 partition_id = 2;
+    int64 term_id = 3;
+}
+
+// Key for a compaction row (compaction state for a partition).
+message CompactionKey {
+    string topic_id = 1;
+    int32 partition_id = 2;
+}
+
+// Key for an object row (object-level metadata).
+message ObjectKey {
+    string object_id = 1;
+}
+
+// A typed key for a metastore row.
+message RowKey {
+    oneof key {
+        MetadataKey metadata = 1;
+        ExtentKey extent = 2;
+        TermKey term = 3;
+        CompactionKey compaction = 4;
+        ObjectKey object = 5;
+    }
+}
+
+// Value for a metadata row.
+message MetadataValue {
+    int64 start_offset = 1;
+    int64 next_offset = 2;
+    int64 compaction_epoch = 3;
+    uint64 size = 4;
+}
+
+// Value for an extent row.
+message ExtentValue {
+    int64 last_offset = 1;
+    int64 max_timestamp = 2;
+    uint64 filepos = 3;
+    uint64 len = 4;
+    string object_id = 5;
+}
+
+// Value for a term row.
+message TermValue {
+    int64 term_start_offset = 1;
+}
+
+// An inclusive offset range.
+message OffsetRange {
+    int64 base_offset = 1;
+    int64 last_offset = 2;
+}
+
+// A cleaned range that may contain tombstones.
+message CleanedRangeWithTombstones {
+    int64 base_offset = 1;
+    int64 last_offset = 2;
+    int64 cleaned_with_tombstones_at = 3;
+}
+
+// Value for a compaction row.
+message CompactionValue {
+    repeated OffsetRange cleaned_ranges = 1;
+    repeated CleanedRangeWithTombstones cleaned_ranges_with_tombstones = 2;
+}
+
+// Value for an object row.
+message ObjectValue {
+    uint64 total_data_size = 1;
+    uint64 removed_data_size = 2;
+    uint64 footer_pos = 3;
+    uint64 object_size = 4;
+    int64 last_updated = 5;
+    bool is_preregistration = 6;
+}
+
+// A typed value for a metastore row.
+message RowValue {
+    oneof value {
+        MetadataValue metadata = 1;
+        ExtentValue extent = 2;
+        TermValue term = 3;
+        CompactionValue compaction = 4;
+        ObjectValue object = 5;
+    }
+}
+
+// A row to write (upsert) to the metastore.
+message WriteRow {
+    RowKey key = 1;
+    RowValue value = 2;
+}
+
+// WriteRowsRequest writes or deletes arbitrary rows in the metastore.
+message WriteRowsRequest {
+    // The metastore partition to write to.
+    uint32 metastore_partition = 1;
+    // Rows to upsert.
+    repeated WriteRow writes = 2;
+    // Keys to delete (tombstone).
+    repeated RowKey deletes = 3;
+}
+
+// WriteRowsResponse is the response for writing rows.
+message WriteRowsResponse {
+    // The number of rows written (including deletes).
+    uint32 rows_written = 1;
+}
+
+// A row read from the metastore, with decoded key and value.
+message ReadRow {
+    RowKey key = 1;
+    RowValue value = 2;
+}
+
+// ReadRowsRequest reads and decodes rows from the LSM metastore database.
+message ReadRowsRequest {
+    // The metastore partition to read from.
+    uint32 metastore_partition = 1;
+    // Optional seek key. If omitted, scan from the beginning.
+    oneof seek {
+        RowKey seek_key = 2;
+        string raw_seek_key = 3;
+    }
+    // Optional upper bound. If omitted, scan until max_rows is hit.
+    oneof last {
+        RowKey last_key = 4;
+        string raw_last_key = 5;
+    }
+    // Maximum number of rows to return. 0 uses a default of 100.
+    uint32 max_rows = 6;
+}
+
+// ReadRowsResponse is the response for reading rows.
+message ReadRowsResponse {
+    // The decoded rows.
+    repeated ReadRow rows = 1;
+    // Raw key for the next page. Empty if no more rows.
+    string next_key = 2;
 }

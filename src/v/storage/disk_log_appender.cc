@@ -12,6 +12,7 @@
 #include "base/likely.h"
 #include "base/vlog.h"
 #include "model/record_utils.h"
+#include "ssx/future-util.h"
 #include "storage/disk_log_impl.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
@@ -117,7 +118,13 @@ disk_log_appender::operator()(model::record_batch& batch) {
     } catch (...) {
         release_lock();
         auto e = std::current_exception();
-        vlog(stlog.error, "Could not append batch: {} - {}", e, *this);
+        vlogl(
+          stlog,
+          ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                        : ss::log_level::error,
+          "Could not append batch: {} - {}",
+          e,
+          *this);
         _log.get_probe().batch_write_error();
         throw;
     }

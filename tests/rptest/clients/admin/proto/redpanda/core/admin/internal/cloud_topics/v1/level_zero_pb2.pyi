@@ -41,6 +41,8 @@ class _StatusEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTyp
     L0_GC_STATUS_RUNNING: _Status.ValueType
     L0_GC_STATUS_STOPPING: _Status.ValueType
     L0_GC_STATUS_STOPPED: _Status.ValueType
+    L0_GC_STATUS_RESETTING: _Status.ValueType
+    L0_GC_STATUS_SAFETY_BLOCKED: _Status.ValueType
 
 class Status(_Status, metaclass=_StatusEnumTypeWrapper):
     """GC worker lifecycle states.
@@ -51,6 +53,8 @@ L0_GC_STATUS_PAUSED: Status.ValueType
 L0_GC_STATUS_RUNNING: Status.ValueType
 L0_GC_STATUS_STOPPING: Status.ValueType
 L0_GC_STATUS_STOPPED: Status.ValueType
+L0_GC_STATUS_RESETTING: Status.ValueType
+L0_GC_STATUS_SAFETY_BLOCKED: Status.ValueType
 Global___Status: typing_extensions.TypeAlias = Status
 
 @typing.final
@@ -136,12 +140,12 @@ class ShardStatus(google.protobuf.message.Message):
 Global___ShardStatus: typing_extensions.TypeAlias = ShardStatus
 
 @typing.final
-class StartRequest(google.protobuf.message.Message):
-    """Request to start GC workers."""
+class StartGcRequest(google.protobuf.message.Message):
+    """Request to start GC workers on a specific node."""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NODE_ID_FIELD_NUMBER: builtins.int
     node_id: builtins.int
-    'Target a specific node, or omit to start on all nodes.'
+    'Target node. If omitted, the receiving node handles the request.'
 
     def __init__(self, *, node_id: builtins.int | None=...) -> None:
         ...
@@ -154,32 +158,24 @@ class StartRequest(google.protobuf.message.Message):
 
     def WhichOneof(self, oneof_group: typing.Literal['_node_id', b'_node_id']) -> typing.Literal['node_id'] | None:
         ...
-Global___StartRequest: typing_extensions.TypeAlias = StartRequest
+Global___StartGcRequest: typing_extensions.TypeAlias = StartGcRequest
 
 @typing.final
-class StartResponse(google.protobuf.message.Message):
-    """Aggregated start results from one or more nodes."""
+class StartGcResponse(google.protobuf.message.Message):
+    """Empty on success; RPC error on failure."""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
-    RESULTS_FIELD_NUMBER: builtins.int
 
-    @property
-    def results(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___StartResult]:
+    def __init__(self) -> None:
         ...
-
-    def __init__(self, *, results: collections.abc.Iterable[Global___StartResult] | None=...) -> None:
-        ...
-
-    def ClearField(self, field_name: typing.Literal['results', b'results']) -> None:
-        ...
-Global___StartResponse: typing_extensions.TypeAlias = StartResponse
+Global___StartGcResponse: typing_extensions.TypeAlias = StartGcResponse
 
 @typing.final
-class PauseRequest(google.protobuf.message.Message):
-    """Request to pause GC workers."""
+class PauseGcRequest(google.protobuf.message.Message):
+    """Request to pause GC workers on a specific node."""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NODE_ID_FIELD_NUMBER: builtins.int
     node_id: builtins.int
-    'Target a specific node, or omit to pause on all nodes.'
+    'Target node. If omitted, the receiving node handles the request.'
 
     def __init__(self, *, node_id: builtins.int | None=...) -> None:
         ...
@@ -192,70 +188,46 @@ class PauseRequest(google.protobuf.message.Message):
 
     def WhichOneof(self, oneof_group: typing.Literal['_node_id', b'_node_id']) -> typing.Literal['node_id'] | None:
         ...
-Global___PauseRequest: typing_extensions.TypeAlias = PauseRequest
+Global___PauseGcRequest: typing_extensions.TypeAlias = PauseGcRequest
 
 @typing.final
-class PauseResponse(google.protobuf.message.Message):
-    """Aggregated pause results from one or more nodes."""
+class PauseGcResponse(google.protobuf.message.Message):
+    """Empty on success; RPC error on failure."""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
-    RESULTS_FIELD_NUMBER: builtins.int
 
-    @property
-    def results(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___PauseResult]:
+    def __init__(self) -> None:
         ...
-
-    def __init__(self, *, results: collections.abc.Iterable[Global___PauseResult] | None=...) -> None:
-        ...
-
-    def ClearField(self, field_name: typing.Literal['results', b'results']) -> None:
-        ...
-Global___PauseResponse: typing_extensions.TypeAlias = PauseResponse
+Global___PauseGcResponse: typing_extensions.TypeAlias = PauseGcResponse
 
 @typing.final
-class StartResult(google.protobuf.message.Message):
-    """Outcome of starting GC on a single node."""
+class ResetGcRequest(google.protobuf.message.Message):
+    """Request to reset GC worker state on a specific node."""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     NODE_ID_FIELD_NUMBER: builtins.int
-    ERROR_FIELD_NUMBER: builtins.int
     node_id: builtins.int
-    error: builtins.str
-    'Set if the node could not be reached or returned an error.'
+    'Target node. If omitted, the receiving node handles the request.'
 
-    def __init__(self, *, node_id: builtins.int=..., error: builtins.str | None=...) -> None:
+    def __init__(self, *, node_id: builtins.int | None=...) -> None:
         ...
 
-    def HasField(self, field_name: typing.Literal['_error', b'_error', 'error', b'error']) -> builtins.bool:
+    def HasField(self, field_name: typing.Literal['_node_id', b'_node_id', 'node_id', b'node_id']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['_error', b'_error', 'error', b'error', 'node_id', b'node_id']) -> None:
+    def ClearField(self, field_name: typing.Literal['_node_id', b'_node_id', 'node_id', b'node_id']) -> None:
         ...
 
-    def WhichOneof(self, oneof_group: typing.Literal['_error', b'_error']) -> typing.Literal['error'] | None:
+    def WhichOneof(self, oneof_group: typing.Literal['_node_id', b'_node_id']) -> typing.Literal['node_id'] | None:
         ...
-Global___StartResult: typing_extensions.TypeAlias = StartResult
+Global___ResetGcRequest: typing_extensions.TypeAlias = ResetGcRequest
 
 @typing.final
-class PauseResult(google.protobuf.message.Message):
-    """Outcome of pausing GC on a single node."""
+class ResetGcResponse(google.protobuf.message.Message):
+    """Empty on success; RPC error on failure."""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
-    NODE_ID_FIELD_NUMBER: builtins.int
-    ERROR_FIELD_NUMBER: builtins.int
-    node_id: builtins.int
-    error: builtins.str
-    'Set if the node could not be reached or returned an error.'
 
-    def __init__(self, *, node_id: builtins.int=..., error: builtins.str | None=...) -> None:
+    def __init__(self) -> None:
         ...
-
-    def HasField(self, field_name: typing.Literal['_error', b'_error', 'error', b'error']) -> builtins.bool:
-        ...
-
-    def ClearField(self, field_name: typing.Literal['_error', b'_error', 'error', b'error', 'node_id', b'node_id']) -> None:
-        ...
-
-    def WhichOneof(self, oneof_group: typing.Literal['_error', b'_error']) -> typing.Literal['error'] | None:
-        ...
-Global___PauseResult: typing_extensions.TypeAlias = PauseResult
+Global___ResetGcResponse: typing_extensions.TypeAlias = ResetGcResponse
 
 @typing.final
 class AdvanceEpochRequest(google.protobuf.message.Message):

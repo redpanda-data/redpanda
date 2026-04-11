@@ -184,8 +184,10 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
       extent.size);
     while (true) {
         auto stream_fut = co_await ss::coroutine::as_future<
-          std::optional<cloud_io::cache_item_stream>>(
-          _cache->get_stream(cache_key));
+          std::optional<cloud_io::cache_item_stream>>(_cache->get_stream(
+          cache_key,
+          config::shard_local_cfg().storage_read_buffer_size(),
+          config::shard_local_cfg().storage_read_readahead_count()));
         if (stream_fut.failed()) {
             auto ex = stream_fut.get_exception();
             vlog(

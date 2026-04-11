@@ -109,9 +109,9 @@ public:
                       model::timestamp(
                         model::timestamp::now().value() - ret_duration.count()),
                       std::nullopt,
-                      log->stm_manager()->max_removable_local_log_offset(),
-                      log->stm_manager()->max_tombstone_remove_offset(),
-                      log->stm_manager()->max_tx_end_remove_offset(),
+                      log->stm_hookset()->max_removable_local_log_offset(),
+                      log->stm_hookset()->max_tombstone_remove_offset(),
+                      log->stm_hookset()->max_tx_end_remove_offset(),
                       std::nullopt,
                       std::nullopt,
                       std::chrono::milliseconds{0},

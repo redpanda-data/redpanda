@@ -318,7 +318,9 @@ ss::future<response_ptr> create_topics_handler::handle(
       begin,
       valid_range_end,
       std::back_inserter(response.data.topics),
-      validators{});
+      validators{},
+      ctx.feature_table().local_is_initialized() ? &ctx.feature_table().local()
+                                                 : nullptr);
 
     // Print log if not supported configuration options are present
     for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {

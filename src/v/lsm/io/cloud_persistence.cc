@@ -24,6 +24,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/reactor.hh>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 
@@ -189,11 +190,13 @@ public:
       std::filesystem::path staging,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
-      cloud_storage_clients::object_key prefix)
+      cloud_storage_clients::object_key prefix,
+      ss::sstring staging_prefix)
       : _staging(std::move(staging))
       , _remote(remote)
       , _bucket(std::move(bucket))
-      , _prefix(std::move(prefix)) {}
+      , _prefix(std::move(prefix))
+      , _staging_prefix(std::move(staging_prefix)) {}
 
     ss::future<optional_pointer<random_access_file_reader>>
     open_random_access_reader(internal::file_handle h) override {
@@ -427,7 +430,7 @@ private:
     }
 
     std::filesystem::path staging_path(std::string_view name) {
-        return _staging / fmt::format("{}-{}", _prefix(), name);
+        return _staging / fmt::format("{}-{}", _staging_prefix, name);
     }
 
     cloud_storage_clients::object_key cloud_key(std::string_view name) {
@@ -438,6 +441,7 @@ private:
     cloud_io::remote* _remote;
     cloud_storage_clients::bucket_name _bucket;
     cloud_storage_clients::object_key _prefix;
+    ss::sstring _staging_prefix;
     ss::abort_source _as;
     ss::gate _gate;
 };
@@ -568,7 +572,8 @@ ss::future<std::unique_ptr<data_persistence>> open_cloud_data_persistence(
   std::filesystem::path staging_directory,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
-  cloud_storage_clients::object_key prefix) {
+  cloud_storage_clients::object_key prefix,
+  ss::sstring staging_prefix) {
     try {
         co_await ss::recursive_touch_directory(staging_directory.native());
     } catch (const std::system_error& e) {
@@ -581,7 +586,8 @@ ss::future<std::unique_ptr<data_persistence>> open_cloud_data_persistence(
       std::move(staging_directory),
       remote,
       std::move(bucket),
-      std::move(prefix));
+      std::move(prefix),
+      std::move(staging_prefix));
 }
 
 ss::future<std::unique_ptr<metadata_persistence>>

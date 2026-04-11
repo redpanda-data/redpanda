@@ -2,32 +2,28 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 
 package(default_visibility = [
     "//src/v/cloud_topics:__pkg__",
-    "//src/v/cloud_topics/level_zero/read_debounce:__pkg__",
-    "//src/v/cloud_topics/level_zero/read_debounce/tests:__pkg__",
+    "//src/v/cloud_topics/level_zero/read_merge:__pkg__",
+    "//src/v/cloud_topics/level_zero/read_merge/tests:__pkg__",
 ])
 
 redpanda_cc_library(
-    name = "read_debounce",
+    name = "read_merge",
     srcs = [
-        "read_debounce.cc",
+        "read_merge.cc",
     ],
     hdrs = [
-        "read_debounce.h",
+        "read_merge.h",
     ],
     deps = [
         "//src/v/base",
-        "//src/v/bytes",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:types",
-        "//src/v/cloud_topics/level_zero/pipeline:event_filter",
+        "//src/v/cloud_topics/level_zero/common:level_zero_probe",
         "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:read_request",
-        "//src/v/container:chunked_vector",
-        "//src/v/model",
-        "//src/v/ssx:checkpoint_mutex",
+        "//src/v/config",
+        "//src/v/container:chunked_hash_map",
         "//src/v/ssx:future_util",
-        "//src/v/storage",
-        "//src/v/utils:retry_chain_node",
         "@seastar",
     ],
 )

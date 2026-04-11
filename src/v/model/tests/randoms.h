@@ -175,8 +175,25 @@ inline model::offset random_offset() {
     return tests::random_named_int<model::offset>();
 }
 
+inline model::offset random_offset_above(model::offset strict_lower_bound) {
+    return model::offset(
+      random_generators::get_int<int64_t>(
+        strict_lower_bound() + 1, std::numeric_limits<int64_t>::max()));
+}
+
 inline model::tx_range random_tx_range() {
     return {random_producer_identity(), random_offset(), random_offset()};
+}
+
+/// Generates a tx_range with first < last < max_offset.
+/// max_offset must be >= 2.
+inline model::tx_range random_tx_range_below(model::offset max_offset) {
+    vassert(max_offset >= model::offset(2), "max_offset must be >= 2");
+    auto first = model::offset(
+      random_generators::get_int<int64_t>(0, max_offset() - 2));
+    auto last = model::offset(
+      random_generators::get_int<int64_t>(first() + 1, max_offset() - 1));
+    return {random_producer_identity(), first, last};
 }
 
 inline model::broker_shard random_broker_shard() {

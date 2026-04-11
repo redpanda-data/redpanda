@@ -263,7 +263,7 @@ void stm_factory::create(
   raft::consensus* raft,
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<translation_stm>(datalake_log, raft);
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace datalake::translation

@@ -388,6 +388,7 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/ssx:future_util",
         "//src/v/storage",
+        "//src/v/test_utils:scoped_config",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:retry_chain_node",
         "@boost//:test",

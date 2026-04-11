@@ -25,3 +25,10 @@ def redpanda_copts():
     copts.append("-DFMT_DEPRECATED_OSTREAM")
 
     return copts
+
+def antithesis_deps():
+    """Conditional deps for Antithesis coverage instrumentation."""
+    return select({
+        "//bazel:antithesis_enabled": ["//bazel/antithesis:instrumentation"],
+        "//conditions:default": [],
+    })

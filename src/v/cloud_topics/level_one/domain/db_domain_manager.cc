@@ -10,13 +10,14 @@
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
 
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/garbage_collector.h"
 #include "cloud_topics/level_one/metastore/lsm/keys.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
 #include "cloud_topics/level_one/metastore/lsm/state_update.h"
 #include "cloud_topics/level_one/metastore/rpc_types.h"
+#include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"
-#include "container/chunked_hash_map.h"
 #include "lsm/io/cloud_persistence.h"
 #include "lsm/proto/manifest.proto.h"
 #include "ssx/sleep_abortable.h"
@@ -107,7 +108,136 @@ log_and_convert(const replicated_database::error& e, std::string_view prefix) {
     return ret;
 }
 
+// Scans up to `max_count` extents fully below `target_offset` (i.e.
+// whose last_offset < target_offset). Returns target_offset if all
+// such extents fit within `max_count`, otherwise returns the offset just
+// past the last scanned extent.
+ss::future<std::expected<kafka::offset, state_reader::error>>
+scan_extents_below(
+  state_reader& reader,
+  const model::topic_id_partition& tp,
+  kafka::offset target_offset,
+  size_t max_count) {
+    size_t count = 0;
+
+    auto max_to_scan = kafka::prev_offset(target_offset);
+    auto extents_res = co_await reader.get_inclusive_extents(
+      tp, std::nullopt, max_to_scan);
+    if (!extents_res.has_value()) {
+        co_return std::unexpected(std::move(extents_res.error()));
+    }
+
+    if (!extents_res.value().has_value()) {
+        // No extents in range, already at target.
+        co_return target_offset;
+    }
+
+    kafka::offset last_offset{};
+    auto gen = (*extents_res)->get_rows();
+    while (auto row_opt = co_await gen()) {
+        const auto& row = row_opt->get();
+        if (!row.has_value()) {
+            co_return std::unexpected(row.error());
+        }
+        if (row->val.last_offset >= target_offset) {
+            // This extent and beyond includes the exclusive target, do not
+            // include it.
+            break;
+        }
+        ++count;
+        last_offset = row->val.last_offset;
+        if (count >= max_count) {
+            // There are more extents than max_count below target_offset;
+            // return what we scanned up through.
+            co_return kafka::next_offset(last_offset);
+        }
+    }
+    // There are under max_count extents below target_offset.
+    co_return target_offset;
+}
+
+// Counts the total number of extents across all partitions for a topic,
+// returning early once the count exceeds `max`.
+ss::future<std::expected<size_t, state_reader::error>> count_topic_extents(
+  state_reader& reader, const model::topic_id& tid, size_t max) {
+    auto partitions_res = co_await reader.get_partitions_for_topic(tid);
+    if (!partitions_res.has_value()) {
+        co_return std::unexpected(std::move(partitions_res.error()));
+    }
+    size_t count = 0;
+    for (const auto& pid : partitions_res.value()) {
+        model::topic_id_partition tidp(tid, pid);
+        auto extents_res = co_await reader.get_inclusive_extents(
+          tidp, std::nullopt, std::nullopt);
+        if (!extents_res.has_value()) {
+            co_return std::unexpected(std::move(extents_res.error()));
+        }
+        if (!extents_res->has_value()) {
+            continue;
+        }
+        auto gen = extents_res->value().get_rows();
+        while (auto row_opt = co_await gen()) {
+            const auto& row = row_opt->get();
+            if (!row.has_value()) {
+                co_return std::unexpected(row.error());
+            }
+            if (++count > max) {
+                co_return max;
+            }
+        }
+    }
+    co_return count;
+}
+
+// Extracts topic IDs and topic_id_partitions from new_objects.
+void collect_topics_and_partitions(
+  const chunked_vector<new_object>& new_objects,
+  absl::btree_set<model::topic_id>& topics,
+  absl::btree_set<model::topic_id_partition>& partitions) {
+    for (const auto& obj : new_objects) {
+        for (const auto& [tid, pmap] : obj.extent_metas) {
+            topics.insert(tid);
+            for (const auto& [pid, _] : pmap) {
+                partitions.emplace(tid, pid);
+            }
+        }
+    }
+}
+
+// Extracts object IDs from new_objects.
+void collect_object_ids(
+  const chunked_vector<new_object>& new_objects,
+  absl::btree_set<object_id>& oids) {
+    for (const auto& obj : new_objects) {
+        oids.insert(obj.oid);
+    }
+}
+
 } // namespace
+
+// entity_locks methods
+
+ss::future<std::expected<void, rpc::errc>>
+db_domain_manager::entity_locks::acquire_objects(
+  absl::btree_set<object_id> additional) {
+    vassert(
+      object_locks.empty(),
+      "Object locks already held; collect all object IDs before acquiring");
+    try {
+        auto new_units = co_await object_lock_map->acquire(additional);
+        for (auto& u : new_units) {
+            object_locks.push_back(std::move(u));
+        }
+        co_return std::expected<void, rpc::errc>{};
+    } catch (...) {
+        auto eptr = std::current_exception();
+        auto lvl = ssx::is_shutdown_exception(eptr) ? ss::log_level::debug
+                                                    : ss::log_level::warn;
+        vlogl(
+          cd_log, lvl, "Exception acquiring additional object locks: {}", eptr);
+        co_return std::unexpected(rpc::errc::not_leader);
+    }
+}
 
 db_domain_manager::db_domain_manager(
   model::term_id expected_term,
@@ -115,12 +245,14 @@ db_domain_manager::db_domain_manager(
   std::filesystem::path staging_dir,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
-  io* object_io)
+  io* object_io,
+  ss::scheduling_group sg)
   : expected_term_(expected_term)
   , staging_dir_(std::move(staging_dir))
   , remote_(remote)
   , bucket_(std::move(bucket))
   , object_io_(object_io)
+  , sg_(sg)
   , stm_(std::move(stm))
   , gc_interval_(
       config::shard_local_cfg()
@@ -129,15 +261,18 @@ db_domain_manager::db_domain_manager(
 }
 
 void db_domain_manager::start() {
-    ssx::spawn_with_gate(gate_, [this] { return gc_loop(); });
+    ssx::spawn_with_gate(gate_, [this] {
+        return ss::with_scheduling_group(sg_, [this] { return gc_loop(); });
+    });
 }
 
 ss::future<> db_domain_manager::stop_and_wait() {
     vlog(cd_log.debug, "DB domain manager stopping...");
     as_.request_abort();
     sem_.broken();
-    auto gate_fut = gate_.close();
-    writer_lock_.broken();
+    partition_locks_.broken();
+    object_locks_.broken();
+    co_await gate_.close();
     auto wlock_res = co_await exclusive_db_lock();
     if (wlock_res.has_value()) {
         if (db_) {
@@ -148,8 +283,6 @@ ss::future<> db_domain_manager::stop_and_wait() {
             }
         }
     }
-
-    co_await std::move(gate_fut);
     vlog(cd_log.debug, "DB domain manager stopped...");
 }
 
@@ -163,9 +296,22 @@ std::optional<ss::gate::holder> db_domain_manager::maybe_gate() {
 
 ss::future<rpc::add_objects_reply>
 db_domain_manager::add_objects(rpc::add_objects_request req) {
-    chunked_hash_set<object_id> added_oids;
-    for (const auto& obj : req.new_objects) {
-        added_oids.emplace(obj.oid);
+    // Collect all entities from request.
+    absl::btree_set<model::topic_id> topics;
+    absl::btree_set<model::topic_id_partition> partitions;
+    absl::btree_set<object_id> oids;
+    collect_topics_and_partitions(req.new_objects, topics, partitions);
+    collect_object_ids(req.new_objects, oids);
+
+    auto locks_res = co_await gate_and_open_writes({
+      .topic_read_locks = std::move(topics),
+      .partition_locks = std::move(partitions),
+      .object_locks = std::move(oids),
+    });
+    if (!locks_res.has_value()) {
+        co_return rpc::add_objects_reply{
+          .ec = locks_res.error(),
+        };
     }
 
     chunked_hash_map<model::topic_id_partition, kafka::offset> corrections;
@@ -173,13 +319,6 @@ db_domain_manager::add_objects(rpc::add_objects_request req) {
       .new_objects = std::move(req.new_objects),
       .new_terms = std::move(req.new_terms),
     };
-    auto gl_res = co_await gate_and_open_writes();
-    if (!gl_res.has_value()) {
-        co_return rpc::add_objects_reply{
-          .ec = gl_res.error(),
-        };
-    }
-    // Validate and build write batch rows
     auto reader = state_reader(db_->db().create_snapshot());
     chunked_vector<write_batch_row> rows;
     auto build_res = co_await update.build_rows(reader, rows, &corrections);
@@ -190,7 +329,7 @@ db_domain_manager::add_objects(rpc::add_objects_request req) {
         };
     }
 
-    auto apply_res = co_await write_rows(gl_res.value(), std::move(rows));
+    auto apply_res = co_await write_rows(locks_res.value(), std::move(rows));
     if (!apply_res.has_value()) {
         co_return rpc::add_objects_reply{
           .ec = apply_res.error(),
@@ -205,10 +344,26 @@ db_domain_manager::add_objects(rpc::add_objects_request req) {
 
 ss::future<rpc::replace_objects_reply>
 db_domain_manager::replace_objects(rpc::replace_objects_request req) {
-    chunked_hash_set<object_id> added_oids;
-    for (const auto& obj : req.new_objects) {
-        added_oids.emplace(obj.oid);
+    // Collect topics and partitions upfront.
+    absl::btree_set<model::topic_id> topics;
+    absl::btree_set<model::topic_id_partition> partitions;
+    collect_topics_and_partitions(req.new_objects, topics, partitions);
+    for (const auto& [tp, update] : req.compaction_updates) {
+        topics.insert(tp.topic_id);
+        partitions.insert(tp);
     }
+
+    // Acquire topic and partition locks only — no object locks yet.
+    auto locks_res = co_await gate_and_open_writes({
+      .topic_read_locks = std::move(topics),
+      .partition_locks = std::move(partitions),
+    });
+    if (!locks_res.has_value()) {
+        co_return rpc::replace_objects_reply{
+          .ec = locks_res.error(),
+        };
+    }
+
     chunked_hash_map<
       model::topic_id,
       chunked_hash_map<model::partition_id, compaction_state_update>>
@@ -222,12 +377,33 @@ db_domain_manager::replace_objects(rpc::replace_objects_request req) {
       .new_objects = std::move(req.new_objects),
       .compaction_updates = std::move(req_compaction_updates),
     };
-    auto gl_res = co_await gate_and_open_writes();
-    if (!gl_res.has_value()) {
-        co_return rpc::replace_objects_reply{
-          .ec = gl_res.error(),
-        };
+
+    // Discover old objects being replaced, merge with new object IDs,
+    // and acquire all object locks in one sorted batch.
+    {
+        absl::btree_set<object_id> all_oids;
+        collect_object_ids(update.new_objects, all_oids);
+
+        auto discovery_reader = state_reader(db_->db().create_snapshot());
+        auto discovered_res = co_await update.discover_replaced_object_ids(
+          discovery_reader);
+        if (!discovered_res.has_value()) {
+            co_return rpc::replace_objects_reply{
+              .ec = log_and_convert(
+                discovered_res.error(), "Error discovering replaced objects: "),
+            };
+        }
+        all_oids.merge(discovered_res.value());
+        auto obj_locks_res = co_await locks_res.value().acquire_objects(
+          std::move(all_oids));
+        if (!obj_locks_res.has_value()) {
+            co_return rpc::replace_objects_reply{
+              .ec = obj_locks_res.error(),
+            };
+        }
     }
+
+    // Final snapshot under full lock protection.
     auto reader = state_reader(db_->db().create_snapshot());
     chunked_vector<write_batch_row> rows;
     auto build_res = co_await update.build_rows(reader, rows);
@@ -237,7 +413,7 @@ db_domain_manager::replace_objects(rpc::replace_objects_request req) {
             build_res.error(), "Rejecting request to replace objects: "),
         };
     }
-    auto apply_res = co_await write_rows(gl_res.value(), std::move(rows));
+    auto apply_res = co_await write_rows(locks_res.value(), std::move(rows));
     if (!apply_res.has_value()) {
         co_return rpc::replace_objects_reply{
           .ec = apply_res.error(),
@@ -279,6 +455,15 @@ db_domain_manager::get_first_offset_ge(rpc::get_first_offset_ge_request req) {
         };
     }
     const auto& object = object_res.value().value();
+    if (object.is_preregistration) {
+        co_return rpc::get_first_offset_ge_reply{
+          .ec = log_and_convert(
+            state_reader::error(
+              state_reader::errc::corruption,
+              "Extent refers to a preregistered object"),
+            "Error getting object"),
+        };
+    }
     co_return rpc::get_first_offset_ge_reply{
       .ec = rpc::errc::ok,
       .object = rpc::object_metadata{
@@ -351,6 +536,15 @@ db_domain_manager::get_first_timestamp_ge(
             }
             auto key = extent_row_key::decode(extent.key);
             const auto& object = object_res.value().value();
+            if (object.is_preregistration) {
+                co_return rpc::get_first_timestamp_ge_reply{
+                  .ec = log_and_convert(
+                    state_reader::error(
+                      state_reader::errc::corruption,
+                      "Extent refers to a preregistered object"),
+                    "Error getting object"),
+                };
+            }
             co_return rpc::get_first_timestamp_ge_reply{
               .ec = rpc::errc::ok,
               .object = rpc::object_metadata{
@@ -490,6 +684,7 @@ db_domain_manager::get_size(rpc::get_size_request req) {
     co_return rpc::get_size_reply{
       .ec = rpc::errc::ok,
       .size = metadata.size,
+      .num_extents = metadata.num_extents,
     };
 }
 
@@ -728,38 +923,85 @@ db_domain_manager::get_end_offset_for_term(
     };
 }
 
-ss::future<rpc::set_start_offset_reply>
-db_domain_manager::set_start_offset(rpc::set_start_offset_request req) {
-    auto gl_res = co_await gate_and_open_writes();
-    if (!gl_res.has_value()) {
+ss::future<rpc::set_start_offset_reply> db_domain_manager::do_set_start_offset(
+  const entity_locks& locks, rpc::set_start_offset_request req) {
+    static constexpr size_t max_extents_per_batch = 1000;
+
+    const auto target_offset = req.start_offset;
+    kafka::offset current_start_offset{};
+
+    // Get current start offset and validate.
+    {
+        auto reader = state_reader(db_->db().create_snapshot());
+        auto meta_res = co_await reader.get_metadata(req.tp);
+        if (!meta_res.has_value()) {
+            co_return rpc::set_start_offset_reply{
+              .ec = log_and_convert(
+                meta_res.error(), "Error reading metadata for partition: "),
+            };
+        }
+        if (!meta_res->has_value()) {
+            co_return rpc::set_start_offset_reply{
+              .ec = rpc::errc::missing_ntp,
+            };
+        }
+        const auto& meta = meta_res->value();
+        if (req.start_offset > meta.next_offset) {
+            vlog(
+              cd_log.debug,
+              "Rejecting request to set {} start offset to {}, current next "
+              "offset {}",
+              req.tp,
+              req.start_offset,
+              meta.next_offset);
+            co_return rpc::set_start_offset_reply{
+              .ec = rpc::errc::concurrent_requests,
+            };
+        }
+        current_start_offset = meta.start_offset;
+    }
+
+    if (current_start_offset >= target_offset) {
         co_return rpc::set_start_offset_reply{
-          .ec = gl_res.error(),
+          .ec = rpc::errc::ok,
+        };
+    }
+
+    // Process one batch. Object locks must already be held by the caller.
+    auto reader = state_reader(db_->db().create_snapshot());
+
+    // Scan through extents to find an intermediate offset bounded by
+    // max_extents_per_batch.
+    auto new_start_res = co_await scan_extents_below(
+      reader, req.tp, target_offset, max_extents_per_batch);
+    if (!new_start_res.has_value()) {
+        co_return rpc::set_start_offset_reply{
+          .ec = log_and_convert(
+            new_start_res.error(), "Error scanning extents: "),
         };
     }
 
     auto update = set_start_offset_db_update{
       .tp = req.tp,
-      .new_start_offset = req.start_offset,
+      .new_start_offset = new_start_res.value(),
     };
 
-    auto reader = state_reader(db_->db().create_snapshot());
     chunked_vector<write_batch_row> rows;
-    auto build_res = co_await update.build_rows(reader, rows);
+    bool is_no_op = false;
+    auto build_res = co_await update.build_rows(reader, rows, &is_no_op);
     if (!build_res.has_value()) {
         co_return rpc::set_start_offset_reply{
           .ec = log_and_convert(
             build_res.error(), "Rejecting request to set start offset: "),
         };
     }
-
-    if (rows.empty()) {
-        // No-op case: new_start_offset <= current start_offset.
+    if (is_no_op) {
         co_return rpc::set_start_offset_reply{
           .ec = rpc::errc::ok,
+          .has_more = new_start_res.value() < target_offset,
         };
     }
-
-    auto apply_res = co_await write_rows(gl_res.value(), std::move(rows));
+    auto apply_res = co_await write_rows(locks, std::move(rows));
     if (!apply_res.has_value()) {
         co_return rpc::set_start_offset_reply{
           .ec = apply_res.error(),
@@ -768,50 +1010,280 @@ db_domain_manager::set_start_offset(rpc::set_start_offset_request req) {
 
     co_return rpc::set_start_offset_reply{
       .ec = rpc::errc::ok,
+      .has_more = new_start_res.value() < target_offset,
     };
 }
 
-ss::future<rpc::remove_topics_reply>
-db_domain_manager::remove_topics(rpc::remove_topics_request req) {
-    auto gl_res = co_await gate_and_open_writes();
-    if (!gl_res.has_value()) {
-        co_return rpc::remove_topics_reply{
-          .ec = gl_res.error(),
-          .not_removed = std::move(req.topics),
+ss::future<rpc::set_start_offset_reply>
+db_domain_manager::set_start_offset(rpc::set_start_offset_request req) {
+    auto locks_res = co_await gate_and_open_writes({
+      .topic_read_locks = {req.tp.topic_id},
+      .partition_locks = {req.tp},
+    });
+    if (!locks_res.has_value()) {
+        co_return rpc::set_start_offset_reply{
+          .ec = locks_res.error(),
         };
     }
 
-    auto update = remove_topics_db_update{
-      .topics = std::move(req.topics),
-    };
+    // Discover all object IDs below the target offset and acquire their
+    // locks before the batched write loop.
+    {
+        auto update = set_start_offset_db_update{
+          .tp = req.tp,
+          .new_start_offset = req.start_offset,
+        };
+        auto discovery_reader = state_reader(db_->db().create_snapshot());
+        auto discovered_res = co_await update.discover_truncated_object_ids(
+          discovery_reader);
+        if (!discovered_res.has_value()) {
+            co_return rpc::set_start_offset_reply{
+              .ec = log_and_convert(
+                discovered_res.error(),
+                "Error discovering truncated objects: "),
+            };
+        }
+        if (!discovered_res.value().empty()) {
+            auto obj_locks_res = co_await locks_res.value().acquire_objects(
+              std::move(discovered_res.value()));
+            if (!obj_locks_res.has_value()) {
+                co_return rpc::set_start_offset_reply{
+                  .ec = obj_locks_res.error(),
+                };
+            }
+        }
+    }
 
+    co_return co_await do_set_start_offset(locks_res.value(), req);
+}
+
+ss::future<
+  std::expected<db_domain_manager::set_partitions_empty_result, rpc::errc>>
+db_domain_manager::set_partitions_empty(
+  entity_locks& locks, const model::topic_id& tid) {
+    auto reader = state_reader(db_->db().create_snapshot());
+    auto partitions_res = co_await reader.get_partitions_for_topic(tid);
+    if (!partitions_res.has_value()) {
+        co_return std::unexpected(log_and_convert(
+          partitions_res.error(), "Error getting partitions for topic: "));
+    }
+    if (partitions_res.value().empty()) {
+        co_return set_partitions_empty_result{.has_more = false};
+    }
+
+    // Discover all object IDs across all partitions' extents and acquire
+    // them in one sorted batch, so do_set_start_offset doesn't need to
+    // grow object locks per partition.
+    {
+        auto update = remove_topics_db_update{
+          .topics = chunked_vector<model::topic_id>::single(tid),
+        };
+        auto discovered_res = co_await update.discover_object_ids(reader);
+        if (!discovered_res.has_value()) {
+            co_return std::unexpected(log_and_convert(
+              discovered_res.error(),
+              "Error discovering objects for topic emptying: "));
+        }
+        if (!discovered_res.value().empty()) {
+            auto obj_locks_res = co_await locks.acquire_objects(
+              std::move(discovered_res.value()));
+            if (!obj_locks_res.has_value()) {
+                co_return std::unexpected(obj_locks_res.error());
+            }
+        }
+    }
+
+    // Process one batch of work for the first non-empty partition, then
+    // return so the caller can bound work per RPC.
+    const auto num_partitions = partitions_res.value().size();
+    for (size_t i = 0; i < num_partitions; ++i) {
+        const auto& pid = partitions_res.value()[i];
+        model::topic_id_partition tidp(tid, pid);
+
+        auto meta_reader = state_reader(db_->db().create_snapshot());
+        auto meta_res = co_await meta_reader.get_metadata(tidp);
+        if (!meta_res.has_value()) {
+            co_return std::unexpected(
+              log_and_convert(meta_res.error(), "Error getting metadata: "));
+        }
+        if (!meta_res.value().has_value()) {
+            continue;
+        }
+        const auto& metadata = (*meta_res).value();
+        if (metadata.start_offset < metadata.next_offset) {
+            auto set_offset_reply = co_await do_set_start_offset(
+              locks,
+              rpc::set_start_offset_request{
+                .tp = tidp,
+                .start_offset = metadata.next_offset,
+              });
+            if (set_offset_reply.ec != rpc::errc::ok) {
+                co_return std::unexpected(set_offset_reply.ec);
+            }
+            co_return set_partitions_empty_result{
+              .has_more = i < (num_partitions - 1)};
+        }
+    }
+
+    co_return set_partitions_empty_result{.has_more = false};
+}
+
+ss::future<std::expected<void, rpc::errc>>
+db_domain_manager::discover_objects_and_remove_topics(
+  entity_locks& locks, chunked_vector<model::topic_id> topics) {
+    auto discovery_update = remove_topics_db_update{
+      .topics = topics.copy(),
+    };
+    auto discovery_reader = state_reader(db_->db().create_snapshot());
+    auto discovered_res = co_await discovery_update.discover_object_ids(
+      discovery_reader);
+    if (!discovered_res.has_value()) {
+        co_return std::unexpected(log_and_convert(
+          discovered_res.error(),
+          "Error discovering objects for topic removal: "));
+    }
+    if (!discovered_res.value().empty()) {
+        auto obj_locks_res = co_await locks.acquire_objects(
+          std::move(discovered_res.value()));
+        if (!obj_locks_res.has_value()) {
+            co_return std::unexpected(obj_locks_res.error());
+        }
+    }
+    co_return co_await do_remove_topics(locks, std::move(topics));
+}
+
+ss::future<std::expected<void, rpc::errc>> db_domain_manager::do_remove_topics(
+  const entity_locks& locks, chunked_vector<model::topic_id> topics) {
+    auto update = remove_topics_db_update{
+      .topics = std::move(topics),
+    };
     auto reader = state_reader(db_->db().create_snapshot());
     chunked_vector<write_batch_row> rows;
     auto build_res = co_await update.build_rows(reader, rows);
     if (!build_res.has_value()) {
-        co_return rpc::remove_topics_reply{
-          .ec = log_and_convert(
-            build_res.error(), "Rejecting request to remove topics: "),
-          .not_removed = std::move(update.topics),
-        };
+        co_return std::unexpected(log_and_convert(
+          build_res.error(), "Rejecting request to remove topics: "));
     }
-
     if (rows.empty()) {
-        // No-op case: no topics to remove or topics don't exist.
+        co_return std::expected<void, rpc::errc>{};
+    }
+    co_return co_await write_rows(locks, std::move(rows));
+}
+
+ss::future<rpc::remove_topics_reply>
+db_domain_manager::remove_topics(rpc::remove_topics_request req) {
+    static constexpr size_t max_extents_per_batch = 1000;
+
+    // TODO: instead of locking all topics upfront, acquire locks per-batch:
+    // each big-topic or small-topic batch gets its own gate_and_open_writes
+    // with topic write locks + discovered partition/object locks.
+    absl::btree_set<model::topic_id> topic_write_set(
+      req.topics.begin(), req.topics.end());
+    auto locks_res = co_await gate_and_open_writes({
+      .topic_write_locks = std::move(topic_write_set),
+    });
+    if (!locks_res.has_value()) {
         co_return rpc::remove_topics_reply{
-          .ec = rpc::errc::ok,
+          .ec = locks_res.error(),
           .not_removed = {},
         };
     }
 
-    auto apply_res = co_await write_rows(gl_res.value(), std::move(rows));
-    if (!apply_res.has_value()) {
-        co_return rpc::remove_topics_reply{
-          .ec = apply_res.error(),
-          .not_removed = std::move(update.topics),
-        };
+    auto reader = state_reader(db_->db().create_snapshot());
+    size_t extents_so_far = 0;
+    chunked_vector<model::topic_id> to_delete_so_far;
+
+    auto copy_req_topics_from = [&req](size_t from_idx) {
+        chunked_vector<model::topic_id> not_removed;
+        std::copy(
+          req.topics.begin() + static_cast<long>(from_idx),
+          req.topics.end(),
+          std::back_inserter(not_removed));
+        return not_removed;
+    };
+    for (size_t i = 0; i < req.topics.size(); ++i) {
+        const auto& tid = req.topics.at(i);
+        auto topic_extents_res = co_await count_topic_extents(
+          reader, tid, max_extents_per_batch);
+        if (!topic_extents_res.has_value()) {
+            co_return rpc::remove_topics_reply{
+              .ec = log_and_convert(
+                topic_extents_res.error(),
+                "Error counting extents for topic removal: "),
+              .not_removed = {},
+            };
+        }
+        auto topic_extents = topic_extents_res.value();
+        if (
+          to_delete_so_far.empty() && topic_extents >= max_extents_per_batch) {
+            // This topic is big and it's the first one (we don't have any
+            // other topics accumulated). Do one batch of partition emptying
+            // and return, expecting callers to retry.
+            auto empty_res = co_await set_partitions_empty(
+              locks_res.value(), tid);
+            if (!empty_res.has_value()) {
+                co_return rpc::remove_topics_reply{
+                  .ec = empty_res.error(),
+                  .not_removed = {},
+                };
+            }
+            if (empty_res.value().has_more) {
+                // More emptying to do — return this topic (and the rest)
+                // as not_removed so the caller retries.
+                co_return rpc::remove_topics_reply{
+                  .ec = rpc::errc::ok,
+                  .not_removed = copy_req_topics_from(i),
+                };
+            }
+            // Partitions are fully emptied. Remove the remaining metadata.
+            auto rm_res = co_await do_remove_topics(
+              locks_res.value(), chunked_vector<model::topic_id>::single(tid));
+            if (!rm_res.has_value()) {
+                co_return rpc::remove_topics_reply{
+                  .ec = rm_res.error(),
+                  .not_removed = {},
+                };
+            }
+            co_return rpc::remove_topics_reply{
+              .ec = rpc::errc::ok,
+              .not_removed = copy_req_topics_from(i + 1),
+            };
+        }
+
+        if (extents_so_far + topic_extents > max_extents_per_batch) {
+            // This topic will put us over our extent limit. Just remove the
+            // topics we've accumulated so far and not this one, expecting that
+            // callers will retry.
+            auto rm_res = co_await discover_objects_and_remove_topics(
+              locks_res.value(), std::move(to_delete_so_far));
+            if (!rm_res.has_value()) {
+                co_return rpc::remove_topics_reply{
+                  .ec = rm_res.error(),
+                  .not_removed = {},
+                };
+            }
+            co_return rpc::remove_topics_reply{
+              .ec = rpc::errc::ok,
+              .not_removed = copy_req_topics_from(i),
+            };
+        }
+
+        to_delete_so_far.push_back(tid);
+        extents_so_far += topic_extents;
     }
 
+    // We've made it through all our topics without hitting the extent limit.
+    // It should be safe to just delete them all.
+    if (!to_delete_so_far.empty()) {
+        auto rm_res = co_await discover_objects_and_remove_topics(
+          locks_res.value(), std::move(to_delete_so_far));
+        if (!rm_res.has_value()) {
+            co_return rpc::remove_topics_reply{
+              .ec = rm_res.error(),
+              .not_removed = {},
+            };
+        }
+    }
     co_return rpc::remove_topics_reply{
       .ec = rpc::errc::ok,
       .not_removed = {},
@@ -887,12 +1359,37 @@ db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
         }
         const auto& extent = row.value();
         auto key = extent_row_key::decode(extent.key);
-        extents.push_back(
-          rpc::extent_metadata{
-            .base_offset = key->base_offset,
-            .last_offset = extent.val.last_offset,
-            .max_timestamp = extent.val.max_timestamp,
-          });
+        rpc::extent_metadata em{
+          .base_offset = key->base_offset,
+          .last_offset = extent.val.last_offset,
+          .max_timestamp = extent.val.max_timestamp,
+        };
+        if (req.include_object_metadata) {
+            auto object_res = co_await reader.get_object(extent.val.oid);
+            if (!object_res.has_value()) {
+                co_return rpc::get_extent_metadata_reply{
+                  .ec = log_and_convert(
+                    object_res.error(),
+                    fmt::format(
+                      "Error getting object {} in extent ({}~{}): ",
+                      extent.val.oid,
+                      key->base_offset,
+                      extent.val.last_offset)),
+                };
+            }
+            if (!object_res->has_value()) {
+                co_return rpc::get_extent_metadata_reply{
+                  .ec = rpc::errc::out_of_range,
+                };
+            }
+            const auto& object = object_res.value().value();
+            em.object_info = rpc::extent_object_info{
+              .oid = extent.val.oid,
+              .footer_pos = object.footer_pos,
+              .object_size = object.object_size,
+            };
+        }
+        extents.push_back(std::move(em));
         if (extents.size() >= req.max_num_extents) {
             end_of_stream = false;
             break;
@@ -903,6 +1400,49 @@ db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
       .ec = rpc::errc::ok,
       .extents = std::move(extents),
       .end_of_stream = end_of_stream,
+    };
+}
+
+ss::future<rpc::preregister_objects_reply>
+db_domain_manager::preregister_objects(rpc::preregister_objects_request req) {
+    preregister_objects_db_update update;
+    update.registered_at = model::timestamp::now();
+    update.object_ids.reserve(req.count);
+    for (uint32_t i = 0; i < req.count; ++i) {
+        update.object_ids.push_back(create_object_id());
+    }
+
+    absl::btree_set<object_id> oids(
+      update.object_ids.begin(), update.object_ids.end());
+    auto locks_res = co_await gate_and_open_writes({
+      .object_locks = std::move(oids),
+    });
+    if (!locks_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = locks_res.error(),
+        };
+    }
+
+    auto reader = state_reader(db_->db().create_snapshot());
+    chunked_vector<write_batch_row> rows;
+    auto build_res = co_await update.build_rows(reader, rows);
+    if (!build_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = log_and_convert(
+            build_res.error(), "Rejecting request to preregister objects: "),
+        };
+    }
+
+    auto apply_res = co_await write_rows(locks_res.value(), std::move(rows));
+    if (!apply_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = apply_res.error(),
+        };
+    }
+
+    co_return rpc::preregister_objects_reply{
+      .ec = rpc::errc::ok,
+      .object_ids = std::move(update.object_ids),
     };
 }
 
@@ -946,27 +1486,70 @@ db_domain_manager::gate_and_open_reads() {
     };
 }
 
-ss::future<std::expected<db_domain_manager::gate_writer_locks, rpc::errc>>
-db_domain_manager::gate_and_open_writes() {
+ss::future<std::expected<db_domain_manager::entity_locks, rpc::errc>>
+db_domain_manager::gate_and_open_writes(write_lock_spec spec) {
     auto gl_res = co_await gate_and_open_reads();
     if (!gl_res.has_value()) {
         co_return std::unexpected(gl_res.error());
     }
-    auto fut = co_await ss::coroutine::as_future(writer_lock_.get_units());
-    if (fut.failed()) {
-        auto ex = fut.get_exception();
-        vlog(cd_log.debug, "Exception while getting writer lock: {}", ex);
+
+    // Ordered acquisition: topic->partition->object.
+    try {
+        chunked_vector<entity_rwlock_map<model::topic_id>::tracked_units>
+          topic_units;
+
+        if (!spec.topic_read_locks.empty()) {
+            auto read_units = co_await topic_locks_.acquire_read(
+              spec.topic_read_locks);
+            for (auto& u : read_units) {
+                topic_units.push_back(std::move(u));
+            }
+        }
+        if (!spec.topic_write_locks.empty()) {
+            auto write_units = co_await topic_locks_.acquire_write(
+              spec.topic_write_locks);
+            for (auto& u : write_units) {
+                topic_units.push_back(std::move(u));
+            }
+        }
+
+        chunked_vector<
+          entity_lock_map<model::topic_id_partition>::tracked_units>
+          partition_units;
+        if (!spec.partition_locks.empty()) {
+            partition_units = co_await partition_locks_.acquire(
+              spec.partition_locks);
+        }
+
+        chunked_vector<entity_lock_map<object_id>::tracked_units> object_units;
+        if (!spec.object_locks.empty()) {
+            object_units = co_await object_locks_.acquire(spec.object_locks);
+        }
+
+        co_return entity_locks{
+          .read_lock = std::move(*gl_res),
+          .topic_locks = std::move(topic_units),
+          .partition_locks = std::move(partition_units),
+          .object_locks = std::move(object_units),
+          .partition_lock_map = &partition_locks_,
+          .object_lock_map = &object_locks_,
+        };
+    } catch (...) {
+        auto eptr = std::current_exception();
+        auto lvl = ssx::is_shutdown_exception(eptr) ? ss::log_level::debug
+                                                    : ss::log_level::warn;
+        vlogl(cd_log, lvl, "Exception while acquiring entity locks: {}", eptr);
         co_return std::unexpected(rpc::errc::not_leader);
     }
-    auto& gl = *gl_res;
-    co_return gate_writer_locks{
-      .gate_read_lock = std::move(gl),
-      .writer_lock = std::move(fut.get()),
-    };
 }
 
 ss::future<std::expected<void, rpc::errc>> db_domain_manager::write_rows(
-  const gate_writer_locks&, chunked_vector<write_batch_row> rows) {
+  const entity_locks&, chunked_vector<write_batch_row> rows) {
+    co_return co_await write_rows_no_lock(std::move(rows));
+}
+
+ss::future<std::expected<void, rpc::errc>>
+db_domain_manager::write_rows_no_lock(chunked_vector<write_batch_row> rows) {
     // TODO: it's probably worth pushing some retries into replicated_database
     // while locks are still held, rather than stepping down immediately.
     auto apply_res = co_await db_->write(std::move(rows));
@@ -1034,7 +1617,7 @@ ss::future<std::expected<void, rpc::errc>> db_domain_manager::maybe_open_db() {
     vlog(
       cd_log.debug, "Opening database with expected term {}", expected_term_);
     auto db_res = co_await replicated_database::open(
-      expected_term_, stm_.get(), staging_dir_, remote_, bucket_, as_);
+      expected_term_, stm_.get(), staging_dir_, remote_, bucket_, as_, sg_);
     if (!db_res.has_value()) {
         co_return std::unexpected(
           log_and_convert(db_res.error(), "Failed to open database: "));
@@ -1053,8 +1636,8 @@ ss::future<> db_domain_manager::gc_loop() {
     db_garbage_collector gc(object_io_);
     while (!as_.abort_requested()) {
         // NOTE: even though the garbage collector will remove objects and
-        // actually write to the database, we don't need to take the writer
-        // lock. This is because there is no risk of logical row operations
+        // actually write to the database, we don't need to take entity locks.
+        // This is because there is no risk of logical row operations
         // colliding with object removal: the garbage collector will only ever
         // mutate unreferenced objects, and no other updates will update these
         // objects.
@@ -1064,8 +1647,17 @@ ss::future<> db_domain_manager::gc_loop() {
         }
         // TODO: make batch size configurable.
         vlog(cd_log.debug, "Running garbage collection now...");
+        auto now = model::timestamp::now();
+        auto ttl
+          = config::shard_local_cfg().cloud_topics_preregistered_object_ttl();
+        auto prereg_expiry_cutoff = model::timestamp{
+          now() - static_cast<int64_t>(ttl.count())};
+        auto deletion_delay = config::shard_local_cfg()
+                                .cloud_topics_long_term_file_deletion_delay();
+        auto deletion_delay_cutoff = model::timestamp{
+          now() - static_cast<int64_t>(deletion_delay.count())};
         auto gc_res = co_await gc.remove_unreferenced_objects(
-          db_.get(), &as_, 1000);
+          db_.get(), &as_, 1000, prereg_expiry_cutoff, deletion_delay_cutoff);
         if (!gc_res.has_value()) {
             using enum db_garbage_collector::errc;
             switch (gc_res.error().e) {
@@ -1083,8 +1675,12 @@ ss::future<> db_domain_manager::gc_loop() {
                 break;
             }
         }
-        // Drop the database lock while we sleep.
+        // Drop the database lock before expiring stale preregistered objects
+        // and before sleeping, so we don't hold it unnecessarily.
         gl_res = {};
+        if (gc_res.has_value() && !gc_res.value().empty()) {
+            co_await expire_preregistered_objects(std::move(gc_res.value()));
+        }
 
         auto sleep_interval = gc_interval_();
         vlog(
@@ -1155,7 +1751,7 @@ db_domain_manager::restore_domain(rpc::restore_domain_request req) {
     }
 
     cloud_storage_clients::object_key domain_prefix{
-      fmt::format("{}", req.new_uuid)};
+      domain_cloud_prefix(req.new_uuid)};
     auto meta_persist = co_await lsm::io::open_cloud_metadata_persistence(
       remote_, bucket_, domain_prefix);
 
@@ -1205,7 +1801,7 @@ db_domain_manager::restore_domain(rpc::restore_domain_request req) {
       "Re-opening database with expected term {}",
       expected_term_);
     auto db_res = co_await replicated_database::open(
-      expected_term_, stm_.get(), staging_dir_, remote_, bucket_, as_);
+      expected_term_, stm_.get(), staging_dir_, remote_, bucket_, as_, sg_);
     if (!db_res.has_value()) {
         co_return rpc::restore_domain_reply{
           .ec = log_and_convert(db_res.error(), "Failed to reopen database: "),
@@ -1273,6 +1869,102 @@ db_domain_manager::get_database_stats() {
     }
 
     co_return result;
+}
+
+ss::future<>
+db_domain_manager::expire_preregistered_objects(chunked_vector<object_id> ids) {
+    absl::btree_set<object_id> oids(ids.begin(), ids.end());
+    auto locks_res = co_await gate_and_open_writes({
+      .object_locks = std::move(oids),
+    });
+    if (!locks_res.has_value()) {
+        vlog(
+          cd_log.debug,
+          "Not expiring preregistered objects, failed to acquire locks: {}",
+          locks_res.error());
+        co_return;
+    }
+    expire_preregistered_objects_db_update update{.object_ids = std::move(ids)};
+    auto reader = state_reader(db_->db().create_snapshot());
+    chunked_vector<write_batch_row> rows;
+    auto build_res = co_await update.build_rows(reader, rows);
+    if (!build_res.has_value()) {
+        log_and_convert(
+          build_res.error(),
+          "Error building rows for preregistered object expiry: ");
+        co_return;
+    }
+    if (rows.empty()) {
+        co_return;
+    }
+    auto write_res = co_await write_rows(locks_res.value(), std::move(rows));
+    if (!write_res.has_value()) {
+        vlog(
+          cd_log.warn,
+          "Error writing preregistered object expiry rows: {}",
+          write_res.error());
+    }
+}
+
+ss::future<std::expected<void, rpc::errc>>
+db_domain_manager::write_debug_rows(chunked_vector<write_batch_row> rows) {
+    auto locks_res = co_await gate_and_open_writes({});
+    if (!locks_res.has_value()) {
+        co_return std::unexpected(locks_res.error());
+    }
+    co_return co_await write_rows(locks_res.value(), std::move(rows));
+}
+
+ss::future<std::expected<domain_manager::read_debug_rows_result, rpc::errc>>
+db_domain_manager::read_debug_rows(
+  std::optional<ss::sstring> seek_key,
+  std::optional<ss::sstring> last_key,
+  uint32_t max_rows) {
+    auto gl_res = co_await gate_and_open_reads();
+    if (!gl_res.has_value()) {
+        co_return std::unexpected(gl_res.error());
+    }
+    try {
+        auto iter = co_await db_->db().create_iterator();
+        if (seek_key.has_value()) {
+            co_await iter.seek(*seek_key);
+        } else {
+            co_await iter.seek_to_first();
+        }
+
+        chunked_vector<write_batch_row> rows;
+        uint32_t count = 0;
+        while (iter.valid() && count <= max_rows) {
+            auto key = ss::sstring(iter.key());
+            if (last_key.has_value() && key > *last_key) {
+                break;
+            }
+            if (count == max_rows) {
+                co_return read_debug_rows_result{
+                  .rows = std::move(rows),
+                  .next_key = std::move(key),
+                };
+            }
+            rows.push_back(
+              write_batch_row{
+                .key = std::move(key),
+                .value = iter.value(),
+              });
+            ++count;
+            co_await iter.next();
+        }
+        co_return read_debug_rows_result{
+          .rows = std::move(rows),
+          .next_key = std::nullopt,
+        };
+    } catch (...) {
+        auto ex = std::current_exception();
+        if (ssx::is_shutdown_exception(ex)) {
+            co_return std::unexpected(rpc::errc::not_leader);
+        }
+        vlog(cd_log.warn, "read_debug_rows exception: {}", ex);
+        co_return std::unexpected(rpc::errc::timed_out);
+    }
 }
 
 } // namespace cloud_topics::l1

@@ -21,17 +21,18 @@ namespace cloud_topics::l1 {
 class simple_metastore;
 class simple_object_builder : public metastore::object_metadata_builder {
 public:
-    simple_object_builder()
-      : object_metadata_builder() {}
+    explicit simple_object_builder(state* s)
+      : object_metadata_builder()
+      , state_(s) {}
     ~simple_object_builder() override {}
     simple_object_builder(const simple_object_builder&) = delete;
     simple_object_builder(simple_object_builder&&) = delete;
     simple_object_builder& operator=(const simple_object_builder&) = delete;
     simple_object_builder& operator=(simple_object_builder&&) = delete;
 
-    std::expected<object_id, error>
+    ss::future<std::expected<object_id, error>>
     get_or_create_object_for(const model::topic_id_partition&) override;
-    std::expected<object_id, error>
+    ss::future<std::expected<object_id, error>>
     create_object_for(const model::topic_id_partition&) override;
     std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
@@ -44,6 +45,7 @@ public:
 
 private:
     friend class simple_metastore;
+    state* state_;
     chunked_hash_map<object_id, metastore::object_metadata::ntp_metas_list_t>
       pending_objects_;
     chunked_vector<metastore::object_metadata> finished_objects_;
@@ -101,6 +103,8 @@ public:
     ss::future<std::expected<void, errc>> compact_objects(
       const chunked_vector<object_metadata>&, const compaction_map_t&);
 
+    void preregister_objects(const chunked_vector<object_id>&);
+
     ss::future<std::expected<compaction_offsets_response, errc>>
     get_compaction_offsets(const model::topic_id_partition&, model::timestamp);
 
@@ -115,7 +119,8 @@ public:
       const model::topic_id_partition&,
       kafka::offset,
       kafka::offset,
-      size_t) override;
+      size_t,
+      include_object_metadata) override;
 
     ss::future<std::expected<extent_metadata_response, errc>>
     get_extent_metadata_backwards(
@@ -169,7 +174,8 @@ private:
       const model::topic_id_partition&,
       kafka::offset,
       kafka::offset,
-      size_t);
+      size_t,
+      include_object_metadata);
     static std::expected<extent_metadata_response, errc>
     get_extent_metadata_backwards(
       const state&,

@@ -609,8 +609,9 @@ ss::future<bool> sharded_store::delete_subject_version(
     co_return result;
 }
 
-ss::future<mode> sharded_store::get_mode(context ctx) {
-    co_return _store.local().get_mode(ctx).value();
+ss::future<mode>
+sharded_store::get_mode(context ctx, default_to_global fallback) {
+    co_return _store.local().get_mode(ctx, fallback).value();
 }
 
 ss::future<mode>
@@ -662,8 +663,9 @@ sharded_store::get_context_mode_written_at(context ctx) {
     co_return _store.local().get_context_mode_written_at(ctx).value();
 }
 
-ss::future<compatibility_level> sharded_store::get_compatibility(context ctx) {
-    co_return _store.local().get_compatibility(ctx).value();
+ss::future<compatibility_level>
+sharded_store::get_compatibility(context ctx, default_to_global fallback) {
+    co_return _store.local().get_compatibility(ctx, fallback).value();
 }
 
 ss::future<compatibility_level> sharded_store::get_compatibility(

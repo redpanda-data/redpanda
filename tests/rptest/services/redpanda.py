@@ -805,6 +805,25 @@ class SISettings:
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self._load_abs_context(logger, test_context)
 
+        cloud_storage_url_style = test_context.globals.get(
+            "cloud_storage_url_style", None
+        )
+        if cloud_storage_url_style is not None:
+            if cloud_storage_url_style not in ("path", "virtual_host"):
+                raise ValueError(
+                    f"Invalid cloud_storage_url_style: {cloud_storage_url_style!r}, "
+                    f"expected 'path' or 'virtual_host'"
+                )
+            logger.info(
+                f"Overriding cloud_storage_url_style from globals: "
+                f"{cloud_storage_url_style}"
+            )
+            self.cloud_storage_url_style = cloud_storage_url_style
+            if cloud_storage_url_style == "path":
+                self.addressing_style = S3AddressingStyle.PATH
+            else:
+                self.addressing_style = S3AddressingStyle.VIRTUAL
+
     def _load_abs_context(self, logger: Logger, test_context: TestContext) -> None:
         storage_account = test_context.globals.get(
             self.GLOBAL_ABS_STORAGE_ACCOUNT, None
@@ -1136,7 +1155,7 @@ class LoggingConfig:
     # assumed it was always supported/does not require special handling.
     LOGGER_GENESIS: dict[str, RedpandaVersionTriple] = {
         "datalake": (24, 3, 1),
-        "cloud_topics-compaction": (26, 1, 1),
+        "cloud_topics_compaction": (26, 1, 1),
     }
 
     def __init__(self, default_level: str, logger_levels: dict[str, str] = {}) -> None:
@@ -1798,10 +1817,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         super().__init__()
 
-        # Cloudv2 agents run on very small instances that can easily be
-        # overwhelmed by too many concurrent ssh sessions.
-        self._max_workers = 10
-
         self.config_profile_name = config_profile_name
         self._min_brokers = min_brokers
         self._superuser = RedpandaService.SUPERUSER_CREDENTIALS
@@ -1871,7 +1886,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             remote_uri=remote_uri,
             cluster_id=cluster_id,
             cluster_provider=self._cloud_cluster.config.provider,
-            cluster_region=self._cloud_cluster.config.region,
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token,
         )
@@ -4721,7 +4735,7 @@ class RedpandaService(Service, RedpandaServiceABC):
             return "/opt/redpanda"
         return self._context.globals["rp_install_path_root"]
 
-    def find_binary(self, name: str):
+    def find_binary(self, name: str) -> str:
         rp_install_path_root = self.rp_install_path()
         return f"{rp_install_path_root}/bin/{name}"
 
@@ -6061,6 +6075,10 @@ class RedpandaService(Service, RedpandaServiceABC):
             manifest_not_uploaded: list[Partition] = []
             for p in self.partitions():
                 try:
+                    if p.topic == "__consumer_offsets":
+                        # We don't tier this topic, so skip it
+                        continue
+
                     status = self._admin.get_partition_cloud_storage_status(
                         p.topic, p.index, node=p.leader
                     )
@@ -6243,7 +6261,12 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         n_partitions = len(cloud_storage_partitions)
         timeout = (n_partitions // 100) * 60 + 120
-        wait_until(all_partitions_scrubbed, timeout_sec=timeout, backoff_sec=5)
+        wait_until(
+            all_partitions_scrubbed,
+            timeout_sec=timeout,
+            backoff_sec=5,
+            retry_on_exc=True,
+        )
 
         return all_anomalies
 

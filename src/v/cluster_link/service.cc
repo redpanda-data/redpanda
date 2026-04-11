@@ -251,10 +251,12 @@ make_remote_consumer_configuration(const model::connection_config& conn_cfg) {
     dc_configuration.partition_max_bytes
       = conn_cfg.get_fetch_partition_max_bytes();
 
+    const size_t partition_max_buffered
+      = 2 * conn_cfg.get_fetch_partition_max_bytes();
     return replication::mux_remote_consumer::configuration{
       .client_id = conn_cfg.client_id,
       .direct_consumer_configuration = dc_configuration,
-      .partition_max_buffered = max_buffered_bytes,
+      .partition_max_buffered = partition_max_buffered,
       .fetch_max_wait = max_wait_time,
     };
 }
@@ -735,7 +737,9 @@ public:
     }
 
 private:
-    ss::future<std::optional<kafka::offset>> fetch_offset_for_timestamp(
+    /// Dispatch a ListOffsets request for the given timestamp and return the
+    /// offset from the response. Returns std::nullopt on transient errors.
+    ss::future<std::optional<kafka::offset>> dispatch_list_offsets(
       retry_chain_node& rcn,
       const ::model::topic_partition& tp,
       ::model::timestamp ts) {
@@ -799,13 +803,43 @@ private:
               partition.error_code);
             co_return std::nullopt;
         }
-        vlog(
-          cllog.debug,
-          "[{}] Fetched offset {} for timestamp {}",
-          tp,
-          partition.offset,
-          ts);
         co_return partition.offset;
+    }
+
+    ss::future<std::optional<kafka::offset>> fetch_offset_for_timestamp(
+      retry_chain_node& rcn,
+      const ::model::topic_partition& tp,
+      ::model::timestamp ts) {
+        auto offset = co_await dispatch_list_offsets(rcn, tp, ts);
+        if (!offset) {
+            co_return std::nullopt;
+        }
+        if (*offset >= kafka::offset{0}) {
+            vlog(
+              cllog.debug,
+              "[{}] Fetched offset {} for timestamp {}",
+              tp,
+              *offset,
+              ts);
+            co_return offset;
+        }
+        // ListOffsets returns offset -1 when the timestamp is past the end
+        // of the log (or the partition is empty). Fall back to the last
+        // stable offset (LSO) so we start replicating only new committed
+        // data. We query with latest_timestamp which, combined with our
+        // read_committed isolation level, returns the LSO.
+        auto lso = co_await dispatch_list_offsets(
+          rcn, tp, kafka::list_offsets_request::latest_timestamp);
+        if (lso) {
+            vlog(
+              cllog.info,
+              "[{}] Timestamp {} is past the end of the source log, "
+              "falling back to last stable offset {}",
+              tp,
+              ts,
+              *lso);
+        }
+        co_return lso;
     }
 
     ss::future<std::optional<kafka::api_version>>

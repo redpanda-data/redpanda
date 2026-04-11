@@ -20,10 +20,11 @@ namespace cloud_topics::l1 {
 struct metadata_row_value
   : public serde::envelope<
       metadata_row_value,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     auto serde_fields() {
-        return std::tie(start_offset, next_offset, compaction_epoch, size);
+        return std::tie(
+          start_offset, next_offset, compaction_epoch, size, num_extents);
     }
     kafka::offset start_offset{};
     kafka::offset next_offset{};
@@ -31,6 +32,8 @@ struct metadata_row_value
     // Partition's size in bytes, updated incrementally as extents are
     // added/removed.
     size_t size{0};
+    // Number of extents in the partition, updated incrementally.
+    size_t num_extents{0};
 };
 
 struct extent_row_value

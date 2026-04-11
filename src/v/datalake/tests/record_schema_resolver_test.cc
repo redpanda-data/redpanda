@@ -149,8 +149,8 @@ TEST_F(RecordSchemaResolverTest, TestAvroSchemaHappyPath) {
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(1, resolved_buf.type->id.schema_id());
-    EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
+    EXPECT_EQ(1, (*resolved_buf.type)->id.schema_id());
+    EXPECT_FALSE((*resolved_buf.type)->id.protobuf_offsets.has_value());
 
     // Check that the resolved schema looks correct. Note, the field IDs are
     // unimportant since they are assigned outside of the resolver -- it's just
@@ -163,7 +163,7 @@ TEST_F(RecordSchemaResolverTest, TestAvroSchemaHappyPath) {
           nested_field::create(0, "next", field_required::yes, int_type{}));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
 }
 
 TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPath) {
@@ -179,9 +179,9 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPath) {
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(2, resolved_buf.type->id.schema_id());
-    EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
-    EXPECT_EQ(resolved_buf.type->id.protobuf_offsets.value(), pb_offsets);
+    EXPECT_EQ(2, (*resolved_buf.type)->id.schema_id());
+    EXPECT_TRUE((*resolved_buf.type)->id.protobuf_offsets.has_value());
+    EXPECT_EQ((*resolved_buf.type)->id.protobuf_offsets.value(), pb_offsets);
 
     const auto expected_type = field_type{[] {
         auto expected_struct = struct_type{};
@@ -193,7 +193,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPath) {
             2, "inner_number_1", field_required::no, int_type{}));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
 }
 
 TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNested) {
@@ -210,9 +210,9 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNested) {
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(2, resolved_buf.type->id.schema_id());
-    EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
-    EXPECT_EQ(resolved_buf.type->id.protobuf_offsets.value(), pb_offsets);
+    EXPECT_EQ(2, (*resolved_buf.type)->id.schema_id());
+    EXPECT_TRUE((*resolved_buf.type)->id.protobuf_offsets.has_value());
+    EXPECT_EQ((*resolved_buf.type)->id.protobuf_offsets.value(), pb_offsets);
 
     const auto expected_type = field_type{[] {
         auto expected_struct = struct_type{};
@@ -234,7 +234,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNested) {
             3, "inner", field_required::no, std::move(inner_struct)));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
 }
 
 TEST_F(RecordSchemaResolverTest, TestProtobufSchemaReferences) {
@@ -304,7 +304,7 @@ message NestedMessage {
             2, "simple", field_required::no, std::move(simple_struct)));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
 }
 
 TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNoOffsets) {
@@ -319,10 +319,11 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNoOffsets) {
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(2, resolved_buf.type->id.schema_id());
-    EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
+    EXPECT_EQ(2, (*resolved_buf.type)->id.schema_id());
+    EXPECT_TRUE((*resolved_buf.type)->id.protobuf_offsets.has_value());
     EXPECT_EQ(
-      resolved_buf.type->id.protobuf_offsets.value(), std::vector<int32_t>{0});
+      (*resolved_buf.type)->id.protobuf_offsets.value(),
+      std::vector<int32_t>{0});
 
     // When there are no protobuf offsets, we return the first descriptor,
     // which in this case translates to an empty struct.
@@ -330,7 +331,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaHappyPathNoOffsets) {
         auto expected_struct = struct_type{};
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
 }
 
 TEST_F(RecordSchemaResolverTest, TestProtobufSchemaBadOffsets) {
@@ -357,8 +358,8 @@ TEST_F(RecordSchemaResolverTest, TestJsonSchemaHappyPath) {
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(3, resolved_buf.type->id.schema_id());
-    EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
+    EXPECT_EQ(3, (*resolved_buf.type)->id.schema_id());
+    EXPECT_FALSE((*resolved_buf.type)->id.protobuf_offsets.has_value());
 
     // Check that the resolved schema looks correct. Note, the field IDs are
     // unimportant since they are assigned outside of the resolver -- it's just
@@ -373,7 +374,7 @@ TEST_F(RecordSchemaResolverTest, TestJsonSchemaHappyPath) {
             0, "json_value", field_required::no, long_type{}));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
 }
 
 TEST_F(RecordSchemaResolverTest, TestMissingMagic) {
@@ -405,8 +406,8 @@ TEST_F(RecordSchemaResolverTest, TestSchemaRegistryError) {
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(1, resolved_buf.type->id.schema_id());
-    EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
+    EXPECT_EQ(1, (*resolved_buf.type)->id.schema_id());
+    EXPECT_FALSE((*resolved_buf.type)->id.protobuf_offsets.has_value());
 }
 
 TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf) {
@@ -419,18 +420,19 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf) {
       subject("latest-proto"),
       std::nullopt,
       config::mock_binding(std::chrono::milliseconds(0s)),
+      std::nullopt,
       std::nullopt);
     auto res = resolver.resolve_buf_type(buf.copy()).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(2, resolved_buf.type->id.schema_id());
+    EXPECT_EQ(2, (*resolved_buf.type)->id.schema_id());
     EXPECT_THAT(
-      resolved_buf.type->id.protobuf_offsets,
+      (*resolved_buf.type)->id.protobuf_offsets,
       testing::Optional(testing::ElementsAre(0)));
 
     const auto expected_type = field_type{struct_type{}};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     EXPECT_THAT(resolved_buf.parsable_buf, testing::Optional(std::ref(buf)));
 }
 
@@ -444,14 +446,15 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf_MessageName) {
       subject("latest-proto"),
       "datalake.proto.nested_message.inner_message_t1",
       config::mock_binding(std::chrono::milliseconds(0s)),
+      std::nullopt,
       std::nullopt);
     auto res = resolver.resolve_buf_type(buf.copy()).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(2, resolved_buf.type->id.schema_id());
+    EXPECT_EQ(2, (*resolved_buf.type)->id.schema_id());
     EXPECT_THAT(
-      resolved_buf.type->id.protobuf_offsets,
+      (*resolved_buf.type)->id.protobuf_offsets,
       testing::Optional(testing::ElementsAre(2, 0)));
 
     const auto expected_type = field_type{[] {
@@ -464,7 +467,7 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf_MessageName) {
             2, "inner_number_1", field_required::no, int_type{}));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     EXPECT_THAT(resolved_buf.parsable_buf, testing::Optional(std::ref(buf)));
 }
 
@@ -481,13 +484,14 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Avro) {
       subject("latest-avro"),
       std::nullopt,
       config::mock_binding(std::chrono::milliseconds(0s)),
+      std::nullopt,
       std::nullopt);
     auto res = resolver.resolve_buf_type(buf.copy()).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(1, resolved_buf.type->id.schema_id());
-    EXPECT_EQ(resolved_buf.type->id.protobuf_offsets, std::nullopt);
+    EXPECT_EQ(1, (*resolved_buf.type)->id.schema_id());
+    EXPECT_EQ((*resolved_buf.type)->id.protobuf_offsets, std::nullopt);
 
     const auto expected_type = field_type{[] {
         auto expected_struct = struct_type{};
@@ -497,7 +501,7 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Avro) {
           nested_field::create(0, "next", field_required::yes, int_type{}));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     EXPECT_THAT(resolved_buf.parsable_buf, testing::Optional(std::ref(buf)));
 }
 
@@ -511,13 +515,14 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Json) {
       subject("latest-json"),
       std::nullopt,
       config::mock_binding(std::chrono::milliseconds(0s)),
+      std::nullopt,
       std::nullopt);
     auto res = resolver.resolve_buf_type(buf.copy()).get();
     ASSERT_FALSE(res.has_error());
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
-    EXPECT_EQ(3, resolved_buf.type->id.schema_id());
-    EXPECT_EQ(resolved_buf.type->id.protobuf_offsets, std::nullopt);
+    EXPECT_EQ(3, (*resolved_buf.type)->id.schema_id());
+    EXPECT_EQ((*resolved_buf.type)->id.protobuf_offsets, std::nullopt);
 
     const auto expected_type = field_type{[] {
         auto expected_struct = struct_type{};
@@ -529,7 +534,7 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Json) {
             0, "json_value", field_required::no, long_type{}));
         return expected_struct;
     }()};
-    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     EXPECT_THAT(resolved_buf.parsable_buf, testing::Optional(std::ref(buf)));
 }
 
@@ -694,11 +699,12 @@ TEST(CachedRecordSchemaResolverTest, TestProtobufSchemaCache) {
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
-        EXPECT_EQ(2, resolved_buf.type->id.schema_id());
+        EXPECT_EQ(2, (*resolved_buf.type)->id.schema_id());
         ASSERT_EQ(
-          sr->get_count(resolved_buf.type->id.schema_id), expected_sr_count);
-        EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
-        EXPECT_EQ(resolved_buf.type->id.protobuf_offsets.value(), pb_offsets);
+          sr->get_count((*resolved_buf.type)->id.schema_id), expected_sr_count);
+        EXPECT_TRUE((*resolved_buf.type)->id.protobuf_offsets.has_value());
+        EXPECT_EQ(
+          (*resolved_buf.type)->id.protobuf_offsets.value(), pb_offsets);
 
         const auto expected_type = field_type{[] {
             auto expected_struct = struct_type{};
@@ -710,7 +716,7 @@ TEST(CachedRecordSchemaResolverTest, TestProtobufSchemaCache) {
                 2, "inner_number_1", field_required::no, int_type{}));
             return expected_struct;
         }()};
-        EXPECT_EQ(resolved_buf.type->type, expected_type);
+        EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     };
 
     // First access to a schema, should hit the schema registry.
@@ -737,10 +743,10 @@ TEST(CachedRecordSchemaResolverTest, TestAvroSchemaCache) {
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
-        EXPECT_EQ(1, resolved_buf.type->id.schema_id());
+        EXPECT_EQ(1, (*resolved_buf.type)->id.schema_id());
         ASSERT_EQ(
-          sr->get_count(resolved_buf.type->id.schema_id), expected_sr_count);
-        EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
+          sr->get_count((*resolved_buf.type)->id.schema_id), expected_sr_count);
+        EXPECT_FALSE((*resolved_buf.type)->id.protobuf_offsets.has_value());
 
         const auto expected_type = field_type{[] {
             auto expected_struct = struct_type{};
@@ -751,7 +757,7 @@ TEST(CachedRecordSchemaResolverTest, TestAvroSchemaCache) {
               nested_field::create(0, "next", field_required::yes, int_type{}));
             return expected_struct;
         }()};
-        EXPECT_EQ(resolved_buf.type->type, expected_type);
+        EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     };
 
     // First access to a schema, should hit the schema registry.
@@ -778,10 +784,10 @@ TEST(CachedRecordSchemaResolverTest, TestJsonSchemaCache) {
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
-        EXPECT_EQ(10, resolved_buf.type->id.schema_id());
+        EXPECT_EQ(10, (*resolved_buf.type)->id.schema_id());
         ASSERT_EQ(
-          sr->get_count(resolved_buf.type->id.schema_id), expected_sr_count);
-        EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
+          sr->get_count((*resolved_buf.type)->id.schema_id), expected_sr_count);
+        EXPECT_FALSE((*resolved_buf.type)->id.protobuf_offsets.has_value());
 
         const auto expected_type = field_type{[] {
             auto expected_struct = struct_type{};
@@ -793,7 +799,7 @@ TEST(CachedRecordSchemaResolverTest, TestJsonSchemaCache) {
                 0, "json_value", field_required::no, long_type{}));
             return expected_struct;
         }()};
-        EXPECT_EQ(resolved_buf.type->type, expected_type);
+        EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     };
 
     // First access to a schema, should hit the schema registry.
@@ -826,12 +832,13 @@ TEST(CachedRecordSchemaResolverTest, TestSchemaCacheEviction) {
         ASSERT_FALSE(res.has_error());
         auto& resolved_buf = res.value();
         ASSERT_TRUE(resolved_buf.type.has_value());
-        EXPECT_EQ(schema_id, resolved_buf.type->id.schema_id());
+        EXPECT_EQ(schema_id, (*resolved_buf.type)->id.schema_id());
         ASSERT_EQ(
-          sr->get_count(resolved_buf.type->id.schema_id), expected_sr_count);
-        EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
-        EXPECT_EQ(resolved_buf.type->id.protobuf_offsets.value(), pb_offsets);
-        EXPECT_EQ(resolved_buf.type->type, expected_type);
+          sr->get_count((*resolved_buf.type)->id.schema_id), expected_sr_count);
+        EXPECT_TRUE((*resolved_buf.type)->id.protobuf_offsets.has_value());
+        EXPECT_EQ(
+          (*resolved_buf.type)->id.protobuf_offsets.value(), pb_offsets);
+        EXPECT_EQ((*resolved_buf.type)->type, expected_type);
     };
 
     const auto schema_2_expected_type = field_type{[] {

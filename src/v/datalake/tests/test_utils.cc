@@ -41,7 +41,7 @@ direct_table_creator::ensure_table(
   record_schema_components comps) const {
     auto table_id = table_id_provider::table_id(topic);
 
-    std::optional<resolved_type> val_type;
+    std::optional<shared_resolved_type_t> val_type;
     if (comps.val_identifier) {
         auto type_res = co_await type_resolver_.resolve_identifier(
           comps.val_identifier.value());

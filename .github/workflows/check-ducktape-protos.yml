@@ -1,0 +1,67 @@
+---
+# Copyright 2026 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+# Verify that the generated Python protobuf bindings used by ducktape
+# tests are up-to-date with the .proto source files. If this check
+# fails, run:
+#
+#   bazel fetch //proto/...
+#   tools/regenerate_ducktape_protos.sh
+#
+# and commit the resulting changes.
+name: Check ducktape proto bindings
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'proto/redpanda/**/*.proto'
+      - 'tools/regenerate_ducktape_protos.sh'
+      - 'tests/rptest/clients/admin/proto/**'
+      - '.github/workflows/check-ducktape-protos.yml'
+  pull_request:
+    paths:
+      - 'proto/redpanda/**/*.proto'
+      - 'tools/regenerate_ducktape_protos.sh'
+      - 'tests/rptest/clients/admin/proto/**'
+      - '.github/workflows/check-ducktape-protos.yml'
+  merge_group:
+    types: [checks_requested]
+jobs:
+  check-ducktape-proto-gen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+      - name: Fetch proto dependencies (googleapis)
+        env:
+          CI: false
+        run: bazel fetch --lockfile_mode=off //proto/...
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Regenerate ducktape proto bindings
+        env:
+          CI: false
+        run: tools/regenerate_ducktape_protos.sh
+      - name: Check for uncommitted changes
+        run: |
+          if ! git diff --exit-code tests/rptest/clients/admin/; then
+            git diff --stat tests/rptest/clients/admin/
+            echo ""
+            echo "Error: Generated ducktape proto bindings are out of date."
+            echo "Run the following and commit the changes:"
+            echo ""
+            echo "  bazel fetch //proto/..."
+            echo "  tools/regenerate_ducktape_protos.sh"
+            exit 1
+          fi

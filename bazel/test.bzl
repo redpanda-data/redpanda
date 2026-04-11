@@ -10,7 +10,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
-load(":internal.bzl", "redpanda_copts")
+load(":internal.bzl", "antithesis_deps", "redpanda_copts")
 
 def _has_flags(args, *flags):
     """
@@ -153,7 +153,7 @@ def _redpanda_cc_test(
         timeout = timeout,
         srcs = srcs,
         defines = defines,
-        deps = deps,
+        deps = deps + antithesis_deps(),
         copts = redpanda_copts(),
         args = args,
         features = [
@@ -390,7 +390,8 @@ def redpanda_cc_bench(
         duration = None,
         data = [],
         tags = [],
-        redirect_stderr = False):
+        redirect_stderr = False,
+        test_regex = None):
     """
     Create a seastar benchmark target
 
@@ -408,8 +409,10 @@ def redpanda_cc_bench(
       data: any data files available to the benchmark as runfiles
       tags: custom tags for the test
       timeout: the timeout for smoke testing the benchmark
-      redirect_stderr: if True, redirects stdout (seastar logging, mostly) to a file
+      redirect_stderr: if True, redirects stderr (seastar logging, mostly) to a file
                        so that it does not overwhelm the result output
+      test_regex: optional regex passed as `-t <regex>` to the smoke test to select
+                  a subset of benchmarks to run
     """
 
     # We require this naming convention as we do things like extract
@@ -456,7 +459,7 @@ def redpanda_cc_bench(
         name = binary_name,
         srcs = srcs,
         defines = defines,
-        deps = deps,
+        deps = deps + antithesis_deps(),
         testonly = True,
         copts = redpanda_copts(),
         features = [
@@ -494,6 +497,9 @@ def redpanda_cc_bench(
     # we write a wrapper to test the benchmark, which tries to
     # run it as quickly as possible in order to smoke test it
     test_data, test_env = _test_options()
+    test_args = args + ["--iterations=1 --runs=1 --duration=0 --no-stdout --overprovisioned"]
+    if test_regex != None:
+        test_args = test_args + ["-t {}".format(test_regex)]
     py_test(
         name = name + "_test",
         timeout = timeout,
@@ -501,6 +507,6 @@ def redpanda_cc_bench(
         tags = resource_tags + tags,
         srcs = ["//bazel:bench_wrapper"],
         env = test_env | env,
-        args = args + ["--iterations=1 --runs=1 --duration=0 --no-stdout --overprovisioned"],
+        args = test_args,
         data = [":" + binary_name] + data + test_data,
     )

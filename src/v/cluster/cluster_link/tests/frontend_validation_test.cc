@@ -980,17 +980,6 @@ TEST_F_CORO(
           co_await upsert_cluster_link(std::move(m1)),
           cluster::cluster_link::errc::topic_property_excluded_from_mirroring);
     }
-    {
-        auto m1 = create_base_metadata();
-        m1.configuration.topic_metadata_mirroring_cfg.topic_properties_to_mirror
-          = ::cluster_link::model::topic_metadata_mirroring_config::
-            properties_set{
-              ss::sstring{kafka::topic_property_redpanda_storage_mode}};
-
-        EXPECT_EQ(
-          co_await upsert_cluster_link(std::move(m1)),
-          cluster::cluster_link::errc::topic_property_excluded_from_mirroring);
-    }
 }
 
 TEST_F_CORO(frontend_validation_test, update_mirror_topic_properties_success) {

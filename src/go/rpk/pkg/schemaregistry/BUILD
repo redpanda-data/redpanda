@@ -1,8 +1,11 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "schemaregistry",
-    srcs = ["client.go"],
+    srcs = [
+        "client.go",
+        "context.go",
+    ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry",
     visibility = ["//visibility:public"],
     deps = [
@@ -17,4 +20,11 @@ go_library(
         "@com_github_twmb_franz_go_pkg_sr//:sr",
         "@com_github_twmb_franz_go_plugin_kzap//:kzap",
     ],
+)
+
+go_test(
+    name = "schemaregistry_test",
+    srcs = ["context_test.go"],
+    embed = [":schemaregistry"],
+    deps = ["@com_github_stretchr_testify//require"],
 )

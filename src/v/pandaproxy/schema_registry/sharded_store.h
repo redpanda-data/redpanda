@@ -152,7 +152,7 @@ public:
     ss::future<bool> delete_subject_version(
       context_subject sub, schema_version version, force f = force::no);
     ///\brief Get the mode of a context.
-    ss::future<mode> get_mode(context ctx);
+    ss::future<mode> get_mode(context ctx, default_to_global fallback);
 
     ///\brief Get the mode for a subject, or fallback to global.
     ss::future<mode> get_mode(context_subject sub, default_to_global fallback);
@@ -179,12 +179,14 @@ public:
     ss::future<chunked_vector<seq_marker>>
     get_context_mode_written_at(context ctx);
 
-    ///\brief Get the compatibility level of a context.
-    ss::future<compatibility_level> get_compatibility(context ctx);
+    ///\brief Get the compatibility level for a context, or fallback to global.
+    ss::future<compatibility_level>
+    get_compatibility(context ctx, default_to_global fallback);
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
     ss::future<compatibility_level>
     get_compatibility(context_subject sub, default_to_global fallback);
+
     ///\brief Set the compatibility level of a context.
     ss::future<bool> set_compatibility(
       seq_marker marker, context ctx, compatibility_level compatibility);

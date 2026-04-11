@@ -121,13 +121,6 @@ public:
       std::optional<std::reference_wrapper<ss::abort_source>> as
       = std::nullopt);
 
-    // Replicates the given batch and waits for it to finish applying.
-    // Success indicates the batch was replicated and applied, but does not
-    // guarantee the update semantically succeeded (e.g., if it was rejected
-    // due to stale data).
-    ss::future<std::expected<model::offset, error>> replicate_and_wait(
-      model::term_id term, model::record_batch batch, ss::abort_source& as);
-
     // Accessors for current state.
     const state& get_state() const { return state_; }
     l1::domain_uuid domain() const { return state_.domain; }
@@ -137,6 +130,13 @@ public:
     get_initial_recovery_policy() const final {
         return raft::stm_initial_recovery_policy::read_everything;
     }
+
+    /// Serializes the update into a record batch and replicates it through
+    /// Raft. Waits for the batch to be applied before returning. The update
+    /// is applied only if can_apply() passes during do_apply(); callers
+    /// should check can_apply() beforehand to avoid unnecessary replication.
+    ss::future<std::expected<model::offset, error>>
+    update(model::term_id term, update_metadata_update, ss::abort_source& as);
 
 protected:
     ss::future<> do_apply(const model::record_batch&) override;
@@ -152,6 +152,13 @@ protected:
     ss::future<iobuf> take_raft_snapshot() final;
 
 private:
+    // Replicates the given batch and waits for it to finish applying.
+    // Success indicates the batch was replicated and applied, but does not
+    // guarantee the update semantically succeeded (e.g., if it was rejected
+    // due to stale data).
+    ss::future<std::expected<model::offset, error>> replicate_and_wait(
+      model::term_id term, model::record_batch batch, ss::abort_source& as);
+
     // The deterministic state managed by this STM.
     state state_;
 };

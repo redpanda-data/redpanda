@@ -14,6 +14,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/go/rpk/pkg/cli/acl",
+        "//src/go/rpk/pkg/cli/benchmark",
         "//src/go/rpk/pkg/cli/cloud",
         "//src/go/rpk/pkg/cli/cluster",
         "//src/go/rpk/pkg/cli/connect",

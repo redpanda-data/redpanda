@@ -64,6 +64,51 @@ class MetastoreServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    def call_get_database_stats(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsResponse]:
+        """Low-level method to call GetDatabaseStats, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/GetDatabaseStats'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsResponse, extra_headers, timeout_seconds)
+
+    def get_database_stats(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsResponse:
+        response = self.call_get_database_stats(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    def call_write_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsResponse]:
+        """Low-level method to call WriteRows, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/WriteRows'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsResponse, extra_headers, timeout_seconds)
+
+    def write_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsResponse:
+        response = self.call_write_rows(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    def call_read_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse]:
+        """Low-level method to call ReadRows, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ReadRows'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse, extra_headers, timeout_seconds)
+
+    def read_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse:
+        response = self.call_read_rows(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 class AsyncMetastoreServiceClient:
 
     def __init__(self, base_url: str, http_client: aiohttp.ClientSession, protocol: ConnectProtocol=ConnectProtocol.CONNECT_PROTOBUF):
@@ -100,6 +145,51 @@ class AsyncMetastoreServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    async def call_get_database_stats(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsResponse]:
+        """Low-level method to call GetDatabaseStats, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/GetDatabaseStats'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsResponse, extra_headers, timeout_seconds)
+
+    async def get_database_stats(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsResponse:
+        response = await self.call_get_database_stats(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    async def call_write_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsResponse]:
+        """Low-level method to call WriteRows, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/WriteRows'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsResponse, extra_headers, timeout_seconds)
+
+    async def write_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsResponse:
+        response = await self.call_write_rows(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    async def call_read_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse]:
+        """Low-level method to call ReadRows, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ReadRows'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse, extra_headers, timeout_seconds)
+
+    async def read_rows(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse:
+        response = await self.call_read_rows(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 @typing.runtime_checkable
 class MetastoreServiceProtocol(typing.Protocol):
 
@@ -108,10 +198,22 @@ class MetastoreServiceProtocol(typing.Protocol):
 
     def get_size(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetSizeRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetSizeResponse]:
         ...
+
+    def get_database_stats(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsResponse]:
+        ...
+
+    def write_rows(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsResponse]:
+        ...
+
+    def read_rows(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse]:
+        ...
 METASTORE_SERVICE_PATH_PREFIX = '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService'
 
 def wsgi_metastore_service(implementation: MetastoreServiceProtocol) -> WSGIApplication:
     app = ConnectWSGI()
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/GetOffsets', implementation.get_offsets, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetOffsetsRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/GetSize', implementation.get_size, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetSizeRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/GetDatabaseStats', implementation.get_database_stats, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/WriteRows', implementation.write_rows, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ReadRows', implementation.read_rows, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest)
     return app

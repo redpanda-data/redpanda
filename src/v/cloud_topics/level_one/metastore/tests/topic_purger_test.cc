@@ -126,7 +126,7 @@ public:
             auto tp = model::topic_id_partition(
               make_tid(i), model::partition_id{0});
 
-            auto oid_res = builder->get_or_create_object_for(tp);
+            auto oid_res = co_await builder->get_or_create_object_for(tp);
             ASSERT_TRUE_CORO(oid_res.has_value());
 
             auto add_res = builder->add(

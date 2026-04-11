@@ -112,12 +112,21 @@ public:
     // This is used to preserve ordering of concurrently uploading requests.
     l0::producer_queue& producer_queue();
 
+    // Register this reader with the STM.
+    //
+    // By registering this reader, it's ensured that we don't GC any of the
+    // data at the time this method is called. The state here will be filled in
+    // by the STM for bookkeeping. The pointer to `state` must be kept stable
+    // for it's entire lifetime.
+    void register_reader(active_reader_state* state);
+
 private:
     ss::future<> do_apply(const model::record_batch&) override;
     void apply_placeholder(const model::record_batch&);
     void apply_advance_reconciled_offset(model::record);
     void apply_set_start_offset(model::record);
     void apply_advance_epoch(model::record, model::offset base_offset);
+    void apply_reset_state(model::record);
 
     ss::future<raft::local_snapshot_applied>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
@@ -135,6 +144,8 @@ private:
 
 private:
     l0::producer_queue _producer_queue;
+    intrusive_list<active_reader_state, &active_reader_state::hook>
+      _active_readers;
     /// Lock to protect the state from concurrent access.
     /// When the new epoch is applied we need to acquire a write lock.
     /// Otherwise, we need to acquire a read lock.

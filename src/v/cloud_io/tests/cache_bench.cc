@@ -26,11 +26,12 @@ static void run_test(int test_scale) {
         names.push_back(ssx::sformat("name-{}", i));
     }
 
+    perf_tests::start_measuring_time();
     for (int i = 0; i < test_scale; i++) {
-        perf_tests::start_measuring_time();
         tracker.add(names[i % test_scale], make_ts(i), 0);
-        perf_tests::stop_measuring_time();
     }
+    perf_tests::stop_measuring_time();
+    perf_tests::do_not_optimize(tracker);
 }
 
 PERF_TEST(cache_utils, cm_sketch_1000) { run_test(1000); }

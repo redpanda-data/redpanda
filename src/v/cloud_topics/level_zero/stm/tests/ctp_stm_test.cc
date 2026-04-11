@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_commands.h"
 #include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
@@ -49,6 +50,10 @@ struct ctp_stm_accessor {
 
     bool epoch_cv_has_waiters(ctp_stm& stm) {
         return stm._epoch_updated_cv.has_waiters();
+    }
+
+    model::offset max_removable_local_log_offset(ctp_stm& stm) {
+        return stm.max_removable_local_log_offset();
     }
 };
 } // namespace cloud_topics
@@ -132,6 +137,18 @@ public:
 
         // fence_guard released here when it goes out of scope
         co_return res.has_value();
+    }
+
+    ss::future<std::expected<model::offset, ct::ctp_stm_api_errc>>
+    replicate_reset_state(
+      raft::raft_node_instance& node, ct::ctp_stm_state state) {
+        storage::record_batch_builder builder(
+          model::record_batch_type::ctp_stm_command, model::offset{0});
+        builder.add_raw_kv(
+          serde::to_iobuf(ct::reset_state_cmd::key),
+          serde::to_iobuf(ct::reset_state_cmd(std::move(state))));
+        co_return co_await replicate_record_batch(
+          node, std::move(builder).build());
     }
 
     ss::abort_source as;
@@ -1131,4 +1148,161 @@ TEST_F_CORO(
     // wasn't actually idle - it had unreconciled data that blocked LRLO from
     // reaching the epoch_window_offset
     ASSERT_EQ_CORO(estimate_after_sync.value(), estimate_before_sync.value());
+}
+
+TEST_F_CORO(ctp_stm_fixture, test_active_reader_holds_back_gc) {
+    // An active reader registered with the STM should hold back both
+    // estimate_inactive_epoch() and max_removable_local_log_offset() to
+    // the values captured at registration time. This prevents prefix
+    // truncation from removing data a reader still needs.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+    auto stm = get_stm<0>(leader);
+    ct::ctp_stm_accessor accessor;
+
+    // Replicate epoch 5 placeholder and reconcile it.
+    auto b1 = make_record_batch(ct::cluster_epoch{5}, model::offset{0}, 0);
+    co_await replicate_record_batch(leader, std::move(b1));
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{0}, model::no_timeout, as);
+
+    // Advance epoch to 10 and sync LRLO past the advance_epoch batch.
+    co_await leader_api.advance_epoch(
+      ct::cluster_epoch{10}, model::no_timeout, as);
+    co_await leader_api.sync_to_next_placeholder(model::no_timeout, as);
+
+    // Capture baseline: epoch estimate=4, lrlo from state.
+    auto baseline_epoch = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(baseline_epoch.has_value());
+    ASSERT_EQ_CORO(baseline_epoch.value(), ct::cluster_epoch{4});
+    auto baseline_lrlo = accessor.max_removable_local_log_offset(*stm);
+
+    // Register a reader - captures the current state.
+    auto reader1 = std::make_unique<ct::active_reader_state>();
+    leader_api.register_reader(reader1.get());
+    ASSERT_EQ_CORO(reader1->inactive_epoch, baseline_epoch);
+    ASSERT_EQ_CORO(reader1->lrlo, baseline_lrlo);
+
+    // Advance the state: new epoch 15, replicate + reconcile more data.
+    auto b2 = make_record_batch(ct::cluster_epoch{15}, model::offset{1}, 1);
+    co_await replicate_record_batch(leader, std::move(b2));
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{1}, model::no_timeout, as);
+    co_await leader_api.advance_epoch(
+      ct::cluster_epoch{20}, model::no_timeout, as);
+    co_await leader_api.sync_to_next_placeholder(model::no_timeout, as);
+
+    // The reader should hold back both values to the captured state.
+    ASSERT_EQ_CORO(leader_api.estimate_inactive_epoch(), ct::cluster_epoch{4});
+    ASSERT_EQ_CORO(
+      accessor.max_removable_local_log_offset(*stm), baseline_lrlo);
+
+    // Destroy reader1 to unlink it from the tracking list.
+    reader1 = nullptr;
+
+    // Without any readers, both values should reflect the advanced state.
+    auto advanced_epoch = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(advanced_epoch.has_value());
+    ASSERT_GT_CORO(advanced_epoch.value(), ct::cluster_epoch{4});
+    ASSERT_GT_CORO(
+      accessor.max_removable_local_log_offset(*stm), baseline_lrlo);
+}
+
+TEST_F_CORO(ctp_stm_fixture, test_multiple_active_readers) {
+    // With multiple readers, the first registered reader (front of list)
+    // determines the holdback point. When it's removed, the next reader
+    // takes over.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+    auto stm = get_stm<0>(leader);
+    ct::ctp_stm_accessor accessor;
+
+    // Replicate epoch 5 placeholder and reconcile.
+    auto b1 = make_record_batch(ct::cluster_epoch{5}, model::offset{0}, 0);
+    co_await replicate_record_batch(leader, std::move(b1));
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{0}, model::no_timeout, as);
+    co_await leader_api.advance_epoch(
+      ct::cluster_epoch{10}, model::no_timeout, as);
+    co_await leader_api.sync_to_next_placeholder(model::no_timeout, as);
+
+    // Register reader1 at state A.
+    auto reader1 = std::make_unique<ct::active_reader_state>();
+    leader_api.register_reader(reader1.get());
+    auto reader1_epoch = reader1->inactive_epoch;
+    auto reader1_lrlo = reader1->lrlo;
+    ASSERT_EQ_CORO(reader1_epoch, ct::cluster_epoch{4});
+
+    // Advance state: new epoch 15, replicate + reconcile.
+    auto b2 = make_record_batch(ct::cluster_epoch{15}, model::offset{1}, 1);
+    co_await replicate_record_batch(leader, std::move(b2));
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{1}, model::no_timeout, as);
+    co_await leader_api.advance_epoch(
+      ct::cluster_epoch{20}, model::no_timeout, as);
+    co_await leader_api.sync_to_next_placeholder(model::no_timeout, as);
+
+    // Register reader2 at state B (more advanced).
+    auto reader2 = std::make_unique<ct::active_reader_state>();
+    leader_api.register_reader(reader2.get());
+    auto reader2_epoch = reader2->inactive_epoch;
+    auto reader2_lrlo = reader2->lrlo;
+    ASSERT_GT_CORO(reader2_epoch, reader1_epoch);
+    ASSERT_GE_CORO(reader2_lrlo, reader1_lrlo);
+
+    // reader1 (front) determines the holdback.
+    ASSERT_EQ_CORO(leader_api.estimate_inactive_epoch(), reader1_epoch);
+    ASSERT_EQ_CORO(accessor.max_removable_local_log_offset(*stm), reader1_lrlo);
+
+    // Remove reader1 - reader2 (now front) takes over.
+    reader1.reset();
+    ASSERT_EQ_CORO(leader_api.estimate_inactive_epoch(), reader2_epoch);
+    ASSERT_EQ_CORO(accessor.max_removable_local_log_offset(*stm), reader2_lrlo);
+
+    // Remove reader2 - live state values returned.
+    reader2.reset();
+    auto live_epoch = leader_api.estimate_inactive_epoch();
+    ASSERT_TRUE_CORO(live_epoch.has_value());
+    ASSERT_GE_CORO(live_epoch.value(), reader2_epoch.value());
+}
+
+TEST_F_CORO(ctp_stm_fixture, test_reset_state_cmd) {
+    // Verify that replicating a reset_state_cmd replaces the STM's in-memory
+    // state wholesale. The test first drives the STM into a non-trivial state
+    // (epoch + LRO), then resets it to a fresh default state and confirms that
+    // all previously accumulated state is gone.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    // Drive the STM into a known non-trivial state.
+    bool ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{5}, model::offset{0}, 0);
+    ASSERT_TRUE_CORO(ok);
+
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{0}, model::no_timeout, as);
+
+    ASSERT_EQ_CORO(leader_api.get_max_epoch().value(), ct::cluster_epoch{5});
+    auto stm = get_stm<0>(leader);
+    ASSERT_TRUE_CORO(stm->state().get_last_reconciled_offset().has_value());
+
+    // Build a fresh default state and replicate the reset command.
+    ct::ctp_stm_state fresh_state;
+    auto res = co_await replicate_reset_state(leader, std::move(fresh_state));
+    ASSERT_TRUE_CORO(res.has_value());
+
+    // The STM state should now reflect the fresh state: no epoch, no LRO.
+    ASSERT_FALSE_CORO(stm->state().get_max_applied_epoch().has_value())
+      << "max_applied_epoch should be cleared after reset";
+    ASSERT_FALSE_CORO(stm->state().get_last_reconciled_offset().has_value())
+      << "LRO should be cleared after reset";
 }

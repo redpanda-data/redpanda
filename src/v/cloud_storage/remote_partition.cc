@@ -546,6 +546,23 @@ private:
         }
     }
 
+    /// Set the current segment reader and trigger prefetch for upcoming small
+    /// segments
+    void set_current_reader(
+      std::unique_ptr<remote_segment_batch_reader> reader,
+      model::offset next_offset,
+      const partition_manifest& manifest) {
+        _seg_reader = std::move(reader);
+        _next_segment_base_offset = next_offset;
+
+        if (_seg_reader) {
+            _partition->maybe_prefetch_small_segments(
+              manifest,
+              _next_segment_base_offset,
+              _seg_reader->get_segment_size());
+        }
+    }
+
     ss::future<> init_cursor(cloud_storage::cloud_log_reader_config config) {
         auto segment_unit = co_await _partition->materialized()
                               .get_segment_units(config.abort_source);
@@ -670,8 +687,7 @@ private:
           std::move(segment_unit),
           std::move(segment_reader_unit));
         if (reader) {
-            _seg_reader = std::move(reader);
-            _next_segment_base_offset = next_offset;
+            set_current_reader(std::move(reader), next_offset, manifest);
             return;
         }
         vlog(
@@ -840,8 +856,10 @@ private:
                     std::move(segment_unit),
                     std::move(segment_reader_unit),
                     _next_segment_base_offset);
-                _next_segment_base_offset = new_next_offset;
-                _seg_reader = std::move(new_reader);
+                set_current_reader(
+                  std::move(new_reader),
+                  new_next_offset,
+                  maybe_manifest.value());
             }
             if (maybe_manifest.has_value() && _seg_reader != nullptr) {
                 vassert(
@@ -1552,6 +1570,92 @@ void remote_partition::offload_segment(model::offset o) {
 
 materialized_resources& remote_partition::materialized() {
     return _api.materialized();
+}
+
+void remote_partition::maybe_prefetch_small_segments(
+  const partition_manifest& manifest,
+  model::offset next_segment_base_offset,
+  size_t current_segment_size) {
+    auto max_segments
+      = config::shard_local_cfg().cloud_storage_prefetch_segments_max();
+    if (max_segments == 0) {
+        return;
+    }
+    if (next_segment_base_offset == model::offset{}) {
+        // In this case the reader is likely at the last segment in the
+        // manifest. So there is nothing to prefetch at the moment.
+        return;
+    }
+
+    auto chunk_size
+      = config::shard_local_cfg().cloud_storage_cache_chunk_size();
+    if (current_segment_size > chunk_size) {
+        return;
+    }
+
+    auto prefetch_bytes_left = std::max(
+      chunk_size * config::shard_local_cfg().cloud_storage_chunk_prefetch(),
+      chunk_size);
+    size_t segments_prefetched = 0;
+
+    auto it = manifest.segment_containing(next_segment_base_offset);
+    while (it != manifest.end() && prefetch_bytes_left > 0
+           && segments_prefetched < max_segments) {
+        if (it->size_bytes > chunk_size) {
+            // Prefetching for segments larger than a chunk is handled in the
+            // chunks_api.
+            break;
+        }
+        if (it->size_bytes > prefetch_bytes_left) {
+            break;
+        }
+
+        ssx::spawn_with_gate(
+          _gate, [this, m = *it]() { return do_prefetch_small_segment(m); });
+
+        prefetch_bytes_left -= it->size_bytes;
+        ++segments_prefetched;
+        ++it;
+    }
+
+    vlog(
+      _ctxlog.trace,
+      "Prefetched {} small segments ahead of offset {}",
+      segments_prefetched,
+      next_segment_base_offset);
+}
+
+ss::future<> remote_partition::do_prefetch_small_segment(segment_meta meta) {
+    try {
+        if (_segments.contains(meta.base_offset)) {
+            // Assume that this is a duplicate pre-fetch and avoid adding
+            // waiters to the hydration queues.
+            co_return;
+        }
+
+        auto segment_units = materialized().try_get_segment_units();
+        if (!segment_units) {
+            co_return;
+        }
+
+        auto path = _manifest_view->stm_manifest().generate_segment_path(
+          meta, _manifest_view->path_provider());
+        auto iter = get_or_materialize_segment(
+          path, meta, std::move(*segment_units));
+
+        auto segment = iter->second->segment;
+        co_await segment->hydrate();
+        co_await segment->prefetch_first_chunk();
+    } catch (...) {
+        auto eptr = std::current_exception();
+        if (!ssx::is_shutdown_exception(eptr)) {
+            vlog(
+              _ctxlog.warn,
+              "Small segment prefetch failed for {}: {}",
+              meta.base_offset,
+              eptr);
+        }
+    }
 }
 
 cache_usage_target remote_partition::get_cache_usage_target() const {

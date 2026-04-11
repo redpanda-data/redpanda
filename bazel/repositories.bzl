@@ -100,9 +100,9 @@ def data_dependency():
     http_archive(
         name = "libxml2",
         build_file = "//bazel/thirdparty:libxml2.BUILD",
-        sha256 = "546ab74561c040df210c88dbd3c652bf509d826954ab2002c8973f1fa8d10130",
-        strip_prefix = "libxml2-2.14.6",
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/libxml2-v2.14.6.tar.gz",
+        sha256 = "2769234c4fe2fab9b0b043e891c2af0f1ae51c8d4b94799472981e676ed8009e",
+        strip_prefix = "libxml2-2.15.2",
+        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/libxml2-v2.15.2.tar.gz",
     )
 
     http_archive(

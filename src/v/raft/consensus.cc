@@ -292,6 +292,7 @@ ss::future<xshard_transfer_state> consensus::stop() {
     }
     co_await _replication_monitor.stop();
     co_await _event_manager.stop();
+    _log->stm_hookset()->stop();
     if (_stm_manager) {
         co_await _stm_manager->stop();
     }
@@ -1659,6 +1660,7 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
             co_await ss::coroutine::switch_to(ss::default_scheduling_group());
             co_await _stm_manager->start();
         }
+        _log->stm_hookset()->start();
 
         vlog(
           _ctxlog.info,
@@ -2266,7 +2268,18 @@ consensus::do_append_entries(append_entries_request&& r) {
             co_return reply;
         }
 
-        co_return co_await do_append_entries(std::move(r));
+        // Here we intentionally choose not to recurse with a mutated
+        // request (r) because of the risk of polluting prev_log_delta.
+        // If we are to recurse, we have to populate prev_log_delta with
+        // the local state of the log which could, in theory, diverge from
+        // the leader log. Instead we choose to return success, let the leader
+        // reconstruct new request from its state. This is an extra round trip
+        // but far easier to reason about in terms of correctness.
+        reply.last_dirty_log_index = adjusted_prev_log_index;
+        reply.last_flushed_log_index = std::min(
+          adjusted_prev_log_index, _flushed_offset);
+        reply.result = reply_result::success;
+        co_return reply;
     }
 
     // success. copy entries for each subsystem
@@ -4317,9 +4330,9 @@ consensus::do_snapshot_and_truncate_log(model::offset truncation_point) {
     co_await _consumable_offset_monitor.wait(
       truncation_point, model::no_timeout, _as);
     co_await refresh_commit_index();
-    co_await _log->stm_manager()->ensure_snapshot_exists(truncation_point);
+    co_await _log->stm_hookset()->ensure_snapshot_exists(truncation_point);
     const auto max_removable_local_log_offset
-      = _log->stm_manager()->max_removable_local_log_offset();
+      = _log->stm_hookset()->max_removable_local_log_offset();
     if (truncation_point > max_removable_local_log_offset) {
         truncation_point = max_removable_local_log_offset;
         if (truncation_point <= _last_snapshot_index) {

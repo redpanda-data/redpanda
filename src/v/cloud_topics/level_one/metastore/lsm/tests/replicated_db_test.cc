@@ -12,6 +12,7 @@
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage_clients/types.h"
+#include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/replicated_db.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/level_one/metastore/lsm/write_batch_row.h"
@@ -81,7 +82,8 @@ struct replicated_db_node {
           staging_directory.get_path(),
           remote,
           bucket,
-          as);
+          as,
+          ss::default_scheduling_group());
         if (!ret.has_value()) {
             co_return std::unexpected(ret.error());
         }
@@ -211,7 +213,7 @@ public:
       domain_uuid domain_uuid,
       chunked_vector<volatile_row> rows) {
         auto domain_prefix = cloud_storage_clients::object_key{
-          fmt::format("{}", domain_uuid)};
+          domain_cloud_prefix(domain_uuid)};
         temporary_dir tmp("lsm_staging_scratch");
         auto cloud_db
           = lsm::database::open(
@@ -221,7 +223,8 @@ public:
                           tmp.get_path(),
                           &sr->remote.local(),
                           bucket_name,
-                          domain_prefix)
+                          domain_prefix,
+                          ss::sstring(domain_uuid()))
                           .get(),
                 .metadata = lsm::io::open_cloud_metadata_persistence(
                               &sr->remote.local(), bucket_name, domain_prefix)

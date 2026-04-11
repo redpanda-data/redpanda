@@ -185,6 +185,10 @@ public:
     model::offset offset_lag() const override {
         throw std::runtime_error("unimplemented");
     }
+    ss::future<cluster::partition_cloud_storage_status>
+    get_cloud_storage_status() const override {
+        throw std::runtime_error("unimplemented");
+    }
 
 private:
     model::offset latest_offset() {

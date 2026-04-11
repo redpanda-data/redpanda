@@ -9,9 +9,11 @@
  */
 #include "cloud_topics/level_one/domain/simple_domain_manager.h"
 
+#include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/metastore/garbage_collector.h"
 #include "cloud_topics/level_one/metastore/rpc_types.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
+#include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"
 #include "config/configuration.h"
 #include "container/chunked_hash_map.h"
@@ -54,11 +56,20 @@ meta_to_rpc_extent_metadata(metastore::extent_metadata_vec v) {
     chunked_vector<rpc::extent_metadata> res;
     res.reserve(v.size());
     for (auto& e : v) {
+        std::optional<rpc::extent_object_info> obj_info;
+        if (e.object_info.has_value()) {
+            obj_info = rpc::extent_object_info{
+              .oid = e.object_info->oid,
+              .footer_pos = e.object_info->footer_pos,
+              .object_size = e.object_info->object_size,
+            };
+        }
         res.push_back(
           rpc::extent_metadata{
             .base_offset = e.base_offset,
             .last_offset = e.last_offset,
-            .max_timestamp = e.max_timestamp});
+            .max_timestamp = e.max_timestamp,
+            .object_info = std::move(obj_info)});
     }
     return res;
 }
@@ -377,6 +388,7 @@ simple_domain_manager::get_size(rpc::get_size_request req) {
     co_return rpc::get_size_reply{
       .ec = rpc::errc::ok,
       .size = get_res->size,
+      .num_extents = get_res->num_extents,
     };
 }
 
@@ -647,7 +659,8 @@ simple_domain_manager::get_extent_metadata(
               req.tp,
               req.min_offset,
               req.max_offset,
-              req.max_num_extents);
+              req.max_num_extents,
+              metastore::include_object_metadata(req.include_object_metadata));
         case rpc::get_extent_metadata_request::order::backwards:
             return simple_metastore::get_extent_metadata_backwards(
               stm_state,
@@ -667,6 +680,54 @@ simple_domain_manager::get_extent_metadata(
       .ec = rpc::errc::ok,
       .extents = meta_to_rpc_extent_metadata(std::move(get_res->extents)),
       .end_of_stream = get_res->end_of_stream};
+}
+
+ss::future<rpc::preregister_objects_reply>
+simple_domain_manager::preregister_objects(
+  rpc::preregister_objects_request req) {
+    auto gate = maybe_gate();
+    if (!gate.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = rpc::errc::not_leader,
+        };
+    }
+    auto sync_res = co_await stm_->sync(10s);
+    if (!sync_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = convert_stm_errc(sync_res.error()),
+        };
+    }
+
+    preregister_objects_update update;
+    update.registered_at = model::timestamp::now();
+    update.object_ids.reserve(req.count);
+    for (uint32_t i = 0; i < req.count; ++i) {
+        update.object_ids.push_back(create_object_id());
+    }
+
+    chunked_vector<object_id> reply_ids;
+    reply_ids.reserve(update.object_ids.size());
+    for (const auto& oid : update.object_ids) {
+        reply_ids.push_back(oid);
+    }
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::l1_stm, model::offset{0});
+    builder.add_raw_kv(
+      serde::to_iobuf(preregister_objects_update::key),
+      serde::to_iobuf(std::move(update)));
+    auto repl_res = co_await stm_->replicate_and_wait(
+      sync_res.value(), std::move(builder).build(), as_);
+    if (!repl_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = convert_stm_errc(repl_res.error()),
+        };
+    }
+
+    co_return rpc::preregister_objects_reply{
+      .ec = rpc::errc::ok,
+      .object_ids = std::move(reply_ids),
+    };
 }
 
 ss::future<rpc::flush_domain_reply>
@@ -727,6 +788,17 @@ ss::future<std::expected<database_stats, rpc::errc>>
 simple_domain_manager::get_database_stats() {
     // Not implemented.
     co_return std::unexpected(rpc::errc::concurrent_requests);
+}
+
+ss::future<std::expected<void, rpc::errc>>
+simple_domain_manager::write_debug_rows(chunked_vector<write_batch_row>) {
+    co_return std::unexpected(rpc::errc::not_leader);
+}
+
+ss::future<std::expected<domain_manager::read_debug_rows_result, rpc::errc>>
+simple_domain_manager::read_debug_rows(
+  std::optional<ss::sstring>, std::optional<ss::sstring>, uint32_t) {
+    co_return std::unexpected(rpc::errc::not_leader);
 }
 
 } // namespace cloud_topics::l1

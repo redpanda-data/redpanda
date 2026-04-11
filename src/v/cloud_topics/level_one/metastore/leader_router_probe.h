@@ -98,6 +98,10 @@ public:
         return _restore_domain.auto_measure();
     }
 
+    std::unique_ptr<hist_t::measurement> auto_measure_preregister_objects() {
+        return _preregister_objects.auto_measure();
+    }
+
 private:
     hist_t _add_objects;
     hist_t _replace_objects;
@@ -115,6 +119,7 @@ private:
     hist_t _get_extent_metadata;
     hist_t _flush_domain;
     hist_t _restore_domain;
+    hist_t _preregister_objects;
 
     metrics::internal_metric_groups _metrics;
 };

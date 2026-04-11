@@ -34,13 +34,21 @@ type CloudClientSet struct {
 	Region           controlplanev1connect.RegionServiceClient
 	Cluster          controlplanev1connect.ClusterServiceClient
 	Network          controlplanev1connect.NetworkServiceClient
-	Organization     iamv1connect.OrganizationServiceClient
 	ResourceGroup    controlplanev1connect.ResourceGroupServiceClient
 	Serverless       controlplanev1connect.ServerlessClusterServiceClient
 	Operations       controlplanev1connect.OperationServiceClient
 	ServerlessRegion controlplanev1connect.ServerlessRegionServiceClient
 	BYOCPlugin       byocpluginv1alpha1connect.BYOCPluginServiceClient
 	ShadowLink       controlplanev1connect.ShadowLinkServiceClient
+
+	// IAM
+	Organization   iamv1connect.OrganizationServiceClient
+	Permission     iamv1connect.PermissionServiceClient
+	Role           iamv1connect.RoleServiceClient
+	RoleBinding    iamv1connect.RoleBindingServiceClient
+	ServiceAccount iamv1connect.ServiceAccountServiceClient
+	IAMUser        iamv1connect.UserServiceClient
+	UserInvite     iamv1connect.UserInviteServiceClient
 
 	m         sync.RWMutex
 	authToken string
@@ -73,13 +81,20 @@ func NewCloudClientSet(host, authToken string, opts ...connect.ClientOption) *Cl
 	ccs.Cluster = controlplanev1connect.NewClusterServiceClient(httpCl, host, opts...)
 	ccs.Region = controlplanev1connect.NewRegionServiceClient(httpCl, host, opts...)
 	ccs.Network = controlplanev1connect.NewNetworkServiceClient(httpCl, host, opts...)
-	ccs.Organization = iamv1connect.NewOrganizationServiceClient(httpCl, host, opts...)
 	ccs.ResourceGroup = controlplanev1connect.NewResourceGroupServiceClient(httpCl, host, opts...)
 	ccs.Serverless = controlplanev1connect.NewServerlessClusterServiceClient(httpCl, host, opts...)
 	ccs.Operations = controlplanev1connect.NewOperationServiceClient(httpCl, host, opts...)
 	ccs.ServerlessRegion = controlplanev1connect.NewServerlessRegionServiceClient(httpCl, host, opts...)
 	ccs.BYOCPlugin = byocpluginv1alpha1connect.NewBYOCPluginServiceClient(httpCl, host, opts...)
 	ccs.ShadowLink = controlplanev1connect.NewShadowLinkServiceClient(httpCl, host, opts...)
+
+	ccs.Organization = iamv1connect.NewOrganizationServiceClient(httpCl, host, opts...)
+	ccs.Permission = iamv1connect.NewPermissionServiceClient(httpCl, host, opts...)
+	ccs.Role = iamv1connect.NewRoleServiceClient(httpCl, host, opts...)
+	ccs.RoleBinding = iamv1connect.NewRoleBindingServiceClient(httpCl, host, opts...)
+	ccs.ServiceAccount = iamv1connect.NewServiceAccountServiceClient(httpCl, host, opts...)
+	ccs.IAMUser = iamv1connect.NewUserServiceClient(httpCl, host, opts...)
+	ccs.UserInvite = iamv1connect.NewUserInviteServiceClient(httpCl, host, opts...)
 	return ccs
 }
 

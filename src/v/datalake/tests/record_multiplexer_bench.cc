@@ -394,8 +394,9 @@ class record_multiplexer_bench_fixture
 public:
     record_multiplexer_bench_fixture()
       : _schema_cache({10, 5})
+      , _resolved_type_cache({10, 5})
       , _schema_mgr(catalog, &_features)
-      , _type_resolver(registry, _schema_cache)
+      , _type_resolver(registry, _schema_cache, _resolved_type_cache)
       , _record_gen(&registry)
       , _table_creator(_type_resolver, _schema_mgr) {
         _features.testing_activate_all();
@@ -550,6 +551,7 @@ private:
     std::unordered_set<std::string> _added_names;
     features::feature_table _features;
     datalake::chunked_schema_cache _schema_cache;
+    datalake::chunked_resolved_type_cache _resolved_type_cache;
     datalake::catalog_schema_manager _schema_mgr;
     datalake::record_schema_resolver _type_resolver;
     datalake::tests::record_generator _record_gen;

@@ -20,7 +20,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
-func getCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func getCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
 		Use:   "get [SUBJECT...]",
@@ -42,12 +42,20 @@ per-subject modes.
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
+			for i, s := range subjects {
+				if s != sr.GlobalSubject {
+					subjects[i] = schemaregistry.QualifySubject(*schemaCtx, s)
+				}
+			}
 			if len(subjects) > 0 && global {
 				subjects = append(subjects, sr.GlobalSubject)
 			}
 			ctx := sr.WithParams(cmd.Context(), sr.DefaultToGlobal)
-			modeResult := cl.Mode(ctx, subjects...)
-			exit1, err := printModeResult(f, modeResult)
+			results := cl.Mode(ctx, subjects...)
+			for i := range results {
+				results[i].Subject = schemaregistry.StripContextQualifier(*schemaCtx, results[i].Subject)
+			}
+			exit1, err := printModeResult(f, results)
 			out.MaybeDieErr(err)
 			if exit1 {
 				os.Exit(1)

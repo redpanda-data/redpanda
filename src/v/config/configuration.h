@@ -533,6 +533,7 @@ struct configuration final : public config_store {
     enum_property<model::cloud_storage_chunk_eviction_strategy>
       cloud_storage_chunk_eviction_strategy;
     property<uint16_t> cloud_storage_chunk_prefetch;
+    property<uint16_t> cloud_storage_prefetch_segments_max;
     bounded_property<uint32_t> cloud_storage_cache_num_buckets;
     bounded_property<std::optional<double>, numeric_bounds>
       cloud_storage_cache_trim_threshold_percent_size;
@@ -794,6 +795,7 @@ public:
     property<size_t> cloud_topics_reconciliation_max_object_size;
     bounded_property<size_t> cloud_topics_upload_part_size;
     bounded_property<size_t> cloud_topics_reconciliation_parallelism;
+    property<bool> cloud_topics_allow_materialization_failure;
     property<size_t> cloud_topics_compaction_max_object_size;
     property<size_t> cloud_topics_l1_indexing_interval;
     property<std::chrono::milliseconds> cloud_topics_compaction_interval_ms;
@@ -811,10 +813,22 @@ public:
     property<std::chrono::milliseconds> cloud_topics_short_term_gc_interval;
     property<std::chrono::milliseconds>
       cloud_topics_short_term_gc_backoff_interval;
+    property<std::chrono::milliseconds> cloud_topics_gc_health_check_interval;
+
+    property<std::chrono::milliseconds>
+      cloud_topics_metastore_replication_timeout_ms;
+    property<std::chrono::milliseconds>
+      cloud_topics_metastore_lsm_apply_timeout_ms;
 
     property<bool> cloud_topics_parallel_fetch_enabled;
 
     property<bool> cloud_topics_fetch_debounce_enabled;
+
+    property<std::chrono::milliseconds> cloud_topics_preregistered_object_ttl;
+
+    property<std::chrono::milliseconds>
+      cloud_topics_long_term_file_deletion_delay;
+    bounded_property<int32_t> cloud_topics_num_metastore_partitions;
 
     development_feature_property<int> development_feature_property_testing_only;
 

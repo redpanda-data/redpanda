@@ -13,6 +13,7 @@
 #include "cloud_topics/level_one/metastore/lsm/lsm_update.h"
 #include "cloud_topics/level_one/metastore/lsm/state.h"
 #include "cloud_topics/logger.h"
+#include "config/configuration.h"
 #include "model/record_batch_types.h"
 #include "serde/async.h"
 #include "ssx/future-util.h"
@@ -99,12 +100,10 @@ ss::future<std::expected<model::offset, stm::errc>> stm::replicate_and_wait(
     if (!gh) {
         co_return std::unexpected(errc::shutting_down);
     }
-    constexpr auto replicate_timeout = 10s;
+    auto timeout = config::shard_local_cfg()
+                     .cloud_topics_metastore_replication_timeout_ms();
     auto opts = raft::replicate_options(
-      raft::consistency_level::quorum_ack,
-      term,
-      replicate_timeout,
-      std::ref(as));
+      raft::consistency_level::quorum_ack, term, timeout, std::ref(as));
     opts.set_force_flush();
     const auto offsets_delta = batch.header().last_offset_delta;
     const auto res = co_await _raft->replicate(std::move(batch), opts);
@@ -115,7 +114,7 @@ ss::future<std::expected<model::offset, stm::errc>> stm::replicate_and_wait(
     auto base_offset = model::offset(last_offset() - offsets_delta);
     auto replicated_offset = res.value().last_offset;
     auto success = co_await wait_no_throw(
-      replicated_offset, ss::lowres_clock::now() + 30s, as);
+      replicated_offset, ss::lowres_clock::now() + timeout, as);
     if (!success || _raft->term() != term) {
         vlog(
           cd_log.debug,
@@ -266,7 +265,7 @@ void lsm_stm_factory::create(
   raft::consensus* raft,
   const cluster::stm_instance_config&) {
     auto s = builder.create_stm<stm>(cd_log, raft, config::mock_binding(10s));
-    raft->log()->stm_manager()->add_stm(std::move(s));
+    raft->log()->stm_hookset()->add_stm(std::move(s));
 }
 
 std::ostream& operator<<(std::ostream& os, stm::errc e) {

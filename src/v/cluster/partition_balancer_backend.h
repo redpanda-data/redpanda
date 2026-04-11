@@ -19,6 +19,7 @@
 #include "features/enterprise_features.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
+#include "ssx/minimum_interval_timer.h"
 #include "ssx/mutex.h"
 
 #include <seastar/core/sharded.hh>
@@ -53,7 +54,9 @@ public:
       config::binding<std::optional<size_t>> min_partition_size_threshold,
       config::binding<std::chrono::milliseconds> node_status_interval,
       config::binding<size_t> raft_learner_recovery_rate,
-      config::binding<bool> topic_aware);
+      config::binding<bool> topic_aware,
+      config::binding<std::chrono::milliseconds>
+        health_monitor_max_metadata_age);
 
     void start();
     ss::future<> stop();
@@ -75,7 +78,7 @@ public:
     ss::future<std::error_code> request_rebalance();
 
 private:
-    void tick();
+    ss::future<> tick();
     ss::future<> do_tick();
 
     /// If now, rearms to run immediately, else rearms to _tick_interval or
@@ -115,10 +118,11 @@ private:
     config::binding<std::chrono::milliseconds> _node_status_interval;
     config::binding<size_t> _raft_learner_recovery_rate;
     config::binding<bool> _topic_aware;
+    config::binding<std::chrono::milliseconds> _health_monitor_max_metadata_age;
 
     ssx::mutex _lock{"partition_balancer_backend::lock"};
     ss::gate _gate;
-    ss::timer<clock_t> _timer;
+    ssx::tail_minimum_interval_timer _timer;
     notification_id_type _topic_table_updates;
     notification_id_type _member_updates;
     notification_id_type _health_monitor_updates;

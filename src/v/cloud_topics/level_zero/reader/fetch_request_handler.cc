@@ -105,13 +105,13 @@ ss::future<> fetch_handler::process_single_request(l0::read_request<>* req) {
     std::optional<chunked_vector<model::tx_range>> aborted_tx;
     try {
         auto meta = std::move(req->query.meta);
-
         auto extent = co_await ss::coroutine::as_future(
           materialize_placeholders(
             _bucket,
             std::move(meta),
             *_remote,
             *_cache,
+            req->query.allow_mat_failure,
             req->rtc,
             req->rtc_logger));
 

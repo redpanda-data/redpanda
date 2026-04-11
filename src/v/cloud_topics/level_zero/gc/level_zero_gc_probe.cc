@@ -95,6 +95,13 @@ void level_zero_gc_probe::setup_internal_metrics(bool disable) {
             "Cumulative time in seconds spent in backoff between L0 "
             "garbage collection rounds."),
           labels),
+        sm::make_counter(
+          "safety_blocked_rounds_total",
+          [this] { return safety_blocked_rounds_; },
+          sm::description(
+            "Number of L0 GC rounds skipped because the safety monitor "
+            "reported an unsafe condition."),
+          labels),
         sm::make_gauge(
           "min_partition_gc_epoch",
           [this] {

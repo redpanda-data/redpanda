@@ -1,10 +1,10 @@
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
-    name = "read_debounce_test",
+    name = "read_merge_test",
     timeout = "short",
     srcs = [
-        "read_debounce_test.cc",
+        "read_merge_test.cc",
     ],
     deps = [
         "//src/v/base",
@@ -13,7 +13,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/level_zero/pipeline:pipeline_stage",
         "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:read_request",
-        "//src/v/cloud_topics/level_zero/read_debounce",
+        "//src/v/cloud_topics/level_zero/read_merge",
         "//src/v/config",
         "//src/v/model",
         "//src/v/model/tests:random",
@@ -25,10 +25,10 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_bench(
-    name = "read_debounce_rpbench",
+    name = "read_merge_rpbench",
     timeout = "short",
     srcs = [
-        "read_debounce_bench.cc",
+        "read_merge_bench.cc",
     ],
     cpu = 1,
     deps = [
@@ -37,7 +37,7 @@ redpanda_cc_bench(
         "//src/v/cloud_topics/level_zero/pipeline:pipeline_stage",
         "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:read_request",
-        "//src/v/cloud_topics/level_zero/read_debounce",
+        "//src/v/cloud_topics/level_zero/read_merge",
         "//src/v/config",
         "//src/v/model",
         "//src/v/model/tests:random",

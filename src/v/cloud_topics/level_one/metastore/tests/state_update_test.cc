@@ -166,8 +166,20 @@ protected:
 
     std::expected<std::monostate, stm_update_error>
     apply_add_objects(add_objects_update update) {
+        chunked_vector<object_id> oids;
+        for (const auto& o : update.new_objects) {
+            oids.push_back(o.oid);
+        }
         if (GetParam() == state_backend::simple) {
+            auto prereg = preregister_for_simple(oids);
+            if (!prereg.has_value()) {
+                return prereg;
+            }
             return update.apply(state_);
+        }
+        auto prereg = preregister_for_lsm(oids);
+        if (!prereg.has_value()) {
+            return prereg;
         }
         add_objects_db_update db_update{
           .new_objects = std::move(update.new_objects),
@@ -186,8 +198,20 @@ protected:
 
     std::expected<std::monostate, stm_update_error>
     apply_replace_objects(replace_objects_update update) {
+        chunked_vector<object_id> oids;
+        for (const auto& o : update.new_objects) {
+            oids.push_back(o.oid);
+        }
         if (GetParam() == state_backend::simple) {
+            auto prereg = preregister_for_simple(oids);
+            if (!prereg.has_value()) {
+                return prereg;
+            }
             return update.apply(state_);
+        }
+        auto prereg = preregister_for_lsm(oids);
+        if (!prereg.has_value()) {
+            return prereg;
         }
         replace_objects_db_update db_update{
           .new_objects = std::move(update.new_objects),
@@ -312,6 +336,50 @@ protected:
         return std::monostate{};
     }
 
+    std::expected<std::monostate, stm_update_error> apply_preregister_objects(
+      chunked_vector<object_id> ids, model::timestamp ts) {
+        if (GetParam() == state_backend::simple) {
+            preregister_objects_update update;
+            update.object_ids = std::move(ids);
+            update.registered_at = ts;
+            return update.apply(state_);
+        }
+        preregister_objects_db_update db_update{
+          .object_ids = std::move(ids),
+          .registered_at = ts,
+        };
+        auto reader = state_reader(db_->create_snapshot());
+        chunked_vector<write_batch_row> rows;
+        auto result = db_update.build_rows(reader, rows).get();
+        if (!result.has_value()) {
+            return std::unexpected(
+              stm_update_error{fmt::format("{}", result.error())});
+        }
+        apply_rows_to_db(rows);
+        return std::monostate{};
+    }
+
+    std::expected<std::monostate, stm_update_error>
+    apply_expire_preregistered_objects(chunked_vector<object_id> ids) {
+        if (GetParam() == state_backend::simple) {
+            expire_preregistered_objects_update update;
+            update.object_ids = std::move(ids);
+            return update.apply(state_);
+        }
+        expire_preregistered_objects_db_update db_update{
+          .object_ids = std::move(ids),
+        };
+        auto reader = state_reader(db_->create_snapshot());
+        chunked_vector<write_batch_row> rows;
+        auto result = db_update.build_rows(reader, rows).get();
+        if (!result.has_value()) {
+            return std::unexpected(
+              stm_update_error{fmt::format("{}", result.error())});
+        }
+        apply_rows_to_db(rows);
+        return std::monostate{};
+    }
+
     state& get_state() {
         if (GetParam() == state_backend::lsm) {
             state_ = snapshot_to_state(*db_);
@@ -319,7 +387,47 @@ protected:
         return state_;
     }
 
+    std::expected<std::monostate, stm_update_error>
+    apply_preregister_objects(std::initializer_list<object_id> ids) {
+        chunked_vector<object_id> id_vec(ids.begin(), ids.end());
+        if (GetParam() == state_backend::simple) {
+            return preregister_for_simple(id_vec);
+        }
+        return preregister_for_lsm(id_vec);
+    }
+
 private:
+    std::expected<std::monostate, stm_update_error>
+    preregister_for_simple(const chunked_vector<object_id>& ids) {
+        preregister_objects_update u;
+        u.registered_at = model::timestamp::now();
+        for (const auto& oid : ids) {
+            u.object_ids.push_back(oid);
+        }
+        if (u.object_ids.empty()) {
+            return std::monostate{};
+        }
+        return u.apply(state_);
+    }
+
+    std::expected<std::monostate, stm_update_error>
+    preregister_for_lsm(const chunked_vector<object_id>& ids) {
+        preregister_objects_db_update update;
+        update.registered_at = model::timestamp::now();
+        for (const auto& oid : ids) {
+            update.object_ids.push_back(oid);
+        }
+        auto reader = state_reader(db_->create_snapshot());
+        chunked_vector<write_batch_row> rows;
+        auto result = update.build_rows(reader, rows).get();
+        if (!result.has_value()) {
+            return std::unexpected(
+              stm_update_error{fmt::format("{}", result.error())});
+        }
+        apply_rows_to_db(rows);
+        return std::monostate{};
+    }
+
     void apply_rows_to_db(const chunked_vector<write_batch_row>& rows) {
         auto wb = db_->create_write_batch();
         auto seqno = next_seqno();
@@ -391,6 +499,7 @@ TEST_P(StateUpdateParamTest, TestAddBasic) {
 }
 
 TEST_P(StateUpdateParamTest, TestDuplicateAddSingleUpdate) {
+    ASSERT_TRUE(apply_preregister_objects({oid1, oid2}).has_value());
     auto update = add_objects_builder()
                     .add(new_obj_builder(oid1, 100, 1100)
                            .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
@@ -1480,6 +1589,7 @@ TEST_P(StateUpdateParamTest, TestAddSameSubsequentTerm) {
 }
 
 TEST_P(StateUpdateParamTest, TestAddNoTerms) {
+    ASSERT_TRUE(apply_preregister_objects({oid1}).has_value());
     auto update = add_objects_builder()
                     .add(new_obj_builder(oid1, 100, 1100)
                            .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
@@ -1491,6 +1601,7 @@ TEST_P(StateUpdateParamTest, TestAddNoTerms) {
 }
 
 TEST_P(StateUpdateParamTest, TestAddMissingTermsForPartition) {
+    ASSERT_TRUE(apply_preregister_objects({oid1}).has_value());
     auto update = add_objects_builder()
                     .add(new_obj_builder(oid1, 100, 1100)
                            .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
@@ -1525,6 +1636,7 @@ TEST_P(StateUpdateParamTest, TestAddDecreasingTerm) {
     auto res = apply_add_objects(std::move(update));
     EXPECT_TRUE(res.has_value());
 
+    ASSERT_TRUE(apply_preregister_objects({oid2}).has_value());
     update = add_objects_builder()
                .add(new_obj_builder(oid2, 100, 1100)
                       .add(tidp_a, 11_o, 20_o, 1999_t, 0, 99)
@@ -1550,6 +1662,7 @@ TEST_P(StateUpdateParamTest, TestRejectBogusTermWithBogusExtent) {
 }
 
 TEST_P(StateUpdateParamTest, TestTermsWithNoExtent) {
+    ASSERT_TRUE(apply_preregister_objects({oid1}).has_value());
     auto update = add_objects_builder()
                     .add(new_obj_builder(oid1, 100, 1100)
                            .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
@@ -1573,6 +1686,7 @@ TEST_P(StateUpdateParamTest, TestAddMismatchedStartOffset) {
     EXPECT_TRUE(res.has_value());
 
     // Add an update where the term's start offset doesn't match the extent.
+    ASSERT_TRUE(apply_preregister_objects({oid2}).has_value());
     update = add_objects_builder()
                .add(new_obj_builder(oid2, 100, 1100)
                       .add(tidp_a, 11_o, 20_o, 1999_t, 0, 99)
@@ -2067,7 +2181,7 @@ TEST_P(StateUpdateParamTest, TestCompactionValidatesEpoch) {
         // Fix the expected epoch and see state increment its internal
         // compaction_epoch.
         auto replace = replace_objects_builder()
-                         .add(new_obj_builder(oid2, 100, 1100)
+                         .add(new_obj_builder(oid3, 100, 1100)
                                 .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
                                 .build())
                          .clean(
@@ -2092,4 +2206,62 @@ TEST_P(StateUpdateParamTest, TestCompactionValidatesEpoch) {
           p_state->get().compaction_epoch,
           partition_state::compaction_epoch_t{1});
     }
+}
+
+// --- preregistration tests ---
+
+TEST_P(StateUpdateParamTest, TestPreregisterObjectsInsertsThenApply) {
+    auto now = model::timestamp::now();
+    chunked_vector<object_id> ids;
+    ids.push_back(oid1);
+    ids.push_back(oid2);
+
+    auto res = apply_preregister_objects(std::move(ids), now);
+    ASSERT_TRUE(res.has_value());
+
+    auto& s = get_state();
+    EXPECT_EQ(s.objects.size(), 2u);
+    ASSERT_TRUE(s.objects.contains(oid1));
+    ASSERT_TRUE(s.objects.contains(oid2));
+    EXPECT_TRUE(s.objects.at(oid1).is_preregistration);
+    EXPECT_EQ(s.objects.at(oid1).last_updated, now);
+}
+
+TEST_P(StateUpdateParamTest, TestExpirePreregisteredObjectsClearsFlag) {
+    auto now = model::timestamp{1000};
+    chunked_vector<object_id> prereg_ids;
+    prereg_ids.push_back(oid1);
+    prereg_ids.push_back(oid2);
+    ASSERT_TRUE(
+      apply_preregister_objects(std::move(prereg_ids), now).has_value());
+
+    chunked_vector<object_id> expire_ids;
+    expire_ids.push_back(oid1);
+    ASSERT_TRUE(
+      apply_expire_preregistered_objects(std::move(expire_ids)).has_value());
+
+    auto& s = get_state();
+    // oid1 should have is_preregistration cleared (zero-sized, GC-eligible)
+    ASSERT_TRUE(s.objects.contains(oid1));
+    EXPECT_FALSE(s.objects.at(oid1).is_preregistration);
+    EXPECT_EQ(s.objects.at(oid1).total_data_size, 0u);
+
+    // oid2 untouched
+    ASSERT_TRUE(s.objects.contains(oid2));
+    EXPECT_TRUE(s.objects.at(oid2).is_preregistration);
+}
+
+TEST(AddObjectsUpdateTest, RejectsUnregisteredObject) {
+    state s;
+    // oid1 is NOT in objects (not preregistered).
+    // add_objects_update::build() should fail.
+    chunked_vector<new_object> objs;
+    new_object obj;
+    obj.oid = oid1;
+    obj.footer_pos = 0;
+    obj.object_size = 100;
+    objs.push_back(std::move(obj));
+
+    auto result = add_objects_update::build(s, std::move(objs), {});
+    EXPECT_FALSE(result.has_value());
 }

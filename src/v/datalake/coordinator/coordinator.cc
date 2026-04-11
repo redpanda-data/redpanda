@@ -431,7 +431,7 @@ struct coordinator::main_table_schema_provider
 
     ss::future<checked<iceberg::struct_type, coordinator::errc>>
     get_record_type(record_schema_components comps) const final {
-        std::optional<resolved_type> val_type;
+        std::optional<shared_resolved_type_t> val_type;
         if (comps.val_identifier) {
             auto type_res = co_await parent.type_resolver_.resolve_identifier(
               comps.val_identifier.value());

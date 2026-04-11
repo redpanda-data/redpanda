@@ -6,6 +6,7 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+import json
 from datetime import datetime
 from typing import Any
 
@@ -225,6 +226,41 @@ class AdminV2ListKafkaConnectionsTest(RedpandaTest):
                 retry_on_exc=True,
                 err_msg="Pagination validation failed",
             )
+
+        self.consumer.stop()
+
+    @cluster(num_nodes=4)
+    def test_list_kafka_connections_rpk(self):
+        """
+        Tests that rpk cluster connections list works correctly.
+
+        This specifically exercises the code path where rpk calls ListBrokers
+        to check version compatibility before listing connections.
+        """
+
+        self.logger.debug("Start a consumer to open some kafka connections")
+        self.consumer.start()
+
+        def valid_response() -> bool:
+            raw_resp = self.super_rpk.cluster_connections_list(
+                limit=100,
+                filter_raw="state = KAFKA_CONNECTION_STATE_OPEN",
+            )
+            resp = json.loads(raw_resp)
+            conns = resp.get("connections", [])
+
+            self.logger.info(
+                f"rpk cluster connections list returned {len(conns)} connections"
+            )
+
+            return len(conns) >= 2
+
+        wait_until(
+            valid_response,
+            timeout_sec=30,
+            retry_on_exc=True,
+            err_msg="rpk cluster connections list failed",
+        )
 
         self.consumer.stop()
 

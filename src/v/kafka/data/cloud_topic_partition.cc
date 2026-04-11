@@ -239,4 +239,22 @@ model::offset cloud_topic_partition::offset_lag() const {
     return _partition->high_watermark() - _partition->dirty_offset();
 }
 
+ss::future<cluster::partition_cloud_storage_status>
+cloud_topic_partition::get_cloud_storage_status() const {
+    cluster::partition_cloud_storage_status status{};
+    auto local_size = local_size_bytes();
+    auto l0_size = _fe->get_l0_size_estimate();
+    auto l1_size = (co_await _fe->l1_size())
+                     .value_or(cloud_topics::l1::metastore::size_response{});
+    status.mode = cluster::cloud_storage_mode::cloud_topic;
+    status.local_log_size_bytes = local_size;
+    // Report the L1 size via "cloud" size bytes and the sum of L0 and L1 sizes
+    // via "total" log size bytes. Users can derive the L0 size through total -
+    // cloud.
+    status.cloud_log_size_bytes = l1_size.size;
+    status.total_log_size_bytes = l0_size + l1_size.size;
+    status.stm_region_segment_count = l1_size.num_extents;
+    co_return status;
+}
+
 } // namespace kafka

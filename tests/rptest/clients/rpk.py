@@ -1628,7 +1628,9 @@ class RpkTool:
         output = self._execute(cmd)
         return list(filter(None, map(parse, output.splitlines())))
 
-    def cluster_connections_list(self, limit: int, filter_raw=None, order_by=None):
+    def cluster_connections_list(
+        self, limit: int, filter_raw: str | None = None, order_by: str | None = None
+    ) -> str:
         cmd = [
             self._rpk_binary(),
             "-X",

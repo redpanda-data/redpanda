@@ -352,7 +352,7 @@ ss::future<size_t> do_compact_segment_index(
 ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<segment> seg,
   compaction::compaction_config cfg,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   storage::probe& pb,
   ss::rwlock::holder rw_lock_holder,
   storage_resources& resources,
@@ -460,7 +460,7 @@ ss::future<storage::index_state> do_copy_segment_data(
       segment_last_offset,
       compaction_placeholder_enabled,
       tx_batch_compaction_enabled,
-      stm_manager,
+      stm_hookset,
       /*cidx=*/nullptr,
       /*inject_failure=*/false,
       cfg.asrc);
@@ -581,7 +581,7 @@ ss::future<> do_swap_data_file_handles(
 ss::future<compaction_result> do_self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   compaction::compaction_config cfg,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
   storage_resources& resources,
@@ -617,7 +617,7 @@ ss::future<compaction_result> do_self_compact_segment(
     auto idx = co_await do_copy_segment_data(
       s,
       cfg,
-      stm_manager,
+      stm_hookset,
       pb,
       std::move(read_holder),
       resources,
@@ -662,7 +662,7 @@ ss::future<compaction_result> do_self_compact_segment(
 
 ss::future<> build_compaction_index(
   model::record_batch_reader rdr,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   chunked_vector<model::tx_range> aborted_txs,
   const segment_full_path& p,
   compaction::compaction_config cfg,
@@ -672,7 +672,7 @@ ss::future<> build_compaction_index(
       p, false, resources, cfg.sanitizer_config);
     auto reducer = tx_reducer(
       p.get_ntp(),
-      stm_manager,
+      stm_hookset,
       std::move(aborted_txs),
       w.get(),
       tx_batch_compaction_enabled);
@@ -682,8 +682,10 @@ ss::future<> build_compaction_index(
         .finally([&w] { return w->close(); }));
     if (index_builder.failed()) {
         auto exception = index_builder.get_exception();
-        vlog(
-          gclog.error,
+        vlogl(
+          gclog,
+          ssx::is_shutdown_exception(exception) ? ss::log_level::debug
+                                                : ss::log_level::error,
           "Error rebuilding index: {}, {}",
           w->filename(),
           exception);
@@ -710,7 +712,7 @@ bool compacted_index_needs_rebuild(compacted_index::recovery_state state) {
 
 ss::future<> rebuild_compaction_index(
   ss::lw_shared_ptr<segment> s,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   compaction::compaction_config cfg,
   storage::probe& pb,
   storage_resources& resources,
@@ -723,11 +725,11 @@ ss::future<> rebuild_compaction_index(
         throw segment_closed_exception();
     }
     // TODO: Improve memory management here, eg: ton of aborted txs?
-    auto aborted_txs = co_await stm_manager->aborted_tx_ranges(
+    auto aborted_txs = co_await stm_hookset->aborted_tx_ranges(
       s->offsets().get_base_offset(), s->offsets().get_stable_offset());
     co_await build_compaction_index(
       create_segment_full_reader(s, cfg, pb, std::move(h)),
-      stm_manager,
+      stm_hookset,
       std::move(aborted_txs),
       idx_path,
       cfg,
@@ -739,7 +741,7 @@ ss::future<> rebuild_compaction_index(
 
 ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
   ss::lw_shared_ptr<segment> s,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   const compaction::compaction_config& cfg,
   ss::rwlock::holder& read_holder,
   storage_resources& resources,
@@ -778,7 +780,7 @@ ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
         }
 
         co_await rebuild_compaction_index(
-          s, stm_manager, cfg, pb, resources, tx_batch_compaction_enabled);
+          s, stm_hookset, cfg, pb, resources, tx_batch_compaction_enabled);
 
         // Take the lock again before proceeding.
         read_holder = co_await s->read_lock();
@@ -794,7 +796,7 @@ ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
 
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<segment> s,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   const compaction::compaction_config& cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
@@ -828,7 +830,7 @@ ss::future<compaction_result> self_compact_segment(
     compacted_index::recovery_state state
       = co_await maybe_rebuild_compaction_index(
         s,
-        stm_manager,
+        stm_hookset,
         cfg,
         read_holder,
         resources,
@@ -844,7 +846,7 @@ ss::future<compaction_result> self_compact_segment(
     auto res = co_await do_self_compact_segment(
       s,
       cfg,
-      stm_manager,
+      stm_hookset,
       pb,
       readers_cache,
       resources,
@@ -1199,7 +1201,7 @@ ss::future<chunked_vector<ss::rwlock::holder>> transfer_segment(
 ss::future<compaction_result> concatenate_and_rebuild_target_segment(
   ss::lw_shared_ptr<segment> target,
   chunked_vector<ss::lw_shared_ptr<segment>>& segments,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   compaction::compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
@@ -1241,7 +1243,7 @@ ss::future<compaction_result> concatenate_and_rebuild_target_segment(
     // index state.
     compaction_result ret = co_await self_compact_segment(
       replacement,
-      stm_manager,
+      stm_hookset,
       cfg,
       pb,
       readers_cache,

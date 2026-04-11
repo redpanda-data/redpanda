@@ -16,6 +16,7 @@ import (
 	"github.com/redpanda-data/common-go/rpadmin"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +25,8 @@ const (
 	rolePrefix = "RedpandaRole:"
 	userPrefix = "User:"
 )
+
+var minGroupVersion = redpanda.Version{Major: 26, Feature: 1}
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{

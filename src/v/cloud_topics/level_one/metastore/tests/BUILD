@@ -81,6 +81,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/cloud_storage:remote_label",
         "//src/v/cloud_topics:app",
+        "//src/v/cloud_topics/level_one/metastore:domain_uuid",
         "//src/v/cloud_topics/level_one/metastore:manifest_io",
         "//src/v/cloud_topics/level_one/metastore:metastore_manifest",
         "//src/v/cloud_topics/level_one/metastore:replicated_metastore",

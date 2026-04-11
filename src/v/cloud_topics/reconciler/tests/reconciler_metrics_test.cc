@@ -72,7 +72,7 @@ private:
     unreliable_io _io;
     unreliable_metastore _metastore;
     reconciler::reconciler<ss::manual_clock> _reconciler{
-      &_io, &_metastore, ss::default_scheduling_group()};
+      &_io, &_metastore, nullptr, ss::default_scheduling_group()};
 };
 
 using ::testing::Gt;

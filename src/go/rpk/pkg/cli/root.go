@@ -21,6 +21,7 @@ import (
 	"github.com/fatih/color"
 	mTerm "github.com/moby/term"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/acl"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/benchmark"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/connect"
@@ -114,6 +115,7 @@ func Execute() {
 
 	root.AddCommand(
 		acl.NewCommand(fs, p),
+		benchmark.NewCommand(fs, p),
 		cloud.NewCommand(fs, p, osExec),
 		cluster.NewCommand(fs, p),
 		container.NewCommand(fs, p),

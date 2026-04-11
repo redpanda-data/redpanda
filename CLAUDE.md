@@ -194,6 +194,12 @@ for memory safety in coroutines, not self-reference.
   - ASCII diagrams for complex state machines or data flows
 - **Avoid obvious branching comments** - `if (x)` rarely needs `// when x is true`
 
+### Benchmarking
+
+  - Run benchmarks like `bazel run --config=release //src/v/utils/tests:coro_rpbench`
+  - Get --help like: `bazel run --config=release //src/v/utils/tests:coro_rpbench -- --help`
+  - If running/writing benchmarks read this also: external/+non_module_dependencies+seastar/tests/perf/perf-tests.md
+
 ### More C++-Specific References
 
 - [MODULE.bazel](https://github.com/redpanda-data/redpanda/blob/dev/MODULE.bazel)

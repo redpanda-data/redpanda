@@ -82,7 +82,12 @@ public:
         co_return ss::stop_iteration::no;
     }
 
-    ss::future<> finalize() final { co_return; }
+    ss::future<> finalize(bool /*success*/) final { co_return; }
+
+    ss::future<> prepare_iteration(kafka::offset) final { co_return; }
+    ss::future<> finish_iteration(kafka::offset, kafka::offset) final {
+        co_return;
+    }
 
     chunked_circular_buffer<model::record_batch>& _output_batches;
 };

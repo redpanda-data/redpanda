@@ -166,6 +166,7 @@ class DatalakeServices:
             self.query_engines.append(svc)
 
     def tearDown(self):
+        self.redpanda.stop()
         for engine in self.query_engines:
             engine.stop()
         self.catalog_service.stop()

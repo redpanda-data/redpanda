@@ -35,6 +35,13 @@ void validate_initialized(ss::sharded<cloud_topics::level_zero_gc>* gc) {
           "Cloud topics level zero GC not initialized");
     }
 }
+
+void validate_node_exists(const cluster::members_table& mt, model::node_id id) {
+    if (!mt.nodes().contains(id)) {
+        throw serde::pb::rpc::not_found_exception(
+          ssx::sformat("Node ID {} not found", id));
+    }
+}
 } // namespace
 
 namespace admin {
@@ -49,10 +56,14 @@ map_gc_state(cloud_topics::level_zero_gc::state st) {
         return status::l0_gc_status_paused;
     case running:
         return status::l0_gc_status_running;
+    case resetting:
+        return status::l0_gc_status_resetting;
     case stopping:
         return status::l0_gc_status_stopping;
     case stopped:
         return status::l0_gc_status_stopped;
+    case safety_blocked:
+        return status::l0_gc_status_safety_blocked;
     }
     vunreachable("Unrecognized level_zero_gc::state {}", st);
 }
@@ -130,80 +141,65 @@ level_zero_service_impl::get_status(
     co_return response;
 }
 
-seastar::future<proto::admin::level_zero::start_response>
-level_zero_service_impl::start(
-  serde::pb::rpc::context ctx, proto::admin::level_zero::start_request req) {
+seastar::future<proto::admin::level_zero::start_gc_response>
+level_zero_service_impl::start_gc(
+  serde::pb::rpc::context ctx, proto::admin::level_zero::start_gc_request req) {
     validate_initialized(_gc);
     using namespace proto::admin::level_zero;
-    auto [local, remote] = validate_request_routing(ctx, req);
+    model::node_id target = req.has_node_id()
+                              ? model::node_id{req.get_node_id()}
+                              : _self;
+    validate_node_exists(_members_table->local(), target);
 
-    start_response response;
-    if (local == apply_local::yes) {
-        co_await _gc->invoke_on_all(&cloud_topics::level_zero_gc::start);
-        auto& result = response.get_results().emplace_back();
-        result.set_node_id(_self);
+    if (target != _self) {
+        co_return co_await _proxy_client
+          .make_client_for_node<level_zero_service_client>(target)
+          .start_gc(ctx, std::move(req));
     }
 
-    if (remote == apply_remote::yes) {
-        auto results = co_await dispatch_and_collect<
-          start_request,
-          start_response,
-          start_result,
-          level_zero_service_client>(
-          req,
-          [ctx](
-            level_zero_service_client& cl,
-            model::node_id id,
-            const start_request&) {
-              start_request proxy_req;
-              proxy_req.set_node_id(id);
-              return cl.start(ctx, std::move(proxy_req));
-          },
-          [](start_response rsp) { return std::move(rsp.get_results()); });
-        response.get_results().reserve(
-          response.get_results().size() + results.size());
-        std::ranges::move(results, std::back_inserter(response.get_results()));
-    }
-
-    co_return response;
+    co_await _gc->invoke_on_all(&cloud_topics::level_zero_gc::start);
+    co_return start_gc_response{};
 }
 
-seastar::future<proto::admin::level_zero::pause_response>
-level_zero_service_impl::pause(
-  serde::pb::rpc::context ctx, proto::admin::level_zero::pause_request req) {
+seastar::future<proto::admin::level_zero::pause_gc_response>
+level_zero_service_impl::pause_gc(
+  serde::pb::rpc::context ctx, proto::admin::level_zero::pause_gc_request req) {
     validate_initialized(_gc);
     using namespace proto::admin::level_zero;
-    auto [local, remote] = validate_request_routing(ctx, req);
+    model::node_id target = req.has_node_id()
+                              ? model::node_id{req.get_node_id()}
+                              : _self;
+    validate_node_exists(_members_table->local(), target);
 
-    pause_response response;
-    if (local == apply_local::yes) {
-        co_await _gc->invoke_on_all(&cloud_topics::level_zero_gc::pause);
-        auto& result = response.get_results().emplace_back();
-        result.set_node_id(_self);
+    if (target != _self) {
+        co_return co_await _proxy_client
+          .make_client_for_node<level_zero_service_client>(target)
+          .pause_gc(ctx, std::move(req));
     }
 
-    if (remote == apply_remote::yes) {
-        auto results = co_await dispatch_and_collect<
-          pause_request,
-          pause_response,
-          pause_result,
-          level_zero_service_client>(
-          req,
-          [ctx](
-            level_zero_service_client& cl,
-            model::node_id id,
-            const pause_request&) {
-              pause_request proxy_req;
-              proxy_req.set_node_id(id);
-              return cl.pause(ctx, std::move(proxy_req));
-          },
-          [](pause_response rsp) { return std::move(rsp.get_results()); });
-        response.get_results().reserve(
-          response.get_results().size() + results.size());
-        std::ranges::move(results, std::back_inserter(response.get_results()));
+    co_await _gc->invoke_on_all(&cloud_topics::level_zero_gc::pause);
+    co_return pause_gc_response{};
+}
+
+seastar::future<proto::admin::level_zero::reset_gc_response>
+level_zero_service_impl::reset_gc(
+  serde::pb::rpc::context ctx, proto::admin::level_zero::reset_gc_request req) {
+    validate_initialized(_gc);
+    using namespace proto::admin::level_zero;
+    model::node_id target = req.has_node_id()
+                              ? model::node_id{req.get_node_id()}
+                              : _self;
+    validate_node_exists(_members_table->local(), target);
+
+    if (target != _self) {
+        co_return co_await _proxy_client
+          .make_client_for_node<level_zero_service_client>(target)
+          .reset_gc(ctx, std::move(req));
     }
 
-    co_return response;
+    co_await _gc->invoke_on_all(
+      [](cloud_topics::level_zero_gc& gc) { return gc.reset(); });
+    co_return reset_gc_response{};
 }
 
 namespace {

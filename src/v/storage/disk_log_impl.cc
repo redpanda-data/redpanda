@@ -182,6 +182,7 @@ disk_log_impl::disk_log_impl(
   ss::sharded<features::feature_table>& feature_table,
   std::vector<model::record_batch_type> translator_batch_types)
   : log(std::move(cfg))
+  , _stm_hookset(ss::make_lw_shared<storage::stm_hookset>())
   , _manager(manager)
   , _segment_size_jitter(
       internal::random_jitter(_manager.config().segment_size_jitter))
@@ -540,7 +541,7 @@ ss::future<compaction_result> disk_log_impl::segment_self_compact(
   bool force_compaction) {
     co_return co_await storage::internal::self_compact_segment(
       seg,
-      _stm_manager,
+      _stm_hookset,
       cfg,
       *_probe,
       *_readers_cache,
@@ -787,7 +788,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         idx_start_offset = co_await build_offset_map(
           cfg,
           segs,
-          _stm_manager,
+          _stm_hookset,
           _manager.resources(),
           *_probe,
           map,
@@ -1160,7 +1161,7 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
           = co_await storage::internal::concatenate_and_rebuild_target_segment(
             target,
             segments,
-            _stm_manager,
+            _stm_hookset,
             cfg,
             *_probe,
             *_readers_cache,
@@ -1691,7 +1692,7 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
           seg,
           *appender,
           *compacted_idx_writer,
-          _stm_manager,
+          _stm_hookset,
           *_probe,
           storage::internal::should_apply_delta_time_offset(_feature_table),
           _feature_table);
@@ -2087,7 +2088,7 @@ ss::future<> disk_log_impl::new_segment(model::offset o, model::term_id t) {
                 }
                 _segs.add(std::move(h));
                 _probe->segment_created();
-                _stm_manager->make_snapshot_in_background();
+                _stm_hookset->request_make_snapshot_in_background();
                 _stm_dirty_bytes_units.return_all();
             });
       });
@@ -3506,14 +3507,12 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
 
 ss::future<> disk_log_impl::truncate(truncate_config cfg) {
     throw_if_closed();
-    // We are truncating the offset translator before truncating the log
-    // because if saving offset translator state fails (e.g. because of a
-    // crash), we can retry and eventually log and offset translator will
-    // become consistent. OTOH if log truncation were first and saving offset
-    // translator state failed, we wouldn't retry and log and offset translator
-    // could diverge.
-    co_await _offset_translator.truncate(cfg.base_offset);
-
+    // Truncate the log before the offset translator. This ordering ensures
+    // that if the OT update fails (I/O error on checkpoint), the in-memory
+    // OT state is already correct (the map erase happens before the
+    // checkpoint) so runtime offset translations remain accurate. On
+    // restart, sync_with_log will reconcile the on-disk OT state with the
+    // actual log.
     co_await _failure_probes.truncate().then([this, cfg]() mutable {
         // Before truncation, erase any claim about a particular segment being
         // clean: this may refer to a segment we are about to delete, or it
@@ -3530,6 +3529,7 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
               return do_truncate(cfg, std::nullopt);
           });
     });
+    co_await _offset_translator.truncate(cfg.base_offset);
 }
 
 ss::future<> disk_log_impl::do_truncate(
@@ -3793,8 +3793,9 @@ void disk_log_impl::wrote_stm_bytes(size_t byte_size) {
     auto checkpoint_hint = _manager.resources().stm_take_bytes(
       byte_size, _stm_dirty_bytes_units);
     if (checkpoint_hint) {
-        _stm_manager->make_snapshot_in_background();
-        _stm_dirty_bytes_units.return_all();
+        if (_stm_hookset->request_make_snapshot_in_background()) [[likely]] {
+            _stm_dirty_bytes_units.return_all();
+        }
     }
 }
 
@@ -3875,7 +3876,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
      * max removable offset from stm. A future refactoring may consider moving
      * more of the retention controls into a higher level location.
      */
-    const auto max_removable = stm_manager()->max_removable_local_log_offset();
+    const auto max_removable = stm_hookset()->max_removable_local_log_offset();
     const auto retention_offset = [&]() -> std::optional<model::offset> {
         if (max_offset.has_value()) {
             return std::min(max_offset.value(), max_removable);
@@ -4212,8 +4213,11 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
             config::shard_local_cfg()
               .space_management_max_segment_concurrency()));
 
+        // Copy segment pointers so that concurrent modification of
+        // _segs does not invalidate the range we iterate over.
+        auto segments = _segs.copy();
         use = co_await ss::map_reduce(
-          _segs,
+          segments,
           [&limit](const segment_set::type& seg) {
               return ss::with_semaphore(
                 limit, 1, [&seg] { return seg->persistent_size(); });
@@ -4270,7 +4274,7 @@ disk_log_impl::cloud_gc_eligible_segments() {
      * topics max removable will include a reflection of how much data has
      * been uploaded into the cloud.
      */
-    const auto max_removable = stm_manager()->max_removable_local_log_offset();
+    const auto max_removable = stm_hookset()->max_removable_local_log_offset();
 
     // collect eligible segments
     chunked_vector<segment_set::type> segments;
@@ -4366,7 +4370,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
      * for a cloud-backed topic the max collecible offset is the threshold below
      * which data has been uploaded and can safely be removed from local disk.
      */
-    const auto max_removable = stm_manager()->max_removable_local_log_offset();
+    const auto max_removable = stm_hookset()->max_removable_local_log_offset();
 
     /*
      * lightweight segment set copy for safe iteration

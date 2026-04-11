@@ -12,6 +12,7 @@
 
 #include "base/vassert.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
+#include "cloud_topics/level_zero/common/level_zero_probe.h"
 #include "cloud_topics/level_zero/pipeline/base_pipeline.h"
 #include "cloud_topics/level_zero/pipeline/write_pipeline.h"
 #include "cloud_topics/level_zero/pipeline/write_request.h"
@@ -215,7 +216,8 @@ schedule_result<Clock> scheduler_context<Clock>::try_schedule_upload(
   ss::shard_id shard,
   size_t max_buffer_size,
   std::chrono::milliseconds scheduling_interval,
-  time_point now) {
+  time_point now,
+  write_request_scheduler_probe& probe) {
     // Get group info for this shard
     auto gid = shard_to_group[shard].load();
     auto& group = groups[static_cast<size_t>(gid)];
@@ -241,8 +243,9 @@ schedule_result<Clock> scheduler_context<Clock>::try_schedule_upload(
 
         if (can_modify) {
             auto next_stage_bytes = get_group_next_stage_bytes(gid);
+            probe.set_next_stage_bytes(next_stage_bytes);
             // Calculate dynamic split threshold based on group size
-            size_t group_split_threshold = max_buffer_size * grp_size;
+            size_t group_split_threshold = 2 * max_buffer_size * grp_size;
             if (grp_size > 1 && next_stage_bytes > group_split_threshold) {
                 // Split: next stage is overloaded, work more independently
                 if (try_split_group(gid)) {
@@ -421,7 +424,7 @@ write_request_scheduler<Clock>::run_once() {
 
     // Let scheduler_context make the scheduling decision
     auto result = _context->try_schedule_upload(
-      this_shard, _max_buffer_size(), _scheduling_interval(), now);
+      this_shard, _max_buffer_size(), _scheduling_interval(), now, _probe);
 
     switch (result.action) {
     case schedule_action::skip:

@@ -1751,7 +1751,7 @@ void archival_metadata_stm_factory::create(
       clusterlog,
       tcfg ? tcfg->properties.remote_label : std::nullopt,
       tcfg ? tcfg->properties.remote_topic_namespace_override : std::nullopt);
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace cluster

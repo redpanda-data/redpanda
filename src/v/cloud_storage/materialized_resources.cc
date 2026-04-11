@@ -305,9 +305,7 @@ materialized_resources::get_partition_reader_units(
     return get_units_abortable(_mem_units, sz, as);
 }
 
-ss::future<segment_units>
-materialized_resources::get_segment_units(model::opt_abort_source_t as) {
-    auto sz = projected_remote_segment_memory_usage();
+void materialized_resources::maybe_trim_segments(ssize_t sz) {
     if (_mem_units.available_units() <= sz) {
         // Update metrics counter if we are trying to acquire units while
         // saturated
@@ -315,8 +313,22 @@ materialized_resources::get_segment_units(model::opt_abort_source_t as) {
 
         trim_segments(max_memory_utilization() / 2);
     }
+}
+
+ss::future<segment_units>
+materialized_resources::get_segment_units(model::opt_abort_source_t as) {
+    auto sz = projected_remote_segment_memory_usage();
+    maybe_trim_segments(sz);
     auto semaphore_units = co_await get_units_abortable(_mem_units, sz, as);
     co_return segment_units{std::move(semaphore_units)};
+}
+
+std::optional<segment_units> materialized_resources::try_get_segment_units() {
+    auto sz = projected_remote_segment_memory_usage();
+    maybe_trim_segments(sz);
+
+    return _mem_units.try_get_units(sz).transform(
+      [](auto u) { return segment_units{std::move(u)}; });
 }
 
 void materialized_resources::trim_segment_readers(size_t target_free) {

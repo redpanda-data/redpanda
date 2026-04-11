@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "container/chunked_vector.h"
+#include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/logger.h"
 #include "kafka/server/handlers/topics/types.h"
@@ -69,7 +70,7 @@ creatable_topic_result generate_successfull_result(const T& item) {
 template<typename Iter, typename ErrIter, typename Predicate>
     requires TopicRequestItem<typename Iter::value_type> &&
     TopicResultIterator<ErrIter> &&
-    std::predicate<Predicate, std::iter_reference_t<Iter>>
+    std::predicate<Predicate, std::iter_reference_t<Iter>, features::feature_table*>
 // clang-format on
 Iter validate_requests_range(
   Iter begin,
@@ -77,8 +78,12 @@ Iter validate_requests_range(
   ErrIter out_it,
   error_code code,
   const ss::sstring& error_msg,
-  Predicate&& p) {
-    auto valid_range_end = std::partition(begin, end, p);
+  Predicate&& p,
+  features::feature_table* ft = nullptr) {
+    auto valid_range_end = std::partition(
+      begin, end, [p = std::forward<Predicate>(p), ft](const auto& c) {
+          return p(c, ft);
+      });
     std::transform(
       valid_range_end,
       end,
@@ -97,14 +102,16 @@ Iter validate_requests_range(
   Iter begin,
   Iter end,
   ErrIter err_it,
-  validator_type_list<typename Iter::value_type, ValidatorTypes...>) {
+  validator_type_list<typename Iter::value_type, ValidatorTypes...>,
+  features::feature_table* ft = nullptr) {
     ((end = validate_requests_range(
         begin,
         end,
         err_it,
         ValidatorTypes::ec,
         ValidatorTypes::error_message,
-        ValidatorTypes::is_valid)),
+        ValidatorTypes::is_valid,
+        ft)),
      ...);
     return end;
 }

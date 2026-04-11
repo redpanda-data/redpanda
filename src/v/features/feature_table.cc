@@ -132,6 +132,8 @@ std::string_view to_string_view(feature f) {
         return "group_based_authorization";
     case feature::user_based_client_quota:
         return "user_based_client_quota";
+    case feature::cloud_topics:
+        return "cloud_topics";
 
     /*
      * testing features

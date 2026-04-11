@@ -20,7 +20,7 @@ fmt::iterator cloud_topic_log_reader_config::format_to(fmt::iterator it) const {
       it,
       "start_offset:{}, max_offset:{}, min_bytes:{}, max_bytes:{}, "
       "strict_max_bytes:{}, type_filter: {}, first_timestamp:{}, "
-      "skip_cache:{}, abortable:{}, "
+      "skip_cache:{}, allow_mat_failure:{}, abortable:{}, "
       "client_address:{}",
       start_offset,
       max_offset,
@@ -30,6 +30,7 @@ fmt::iterator cloud_topic_log_reader_config::format_to(fmt::iterator it) const {
       type_filter,
       first_timestamp,
       skip_cache,
+      allow_mat_failure,
       abort_source.has_value(),
       client_address);
 }

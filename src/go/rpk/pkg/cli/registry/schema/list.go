@@ -12,13 +12,15 @@ package schema
 import (
 	"sync"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/sr"
 	"github.com/twmb/types"
+
+	srcontext "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry/context"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 )
 
 type schemaResponse struct {
@@ -29,7 +31,16 @@ type schemaResponse struct {
 	Err     string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
-func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+type schemaResponseWithContext struct {
+	Context string `json:"context" yaml:"context"`
+	Subject string `json:"subject" yaml:"subject"`
+	Version int    `json:"version,omitempty" yaml:"version,omitempty"`
+	ID      int    `json:"id,omitempty" yaml:"id,omitempty"`
+	Type    string `json:"type,omitempty" yaml:"type,omitempty"`
+	Err     string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+func newListCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	var deleted bool
 	cmd := &cobra.Command{
 		Use:     "list [SUBJECT...]",
@@ -46,13 +57,32 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-			ctx := cmd.Context()
+			skipCheck, _ := cmd.Flags().GetBool("skip-context-check")
+			showCtxCol := *schemaCtx == "" && srcontext.IsContextSupported(cmd.Context(), fs, p, skipCheck) == nil
+
+			// Build params: combine ShowDeleted and SubjectPrefix in
+			// one WithParams call (params do not stack).
+			var params []sr.Param
 			if deleted {
-				ctx = sr.WithParams(cmd.Context(), sr.ShowDeleted)
+				params = append(params, sr.ShowDeleted)
 			}
+			ctx := cmd.Context()
 			if len(subjects) == 0 {
+				if pfx := schemaregistry.ContextSubjectPrefix(*schemaCtx); pfx != "" {
+					params = append(params, sr.SubjectPrefix(pfx))
+				}
+				if len(params) > 0 {
+					ctx = sr.WithParams(ctx, params...)
+				}
 				subjects, err = cl.Subjects(ctx)
 				out.MaybeDie(err, "unable to list all subjects: %v", err)
+			} else {
+				for i, s := range subjects {
+					subjects[i] = schemaregistry.QualifySubject(*schemaCtx, s)
+				}
+				if len(params) > 0 {
+					ctx = sr.WithParams(ctx, params...)
+				}
 			}
 
 			type res struct {
@@ -65,8 +95,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				mu      sync.Mutex
 				results []res
 			)
-			for i := range subjects {
-				subject := subjects[i]
+			for _, subject := range subjects {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
@@ -84,18 +113,53 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			types.Sort(results)
 
-			// We use literal here to display an empty array when unmarshalling
-			// an empty list.
+			if showCtxCol {
+				response := []schemaResponseWithContext{}
+				for _, res := range results {
+					if res.err != nil {
+						sCtx, bare := schemaregistry.ParseSubjectContext(res.subject)
+						response = append(response, schemaResponseWithContext{
+							Context: schemaregistry.DisplayContext(sCtx),
+							Subject: bare,
+							Err:     res.err.Error(),
+						})
+						continue
+					}
+					for _, s := range res.ss {
+						sCtx, bare := schemaregistry.ParseSubjectContext(s.Subject)
+						response = append(response, schemaResponseWithContext{
+							Context: schemaregistry.DisplayContext(sCtx),
+							Subject: bare,
+							Version: s.Version,
+							ID:      s.ID,
+							Type:    s.Type.String(),
+						})
+					}
+				}
+				types.Sort(response)
+				if isText, _, s, err := f.Format(response); !isText {
+					out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
+					out.Exit(s)
+				}
+				tw := out.NewTable("context", "subject", "version", "id", "type", "error")
+				defer tw.Flush()
+				for _, r := range response {
+					tw.PrintStructFields(r)
+				}
+				return
+			}
+
+			// No context column: strip qualifier and use the standard response.
 			response := []schemaResponse{}
 			for _, res := range results {
 				if res.err != nil {
-					sc := schemaResponse{Subject: res.subject, Err: res.err.Error()}
+					sc := schemaResponse{Subject: schemaregistry.StripContextQualifier(*schemaCtx, res.subject), Err: res.err.Error()}
 					response = append(response, sc)
 					continue
 				}
 				for _, s := range res.ss {
 					sc := schemaResponse{
-						Subject: s.Subject,
+						Subject: schemaregistry.StripContextQualifier(*schemaCtx, s.Subject),
 						Version: s.Version,
 						ID:      s.ID,
 						Type:    s.Type.String(),
@@ -103,6 +167,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					response = append(response, sc)
 				}
 			}
+			types.Sort(response)
 			if isText, _, s, err := f.Format(response); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				out.Exit(s)

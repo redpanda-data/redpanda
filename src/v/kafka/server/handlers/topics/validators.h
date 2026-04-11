@@ -12,6 +12,7 @@
 #pragma once
 #include "config/configuration.h"
 #include "datalake/partition_spec_parser.h"
+#include "features/feature_table.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/server/handlers/topics/types.h"
@@ -21,8 +22,9 @@
 
 namespace kafka {
 template<typename Request, typename T>
-concept RequestValidator = requires(T validator, const Request& request) {
-    { T::is_valid(request) } -> std::same_as<bool>;
+concept RequestValidator = requires(
+  T validator, const Request& request, features::feature_table* ft) {
+    { T::is_valid(request, ft) } -> std::same_as<bool>;
     { T::ec } -> std::convertible_to<const error_code&>;
     { T::error_message } -> std::convertible_to<const char*>;
 };
@@ -40,7 +42,7 @@ struct custom_partition_assignment_negative_partition_count {
       = "For custom partition assignment, partition count and replication "
         "factor must be equal to -1";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (!c.assignments.empty()) {
             return c.num_partitions == -1 && c.replication_factor == -1;
         }
@@ -54,7 +56,7 @@ struct replicas_diversity {
     static constexpr const char* error_message
       = "Topic partition replica set must contain unique nodes";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (c.assignments.empty()) {
             return true;
         }
@@ -75,7 +77,7 @@ struct all_replication_factors_are_the_same {
     static constexpr const char* error_message
       = "All custom assigned partitions must have the same number of replicas";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (c.assignments.empty()) {
             return true;
         }
@@ -94,7 +96,7 @@ struct partition_count_must_be_positive {
     static constexpr const char* error_message
       = "Partitions count must be greater than 0";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (!c.assignments.empty()) {
             return true;
         }
@@ -108,7 +110,7 @@ struct replication_factor_must_be_odd {
     static constexpr const char* error_message
       = "Replication factor must be an odd number - 1,3,5,7,9,11...";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (!c.assignments.empty()) {
             return true;
         }
@@ -122,7 +124,7 @@ struct replication_factor_must_be_positive {
     static constexpr const char* error_message
       = "Replication factor must be greater than 0";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (!c.assignments.empty()) {
             return true;
         }
@@ -137,7 +139,7 @@ struct replication_factor_must_be_greater_or_equal_to_minimum {
       = "Replication factor must be greater than or equal to specified minimum "
         "value";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         // All topics being validated as this level will be created in the kafka
         // namespace
         if (model::is_user_topic(
@@ -161,7 +163,7 @@ struct remote_read_and_write_are_not_supported_for_read_replica {
     static constexpr const char* error_message
       = "remote read and write are not supported for read replicas";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         auto config_entries = config_map(c.configs);
         auto end = config_entries.end();
         bool is_recovery
@@ -187,7 +189,7 @@ struct batch_max_bytes_limits {
         "equal to the `kafka_max_message_size_upper_limit` broker "
         "configuration";
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         auto it = std::find_if(
           c.configs.begin(),
           c.configs.end(),
@@ -242,7 +244,7 @@ struct subject_name_strategy_validator {
       = "Unsupported subject name strategy ";
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         return std::all_of(
           c.configs.begin(),
           c.configs.end(),
@@ -282,7 +284,7 @@ struct iceberg_config_validator {
         "level.";
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         model::iceberg_mode parsed_mode = model::iceberg_mode::disabled;
 
         auto mode_it = std::find_if(
@@ -345,7 +347,7 @@ struct iceberg_invalid_record_action_validator {
 
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         auto it = std::find_if(
           c.configs.begin(),
           c.configs.end(),
@@ -436,7 +438,7 @@ struct write_caching_configs_validator {
         return false;
     }
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         return validate_write_caching(c) && validate_flush_ms(c)
                && validate_flush_bytes(c);
     }
@@ -449,7 +451,7 @@ struct iceberg_target_lag_ms_validator {
       = topic_property_iceberg_target_lag_ms;
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (auto it = std::ranges::find(
               c.configs,
               topic_property_iceberg_target_lag_ms,
@@ -474,7 +476,7 @@ struct configuration_value_validator {
     static constexpr const char* error_message = T::error_message;
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         auto config_entries = config_map(c.configs);
         auto end = config_entries.end();
 
@@ -496,7 +498,7 @@ struct vcluster_id_validator {
     static constexpr const char* error_message = "invalid virtual cluster id";
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         if (!config::shard_local_cfg().enable_mpx_extensions()) {
             return true;
         }
@@ -522,7 +524,7 @@ struct min_max_compaction_lag_ms_validator {
       = "max.compaction.lag.ms must be at least min.compaction.lag.ms";
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool is_valid(const creatable_topic& c, features::feature_table*) {
         const auto entries = config_map(c.configs);
         const auto min_lag = get_config_value<int64_t>(
           entries, topic_property_min_compaction_lag_ms);
@@ -540,11 +542,13 @@ struct min_max_compaction_lag_ms_validator {
  */
 struct storage_mode_config_validator {
     static constexpr const char* error_message
-      = "Invalid storage mode: 'cloud' requires cloud topics to be enabled, "
+      = "Invalid storage mode: 'cloud' requires cloud topics to be enabled and "
+        "the cluster to be fully upgraded to at least v26.1.1, "
         "'tiered' requires cloud storage to be enabled.";
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c) {
+    static bool
+    is_valid(const creatable_topic& c, features::feature_table* ft) {
         auto it = std::find_if(
           c.configs.begin(),
           c.configs.end(),
@@ -564,6 +568,11 @@ struct storage_mode_config_validator {
         case model::redpanda_storage_mode::tiered:
             return config::shard_local_cfg().cloud_storage_enabled();
         case model::redpanda_storage_mode::cloud:
+            if (
+              ft == nullptr
+              || !ft->is_active(features::feature::cloud_topics)) {
+                return false;
+            }
             return config::shard_local_cfg().cloud_topics_enabled();
         case model::redpanda_storage_mode::unset:
             // unset is always valid - actual behavior depends on

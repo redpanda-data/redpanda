@@ -1,0 +1,19 @@
+FROM debian:12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gdb strace ltrace binutils procps \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=bins {{ bin_paths | join(' ') }} {{ install_prefix }}/bin/
+COPY libs/ {{ lib_dir }}/
+{% for ctx_name, src_name, dest_path in data_files %}
+COPY --from={{ ctx_name }} {{ src_name }} {{ data_dir }}/{{ dest_path }}
+{% endfor %}
+COPY --from=deps entrypoint.sh /usr/bin/entrypoint.sh
+COPY drivers/ {{ driver_dir }}/
+RUN mkdir -p /symbols \
+{% for name in binary_names %}
+    && ln -s {{ install_prefix }}/bin/{{ name }} /symbols/{{ name }} \
+{% endfor %}
+    && find {{ lib_dir }}/ -name '*.so*' -exec sh -c 'ln -s "$1" /symbols/"$(basename "$1")"' _ {} \; \
+    && chmod 755 /usr/bin/entrypoint.sh \
+    && chmod 755 {{ driver_dir }}/singleton_driver_*.sh
+ENTRYPOINT ["/usr/bin/sh", "/usr/bin/entrypoint.sh"]

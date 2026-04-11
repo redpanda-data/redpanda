@@ -17,13 +17,16 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
 #include "pandaproxy/util.h"
+#include "security/fwd.h"
 #include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/net/socket_defs.hh>
-
+namespace datalake::coordinator {
+class frontend;
+}
 namespace pandaproxy::rest {
 
 class proxy : public ss::peering_sharded_service<proxy> {
@@ -36,7 +39,8 @@ public:
       size_t max_memory,
       ss::sharded<kafka::client::client>& client,
       ss::sharded<kafka_client_cache>& client_cache,
-      cluster::controller* controller);
+      cluster::controller* controller,
+      ss::sharded<datalake::coordinator::frontend>& dl_frontend);
 
     ss::future<> start();
     ss::future<> stop();
@@ -45,6 +49,11 @@ public:
     const configuration& config() const;
     ss::sharded<kafka::client::client>& client() { return _client; }
     ss::sharded<kafka_client_cache>& client_cache() { return _client_cache; }
+    ss::sharded<datalake::coordinator::frontend>& dl_frontend() {
+        return _dl_frontend;
+    }
+    security::authorizer& authorizer();
+    cluster::topic_table& topic_table() { return _topic_table.local(); }
     ss::future<> mitigate_error(std::exception_ptr);
 
 private:
@@ -59,7 +68,10 @@ private:
     ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
     ss::sharded<kafka_client_cache>& _client_cache;
+    cluster::controller* _controller;
+    ss::sharded<datalake::coordinator::frontend>& _dl_frontend;
     server::context_t _ctx;
+    ss::sharded<cluster::topic_table>& _topic_table;
     server _server;
     one_shot _ensure_started;
     bool _is_started{false};

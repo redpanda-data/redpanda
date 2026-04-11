@@ -25,7 +25,7 @@ type deleteResponse struct {
 	Version string `json:"version" yaml:"version"`
 }
 
-func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newDeleteCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	var sversion string
 	var isPermanent bool
 	cmd := &cobra.Command{
@@ -47,15 +47,16 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDieErr(err)
 
 			subject := args[0]
+			qualified := schemaregistry.QualifySubject(*schemaCtx, subject)
 			if isPermanent {
-				err = cl.DeleteSchema(cmd.Context(), subject, version, sr.SoftDelete)
+				err = cl.DeleteSchema(cmd.Context(), qualified, version, sr.SoftDelete)
 				if err == nil || schemaregistry.IsSoftDeleteError(err) {
-					err = cl.DeleteSchema(cmd.Context(), subject, version, sr.HardDelete)
+					err = cl.DeleteSchema(cmd.Context(), qualified, version, sr.HardDelete)
 					out.MaybeDie(err, "unable to perform hard-deletion: %v", err)
 				}
 				out.MaybeDie(err, "unable to perform initial soft-deletion that is required for hard-deletion: %v", err)
 			} else {
-				err = cl.DeleteSchema(cmd.Context(), subject, version, sr.SoftDelete)
+				err = cl.DeleteSchema(cmd.Context(), qualified, version, sr.SoftDelete)
 				out.MaybeDieErr(err)
 			}
 			if isText, _, s, err := f.Format(deleteResponse{subject, sversion}); !isText {

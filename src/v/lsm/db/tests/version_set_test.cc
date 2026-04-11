@@ -1,13 +1,10 @@
-/*
- * Copyright 2025 Redpanda Data, Inc.
- *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
- *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
- */
+// Copyright (c) 2014 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found at https://github.com/google/leveldb/blob/main/LICENSE. See
+// https://github.com/google/leveldb/blob/main/AUTHORS for names of
+// contributors.
+//
+// Modifications copyright 2025 Redpanda Data, Inc.
 
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/options.h"
@@ -531,9 +528,10 @@ TEST_F(CompactionTest, PickCompactionLevel0ToLevel1) {
     add_file(1_level, 10_file_id, "b"_key, "f"_key);
     add_file(1_level, 11_file_id, "g"_key, "k"_key);
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     // L0 compaction includes all overlapping files
     EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
@@ -549,9 +547,10 @@ TEST_F(CompactionTest, TrivialMove) {
     add_file(0_level, 4_file_id, "n"_key, "z"_key);
 
     // L1 has no files - first file can be trivially moved
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
     EXPECT_THAT(output_file_ids(*c), IsEmpty());
@@ -570,9 +569,10 @@ TEST_F(CompactionTest, OverlappingL0Files) {
     // Add overlapping file in L1
     add_file(1_level, 10_file_id, "d"_key, "h"_key);
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     // Should include all overlapping L0 files: starts with file 1, which
     // overlaps with file 2, which overlaps with file 3
@@ -602,9 +602,10 @@ TEST_F(CompactionTest, Level1ToLevel2Compaction) {
     // Add overlapping file in L2
     add_file(2_level, 100_file_id, "aa"_key, "ac"_key);
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 1_level); // L1→L2 compaction
     // Expansion picks both file 1 and 2 since they both overlap with
     // the same L2 file and fit within the expansion byte limit
@@ -626,9 +627,10 @@ TEST_F(CompactionTest, GrandparentOverlapTracking) {
     add_file(2_level, 20_file_id, "a"_key, "c"_key);
     add_file(2_level, 21_file_id, "d"_key, "e"_key);
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     // Expansion picks both file 1 and 2 since they both overlap with
     // the same L1 file and fit within the expansion byte limit.
@@ -650,9 +652,10 @@ TEST_F(CompactionTest, InputExpansion) {
     // L1 file that covers both file 1 and file 2
     add_file(1_level, 10_file_id, "a"_key, "g"_key, 100);
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     // Expansion should pick both files 1 and 2 since they both overlap with
     // the same L1 file and fit within the expansion limit
@@ -674,9 +677,10 @@ TEST_F(CompactionTest, NoExpansionWhenOutputLevelGrows) {
     add_file(1_level, 10_file_id, "a"_key, "c"_key, 100);
     add_file(1_level, 11_file_id, "d"_key, "f"_key, 100);
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     // Only file 1 should be selected; expansion would add file 2 but also
     // require adding L1 file 11, so it's rejected
@@ -696,9 +700,10 @@ TEST_F(CompactionTest, BoundaryKeyHandling) {
     add_file(
       1_level, 11_file_id, "e"_key, "g"_key); // Starts at 'e' like file 2
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     // Should include file 1 from L0
     EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
@@ -715,7 +720,7 @@ TEST_F(CompactionTest, NoCompactionBelowThreshold) {
     auto c = version_set().pick_compaction();
 
     // No compaction should be triggered
-    EXPECT_FALSE(c.has_value());
+    EXPECT_FALSE(c);
 }
 
 TEST_F(CompactionTest, SameUserKeyDifferentSeqnosOverlap) {
@@ -742,9 +747,10 @@ TEST_F(CompactionTest, SameUserKeyDifferentSeqnosOverlap) {
     // File 11: "apple" at seqno 50 (could be a tombstone)
     add_file(1_level, 11_file_id, "apple@50"_key, "apple@50"_key);
 
-    auto c = version_set().pick_compaction();
+    auto maybe_c = version_set().pick_compaction();
 
-    ASSERT_TRUE(c.has_value());
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 0_level);
     // File 1 from L0 should be selected
     EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
@@ -792,10 +798,369 @@ TEST_F(CompactionTest, CompactionPointerRespected) {
     version_set().log_and_apply(std::move(edit)).get();
 
     // Next compaction should pick file 3 or later, not file 1 or 2
-    auto c = version_set().pick_compaction();
-    ASSERT_TRUE(c.has_value());
+    auto maybe_c = version_set().pick_compaction();
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
     EXPECT_EQ(c->level(), 1_level);
     // Should pick file 3 (first file after the compact pointer at "d")
     EXPECT_THAT(input_file_ids(*c), ElementsAre(3_file_id));
     EXPECT_THAT(output_file_ids(*c), ElementsAre(101_file_id));
+}
+
+TEST_F(CompactionTest, HighestScoringLevelIsPickedL1OverL0) {
+    // When both L0 and L1 have score >= 1, the level with the higher score
+    // should be picked. Here L1 has a higher score than L0.
+    //
+    // L0 score: 4 files / 4 trigger = 1.0
+    add_file(0_level, 1_file_id, "a"_key, "b"_key);
+    add_file(0_level, 2_file_id, "c"_key, "d"_key);
+    add_file(0_level, 3_file_id, "e"_key, "f"_key);
+    add_file(0_level, 4_file_id, "g"_key, "h"_key);
+
+    // L1 score: 20KB / 10KB = 2.0 (higher than L0's 1.0)
+    add_file(1_level, 10_file_id, "aa"_key, "ab"_key, 2000);
+    add_file(1_level, 11_file_id, "ac"_key, "ad"_key, 2000);
+    add_file(1_level, 12_file_id, "ae"_key, "af"_key, 2000);
+    add_file(1_level, 13_file_id, "ag"_key, "ah"_key, 2000);
+    add_file(1_level, 14_file_id, "ai"_key, "aj"_key, 2000);
+    add_file(1_level, 15_file_id, "ak"_key, "al"_key, 2000);
+    add_file(1_level, 16_file_id, "am"_key, "an"_key, 2000);
+    add_file(1_level, 17_file_id, "ao"_key, "ap"_key, 2000);
+    add_file(1_level, 18_file_id, "aq"_key, "ar"_key, 2000);
+    add_file(1_level, 19_file_id, "as"_key, "at"_key, 2000);
+
+    auto maybe_c = version_set().pick_compaction();
+
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
+    // L1 score (2.0) > L0 score (1.0), so L1→L2 compaction is picked
+    EXPECT_EQ(c->level(), 1_level);
+}
+
+TEST_F(CompactionTest, HighestScoringLevelIsPickedL0OverL1) {
+    // When both L0 and L1 have score >= 1, the level with the higher score
+    // should be picked. Here L0 has a higher score than L1.
+    //
+    // L0 score: 8 files / 4 trigger = 2.0
+    add_file(0_level, 1_file_id, "a"_key, "b"_key);
+    add_file(0_level, 2_file_id, "c"_key, "d"_key);
+    add_file(0_level, 3_file_id, "e"_key, "f"_key);
+    add_file(0_level, 4_file_id, "g"_key, "h"_key);
+    add_file(0_level, 5_file_id, "i"_key, "j"_key);
+    add_file(0_level, 6_file_id, "k"_key, "l"_key);
+    add_file(0_level, 7_file_id, "m"_key, "n"_key);
+    add_file(0_level, 8_file_id, "o"_key, "p"_key);
+
+    // L1 score: 11KB / 10KB = 1.1 (lower than L0's 2.0)
+    add_file(1_level, 10_file_id, "aa"_key, "ab"_key, 1000);
+    add_file(1_level, 11_file_id, "ac"_key, "ad"_key, 1000);
+    add_file(1_level, 12_file_id, "ae"_key, "af"_key, 1000);
+    add_file(1_level, 13_file_id, "ag"_key, "ah"_key, 1000);
+    add_file(1_level, 14_file_id, "ai"_key, "aj"_key, 1000);
+    add_file(1_level, 15_file_id, "ak"_key, "al"_key, 1000);
+    add_file(1_level, 16_file_id, "am"_key, "an"_key, 1000);
+    add_file(1_level, 17_file_id, "ao"_key, "ap"_key, 1000);
+    add_file(1_level, 18_file_id, "aq"_key, "ar"_key, 1000);
+    add_file(1_level, 19_file_id, "as"_key, "at"_key, 1000);
+    add_file(1_level, 20_file_id, "au"_key, "av"_key, 1000);
+
+    auto maybe_c = version_set().pick_compaction();
+
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
+    // L0 score (2.0) > L1 score (1.1), so L0→L1 compaction is picked
+    EXPECT_EQ(c->level(), 0_level);
+}
+
+TEST_F(CompactionTest, NeedsCompactionChecksAllLevels) {
+    // needs_compaction should return true when any level exceeds the threshold,
+    // even if L0 is below its threshold.
+    EXPECT_FALSE(version_set().needs_compaction());
+
+    // L0 has only 1 file (below trigger of 4)
+    add_file(0_level, 1_file_id, "a"_key, "z"_key);
+    EXPECT_FALSE(version_set().needs_compaction());
+
+    // Fill L1 above its 10KB threshold to trigger needs_compaction
+    add_file(1_level, 10_file_id, "aa"_key, "ab"_key, 1000);
+    add_file(1_level, 11_file_id, "ac"_key, "ad"_key, 1000);
+    add_file(1_level, 12_file_id, "ae"_key, "af"_key, 1000);
+    add_file(1_level, 13_file_id, "ag"_key, "ah"_key, 1000);
+    add_file(1_level, 14_file_id, "ai"_key, "aj"_key, 1000);
+    add_file(1_level, 15_file_id, "ak"_key, "al"_key, 1000);
+    add_file(1_level, 16_file_id, "am"_key, "an"_key, 1000);
+    add_file(1_level, 17_file_id, "ao"_key, "ap"_key, 1000);
+    add_file(1_level, 18_file_id, "aq"_key, "ar"_key, 1000);
+    add_file(1_level, 19_file_id, "as"_key, "at"_key, 1000);
+    add_file(1_level, 20_file_id, "au"_key, "av"_key, 1000);
+
+    EXPECT_TRUE(version_set().needs_compaction());
+}
+
+TEST_F(CompactionTest, CompactingLevelSkippedByPick) {
+    // When a compaction is in progress on a level, that level (and its output
+    // level) should be skipped by pick_compaction. A second call should pick
+    // the next best level.
+
+    // L0 score: 4/4 = 1.0
+    add_file(0_level, 1_file_id, "a"_key, "b"_key);
+    add_file(0_level, 2_file_id, "c"_key, "d"_key);
+    add_file(0_level, 3_file_id, "e"_key, "f"_key);
+    add_file(0_level, 4_file_id, "g"_key, "h"_key);
+
+    // L2 score: 120KB / 100KB = 1.2 (L2 max = 10KB * 10 = 100KB)
+    add_file(2_level, 30_file_id, "aa"_key, "ab"_key, 10000);
+    add_file(2_level, 31_file_id, "ac"_key, "ad"_key, 10000);
+    add_file(2_level, 32_file_id, "ae"_key, "af"_key, 10000);
+    add_file(2_level, 33_file_id, "ag"_key, "ah"_key, 10000);
+    add_file(2_level, 34_file_id, "ai"_key, "aj"_key, 10000);
+    add_file(2_level, 35_file_id, "ak"_key, "al"_key, 10000);
+    add_file(2_level, 36_file_id, "am"_key, "an"_key, 10000);
+    add_file(2_level, 37_file_id, "ao"_key, "ap"_key, 10000);
+    add_file(2_level, 38_file_id, "aq"_key, "ar"_key, 10000);
+    add_file(2_level, 39_file_id, "as"_key, "at"_key, 10000);
+    add_file(2_level, 40_file_id, "au"_key, "av"_key, 10000);
+    add_file(2_level, 41_file_id, "aw"_key, "ax"_key, 10000);
+
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    // L2 score (1.2) > L0 score (1.0), so first pick should be L2
+    auto c1 = version_set().pick_compaction();
+    ASSERT_TRUE(c1);
+    EXPECT_EQ((*c1)->level(), 2_level);
+
+    // While L2→L3 compaction is held, L2 and L3 are locked out.
+    // Second pick should fall back to L0→L1.
+    EXPECT_TRUE(version_set().needs_compaction());
+    auto c2 = version_set().pick_compaction();
+    ASSERT_TRUE(c2);
+    EXPECT_EQ((*c2)->level(), 0_level);
+
+    // Now both L0→L1 and L2→L3 are in progress. No more compactions.
+    EXPECT_FALSE(version_set().needs_compaction());
+    auto c3 = version_set().pick_compaction();
+    EXPECT_FALSE(c3);
+}
+
+TEST_F(CompactionTest, CompactingLevelUnlockedOnDestruction) {
+    // Verifies that dropping a compaction object unlocks the levels.
+    add_file(0_level, 1_file_id, "a"_key, "b"_key);
+    add_file(0_level, 2_file_id, "c"_key, "d"_key);
+    add_file(0_level, 3_file_id, "e"_key, "f"_key);
+    add_file(0_level, 4_file_id, "g"_key, "h"_key);
+
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    {
+        auto c = version_set().pick_compaction();
+        ASSERT_TRUE(c);
+        EXPECT_EQ((*c)->level(), 0_level);
+        // L0 and L1 are locked
+        EXPECT_FALSE(version_set().needs_compaction());
+    }
+    // compaction destroyed, levels unlocked
+    EXPECT_TRUE(version_set().needs_compaction());
+}
+
+TEST_F(CompactionTest, L2ToL3Compaction) {
+    // Deeper levels should also trigger compaction when they exceed their
+    // byte threshold. L2 max = 10KB * 10 = 100KB with multiplier=10.
+    add_file(2_level, 1_file_id, "aa"_key, "ab"_key, 10000);
+    add_file(2_level, 2_file_id, "ac"_key, "ad"_key, 10000);
+    add_file(2_level, 3_file_id, "ae"_key, "af"_key, 10000);
+    add_file(2_level, 4_file_id, "ag"_key, "ah"_key, 10000);
+    add_file(2_level, 5_file_id, "ai"_key, "aj"_key, 10000);
+    add_file(2_level, 6_file_id, "ak"_key, "al"_key, 10000);
+    add_file(2_level, 7_file_id, "am"_key, "an"_key, 10000);
+    add_file(2_level, 8_file_id, "ao"_key, "ap"_key, 10000);
+    add_file(2_level, 9_file_id, "aq"_key, "ar"_key, 10000);
+    add_file(2_level, 10_file_id, "as"_key, "at"_key, 10000);
+    add_file(2_level, 11_file_id, "au"_key, "av"_key, 10000);
+
+    // Add an L3 file to verify correct output level
+    add_file(3_level, 100_file_id, "aa"_key, "ac"_key);
+
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    auto maybe_c = version_set().pick_compaction();
+    ASSERT_TRUE(maybe_c);
+    auto& c = *maybe_c;
+    EXPECT_EQ(c->level(), 2_level);
+    EXPECT_THAT(output_file_ids(*c), ElementsAre(100_file_id));
+}
+
+TEST_F(CompactionTest, NeedsCompactionFalseWhenLevelLocked) {
+    // If the only level needing compaction is currently locked,
+    // needs_compaction should return false.
+    add_file(0_level, 1_file_id, "a"_key, "b"_key);
+    add_file(0_level, 2_file_id, "c"_key, "d"_key);
+    add_file(0_level, 3_file_id, "e"_key, "f"_key);
+    add_file(0_level, 4_file_id, "g"_key, "h"_key);
+
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    auto c = version_set().pick_compaction();
+    ASSERT_TRUE(c);
+
+    // L0→L1 is in progress, both levels locked. Since L0 was the only level
+    // above threshold, needs_compaction should now be false.
+    EXPECT_FALSE(version_set().needs_compaction());
+}
+
+TEST_F(CompactionTest, NeedsCompactionFalseWhenOutputLevelLocked) {
+    // If a level needs compaction but its output level is locked by another
+    // compaction, needs_compaction should return false.
+
+    // Fill L1 above its 10KB threshold so L1→L2 is needed.
+    add_file(1_level, 10_file_id, "aa"_key, "ab"_key, 1000);
+    add_file(1_level, 11_file_id, "ac"_key, "ad"_key, 1000);
+    add_file(1_level, 12_file_id, "ae"_key, "af"_key, 1000);
+    add_file(1_level, 13_file_id, "ag"_key, "ah"_key, 1000);
+    add_file(1_level, 14_file_id, "ai"_key, "aj"_key, 1000);
+    add_file(1_level, 15_file_id, "ak"_key, "al"_key, 1000);
+    add_file(1_level, 16_file_id, "am"_key, "an"_key, 1000);
+    add_file(1_level, 17_file_id, "ao"_key, "ap"_key, 1000);
+    add_file(1_level, 18_file_id, "aq"_key, "ar"_key, 1000);
+    add_file(1_level, 19_file_id, "as"_key, "at"_key, 1000);
+    add_file(1_level, 20_file_id, "au"_key, "av"_key, 1000);
+
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    // Pick the L1→L2 compaction, locking both L1 and L2.
+    auto c1 = version_set().pick_compaction();
+    ASSERT_TRUE(c1);
+    EXPECT_EQ((*c1)->level(), 1_level);
+
+    // Now fill L2 above its 100KB threshold so L2→L3 would be needed, but
+    // L2 is already locked as the output of the L1→L2 compaction.
+    add_file(2_level, 30_file_id, "ba"_key, "bb"_key, 10000);
+    add_file(2_level, 31_file_id, "bc"_key, "bd"_key, 10000);
+    add_file(2_level, 32_file_id, "be"_key, "bf"_key, 10000);
+    add_file(2_level, 33_file_id, "bg"_key, "bh"_key, 10000);
+    add_file(2_level, 34_file_id, "bi"_key, "bj"_key, 10000);
+    add_file(2_level, 35_file_id, "bk"_key, "bl"_key, 10000);
+    add_file(2_level, 36_file_id, "bm"_key, "bn"_key, 10000);
+    add_file(2_level, 37_file_id, "bo"_key, "bp"_key, 10000);
+    add_file(2_level, 38_file_id, "bq"_key, "br"_key, 10000);
+    add_file(2_level, 39_file_id, "bs"_key, "bt"_key, 10000);
+    add_file(2_level, 40_file_id, "bu"_key, "bv"_key, 10000);
+
+    // L2 is the input level for the would-be L2→L3, but it's locked.
+    EXPECT_FALSE(version_set().needs_compaction());
+    auto c2 = version_set().pick_compaction();
+    EXPECT_FALSE(c2);
+}
+
+TEST_F(CompactionTest, PickCompactionSkipsWhenOutputLevelLocked) {
+    // When L1→L2 compaction is in progress (locking L1 and L2), an L0→L1
+    // compaction must not be picked because L1 is locked as an output level.
+
+    // L0 score: 4/4 = 1.0 (exactly at threshold)
+    add_file(0_level, 1_file_id, "a"_key, "b"_key);
+    add_file(0_level, 2_file_id, "c"_key, "d"_key);
+    add_file(0_level, 3_file_id, "e"_key, "f"_key);
+    add_file(0_level, 4_file_id, "g"_key, "h"_key);
+
+    // Fill L1 above its 10KB threshold so L1→L2 scores >= 1.
+    add_file(1_level, 10_file_id, "aa"_key, "ab"_key, 1000);
+    add_file(1_level, 11_file_id, "ac"_key, "ad"_key, 1000);
+    add_file(1_level, 12_file_id, "ae"_key, "af"_key, 1000);
+    add_file(1_level, 13_file_id, "ag"_key, "ah"_key, 1000);
+    add_file(1_level, 14_file_id, "ai"_key, "aj"_key, 1000);
+    add_file(1_level, 15_file_id, "ak"_key, "al"_key, 1000);
+    add_file(1_level, 16_file_id, "am"_key, "an"_key, 1000);
+    add_file(1_level, 17_file_id, "ao"_key, "ap"_key, 1000);
+    add_file(1_level, 18_file_id, "aq"_key, "ar"_key, 1000);
+    add_file(1_level, 19_file_id, "as"_key, "at"_key, 1000);
+    add_file(1_level, 20_file_id, "au"_key, "av"_key, 1000);
+
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    // Pick L1→L2 first (higher score). This locks L1 and L2.
+    auto c1 = version_set().pick_compaction();
+    ASSERT_TRUE(c1);
+    EXPECT_EQ((*c1)->level(), 1_level);
+
+    // L0→L1 should NOT be picked because L1 (the output level) is locked.
+    EXPECT_FALSE(version_set().needs_compaction());
+    auto c2 = version_set().pick_compaction();
+    EXPECT_FALSE(c2);
+
+    // After L1→L2 completes, compactions become available again.
+    c1 = {};
+    EXPECT_TRUE(version_set().needs_compaction());
+    auto c3 = version_set().pick_compaction();
+    ASSERT_TRUE(c3);
+}
+
+TEST_F(CompactionTest, SeekCompactionSkippedWhenLevelLocked) {
+    // Seek-triggered compaction on L1 should be skipped when L1 is locked by
+    // an in-progress compaction.
+
+    // Add a single file to L1 (below score threshold).
+    add_file(1_level, 10_file_id, "aa"_key, "az"_key);
+
+    // Set _file_to_compact on the current version by forcing allowed_seeks to
+    // 0 and calling update_stats.
+    auto current = version_set().current();
+    auto l1_files = current->get_overlapping_inputs(
+      1_level, std::nullopt, std::nullopt);
+    ASSERT_EQ(l1_files.size(), 1);
+    l1_files[0]->allowed_seeks = 0;
+    EXPECT_TRUE(current->update_stats(
+      {.seek_file = l1_files[0], .seek_file_level = 1_level}));
+
+    // Seek compaction is pending on L1, so needs_compaction should be true.
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    // Pick the seek compaction — this locks L1 and L2.
+    auto c = version_set().pick_compaction();
+    ASSERT_TRUE(c);
+    EXPECT_EQ((*c)->level(), 1_level);
+
+    // L1 and L2 are now locked. No more compactions.
+    EXPECT_FALSE(version_set().needs_compaction());
+}
+
+TEST_F(CompactionTest, SeekCompactionSkippedWhenOutputLevelLocked) {
+    // Seek compaction on L1 should be blocked when L2 (its output level) is
+    // already locked by a L1→L2 compaction.
+
+    // Fill L1 above threshold to trigger score-based compaction, and also add
+    // a file on which we'll trigger seek compaction.
+    add_file(1_level, 10_file_id, "aa"_key, "ab"_key, 1000);
+    add_file(1_level, 11_file_id, "ac"_key, "ad"_key, 1000);
+    add_file(1_level, 12_file_id, "ae"_key, "af"_key, 1000);
+    add_file(1_level, 13_file_id, "ag"_key, "ah"_key, 1000);
+    add_file(1_level, 14_file_id, "ai"_key, "aj"_key, 1000);
+    add_file(1_level, 15_file_id, "ak"_key, "al"_key, 1000);
+    add_file(1_level, 16_file_id, "am"_key, "an"_key, 1000);
+    add_file(1_level, 17_file_id, "ao"_key, "ap"_key, 1000);
+    add_file(1_level, 18_file_id, "aq"_key, "ar"_key, 1000);
+    add_file(1_level, 19_file_id, "as"_key, "at"_key, 1000);
+    add_file(1_level, 20_file_id, "au"_key, "av"_key, 1000);
+    // Add a separate L2 file for seek compaction target.
+    add_file(2_level, 50_file_id, "ba"_key, "bz"_key);
+
+    // Set _file_to_compact for L2 on the current version.
+    auto current = version_set().current();
+    auto l2_files = current->get_overlapping_inputs(
+      2_level, std::nullopt, std::nullopt);
+    ASSERT_EQ(l2_files.size(), 1);
+    l2_files[0]->allowed_seeks = 0;
+    EXPECT_TRUE(current->update_stats(
+      {.seek_file = l2_files[0], .seek_file_level = 2_level}));
+
+    EXPECT_TRUE(version_set().needs_compaction());
+
+    // Pick L1→L2 compaction (score-based, preferred over seek). Locks L1, L2.
+    auto c = version_set().pick_compaction();
+    ASSERT_TRUE(c);
+    EXPECT_EQ((*c)->level(), 1_level);
+
+    // Seek compaction on L2 should be blocked because L2 is locked as the
+    // output of L1→L2, and L3 would be the output of a L2→L3 compaction.
+    EXPECT_FALSE(version_set().needs_compaction());
+    auto c2 = version_set().pick_compaction();
+    EXPECT_FALSE(c2);
 }

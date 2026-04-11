@@ -204,6 +204,17 @@ ss::future<rpc::restore_domain_reply> do_restore_domain(
     co_return co_await domain_mgr->restore_domain(std::move(req));
 }
 
+ss::future<rpc::preregister_objects_reply> do_preregister_objects(
+  domain_supervisor& domain_supervisor,
+  const model::ntp& ntp,
+  rpc::preregister_objects_request req) {
+    auto domain_mgr = domain_supervisor.get(ntp);
+    if (!domain_mgr) {
+        co_return rpc::preregister_objects_reply{.ec = rpc::errc::not_leader};
+    }
+    co_return co_await domain_mgr->preregister_objects(std::move(req));
+}
+
 } // namespace
 
 template<auto Func, typename req_t>
@@ -397,6 +408,14 @@ template ss::future<rpc::flush_domain_reply>
 template ss::future<rpc::flush_domain_reply> leader_router::process<
   &leader_router::flush_domain_locally,
   &leader_router::client::flush_domain>(rpc::flush_domain_request, bool);
+
+template ss::future<rpc::preregister_objects_reply>
+  leader_router::remote_dispatch<&leader_router::client::preregister_objects>(
+    rpc::preregister_objects_request, model::node_id);
+template ss::future<rpc::preregister_objects_reply> leader_router::process<
+  &leader_router::preregister_objects_locally,
+  &leader_router::client::preregister_objects>(
+  rpc::preregister_objects_request, bool);
 
 leader_router::leader_router(
   model::node_id self,
@@ -805,6 +824,28 @@ ss::future<rpc::restore_domain_reply> leader_router::restore_domain(
     co_return co_await process<
       &leader_router::restore_domain_locally,
       &client::restore_domain>(std::move(request), bool(local_only_exec));
+}
+
+ss::future<rpc::preregister_objects_reply>
+leader_router::preregister_objects_locally(
+  rpc::preregister_objects_request request,
+  const model::ntp& metastore_ntp,
+  ss::shard_id shard) {
+    auto m = _probe.auto_measure_preregister_objects();
+    co_return co_await container().invoke_on(
+      shard,
+      [metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
+          return do_preregister_objects(
+            *(fe._domain_supervisor), metastore_ntp, std::move(req));
+      });
+}
+
+ss::future<rpc::preregister_objects_reply> leader_router::preregister_objects(
+  rpc::preregister_objects_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &leader_router::preregister_objects_locally,
+      &client::preregister_objects>(std::move(request), bool(local_only_exec));
 }
 
 } // namespace cloud_topics::l1

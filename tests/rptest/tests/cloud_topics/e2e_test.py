@@ -359,12 +359,12 @@ class EndToEndCloudTopicsCompactionTest(EndToEndCloudTopicsBase):
 
     def get_removed_records(self):
         return self._metric_sum(
-            "vectorized_cloud_topics_compaction_worker_records_removed"
+            "vectorized_cloud_topics_compaction_worker_records_removed_total"
         )
 
     def get_log_compactions(self):
         return self._metric_sum(
-            "vectorized_cloud_topics_compaction_scheduler_log_compactions"
+            "vectorized_cloud_topics_compaction_scheduler_log_compactions_total"
         )
 
     def get_managed_logs(self):

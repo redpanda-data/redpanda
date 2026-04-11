@@ -17,9 +17,10 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/sr"
 )
 
-func resetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func resetCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "reset [SUBJECT...]",
 		Short: "Reset schema registry mode",
@@ -40,8 +41,17 @@ The command also prints the subject mode before reverting to the global default.
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-			resetModeResult := cl.ResetMode(cmd.Context(), subjects...)
-			exit1, err := printModeResult(f, resetModeResult)
+			for i, s := range subjects {
+				if s != sr.GlobalSubject {
+					subjects[i] = schemaregistry.QualifySubject(*schemaCtx, s)
+				}
+			}
+
+			results := cl.ResetMode(cmd.Context(), subjects...)
+			for i := range results {
+				results[i].Subject = schemaregistry.StripContextQualifier(*schemaCtx, results[i].Subject)
+			}
+			exit1, err := printModeResult(f, results)
 			out.MaybeDieErr(err)
 			if exit1 {
 				os.Exit(1)

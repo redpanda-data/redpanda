@@ -106,6 +106,9 @@ public:
     ss::future<rpc::restore_domain_reply>
       restore_domain(rpc::restore_domain_request, local_only = local_only::no);
 
+    ss::future<rpc::preregister_objects_reply> preregister_objects(
+      rpc::preregister_objects_request, local_only = local_only::no);
+
     std::optional<model::partition_id>
     metastore_partition(const model::topic_id_partition&) const;
 
@@ -217,6 +220,11 @@ private:
 
     ss::future<rpc::restore_domain_reply> restore_domain_locally(
       rpc::restore_domain_request,
+      const model::ntp& metastore_ntp,
+      ss::shard_id);
+
+    ss::future<rpc::preregister_objects_reply> preregister_objects_locally(
+      rpc::preregister_objects_request,
       const model::ntp& metastore_ntp,
       ss::shard_id);
 

@@ -364,7 +364,7 @@ void partition_properties_stm_factory::create(
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<partition_properties_stm>(
       raft, clusterlog, _kvstore, _sync_timeout);
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 std::ostream& operator<<(

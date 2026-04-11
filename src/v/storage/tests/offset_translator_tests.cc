@@ -560,6 +560,7 @@ TEST_F(base_fixture, fuzz_operations_test) {
                      .log_mgr()
                      .manage(storage::ntp_config(ntp, _test_dir))
                      .get();
+        log->stm_hookset()->start();
         fuzz_checker checker(log, [this] { return make_offset_translator(); });
         checker.start().get();
 
@@ -594,6 +595,7 @@ TEST_F(base_fixture, fuzz_operations_test) {
         checker.restart().get();
         checker.validate();
         checker.stop().get();
+        log->stm_hookset()->stop();
     }
 }
 

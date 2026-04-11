@@ -11,6 +11,9 @@
 #include "redpanda/admin/services/internal/metastore.h"
 
 #include "cloud_topics/level_one/domain/domain_manager.h"
+#include "cloud_topics/level_one/metastore/lsm/debug_reader.h"
+#include "cloud_topics/level_one/metastore/lsm/debug_serde.h"
+#include "cloud_topics/level_one/metastore/lsm/debug_writer.h"
 #include "cluster/shard_table.h"
 #include "redpanda/admin/services/utils.h"
 #include "serde/protobuf/rpc.h"
@@ -161,6 +164,163 @@ metastore_service_impl::get_database_stats(
     }
 
     co_return response;
+}
+
+seastar::future<proto::admin::metastore::write_rows_response>
+metastore_service_impl::write_rows(
+  serde::pb::rpc::context ctx,
+  proto::admin::metastore::write_rows_request req) {
+    model::ntp metastore_ntp{
+      model::kafka_internal_namespace,
+      model::l1_metastore_topic,
+      model::partition_id{
+        static_cast<model::partition_id::type>(req.get_metastore_partition())}};
+
+    auto redirect_node = utils::redirect_to_leader(
+      _metadata_cache->local(), metastore_ntp, _proxy_client.self_node_id());
+    if (redirect_node) {
+        co_return co_await _proxy_client
+          .make_client_for_node<
+            proto::admin::metastore::metastore_service_client>(*redirect_node)
+          .write_rows(std::move(ctx), std::move(req));
+    }
+
+    auto shard = _shard_table->local().shard_for(metastore_ntp);
+    if (!shard.has_value()) {
+        throw serde::pb::rpc::unavailable_exception("no shard");
+    }
+
+    auto rows_res = cloud_topics::l1::debug_writer::build_rows(req);
+    if (!rows_res.has_value()) {
+        throw serde::pb::rpc::invalid_argument_exception(
+          fmt::format("failed to build rows: {}", rows_res.error()));
+    }
+    auto num_rows = rows_res->size();
+
+    auto result_exp = co_await _domain_supervisor->invoke_on(
+      *shard,
+      [metastore_ntp, rows = std::move(*rows_res)](
+        this auto, cloud_topics::l1::domain_supervisor& sup)
+        -> ss::future<std::expected<void, cloud_topics::l1::rpc::errc>> {
+          auto dm = sup.get(metastore_ntp);
+          if (!dm) {
+              co_return std::unexpected(
+                cloud_topics::l1::rpc::errc::not_leader);
+          }
+          co_return co_await dm->write_debug_rows(std::move(rows));
+      });
+    if (!result_exp.has_value()) {
+        switch (result_exp.error()) {
+        case cloud_topics::l1::rpc::errc::not_leader:
+            throw serde::pb::rpc::unavailable_exception("not leader");
+        case cloud_topics::l1::rpc::errc::missing_ntp:
+            throw serde::pb::rpc::not_found_exception("missing ntp");
+        case cloud_topics::l1::rpc::errc::timed_out:
+            throw serde::pb::rpc::deadline_exceeded_exception();
+        default:
+            throw serde::pb::rpc::unavailable_exception(
+              fmt::format("error: {}", result_exp.error()));
+        }
+    }
+
+    proto::admin::metastore::write_rows_response response;
+    response.set_rows_written(static_cast<uint32_t>(num_rows));
+    co_return response;
+}
+
+seastar::future<proto::admin::metastore::read_rows_response>
+metastore_service_impl::read_rows(
+  serde::pb::rpc::context ctx, proto::admin::metastore::read_rows_request req) {
+    model::ntp metastore_ntp{
+      model::kafka_internal_namespace,
+      model::l1_metastore_topic,
+      model::partition_id{
+        static_cast<model::partition_id::type>(req.get_metastore_partition())}};
+
+    auto redirect_node = utils::redirect_to_leader(
+      _metadata_cache->local(), metastore_ntp, _proxy_client.self_node_id());
+    if (redirect_node) {
+        co_return co_await _proxy_client
+          .make_client_for_node<
+            proto::admin::metastore::metastore_service_client>(*redirect_node)
+          .read_rows(std::move(ctx), std::move(req));
+    }
+
+    auto shard = _shard_table->local().shard_for(metastore_ntp);
+    if (!shard.has_value()) {
+        throw serde::pb::rpc::unavailable_exception("no shard");
+    }
+
+    // Resolve seek key.
+    std::optional<ss::sstring> seek_key;
+    if (req.has_raw_seek_key()) {
+        seek_key = req.get_raw_seek_key();
+    } else if (req.has_seek_key()) {
+        auto enc = cloud_topics::l1::debug_encode_key(req.get_seek_key());
+        if (!enc.has_value()) {
+            throw serde::pb::rpc::invalid_argument_exception(
+              fmt::format("invalid seek_key: {}", enc.error()));
+        }
+        seek_key = std::move(*enc);
+    }
+
+    // Resolve last key.
+    std::optional<ss::sstring> last_key;
+    if (req.has_raw_last_key()) {
+        last_key = req.get_raw_last_key();
+    } else if (req.has_last_key()) {
+        auto enc = cloud_topics::l1::debug_encode_key(req.get_last_key());
+        if (!enc.has_value()) {
+            throw serde::pb::rpc::invalid_argument_exception(
+              fmt::format("invalid last_key: {}", enc.error()));
+        }
+        last_key = std::move(*enc);
+    }
+
+    uint32_t max_rows = req.get_max_rows();
+    if (max_rows == 0) {
+        max_rows = 100;
+    }
+
+    auto result_exp = co_await _domain_supervisor->invoke_on(
+      *shard,
+      [metastore_ntp,
+       seek = std::move(seek_key),
+       last = std::move(last_key),
+       max_rows](this auto, cloud_topics::l1::domain_supervisor& sup)
+        -> ss::future<std::expected<
+          cloud_topics::l1::domain_manager::read_debug_rows_result,
+          cloud_topics::l1::rpc::errc>> {
+          auto dm = sup.get(metastore_ntp);
+          if (!dm) {
+              co_return std::unexpected(
+                cloud_topics::l1::rpc::errc::not_leader);
+          }
+          co_return co_await dm->read_debug_rows(
+            std::move(seek), std::move(last), max_rows);
+      });
+    if (!result_exp.has_value()) {
+        switch (result_exp.error()) {
+        case cloud_topics::l1::rpc::errc::not_leader:
+            throw serde::pb::rpc::unavailable_exception("not leader");
+        case cloud_topics::l1::rpc::errc::missing_ntp:
+            throw serde::pb::rpc::not_found_exception("missing ntp");
+        case cloud_topics::l1::rpc::errc::timed_out:
+            throw serde::pb::rpc::deadline_exceeded_exception();
+        default:
+            throw serde::pb::rpc::unavailable_exception(
+              fmt::format("error: {}", result_exp.error()));
+        }
+    }
+
+    auto& result = result_exp.value();
+    auto resp_res = cloud_topics::l1::debug_reader::build_response(
+      result.rows, std::move(result.next_key));
+    if (!resp_res.has_value()) {
+        throw serde::pb::rpc::internal_exception(
+          fmt::format("decode error: {}", resp_res.error()));
+    }
+    co_return std::move(*resp_res);
 }
 
 } // namespace admin

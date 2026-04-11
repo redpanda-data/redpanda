@@ -766,4 +766,9 @@ model::offset replicated_partition::offset_lag() const {
     return _partition->high_watermark() - _partition->dirty_offset();
 }
 
+ss::future<cluster::partition_cloud_storage_status>
+replicated_partition::get_cloud_storage_status() const {
+    co_return _partition->get_cloud_storage_status();
+}
+
 } // namespace kafka

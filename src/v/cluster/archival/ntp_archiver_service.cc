@@ -2741,7 +2741,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
       = ntp_conf.retention_duration();
 
     auto pinned_offset
-      = _parent.raft()->log()->stm_manager()->lowest_pinned_data_offset();
+      = _parent.raft()->log()->stm_hookset()->lowest_pinned_data_offset();
     auto res = co_await _manifest_view->compute_retention(
       retention_bytes, retention_ms, pinned_offset);
 
@@ -3318,7 +3318,7 @@ ss::future<> ntp_archiver::apply_retention() {
     }
 
     auto pinned_offset
-      = _parent.raft()->log()->stm_manager()->lowest_pinned_data_offset();
+      = _parent.raft()->log()->stm_hookset()->lowest_pinned_data_offset();
     auto retention_calculator = retention_calculator::factory(
       manifest(), _parent.get_ntp_config(), pinned_offset);
     if (!retention_calculator) {

@@ -1,13 +1,10 @@
-/*
- * Copyright 2025 Redpanda Data, Inc.
- *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
- *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
- */
+// Copyright (c) 2014 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found at https://github.com/google/leveldb/blob/main/LICENSE. See
+// https://github.com/google/leveldb/blob/main/AUTHORS for names of
+// contributors.
+//
+// Modifications copyright 2025 Redpanda Data, Inc.
 
 #include "lsm/db/version_set.h"
 
@@ -27,6 +24,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/as_future.hh>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 
@@ -267,7 +265,8 @@ private:
 
 version::version(ctor, version_set* vset)
   : _vset(vset)
-  , _files(_vset->_options->levels.size()) {}
+  , _files(_vset->_options->levels.size())
+  , _compaction_scores(_vset->_options->levels.size(), 0.0) {}
 
 ss::future<> version::add_iterators(
   chunked_vector<std::unique_ptr<internal::iterator>>* iters) {
@@ -572,6 +571,7 @@ version_set::version_set(
   : _persistence(persistence)
   , _table_cache(table_cache)
   , _options(std::move(opts))
+  , _compacting_levels(_options->levels.size(), false)
   , _compact_pointer(_options->levels.size()) {
     set_current(ss::make_lw_shared<version>(version::ctor{}, this));
 }
@@ -667,10 +667,9 @@ void version_set::finalize(version* v) {
         return;
     }
     // Precompute the best level for the next compaction
-    internal::level best_level = 0_level;
-    double best_score = static_cast<double>(v->_files[0_level].size())
-                        / static_cast<double>(
-                          _options->default_level_one_compaction_trigger);
+    v->_compaction_scores[0_level]
+      = static_cast<double>(v->_files[0_level].size())
+        / static_cast<double>(_options->level_one_compaction_trigger);
     // While level 0 compaction score is based on number of files, other levels
     // are based on number of bytes in the level.
     for (auto level = 1_level; level < _options->max_level(); ++level) {
@@ -678,13 +677,8 @@ void version_set::finalize(version* v) {
         double score = static_cast<double>(level_bytes)
                        / static_cast<double>(
                          _options->levels[level].max_total_bytes);
-        if (score > best_score) {
-            best_level = level;
-            best_score = score;
-        }
+        v->_compaction_scores[level] = score;
     }
-    v->_compaction_level = best_level;
-    v->_compaction_score = best_score;
 }
 
 ss::future<> version_set::write_manifest(manifest m) {
@@ -758,23 +752,55 @@ ss::future<std::optional<version_set::manifest>> version_set::read_manifest() {
 }
 
 bool version_set::needs_compaction() const {
-    return _current->_compaction_score >= 1 || _current->_file_to_compact;
+    if (
+      _current->_file_to_compact
+      && !_compacting_levels[_current->_file_to_compact_level]
+      && !_compacting_levels[_current->_file_to_compact_level + 1_level]) {
+        return true;
+    }
+    const auto& scores = _current->_compaction_scores;
+    for (auto lvl = 0_level; lvl < _options->max_level(); ++lvl) {
+        if (_compacting_levels[lvl] || _compacting_levels[lvl + 1_level]) {
+            continue;
+        }
+        if (scores[lvl] >= 1) {
+            return true;
+        }
+    }
+    return false;
 }
 
-std::optional<compaction> version_set::pick_compaction() {
+ss::optimized_optional<std::unique_ptr<compaction>>
+version_set::pick_compaction() {
     internal::level level;
-    std::optional<compaction> c;
+    std::unique_ptr<compaction> c;
     using which = compaction::which;
     // We prefer compactions triggered by too much data in a level over
     // compactions triggered by seeks.
-    bool size_compaction = _current->_compaction_score >= 1;
-    bool seek_compaction = _current->_file_to_compact != std::nullopt;
+    std::optional<internal::level> size_compaction;
+    const auto& scores = _current->_compaction_scores;
+    for (auto lvl = 0_level; lvl < _options->max_level(); ++lvl) {
+        if (_compacting_levels[lvl] || _compacting_levels[lvl + 1_level]) {
+            continue;
+        }
+        double score = scores[lvl];
+        if (!size_compaction && score >= 1) { // NOLINT(*-branch-clone)
+            size_compaction.emplace(lvl);
+        } else if (size_compaction && score > scores[*size_compaction]) {
+            size_compaction.emplace(lvl);
+        }
+    }
+    bool seek_compaction
+      = _current->_file_to_compact != std::nullopt
+        && !_compacting_levels[_current->_file_to_compact_level]
+        && !_compacting_levels[_current->_file_to_compact_level + 1_level];
     if (size_compaction) {
-        level = _current->_compaction_level;
+        level = size_compaction.value();
         vassert(
           level() + 1 < _options->levels.size(),
           "cannot compact the bottom-most level");
-        c.emplace(compaction(_options, new_edit(), level));
+        c = std::make_unique<compaction>(
+          compaction::ctor{}, _options, _current, new_edit(), level);
         // Pick the first file that comes after _compact_pointer[level]
         for (const auto& f : _current->_files[level]) {
             const auto& key = _compact_pointer[level];
@@ -790,12 +816,12 @@ std::optional<compaction> version_set::pick_compaction() {
         }
     } else if (seek_compaction) {
         level = _current->_file_to_compact_level;
-        c.emplace(compaction(_options, new_edit(), level));
+        c = std::make_unique<compaction>(
+          compaction::ctor{}, _options, _current, new_edit(), level);
         c->_inputs[which::input_level].push_back(*_current->_file_to_compact);
     } else {
         return std::nullopt;
     }
-    c->_input_version = _current;
 
     // files in level 0 may overlap each other, so pick up all overlapping ones.
     if (level == 0_level) {
@@ -918,6 +944,29 @@ internal::file_id version_set::min_uncommitted_file_id() const {
         min = std::min(min, e._min_allocated_id);
     }
     return min;
+}
+
+compaction::compaction(
+  ctor,
+  ss::lw_shared_ptr<internal::options> options,
+  ss::lw_shared_ptr<version> version,
+  ss::lw_shared_ptr<version_edit> edit,
+  internal::level level)
+  : _level(level)
+  , _input_version(std::move(version))
+  , _edit(std::move(edit))
+  , _level_ptrs(/*n=*/options->levels.size(), /*val=*/0) {
+    // Mark the input and output levels as having compaction running so we don't
+    // try and schedule anything that could conflict.
+    auto* vset = _input_version->_vset;
+    vset->_compacting_levels[_level] = true;
+    vset->_compacting_levels[_level + 1_level] = true;
+}
+
+compaction::~compaction() {
+    auto* vset = _input_version->_vset;
+    vset->_compacting_levels[_level] = false;
+    vset->_compacting_levels[_level + 1_level] = false;
 }
 
 bool compaction::is_trivial_move() const {

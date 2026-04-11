@@ -157,7 +157,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     BOOST_REQUIRE_THROW(c(bad_schema_magic.copy()).get(), pps::exception);
 
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).get()
+      s.get_compatibility(pps::default_context, pps::default_to_global::yes)
+        .get()
       == pps::compatibility_level::backward);
     BOOST_REQUIRE(
       s.get_compatibility(subject0, pps::default_to_global::yes).get()

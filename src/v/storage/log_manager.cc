@@ -765,7 +765,7 @@ ss::future<> log_manager::do_housekeeping(
     // the removal of the parent object. this makes awaiting housekeeping
     // safe against removal of segments from _logs_list
     auto& log = meta.handle;
-    auto pinned_kafka_offset = log->stm_manager()->lowest_pinned_data_offset();
+    auto pinned_kafka_offset = log->stm_hookset()->lowest_pinned_data_offset();
     std::optional<model::offset> max_unpinned_offset;
     if (pinned_kafka_offset) {
         auto local_log_start = log->offsets().start_offset;
@@ -781,12 +781,12 @@ ss::future<> log_manager::do_housekeeping(
     }
 
     model::offset max_compactible_offset
-      = log->stm_manager()->max_removable_local_log_offset();
+      = log->stm_hookset()->max_removable_local_log_offset();
     model::offset max_tombstone_remove_offset
-      = log->stm_manager()->max_tombstone_remove_offset();
+      = log->stm_hookset()->max_tombstone_remove_offset();
     model::offset max_tx_end_remove_offset
-      = log->stm_manager()->max_tx_end_remove_offset();
-    model::offset tx_snapshot_offset = log->stm_manager()->tx_snapshot_offset();
+      = log->stm_hookset()->max_tx_end_remove_offset();
+    model::offset tx_snapshot_offset = log->stm_hookset()->tx_snapshot_offset();
     // We clamp the offset up to which we can remove transactional control
     // batches to the last snapshot taken by the transactional stm. This
     // ensures that we do not remove control batches that may be needed to

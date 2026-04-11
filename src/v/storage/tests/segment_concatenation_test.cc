@@ -177,7 +177,7 @@ void concatenate_segments_from_log(
       = storage::internal::concatenate_and_rebuild_target_segment(
           target,
           chunked_segments,
-          log.stm_manager(),
+          log.stm_hookset(),
           cfg,
           log.get_probe(),
           log.readers(),

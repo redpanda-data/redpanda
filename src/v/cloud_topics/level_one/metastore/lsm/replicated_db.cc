@@ -10,10 +10,12 @@
 
 #include "cloud_topics/level_one/metastore/lsm/replicated_db.h"
 
+#include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/lsm_update.h"
 #include "cloud_topics/level_one/metastore/lsm/replicated_persistence.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/logger.h"
+#include "config/configuration.h"
 #include "lsm/io/cloud_persistence.h"
 #include "lsm/io/persistence.h"
 #include "lsm/proto/manifest.proto.h"
@@ -59,7 +61,8 @@ replicated_database::open(
   const std::filesystem::path& staging_directory,
   cloud_io::remote* remote,
   const cloud_storage_clients::bucket_name& bucket,
-  ss::abort_source& as) {
+  ss::abort_source& as,
+  ss::scheduling_group sg) {
     auto term_result = co_await s->sync(std::chrono::seconds(30));
     if (!term_result.has_value()) {
         co_return std::unexpected(
@@ -109,11 +112,15 @@ replicated_database::open(
     }
     auto domain_uuid = s->state().domain_uuid;
     cloud_storage_clients::object_key domain_prefix{
-      fmt::format("{}", domain_uuid())};
+      domain_cloud_prefix(domain_uuid)};
 
     auto data_persist_fut = co_await ss::coroutine::as_future(
       lsm::io::open_cloud_data_persistence(
-        staging_directory, remote, bucket, domain_prefix));
+        staging_directory,
+        remote,
+        bucket,
+        domain_prefix,
+        ss::sstring(domain_uuid())));
     if (data_persist_fut.failed()) {
         co_return std::unexpected(wrap_failed_future(
           data_persist_fut.get_exception(), "Failed to open data persistence"));
@@ -136,7 +143,10 @@ replicated_database::open(
       lsm::database::open(
         lsm::options{
           .database_epoch = epoch(),
-          // TODO: tuning.
+          .compaction_scheduling_group = sg,
+          .file_deletion_delay = absl::FromChrono(
+            config::shard_local_cfg()
+              .cloud_topics_long_term_file_deletion_delay()),
         },
         std::move(io)));
     if (db_fut.failed()) {
@@ -185,13 +195,15 @@ replicated_database::open(
         }
     }
     auto ret = std::unique_ptr<replicated_database>(
-      new replicated_database(term, domain_uuid, s, std::move(db), as));
+      new replicated_database(term, domain_uuid, s, std::move(db), as, sg));
     ret->start();
     co_return std::move(ret);
 }
 
 void replicated_database::start() {
-    ssx::spawn_with_gate(gate_, [this] { return apply_loop(); });
+    ssx::spawn_with_gate(gate_, [this] {
+        return ss::with_scheduling_group(sg_, [this] { return apply_loop(); });
+    });
 }
 
 ss::future<std::expected<void, replicated_database::error>>
@@ -247,7 +259,9 @@ replicated_database::write(chunked_vector<write_batch_row> rows) {
     // NOTE: at this point, since we waited for STM apply after replication,
     // the write should have been added to the volatile buffer.
     needs_apply_cv_.signal();
-    auto deadline = ss::lowres_clock::now() + 30s;
+    auto lsm_apply_timeout
+      = config::shard_local_cfg().cloud_topics_metastore_lsm_apply_timeout_ms();
+    auto deadline = ss::lowres_clock::now() + lsm_apply_timeout;
     auto wait_fut = co_await ss::coroutine::as_future(finished_apply_cv_.wait(
       deadline, as_, [this, o = replicate_result.value()] {
           return applied_offset_.has_value() && applied_offset_.value() >= o;

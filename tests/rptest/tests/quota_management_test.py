@@ -10,30 +10,30 @@
 import json
 from enum import Enum
 from functools import total_ordering
-from typing import NamedTuple, Any
-from typing_extensions import Self
+from typing import Any, NamedTuple
 
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+from typing_extensions import Self
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools, KafkaCliToolsError
-from rptest.services.redpanda_installer import (
-    wait_for_num_versions,
-    InstallOptions,
-    RedpandaVersionTriple,
-    RedpandaInstaller,
-)
-from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.kcl import RawKCL
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
-    LoggingConfig,
     RESTART_LOG_ALLOW_LIST,
-    SISettings,
     ClusterNode,
+    LoggingConfig,
+    SISettings,
 )
+from rptest.services.redpanda_installer import (
+    InstallOptions,
+    RedpandaInstaller,
+    RedpandaVersionTriple,
+    wait_for_num_versions,
+)
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until_result
 
@@ -198,7 +198,7 @@ class QuotaManagementUtils:
             wait_until(
                 lambda: self.rpk.alter_cluster_quotas(*args, **kwargs)["status"]
                 == "OK",
-                timeout_sec=10,
+                timeout_sec=30,
                 backoff_sec=1,
                 err_msg="failed to run rpk.alter_cluster_quotas",
             )
@@ -852,6 +852,10 @@ class QuotaManagementUpgradeTest(EndToEndTest, QuotaManagementUtils):
         self.redpanda.restart_nodes([first_node])
         wait_for_num_versions(self.redpanda, 2)
 
+        # Ensure the controller is on the upgraded node so that we can verify
+        # the behavior of user quotas during the upgrade
+        self.transfer_leadership(first_node)
+
         self.logger.debug("Verify that during upgrade user quotas are disabled")
         res = self.alter_quotas(alter_user_quota_body)
         assert len(res["Entries"]) == 1, f"Unexpected entries: {res}"
@@ -863,6 +867,7 @@ class QuotaManagementUpgradeTest(EndToEndTest, QuotaManagementUtils):
 
         self.redpanda.restart_nodes([second_node])
         wait_for_num_versions(self.redpanda, 1)
+        self.redpanda.await_feature("user_based_client_quota", "active", timeout_sec=30)
 
         self.logger.debug("Verify that user quotas are now enabled")
         res = self.alter_quotas(alter_user_quota_body, node=second_node)

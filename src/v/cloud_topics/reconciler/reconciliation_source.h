@@ -52,6 +52,9 @@ public:
         return _tidp;
     }
 
+    // Returns true if there may be new data to reconcile (LSO > LRO).
+    virtual bool has_pending_data() = 0;
+
     // Get the last reconciled offset for this source, or kafka::offset::min()
     // if none.
     virtual kafka::offset last_reconciled_offset() = 0;

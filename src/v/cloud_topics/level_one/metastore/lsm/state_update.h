@@ -9,7 +9,9 @@
  */
 #pragma once
 
+#include "absl/container/btree_set.h"
 #include "base/seastarx.h"
+#include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
 #include "cloud_topics/level_one/metastore/lsm/write_batch_row.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
@@ -62,6 +64,10 @@ struct replace_objects_db_update {
     ss::future<std::expected<void, db_update_error>>
     build_rows(state_reader&, chunked_vector<write_batch_row>&) const;
 
+    /// Returns the set of object IDs referenced by the extents being replaced.
+    ss::future<std::expected<absl::btree_set<object_id>, db_update_error>>
+    discover_replaced_object_ids(state_reader&) const;
+
     // Validates the given update is well-formed:
     // - There are new objects
     // - Input extents are in order and form contiguous intervals
@@ -81,6 +87,10 @@ struct set_start_offset_db_update {
       chunked_vector<write_batch_row>&,
       bool* is_no_op = nullptr) const;
 
+    /// Returns the set of object IDs from extents below new_start_offset.
+    ss::future<std::expected<absl::btree_set<object_id>, db_update_error>>
+    discover_truncated_object_ids(state_reader&) const;
+
     model::topic_id_partition tp;
     kafka::offset new_start_offset;
 };
@@ -88,6 +98,11 @@ struct set_start_offset_db_update {
 struct remove_topics_db_update {
     ss::future<std::expected<void, db_update_error>>
     build_rows(state_reader&, chunked_vector<write_batch_row>&) const;
+
+    /// Returns the set of object IDs referenced by extents across all
+    /// partitions of the given topics.
+    ss::future<std::expected<absl::btree_set<object_id>, db_update_error>>
+    discover_object_ids(state_reader&) const;
 
     chunked_vector<model::topic_id> topics;
 };
@@ -104,6 +119,30 @@ struct remove_objects_db_update {
     build_rows(chunked_vector<write_batch_row>&) const;
 
     chunked_vector<object_id> objects;
+};
+
+struct preregister_objects_db_update {
+    /// \brief Returns an error if any oid already exists in state.
+    ss::future<std::expected<void, db_update_error>>
+    can_apply(state_reader&) const;
+
+    /// \brief For each oid not already a committed object, writes an
+    /// object_row_key entry with is_preregistration=true.
+    ss::future<std::expected<void, db_update_error>>
+    build_rows(state_reader&, chunked_vector<write_batch_row>&) const;
+
+    chunked_vector<object_id> object_ids;
+    model::timestamp registered_at;
+};
+
+struct expire_preregistered_objects_db_update {
+    /// \brief For each oid whose object_entry has is_preregistration=true,
+    /// emits an overwrite of object_row_key(oid) with is_preregistration
+    /// cleared. The next GC run picks them up via the removed==total path.
+    ss::future<std::expected<void, db_update_error>>
+    build_rows(state_reader&, chunked_vector<write_batch_row>&) const;
+
+    chunked_vector<object_id> object_ids;
 };
 
 } // namespace cloud_topics::l1

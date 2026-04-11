@@ -16,6 +16,6 @@
 
 namespace cloud_topics::l1 {
 
-inline ss::logger compaction_log("cloud_topics-compaction");
+inline ss::logger compaction_log("cloud_topics_compaction");
 
 } // namespace cloud_topics::l1

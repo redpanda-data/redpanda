@@ -160,6 +160,19 @@ ss::future<> simple_stm::do_apply(const model::record_batch& batch) {
             maybe_log_update_error(_log, key, o, result);
             break;
         }
+        case update_key::preregister_objects: {
+            auto update = serde::read<preregister_objects_update>(value_parser);
+            auto result = update.apply(state_);
+            maybe_log_update_error(_log, key, o, result);
+            break;
+        }
+        case update_key::expire_preregistered_objects: {
+            auto update = serde::read<expire_preregistered_objects_update>(
+              value_parser);
+            auto result = update.apply(state_);
+            maybe_log_update_error(_log, key, o, result);
+            break;
+        }
         }
     }
 
@@ -250,7 +263,7 @@ void stm_factory::create(
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<simple_stm>(
       cd_log, raft, config::mock_binding(10s));
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace cloud_topics::l1

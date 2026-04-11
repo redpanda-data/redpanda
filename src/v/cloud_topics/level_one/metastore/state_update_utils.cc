@@ -22,8 +22,26 @@ contiguous_intervals_for_extents(
         }
         auto current_base = extents.begin()->base_offset;
         auto current_last = extents.begin()->last_offset;
+        if (current_base > current_last) {
+            return std::unexpected(
+              fmt::format(
+                "Input object has inverted extent for partition {}: "
+                "base_offset {} > last_offset {}",
+                tidp,
+                current_base,
+                current_last));
+        }
         // Skip the first entry when iterating over `extents`.
         for (const auto& extent : extents | std::views::drop(1)) {
+            if (extent.base_offset > extent.last_offset) {
+                return std::unexpected(
+                  fmt::format(
+                    "Input object has inverted extent for partition {}: "
+                    "base_offset {} > last_offset {}",
+                    tidp,
+                    extent.base_offset,
+                    extent.last_offset));
+            }
             auto expected_next = kafka::next_offset(current_last);
             if (extent.base_offset == expected_next) {
                 // A new extent that is contiguous with the current interval.

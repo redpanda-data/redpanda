@@ -25,22 +25,32 @@ option (pbgen.cpp_namespace) = "proto::admin::level_zero";
 // Admin endpoints to query Level-0 garbage collection workers for Cloud Topics.
 
 service LevelZeroService {
-    // Returns GC worker status for each shard on targeted node(s).
+    // Returns GC worker status for each shard on specified node (if present) or
+    // whole cluster.
     rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
 
-    // Starts GC workers on targeted node(s).
-    rpc Start(StartRequest) returns (StartResponse) {
+    // Starts GC workers on a specific node.
+    rpc StartGc(StartGcRequest) returns (StartGcResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
 
-    // Pauses GC workers on targeted node(s).
-    rpc Pause(PauseRequest) returns (PauseResponse) {
+    // Pauses GC workers on a specific node.
+    rpc PauseGc(PauseGcRequest) returns (PauseGcResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // Resets GC worker internal state on the specified node.
+    // Drains in-flight operations and clears iteration state.
+    // GC resumes automatically if it was running before the reset.
+    rpc ResetGc(ResetGcRequest) returns (ResetGcResponse) {
         option (pbgen.rpc) = {
             authz: SUPERUSER
         };
@@ -95,41 +105,32 @@ message ShardStatus {
     Status status = 2;
 }
 
-// Request to start GC workers.
-message StartRequest {
-    // Target a specific node, or omit to start on all nodes.
+// Request to start GC workers on a specific node.
+message StartGcRequest {
+    // Target node. If omitted, the receiving node handles the request.
     optional int32 node_id = 1;
 }
 
-// Aggregated start results from one or more nodes.
-message StartResponse {
-    repeated StartResult results = 1;
-}
+// Empty on success; RPC error on failure.
+message StartGcResponse {}
 
-// Request to pause GC workers.
-message PauseRequest {
-    // Target a specific node, or omit to pause on all nodes.
+// Request to pause GC workers on a specific node.
+message PauseGcRequest {
+    // Target node. If omitted, the receiving node handles the request.
     optional int32 node_id = 1;
 }
 
-// Aggregated pause results from one or more nodes.
-message PauseResponse {
-    repeated PauseResult results = 1;
+// Empty on success; RPC error on failure.
+message PauseGcResponse {}
+
+// Request to reset GC worker state on a specific node.
+message ResetGcRequest {
+    // Target node. If omitted, the receiving node handles the request.
+    optional int32 node_id = 1;
 }
 
-// Outcome of starting GC on a single node.
-message StartResult {
-    int32 node_id = 1;
-    // Set if the node could not be reached or returned an error.
-    optional string error = 3;
-}
-
-// Outcome of pausing GC on a single node.
-message PauseResult {
-    int32 node_id = 1;
-    // Set if the node could not be reached or returned an error.
-    optional string error = 3;
-}
+// Empty on success; RPC error on failure.
+message ResetGcResponse {}
 
 // Request to advance a partition to the current cluster epoch.
 message AdvanceEpochRequest {
@@ -172,6 +173,8 @@ enum Status {
     L0_GC_STATUS_RUNNING = 2;
     L0_GC_STATUS_STOPPING = 3;
     L0_GC_STATUS_STOPPED = 4;
+    L0_GC_STATUS_RESETTING = 5;
+    L0_GC_STATUS_SAFETY_BLOCKED = 6;
 }
 
 // Request the L0 size estimate for a single partition.

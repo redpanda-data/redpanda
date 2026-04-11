@@ -12,6 +12,7 @@
 
 #include "cloud_topics/frontend/frontend.h"
 #include "cloud_topics/housekeeper/housekeeper.h"
+#include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/state_accessors.h"
@@ -64,7 +65,7 @@ public:
         auto& state = _state->at(tidp);
         auto lowest_pinned = state.partition->raft()
                                ->log()
-                               ->stm_manager()
+                               ->stm_hookset()
                                ->lowest_pinned_data_offset();
         if (!lowest_pinned.has_value()) {
             return kafka::offset::max();

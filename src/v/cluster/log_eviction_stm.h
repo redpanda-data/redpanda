@@ -33,7 +33,7 @@ class consensus;
  *
  * The process goes like this: storage layer will send a "deletion notification"
  * - a request to evict log up to a certain offset. log_eviction_stm will then
- * adjust that offset with _stm_manager->max_removable_local_log_offset(), write
+ * adjust that offset with _stm_hookset->max_removable_local_log_offset(), write
  * the raft snapshot and notify the storage layer that log eviction can safely
  * proceed up to the adjusted offset.
  *

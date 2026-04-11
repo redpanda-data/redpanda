@@ -38,7 +38,8 @@ ss::future<> compaction::sliding_window_reducer::run() && {
     }
 
     // Done!
-    co_await _sink->finalize();
+    bool success = eptr == nullptr;
+    co_await _sink->finalize(success);
 
     if (eptr) {
         std::rethrow_exception(eptr);

@@ -44,6 +44,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm_commands",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_factory",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_state",
         "//src/v/cloud_topics/level_zero/stm:placeholder",

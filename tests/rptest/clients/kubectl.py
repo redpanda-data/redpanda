@@ -53,11 +53,10 @@ class KubectlTool:
         self,
         redpanda: Any,
         *,
-        remote_uri: str | None = None,
+        remote_uri: str,
         namespace: str = "redpanda",
         cluster_id: str = "",
         cluster_provider: str = "aws",
-        cluster_region: str = "us-west-2",
         tp_proxy: str | None = None,
         tp_token: str | None = None,
     ):
@@ -72,24 +71,20 @@ class KubectlTool:
                 f"KubectlTool does not yet support '{self._provider}' cloud provider"
             )
 
-        self._region = cluster_region
         self._tp_proxy = tp_proxy
         self._tp_token = tp_token
-        self._kubectl_installed = False
-        self._privileged_pod_installed = False
         self._setup_tbot()
+        self._install_kubectl()
+        self._setup_privileged_pod()
 
     def _ssh_prefix(self):
         """Generate the ssh prefix of a cmd.
 
-        Example output of the 4 types of ssh prefixes:
-         0. # nothing if there is no _remote_uri to run a remote command onto
+        Example output of the 3 types of ssh prefixes:
          1. ssh target.example.com # for simple ssh
          2. tsh ssh --proxy=proxy.example.com target.example.com # for local dev that will use github auth by default
          3. tsh ssh --proxy=proxy.example.com --identity=/tmp/machine-id/identity target.example.com # for headless assuming tbot start
         """
-        if self._remote_uri is None:
-            return []
         if self._tp_proxy is None:
             return [
                 "ssh",
@@ -112,18 +107,14 @@ class KubectlTool:
             self._remote_uri,
         ]
 
-    def _scp_cmd(self, src, dest):
+    def _scp_cmd(self, src: str, dest: str):
         """Generate the scp cmd.
 
-        Example output of the 4 types of ssh prefixes:
-         0. # nothing if there is no _remote_uri to run a remote command onto
+        Example output of the 3 types of scp commands:
          1. scp src dest # for simple scp passwordless
          2. tsh scp --proxy=proxy.example.com src dest # for local dev that will use github auth by default
          3. tsh scp --proxy=proxy.example.com --identity=/tmp/machine-id/identity src dest # for headless assuming tbot start
         """
-        if self._remote_uri is None:
-            # do not copy anything if kubectl is on local machine
-            return []
         if self._tp_proxy is None:
             return ["scp", src, dest]
         if self._tp_token is None:
@@ -138,17 +129,59 @@ class KubectlTool:
             dest,
         ]
 
-    def _install(self):
+    def _install_kubectl(self):
         """Installs kubectl on a remote target host"""
-        if not self._kubectl_installed and self._remote_uri is not None:
-            breakglass_cmd = ["./breakglass-tools.sh"]
-            if self._provider == "azure":
-                # for azure, we manually override the path here to ensure
-                # that azure-cli installed as a snap gets found (workaround)
-                p = ["env", "PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin"]
-                breakglass_cmd = p + breakglass_cmd
-            self._ssh_cmd(breakglass_cmd)
-            self._kubectl_installed = True
+        breakglass_cmd = ["./breakglass-tools.sh"]
+        if self._provider == "azure":
+            # for azure, we manually override the path here to ensure
+            # that azure-cli installed as a snap gets found (workaround)
+            p = ["env", "PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin"]
+            breakglass_cmd = p + breakglass_cmd
+        self._ssh_cmd(breakglass_cmd)
+
+        # Install EKS token caching wrapper for AWS to avoid calling
+        # 'aws eks get-token' on every kubectl invocation
+        if self._provider == "aws":
+            self._install_eks_token_cache_wrapper()
+
+    def _install_eks_token_cache_wrapper(self):
+        """Install a caching wrapper for aws eks get-token on the remote host.
+
+        This wrapper caches tokens to avoid repeated AWS API calls on every
+        kubectl invocation. Tokens are cached until 10 seconds before expiry.
+        """
+        wrapper_remote_path = "~/.kube/aws-eks-token-cache.sh"
+        wrapper_local_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "remote_scripts",
+            "cloud",
+            "aws_eks_token_cache.sh",
+        )
+
+        try:
+            scp_cmd = self._scp_cmd(
+                wrapper_local_path, f"{self._remote_uri}:{wrapper_remote_path}"
+            )
+            self._redpanda.logger.debug(f"Copying EKS cache wrapper: {scp_cmd}")
+            subprocess.check_output(scp_cmd)
+
+            self._ssh_cmd(["chmod", "+x", wrapper_remote_path])
+
+            # Update kubeconfig to use the wrapper instead of aws
+            update_cmd = [
+                "sed",
+                "-i",
+                f"'s#command: aws$#command: {wrapper_remote_path}#'",
+                "~/.kube/config",
+            ]
+            self._ssh_cmd(update_cmd)
+
+            self._redpanda.logger.info("Installed EKS token caching wrapper")
+        except subprocess.CalledProcessError as e:
+            self._redpanda.logger.warning(
+                f"Failed to install EKS token caching wrapper: {e}"
+            )
 
     @property
     def logger(self) -> Logger:
@@ -162,39 +195,30 @@ class KubectlTool:
             cmd (list[str]): kubectl commands to run
 
         Raises:
-            RuntimeError: when return code is present
+            CalledProcessError: when return code is non-zero
 
         Yields:
-            Generator[str]: Generator of output line by line
+            Generator[bytes]: Generator of output line by line
         """
         self._redpanda.logger.info(cmd)
         process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         )
-        if process.returncode:
-            if process.stdout is not None:
-                s_out = process.stdout.read()
-            else:
-                s_out = "stdout empty"
-            raise subprocess.CalledProcessError(
-                process.returncode, cmd, s_out, "stderr piped"
-            )
 
         for line in process.stdout:  # type: ignore
             yield line
 
-        return
+        process.wait()
+        if process.returncode:
+            raise subprocess.CalledProcessError(
+                process.returncode, cmd, None, "stderr piped to stdout"
+            )
 
-    def _local_cmd(self, cmd: list[str], timeout=900):
-        """Run the given command locally and return the stdout as bytes.
-        Logs stdout and stderr on failure.
-
-        cmd: list[str]: command to run
+    def _local_cmd(self, cmd: list[str], timeout: int = 900) -> str:
+        """Run the given command locally and return stdout.
 
         throws CalledProcessError on non-zero exit code
-        thwows TimeoutExpired on timeout
-
-        returns: stdout as string if not empty, else stderr
+        throws TimeoutExpired on timeout
         """
 
         def _prepare_output(sout: str, serr: str) -> str:
@@ -204,43 +228,19 @@ class KubectlTool:
             )
 
         self._redpanda.logger.info(cmd)
-
-        # Using text mode to get strings, not binary
-        # Following code will capture all output to log and work
-        # significantly faster than 'check_output'
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
         try:
-            s_out, s_err = process.communicate(timeout=timeout)
-            # safety check for process termination
-            if process.poll() is None:
-                # Should never happen (c)
-                process.kill()
-        except subprocess.TimeoutExpired:
-            process.kill()
-            s_out, s_err = process.communicate()
-            raise subprocess.TimeoutExpired(cmd, timeout, s_out, s_err)
-
-        # TODO: Handle s_err output
-        # It will be hard to detect errors as a lot of apps and utils
-        # just uses stderr as normal output. For example, tsh (teleport tunnel)
-
-        if process.returncode != 0:
-            self.logger.info(
-                f"Command failed (rc={process.returncode}): "
-                f"'{' '.join(cmd)}'\n"
-                f"{_prepare_output(s_out, s_err)}"
+            res = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout, check=True
             )
-            raise subprocess.CalledProcessError(process.returncode, cmd, s_out, s_err)
-        else:
-            # Log all collected strings, including JSONs collected
-            self.logger.debug(_prepare_output(s_out, s_err))
-
-        # Most of the time stdout will hold valuable data
-        # In rare occasions when return code is 0, and and stderr is not empty
-        # return that instead.
-        return s_out if len(s_out) > 0 else s_err
+        except subprocess.CalledProcessError as e:
+            self.logger.info(
+                f"Command failed (rc={e.returncode}): "
+                f"'{' '.join(cmd)}'\n"
+                f"{_prepare_output(e.stdout, e.stderr)}"
+            )
+            raise
+        self.logger.debug(_prepare_output(res.stdout, res.stderr))
+        return res.stdout
 
     @property
     def _redpanda_operator_v2(self) -> bool:
@@ -292,8 +292,6 @@ class KubectlTool:
             list[str / bytes]: Return is either a whole lines list
                 or a Generator with lines as items
         """
-        # prepare
-        self._install()
         _kubectl = ["kubectl"]
 
         # Make it universal for str/list
@@ -309,7 +307,6 @@ class KubectlTool:
         :param pod_name: name of the pod, e.g. 'rp-clo88krkqkrfamptsst0-5', defaults to pod 0
         """
 
-        self._install()
         if pod_name is None:
             pod_name = self._redpanda_broker_pod_name()
         cmd = [
@@ -325,7 +322,6 @@ class KubectlTool:
         return self._ssh_cmd(cmd)
 
     def exists(self, remote_path: str, pod_name: str | None = None) -> bool:
-        self._install()
         if pod_name is None:
             pod_name = self._redpanda_broker_pod_name()
         try:
@@ -401,7 +397,7 @@ class KubectlTool:
 
         self._redpanda.logger.info(redpanda_to_priv_pods)
         if pod_name is None:
-            pod_name = f"rp-{self._cluster_id}-0"
+            pod_name = self._redpanda_broker_pod_name()
         return redpanda_to_priv_pods[pod_name]
 
     def _setup_tbot(self):
@@ -443,22 +439,18 @@ class KubectlTool:
             raise
 
     def _setup_privileged_pod(self):
-        if not self._privileged_pod_installed and self._remote_uri is not None:
-            filename = "everything-allowed-exec-pod.yml"
-            filename_path = os.path.join(
-                os.path.dirname(__file__), "everything-allowed-exec-pod.yml"
-            )
-            self._redpanda.logger.info(filename_path)
-            setup_cmd = self._scp_cmd(filename_path, f"{self._remote_uri}:")
-            if len(setup_cmd) > 0:
-                self._redpanda.logger.info(setup_cmd)
-                subprocess.check_output(setup_cmd)
-            apply_cmd = ["kubectl", "apply", "-f", filename]
-            self._ssh_cmd(apply_cmd)
-            self._privileged_pod_installed = True
+        filename = "everything-allowed-exec-pod.yml"
+        filename_path = os.path.join(
+            os.path.dirname(__file__), "everything-allowed-exec-pod.yml"
+        )
+        self._redpanda.logger.info(filename_path)
+        setup_cmd = self._scp_cmd(filename_path, f"{self._remote_uri}:")
+        self._redpanda.logger.info(setup_cmd)
+        subprocess.check_output(setup_cmd)
+        apply_cmd = ["kubectl", "apply", "-f", filename]
+        self._ssh_cmd(apply_cmd)
 
     def exec_privileged(self, remote_cmd, pod_name=None):
-        self._setup_privileged_pod()
         priv_pod = self._get_privileged_pod(pod_name)
         ssh_prefix = self._ssh_prefix()
         cmd = (
@@ -549,9 +541,6 @@ class KubeNodeShell:
         if not self._is_shell_running():
             # Init node shell
             overrides = self._build_overrides()
-            # We do not require timeout option to fail
-            # if pod is not running at this point
-            # Feel free to uncomment
             _out = self.kubectl.cmd(
                 [
                     f"--context={self.current_context}",
@@ -560,7 +549,8 @@ class KubeNodeShell:
                     "--image docker.io/library/alpine",
                     "--restart=Never",
                     f"--overrides='{json.dumps(overrides)}'",
-                    # "--pod-running-timeout=1m",
+                    # Ensure the pod is running before this method returns.
+                    "--pod-running-timeout=1m",
                     f"{self.pod_name}",
                 ]
             )

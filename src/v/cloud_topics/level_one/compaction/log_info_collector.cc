@@ -98,7 +98,7 @@ ss::future<> max_compactible_offset_provider_impl::fill_max_compactible_offsets(
                   }
                   auto lowest_pinned = p->raft()
                                          ->log()
-                                         ->stm_manager()
+                                         ->stm_hookset()
                                          ->lowest_pinned_data_offset();
                   auto max_compactible = lowest_pinned.has_value()
                                            ? kafka::prev_offset(

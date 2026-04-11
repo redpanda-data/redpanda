@@ -492,6 +492,9 @@ redpanda_cc_bench(
     srcs = [
         "api_bench.cc",
     ],
+    # this bench is very slow, because posting many versions & subjects
+    # in setup_bench is slow, so in test mode, run only the 1, 1 test
+    test_regex = ".*(lookup|post)_x1_1",
     deps = [
         ":client_utils",
         ":protobuf_utils",

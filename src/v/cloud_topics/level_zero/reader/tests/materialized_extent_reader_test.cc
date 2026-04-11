@@ -54,6 +54,7 @@ TEST_F_CORO(materialized_extent_fixture, full_scan_test) {
       std::move(underlying),
       remote,
       cache,
+      cloud_topics::allow_materialization_failure::no,
       rtc,
       logger);
     ASSERT_EQ_CORO(actual.value().size(), expected.size());
@@ -103,6 +104,7 @@ ss::future<> test_aggregated_log_partial_scan(
       std::move(underlying),
       fx->remote,
       fx->cache,
+      cloud_topics::allow_materialization_failure::no,
       rtc,
       logger);
 
@@ -134,9 +136,123 @@ TEST_F_CORO(materialized_extent_fixture, timeout_test) {
       std::move(underlying),
       remote,
       cache,
+      cloud_topics::allow_materialization_failure::no,
       rtc,
       logger);
 
     ASSERT_TRUE_CORO(!actual.has_value());
     ASSERT_TRUE_CORO(actual.error() == cloud_topics::errc::timeout);
+}
+
+TEST_F_CORO(
+  materialized_extent_fixture, allow_materialization_failure_skips_notfound) {
+    // When allow_materialization_failure is set and an extent's object returns
+    // 404, that extent should be skipped and the result should be empty.
+    co_await add_random_batches(1);
+
+    std::queue<injected_failure> failures;
+    failures.push({.cloud_get = injected_cloud_get_failure::return_notfound});
+    produce_placeholders(false, 1, std::move(failures));
+
+    auto underlying = convert_placeholders(make_underlying());
+    ss::abort_source as;
+    retry_chain_node rtc(as, 1s, 100ms);
+    retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
+
+    auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
+      cloud_storage_clients::bucket_name("test-bucket-name"),
+      std::move(underlying),
+      remote,
+      cache,
+      cloud_topics::allow_materialization_failure::yes,
+      rtc,
+      logger);
+
+    ASSERT_TRUE_CORO(actual.has_value());
+    ASSERT_EQ_CORO(actual.value().size(), 0);
+}
+
+TEST_F_CORO(
+  materialized_extent_fixture, notfound_propagates_without_failure_flag) {
+    // Without allow_materialization_failure, a 404 should propagate as an
+    // error, same as any other download failure.
+    co_await add_random_batches(1);
+
+    std::queue<injected_failure> failures;
+    failures.push({.cloud_get = injected_cloud_get_failure::return_notfound});
+    produce_placeholders(false, 1, std::move(failures));
+
+    auto underlying = convert_placeholders(make_underlying());
+    ss::abort_source as;
+    retry_chain_node rtc(as, 1s, 100ms);
+    retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
+
+    auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
+      cloud_storage_clients::bucket_name("test-bucket-name"),
+      std::move(underlying),
+      remote,
+      cache,
+      cloud_topics::allow_materialization_failure::no,
+      rtc,
+      logger);
+
+    ASSERT_TRUE_CORO(!actual.has_value());
+    ASSERT_TRUE_CORO(actual.error() == cloud_topics::errc::download_not_found);
+}
+
+TEST_F_CORO(
+  materialized_extent_fixture, non_404_error_propagates_with_failure_flag) {
+    // Only 404 errors are tolerated. A timeout should still propagate
+    // even when allow_materialization_failure is set.
+    co_await add_random_batches(1);
+
+    std::queue<injected_failure> failures;
+    failures.push({.cloud_get = injected_cloud_get_failure::return_timeout});
+    produce_placeholders(false, 1, std::move(failures));
+
+    auto underlying = convert_placeholders(make_underlying());
+    ss::abort_source as;
+    retry_chain_node rtc(as, 1s, 100ms);
+    retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
+
+    auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
+      cloud_storage_clients::bucket_name("test-bucket-name"),
+      std::move(underlying),
+      remote,
+      cache,
+      cloud_topics::allow_materialization_failure::yes,
+      rtc,
+      logger);
+
+    ASSERT_TRUE_CORO(!actual.has_value());
+    ASSERT_TRUE_CORO(actual.error() == cloud_topics::errc::timeout);
+}
+
+TEST_F_CORO(materialized_extent_fixture, skip_one_missing_extent_among_many) {
+    // With multiple extents, only the missing one should be skipped.
+    // The other extents should materialize normally.
+    co_await add_random_batches(3);
+
+    // Single failure in the queue: exactly one of the three L0 objects
+    // will return notfound, the other two will succeed.
+    std::queue<injected_failure> failures;
+    failures.push({.cloud_get = injected_cloud_get_failure::return_notfound});
+    produce_placeholders(false, 1, std::move(failures));
+
+    auto underlying = convert_placeholders(make_underlying());
+    ss::abort_source as;
+    retry_chain_node rtc(as, 1s, 100ms);
+    retry_chain_logger logger(test_log, rtc, "materialized_extent_reader_test");
+
+    auto [actual, probe] = co_await cloud_topics::l0::materialize_placeholders(
+      cloud_storage_clients::bucket_name("test-bucket-name"),
+      std::move(underlying),
+      remote,
+      cache,
+      cloud_topics::allow_materialization_failure::yes,
+      rtc,
+      logger);
+
+    ASSERT_TRUE_CORO(actual.has_value());
+    ASSERT_EQ_CORO(actual.value().size(), 2);
 }

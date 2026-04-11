@@ -319,7 +319,8 @@ INSTANTIATE_TEST_SUITE_P(
           staging,
           &sr->remote.local(),
           fixture->bucket_name,
-          cloud_storage_clients::object_key("test-prefix"));
+          cloud_storage_clients::object_key("test-prefix"),
+          "test-prefix");
 
         co_return std::make_unique<mock_cloud_data_persistence>(
           std::move(fixture), std::move(sr), std::move(impl));

@@ -1,13 +1,10 @@
-/*
- * Copyright 2025 Redpanda Data, Inc.
- *
- * Use of this software is governed by the Business Source License
- * included in the file licenses/BSL.md
- *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
- */
+// Copyright (c) 2014 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found at https://github.com/google/leveldb/blob/main/LICENSE. See
+// https://github.com/google/leveldb/blob/main/AUTHORS for names of
+// contributors.
+//
+// Modifications copyright 2025 Redpanda Data, Inc.
 
 #pragma once
 
@@ -118,7 +115,7 @@ private:
     void maybe_schedule_compaction();
 
     ss::future<> do_flush();
-    ss::future<> do_compaction();
+    ss::future<> do_compaction(std::unique_ptr<compaction>);
     ss::future<> apply_edits(ss::lw_shared_ptr<version_edit>);
 
     io::persistence _persistence;
@@ -134,8 +131,8 @@ private:
     snapshot_list _snapshots;
     gc_actor _gc_actor;
     ssx::mutex _manifest_write_mu;
-    std::optional<ss::future<>> _compaction_task;
-    std::optional<ss::future<>> _flush_task;
+    bool _is_flushing = false;
+    ss::gate _gate;
 };
 
 } // namespace lsm::db

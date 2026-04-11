@@ -76,5 +76,6 @@ BOOST_DATA_TEST_CASE(
       .replication_factor = 1,
       .configs = data.configs};
     BOOST_REQUIRE_EQUAL(
-      subject_name_strategy_validator::is_valid(no_options), data.is_valid);
+      subject_name_strategy_validator::is_valid(no_options, nullptr),
+      data.is_valid);
 }

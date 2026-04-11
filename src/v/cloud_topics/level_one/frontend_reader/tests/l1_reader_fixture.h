@@ -14,6 +14,7 @@
 #include "cloud_topics/level_one/common/fake_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
@@ -63,7 +64,7 @@ protected:
         std::map<model::topic_id_partition, l1::object_id> oid_by_tidp;
         for (auto& [tidp, unused] : batches_by_tidp) {
             oid_by_tidp[tidp]
-              = meta_builder->get_or_create_object_for(tidp).value();
+              = (co_await meta_builder->get_or_create_object_for(tidp)).value();
         }
 
         // Then create output streams and builders for each object.
@@ -136,7 +137,8 @@ protected:
       kafka::offset start_offset = kafka::offset{0},
       kafka::offset max_offset = kafka::offset::max(),
       size_t max_bytes = std::numeric_limits<size_t>::max(),
-      bool strict_max_bytes = false) {
+      bool strict_max_bytes = false,
+      size_t lookahead_objects = 0) {
         cloud_topic_log_reader_config config(
           start_offset,
           max_offset,
@@ -147,9 +149,10 @@ protected:
           /*abort_source=*/std::nullopt,
           /*client_addr=*/std::nullopt,
           /*strict_max_bytes=*/strict_max_bytes);
+        config.lookahead_objects = lookahead_objects;
         return model::record_batch_reader(
           std::make_unique<level_one_log_reader_impl>(
-            config, ntp, tidp, &_metastore, &_io, nullptr));
+            config, ntp, tidp, &_metastore, &_io, nullptr, _cache_ptr));
     }
 
     chunked_circular_buffer<model::record_batch>
@@ -162,8 +165,12 @@ protected:
         return result;
     }
 
+    ss::future<> TearDownAsync() override { co_await _cache.stop(); }
+
     l1::simple_metastore _metastore{};
     l1::fake_io _io{};
+    l1_reader_cache _cache{};
+    l1_reader_cache* _cache_ptr = &_cache;
 };
 
 } // namespace cloud_topics::l1

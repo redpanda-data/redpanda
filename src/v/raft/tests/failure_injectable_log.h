@@ -153,6 +153,8 @@ public:
 
     bool needs_compaction() const final;
 
+    ss::lw_shared_ptr<storage::stm_hookset> stm_hookset() final;
+
 private:
     ss::shared_ptr<storage::log> _underlying_log;
     std::optional<append_delay_generator> _append_delay_generator;

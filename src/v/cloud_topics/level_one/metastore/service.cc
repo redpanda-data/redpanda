@@ -118,4 +118,10 @@ ss::future<restore_domain_reply> service::restore_domain(
       std::move(request), leader_router::local_only::yes);
 }
 
+ss::future<preregister_objects_reply> service::preregister_objects(
+  preregister_objects_request request, ::rpc::streaming_context&) {
+    return _leader_router->local().preregister_objects(
+      std::move(request), leader_router::local_only::yes);
+}
+
 } // namespace cloud_topics::l1::rpc

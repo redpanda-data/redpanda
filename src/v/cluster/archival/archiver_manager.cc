@@ -563,6 +563,7 @@ private:
         return config::shard_local_cfg().cloud_storage_enabled()
                && !config::shard_local_cfg()
                      .cloud_storage_disable_archiver_manager()
+               && !ntp_config.cloud_topic_enabled()
                && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled());
     }
 

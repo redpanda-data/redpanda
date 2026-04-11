@@ -328,7 +328,7 @@ void group_tx_tracker_stm_factory::create(
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<kafka::group_tx_tracker_stm>(
       cg_klog, raft, _feature_table);
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 void group_tx_tracker_stm::per_group_state::maybe_add_tx_begin(

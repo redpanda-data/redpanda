@@ -163,6 +163,7 @@ using subject = named_type<ss::sstring, struct subject_tag>;
 /// separation, and so on. By default, schemas are stored under the "." context.
 using context = named_type<ss::sstring, struct context_tag>;
 inline const context default_context{"."};
+inline const context global_context{".__GLOBAL"};
 
 /// Whether qualified subject parsing is enabled. Captured at SR startup.
 using enable_qualified_subjects
@@ -702,6 +703,14 @@ enum class compatibility_level {
     full,
     full_transitive,
 };
+
+/// The hard-coded compatibility level returned when no explicit config is set
+/// at any level in the fallback chain.
+inline constexpr auto default_top_level_compat = compatibility_level::backward;
+
+/// The hard-coded mode returned when no explicit mode is set
+/// at any level in the fallback chain.
+inline constexpr auto default_top_level_mode = mode::read_write;
 
 constexpr std::string_view to_string_view(compatibility_level v) {
     switch (v) {

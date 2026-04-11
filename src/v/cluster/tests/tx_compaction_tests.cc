@@ -40,7 +40,7 @@ using cluster::tx_executor;
     wait_for_confirmed_leader();                                               \
     wait_for_meta_initialized();                                               \
     auto log = _storage.local().log_mgr().get(_raft->ntp());                   \
-    log->stm_manager()->add_stm(stm);                                          \
+    log->stm_hookset()->add_stm(stm);                                          \
     BOOST_REQUIRE(log);
 
 FIXTURE_TEST(test_tx_compaction_combinations, rm_stm_test_fixture) {

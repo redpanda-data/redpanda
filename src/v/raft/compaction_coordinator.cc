@@ -456,9 +456,9 @@ void compaction_coordinator::update_group_offsets(
         _need_force_update = false;
         send_group_offsets_to_followers();
     }
-    _log->stm_manager()->set_max_tombstone_remove_offset(
+    _log->stm_hookset()->set_max_tombstone_remove_offset(
       model::prev_offset(_mtro));
-    _log->stm_manager()->set_max_tx_end_remove_offset(
+    _log->stm_hookset()->set_max_tx_end_remove_offset(
       model::prev_offset(_mxro));
 }
 

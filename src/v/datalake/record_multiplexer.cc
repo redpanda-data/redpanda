@@ -231,7 +231,7 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
         record_schema_components comps{
           .key_identifier = std::nullopt,
           .val_identifier = val_type.has_value()
-                              ? std::make_optional(val_type->id)
+                              ? std::make_optional((*val_type)->id)
                               : std::nullopt,
         };
         auto writer_iter = _writers.find(comps);

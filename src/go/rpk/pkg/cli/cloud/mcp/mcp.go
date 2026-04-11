@@ -18,9 +18,11 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/aigateway/v1/aigatewayv1mcp"
 	controlplanev1mcp "github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/controlplane/v1/controlplanev1mcp"
 	"github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/dataplane/v1/dataplanev1mcp"
 	"github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/dataplane/v1alpha3/dataplanev1alpha3mcp"
+	"github.com/redpanda-data/common-go/proto/gen/go/redpanda/api/iam/v1/iamv1mcp"
 	"github.com/redpanda-data/protoc-gen-go-mcp/pkg/runtime"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -98,6 +100,10 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			// Create dataplane client set with dynamic transport for MCP
 			dataplaneClientSet, err := publicapi.NewDataPlaneClientSet("", "")
 			out.MaybeDie(err, "failed to create dataplane client set: %v", err)
+
+			// Create AI Gateway client set with dynamic transport for MCP
+			aiGatewayClientSet, err := publicapi.NewAIGatewayClientSet("", "")
+			out.MaybeDie(err, "failed to create AI gateway client set: %v", err)
 			var m sync.RWMutex
 			var tokenOK bool
 
@@ -132,6 +138,7 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if !ok {
 					cl.UpdateAuthToken(authToken)
 					dataplaneClientSet.UpdateAuthToken(authToken)
+					aiGatewayClientSet.UpdateAuthToken(authToken)
 					m.Lock()
 					tokenOK = true
 					m.Unlock()
@@ -167,6 +174,15 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClient(s, cl.ServerlessRegion)
 			controlplanev1mcp.ForwardToConnectServerlessRegionServiceClient(s, cl.ServerlessRegion)
 
+			// IAM
+			iamv1mcp.ForwardToConnectOrganizationServiceClient(s, cl.Organization)
+			iamv1mcp.ForwardToConnectPermissionServiceClient(s, cl.Permission)
+			iamv1mcp.ForwardToConnectRoleServiceClient(s, cl.Role)
+			iamv1mcp.ForwardToConnectRoleBindingServiceClient(s, cl.RoleBinding)
+			iamv1mcp.ForwardToConnectServiceAccountServiceClient(s, cl.ServiceAccount)
+			iamv1mcp.ForwardToConnectUserServiceClient(s, cl.IAMUser)
+			iamv1mcp.ForwardToConnectUserInviteServiceClient(s, cl.UserInvite)
+
 			// Dataplane
 			urlOpt := runtime.WithExtraProperties(runtime.ExtraProperty{
 				Name:        "dataplane_api_url",
@@ -184,8 +200,47 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			dataplanev1mcp.ForwardToConnectSecurityServiceClient(s, dataplaneClientSet.Security, urlOpt)
 			dataplanev1mcp.ForwardToConnectTransformServiceClient(s, dataplaneClientSet.Transform, urlOpt)
 			dataplanev1mcp.ForwardToConnectUserServiceClient(s, dataplaneClientSet.User, urlOpt)
+			dataplanev1alpha3mcp.ForwardToConnectAIAgentServiceClient(s, dataplaneClientSet.AIAgent, urlOpt)
 			dataplanev1alpha3mcp.ForwardToConnectKnowledgeBaseServiceClient(s, dataplaneClientSet.KnowledgeBase, urlOpt)
 			dataplanev1alpha3mcp.ForwardToConnectMCPServerServiceClient(s, dataplaneClientSet.MCPServer, urlOpt)
+
+			// AI Gateway
+			aiGatewayURLOpt := runtime.WithExtraProperties(runtime.ExtraProperty{
+				Name:        "ai_gateway_url",
+				Description: "URL to connect to this AI Gateway instance.",
+				Required:    true,
+				ContextKey:  publicapi.AIGatewayURLContextKey{},
+			})
+
+			aigatewayv1mcp.ForwardToConnectAccessControlServiceClient(s, aiGatewayClientSet.AccessControl, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectAccountServiceClient(s, aiGatewayClientSet.Account, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectAnalyticsServiceClient(s, aiGatewayClientSet.Analytics, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectAuditServiceClient(s, aiGatewayClientSet.Audit, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectAuthServiceClient(s, aiGatewayClientSet.Auth, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectBackendPoolServiceClient(s, aiGatewayClientSet.BackendPool, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectConfigServiceClient(s, aiGatewayClientSet.Config, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectGatewayServiceClient(s, aiGatewayClientSet.Gateway, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectGatewayConfigServiceClient(s, aiGatewayClientSet.GatewayConfig, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectGuardrailServiceClient(s, aiGatewayClientSet.Guardrail, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectIAMSettingsServiceClient(s, aiGatewayClientSet.IAMSettings, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectMCPToolsServiceClient(s, aiGatewayClientSet.MCPTools, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectModelPricingServiceClient(s, aiGatewayClientSet.ModelPricing, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectModelProvidersServiceClient(s, aiGatewayClientSet.ModelProviders, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectModelsServiceClient(s, aiGatewayClientSet.Models, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectOAuth2ClientServiceClient(s, aiGatewayClientSet.OAuth2Client, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectOAuth2KeyServiceClient(s, aiGatewayClientSet.OAuth2Key, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectOrganizationServiceClient(s, aiGatewayClientSet.Organization, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectProviderConfigServiceClient(s, aiGatewayClientSet.ProviderConfig, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectRateLimitServiceClient(s, aiGatewayClientSet.RateLimit, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectRoleServiceClient(s, aiGatewayClientSet.Role, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectRoutingServiceClient(s, aiGatewayClientSet.Routing, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectSettingsServiceClient(s, aiGatewayClientSet.Settings, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectSpendLimitServiceClient(s, aiGatewayClientSet.SpendLimit, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectSSOServiceClient(s, aiGatewayClientSet.SSO, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectTeamServiceClient(s, aiGatewayClientSet.Team, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectUserServiceClient(s, aiGatewayClientSet.User, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectVisualMetadataServiceClient(s, aiGatewayClientSet.VisualMetadata, aiGatewayURLOpt)
+			aigatewayv1mcp.ForwardToConnectWorkspaceServiceClient(s, aiGatewayClientSet.Workspace, aiGatewayURLOpt)
 
 			if err := server.ServeStdio(s); err != nil {
 				fmt.Fprintf(os.Stderr, "Server error: %v\n", err)

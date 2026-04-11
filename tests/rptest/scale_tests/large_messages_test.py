@@ -20,16 +20,19 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.consumer_swarm import ConsumerSwarm
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import (
+    CLOUD_TOPICS_CONFIG_STR,
     RESTART_LOG_ALLOW_LIST,
     LoggingConfig,
     MetricsEndpoint,
     PandaproxyConfig,
     SchemaRegistryConfig,
+    SISettings,
 )
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.scale_parameters import ScaleParameters
@@ -123,7 +126,7 @@ class LargeMessagesTest(RedpandaTest):
         # ResourceSettings based on its parameters.
         pass
 
-    def _create_topics(self) -> None:
+    def _create_topics(self, cloud_topics: bool = False) -> None:
         self.logger.info("Entering topic creation")
         for tn in self.topic_names:
             self.logger.info(f"Creating topic {tn} with {self.n_partitions} partitions")
@@ -139,10 +142,13 @@ class LargeMessagesTest(RedpandaTest):
             if self.message_size / 2**20 > self.MAX_DEFAULT_MSG_SIZE_MIB:
                 config |= {"max.message.bytes": self.message_size + 1000}
 
-            if self.scale.local_retention_bytes:
+            if not cloud_topics and self.scale.local_retention_bytes:
                 config["retention.local.target.bytes"] = (
                     self.scale.local_retention_bytes
                 )
+
+            if cloud_topics:
+                config[TopicSpec.PROPERTY_STORAGE_MODE] = TopicSpec.STORAGE_MODE_CLOUD
 
             self.rpk.create_topic(
                 tn,
@@ -302,9 +308,6 @@ class LargeMessagesTest(RedpandaTest):
         generate 100 messages with parametrized size and sends this count
         to each topic and validates high watermark values along with expected
         throughput.
-
-        Returns:
-            None
         """
 
         self.message_size = int(message_size_mib * 2**20)
@@ -325,6 +328,36 @@ class LargeMessagesTest(RedpandaTest):
         if self.scale.si_settings:
             self.redpanda.set_si_settings(self.scale.si_settings)
 
+        # Enable large node-wide throughput limits to verify they work at scale
+        # To avoid affecting the result of the test with the limit, set them
+        # somewhat above the expect_bandwidth value per node.
+        per_broker_throttle: int | None = None
+        if apply_throughput_limits:
+            per_broker_throttle = int(
+                float(self.scale.expect_bandwidth) // len(self.redpanda.nodes) * 3
+            )
+            self.redpanda.add_extra_rp_conf(
+                {
+                    "kafka_throughput_limit_node_in_bps": per_broker_throttle,
+                    "kafka_throughput_limit_node_out_bps": per_broker_throttle,
+                }
+            )
+
+        # Start redpanda
+        self.redpanda.start()
+
+        throttle_str = (
+            per_broker_throttle if per_broker_throttle is not None else "disabled"
+        )
+        self._test_large_messages(
+            mode=mode,
+            extra_log_fields=(
+                f"apply_throughput_limits={apply_throughput_limits}, "
+                f"per_broker_throttle={throttle_str}, "
+            ),
+        )
+
+    def _setup_mode(self, mode: Mode) -> None:
         if mode == Mode.TEN_TOPICS:
             self.n_topics = 10
             self.n_partitions = 1
@@ -343,7 +376,8 @@ class LargeMessagesTest(RedpandaTest):
         else:
             assert_never(mode)  # pyright: ignore[reportUnreachable]
 
-        self.topic_prefix_template = "large-messages"
+    def _setup_topic_names(self, topic_prefix: str) -> None:
+        self.topic_prefix_template = topic_prefix
         self.topic_prefixes = [
             f"{self.topic_prefix_template}-n{i}" for i in range(self.swarm_nodes)
         ]
@@ -354,12 +388,29 @@ class LargeMessagesTest(RedpandaTest):
         else:
             self.topic_names = self.topic_prefixes
 
-        # we size everything to this target runtime, 3 minutes, this will result in very
-        # different amounts of total message volume in different environments with different
-        # scale parameters.
+    def _test_large_messages(
+        self,
+        mode: Mode,
+        cloud_topics: bool = False,
+        extra_log_fields: str = "",
+    ) -> None:
+        """Shared workload driver for large message throughput tests.
+
+        Callers are responsible for configuring self.message_size,
+        self.replication_factor, self.swarm_nodes, self.default_consumer_config,
+        self.scale, and starting redpanda before calling this.
+        """
+
+        self._setup_mode(mode)
+        self._setup_topic_names("large-messages")
+
+        # we size everything to this target runtime, 3 minutes, this will
+        # result in very different amounts of total message volume in different
+        # environments with different scale parameters.
         target_runtime_sec = 180
 
-        # every increase of 1 in message_count increases total bytes written by this amount
+        # every increase of 1 in message_count increases total bytes written
+        # by this amount
         bytes_per_message_count = self.n_clients * self.message_size * self.swarm_nodes
 
         self.expected_throughput: float = float(self.scale.expect_bandwidth)
@@ -372,26 +423,8 @@ class LargeMessagesTest(RedpandaTest):
             + 1
         )
 
-        # Enable large node-wide throughput limits to verify they work at scale
-        # To avoid affecting the result of the test with the limit, set them
-        # somewhat above the expect_bandwidth value per node.
-        per_broker_throttle: int | None = None
-        if apply_throughput_limits:
-            per_broker_throttle = int(
-                self.expected_throughput // len(self.redpanda.nodes) * 3
-            )
-            self.redpanda.add_extra_rp_conf(
-                {
-                    "kafka_throughput_limit_node_in_bps": per_broker_throttle,
-                    "kafka_throughput_limit_node_out_bps": per_broker_throttle,
-                }
-            )
-
-        # Start redpanda
-        self.redpanda.start()
-
         # Do create topics stage
-        self._create_topics()
+        self._create_topics(cloud_topics=cloud_topics)
 
         # Do the healthcheck on RP
         # to make sure that all topics are settle down and have their leader
@@ -403,14 +436,14 @@ class LargeMessagesTest(RedpandaTest):
         )
 
         self.logger.info(
-            "LargeMessagesTest parameters: "
-            f"mode={mode.value}, apply_throughput_limits={apply_throughput_limits}, "
+            f"LargeMessagesTest parameters: "
+            f"mode={mode.value}, cloud_topics={cloud_topics}, "
             f"message_size={self.message_size} bytes ({self.message_size / 2**20:.2f} MiB), "
             f"n_topics={self.n_topics}, n_partitions={self.n_partitions}, replication_factor={self.replication_factor}, "
             f"n_clients={self.n_clients}, swarm_nodes={self.swarm_nodes}, unique={self.unique}, "
             f"total_data={total_bytes / 1e6:.2f} MB, message_count={self.message_count}, "
             f"expected_throughput>={self.expected_throughput / 1e6:5.2f} MB/s, "
-            f"per_broker_throttle={per_broker_throttle if per_broker_throttle is not None else 'disabled'}, "
+            f"{extra_log_fields}"
             f"target_runtime_sec={target_runtime_sec}"
         )
 
@@ -562,3 +595,59 @@ class LargeMessagesTest(RedpandaTest):
         # The lines below were added to debug a shutdown hang.
         # Remove once CORE-13977 is resolved.
         self.redpanda._admin.set_log_level("raft", "debug")
+
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @matrix(
+        message_size_mib=[8, 32],
+        mode=[Mode.MANY_PARTS, Mode.TEN_TOPICS],
+    )
+    def test_cloud_topics_large_messages_throughput(
+        self,
+        message_size_mib: float,
+        mode: Mode,
+    ) -> None:
+        """Cloud topics variant of the large messages throughput test.
+
+        Validates that cloud topics can handle large messages (8-32 MiB)
+        at acceptable throughput. Uses the same workload structure as the
+        regular test but with all topics created as cloud topics.
+        """
+
+        self.message_size = int(message_size_mib * 2**20)
+        self.replication_factor = 3
+        self.swarm_nodes = 2
+        self.default_consumer_config = False
+
+        assert not self.debug_mode
+
+        # Cloud topics require SISettings for the object storage backend,
+        # but we don't use ScaleParameters' tiered_storage_enabled since
+        # that tunes for tiny segments (32KB) which is wrong for large
+        # messages.
+        si_settings = SISettings(
+            self.test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+        self.redpanda.set_si_settings(si_settings)
+        self.redpanda.add_extra_rp_conf(
+            {
+                CLOUD_TOPICS_CONFIG_STR: True,
+                "enable_cluster_metadata_upload_loop": False,
+            }
+        )
+
+        self.scale = ScaleParameters(
+            self.redpanda,
+            self.replication_factor,
+            tiered_storage_enabled=False,
+        )
+
+        self.redpanda.start()
+
+        self._test_large_messages(
+            mode=mode,
+            cloud_topics=True,
+        )

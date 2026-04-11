@@ -75,7 +75,7 @@ void reconciler_probe::setup_metrics() {
           sm::description("Duration of add_objects to metastore")),
         sm::make_histogram(
           "object_size_bytes",
-          [this] { return _object_size_bytes.internal_histogram_logform(); },
+          [this] { return _object_size_bytes.seastar_histogram_logform(); },
           sm::description("Distribution of built L1 object sizes in bytes")),
       });
 }

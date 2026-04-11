@@ -143,6 +143,174 @@ TEST_F(batch_cache_test_fixture, test_batch_cache_eviction) {
     _cache.stop().get();
 }
 
+// Verify that put_ordered inserts batches into the cache and notifies
+// waiters blocked in wait_for_offset.
+TEST_F(batch_cache_test_fixture, test_put_ordered_sequential) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    // Create 3 batches: [0,9], [10,19], [20,29]
+    chunked_vector<model::record_batch> batches;
+    batches.push_back(
+      model::test::make_random_batch(model::offset(0), 10, false));
+    batches.push_back(
+      model::test::make_random_batch(model::offset(10), 10, false));
+    batches.push_back(
+      model::test::make_random_batch(model::offset(20), 10, false));
+
+    _cache.start().get();
+
+    // Seed the offset monitor so put_ordered can check alignment.
+    _cache
+      .wait_for_offset(
+        tidp,
+        model::offset{},
+        model::offset{},
+        model::timeout_clock::now(),
+        std::nullopt)
+      .get();
+
+    _cache.put_ordered(tidp, std::move(batches));
+
+    // All batches should be retrievable immediately.
+    auto b0 = _cache.get(tidp, model::offset(0));
+    auto b1 = _cache.get(tidp, model::offset(10));
+    auto b2 = _cache.get(tidp, model::offset(20));
+    ASSERT_TRUE(b0.has_value());
+    ASSERT_TRUE(b1.has_value());
+    ASSERT_TRUE(b2.has_value());
+    ASSERT_EQ(b0->base_offset(), model::offset(0));
+    ASSERT_EQ(b1->base_offset(), model::offset(10));
+    ASSERT_EQ(b2->base_offset(), model::offset(20));
+
+    // The monitor should have been notified up to offset 29.
+    auto wait_fut = _cache.wait_for_offset(
+      tidp,
+      model::offset(29),
+      model::offset{},
+      model::timeout_clock::now(),
+      std::nullopt);
+    ASSERT_TRUE(wait_fut.available());
+    ASSERT_NO_THROW(wait_fut.get());
+
+    _cache.stop().get();
+}
+
+// Verify that put_ordered wakes a concurrent wait_for_offset.
+TEST_F(batch_cache_test_fixture, test_put_ordered_wakes_waiter) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    _cache.start().get();
+
+    // Start waiting for offset 9 (last offset of a 10-record batch at 0).
+    auto wait_fut = _cache.wait_for_offset(
+      tidp,
+      model::offset(9),
+      model::offset{},
+      model::timeout_clock::now() + 5s,
+      std::nullopt);
+
+    ASSERT_FALSE(wait_fut.available())
+      << "wait_for_offset should block before put_ordered";
+
+    // Insert the batch that covers offset 9.
+    chunked_vector<model::record_batch> batches;
+    batches.push_back(
+      model::test::make_random_batch(model::offset(0), 10, false));
+    _cache.put_ordered(tidp, std::move(batches));
+
+    // The waiter should now be resolved.
+    ASSERT_NO_THROW(wait_fut.get());
+
+    _cache.stop().get();
+}
+
+// Verify that out-of-order put_ordered calls notify correctly:
+// inserting [10,19] first puts the data in cache but doesn't notify the
+// monitor.  When [0,9] arrives the index has contiguous coverage and
+// the monitor is notified for both batches.
+TEST_F(batch_cache_test_fixture, test_put_ordered_out_of_order) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    _cache.start().get();
+
+    // Set up a waiter for offset 19 so the monitor exists.
+    auto wait_fut = _cache.wait_for_offset(
+      tidp,
+      model::offset(19),
+      model::offset{},
+      model::timeout_clock::now() + 5s,
+      std::nullopt);
+    ASSERT_FALSE(wait_fut.available());
+
+    // Insert batch [10,19] first — it goes into cache but the monitor
+    // is not notified because there is no contiguous coverage from
+    // the monitor's position.
+    chunked_vector<model::record_batch> second_batch;
+    second_batch.push_back(
+      model::test::make_random_batch(model::offset(10), 10, false));
+    _cache.put_ordered(tidp, std::move(second_batch));
+
+    // The batch is in cache but the monitor hasn't been notified.
+    ASSERT_TRUE(_cache.get(tidp, model::offset(10)).has_value());
+    ASSERT_FALSE(wait_fut.available());
+
+    // Now insert batch [0,9] — the index now has contiguous coverage
+    // from 0 through 19, which fills the gap. put_ordered scans forward
+    // past the inserted range and discovers [10,19] is already cached,
+    // so the monitor is notified with offset 19.
+    chunked_vector<model::record_batch> first_batch;
+    first_batch.push_back(
+      model::test::make_random_batch(model::offset(0), 10, false));
+    _cache.put_ordered(tidp, std::move(first_batch));
+
+    // Both batches are in cache and the waiter for offset 19 is resolved
+    // because the gap-closing put discovers the full contiguous range.
+    auto b0 = _cache.get(tidp, model::offset(0));
+    auto b1 = _cache.get(tidp, model::offset(10));
+    ASSERT_TRUE(b0.has_value());
+    ASSERT_TRUE(b1.has_value());
+    ASSERT_TRUE(wait_fut.available());
+    wait_fut.get();
+
+    _cache.stop().get();
+}
+
+// Verify that put_ordered inserts the batch even when the predecessor
+// never arrives — the data is still cached, just no monitor notification.
+TEST_F(
+  batch_cache_test_fixture, test_put_ordered_no_predecessor_still_inserts) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    _cache.start().get();
+
+    // Seed the monitor.
+    _cache
+      .wait_for_offset(
+        tidp,
+        model::offset{},
+        model::offset{},
+        model::timeout_clock::now(),
+        std::nullopt)
+      .get();
+
+    // Insert batch [10,19] without [0,9] — no contiguous coverage so
+    // the monitor is not notified, but the batch is still in cache.
+    chunked_vector<model::record_batch> batches;
+    batches.push_back(
+      model::test::make_random_batch(model::offset(10), 10, false));
+    _cache.put_ordered(tidp, std::move(batches));
+
+    auto b = _cache.get(tidp, model::offset(10));
+    ASSERT_TRUE(b.has_value());
+    ASSERT_EQ(b->base_offset(), model::offset(10));
+
+    _cache.stop().get();
+}
+
 TEST_F(batch_cache_test_fixture, test_batch_cache_topic_recreation) {
     // Test that recreating a topic with the same name doesn't resurrect batches
     auto topic_id_1 = model::topic_id::create();

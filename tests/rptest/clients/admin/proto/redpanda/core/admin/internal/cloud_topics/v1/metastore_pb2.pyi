@@ -16,7 +16,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import builtins
+import collections.abc
 import google.protobuf.descriptor
+import google.protobuf.internal.containers
 import google.protobuf.message
 from ........ import proto
 import sys
@@ -125,3 +127,548 @@ class GetSizeResponse(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal['size_bytes', b'size_bytes']) -> None:
         ...
 Global___GetSizeResponse: typing_extensions.TypeAlias = GetSizeResponse
+
+@typing.final
+class GetDatabaseStatsRequest(google.protobuf.message.Message):
+    """GetDatabaseStatsRequest is the request for looking up LSM storage statistics."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    METASTORE_PARTITION_FIELD_NUMBER: builtins.int
+    metastore_partition: builtins.int
+    'The metastore partition to query. Defaults to partition 0 if not\n    specified.\n    '
+
+    def __init__(self, *, metastore_partition: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['metastore_partition', b'metastore_partition']) -> None:
+        ...
+Global___GetDatabaseStatsRequest: typing_extensions.TypeAlias = GetDatabaseStatsRequest
+
+@typing.final
+class GetDatabaseStatsResponse(google.protobuf.message.Message):
+    """GetDatabaseStatsResponse contains detailed LSM storage statistics."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    ACTIVE_MEMTABLE_BYTES_FIELD_NUMBER: builtins.int
+    IMMUTABLE_MEMTABLE_BYTES_FIELD_NUMBER: builtins.int
+    TOTAL_SIZE_BYTES_FIELD_NUMBER: builtins.int
+    LEVELS_FIELD_NUMBER: builtins.int
+    active_memtable_bytes: builtins.int
+    'Size of the active memtable (data not yet flushed).'
+    immutable_memtable_bytes: builtins.int
+    'Size of the immutable memtable (data being flushed).'
+    total_size_bytes: builtins.int
+    'Total size including memtables and all levels.'
+
+    @property
+    def levels(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LsmLevel]:
+        """Per-level file information for the LSM tree."""
+
+    def __init__(self, *, active_memtable_bytes: builtins.int=..., immutable_memtable_bytes: builtins.int=..., total_size_bytes: builtins.int=..., levels: collections.abc.Iterable[Global___LsmLevel] | None=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['active_memtable_bytes', b'active_memtable_bytes', 'immutable_memtable_bytes', b'immutable_memtable_bytes', 'levels', b'levels', 'total_size_bytes', b'total_size_bytes']) -> None:
+        ...
+Global___GetDatabaseStatsResponse: typing_extensions.TypeAlias = GetDatabaseStatsResponse
+
+@typing.final
+class LsmLevel(google.protobuf.message.Message):
+    """Information about a single level in the LSM tree."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    LEVEL_NUMBER_FIELD_NUMBER: builtins.int
+    FILES_FIELD_NUMBER: builtins.int
+    level_number: builtins.int
+    'The level number (0 for L0, 1 for L1, etc).'
+
+    @property
+    def files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LsmFile]:
+        """Files in this level."""
+
+    def __init__(self, *, level_number: builtins.int=..., files: collections.abc.Iterable[Global___LsmFile] | None=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['files', b'files', 'level_number', b'level_number']) -> None:
+        ...
+Global___LsmLevel: typing_extensions.TypeAlias = LsmLevel
+
+@typing.final
+class LsmFile(google.protobuf.message.Message):
+    """Summary information about a single SST file."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    EPOCH_FIELD_NUMBER: builtins.int
+    ID_FIELD_NUMBER: builtins.int
+    SIZE_BYTES_FIELD_NUMBER: builtins.int
+    SMALLEST_KEY_INFO_FIELD_NUMBER: builtins.int
+    LARGEST_KEY_INFO_FIELD_NUMBER: builtins.int
+    epoch: builtins.int
+    'Database epoch when the file was created.'
+    id: builtins.int
+    'File ID.'
+    size_bytes: builtins.int
+    'File size in bytes.'
+    smallest_key_info: builtins.str
+    'Smallest key in the file (human-readable string representation).'
+    largest_key_info: builtins.str
+    'Largest key in the file (human-readable string representation).'
+
+    def __init__(self, *, epoch: builtins.int=..., id: builtins.int=..., size_bytes: builtins.int=..., smallest_key_info: builtins.str=..., largest_key_info: builtins.str=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['epoch', b'epoch', 'id', b'id', 'largest_key_info', b'largest_key_info', 'size_bytes', b'size_bytes', 'smallest_key_info', b'smallest_key_info']) -> None:
+        ...
+Global___LsmFile: typing_extensions.TypeAlias = LsmFile
+
+@typing.final
+class MetadataKey(google.protobuf.message.Message):
+    """Key for a metadata row (partition-level metadata)."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPIC_ID_FIELD_NUMBER: builtins.int
+    PARTITION_ID_FIELD_NUMBER: builtins.int
+    topic_id: builtins.str
+    partition_id: builtins.int
+
+    def __init__(self, *, topic_id: builtins.str=..., partition_id: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['partition_id', b'partition_id', 'topic_id', b'topic_id']) -> None:
+        ...
+Global___MetadataKey: typing_extensions.TypeAlias = MetadataKey
+
+@typing.final
+class ExtentKey(google.protobuf.message.Message):
+    """Key for an extent row (pointer into an L1 object)."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPIC_ID_FIELD_NUMBER: builtins.int
+    PARTITION_ID_FIELD_NUMBER: builtins.int
+    BASE_OFFSET_FIELD_NUMBER: builtins.int
+    topic_id: builtins.str
+    partition_id: builtins.int
+    base_offset: builtins.int
+
+    def __init__(self, *, topic_id: builtins.str=..., partition_id: builtins.int=..., base_offset: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['base_offset', b'base_offset', 'partition_id', b'partition_id', 'topic_id', b'topic_id']) -> None:
+        ...
+Global___ExtentKey: typing_extensions.TypeAlias = ExtentKey
+
+@typing.final
+class TermKey(google.protobuf.message.Message):
+    """Key for a term row (term-to-offset mapping)."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPIC_ID_FIELD_NUMBER: builtins.int
+    PARTITION_ID_FIELD_NUMBER: builtins.int
+    TERM_ID_FIELD_NUMBER: builtins.int
+    topic_id: builtins.str
+    partition_id: builtins.int
+    term_id: builtins.int
+
+    def __init__(self, *, topic_id: builtins.str=..., partition_id: builtins.int=..., term_id: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['partition_id', b'partition_id', 'term_id', b'term_id', 'topic_id', b'topic_id']) -> None:
+        ...
+Global___TermKey: typing_extensions.TypeAlias = TermKey
+
+@typing.final
+class CompactionKey(google.protobuf.message.Message):
+    """Key for a compaction row (compaction state for a partition)."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOPIC_ID_FIELD_NUMBER: builtins.int
+    PARTITION_ID_FIELD_NUMBER: builtins.int
+    topic_id: builtins.str
+    partition_id: builtins.int
+
+    def __init__(self, *, topic_id: builtins.str=..., partition_id: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['partition_id', b'partition_id', 'topic_id', b'topic_id']) -> None:
+        ...
+Global___CompactionKey: typing_extensions.TypeAlias = CompactionKey
+
+@typing.final
+class ObjectKey(google.protobuf.message.Message):
+    """Key for an object row (object-level metadata)."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    OBJECT_ID_FIELD_NUMBER: builtins.int
+    object_id: builtins.str
+
+    def __init__(self, *, object_id: builtins.str=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['object_id', b'object_id']) -> None:
+        ...
+Global___ObjectKey: typing_extensions.TypeAlias = ObjectKey
+
+@typing.final
+class RowKey(google.protobuf.message.Message):
+    """A typed key for a metastore row."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    METADATA_FIELD_NUMBER: builtins.int
+    EXTENT_FIELD_NUMBER: builtins.int
+    TERM_FIELD_NUMBER: builtins.int
+    COMPACTION_FIELD_NUMBER: builtins.int
+    OBJECT_FIELD_NUMBER: builtins.int
+
+    @property
+    def metadata(self) -> Global___MetadataKey:
+        ...
+
+    @property
+    def extent(self) -> Global___ExtentKey:
+        ...
+
+    @property
+    def term(self) -> Global___TermKey:
+        ...
+
+    @property
+    def compaction(self) -> Global___CompactionKey:
+        ...
+
+    @property
+    def object(self) -> Global___ObjectKey:
+        ...
+
+    def __init__(self, *, metadata: Global___MetadataKey | None=..., extent: Global___ExtentKey | None=..., term: Global___TermKey | None=..., compaction: Global___CompactionKey | None=..., object: Global___ObjectKey | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['compaction', b'compaction', 'extent', b'extent', 'key', b'key', 'metadata', b'metadata', 'object', b'object', 'term', b'term']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['compaction', b'compaction', 'extent', b'extent', 'key', b'key', 'metadata', b'metadata', 'object', b'object', 'term', b'term']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['key', b'key']) -> typing.Literal['metadata', 'extent', 'term', 'compaction', 'object'] | None:
+        ...
+Global___RowKey: typing_extensions.TypeAlias = RowKey
+
+@typing.final
+class MetadataValue(google.protobuf.message.Message):
+    """Value for a metadata row."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    START_OFFSET_FIELD_NUMBER: builtins.int
+    NEXT_OFFSET_FIELD_NUMBER: builtins.int
+    COMPACTION_EPOCH_FIELD_NUMBER: builtins.int
+    SIZE_FIELD_NUMBER: builtins.int
+    start_offset: builtins.int
+    next_offset: builtins.int
+    compaction_epoch: builtins.int
+    size: builtins.int
+
+    def __init__(self, *, start_offset: builtins.int=..., next_offset: builtins.int=..., compaction_epoch: builtins.int=..., size: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['compaction_epoch', b'compaction_epoch', 'next_offset', b'next_offset', 'size', b'size', 'start_offset', b'start_offset']) -> None:
+        ...
+Global___MetadataValue: typing_extensions.TypeAlias = MetadataValue
+
+@typing.final
+class ExtentValue(google.protobuf.message.Message):
+    """Value for an extent row."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    LAST_OFFSET_FIELD_NUMBER: builtins.int
+    MAX_TIMESTAMP_FIELD_NUMBER: builtins.int
+    FILEPOS_FIELD_NUMBER: builtins.int
+    LEN_FIELD_NUMBER: builtins.int
+    OBJECT_ID_FIELD_NUMBER: builtins.int
+    last_offset: builtins.int
+    max_timestamp: builtins.int
+    filepos: builtins.int
+    len: builtins.int
+    object_id: builtins.str
+
+    def __init__(self, *, last_offset: builtins.int=..., max_timestamp: builtins.int=..., filepos: builtins.int=..., len: builtins.int=..., object_id: builtins.str=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['filepos', b'filepos', 'last_offset', b'last_offset', 'len', b'len', 'max_timestamp', b'max_timestamp', 'object_id', b'object_id']) -> None:
+        ...
+Global___ExtentValue: typing_extensions.TypeAlias = ExtentValue
+
+@typing.final
+class TermValue(google.protobuf.message.Message):
+    """Value for a term row."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TERM_START_OFFSET_FIELD_NUMBER: builtins.int
+    term_start_offset: builtins.int
+
+    def __init__(self, *, term_start_offset: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['term_start_offset', b'term_start_offset']) -> None:
+        ...
+Global___TermValue: typing_extensions.TypeAlias = TermValue
+
+@typing.final
+class OffsetRange(google.protobuf.message.Message):
+    """An inclusive offset range."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    BASE_OFFSET_FIELD_NUMBER: builtins.int
+    LAST_OFFSET_FIELD_NUMBER: builtins.int
+    base_offset: builtins.int
+    last_offset: builtins.int
+
+    def __init__(self, *, base_offset: builtins.int=..., last_offset: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['base_offset', b'base_offset', 'last_offset', b'last_offset']) -> None:
+        ...
+Global___OffsetRange: typing_extensions.TypeAlias = OffsetRange
+
+@typing.final
+class CleanedRangeWithTombstones(google.protobuf.message.Message):
+    """A cleaned range that may contain tombstones."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    BASE_OFFSET_FIELD_NUMBER: builtins.int
+    LAST_OFFSET_FIELD_NUMBER: builtins.int
+    CLEANED_WITH_TOMBSTONES_AT_FIELD_NUMBER: builtins.int
+    base_offset: builtins.int
+    last_offset: builtins.int
+    cleaned_with_tombstones_at: builtins.int
+
+    def __init__(self, *, base_offset: builtins.int=..., last_offset: builtins.int=..., cleaned_with_tombstones_at: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['base_offset', b'base_offset', 'cleaned_with_tombstones_at', b'cleaned_with_tombstones_at', 'last_offset', b'last_offset']) -> None:
+        ...
+Global___CleanedRangeWithTombstones: typing_extensions.TypeAlias = CleanedRangeWithTombstones
+
+@typing.final
+class CompactionValue(google.protobuf.message.Message):
+    """Value for a compaction row."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    CLEANED_RANGES_FIELD_NUMBER: builtins.int
+    CLEANED_RANGES_WITH_TOMBSTONES_FIELD_NUMBER: builtins.int
+
+    @property
+    def cleaned_ranges(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___OffsetRange]:
+        ...
+
+    @property
+    def cleaned_ranges_with_tombstones(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___CleanedRangeWithTombstones]:
+        ...
+
+    def __init__(self, *, cleaned_ranges: collections.abc.Iterable[Global___OffsetRange] | None=..., cleaned_ranges_with_tombstones: collections.abc.Iterable[Global___CleanedRangeWithTombstones] | None=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['cleaned_ranges', b'cleaned_ranges', 'cleaned_ranges_with_tombstones', b'cleaned_ranges_with_tombstones']) -> None:
+        ...
+Global___CompactionValue: typing_extensions.TypeAlias = CompactionValue
+
+@typing.final
+class ObjectValue(google.protobuf.message.Message):
+    """Value for an object row."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TOTAL_DATA_SIZE_FIELD_NUMBER: builtins.int
+    REMOVED_DATA_SIZE_FIELD_NUMBER: builtins.int
+    FOOTER_POS_FIELD_NUMBER: builtins.int
+    OBJECT_SIZE_FIELD_NUMBER: builtins.int
+    LAST_UPDATED_FIELD_NUMBER: builtins.int
+    IS_PREREGISTRATION_FIELD_NUMBER: builtins.int
+    total_data_size: builtins.int
+    removed_data_size: builtins.int
+    footer_pos: builtins.int
+    object_size: builtins.int
+    last_updated: builtins.int
+    is_preregistration: builtins.bool
+
+    def __init__(self, *, total_data_size: builtins.int=..., removed_data_size: builtins.int=..., footer_pos: builtins.int=..., object_size: builtins.int=..., last_updated: builtins.int=..., is_preregistration: builtins.bool=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['footer_pos', b'footer_pos', 'is_preregistration', b'is_preregistration', 'last_updated', b'last_updated', 'object_size', b'object_size', 'removed_data_size', b'removed_data_size', 'total_data_size', b'total_data_size']) -> None:
+        ...
+Global___ObjectValue: typing_extensions.TypeAlias = ObjectValue
+
+@typing.final
+class RowValue(google.protobuf.message.Message):
+    """A typed value for a metastore row."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    METADATA_FIELD_NUMBER: builtins.int
+    EXTENT_FIELD_NUMBER: builtins.int
+    TERM_FIELD_NUMBER: builtins.int
+    COMPACTION_FIELD_NUMBER: builtins.int
+    OBJECT_FIELD_NUMBER: builtins.int
+
+    @property
+    def metadata(self) -> Global___MetadataValue:
+        ...
+
+    @property
+    def extent(self) -> Global___ExtentValue:
+        ...
+
+    @property
+    def term(self) -> Global___TermValue:
+        ...
+
+    @property
+    def compaction(self) -> Global___CompactionValue:
+        ...
+
+    @property
+    def object(self) -> Global___ObjectValue:
+        ...
+
+    def __init__(self, *, metadata: Global___MetadataValue | None=..., extent: Global___ExtentValue | None=..., term: Global___TermValue | None=..., compaction: Global___CompactionValue | None=..., object: Global___ObjectValue | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['compaction', b'compaction', 'extent', b'extent', 'metadata', b'metadata', 'object', b'object', 'term', b'term', 'value', b'value']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['compaction', b'compaction', 'extent', b'extent', 'metadata', b'metadata', 'object', b'object', 'term', b'term', 'value', b'value']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['value', b'value']) -> typing.Literal['metadata', 'extent', 'term', 'compaction', 'object'] | None:
+        ...
+Global___RowValue: typing_extensions.TypeAlias = RowValue
+
+@typing.final
+class WriteRow(google.protobuf.message.Message):
+    """A row to write (upsert) to the metastore."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    KEY_FIELD_NUMBER: builtins.int
+    VALUE_FIELD_NUMBER: builtins.int
+
+    @property
+    def key(self) -> Global___RowKey:
+        ...
+
+    @property
+    def value(self) -> Global___RowValue:
+        ...
+
+    def __init__(self, *, key: Global___RowKey | None=..., value: Global___RowValue | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['key', b'key', 'value', b'value']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['key', b'key', 'value', b'value']) -> None:
+        ...
+Global___WriteRow: typing_extensions.TypeAlias = WriteRow
+
+@typing.final
+class WriteRowsRequest(google.protobuf.message.Message):
+    """WriteRowsRequest writes or deletes arbitrary rows in the metastore."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    METASTORE_PARTITION_FIELD_NUMBER: builtins.int
+    WRITES_FIELD_NUMBER: builtins.int
+    DELETES_FIELD_NUMBER: builtins.int
+    metastore_partition: builtins.int
+    'The metastore partition to write to.'
+
+    @property
+    def writes(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___WriteRow]:
+        """Rows to upsert."""
+
+    @property
+    def deletes(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___RowKey]:
+        """Keys to delete (tombstone)."""
+
+    def __init__(self, *, metastore_partition: builtins.int=..., writes: collections.abc.Iterable[Global___WriteRow] | None=..., deletes: collections.abc.Iterable[Global___RowKey] | None=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['deletes', b'deletes', 'metastore_partition', b'metastore_partition', 'writes', b'writes']) -> None:
+        ...
+Global___WriteRowsRequest: typing_extensions.TypeAlias = WriteRowsRequest
+
+@typing.final
+class WriteRowsResponse(google.protobuf.message.Message):
+    """WriteRowsResponse is the response for writing rows."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    ROWS_WRITTEN_FIELD_NUMBER: builtins.int
+    rows_written: builtins.int
+    'The number of rows written (including deletes).'
+
+    def __init__(self, *, rows_written: builtins.int=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['rows_written', b'rows_written']) -> None:
+        ...
+Global___WriteRowsResponse: typing_extensions.TypeAlias = WriteRowsResponse
+
+@typing.final
+class ReadRow(google.protobuf.message.Message):
+    """A row read from the metastore, with decoded key and value."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    KEY_FIELD_NUMBER: builtins.int
+    VALUE_FIELD_NUMBER: builtins.int
+
+    @property
+    def key(self) -> Global___RowKey:
+        ...
+
+    @property
+    def value(self) -> Global___RowValue:
+        ...
+
+    def __init__(self, *, key: Global___RowKey | None=..., value: Global___RowValue | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['key', b'key', 'value', b'value']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['key', b'key', 'value', b'value']) -> None:
+        ...
+Global___ReadRow: typing_extensions.TypeAlias = ReadRow
+
+@typing.final
+class ReadRowsRequest(google.protobuf.message.Message):
+    """ReadRowsRequest reads and decodes rows from the LSM metastore database."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    METASTORE_PARTITION_FIELD_NUMBER: builtins.int
+    SEEK_KEY_FIELD_NUMBER: builtins.int
+    RAW_SEEK_KEY_FIELD_NUMBER: builtins.int
+    LAST_KEY_FIELD_NUMBER: builtins.int
+    RAW_LAST_KEY_FIELD_NUMBER: builtins.int
+    MAX_ROWS_FIELD_NUMBER: builtins.int
+    metastore_partition: builtins.int
+    'The metastore partition to read from.'
+    raw_seek_key: builtins.str
+    raw_last_key: builtins.str
+    max_rows: builtins.int
+    'Maximum number of rows to return. 0 uses a default of 100.'
+
+    @property
+    def seek_key(self) -> Global___RowKey:
+        ...
+
+    @property
+    def last_key(self) -> Global___RowKey:
+        ...
+
+    def __init__(self, *, metastore_partition: builtins.int=..., seek_key: Global___RowKey | None=..., raw_seek_key: builtins.str=..., last_key: Global___RowKey | None=..., raw_last_key: builtins.str=..., max_rows: builtins.int=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['last', b'last', 'last_key', b'last_key', 'raw_last_key', b'raw_last_key', 'raw_seek_key', b'raw_seek_key', 'seek', b'seek', 'seek_key', b'seek_key']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['last', b'last', 'last_key', b'last_key', 'max_rows', b'max_rows', 'metastore_partition', b'metastore_partition', 'raw_last_key', b'raw_last_key', 'raw_seek_key', b'raw_seek_key', 'seek', b'seek', 'seek_key', b'seek_key']) -> None:
+        ...
+
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal['last', b'last']) -> typing.Literal['last_key', 'raw_last_key'] | None:
+        ...
+
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal['seek', b'seek']) -> typing.Literal['seek_key', 'raw_seek_key'] | None:
+        ...
+Global___ReadRowsRequest: typing_extensions.TypeAlias = ReadRowsRequest
+
+@typing.final
+class ReadRowsResponse(google.protobuf.message.Message):
+    """ReadRowsResponse is the response for reading rows."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    ROWS_FIELD_NUMBER: builtins.int
+    NEXT_KEY_FIELD_NUMBER: builtins.int
+    next_key: builtins.str
+    'Raw key for the next page. Empty if no more rows.'
+
+    @property
+    def rows(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___ReadRow]:
+        """The decoded rows."""
+
+    def __init__(self, *, rows: collections.abc.Iterable[Global___ReadRow] | None=..., next_key: builtins.str=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['next_key', b'next_key', 'rows', b'rows']) -> None:
+        ...
+Global___ReadRowsResponse: typing_extensions.TypeAlias = ReadRowsResponse

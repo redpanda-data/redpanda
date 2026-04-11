@@ -154,7 +154,9 @@ ss::future<> api::stop() {
     if (_store) {
         co_await _store->stop();
     }
-    co_await enable_qualified_subjects::reset();
+    if (enable_qualified_subjects::is_initialized()) {
+        co_await enable_qualified_subjects::reset();
+    }
     vlog(srlog.debug, "Stopped schema registry API...");
 }
 

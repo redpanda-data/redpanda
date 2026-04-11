@@ -57,7 +57,7 @@ public:
             map.emplace(k, val);
         }
         perf_tests::stop_measuring_time();
-        return KeySetSize * (FillPercent / 100.0);
+        return map.size();
     }
 
     size_t run_random_fill_test() {
@@ -71,8 +71,11 @@ public:
             map.emplace(k, val);
         }
         perf_tests::stop_measuring_time();
-        return KeySetSize * (FillPercent / 100.0);
+        return map.size();
     }
+
+    static constexpr size_t lookup_inner_iters = std::max<size_t>(
+      1, 10000 / std::max<size_t>(1, KeySetSize));
 
     size_t run_look_up_test() {
         MapT map = make_filled();
@@ -81,22 +84,29 @@ public:
             return random_generators::get_int<key_t>(KeySetSize);
         });
         perf_tests::start_measuring_time();
-        for (const auto& i : to_query) {
-            perf_tests::do_not_optimize(map.find(i));
+        for (size_t iter = 0; iter < lookup_inner_iters; ++iter) {
+            for (const auto& i : to_query) {
+                perf_tests::do_not_optimize(map.find(i));
+            }
         }
         perf_tests::stop_measuring_time();
-        return 1000;
+        return to_query.size() * lookup_inner_iters;
     }
+
+    static constexpr size_t iterate_inner_iters = std::max<size_t>(
+      1, 10000 / std::max<size_t>(1, KeySetSize));
 
     size_t run_iterate_test() {
         MapT map = make_filled();
 
         perf_tests::start_measuring_time();
-        for (const auto& p : map) {
-            perf_tests::do_not_optimize(p);
+        for (size_t iter = 0; iter < iterate_inner_iters; ++iter) {
+            for (const auto& p : map) {
+                perf_tests::do_not_optimize(p);
+            }
         }
         perf_tests::stop_measuring_time();
-        return KeySetSize * (FillPercent / 100.0);
+        return map.size() * iterate_inner_iters;
     }
 };
 

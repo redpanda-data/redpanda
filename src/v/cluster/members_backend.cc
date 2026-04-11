@@ -125,6 +125,8 @@ void members_backend::handle_single_update(
         _new_updates.broadcast();
         return;
     case node_update_type::decommissioned:
+        // decom -> recom -> decom, make sure the recom gets removed
+        stop_node_recommissioning(update.id);
         _updates.emplace_back(update);
         stop_node_addition(update.id);
         _new_updates.broadcast();
@@ -599,6 +601,14 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
     std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update.id == id
                && meta.update.type == node_update_type::decommissioned;
+    });
+}
+
+void members_backend::stop_node_recommissioning(model::node_id id) {
+    // remove all pending recommissioned updates for this node
+    std::erase_if(_updates, [id](update_meta& meta) {
+        return meta.update.id == id
+               && meta.update.type == node_update_type::recommissioned;
     });
 }
 

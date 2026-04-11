@@ -799,6 +799,10 @@ std::ostream& operator<<(std::ostream& o, const cloud_storage_mode& mode) {
         return o << "full";
     case cloud_storage_mode::read_replica:
         return o << "read_replica";
+    case cloud_storage_mode::cloud_topic:
+        return o << "cloud_topic";
+    case cloud_storage_mode::cloud_topic_read_replica:
+        return o << "cloud_topic_read_replica";
     }
     __builtin_unreachable();
 }

@@ -378,3 +378,19 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "minimum_interval_timer_test",
+    timeout = "short",
+    srcs = [
+        "minimum_interval_timer_test.cc",
+    ],
+    deps = [
+        "//src/v/ssx:minimum_interval_timer",
+        "//src/v/test_utils:async",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)

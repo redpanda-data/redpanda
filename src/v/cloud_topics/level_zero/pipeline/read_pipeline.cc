@@ -204,7 +204,8 @@ read_pipeline<Clock>::get_fetch_requests(
         el._hook.unlink();
         result.requests.push_back(el);
     }
-    result.complete = pending.empty();
+    result.complete = std::none_of(
+      it, pending.end(), [stage](const auto& r) { return r.stage == stage; });
     vlog(
       logger.debug,
       "get_fetch_requests returned {} requests which are querying {} ({}B)",

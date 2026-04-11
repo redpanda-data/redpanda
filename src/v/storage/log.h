@@ -37,8 +37,7 @@ class probe;
 class log {
 public:
     explicit log(ntp_config cfg) noexcept
-      : _config(std::move(cfg))
-      , _stm_manager(ss::make_lw_shared<storage::stm_manager>()) {}
+      : _config(std::move(cfg)) {}
     log(log&&) noexcept = delete;
     log& operator=(log&&) noexcept = delete;
     log(const log&) = delete;
@@ -157,9 +156,8 @@ public:
      *
      */
     virtual ss::future<model::offset> monitor_eviction(ss::abort_source&) = 0;
-    ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
-        return _stm_manager;
-    }
+
+    virtual ss::lw_shared_ptr<storage::stm_hookset> stm_hookset() = 0;
 
     virtual size_t size_bytes() const = 0;
     // Byte size of the log for all segments after offset 'o'
@@ -284,7 +282,6 @@ private:
 
 protected:
     ntp_config& mutable_config() { return _config; }
-    ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
 };
 
 class log_manager;

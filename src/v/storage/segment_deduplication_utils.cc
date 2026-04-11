@@ -110,7 +110,7 @@ ss::future<bool> build_offset_map_for_segment(
 ss::future<model::offset> build_offset_map(
   const compaction::compaction_config& cfg,
   const segment_set& segs,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   storage_resources& resources,
   storage::probe& probe,
   compaction::key_offset_map& m,
@@ -151,7 +151,7 @@ ss::future<model::offset> build_offset_map(
             auto read_lock = co_await seg->read_lock();
             co_await internal::maybe_rebuild_compaction_index(
               seg,
-              stm_manager,
+              stm_hookset,
               cfg,
               read_lock,
               resources,
@@ -194,7 +194,7 @@ ss::future<index_state> deduplicate_segment(
   ss::lw_shared_ptr<storage::segment> seg,
   segment_appender& appender,
   compacted_index_writer& cmp_idx_writer,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_hookset> stm_hookset,
   probe& probe,
   offset_delta_time should_offset_delta_times,
   ss::sharded<features::feature_table>& feature_table,
@@ -268,7 +268,7 @@ ss::future<index_state> deduplicate_segment(
       segment_last_offset,
       compaction_placeholder_enabled,
       tx_batch_compaction_enabled,
-      stm_manager,
+      stm_hookset,
       &cmp_idx_writer,
       inject_reader_failure,
       cfg.asrc);

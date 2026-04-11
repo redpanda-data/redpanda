@@ -23,6 +23,7 @@ func TestVersionFromString(t *testing.T) {
 		{name: "without v and rc", in: "22.3.13-rc1", exp: Version{22, 3, 13}},
 		{name: "without v and rc - single major", in: "4.36.1-rc1", exp: Version{4, 36, 1}},
 		{name: "without v, with rc and text", in: "22.3.13-rc1 - 29e2b111d1d94d6d1f6cc591457ed03119edf0e6-dirty", exp: Version{22, 3, 13}},
+		{name: "nightly build", in: "v26.1.0-nightly", exp: Version{26, 1, 0}},
 		{name: "incomplete", in: "22.3", expErr: true},
 		{name: "random string", in: "random", expErr: true},
 		{name: "3 digits year", in: "v222.11.1", expErr: true},

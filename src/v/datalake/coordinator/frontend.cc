@@ -499,6 +499,41 @@ ss::future<get_topic_state_reply> frontend::get_topic_state(
       &client::get_topic_state>(std::move(request), bool(local_only_exec));
 }
 
+ss::future<get_topic_state_reply>
+frontend::get_topic_state(chunked_vector<model::topic> topics_filter) {
+    auto holder = _gate.hold();
+    auto success = co_await ensure_topic_exists();
+    if (!success) {
+        co_return get_topic_state_reply{errc::coordinator_topic_not_exists};
+    }
+    chunked_hash_map<model::partition_id, chunked_vector<model::topic>>
+      topics_by_partition;
+
+    for (auto& topic : topics_filter) {
+        auto partition_opt = coordinator_partition(topic);
+        if (!partition_opt.has_value()) {
+            co_return get_topic_state_reply{errc::coordinator_topic_not_exists};
+        }
+        topics_by_partition[partition_opt.value()].emplace_back(
+          std::move(topic));
+    }
+
+    get_topic_state_reply aggregated;
+    aggregated.errc = errc::ok;
+    for (auto& [partition_id, filter] : topics_by_partition) {
+        get_topic_state_request req{partition_id, std::move(filter)};
+        auto reply = co_await get_topic_state(std::move(req));
+        if (reply.errc != errc::ok) {
+            co_return reply;
+        }
+        for (auto& [topic, state] : reply.topic_states) {
+            aggregated.topic_states.insert({topic, std::move(state)});
+        }
+    }
+
+    co_return aggregated;
+}
+
 ss::future<reset_topic_state_reply> frontend::reset_topic_state_locally(
   reset_topic_state_request request,
   const model::ntp& coordinator_partition,

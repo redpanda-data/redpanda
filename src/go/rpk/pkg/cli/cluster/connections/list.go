@@ -12,7 +12,6 @@ package connections
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,7 +20,6 @@ import (
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	"connectrpc.com/connect"
 	"github.com/docker/go-units"
-	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -56,26 +54,6 @@ var tableHeaders = []string{
 	"PROD-TPUT/SEC",
 	"FETCH-TPUT/SEC",
 	"REQS/MIN",
-}
-
-func isFeatureSupported(ctx context.Context, client *rpadmin.AdminAPI) bool {
-	// Determine whether the broker version supports client connection monitoring
-	brokers, err := client.BrokerService().ListBrokers(ctx, &connect.Request[adminv2.ListBrokersRequest]{})
-	if err != nil || len(brokers.Msg.Brokers) == 0 {
-		return false
-	}
-
-	for _, broker := range brokers.Msg.Brokers {
-		if broker.BuildInfo == nil {
-			return false
-		}
-		version, err := redpanda.VersionFromString(broker.BuildInfo.Version)
-		if err != nil || !version.IsAtLeast(minVersion) {
-			return false
-		}
-	}
-
-	return true
 }
 
 func getConnectionDuration(conn *adminv2.KafkaConnection) string {
@@ -242,7 +220,7 @@ List extended output for open connections in json format:
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 				// Check that we're at least at the minimum version
-				if !isFeatureSupported(cmd.Context(), cl) {
+				if !adminapi.HasMinimumVersion(cmd.Context(), cl, minVersion) {
 					out.Die("rpk cluster connections list requires Redpanda version %s or later", minVersion.String())
 				}
 

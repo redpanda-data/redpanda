@@ -46,6 +46,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/config",
         "//src/v/metrics",
+        "//src/v/utils:hdr_hist",
         "//src/v/utils:log_hist",
         "@seastar",
     ],
@@ -64,6 +65,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/frontend",
+        "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
         "//src/v/config",
         "//src/v/kafka/utils:txn_reader",

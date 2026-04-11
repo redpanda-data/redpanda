@@ -75,9 +75,9 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
     auto conf = storage::housekeeping_config::make_config(
       model::timestamp::min(),
       std::nullopt,
-      first_log->stm_manager()->max_removable_local_log_offset(),
-      first_log->stm_manager()->max_removable_local_log_offset(),
-      first_log->stm_manager()->max_removable_local_log_offset(),
+      first_log->stm_hookset()->max_removable_local_log_offset(),
+      first_log->stm_hookset()->max_removable_local_log_offset(),
+      first_log->stm_hookset()->max_removable_local_log_offset(),
       std::nullopt,
       std::nullopt,
       std::chrono::milliseconds{0},
@@ -129,9 +129,9 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
     auto conf2 = storage::housekeeping_config::make_config(
       model::timestamp::min(),
       std::nullopt,
-      new_log->stm_manager()->max_removable_local_log_offset(),
-      new_log->stm_manager()->max_removable_local_log_offset(),
-      new_log->stm_manager()->max_removable_local_log_offset(),
+      new_log->stm_hookset()->max_removable_local_log_offset(),
+      new_log->stm_hookset()->max_removable_local_log_offset(),
+      new_log->stm_hookset()->max_removable_local_log_offset(),
       std::nullopt,
       std::nullopt,
       std::chrono::milliseconds{0},
@@ -205,7 +205,7 @@ FIXTURE_TEST(compact_transactions_and_replicate, compaction_multinode_test) {
     first_log->force_roll().get();
     ss::abort_source as;
     auto collect_offset
-      = first_log->stm_manager()->max_removable_local_log_offset();
+      = first_log->stm_hookset()->max_removable_local_log_offset();
     auto conf = storage::housekeeping_config::make_config(
       model::timestamp::min(),
       std::nullopt,
@@ -241,9 +241,9 @@ FIXTURE_TEST(compact_transactions_and_replicate, compaction_multinode_test) {
     auto conf2 = storage::housekeeping_config::make_config(
       model::timestamp::min(),
       std::nullopt,
-      new_log->stm_manager()->max_removable_local_log_offset(),
-      new_log->stm_manager()->max_removable_local_log_offset(),
-      new_log->stm_manager()->max_removable_local_log_offset(),
+      new_log->stm_hookset()->max_removable_local_log_offset(),
+      new_log->stm_hookset()->max_removable_local_log_offset(),
+      new_log->stm_hookset()->max_removable_local_log_offset(),
       std::nullopt,
       std::nullopt,
       std::chrono::milliseconds{0},
@@ -314,7 +314,7 @@ FIXTURE_TEST(segment_tx_flags, compaction_multinode_test) {
     }
 
     ss::abort_source as;
-    auto collect_offset = log->stm_manager()->max_removable_local_log_offset();
+    auto collect_offset = log->stm_hookset()->max_removable_local_log_offset();
     {
         auto conf = storage::housekeeping_config::make_config(
           model::timestamp::min(),
@@ -434,7 +434,7 @@ FIXTURE_TEST(segment_tx_flags_compaction_disabled, compaction_multinode_test) {
     }
 
     ss::abort_source as;
-    auto collect_offset = log->stm_manager()->max_removable_local_log_offset();
+    auto collect_offset = log->stm_hookset()->max_removable_local_log_offset();
     {
         // Compact while `log_compaction_tx_batch_removal_enabled` is `false`,
         // preventing unsetting of transactional bits or removal of any control

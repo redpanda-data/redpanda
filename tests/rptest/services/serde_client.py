@@ -128,3 +128,12 @@ class SerdeClient(BackgroundThreadService):
     def reset(self):
         self.worker_errors.clear()
         self.errors = ""
+
+    def clean_node(self, node, **kwargs):
+        """
+        There is no state to clean on the node, so this is a no-op. The override
+        exists to avoid warning message from ducktape about not having a
+        clean_node method, and to make it clear that there is no state to
+        clean for this service.
+        """
+        pass

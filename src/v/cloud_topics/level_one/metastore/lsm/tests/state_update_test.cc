@@ -215,7 +215,17 @@ protected:
         return state_reader(std::move(snap));
     }
 
+    void
+    preregister_new_objects(const chunked_vector<new_object>& new_objects) {
+        chunked_vector<object_id> oids;
+        for (const auto& o : new_objects) {
+            oids.push_back(o.oid);
+        }
+        preregister_objects(std::move(oids), model::timestamp(1000));
+    }
+
     void apply_add_update(add_objects_db_update& update) {
+        preregister_new_objects(update.new_objects);
         auto reader = make_reader();
         chunked_vector<write_batch_row> rows;
         auto result = update.build_rows(reader, rows).get();
@@ -224,12 +234,17 @@ protected:
         auto wb = db_->create_write_batch();
         auto seqno = next_seqno();
         for (const auto& row : rows) {
-            wb.put(row.key, row.value.copy(), seqno);
+            if (row.value.empty()) {
+                wb.remove(row.key, seqno);
+            } else {
+                wb.put(row.key, row.value.copy(), seqno);
+            }
         }
         db_->apply(std::move(wb)).get();
     }
 
     void apply_replace_update(replace_objects_db_update& update) {
+        preregister_new_objects(update.new_objects);
         auto reader = make_reader();
         chunked_vector<write_batch_row> rows;
         auto result = update.build_rows(reader, rows).get();
@@ -480,6 +495,85 @@ protected:
         EXPECT_FALSE(res->has_value());
     }
 
+    void apply_preregister_update(preregister_objects_db_update& update) {
+        auto reader = make_reader();
+        chunked_vector<write_batch_row> rows;
+        auto result = update.build_rows(reader, rows).get();
+        ASSERT_TRUE(result.has_value());
+
+        auto seqno = next_seqno();
+        auto wb = db_->create_write_batch();
+        for (const auto& row : rows) {
+            if (row.value.empty()) {
+                wb.remove(row.key, seqno);
+            } else {
+                wb.put(row.key, row.value.copy(), seqno);
+            }
+        }
+        db_->apply(std::move(wb)).get();
+    }
+
+    void apply_expire_preregistered_update(
+      expire_preregistered_objects_db_update& update) {
+        auto reader = make_reader();
+        chunked_vector<write_batch_row> rows;
+        auto result = update.build_rows(reader, rows).get();
+        ASSERT_TRUE(result.has_value());
+
+        auto seqno = next_seqno();
+        auto wb = db_->create_write_batch();
+        for (const auto& row : rows) {
+            if (row.value.empty()) {
+                wb.remove(row.key, seqno);
+            } else {
+                wb.put(row.key, row.value.copy(), seqno);
+            }
+        }
+        db_->apply(std::move(wb)).get();
+    }
+
+    void verify_object_preregistered(object_id oid) {
+        auto reader = make_reader();
+        auto res = reader.get_object(oid).get();
+        ASSERT_TRUE(res.has_value());
+        ASSERT_TRUE(res.value().has_value());
+        EXPECT_TRUE(res.value()->is_preregistration);
+    }
+
+    void verify_object_not_preregistered(object_id oid) {
+        auto reader = make_reader();
+        auto res = reader.get_object(oid).get();
+        ASSERT_TRUE(res.has_value());
+        ASSERT_TRUE(res.value().has_value());
+        EXPECT_FALSE(res.value()->is_preregistration);
+    }
+
+    void preregister_objects(
+      chunked_vector<object_id> oids, model::timestamp registered_at) {
+        auto update = preregister_objects_db_update{
+          .object_ids = std::move(oids),
+          .registered_at = registered_at,
+        };
+        apply_preregister_update(update);
+    }
+
+    void verify_preregistered_object_exists(object_id oid) {
+        auto reader = make_reader();
+        auto res = reader.get_object(oid).get();
+        ASSERT_TRUE(res.has_value());
+        ASSERT_TRUE(res->has_value());
+        EXPECT_TRUE(res->value().is_preregistration);
+    }
+
+    void verify_preregistered_object_missing(object_id oid) {
+        auto reader = make_reader();
+        auto res = reader.get_object(oid).get();
+        ASSERT_TRUE(res.has_value());
+        if (res->has_value()) {
+            EXPECT_FALSE(res->value().is_preregistration);
+        }
+    }
+
     std::optional<lsm::database> db_;
 };
 
@@ -540,7 +634,8 @@ TEST_F(StateUpdateTest, TestAddObjectsRejectsDuplicateObject) {
     auto result = dupe_update.build_rows(reader, rows).get();
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().e, db_update_errc::invalid_update);
-    EXPECT_THAT(fmt::format("{}", result.error()), HasSubstr("already exists"));
+    EXPECT_THAT(
+      fmt::format("{}", result.error()), HasSubstr("not pre-registered"));
 }
 
 TEST_F(StateUpdateTest, TestAddObjectsRejectsEmptyObjects) {
@@ -647,6 +742,10 @@ TEST_F(StateUpdateTest, TestAddObjectsWithCorrections) {
 
     // Try to add misaligned objects starting at offset 50 instead of 100.
     auto new_oid = make_oid();
+    chunked_vector<object_id> prereg_oids;
+    prereg_oids.push_back(new_oid);
+    preregister_objects(std::move(prereg_oids), model::timestamp(1000));
+
     auto misaligned_update = make_add_objects_update(
       {terms(tidp0, {{50, 2}})},
       make_object(new_oid, tp(tidp0, 50, 149).pos(0, 1023)));
@@ -657,12 +756,16 @@ TEST_F(StateUpdateTest, TestAddObjectsWithCorrections) {
       = misaligned_update.build_rows(reader, rows, &corrections).get();
     ASSERT_TRUE(result.has_value());
 
-    // There should be one row generated -- an object entry (checked below).
+    // There should be one row: object entry (all data marked removed).
     EXPECT_EQ(1, rows.size());
     auto wb = db_->create_write_batch();
     auto seqno = next_seqno();
     for (const auto& row : rows) {
-        wb.put(row.key, row.value.copy(), seqno);
+        if (row.value.empty()) {
+            wb.remove(row.key, seqno);
+        } else {
+            wb.put(row.key, row.value.copy(), seqno);
+        }
     }
     db_->apply(std::move(wb)).get();
 
@@ -711,8 +814,13 @@ TEST_F(StateUpdateTest, TestReplaceObjectsBasic) {
 }
 
 TEST_F(StateUpdateTest, TestReplaceObjectsRejectsMissingPartition) {
+    auto oid = make_oid();
+    chunked_vector<object_id> prereg_oids;
+    prereg_oids.push_back(oid);
+    preregister_objects(std::move(prereg_oids), model::timestamp(1000));
+
     auto db_update = make_replace_objects_update(
-      compact_specs{}, make_object(make_oid(), tp(tidp0, 0, 99).pos(0, 1023)));
+      compact_specs{}, make_object(oid, tp(tidp0, 0, 99).pos(0, 1023)));
     auto reader = make_reader();
     chunked_vector<write_batch_row> rows;
     auto result = db_update.build_rows(reader, rows).get();
@@ -805,7 +913,8 @@ TEST_F(StateUpdateTest, TestReplaceObjectsRejectsDuplicateObject) {
     auto result = db_update.build_rows(reader, rows).get();
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().e, db_update_errc::invalid_update);
-    EXPECT_THAT(fmt::format("{}", result.error()), HasSubstr("already exists"));
+    EXPECT_THAT(
+      fmt::format("{}", result.error()), HasSubstr("not pre-registered"));
 }
 
 TEST_F(StateUpdateTest, TestReplaceObjectsRejectsOverlappingCleanedRanges) {
@@ -828,6 +937,11 @@ TEST_F(StateUpdateTest, TestReplaceObjectsRejectsOverlappingCleanedRanges) {
 
     // Now try to add overlapping cleaned range [49-99].
     // epoch=1 because the first compaction incremented it from 0 to 1.
+    auto overlap_oid = make_oid();
+    chunked_vector<object_id> prereg_oids;
+    prereg_oids.push_back(overlap_oid);
+    preregister_objects(std::move(prereg_oids), model::timestamp(1000));
+
     auto db_update = make_replace_objects_update(
       {{compact_spec{
         .tidp = tidp0,
@@ -835,7 +949,7 @@ TEST_F(StateUpdateTest, TestReplaceObjectsRejectsOverlappingCleanedRanges) {
         .epoch = 1,
         .cleaned = {{49, 99, true}},
       }}},
-      make_object(make_oid(), tp(tidp0, 0, 99).pos(0, 511)));
+      make_object(overlap_oid, tp(tidp0, 0, 99).pos(0, 511)));
 
     auto reader = make_reader();
     chunked_vector<write_batch_row> rows;
@@ -854,12 +968,17 @@ TEST_F(StateUpdateTest, TestReplaceObjectsRejectsRemovingUntrackedTombstones) {
       make_object(make_oid(), tp(tidp0, 0, 99).pos(0, 1023)));
 
     // Try to remove tombstones from range [0-49] which doesn't have them.
+    auto tomb_oid = make_oid();
+    chunked_vector<object_id> prereg_oids;
+    prereg_oids.push_back(tomb_oid);
+    preregister_objects(std::move(prereg_oids), model::timestamp(1000));
+
     auto db_update = make_replace_objects_update(
       {{compact_spec{
         .tidp = tidp0,
         .rm_tombstones = {{0, 49}},
       }}},
-      make_object(make_oid(), tp(tidp0, 0, 99).pos(0, 1023)));
+      make_object(tomb_oid, tp(tidp0, 0, 99).pos(0, 1023)));
 
     auto reader = make_reader();
     chunked_vector<write_batch_row> rows;
@@ -932,12 +1051,17 @@ TEST_F(StateUpdateTest, TestReplaceObjectsRejectsCleanedRangeNotAtLogStart) {
     // Try to replace with cleaned range [100-199], but without replacing down
     // to offset 0. This should be rejected because cleaning requires
     // replacing from the start of the log.
+    auto partial_oid = make_oid();
+    chunked_vector<object_id> prereg_oids;
+    prereg_oids.push_back(partial_oid);
+    preregister_objects(std::move(prereg_oids), model::timestamp(1000));
+
     auto db_update = make_replace_objects_update(
       {{compact_spec{
         .tidp = tidp0,
         .cleaned = {{100, 199, false}},
       }}},
-      make_object(make_oid(), tp(tidp0, 100, 199).pos(0, 1023)));
+      make_object(partial_oid, tp(tidp0, 100, 199).pos(0, 1023)));
 
     auto reader = make_reader();
     chunked_vector<write_batch_row> rows;
@@ -1465,4 +1589,239 @@ TEST_F(StateUpdateTest, TestRemoveTopicsZerosSize) {
 
     // Metadata should be removed entirely.
     verify_metadata_missing(tidp0);
+}
+
+TEST_F(StateUpdateTest, TestPreregisterObjectsBasic) {
+    auto oid1 = make_oid();
+    auto oid2 = make_oid();
+
+    preregister_objects_db_update update;
+    update.object_ids.push_back(oid1);
+    update.object_ids.push_back(oid2);
+    update.registered_at = model::timestamp::now();
+
+    auto reader = make_reader();
+    auto can_apply_res = update.can_apply(reader).get();
+    ASSERT_TRUE(can_apply_res.has_value());
+
+    apply_preregister_update(update);
+
+    verify_object_preregistered(oid1);
+    verify_object_preregistered(oid2);
+}
+
+TEST_F(StateUpdateTest, TestPreregisterObjectsRejectsDuplicate) {
+    auto oid1 = make_oid();
+
+    preregister_objects_db_update update1;
+    update1.object_ids.push_back(oid1);
+    update1.registered_at = model::timestamp::now();
+    apply_preregister_update(update1);
+
+    preregister_objects_db_update update2;
+    update2.object_ids.push_back(oid1);
+    update2.registered_at = model::timestamp::now();
+    auto reader = make_reader();
+    auto can_apply_res = update2.can_apply(reader).get();
+    EXPECT_FALSE(can_apply_res.has_value());
+}
+
+TEST_F(StateUpdateTest, TestExpirePreregisteredObjectsClearsFlag) {
+    auto oid1 = make_oid();
+    auto oid2 = make_oid();
+
+    preregister_objects_db_update prereg;
+    prereg.object_ids.push_back(oid1);
+    prereg.object_ids.push_back(oid2);
+    prereg.registered_at = model::timestamp::now();
+    apply_preregister_update(prereg);
+
+    verify_object_preregistered(oid1);
+    verify_object_preregistered(oid2);
+
+    expire_preregistered_objects_db_update expire;
+    expire.object_ids.push_back(oid1);
+    apply_expire_preregistered_update(expire);
+
+    // oid1 should have is_preregistration cleared.
+    verify_object_not_preregistered(oid1);
+    // oid2 should be unchanged.
+    verify_object_preregistered(oid2);
+}
+
+TEST_F(StateUpdateTest, TestPreregisterObjects) {
+    auto oid1 = make_oid();
+    auto oid2 = make_oid();
+
+    chunked_vector<object_id> oids;
+    oids.push_back(oid1);
+    oids.push_back(oid2);
+    preregister_objects(std::move(oids), model::timestamp(12345));
+
+    verify_preregistered_object_exists(oid1);
+    verify_preregistered_object_exists(oid2);
+}
+
+TEST_F(StateUpdateTest, TestExpirePreregisteredObjects) {
+    auto oid1 = make_oid();
+    auto oid2 = make_oid();
+
+    chunked_vector<object_id> oids;
+    oids.push_back(oid1);
+    oids.push_back(oid2);
+    preregister_objects(std::move(oids), model::timestamp(12345));
+
+    verify_preregistered_object_exists(oid1);
+    verify_preregistered_object_exists(oid2);
+
+    chunked_vector<object_id> expire_oids;
+    expire_oids.push_back(oid1);
+    expire_oids.push_back(oid2);
+    auto expire_update = expire_preregistered_objects_db_update{
+      .object_ids = std::move(expire_oids),
+    };
+    apply_expire_preregistered_update(expire_update);
+
+    // is_preregistration flag should be cleared.
+    verify_preregistered_object_missing(oid1);
+    verify_preregistered_object_missing(oid2);
+
+    // Objects remain as zero-sized entries, now eligible for GC.
+    verify_object_exists(oid1, 0);
+    verify_object_exists(oid2, 0);
+}
+
+TEST_F(StateUpdateTest, TestAddObjectsRequiresPreregistration) {
+    auto oid = make_oid();
+
+    // Attempt to add an object that has NOT been pre-registered.
+    auto update = make_add_objects_update(
+      {terms(tidp0, {{0, 1}})},
+      make_object(oid, tp(tidp0, 0, 99).pos(0, 1023)));
+    auto reader = make_reader();
+    chunked_vector<write_batch_row> rows;
+    auto result = update.build_rows(reader, rows).get();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().e, db_update_errc::invalid_update);
+}
+
+TEST_F(StateUpdateTest, TestAddObjectsWithPreregistration) {
+    auto oid = make_oid();
+
+    // Pre-register the object first.
+    chunked_vector<object_id> oids;
+    oids.push_back(oid);
+    preregister_objects(std::move(oids), model::timestamp(12345));
+    verify_preregistered_object_exists(oid);
+
+    // Now add the object — call build_rows directly since oid is already
+    // preregistered (add_objects() would preregister again, which is invalid).
+    {
+        auto db_update = make_add_objects_update(
+          {terms(tidp0, {{0, 1}})},
+          make_object(oid, tp(tidp0, 0, 99).pos(0, 1023)));
+        auto reader = make_reader();
+        chunked_vector<write_batch_row> rows;
+        ASSERT_TRUE(db_update.build_rows(reader, rows).get().has_value());
+        auto wb = db_->create_write_batch();
+        auto seqno = next_seqno();
+        for (const auto& row : rows) {
+            if (row.value.empty()) {
+                wb.remove(row.key, seqno);
+            } else {
+                wb.put(row.key, row.value.copy(), seqno);
+            }
+        }
+        db_->apply(std::move(wb)).get();
+    }
+
+    verify_metadata(tidp0, kafka::offset(0), kafka::offset(100));
+    verify_object_exists(oid, 1024);
+
+    // Preregistered row should be cleaned up.
+    verify_preregistered_object_missing(oid);
+}
+
+TEST_F(StateUpdateTest, TestDiscoverTruncatedObjectIds) {
+    auto oid1 = make_oid();
+    auto oid2 = make_oid();
+    auto oid3 = make_oid();
+    add_objects(
+      {terms(tidp0, {{0, 1}})},
+      make_object(oid1, tp(tidp0, 0, 99).pos(0, 1023)),
+      make_object(oid2, tp(tidp0, 100, 199).pos(0, 1023)),
+      make_object(oid3, tp(tidp0, 200, 299).pos(0, 1023)));
+
+    // Discover objects below offset 200: should find oid1 and oid2.
+    auto update = set_start_offset_db_update{
+      .tp = tidp0,
+      .new_start_offset = kafka::offset(200),
+    };
+    auto reader = make_reader();
+    auto result = update.discover_truncated_object_ids(reader).get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 2);
+    EXPECT_TRUE(result.value().contains(oid1));
+    EXPECT_TRUE(result.value().contains(oid2));
+    EXPECT_FALSE(result.value().contains(oid3));
+}
+
+TEST_F(StateUpdateTest, TestDiscoverReplacedObjectIds) {
+    auto old_oid1 = make_oid();
+    auto old_oid2 = make_oid();
+    auto old_oid3 = make_oid();
+    add_objects(
+      {terms(tidp0, {{0, 1}})},
+      make_object(old_oid1, tp(tidp0, 0, 99).pos(0, 1023)),
+      make_object(old_oid2, tp(tidp0, 100, 199).pos(0, 1023)),
+      make_object(old_oid3, tp(tidp0, 200, 299).pos(0, 1023)));
+
+    // Build a replace update that replaces extents [0-199]. Discovery
+    // should find old_oid1 and old_oid2 but not old_oid3.
+    auto new_oid = make_oid();
+    auto db_update = make_replace_objects_update(
+      compact_specs{}, make_object(new_oid, tp(tidp0, 0, 199).pos(0, 2047)));
+
+    // Preregister the new object so validate_inputs passes.
+    preregister_new_objects(db_update.new_objects);
+
+    auto reader = make_reader();
+    auto result = db_update.discover_replaced_object_ids(reader).get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 2);
+    EXPECT_TRUE(result.value().contains(old_oid1));
+    EXPECT_TRUE(result.value().contains(old_oid2));
+    EXPECT_FALSE(result.value().contains(old_oid3));
+}
+
+TEST_F(StateUpdateTest, TestDiscoverRemoveTopicsObjectIds) {
+    // Use a different topic_id for the second topic.
+    auto other_tidp = model::topic_id_partition(
+      model::topic_id(
+        uuid_t::from_string("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")),
+      model::partition_id(0));
+
+    auto oid1 = make_oid();
+    auto oid2 = make_oid();
+    auto oid3 = make_oid();
+    add_objects(
+      {terms(tidp0, {{0, 1}})},
+      make_object(oid1, tp(tidp0, 0, 99).pos(0, 1023)),
+      make_object(oid2, tp(tidp0, 100, 199).pos(0, 1023)));
+    add_objects(
+      {terms(other_tidp, {{0, 1}})},
+      make_object(oid3, tp(other_tidp, 0, 99).pos(0, 1023)));
+
+    // Discover objects for tidp0's topic only — should find oid1 and oid2
+    // but not oid3 (different topic).
+    auto update = remove_topics_db_update{
+      .topics = chunked_vector<model::topic_id>::single(tidp0.topic_id),
+    };
+    auto reader = make_reader();
+    auto result = update.discover_object_ids(reader).get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 2);
+    EXPECT_TRUE(result.value().contains(oid1));
+    EXPECT_TRUE(result.value().contains(oid2));
+    EXPECT_FALSE(result.value().contains(oid3));
 }

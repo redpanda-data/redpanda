@@ -22,7 +22,13 @@ using std::ranges::generate_n;
 
 constexpr size_t BIG_ELEM_COUNT = 1000;
 constexpr size_t SMALL_ELEM_COUNT = 1;
-constexpr size_t ITERATIONS = 1000;
+
+// Scale iterations inversely with element count so that
+// even small-element tests do enough work per start/stop
+// timing pair to avoid excessive measurement overhead.
+constexpr size_t iterations_for(size_t elem_count) {
+    return std::max<size_t>(1000, 1000000 / std::max<size_t>(1, elem_count));
+}
 
 namespace {
 using vec_t = std::vector<int>;
@@ -46,14 +52,14 @@ struct sum {
 
 // split up the inner loop into two variations so that
 // the "sync" version doesn't have a co_await in the loop
-ss::future<> coro_inner(vec_t& data, auto fn, sum& s) {
-    for (size_t i = 0; i < ITERATIONS; i++) {
+ss::future<> coro_inner(vec_t& data, auto fn, sum& s, size_t iters) {
+    for (size_t i = 0; i < iters; i++) {
         co_await fn(data, s);
     }
 }
 
-ss::future<> sync_inner(vec_t& data, auto fn, sum& s) {
-    for (size_t i = 0; i < ITERATIONS; i++) {
+ss::future<> sync_inner(vec_t& data, auto fn, sum& s, size_t iters) {
+    for (size_t i = 0; i < iters; i++) {
         fn(data, s);
     }
     return ss::now();
@@ -61,29 +67,20 @@ ss::future<> sync_inner(vec_t& data, auto fn, sum& s) {
 
 template<size_t elem_count, bool async_inner = true>
 ss::future<size_t> run_test_coro(auto fn) {
+    constexpr auto iters = iterations_for(elem_count);
     auto data = rand_vec(elem_count);
     sum s;
 
     perf_tests::start_measuring_time();
     if constexpr (async_inner) {
-        co_await coro_inner(data, fn, s);
+        co_await coro_inner(data, fn, s, iters);
     } else {
-        co_await sync_inner(data, fn, s);
+        co_await sync_inner(data, fn, s, iters);
     }
     perf_tests::stop_measuring_time();
 
     perf_tests::do_not_optimize(s);
-    co_return ITERATIONS;
-}
-
-template<typename Fn>
-ss::future<size_t> run_big(Fn f) {
-    return run_test_coro<BIG_ELEM_COUNT>(f);
-}
-
-template<typename Fn>
-ss::future<size_t> run_small(Fn f) {
-    return run_test_coro<SMALL_ELEM_COUNT>(f);
+    co_return iters;
 }
 
 } // namespace

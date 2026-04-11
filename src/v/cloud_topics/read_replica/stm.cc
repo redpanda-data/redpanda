@@ -11,8 +11,10 @@
 #include "cloud_topics/read_replica/stm.h"
 
 #include "cloud_topics/logger.h"
+#include "model/batch_builder.h"
 #include "model/record_batch_types.h"
 #include "serde/async.h"
+#include "serde/rw/rw.h"
 #include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
@@ -112,6 +114,21 @@ ss::future<std::expected<model::term_id, stm::error>> stm::sync(
         co_return std::unexpected(error(errc::not_leader, "Failed to sync"));
     }
     co_return _insync_term;
+}
+
+ss::future<std::expected<model::offset, stm::error>> stm::update(
+  model::term_id term, update_metadata_update update, ss::abort_source& as) {
+    iobuf key_buf;
+    serde::write(key_buf, update_key::update_metadata);
+    iobuf value_buf;
+    serde::write(value_buf, update);
+    model::batch_builder builder;
+    builder.set_batch_type(model::record_batch_type::ct_read_replica_stm);
+    builder.set_base_offset(model::offset{0});
+    builder.add_record(
+      {.key = std::move(key_buf), .value = std::move(value_buf)});
+    auto batch = builder.build_sync();
+    co_return co_await replicate_and_wait(term, std::move(batch), as);
 }
 
 ss::future<std::expected<model::offset, stm::error>> stm::replicate_and_wait(
@@ -219,7 +236,7 @@ void stm_factory::create(
   raft::consensus* raft,
   const cluster::stm_instance_config&) {
     auto s = builder.create_stm<stm>(cd_log, raft);
-    raft->log()->stm_manager()->add_stm(std::move(s));
+    raft->log()->stm_hookset()->add_stm(std::move(s));
 }
 
 } // namespace cloud_topics::read_replica

@@ -33,6 +33,9 @@ garbage_collector::remove_unreferenced_objects(ss::abort_source* as) {
 
     chunked_vector<object_id> to_remove;
     for (const auto& [oid, obj_entry] : s.objects) {
+        if (obj_entry.is_preregistration) {
+            continue;
+        }
         if (obj_entry.total_data_size != obj_entry.removed_data_size) {
             continue;
         }

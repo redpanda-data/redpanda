@@ -1094,6 +1094,16 @@ chunked_vector<shadow_link_task_status> create_task_status(
           });
     }
 
+    std::ranges::sort(task_status, [](const auto& a, const auto& b) {
+        if (a.get_name() != b.get_name()) {
+            return a.get_name() < b.get_name();
+        }
+        if (a.get_broker_id() != b.get_broker_id()) {
+            return a.get_broker_id() < b.get_broker_id();
+        }
+        return a.get_shard() < b.get_shard();
+    });
+
     return task_status;
 }
 
@@ -1112,6 +1122,7 @@ shadow_link_status create_shadow_link_status(
     properties_synced.reserve(props.size());
     std::ranges::copy(props, std::back_inserter(properties_synced));
 
+    std::ranges::sort(properties_synced);
     status.set_synced_shadow_topic_properties(std::move(properties_synced));
     return status;
 }
@@ -1265,7 +1276,7 @@ chunked_vector<topic_partition_information> status_to_partition_information(
 
 void set_client_id(cluster_link::model::metadata& md) {
     md.connection.client_id = ssx::sformat(
-      "cluster-link-{}-{}", md.name, md.uuid);
+      "shadow-link-{}-{}", md.name, md.uuid);
 }
 
 cluster_link::model::metadata

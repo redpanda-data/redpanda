@@ -145,10 +145,13 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				// We can safely pick the value of the first partition since
 				// the cloud storage mode doesn't change between partitions of
 				// the same topic.
-				tw.PrintColumn("CLOUD-STORAGE-MODE", report[0].CloudStatus.CloudStorageMode)
+				mode := report[0].CloudStatus.CloudStorageMode
+				tw.PrintColumn("CLOUD-STORAGE-MODE", mode)
 
-				lastUpload := getLastUpload(report)
-				tw.PrintColumn("LAST-UPLOAD", humanReadable(lastUpload, human, humanTime))
+				if mode != "cloud_topic" && mode != "cloud_topic_read_replica" {
+					lastUpload := getLastUpload(report)
+					tw.PrintColumn("LAST-UPLOAD", humanReadable(lastUpload, human, humanTime))
+				}
 			})
 
 			sections.Add(secOffsets, func() {
@@ -166,17 +169,36 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			})
 
 			sections.Add(secSize, func() {
-				tw := out.NewTable("PARTITION", "CLOUD-BYTES", "LOCAL-BYTES", "TOTAL-BYTES", "CLOUD-SEGMENTS", "LOCAL-SEGMENTS")
-				defer tw.Flush()
-				for _, r := range report {
-					tw.Print(
-						r.Partition,
-						humanReadable(r.CloudStatus.CloudLogBytes, human, humanSize),
-						humanReadable(r.CloudStatus.LocalLogBytes, human, humanSize),
-						humanReadable(r.CloudStatus.TotalLogBytes, human, humanSize),
-						r.CloudStatus.CloudLogSegmentCount,
-						r.CloudStatus.LocalLogSegmentCount,
-					)
+				mode := report[0].CloudStatus.CloudStorageMode
+				isCloudTopic := mode == "cloud_topic" || mode == "cloud_topic_read_replica"
+				if isCloudTopic {
+					tw := out.NewTable("PARTITION", "LOCAL-BYTES", "L0-BYTES", "L1-BYTES", "TOTAL-BYTES", "L1-EXTENTS")
+					defer tw.Flush()
+					for _, r := range report {
+						l1 := r.CloudStatus.CloudLogBytes
+						l0 := r.CloudStatus.TotalLogBytes - l1
+						tw.Print(
+							r.Partition,
+							humanReadable(r.CloudStatus.LocalLogBytes, human, humanSize),
+							humanReadable(l0, human, humanSize),
+							humanReadable(l1, human, humanSize),
+							humanReadable(r.CloudStatus.TotalLogBytes, human, humanSize),
+							r.CloudStatus.CloudLogSegmentCount,
+						)
+					}
+				} else {
+					tw := out.NewTable("PARTITION", "CLOUD-BYTES", "LOCAL-BYTES", "TOTAL-BYTES", "CLOUD-SEGMENTS", "LOCAL-SEGMENTS")
+					defer tw.Flush()
+					for _, r := range report {
+						tw.Print(
+							r.Partition,
+							humanReadable(r.CloudStatus.CloudLogBytes, human, humanSize),
+							humanReadable(r.CloudStatus.LocalLogBytes, human, humanSize),
+							humanReadable(r.CloudStatus.TotalLogBytes, human, humanSize),
+							r.CloudStatus.CloudLogSegmentCount,
+							r.CloudStatus.LocalLogSegmentCount,
+						)
+					}
 				}
 			})
 
@@ -254,7 +276,8 @@ given topic, the information is divided in 4 sections:
 SUMMARY
 
 The summary section contains general information about the topic, the cloud
-storage mode (one of disabled, write_only, read_only, full, and read_replica),
+storage mode (one of disabled, write_only, read_only, full, read_replica,
+cloud_topic, and cloud_topic_read_replica),
 and the delta in milliseconds since the last upload of either the partition
 manifest or a segment.
 
@@ -265,10 +288,14 @@ partition of data available in both the cloud and on local disk.
 
 SIZE
 
-The size section contains the total bytes per partition in the cloud and on
-local disk, the total size of the log of each partition (excluding cloud and
-local overlap), and the number of segments in the cloud and on local disk. The
-cloud segment count does not include segments queued for deletion.
+For tiered storage topics, the size section contains the total bytes per
+partition in the cloud and on local disk, the total size of the log of each
+partition (excluding cloud and local overlap), and the number of segments in
+the cloud and on local disk. The cloud segment count does not include segments
+queued for deletion.
+
+For cloud topics, the size section shows the L0 (level zero) and L1 (level
+one) byte breakdown, the total bytes, and the number of L1 extents.
 
 SYNC
 

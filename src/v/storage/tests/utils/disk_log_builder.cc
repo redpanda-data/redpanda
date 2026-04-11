@@ -106,12 +106,10 @@ ss::future<> disk_log_builder::start(storage::ntp_config cfg) {
     co_await _feature_table.invoke_on_all(
       [](features::feature_table& f) { f.testing_activate_all(); });
 
-    co_return co_await _storage.start().then(
-      [this, cfg = std::move(cfg)]() mutable {
-          return _storage.log_mgr()
-            .manage(std::move(cfg), _group_id, _translator_batch_types)
-            .then([this](ss::shared_ptr<storage::log> log) { _log = log; });
-      });
+    co_await _storage.start();
+    _log = co_await _storage.log_mgr().manage(
+      std::move(cfg), _group_id, _translator_batch_types);
+    _log->stm_hookset()->start();
 }
 
 ss::future<> disk_log_builder::truncate(model::offset o) {
@@ -187,6 +185,7 @@ void disk_log_builder::add_closed_segment_bytes(ssize_t bytes) {
 }
 
 ss::future<> disk_log_builder::stop() {
+    _log->stm_hookset()->stop();
     return _storage.stop().then([this]() { return _feature_table.stop(); });
 }
 

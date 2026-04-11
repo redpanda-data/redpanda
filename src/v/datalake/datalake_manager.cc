@@ -42,7 +42,8 @@ static std::unique_ptr<type_resolver> make_type_resolver(
   const model::iceberg_mode& mode,
   model::topic_view topic_name,
   schema::registry& sr,
-  schema_cache& cache) {
+  schema_cache& cache,
+  resolved_type_cache& type_cache) {
     switch (mode.kind()) {
     case model::iceberg_mode::variant::disabled:
         vassert(
@@ -51,7 +52,7 @@ static std::unique_ptr<type_resolver> make_type_resolver(
     case model::iceberg_mode::variant::key_value:
         return std::make_unique<binary_type_resolver>();
     case model::iceberg_mode::variant::value_schema_id_prefix:
-        return std::make_unique<record_schema_resolver>(sr, cache);
+        return std::make_unique<record_schema_resolver>(sr, cache, type_cache);
     case model::iceberg_mode::variant::value_schema_latest:
         auto subject = pandaproxy::schema_registry::subject(
           fmt::format("{}-value", topic_name));
@@ -63,7 +64,8 @@ static std::unique_ptr<type_resolver> make_type_resolver(
           subject,
           mode.protobuf_full_name(),
           config::shard_local_cfg().iceberg_latest_schema_cache_ttl_ms.bind(),
-          cache);
+          cache,
+          type_cache);
     }
 }
 
@@ -166,11 +168,16 @@ datalake_manager::datalake_manager(
   , _location_provider(cloud_io->local().provider(), bucket_name)
   , _schema_registry(schema::registry::make_default(sr_api))
   , _catalog_factory(std::move(catalog_factory))
-  // TODO: The cache size is currently arbitrary. Figure out a more reasoned
-  // size and allocate a share of the datalake memory semaphore to this cache.
+  // TODO: The two following cache configs were arbitrarily choosen. Figure out
+  // a more reasoned size and allocate a share of the datalake memory semaphore
+  // to this cache.
   , _schema_cache(
       std::make_unique<chunked_schema_cache>(
         chunked_schema_cache::cache_t::config{
+          .cache_size = 50, .small_size = 10}))
+  , _resolved_type_cache(
+      std::make_unique<chunked_resolved_type_cache>(
+        chunked_resolved_type_cache::cache_t::config{
           .cache_size = 50, .small_size = 10}))
   , _as(as)
   , _sg(sg)
@@ -262,6 +269,7 @@ ss::future<> datalake_manager::start() {
     });
 
     _schema_cache->start();
+    _resolved_type_cache->start();
     _backlog_controller = std::make_unique<backlog_controller>(
       [this] { return total_translation_backlog(); }, _sg);
     co_await _backlog_controller->start();
@@ -565,6 +573,7 @@ ss::future<> datalake_manager::shutdown() {
     co_await _scheduler.stop();
     co_await std::move(f);
     _schema_cache->stop();
+    _resolved_type_cache->stop();
     vlog(datalake_log.debug, "Stopped datalake manager...");
 }
 
@@ -624,7 +633,11 @@ ss::future<> datalake_manager::handle_translator_state_change(
 
     auto mode = partition->topic_cfg->properties.iceberg_mode;
     auto type_resolver = make_type_resolver(
-      mode, ntp.tp.topic, *_schema_registry, *_schema_cache);
+      mode,
+      ntp.tp.topic,
+      *_schema_registry,
+      *_schema_cache,
+      *_resolved_type_cache);
     auto record_translator = make_record_translator(mode);
     auto table_creator = translation::make_default_table_creator(
       _coordinator_frontend->local());

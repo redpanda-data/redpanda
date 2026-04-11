@@ -23,9 +23,11 @@
 #include "cloud_topics/reconciler/reconciliation_consumer.h"
 #include "cloud_topics/reconciler/reconciliation_source.h"
 #include "cloud_topics/types.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
@@ -53,7 +55,7 @@ void log_error(
   const reconcile_error& err,
   vlog::file_line file_line = vlog::file_line::current()) {
     lg.log(
-      err.benign ? ss::log_level::debug : ss::log_level::error,
+      err.benign ? ss::log_level::debug : ss::log_level::warn,
       "{} - {}",
       file_line,
       err.message);
@@ -63,9 +65,13 @@ void log_error(
 
 template<class Clock>
 reconciler<Clock>::reconciler(
-  l1::io* l1_io, l1::metastore* metastore, ss::scheduling_group reconciler_sg)
+  l1::io* l1_io,
+  l1::metastore* metastore,
+  cluster::metadata_cache* metadata_cache,
+  ss::scheduling_group reconciler_sg)
   : _l1_io(l1_io)
   , _metastore(metastore)
+  , _metadata_cache(metadata_cache)
   , _reconciler_sg(reconciler_sg)
   , _upload_part_size(config::shard_local_cfg().cloud_topics_upload_part_size())
   , _reconciliation_sem(
@@ -331,12 +337,23 @@ ss::future<> reconciler<Clock>::reconcile() {
     auto now = Clock::now();
     chunked_vector<chunked_vector<ss::shared_ptr<source>>> due_topics;
 
+    // No yield points between the source copy and here, so the scheduler
+    // map must be in sync with sources: one scheduler per distinct topic.
+    vassert(
+      topics.size() == _topic_schedulers.size(),
+      "Topic scheduler count ({}) doesn't match source topic count ({})",
+      _topic_schedulers.size(),
+      topics.size());
+
     for (auto& topic_sources : topics) {
         vassert(!topic_sources.empty(), "Empty topic source set");
         auto topic_id = topic_sources.front()->topic_id_partition().topic_id;
-        auto& scheduler_state = get_or_create_topic_scheduler(topic_id);
-        auto next_due = scheduler_state.last_reconciled
-                        + scheduler_state.scheduler.current_interval();
+        auto sched_it = _topic_schedulers.find(topic_id);
+        if (sched_it == _topic_schedulers.end()) {
+            continue;
+        }
+        auto next_due = sched_it->second.last_reconciled
+                        + sched_it->second.scheduler.current_interval();
 
         if (now >= next_due) {
             due_topics.push_back(std::move(topic_sources));
@@ -359,8 +376,16 @@ ss::future<> reconciler<Clock>::reconcile() {
     // due topic.
     auto parallelism
       = config::shard_local_cfg().cloud_topics_reconciliation_parallelism();
-    auto max_concurrent_topics = (parallelism + default_num_l1_domains - 1)
-                                 / default_num_l1_domains;
+    size_t num_domains
+      = config::shard_local_cfg().cloud_topics_num_metastore_partitions();
+    if (_metadata_cache) {
+        auto md = _metadata_cache->get_topic_metadata_ref(
+          model::l1_metastore_nt);
+        if (md) {
+            num_domains = md->get().get_configuration().partition_count;
+        }
+    }
+    auto max_concurrent_topics = (parallelism + num_domains - 1) / num_domains;
     co_await ss::max_concurrent_for_each(
       std::make_move_iterator(due_topics.begin()),
       std::make_move_iterator(due_topics.end()),
@@ -374,10 +399,13 @@ ss::future<> reconciler<Clock>::reconcile() {
           // Update the topic's scheduler state. Adapt based on max object
           // size produced. Note that we slow down if there's nothing to
           // reconcile or if all objects failed. This is a sort of retry
-          // with backoff mechanism.
-          auto& scheduler_state = get_or_create_topic_scheduler(topic_id);
-          scheduler_state.scheduler.adapt(bytes);
-          scheduler_state.last_reconciled = now;
+          // with backoff mechanism. The scheduler may have been removed
+          // if sources were detached during reconciliation.
+          auto sched_it = _topic_schedulers.find(topic_id);
+          if (sched_it != _topic_schedulers.end()) {
+              sched_it->second.scheduler.adapt(bytes);
+              sched_it->second.last_reconciled = now;
+          }
       });
 }
 
@@ -412,6 +440,20 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
         co_return 0;
     }
 
+    // Don't do any work when no source has pending data.
+    {
+        chunked_vector<ss::shared_ptr<source>> pending;
+        for (auto& src : sources) {
+            if (src->has_pending_data()) {
+                pending.push_back(std::move(src));
+            }
+        }
+        sources = std::move(pending);
+    }
+    if (sources.empty()) {
+        co_return 0;
+    }
+
     // Begin by creating the set of objects to be built.
     retry_chain_node rtc = l1::make_default_metastore_rtc(_as);
     auto metadata_builder_res = co_await l1::retry_metastore_op(
@@ -441,7 +483,7 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
     chunked_hash_map<l1::object_id, chunked_vector<ss::shared_ptr<source>>>
       oid_to_sources;
     for (const auto& src : sources) {
-        auto oid = metadata_builder->get_or_create_object_for(
+        auto oid = co_await metadata_builder->get_or_create_object_for(
           src->topic_id_partition());
         if (!oid.has_value()) {
             vlog(lg.warn, "Could not get object: {}", oid.error());
@@ -453,8 +495,8 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
     // Process sources by their object (one per domain) in parallel,
     // bounded by the semaphore.
     chunked_vector<l1::object_id> oids;
-    chunked_vector<
-      ss::future<std::expected<built_object_metadata, reconcile_error>>>
+    chunked_vector<ss::future<
+      std::expected<std::optional<built_object_metadata>, reconcile_error>>>
       futures;
     oids.reserve(oid_to_sources.size());
     futures.reserve(oid_to_sources.size());
@@ -470,9 +512,10 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
     // NB: `futures` has size at most 3.
     auto results = co_await ss::when_all(futures.begin(), futures.end());
 
-    // Process results.
+    // Process results. Collect objects that won't be committed (no data,
+    // errors, or exceptions) so their pending metastore state is cleaned up.
     chunked_vector<built_object_metadata> successful_objects;
-    chunked_vector<l1::object_id> failed_objects;
+    chunked_vector<l1::object_id> unused_objects;
     for (size_t i = 0; i < results.size(); ++i) {
         auto& oid = oids[i];
         auto& object_fut = results[i];
@@ -489,22 +532,30 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
             if (is_shutdown) {
                 co_return 0;
             }
-            failed_objects.push_back(oid);
+            unused_objects.push_back(oid);
             continue;
         }
 
         auto result = object_fut.get();
         if (!result.has_value()) {
-            failed_objects.push_back(oid);
+            unused_objects.push_back(oid);
             log_error(result.error());
             continue;
         }
 
-        auto obj_metadata = std::move(result).value();
+        auto& maybe_metadata = result.value();
+        if (!maybe_metadata.has_value()) {
+            // No data from any partition in this object — normal for
+            // caught-up or slow-moving partitions.
+            unused_objects.push_back(oid);
+            continue;
+        }
+
+        auto obj_metadata = std::move(maybe_metadata).value();
         auto add_result = add_object_metadata(
           oid, obj_metadata, metadata_builder.get());
         if (!add_result.has_value()) {
-            failed_objects.push_back(oid);
+            unused_objects.push_back(oid);
             log_error(add_result.error().with_context(
               "adding metadata for object {}", oid));
             continue;
@@ -514,7 +565,7 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
         successful_objects.push_back(std::move(obj_metadata));
     }
 
-    for (const auto& oid : failed_objects) {
+    for (const auto& oid : unused_objects) {
         auto rm_ret = metadata_builder->remove_pending_object(oid);
         vassert(
           rm_ret.has_value(), "Removing object {} in non-pending state", oid);
@@ -550,7 +601,7 @@ ss::future<size_t> reconciler<Clock>::reconcile_source_set(
 
 template<class Clock>
 ss::future<std::expected<
-  typename reconciler<Clock>::built_object_metadata,
+  std::optional<typename reconciler<Clock>::built_object_metadata>,
   reconcile_error>>
 reconciler<Clock>::reconcile_sources(
   const l1::object_id& oid,
@@ -562,8 +613,7 @@ reconciler<Clock>::reconcile_sources(
     }
     auto ctx = std::move(ctx_result.value());
 
-    auto fut = co_await ss::coroutine::as_future(
-      build_object(oid, ctx, sources));
+    auto fut = co_await ss::coroutine::as_future(build_object(ctx, sources));
 
     // Always cleanup: abort multipart if not completed, then close builder.
     auto cleanup_fut = co_await ss::coroutine::as_future(ctx.cleanup_upload());
@@ -639,12 +689,10 @@ reconciler<Clock>::make_context(const l1::object_id& oid) {
 
 template<class Clock>
 ss::future<std::expected<
-  typename reconciler<Clock>::built_object_metadata,
+  std::optional<typename reconciler<Clock>::built_object_metadata>,
   reconcile_error>>
 reconciler<Clock>::build_object(
-  const l1::object_id& oid,
-  builder_context& ctx,
-  const chunked_vector<ss::shared_ptr<source>>& sources) {
+  builder_context& ctx, const chunked_vector<ss::shared_ptr<source>>& sources) {
     const auto max_size = ctx.size_budget;
 
     chunked_vector<commit_info> metas;
@@ -690,12 +738,10 @@ reconciler<Clock>::build_object(
     metas.shrink_to_fit();
 
     if (metas.empty()) {
-        // Return early without finishing the builder or completing the
-        // multipart upload. The caller's cleanup will abort the upload
-        // and close the builder.
-        co_return std::unexpected(reconcile_error(
-          "Skipping upload for object {}: no new data from any partition",
-          oid));
+        // No new data from any partition. Return early without finishing
+        // the builder or completing the multipart upload. The caller's
+        // cleanup will abort the upload and close the builder.
+        co_return std::nullopt;
     }
 
     auto obj_info = co_await ctx.builder->finish().finally(

@@ -28,6 +28,19 @@ class CloudStorageType(IntEnum):
     ABS = 2
 
 
+class ReadReplicaSourceMode(IntEnum):
+    """
+    Mode for configuring source topics in read replica tests.
+    """
+
+    TIERED_STORAGE = 1
+    CLOUD_TOPICS = 2
+
+
+def get_read_replica_sources():
+    return [ReadReplicaSourceMode.TIERED_STORAGE, ReadReplicaSourceMode.CLOUD_TOPICS]
+
+
 class Credentials(abc.ABC):
     """
     Typed credentials for cloud storage.

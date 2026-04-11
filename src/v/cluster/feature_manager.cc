@@ -528,7 +528,7 @@ void feature_manager::update_node_version(
       update_node,
       v);
 
-    _updates.emplace(update_node, v);
+    _updates.insert_or_assign(update_node, v);
     _update_wait.signal();
 }
 

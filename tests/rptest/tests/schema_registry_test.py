@@ -5476,6 +5476,20 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
         self.assert_equal(result.json()["mode"], "READWRITE")
 
     @cluster(num_nodes=1)
+    def test_delete_context_config_and_mode_before_set(self):
+        """Deleting context-level config or mode when neither has been set
+        should return 404. This is a regression test to protect against a
+        bug where deleting /config/{subject} and /mode/{subject} with a
+        context-only qualifier (e.g. ":.ctx:") would deadlock because the
+        handler built tombstones from empty written_at sequences."""
+
+        result = self.sr_client.delete_config_subject(subject=":.test-ctx:")
+        self.assert_equal(result.status_code, requests.codes.not_found)
+
+        result = self.sr_client.delete_mode_subject(subject=":.test-ctx:")
+        self.assert_equal(result.status_code, requests.codes.not_found)
+
+    @cluster(num_nodes=1)
     def test_context_record_persistence(self):
         # First, register a schema in the default context (no CONTEXT record)
         result = self.sr_client.post_subjects_subject_versions(

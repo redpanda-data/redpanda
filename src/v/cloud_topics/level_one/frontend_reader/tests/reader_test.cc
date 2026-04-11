@@ -12,6 +12,7 @@
 #include "cloud_topics/level_one/common/fake_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
@@ -73,9 +74,31 @@ chunked_circular_buffer<model::record_batch> slice_by_offset(
 
 } // anonymous namespace
 
-class l1_reader_test : public l1::l1_reader_fixture {};
+// ---------------------------------------------------------------------------
+// Parameterized fixture: runs each test with and without the reader cache.
+// GetParam() == true means cache is enabled.
+// ---------------------------------------------------------------------------
 
-TEST_F(l1_reader_test, empty_read) {
+class l1_reader_test
+  : public l1::l1_reader_fixture
+  , public ::testing::WithParamInterface<bool> {
+public:
+    l1_reader_test() { _cache_ptr = GetParam() ? &_cache : nullptr; }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+  WithAndWithoutCache,
+  l1_reader_test,
+  ::testing::Bool(),
+  [](const ::testing::TestParamInfo<bool>& info) {
+      return info.param ? "WithCache" : "WithoutCache";
+  });
+
+// ---------------------------------------------------------------------------
+// Correctness tests — parameterized over cache/no-cache.
+// ---------------------------------------------------------------------------
+
+TEST_P(l1_reader_test, empty_read) {
     auto [ntp, tidp] = make_ntidp("test_topic");
     auto reader = make_reader(ntp, tidp);
 
@@ -84,7 +107,7 @@ TEST_F(l1_reader_test, empty_read) {
     EXPECT_TRUE(result.empty());
 }
 
-TEST_F(l1_reader_test, read_single_object) {
+TEST_P(l1_reader_test, read_single_object) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     auto batches = model::test::make_random_batches(model::offset{0}, 10).get();
@@ -100,7 +123,7 @@ TEST_F(l1_reader_test, read_single_object) {
     EXPECT_EQ(result, expected);
 }
 
-TEST_F(l1_reader_test, read_multiple_objects) {
+TEST_P(l1_reader_test, read_multiple_objects) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     auto batches
@@ -119,7 +142,7 @@ TEST_F(l1_reader_test, read_multiple_objects) {
     EXPECT_EQ(result, batches);
 }
 
-TEST_F(l1_reader_test, read_multiple_ntps_multiple_objects) {
+TEST_P(l1_reader_test, read_multiple_ntps_multiple_objects) {
     auto ntps = std::vector<std::pair<model::ntp, model::topic_id_partition>>{
       make_ntidp("tapioca"), make_ntidp("taco"), make_ntidp("turkey")};
 
@@ -149,7 +172,7 @@ TEST_F(l1_reader_test, read_multiple_ntps_multiple_objects) {
     }
 }
 
-TEST_F(l1_reader_test, read_offset_range_one_object) {
+TEST_P(l1_reader_test, read_offset_range_one_object) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     auto batches = model::test::make_random_batches(model::offset{0}, 10).get();
@@ -166,7 +189,7 @@ TEST_F(l1_reader_test, read_offset_range_one_object) {
     EXPECT_EQ(result, slice_by_offset(expected, min, max));
 }
 
-TEST_F(l1_reader_test, read_offset_range_multiple_objects) {
+TEST_P(l1_reader_test, read_offset_range_multiple_objects) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     auto batches = model::test::make_random_batches(model::offset{0}, 20).get();
@@ -190,7 +213,7 @@ TEST_F(l1_reader_test, read_offset_range_multiple_objects) {
     EXPECT_EQ(result, slice_by_offset(batches, min, max));
 }
 
-TEST_F(l1_reader_test, read_with_max_bytes) {
+TEST_P(l1_reader_test, read_with_max_bytes) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     // Use a pretty big number so we don't randomly get too many small batches.
@@ -219,7 +242,7 @@ TEST_F(l1_reader_test, read_with_max_bytes) {
     }
 }
 
-TEST_F(l1_reader_test, read_with_strict_max_bytes) {
+TEST_P(l1_reader_test, read_with_strict_max_bytes) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     // Use a pretty big number so we don't randomly get too many small batches.
@@ -248,7 +271,7 @@ TEST_F(l1_reader_test, read_with_strict_max_bytes) {
     }
 }
 
-TEST_F(l1_reader_test, out_of_range) {
+TEST_P(l1_reader_test, out_of_range) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     // Start the object at offset 100.
@@ -276,13 +299,13 @@ TEST_F(l1_reader_test, out_of_range) {
     }
 }
 
-TEST_F(l1_reader_test, missing_object) {
+TEST_P(l1_reader_test, missing_object) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     // Register object in metastore but don't upload.
     // This is corruption and readers should throw.
     auto builder = _metastore.object_builder().get().value();
-    auto oid = builder->get_or_create_object_for(tidp).value();
+    auto oid = builder->get_or_create_object_for(tidp).get().value();
     builder
       ->add(
         oid,
@@ -310,7 +333,7 @@ TEST_F(l1_reader_test, missing_object) {
     EXPECT_THROW(read_all(std::move(reader)), std::runtime_error);
 }
 
-TEST_F(l1_reader_test, empty_offset_range) {
+TEST_P(l1_reader_test, empty_offset_range) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     // Write some initial objects.
@@ -329,7 +352,7 @@ TEST_F(l1_reader_test, empty_offset_range) {
     // to cover a non-empty offset range in the metastore.
     auto meta_builder = _metastore.object_builder().get().value();
 
-    auto oid = meta_builder->get_or_create_object_for(tidp).value();
+    auto oid = meta_builder->get_or_create_object_for(tidp).get().value();
 
     auto buf = iobuf{};
     auto builder = l1::object_builder::create(
@@ -389,7 +412,7 @@ TEST_F(l1_reader_test, empty_offset_range) {
     EXPECT_EQ(result, batches);
 }
 
-TEST_F(l1_reader_test, sparse_offset_ranges) {
+TEST_P(l1_reader_test, sparse_offset_ranges) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     auto all_batches
@@ -441,7 +464,7 @@ TEST_F(l1_reader_test, sparse_offset_ranges) {
     EXPECT_EQ(result, batches);
 }
 
-TEST_F(l1_reader_test, max_bytes_zero_behavior) {
+TEST_P(l1_reader_test, max_bytes_zero_behavior) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     // Create an object with multiple batches
@@ -472,7 +495,7 @@ TEST_F(l1_reader_test, max_bytes_zero_behavior) {
     }
 }
 
-TEST_F(l1_reader_test, read_offset_range_multiple_objects2) {
+TEST_P(l1_reader_test, read_offset_range_multiple_objects2) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
     /*
@@ -575,4 +598,313 @@ TEST_F(l1_reader_test, read_offset_range_multiple_objects2) {
         EXPECT_EQ(batch.last_offset(), expected_offset);
         expected_offset += 1;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cache-specific tests — always use cache, and prove it is exercised.
+// ---------------------------------------------------------------------------
+
+class l1_reader_cache_test : public l1::l1_reader_fixture {};
+
+// Verify that partial reads populate the cache, that multiple entries
+// coexist for the same NTP, and that borrowing each produces a correct
+// continuation.
+TEST_F(l1_reader_cache_test, cache_is_populated_and_borrowed) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, 100).get();
+    auto expected = copy(batches);
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    // Two partial reads at different split points populate two cache
+    // entries for the same NTP.
+    auto split_a = expected.size() / 3;
+    auto split_b = 2 * expected.size() / 3;
+    auto max_a = model::offset_cast(expected[split_a].last_offset());
+    auto max_b = model::offset_cast(expected[split_b].last_offset());
+
+    auto result_a = read_all(make_reader(ntp, tidp, kafka::offset{0}, max_a));
+    ASSERT_FALSE(result_a.empty());
+    auto next_a = kafka::next_offset(
+      model::offset_cast(result_a.back().last_offset()));
+
+    // Second read starts at 0 — cache miss (cached entry is at
+    // next_a), so both entries coexist in the cache afterward.
+    auto result_b = read_all(make_reader(ntp, tidp, kafka::offset{0}, max_b));
+    ASSERT_FALSE(result_b.empty());
+    auto next_b = kafka::next_offset(
+      model::offset_cast(result_b.back().last_offset()));
+
+    // Both entries should be independently borrowable.
+    auto cached_a = _cache.take_reader(tidp, next_a);
+    ASSERT_TRUE(cached_a.has_value())
+      << "Expected cache entry at next_offset " << next_a;
+    EXPECT_EQ(cached_a->next_offset, next_a);
+
+    auto cached_b = _cache.take_reader(tidp, next_b);
+    ASSERT_TRUE(cached_b.has_value())
+      << "Expected cache entry at next_offset " << next_b;
+    EXPECT_EQ(cached_b->next_offset, next_b);
+
+    // Return both so subsequent reads can use them.
+    _cache.return_reader(tidp, std::move(*cached_a)).get();
+    _cache.return_reader(tidp, std::move(*cached_b)).get();
+
+    // Continue from each cached position and verify correctness.
+    auto tail_a = read_all(make_reader(ntp, tidp, next_a));
+    auto tail_b = read_all(make_reader(ntp, tidp, next_b));
+
+    chunked_circular_buffer<model::record_batch> combined_a;
+    for (auto& b : result_a) {
+        combined_a.push_back(std::move(b));
+    }
+    for (auto& b : tail_a) {
+        combined_a.push_back(std::move(b));
+    }
+    EXPECT_EQ(combined_a, expected);
+
+    chunked_circular_buffer<model::record_batch> combined_b;
+    for (auto& b : result_b) {
+        combined_b.push_back(std::move(b));
+    }
+    for (auto& b : tail_b) {
+        combined_b.push_back(std::move(b));
+    }
+    EXPECT_EQ(combined_b, expected);
+}
+
+// Verify that a non-sequential read (different offset from the cached
+// position) falls back to the standard metastore-lookup path correctly.
+TEST_F(l1_reader_cache_test, cache_miss_different_offset) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, 100).get();
+    auto expected = copy(batches);
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    // Read the first half — this caches a reader positioned mid-object.
+    auto split_idx = expected.size() / 2;
+    auto max_offset = model::offset_cast(expected[split_idx].last_offset());
+    auto partial = read_all(
+      make_reader(ntp, tidp, kafka::offset{0}, max_offset));
+    ASSERT_FALSE(partial.empty());
+
+    // Now read from the beginning again — cache miss since the cached reader
+    // is positioned at a later offset. Should still produce correct results.
+    auto full = read_all(make_reader(ntp, tidp));
+    EXPECT_EQ(full, expected);
+}
+
+// Verify that reading across two L1 objects works correctly when the cache
+// holds a reader for the first object.
+TEST_F(l1_reader_cache_test, cache_cross_object_transition) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, 100).get();
+    auto expected = copy(batches);
+
+    // Split into two objects.
+    {
+        std::vector<tidp_batches_t> tidp_batches;
+        tidp_batches.emplace_back(tidp, slice(batches, 0, 50));
+        make_l1_objects(std::move(tidp_batches)).get();
+    }
+    {
+        std::vector<tidp_batches_t> tidp_batches;
+        tidp_batches.emplace_back(tidp, slice(batches, 50, 50));
+        make_l1_objects(std::move(tidp_batches)).get();
+    }
+
+    // Read partial from the first object — stop well before the boundary.
+    auto mid_first_obj = expected.size() / 4;
+    auto max_offset = model::offset_cast(expected[mid_first_obj].last_offset());
+    auto first_result = read_all(
+      make_reader(ntp, tidp, kafka::offset{0}, max_offset));
+    ASSERT_FALSE(first_result.empty());
+
+    // Continue from where first reader stopped — should use cache for
+    // remainder of first object, then transition to second object.
+    auto next_start = kafka::next_offset(
+      model::offset_cast(first_result.back().last_offset()));
+    auto second_result = read_all(make_reader(ntp, tidp, next_start));
+    ASSERT_FALSE(second_result.empty());
+
+    chunked_circular_buffer<model::record_batch> combined;
+    for (auto& b : first_result) {
+        combined.push_back(std::move(b));
+    }
+    for (auto& b : second_result) {
+        combined.push_back(std::move(b));
+    }
+    EXPECT_EQ(combined, expected);
+}
+
+// Verify that multiple sequential reads, each with a different max_offset
+// boundary, all work correctly through the reader cache.
+TEST_F(l1_reader_cache_test, cache_multiple_sequential_reads) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, 100).get();
+    auto expected = copy(batches);
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    // Split into 4 sequential reads.
+    chunked_circular_buffer<model::record_batch> combined;
+    auto current_start = kafka::offset{0};
+    size_t quarter = expected.size() / 4;
+
+    for (size_t i = 0; i < 4; ++i) {
+        kafka::offset max_off = (i < 3)
+                                  ? model::offset_cast(
+                                      expected[(i + 1) * quarter].last_offset())
+                                  : kafka::offset::max();
+        auto result = read_all(make_reader(ntp, tidp, current_start, max_off));
+        ASSERT_FALSE(result.empty()) << "Empty result on iteration " << i;
+        current_start = kafka::next_offset(
+          model::offset_cast(result.back().last_offset()));
+        for (auto& b : result) {
+            combined.push_back(std::move(b));
+        }
+    }
+
+    EXPECT_EQ(combined, expected);
+}
+
+// Verify that the reader cache works across byte-limit boundaries.
+TEST_F(l1_reader_cache_test, cache_strict_max_bytes_resume) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, 100).get();
+    auto expected = copy(batches);
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    size_t quarter = expected.size() / 4;
+    size_t byte_limit = 0;
+    for (size_t i = 0; i < quarter; ++i) {
+        byte_limit += expected[i].size_bytes();
+    }
+
+    auto first_result = read_all(make_reader(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      byte_limit,
+      /*strict_max_bytes=*/true));
+    ASSERT_FALSE(first_result.empty());
+    ASSERT_LE(first_result.size(), quarter);
+
+    auto next_start = kafka::next_offset(
+      model::offset_cast(first_result.back().last_offset()));
+
+    auto second_result = read_all(make_reader(ntp, tidp, next_start));
+    ASSERT_FALSE(second_result.empty());
+
+    chunked_circular_buffer<model::record_batch> combined;
+    for (auto& b : first_result) {
+        combined.push_back(std::move(b));
+    }
+    for (auto& b : second_result) {
+        combined.push_back(std::move(b));
+    }
+    EXPECT_EQ(combined, expected);
+}
+
+// Lookahead tests: verify that lookahead_objects > 1 produces the same results
+// as the default single-object lookup path.
+TEST_P(l1_reader_test, lookahead_single_object) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches = model::test::make_random_batches(model::offset{0}, 10).get();
+    auto expected = copy(batches);
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    // Read with lookahead enabled — should produce identical results.
+    auto reader = make_reader(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      std::numeric_limits<size_t>::max(),
+      /*strict_max_bytes=*/false,
+      /*lookahead_objects=*/10);
+    auto result = read_all(std::move(reader));
+    EXPECT_EQ(result, expected);
+}
+
+TEST_P(l1_reader_test, lookahead_multiple_objects) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    // Create 3 separate objects with batches at increasing offsets.
+    auto batches1 = model::test::make_random_batches(model::offset{0}, 5).get();
+    auto next_offset = batches1.back().last_offset() + model::offset{1};
+    auto batches2 = model::test::make_random_batches(next_offset, 5).get();
+    next_offset = batches2.back().last_offset() + model::offset{1};
+    auto batches3 = model::test::make_random_batches(next_offset, 5).get();
+
+    // Collect expected batches.
+    chunked_circular_buffer<model::record_batch> expected;
+    for (auto& b : batches1) {
+        expected.push_back(b.share());
+    }
+    for (auto& b : batches2) {
+        expected.push_back(b.share());
+    }
+    for (auto& b : batches3) {
+        expected.push_back(b.share());
+    }
+
+    // Create three separate L1 objects.
+    {
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches1));
+        make_l1_objects(std::move(tb)).get();
+    }
+    {
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches2));
+        make_l1_objects(std::move(tb)).get();
+    }
+    {
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches3));
+        make_l1_objects(std::move(tb)).get();
+    }
+
+    // Read with lookahead=10, which should batch-lookup all 3 objects.
+    auto reader = make_reader(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      std::numeric_limits<size_t>::max(),
+      /*strict_max_bytes=*/false,
+      /*lookahead_objects=*/10);
+    auto result = read_all(std::move(reader));
+    EXPECT_EQ(result, expected);
+
+    // Also verify without lookahead (regression test).
+    auto reader_no_prefetch = make_reader(ntp, tidp);
+    auto result_no_prefetch = read_all(std::move(reader_no_prefetch));
+    EXPECT_EQ(result_no_prefetch, expected);
 }

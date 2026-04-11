@@ -78,6 +78,7 @@ DEFAULT_SYNCED_TOPIC_PROPERTIES = [
     "delete.retention.ms",
     "max.compaction.lag.ms",
     "min.compaction.lag.ms",
+    "redpanda.storage.mode",
 ]
 
 DISALLOWED_SYNCED_TOPIC_PROPERTIES = [
@@ -86,7 +87,6 @@ DISALLOWED_SYNCED_TOPIC_PROPERTIES = [
     "redpanda.remote.allowgaps",
     "redpanda.virtual.cluster.id",
     "redpanda.leaders.preference",
-    "redpanda.storage.mode",
 ]
 
 CONTROLLER_LOCKED_TASKS = [

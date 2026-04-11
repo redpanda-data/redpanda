@@ -12,7 +12,6 @@
 
 #include "cloud_topics/level_one/compaction/filter.h"
 #include "cloud_topics/level_one/compaction/logger.h"
-#include "cloud_topics/level_one/compaction/sink.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/metastore/extent_metadata_reader.h"
 #include "cloud_topics/level_one/metastore/offset_interval_set.h"
@@ -245,7 +244,6 @@ ss::future<ss::stop_iteration> compaction_source::map_building_iteration() {
 
 ss::future<ss::stop_iteration> compaction_source::deduplication_iteration(
   compaction::sliding_window_reducer::sink& sink) {
-    auto& ct_sink = static_cast<compaction_sink&>(sink);
     if (preempted()) {
         co_return ss::stop_iteration::yes;
     }
@@ -283,11 +281,11 @@ ss::future<ss::stop_iteration> compaction_source::deduplication_iteration(
           std::make_unique<level_one_log_reader_impl>(
             config, _ntp, _tp, _metastore, _io, _l1_reader_probe));
 
-        co_await ct_sink.prepare_iteration(start_offset);
+        co_await sink.prepare_iteration(start_offset);
         auto stats = co_await rdr.consume(
-          compaction_filter{ct_sink, *_map, _ntp, _removable_tombstone_ranges},
+          compaction_filter{sink, *_map, _ntp, _removable_tombstone_ranges},
           model::no_timeout);
-        co_await ct_sink.finish_iteration(start_offset, last_offset);
+        co_await sink.finish_iteration(start_offset, last_offset);
         if (stats.has_removed_data()) {
             vlog(
               compaction_log.info,

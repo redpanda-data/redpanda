@@ -76,6 +76,8 @@ remote_topic_configuration_source::set_remote_properties_in_config(
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
           manifest.get_revision(), dl_cfg->partition_count);
         cfg.cfg.properties.remote_label = dl_cfg->properties.remote_label;
+        cfg.cfg.properties.storage_mode = dl_cfg->properties.storage_mode;
+        cfg.cfg.tp_id = dl_cfg->tp_id;
     }
     co_return errc::success;
 }

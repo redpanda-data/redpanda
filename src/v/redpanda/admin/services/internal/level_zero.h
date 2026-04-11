@@ -62,13 +62,17 @@ public:
       serde::pb::rpc::context,
       proto::admin::level_zero::get_status_request) override;
 
-    seastar::future<proto::admin::level_zero::start_response> start(
+    seastar::future<proto::admin::level_zero::start_gc_response> start_gc(
       serde::pb::rpc::context,
-      proto::admin::level_zero::start_request) override;
+      proto::admin::level_zero::start_gc_request) override;
 
-    seastar::future<proto::admin::level_zero::pause_response> pause(
+    seastar::future<proto::admin::level_zero::pause_gc_response> pause_gc(
       serde::pb::rpc::context,
-      proto::admin::level_zero::pause_request) override;
+      proto::admin::level_zero::pause_gc_request) override;
+
+    seastar::future<proto::admin::level_zero::reset_gc_response> reset_gc(
+      serde::pb::rpc::context,
+      proto::admin::level_zero::reset_gc_request) override;
 
     seastar::future<proto::admin::level_zero::advance_epoch_response>
       advance_epoch(

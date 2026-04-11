@@ -136,6 +136,10 @@ public:
     /// reaches part_size. This method may upload multiple parts if data size
     /// exceeds part_size.
     ///
+    /// No-op if the upload has already been finalized. This can occur when an
+    /// upload is aborted with pending data and its stream is subsequently
+    /// closed.
+    ///
     /// \param data Data to write
     [[nodiscard]] virtual ss::future<> put(iobuf data);
 
@@ -148,15 +152,13 @@ public:
     /// no parts have been uploaded yet, uses regular put_object instead of
     /// multipart upload for efficiency.
     ///
-    /// \throws std::logic_error if already finalized
+    /// No-op if the upload has already been finalized.
     [[nodiscard]] virtual ss::future<> complete();
 
     /// Abort the multipart upload (cancel without committing)
     ///
     /// Cancels the multipart upload and attempts to clean up any uploaded
-    /// parts. Safe to call multiple times.
-    ///
-    /// \throws std::logic_error if already finalized with complete()
+    /// parts. No-op if the upload has already been finalized.
     [[nodiscard]] virtual ss::future<> abort();
 
     /// Check if the upload has been finalized (completed or aborted)

@@ -481,7 +481,7 @@ void write_at_offset_stm_factory::create(
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<write_at_offset_stm>(
       raft, klog, _kvstore, _offset_translated_batches);
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace kafka

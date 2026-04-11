@@ -72,7 +72,7 @@ private:
     std::vector<ss::sstring> keys;
 };
 
-void dump_to_disk(iobuf buf, ss::sstring fname) {
+inline void dump_to_disk(iobuf buf, ss::sstring fname) {
     auto file = ss::open_file_dma(
                   fname, ss::open_flags::create | ss::open_flags::wo)
                   .get();

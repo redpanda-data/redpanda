@@ -39,6 +39,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             extra_rp_conf={
                 "partition_autobalancing_mode": "continuous",
                 "partition_autobalancing_node_availability_timeout_sec": self.NODE_AVAILABILITY_TIMEOUT,
+                "health_monitor_tick_interval": 5000,
                 "partition_autobalancing_tick_interval_ms": 5000,
                 "members_backend_retry_ms": 1000,
                 "raft_learner_recovery_rate": 10 * 1073741824,

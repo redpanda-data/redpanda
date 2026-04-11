@@ -82,7 +82,9 @@ multipart_upload::~multipart_upload() {
 
 ss::future<> multipart_upload::put(iobuf data) {
     if (_finalized) {
-        throw std::logic_error("Cannot put() on finalized multipart upload");
+        // May occur if a multipart upload is aborted with pending data and then
+        // its stream is closed.
+        co_return;
     }
 
     // Append data to buffer

@@ -92,7 +92,7 @@ struct group_manager_fixture
     auto group_tx_stm() {
         auto log = consumer_offsets_log();
         return dynamic_pointer_cast<kafka::group_tx_tracker_stm>(
-          log->stm_manager()->transactional_stm());
+          log->stm_hookset()->transactional_stm());
     }
 
     ss::future<> wait_for_version_fence() {
@@ -347,7 +347,7 @@ ss::future<> run_workload(
         }
         return log->apply_segment_ms().then([&] {
             auto collect_offset
-              = log->stm_manager()->max_removable_local_log_offset();
+              = log->stm_hookset()->max_removable_local_log_offset();
             auto cfg = storage::housekeeping_config::make_config(
               model::timestamp::max(),
               std::nullopt,

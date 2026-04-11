@@ -18,7 +18,6 @@ go_library(
         "@build_buf_gen_go_redpandadata_core_protocolbuffers_go//redpanda/core/admin/v2:admin",
         "@com_connectrpc_connect//:connect",
         "@com_github_docker_go_units//:go-units",
-        "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
     ],

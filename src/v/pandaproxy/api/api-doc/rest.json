@@ -561,4 +561,20 @@
           }
         }
       }
+    },
+    "/v1/redpanda/datalake/translation_state": {
+      "post": {
+        "summary": "Get Iceberg translation state for topics",
+        "operationId": "get_translation_state",
+        "consumes": ["application/json", "application/proto"],
+        "produces": ["application/json", "application/proto"],
+        "responses": {
+          "200": {
+            "description": "Translation state for the requested topics"
+          },
+          "400": {
+            "description": "topics_filter must not be empty"
+          }
+        }
+      }
     }

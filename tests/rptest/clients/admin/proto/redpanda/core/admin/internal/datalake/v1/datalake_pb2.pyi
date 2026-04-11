@@ -349,6 +349,9 @@ Global___DescribeCatalogRequest: typing_extensions.TypeAlias = DescribeCatalogRe
 
 @typing.final
 class DescribeCatalogResponse(google.protobuf.message.Message):
+    """Currently empty. In the future, may include additional catalog
+    information such as configuration details or capabilities.
+    """
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(self) -> None:

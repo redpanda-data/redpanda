@@ -20,7 +20,7 @@ func VersionFromString(s string) (Version, error) {
 	//   - index 1: the Major
 	//   - index 2: the Feature
 	//   - index 3: the Patch
-	vMatch := regexp.MustCompile(`^v?(\d{1,2})\.(\d{1,2})\.(\d{1,2})(?:\s|-rc\d{1,2}|-dev|$)`).FindStringSubmatch(s)
+	vMatch := regexp.MustCompile(`^v?(\d{1,2})\.(\d{1,2})\.(\d{1,2})(?:\s|-rc\d{1,2}|-dev|-nightly|$)`).FindStringSubmatch(s)
 
 	if len(vMatch) == 0 {
 		return Version{}, fmt.Errorf("unable to get the redpanda version from %q", s)

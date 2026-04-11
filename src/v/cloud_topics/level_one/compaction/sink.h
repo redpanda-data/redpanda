@@ -46,16 +46,16 @@ public:
     // to the `sink`. This is an asynchronous function because the active L1
     // object may need to be rolled, in case that the next extent range provided
     // is non-contiguous.
-    ss::future<> prepare_iteration(kafka::offset);
+    ss::future<> prepare_iteration(kafka::offset) final;
 
     // Called by the `source` after batches in an extent range are provided
     // to the `sink`.
-    ss::future<> finish_iteration(kafka::offset, kafka::offset);
+    ss::future<> finish_iteration(kafka::offset, kafka::offset) final;
 
     ss::future<ss::stop_iteration>
     operator()(model::record_batch, model::compression) final;
 
-    ss::future<> finalize() final;
+    ss::future<> finalize(bool success) final;
 
 private:
     // The target maximum L1 object size that will be built.
@@ -140,6 +140,9 @@ private:
     // `map_deduplication_iteration`.
     chunked_vector<metastore::compaction_update::cleaned_range>
       _new_cleaned_ranges;
+
+private:
+    friend class throwing_compaction_sink;
 };
 
 } // namespace cloud_topics::l1

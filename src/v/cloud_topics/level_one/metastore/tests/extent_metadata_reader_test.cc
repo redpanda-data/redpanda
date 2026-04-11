@@ -76,6 +76,13 @@ TEST(SimpleMetastoreTest, TestReadExtentMetadataForwards) {
     os.emplace_back(om_builder(oid3, 100, 1100)
                       .add(tid_a, 20_o, 29_o, 2000_t, 0, data_size)
                       .build());
+    {
+        chunked_vector<object_id> ids;
+        ids.push_back(oid1);
+        ids.push_back(oid2);
+        ids.push_back(oid3);
+        m.preregister_objects(ids);
+    }
     auto add_res
       = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
     ASSERT_TRUE(add_res.has_value());
@@ -199,6 +206,13 @@ TEST(SimpleMetastoreTest, TestReadExtentMetadataBackwards) {
     os.emplace_back(om_builder(oid3, 100, 1100)
                       .add(tid_a, 20_o, 29_o, 2000_t, 0, data_size)
                       .build());
+    {
+        chunked_vector<object_id> ids;
+        ids.push_back(oid1);
+        ids.push_back(oid2);
+        ids.push_back(oid3);
+        m.preregister_objects(ids);
+    }
     auto add_res
       = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
     ASSERT_TRUE(add_res.has_value());
@@ -322,6 +336,13 @@ TEST(SimpleMetastoreTest, TestGetExtentMetadataEmpty) {
     os.emplace_back(om_builder(oid3, 100, 1100)
                       .add(tid_a, 20_o, 29_o, 2000_t, 0, data_size)
                       .build());
+    {
+        chunked_vector<object_id> ids;
+        ids.push_back(oid1);
+        ids.push_back(oid2);
+        ids.push_back(oid3);
+        m.preregister_objects(ids);
+    }
     auto add_res
       = m.add_objects(os, terms_builder().add(tid_a, 0_tm, 0_o).build()).get();
     ASSERT_TRUE(add_res.has_value());

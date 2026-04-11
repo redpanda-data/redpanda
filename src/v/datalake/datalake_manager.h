@@ -175,6 +175,7 @@ private:
     std::unique_ptr<iceberg::catalog> _catalog;
     std::unique_ptr<datalake::schema_manager> _schema_mgr;
     std::unique_ptr<datalake::schema_cache> _schema_cache;
+    std::unique_ptr<datalake::resolved_type_cache> _resolved_type_cache;
     std::unique_ptr<backlog_controller> _backlog_controller;
     chunked_hash_map<model::ntp, ss::lw_shared_ptr<class translation_probe>>
       _translation_probe_by_ntp;

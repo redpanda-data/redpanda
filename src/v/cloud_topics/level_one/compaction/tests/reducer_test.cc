@@ -18,6 +18,7 @@
 #include "cloud_topics/level_one/compaction/sink.h"
 #include "cloud_topics/level_one/compaction/source.h"
 #include "cloud_topics/level_one/compaction/tests/in_memory_sink.h"
+#include "cloud_topics/level_one/compaction/tests/throwing_compaction_sink.h"
 #include "cloud_topics/level_one/compaction/worker_probe.h"
 #include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
@@ -130,6 +131,59 @@ ss::future<> do_compact(
       as,
       config::mock_binding<size_t>(128_MiB),
       16_MiB);
+    auto reducer = compaction::sliding_window_reducer(
+      std::move(src), std::move(sink));
+
+    co_await std::move(reducer).run();
+}
+
+ss::future<> do_compact_with_throwing_sink(
+  model::topic_id_partition tidp,
+  model::ntp ntp,
+  l1::metastore::compaction_offsets_response offsets_response,
+  l1::metastore::compaction_epoch expected_compaction_epoch,
+  kafka::offset start_offset,
+  l1::metastore* metastore,
+  l1::io* io,
+  l1::throwing_compaction_sink::predicate_t should_roll,
+  l1::throwing_compaction_sink::predicate_t should_throw,
+  std::chrono::milliseconds min_compaction_lag_ms = 0ms,
+  kafka::offset max_compactible_offset = kafka::offset::max()) {
+    ss::abort_source as;
+    auto state = l1::compaction_job_state::running;
+    auto map = compaction::simple_key_offset_map();
+    auto dirty_range_intervals = offsets_response.dirty_ranges.to_vec();
+    l1::compaction_worker_probe probe;
+    auto src = std::make_unique<l1::compaction_source>(
+      ntp,
+      tidp,
+      dirty_range_intervals,
+      offsets_response.removable_tombstone_ranges,
+      start_offset,
+      max_compactible_offset,
+      &map,
+      min_compaction_lag_ms,
+      metastore,
+      io,
+      as,
+      state,
+      probe,
+      nullptr);
+    // Use a very large max_object_size to disable size-based rolls; the
+    // throwing_compaction_sink's should_roll predicate controls rolling.
+    auto inner_sink = std::make_unique<l1::compaction_sink>(
+      tidp,
+      dirty_range_intervals,
+      offsets_response.removable_tombstone_ranges,
+      expected_compaction_epoch,
+      start_offset,
+      io,
+      metastore,
+      as,
+      config::mock_binding<size_t>(128_MiB),
+      16_MiB);
+    auto sink = std::make_unique<l1::throwing_compaction_sink>(
+      std::move(inner_sink), std::move(should_roll), std::move(should_throw));
     auto reducer = compaction::sliding_window_reducer(
       std::move(src), std::move(sink));
 
@@ -860,4 +914,169 @@ TEST_F(ReducerTestFixture, MaxCompactibleOffsetReducer) {
     ASSERT_GT(compaction_info->dirty_ratio, 0.0);
     ASSERT_TRUE(compaction_info->offsets_response.dirty_ranges.covers(
       max_compactible_offset, last_offset));
+}
+
+// Tests the exceptional path in compaction_sink::finalize() where the inflight
+// object has been rolled mid-extent (Case 1 from the finalize() comments).
+// Setup: two contiguous extents [[0,9], [10,19]], 1 record per batch.
+// A forced roll at batch 15 creates a new object with object_base_offset=15.
+// The throw fires immediately after, before finish_iteration for [10,19].
+// At finalize(false), _processed_extents = {[0,9]}, last_offset=9.
+// Flushing the inflight object would give offsets [15,9] - an inverted range,
+// which would trigger an assert. `finalize()` must discard it instead.
+TEST_F(ReducerTestFixture, ExceptionalFinalizeAfterObjectRoll) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    int batches_per_extent = 10;
+    auto gen = linear_int_kv_batch_generator();
+    auto ts = model::timestamp::now();
+    auto spec = model::test::record_batch_spec{
+      .allow_compression = false,
+      .count = 1,
+      .timestamp = ts,
+      .all_records_have_same_timestamp = true};
+
+    // Two extents, 1 record per batch, 10 batches each -> offsets [0,9] and
+    // [10,19].
+    for (int i = 0; i < 2; ++i) {
+        auto batches = gen(spec, batches_per_extent);
+        std::vector<tidp_batches_t> tidp_batches;
+        tidp_batches.emplace_back(tidp, std::move(batches));
+        make_l1_objects(std::move(tidp_batches)).get();
+    }
+
+    auto info_spec = l1::metastore::compaction_info_spec{
+      .tidp = tidp,
+      .tombstone_removal_upper_bound_ts = model::timestamp::max()};
+    auto compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+
+    // Roll at batch 15 (offset 15, i.e. the 6th batch of the second extent),
+    // then throw immediately after.
+    int batch_count = 0;
+    int roll_at = batches_per_extent + 5;
+    auto should_roll = [&batch_count, roll_at]() -> bool {
+        return batch_count == roll_at;
+    };
+    auto should_throw = [&batch_count, roll_at]() -> bool {
+        ++batch_count;
+        return batch_count == roll_at + 1;
+    };
+
+    EXPECT_THROW(
+      do_compact_with_throwing_sink(
+        tidp,
+        ntp,
+        std::move(compaction_info->offsets_response),
+        compaction_info->compaction_epoch,
+        compaction_info->start_offset,
+        &_metastore,
+        &_io,
+        std::move(should_roll),
+        std::move(should_throw))
+        .get(),
+      std::runtime_error);
+
+    // The log must still be readable after the exceptional compaction.
+    auto reader = make_reader(ntp, tidp);
+    auto output_batches = read_all(std::move(reader));
+    ASSERT_FALSE(output_batches.empty());
+}
+
+// Tests the exceptional path in compaction_sink::finalize() where the inflight
+// object contains partially-processed extent data beyond what
+// _processed_extents tracks (Case 2 from the finalize() comments).
+//
+// Setup: two contiguous extents [[0,9], [10,19]], 1 record per batch.
+// No roll occurs — the single object spans both extents. The throw fires at
+// batch 15 (offset 15), before finish_iteration for [10,19].
+// At finalize(false), _processed_extents = {[0,9]}, last_offset=9.
+// Flushing would give an object with offsets [0,9], but the object actually
+// contains data up to offset 15. finalize must discard it instead.
+TEST_F(ReducerTestFixture, ExceptionalFinalizePartialExtent) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    int batches_per_extent = 10;
+    auto gen = linear_int_kv_batch_generator();
+    auto ts = model::timestamp::now();
+    auto spec = model::test::record_batch_spec{
+      .allow_compression = false,
+      .count = 1,
+      .timestamp = ts,
+      .all_records_have_same_timestamp = true};
+
+    for (int i = 0; i < 2; ++i) {
+        auto batches = gen(spec, batches_per_extent);
+        std::vector<tidp_batches_t> tidp_batches;
+        tidp_batches.emplace_back(tidp, std::move(batches));
+        make_l1_objects(std::move(tidp_batches)).get();
+    }
+
+    auto info_spec = l1::metastore::compaction_info_spec{
+      .tidp = tidp,
+      .tombstone_removal_upper_bound_ts = model::timestamp::max()};
+    auto compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+
+    // No roll. Throw at batch 15 (offset 15, the 6th batch of the second
+    // extent). The inflight object contains data for [0,15] but
+    // _processed_extents only covers [0,9].
+    int batch_count = 0;
+    int throw_at = batches_per_extent + 5;
+    auto no_roll = []() -> bool { return false; };
+    auto should_throw = [&batch_count, throw_at]() -> bool {
+        ++batch_count;
+        return batch_count == throw_at + 1;
+    };
+
+    EXPECT_THROW(
+      do_compact_with_throwing_sink(
+        tidp,
+        ntp,
+        std::move(compaction_info->offsets_response),
+        compaction_info->compaction_epoch,
+        compaction_info->start_offset,
+        &_metastore,
+        &_io,
+        std::move(no_roll),
+        std::move(should_throw))
+        .get(),
+      std::runtime_error);
+
+    // Verify that each object's physical data matches its metadata. If the
+    // inflight object were flushed instead of discarded, the new object
+    // would contain batches beyond what the metadata records (e.g., metadata
+    // says [0,9] but the object physically has data up to offset 15).
+    auto extents_res = _metastore
+                         .get_extent_metadata_forwards(
+                           tidp,
+                           kafka::offset{0},
+                           kafka::offset::max(),
+                           /*max_num_extents=*/100,
+                           l1::metastore::include_object_metadata::yes)
+                         .get();
+    ASSERT_TRUE(extents_res.has_value());
+    for (const auto& extent : extents_res->extents) {
+        ASSERT_TRUE(extent.object_info.has_value());
+        auto obj = _io.get_object(extent.object_info->oid);
+        ASSERT_TRUE(obj.has_value());
+        auto rdr = l1::object_reader::create(
+          make_iobuf_input_stream(std::move(obj.value())));
+        auto close_rdr = ss::defer([&rdr] { rdr->close().get(); });
+
+        kafka::offset physical_last_offset{};
+        while (true) {
+            auto res = rdr->read_next().get();
+            if (std::holds_alternative<model::record_batch>(res)) {
+                auto& batch = std::get<model::record_batch>(res);
+                physical_last_offset = model::offset_cast(batch.last_offset());
+            }
+            if (std::holds_alternative<l1::object_reader::eof>(res)) {
+                break;
+            }
+        }
+
+        EXPECT_EQ(physical_last_offset, extent.last_offset)
+          << "Object " << extent.object_info->oid
+          << " physical last offset does not match metadata last offset: "
+          << physical_last_offset << " != " << extent.last_offset;
+    }
 }

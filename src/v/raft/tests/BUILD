@@ -499,6 +499,30 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "compaction_recovery_test",
+    timeout = "short",
+    srcs = [
+        "compaction_recovery_test.cc",
+    ],
+    deps = [
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/raft/tests:raft_fixture_retry_policy",
+        "//src/v/random:generators",
+        "//src/v/serde",
+        "//src/v/storage",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random_bytes",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "coordinated_compaction_test",
     timeout = "short",
     srcs = [

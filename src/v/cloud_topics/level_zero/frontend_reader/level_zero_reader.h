@@ -11,6 +11,7 @@
 
 #include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/log_reader_config.h"
 #include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
@@ -82,6 +83,10 @@ public:
 
     void print(std::ostream& o) final;
 
+    // Register this reader with the STM - this is needed so that L0 doesn't GC
+    // any active data during reads.
+    void register_with_stm(ctp_stm_api*);
+
 private:
     // A batch read from the local log, these can be either placeholder batches
     // with pointers to the actual data in cloud storage, or it can be control
@@ -133,7 +138,7 @@ private:
     // This method could change state of the reader to end_of_stream_state
     // when it reaches committed offset.
     chunked_circular_buffer<model::record_batch>
-    maybe_read_batches_from_cache();
+    maybe_read_batches_from_cache(kafka::offset committed_kafka);
 
     // If adding a batch of `size` would cause this to go over the bytes limit.
     bool is_over_limit_with_bytes(size_t size) const;
@@ -155,6 +160,8 @@ private:
     data_plane_api* _ct_api;
     prefix_logger _log;
     size_t _bytes_consumed{0};
+    // state that the STM tracks as to hold back prefix truncation and GC
+    active_reader_state _state;
 };
 
 } // namespace cloud_topics

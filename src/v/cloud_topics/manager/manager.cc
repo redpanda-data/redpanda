@@ -92,6 +92,10 @@ ss::future<> cloud_topics_manager::start() {
             && model::topic_namespace_view(ntp) != model::l1_metastore_nt) {
               return;
           }
+          if (config->is_read_replica()) {
+              // Read replicas are handled explicitly separately.
+              return;
+          }
           if (is_leader) {
               // Always ensure that if there is a leadership notification
               // emitted, that we also emit a no leader notification, even if

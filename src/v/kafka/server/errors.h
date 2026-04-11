@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/compiler_utils.h"
 #include "cluster/cluster_link/errc.h"
 #include "cluster/errc.h"
 #include "cluster/tx_errc.h"
@@ -121,6 +122,10 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::topic_id_already_exists:
     case cluster::errc::feature_sanctioned:
         break;
+        REDPANDA_BEGIN_IGNORE_DEPRECATIONS
+    case cluster::errc::inconsistent_stm_update:
+        break;
+        REDPANDA_END_IGNORE_DEPRECATIONS
     }
     return error_code::unknown_server_error;
 }

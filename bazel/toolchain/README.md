@@ -37,6 +37,20 @@ docker run --rm --platform linux/arm64 debian:bullseye uname -a
 docker buildx build --platform=linux/arm64 --build-arg LLVM_VERSION=$LLVM_VERSION --file Dockerfile.llvm --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
 ```
 
+### Building from a specific tag
+
+By default the Dockerfile builds from the `release/${LLVM_VERSION}.x` branch (latest on that release branch). To pin a specific LLVM tag instead, use the `LLVM_REF` build arg:
+
+```
+LLVM_VERSION=22
+LLVM_REF="llvmorg-22.1.0"
+OUTPUT_FILE="llvm-22.1.0-debian-11-x86_64-$(date --rfc-3339=date -u).tar.zst"
+echo "Building $OUTPUT_FILE"
+docker build --file Dockerfile.llvm --build-arg LLVM_VERSION=$LLVM_VERSION --build-arg LLVM_REF=$LLVM_REF --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
+```
+
+`LLVM_VERSION` is still required to install the bootstrap compiler from apt.llvm.org. `LLVM_REF` can be a tag (`llvmorg-22.1.0`) or branch (`main`).
+
 ### LTO Builds
 
 By default we build with PGO+LTO, but if PGO is causing issues (like on AArch64), we can choose a different build (resulting

@@ -16,6 +16,7 @@ import time
 from urllib.parse import urlparse
 
 import requests
+from confluent_kafka import KafkaError
 from connectrpc.errors import ConnectError, ConnectErrorCode
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix, parametrize
@@ -33,6 +34,7 @@ from rptest.services.keycloak import (
     DEFAULT_AT_LIFESPAN_S,
     DEFAULT_REALM,
     KeycloakService,
+    OAuthConfig,
 )
 from rptest.services.redpanda import (
     LoggingConfig,
@@ -49,7 +51,7 @@ from rptest.tests.sasl_reauth_test import (
     get_sasl_metrics,
 )
 from rptest.tests.tls_metrics_test import FaketimeTLSProvider
-from rptest.util import expect_exception
+from rptest.util import expect_exception, wait_until_result
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
 
@@ -245,6 +247,46 @@ class RedpandaOIDCTestBase(Test):
 class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
     def __init__(self, test_context, **kwargs):
         super(RedpandaOIDCTestMethods, self).__init__(test_context, **kwargs)
+
+    def _get_visible_topics(self, cfg: OAuthConfig) -> set[str]:
+        """Get a fresh token and list visible topics."""
+        k_client = PythonLibrdkafka(
+            self.redpanda,
+            algorithm="OAUTHBEARER",
+            oauth_config=cfg,
+            tls_cert=self.client_cert,
+        )
+        producer = k_client.get_producer()
+        producer.poll(0.0)
+        return set(producer.list_topics(timeout=5).topics.keys())
+
+    def _setup_gbac_group(self, group_name: str) -> OAuthConfig:
+        """Create a Keycloak group with the service user and return the
+        OAuth config for the CLIENT_ID application."""
+        client_id = CLIENT_ID
+        self.create_service_user()
+
+        self.keycloak.admin.create_group_mapper(client_id, use_full_path=False)
+        self.keycloak.admin.create_group(group_name)
+        self.keycloak.admin.add_service_user_to_group(client_id, group_name)
+
+        cfg = self.keycloak.generate_oauth_config(self.keycloak.nodes[0], client_id)
+        assert cfg.client_secret is not None
+        assert cfg.token_endpoint is not None
+        return cfg
+
+    def _tls_config(
+        self,
+    ) -> tuple[str, tuple[str, str] | None, str | bool]:
+        """Return (scheme, cert, ca_cert) for HTTP requests, handling
+        both TLS and non-TLS configurations."""
+        if self.client_cert is not None:
+            return (
+                "https",
+                (self.client_cert.crt, self.client_cert.key),
+                self.client_cert.ca.crt,
+            )
+        return ("http", None, True)
 
     @cluster(num_nodes=4)
     # https://redpandadata.atlassian.net/browse/ENG-307
@@ -1000,28 +1042,16 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         assert cfg.client_secret is not None
         assert cfg.token_endpoint is not None
 
-        def get_visible_topics() -> set[str]:
-            """Get a fresh token and list visible topics."""
-            k_client = PythonLibrdkafka(
-                self.redpanda,
-                algorithm="OAUTHBEARER",
-                oauth_config=cfg,
-                tls_cert=self.client_cert,
-            )
-            producer = k_client.get_producer()
-            producer.poll(0.0)
-            return set(producer.list_topics(timeout=5).topics.keys())
-
         # Phase 1: Add service user to group1
         self.logger.info("Phase 1: Adding service user to group1")
         self.keycloak.admin.add_service_user_to_group(client_id, group1)
 
         # Verify service user can see topic1 but not topic2
         wait_until(
-            lambda: get_visible_topics() == {topic1},
+            lambda: self._get_visible_topics(cfg) == {topic1},
             timeout_sec=10,
             backoff_sec=1,
-            err_msg=f"Expected to see only {topic1} when in group1, got: {get_visible_topics()}",
+            err_msg=f"Expected to see only {topic1} when in group1, got: {self._get_visible_topics(cfg)}",
         )
         self.logger.info("Verified: service user in group1 can see topic1 only")
 
@@ -1032,10 +1062,10 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
 
         # Verify service user can now see topic2 but not topic1
         wait_until(
-            lambda: get_visible_topics() == {topic2},
+            lambda: self._get_visible_topics(cfg) == {topic2},
             timeout_sec=10,
             backoff_sec=1,
-            err_msg=f"Expected to see only {topic2} when in group2, got: {get_visible_topics()}",
+            err_msg=f"Expected to see only {topic2} when in group2, got: {self._get_visible_topics(cfg)}",
         )
         self.logger.info("Verified: service user in group2 can see topic2 only")
 
@@ -1048,10 +1078,10 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
 
         # Verify service user cannot see any topics
         wait_until(
-            lambda: get_visible_topics() == set(),
+            lambda: self._get_visible_topics(cfg) == set(),
             timeout_sec=10,
             backoff_sec=1,
-            err_msg=f"Expected to see no topics when in group3, got: {get_visible_topics()}",
+            err_msg=f"Expected to see no topics when in group3, got: {self._get_visible_topics(cfg)}",
         )
         self.logger.info(
             "Verified: service user in group3 (no permissions) cannot see any topics"
@@ -1064,10 +1094,10 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
 
         # Verify service user can see both topics
         wait_until(
-            lambda: get_visible_topics() == {topic1, topic2},
+            lambda: self._get_visible_topics(cfg) == {topic1, topic2},
             timeout_sec=10,
             backoff_sec=1,
-            err_msg=f"Expected to see both topics when in all groups, got: {get_visible_topics()}",
+            err_msg=f"Expected to see both topics when in all groups, got: {self._get_visible_topics(cfg)}",
         )
         self.logger.info("Verified: service user in all groups can see both topics")
 
@@ -1157,24 +1187,12 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         assert cfg.client_secret is not None
         assert cfg.token_endpoint is not None
 
-        def get_visible_topics() -> set[str]:
-            """Get a fresh token and list visible topics."""
-            k_client = PythonLibrdkafka(
-                self.redpanda,
-                algorithm="OAUTHBEARER",
-                oauth_config=cfg,
-                tls_cert=self.client_cert,
-            )
-            producer = k_client.get_producer()
-            producer.poll(0.0)
-            return set(producer.list_topics(timeout=5).topics.keys())
-
         # Verify user can see the topic via the group -> role authorization path
         wait_until(
-            lambda: topic_name in get_visible_topics(),
+            lambda: topic_name in self._get_visible_topics(cfg),
             timeout_sec=10,
             backoff_sec=1,
-            err_msg=f"Expected to see {topic_name} via group->role authorization, got: {get_visible_topics()}",
+            err_msg=f"Expected to see {topic_name} via group->role authorization, got: {self._get_visible_topics(cfg)}",
         )
         self.logger.info(
             f"Verified: user in group '{group_name}' can access topic via role '{role_name}'"
@@ -1263,22 +1281,10 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         # Create a Kafka client that authenticates using OIDC
         cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
 
-        def get_visible_topics() -> set[str]:
-            """Get a fresh token and list visible topics."""
-            k_client = PythonLibrdkafka(
-                self.redpanda,
-                algorithm="OAUTHBEARER",
-                oauth_config=cfg,
-                tls_cert=self.client_cert,
-            )
-            producer = k_client.get_producer()
-            producer.poll(0.0)
-            return set(producer.list_topics(timeout=5).topics.keys())
-
         # Wait a bit to ensure ACLs propagate, then verify user cannot see the topic
         # (deny via role should take precedence over group allow)
         time.sleep(3)
-        visible = get_visible_topics()
+        visible = self._get_visible_topics(cfg)
         assert topic_name not in visible, (
             f"Expected topic '{topic_name}' to NOT be visible due to role deny, "
             f"but it was visible. Deny via group->role should take precedence."
@@ -1352,24 +1358,12 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
 
         cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
 
-        def get_visible_topics() -> set[str]:
-            """Get a fresh token and list visible topics."""
-            k_client = PythonLibrdkafka(
-                self.redpanda,
-                algorithm="OAUTHBEARER",
-                oauth_config=cfg,
-                tls_cert=self.client_cert,
-            )
-            producer = k_client.get_producer()
-            producer.poll(0.0)
-            return set(producer.list_topics(timeout=5).topics.keys())
-
         # Test with user in group1
         self.logger.info(f"Testing with user in {group1_name}")
         self.keycloak.admin.add_service_user_to_group(client_id, group1_name)
 
         wait_until(
-            lambda: topic_name in get_visible_topics(),
+            lambda: topic_name in self._get_visible_topics(cfg),
             timeout_sec=10,
             backoff_sec=1,
             err_msg=f"User in {group1_name} should see {topic_name} via role",
@@ -1382,7 +1376,7 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         self.keycloak.admin.add_service_user_to_group(client_id, group2_name)
 
         wait_until(
-            lambda: topic_name in get_visible_topics(),
+            lambda: topic_name in self._get_visible_topics(cfg),
             timeout_sec=10,
             backoff_sec=1,
             err_msg=f"User in {group2_name} should see {topic_name} via role",
@@ -1467,27 +1461,520 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
 
         cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
 
-        def get_visible_topics() -> set[str]:
-            """Get a fresh token and list visible topics."""
-            k_client = PythonLibrdkafka(
-                self.redpanda,
-                algorithm="OAUTHBEARER",
-                oauth_config=cfg,
-                tls_cert=self.client_cert,
-            )
-            producer = k_client.get_producer()
-            producer.poll(0.0)
-            return set(producer.list_topics(timeout=5).topics.keys())
-
         # Verify user can see both topics via the different role paths
         wait_until(
-            lambda: {topic1_name, topic2_name}.issubset(get_visible_topics()),
+            lambda: {topic1_name, topic2_name}.issubset(self._get_visible_topics(cfg)),
             timeout_sec=10,
             backoff_sec=1,
-            err_msg=f"Expected to see both topics via different roles, got: {get_visible_topics()}",
+            err_msg=f"Expected to see both topics via different roles, got: {self._get_visible_topics(cfg)}",
         )
         self.logger.info(
             f"Verified: user in group '{group_name}' can access both topics via different roles"
+        )
+
+    @cluster(num_nodes=4)
+    def test_group_kafka_api_coverage(self):
+        """
+        Test group-based access control across core Kafka API operations.
+
+        Covers:
+        - Metadata request (authorized group) -> visible
+        - Metadata request (unauthorized group) -> not visible
+        - Produce to allowed topic -> succeeds
+        - Produce to denied topic -> denied
+        - Consume from allowed topic -> succeeds
+        - Consume from denied topic -> denied
+
+        Setup:
+        - Two topics: allowed-topic (group has all permissions) and
+          denied-topic (group has explicit deny ACL)
+        - Service user is a member of kafka-api-group
+        - Consumer group resource kafka-api-consumer-group is allowed
+        """
+        allowed_topic = "allowed-topic"
+        denied_topic = "denied-topic"
+        group_name = "kafka-api-group"
+        consumer_group_id = "kafka-api-consumer-group"
+
+        cfg = self._setup_gbac_group(group_name)
+
+        self.rpk.create_topic(allowed_topic)
+        self.rpk.create_topic(denied_topic)
+
+        # Produce a record to denied-topic via superuser so there is data
+        # to attempt to consume later in Phase 3.
+        self.rpk.produce(denied_topic, "setup-key", "setup-value")
+
+        group_principal = f"Group:{group_name}"
+
+        # Allow all on allowed-topic
+        self.rpk.sasl_allow_principal(group_principal, ["all"], "topic", allowed_topic)
+
+        # Explicit deny all on denied-topic
+        self.rpk.sasl_deny_principal(group_principal, ["all"], "topic", denied_topic)
+
+        # Allow consumer group resource for consume phase
+        self.rpk.sasl_allow_principal(
+            group_principal, ["all"], "group", consumer_group_id
+        )
+
+        self.logger.info("Phase 1: Metadata visibility")
+
+        def check_topic_visibility():
+            visible = self._get_visible_topics(cfg)
+            return allowed_topic in visible and denied_topic not in visible, visible
+
+        visible = wait_until_result(
+            check_topic_visibility,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg=(
+                f"Expected {allowed_topic} to be visible and "
+                f"{denied_topic} to be invisible"
+            ),
+        )
+        self.logger.info(f"Phase 1 passed: visible topics = {visible}")
+
+        self.logger.info("Phase 2: Produce authorization")
+
+        k_client = PythonLibrdkafka(
+            self.redpanda,
+            algorithm="OAUTHBEARER",
+            oauth_config=cfg,
+            tls_cert=self.client_cert,
+        )
+        producer = k_client.get_producer()
+        producer.poll(0.0)
+
+        # Produce to allowed topic should succeed
+        def produce_to_allowed():
+            errors: list[str] = []
+
+            def on_delivery(err, msg):
+                if err is not None:
+                    errors.append(str(err))
+
+            producer.produce(
+                topic=allowed_topic,
+                key="test-key",
+                value="test-value",
+                on_delivery=on_delivery,
+            )
+            producer.flush(timeout=10)
+            return len(errors) == 0
+
+        wait_until(
+            produce_to_allowed,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg=f"Failed to produce to {allowed_topic}",
+        )
+        self.logger.info("Produce to allowed topic succeeded")
+
+        # Produce to denied topic should fail
+        denied_produce_errors: list = []
+
+        def on_delivery_denied(err, msg):
+            denied_produce_errors.append(err)
+
+        producer.produce(
+            topic=denied_topic,
+            key="test-key",
+            value="test-value",
+            on_delivery=on_delivery_denied,
+        )
+        producer.flush(timeout=10)
+        assert len(denied_produce_errors) == 1, (
+            f"Expected exactly one delivery callback, got {len(denied_produce_errors)}"
+        )
+        assert denied_produce_errors[0] is not None, (
+            "Expected delivery error for denied topic, got None"
+        )
+        assert (
+            denied_produce_errors[0].code() == KafkaError.TOPIC_AUTHORIZATION_FAILED
+        ), f"Expected TOPIC_AUTHORIZATION_FAILED, got {denied_produce_errors[0]}"
+        self.logger.info(
+            f"Produce to denied topic failed with {denied_produce_errors[0]}"
+        )
+
+        self.logger.info("Phase 3: Consume authorization")
+
+        # Consume from allowed topic should succeed
+        k_client_consumer = PythonLibrdkafka(
+            self.redpanda,
+            algorithm="OAUTHBEARER",
+            oauth_config=cfg,
+            tls_cert=self.client_cert,
+        )
+        consumer = k_client_consumer.get_consumer(
+            extra_config={
+                "group.id": consumer_group_id,
+                "auto.offset.reset": "earliest",
+            }
+        )
+        consumer.subscribe([allowed_topic])
+
+        def poll_allowed():
+            rec = consumer.poll(timeout=5)
+            return rec is not None and rec.error() is None
+
+        wait_until(
+            poll_allowed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Failed to consume record from allowed topic",
+        )
+        consumer.close()
+        self.logger.info("Consumed from allowed topic")
+
+        # Consume from denied topic should fail
+        denied_consumer = k_client_consumer.get_consumer(
+            extra_config={"group.id": consumer_group_id}
+        )
+        denied_consumer.subscribe([denied_topic])
+
+        rec = denied_consumer.poll(timeout=5)
+        denied_consumer.close()
+
+        assert rec is not None, "Expected error when consuming from denied topic"
+        err = rec.error()
+        assert err is not None, "Expected error when consuming from denied topic"
+        assert err.code() == KafkaError.TOPIC_AUTHORIZATION_FAILED, (
+            f"Expected TOPIC_AUTHORIZATION_FAILED, got {err}"
+        )
+        self.logger.info("Denied topic consumption correctly denied with auth error")
+
+    @cluster(num_nodes=4)
+    def test_group_pandaproxy_api_coverage(self):
+        """
+        Test group-based access control through the Pandaproxy HTTP API.
+
+        Covers:
+        - Produce to allowed topic -> succeeds (200, offsets returned)
+        - Consume from allowed topic -> succeeds (200, records returned)
+
+        TODO(andrew): Exercise the deny path (produce/consume on a denied
+        topic) once CORE-15764 is resolved.
+
+        Setup:
+        - Keycloak group "proxy-api-group" with service user as member
+        - Topic "allowed-topic-pp" with ACL granting all permissions to
+          Group:proxy-api-group
+        """
+        allowed_topic = "allowed-topic-pp"
+        group_name = "proxy-api-group"
+
+        cfg = self._setup_gbac_group(group_name)
+
+        self.rpk.create_topic(allowed_topic)
+
+        group_principal = f"Group:{group_name}"
+
+        # Allow all on allowed-topic-pp
+        self.rpk.sasl_allow_principal(
+            group_principal,
+            ["all"],
+            "topic",
+            allowed_topic,
+        )
+
+        token = self.get_client_credentials_token(cfg)
+
+        scheme, cert, ca_cert = self._tls_config()
+
+        hostname = self.redpanda.nodes[0].account.hostname
+        base_url = f"{scheme}://{hostname}:8082"
+
+        auth_header = {"Authorization": f"Bearer {token['access_token']}"}
+
+        produce_headers = {
+            "Accept": "application/vnd.kafka.v2+json",
+            "Content-Type": "application/vnd.kafka.json.v2+json",
+            **auth_header,
+        }
+
+        fetch_headers = {
+            "Accept": "application/vnd.kafka.json.v2+json",
+            **auth_header,
+        }
+
+        produce_data = json.dumps(
+            {"records": [{"value": "test-value", "partition": 0}]}
+        )
+
+        self.logger.info("Phase 1: Produce authorization")
+
+        # Produce to allowed topic should succeed
+        def produce_to_allowed():
+            res = requests.post(
+                f"{base_url}/topics/{allowed_topic}",
+                produce_data,
+                headers=produce_headers,
+                timeout=10,
+                cert=cert,
+                verify=ca_cert,
+            )
+            if res.status_code != 200:
+                return False
+            offsets = res.json().get("offsets", [])
+            return len(offsets) > 0 and offsets[0].get("offset", -1) >= 0
+
+        wait_until(
+            produce_to_allowed,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Failed to produce to allowed topic via Pandaproxy",
+        )
+        self.logger.info("Produce to allowed topic succeeded")
+
+        self.logger.info("Phase 2: Consume authorization")
+
+        # Fetch from allowed topic should succeed
+        def fetch_from_allowed():
+            res = requests.get(
+                f"{base_url}/topics/{allowed_topic}/partitions/0/records"
+                f"?offset=0&max_bytes=1024&timeout=1000",
+                headers=fetch_headers,
+                timeout=10,
+                cert=cert,
+                verify=ca_cert,
+            )
+            if res.status_code != 200:
+                return False
+            records = res.json()
+            return isinstance(records, list) and len(records) > 0
+
+        wait_until(
+            fetch_from_allowed,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Failed to fetch from allowed topic via Pandaproxy",
+        )
+        self.logger.info("Fetch from allowed topic succeeded")
+
+    @cluster(num_nodes=4)
+    def test_group_schema_registry_api_coverage(self):
+        """
+        Test group-based access control through the Schema Registry HTTP API.
+
+        Covers:
+        - Register schema on allowed subject -> succeeds (200, schema ID)
+        - Register schema on denied subject -> denied (403)
+        - Read schema on allowed subject -> succeeds (200, versions returned)
+        - Read schema on denied subject -> denied (403)
+
+        Setup:
+        - Two subjects: allowed-subject (group has WRITE+READ) and
+          denied-subject (group has explicit deny WRITE+READ)
+        - Service user is a member of sr-api-group
+        - ACLs are managed via SR /security/acls endpoint
+        """
+        allowed_subject = "allowed-subject"
+        denied_subject = "denied-subject"
+        group_name = "sr-api-group"
+
+        cfg = self._setup_gbac_group(group_name)
+        token = self.get_client_credentials_token(cfg)
+
+        scheme, cert, ca_cert = self._tls_config()
+
+        hostname = self.redpanda.nodes[0].account.hostname
+        base_url = f"{scheme}://{hostname}:8081"
+
+        super_auth = (self.su_username, self.su_password)
+
+        # Enable Schema Registry authorization so ACLs are enforced
+        self.redpanda.set_cluster_config(
+            {"schema_registry_enable_authorization": "True"}
+        )
+
+        # --- Create SR ACLs via /security/acls ---
+
+        group_principal = f"Group:{group_name}"
+
+        acls = [
+            # Allow write+read on allowed-subject
+            {
+                "principal": group_principal,
+                "resource": allowed_subject,
+                "resource_type": "SUBJECT",
+                "pattern_type": "LITERAL",
+                "host": "*",
+                "operation": "WRITE",
+                "permission": "ALLOW",
+            },
+            {
+                "principal": group_principal,
+                "resource": allowed_subject,
+                "resource_type": "SUBJECT",
+                "pattern_type": "LITERAL",
+                "host": "*",
+                "operation": "READ",
+                "permission": "ALLOW",
+            },
+            # Deny write+read on denied-subject
+            {
+                "principal": group_principal,
+                "resource": denied_subject,
+                "resource_type": "SUBJECT",
+                "pattern_type": "LITERAL",
+                "host": "*",
+                "operation": "WRITE",
+                "permission": "DENY",
+            },
+            {
+                "principal": group_principal,
+                "resource": denied_subject,
+                "resource_type": "SUBJECT",
+                "pattern_type": "LITERAL",
+                "host": "*",
+                "operation": "READ",
+                "permission": "DENY",
+            },
+        ]
+
+        res = requests.post(
+            f"{base_url}/security/acls",
+            json=acls,
+            headers={"Content-Type": "application/json"},
+            auth=super_auth,
+            timeout=10,
+            cert=cert,
+            verify=ca_cert,
+        )
+        assert res.status_code == 201, (
+            f"Failed to create SR ACLs: {res.status_code} {res.text}"
+        )
+        self.logger.info(f"Created SR ACLs: {res.text}")
+
+        # Wait for ACLs to propagate to all nodes
+        def acls_propagated():
+            for node in self.redpanda.nodes:
+                node_url = f"{scheme}://{node.account.hostname}:8081"
+                resp = requests.get(
+                    f"{node_url}/security/acls",
+                    auth=super_auth,
+                    timeout=10,
+                    cert=cert,
+                    verify=ca_cert,
+                )
+                if resp.status_code != 200:
+                    return False
+                node_acls = resp.json()
+                for acl in acls:
+                    if acl not in node_acls:
+                        return False
+            return True
+
+        wait_until(
+            acls_propagated,
+            timeout_sec=30,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="SR ACLs did not propagate to all nodes",
+        )
+        self.logger.info("SR ACLs propagated to all nodes")
+
+        auth_header = {"Authorization": f"Bearer {token['access_token']}"}
+
+        sr_headers = {
+            "Accept": "application/vnd.schemaregistry.v1+json",
+            "Content-Type": "application/vnd.schemaregistry.v1+json",
+            **auth_header,
+        }
+
+        sr_read_headers = {
+            "Accept": "application/vnd.schemaregistry.v1+json",
+            **auth_header,
+        }
+
+        schema_data = json.dumps(
+            {
+                "schema": '{"type":"record","name":"Test","fields":[{"name":"f","type":"string"}]}',
+                "schemaType": "AVRO",
+            }
+        )
+
+        self.logger.info("Phase 1: Register schema (authorized group)")
+
+        def register_allowed():
+            res = requests.post(
+                f"{base_url}/subjects/{allowed_subject}/versions",
+                data=schema_data,
+                headers=sr_headers,
+                timeout=10,
+                cert=cert,
+                verify=ca_cert,
+            )
+            if res.status_code != 200:
+                self.logger.debug(f"Register allowed: {res.status_code} {res.text}")
+                return False
+            body = res.json()
+            return "id" in body and body["id"] > 0
+
+        wait_until(
+            register_allowed,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Failed to register schema on allowed subject",
+        )
+        self.logger.info("Register schema on allowed subject succeeded")
+
+        self.logger.info("Phase 2: Register schema (unauthorized group)")
+
+        res = requests.post(
+            f"{base_url}/subjects/{denied_subject}/versions",
+            data=schema_data,
+            headers=sr_headers,
+            timeout=10,
+            cert=cert,
+            verify=ca_cert,
+        )
+        assert res.status_code == 403, (
+            f"Expected 403 for denied subject register, got {res.status_code}: {res.text}"
+        )
+        self.logger.info(
+            f"Register on denied subject denied: {res.status_code} {res.text}"
+        )
+
+        self.logger.info("Phase 3: Read schema (authorized group)")
+
+        def read_allowed():
+            res = requests.get(
+                f"{base_url}/subjects/{allowed_subject}/versions",
+                headers=sr_read_headers,
+                timeout=10,
+                cert=cert,
+                verify=ca_cert,
+            )
+            if res.status_code != 200:
+                self.logger.debug(f"Read allowed: {res.status_code} {res.text}")
+                return False
+            versions = res.json()
+            return isinstance(versions, list) and len(versions) > 0
+
+        wait_until(
+            read_allowed,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Failed to read schema from allowed subject",
+        )
+        self.logger.info("Read schema from allowed subject succeeded")
+
+        self.logger.info("Phase 4: Read schema (unauthorized group)")
+
+        res = requests.get(
+            f"{base_url}/subjects/{denied_subject}/versions",
+            headers=sr_read_headers,
+            timeout=10,
+            cert=cert,
+            verify=ca_cert,
+        )
+        assert res.status_code == 403, (
+            f"Expected 403 for denied subject read, got {res.status_code}: {res.text}"
+        )
+        self.logger.info(
+            f"Read from denied subject denied: {res.status_code} {res.text}"
         )
 
 

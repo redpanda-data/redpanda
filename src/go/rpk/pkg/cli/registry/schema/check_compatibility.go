@@ -27,7 +27,7 @@ type compatCheckResponse struct {
 	Messages   []string `json:"messages,omitempty" yaml:"messages,omitempty"`
 }
 
-func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command {
 	var (
 		refs       string
 		schemaFile string
@@ -61,7 +61,7 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 			references, err := parseReferenceFlag(fs, refs)
 			out.MaybeDie(err, "unable to parse reference flag %q: %v", refs, err)
 
-			subject := args[0]
+			subject := schemaregistry.QualifySubject(*schemaCtx, args[0])
 			schema := sr.Schema{
 				Schema:     string(file),
 				Type:       t,

@@ -19,8 +19,8 @@
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
 #include "cloud_topics/level_zero/pipeline/read_pipeline.h"
 #include "cloud_topics/level_zero/pipeline/write_pipeline.h"
-#include "cloud_topics/level_zero/read_debounce/read_debounce.h"
 #include "cloud_topics/level_zero/read_fanout/read_fanout.h"
+#include "cloud_topics/level_zero/read_merge/read_merge.h"
 #include "cloud_topics/level_zero/read_request_scheduler/read_request_scheduler.h"
 #include "cloud_topics/level_zero/reader/fetch_request_handler.h"
 #include "cloud_topics/level_zero/write_request_scheduler/write_request_scheduler.h"
@@ -88,7 +88,7 @@ public:
         }
         if (config::shard_local_cfg().cloud_topics_fetch_debounce_enabled()) {
             co_await construct_service(
-              _read_debounce, ss::sharded_parameter([this] {
+              _read_merge, ss::sharded_parameter([this] {
                   return _read_pipeline.local().register_read_pipeline_stage();
               }));
         }
@@ -117,8 +117,8 @@ public:
             co_await _read_request_scheduler.invoke_on_all(
               [](auto& s) { return s.start(); });
         }
-        if (_read_debounce.local_is_initialized()) {
-            co_await _read_debounce.invoke_on_all(
+        if (_read_merge.local_is_initialized()) {
+            co_await _read_merge.invoke_on_all(
               [](auto& s) { return s.start(); });
         }
         co_await _fetch_handler.invoke_on_all(
@@ -165,7 +165,8 @@ public:
       size_t output_size_estimate,
       chunked_vector<extent_meta> metadata,
       model::timeout_clock::time_point timeout,
-      model::opt_abort_source_t as) override {
+      model::opt_abort_source_t as,
+      allow_materialization_failure allow_mat_failure) override {
         if (metadata.empty()) {
             co_return chunked_vector<model::record_batch>{};
         }
@@ -183,6 +184,7 @@ public:
           {
             .output_size_estimate = output_size_estimate,
             .meta = std::move(metadata),
+            .allow_mat_failure = allow_mat_failure,
           },
           timeout,
           as);
@@ -201,6 +203,12 @@ public:
     std::optional<model::record_batch>
     cache_get(const model::topic_id_partition& tidp, model::offset o) final {
         return _batch_cache.local().get(tidp, o);
+    }
+
+    void cache_put_ordered(
+      const model::topic_id_partition& tidp,
+      chunked_vector<model::record_batch> batches) final {
+        _batch_cache.local().put_ordered(tidp, std::move(batches));
     }
 
     ss::future<> cache_wait(
@@ -239,7 +247,7 @@ private:
     ss::sharded<l0::read_pipeline<>> _read_pipeline;
     ss::sharded<l0::read_fanout> _read_fanout;
     ss::sharded<l0::read_request_scheduler> _read_request_scheduler;
-    ss::sharded<l0::read_debounce<>> _read_debounce;
+    ss::sharded<l0::read_merge<>> _read_merge;
 
     ss::sharded<l0::fetch_handler> _fetch_handler;
     // Batch cache
