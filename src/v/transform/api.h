@@ -118,6 +118,16 @@ public:
     ss::future<std::error_code> patch_transform_metadata(
       model::transform_name, model::transform_metadata_patch data);
 
+    /// Acquire a WASM engine for a produce-path transform.
+    /// Called on the partition's shard during produce.
+    ss::future<ss::shared_ptr<wasm::engine>>
+      get_produce_path_engine(model::transform_id);
+
+    /// Look up a produce-path transform for the given topic.
+    /// Forwards to the manager's secondary index.
+    std::optional<model::transform_id>
+      get_produce_path_transform(model::topic_namespace_view) const;
+
     /**
      * Create a reporter of the transform subsystem.
      */

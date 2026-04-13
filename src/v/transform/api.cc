@@ -750,6 +750,24 @@ service::create_engine(model::transform_metadata meta) {
     co_return co_await (*factory)->make_engine(std::move(logger));
 }
 
+ss::future<ss::shared_ptr<wasm::engine>>
+service::get_produce_path_engine(model::transform_id id) {
+    auto meta = _plugin_frontend->local().lookup_transform(id);
+    if (!meta) {
+        co_return nullptr;
+    }
+    auto engine = co_await create_engine(std::move(*meta));
+    if (!engine) {
+        co_return nullptr;
+    }
+    co_return std::move(*engine);
+}
+
+std::optional<model::transform_id>
+service::get_produce_path_transform(model::topic_namespace_view topic) const {
+    return _manager->get_produce_path_transform(topic);
+}
+
 ss::future<
   ss::optimized_optional<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>>
 service::get_factory(model::transform_metadata meta) {
