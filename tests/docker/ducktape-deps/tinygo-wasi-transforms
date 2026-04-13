@@ -37,6 +37,18 @@ retry 5 tinygo build -target wasi -opt=z \
   -panic print -scheduler none \
   -o "/opt/transforms/tinygo/tee.wasm" ./tee
 
+retry 5 tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/fanout.wasm" ./fanout
+
+retry 5 tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/metadata_stamper.wasm" ./metadata_stamper
+
+retry 5 tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/schema_validator.wasm" ./schema_validator
+
 # The following are some invalid wasm binarys for Redpanda, they either are invalid
 # as they are invalid bytes, or don't adhere to our ABI contract somehow
 #

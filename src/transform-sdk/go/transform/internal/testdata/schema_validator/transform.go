@@ -1,0 +1,74 @@
+// Copyright 2026 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"bytes"
+	"fmt"
+
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/internal/testdata/schema-registry/avro"
+	"github.com/redpanda-data/redpanda/src/transform-sdk/go/transform/sr"
+)
+
+var (
+	client sr.SchemaRegistryClient
+	serde  sr.Serde[*avro.Example]
+)
+
+func main() {
+	client = sr.NewClient()
+	transform.OnRecordWritten(validateSchema)
+}
+
+// validateSchema extracts the schema ID from the Confluent wire
+// format, looks up the schema from the registry, and tries to
+// deserialize the record value as an Avro Example. If deserialization
+// fails, the produce is rejected -- the record is never written.
+func validateSchema(e transform.WriteEvent, w transform.RecordWriter) error {
+	value := e.Record().Value
+
+	// Try to decode with known schemas first.
+	ex := avro.Example{}
+	err := serde.Decode(value, &ex)
+	if err == sr.ErrNotRegistered {
+		// Unknown schema ID -- look it up and register the decoder.
+		id, extractErr := sr.ExtractID(value)
+		if extractErr != nil {
+			return fmt.Errorf("invalid record: %v", extractErr)
+		}
+		schema, lookupErr := client.LookupSchemaById(id)
+		if lookupErr != nil {
+			return fmt.Errorf("unknown schema id %d: %v", id, lookupErr)
+		}
+		serde.Register(
+			id,
+			sr.DecodeFn[*avro.Example](func(b []byte, e *avro.Example) error {
+				decoded, err := avro.DeserializeExampleFromSchema(
+					bytes.NewReader(b), schema.Schema)
+				*e = decoded
+				return err
+			}),
+		)
+		// Retry with the newly registered decoder.
+		err = serde.Decode(value, &ex)
+	}
+	if err != nil {
+		return fmt.Errorf("schema validation failed: %v", err)
+	}
+
+	// Valid record -- pass through unchanged.
+	return w.Write(e.Record())
+}
