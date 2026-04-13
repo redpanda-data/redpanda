@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_set.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
@@ -130,6 +131,12 @@ public:
     // for.
     model::cluster_transform_report compute_report() const;
 
+    /// Look up a produce-path transform for the given topic.
+    /// Returns nullopt if no produce-path transform is deployed.
+    /// This is called on the produce hot path and must not suspend.
+    std::optional<model::transform_id>
+      get_produce_path_transform(model::topic_namespace_view) const;
+
     // Exposed for testing, but drains all the pending operations.
     //
     // Any future here should resolve before calling `stop`.
@@ -160,5 +167,10 @@ private:
     std::unique_ptr<registry> _registry;
     std::unique_ptr<processor_table<ClockType>> _processors;
     std::unique_ptr<processor_factory> _processor_factory;
+
+    // Fast lookup: topic -> transform_id for produce-path transforms.
+    // Updated when transforms are deployed/deleted via handle_plugin_change.
+    chunked_hash_map<model::topic_namespace, model::transform_id>
+      _produce_path_transforms;
 };
 } // namespace transform

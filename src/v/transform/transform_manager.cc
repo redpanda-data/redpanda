@@ -327,6 +327,10 @@ ss::future<> manager<ClockType>::handle_leadership_change(
     auto transforms = _registry->lookup_by_input_topic(
       model::topic_namespace_view(ntp));
     for (model::transform_id id : transforms) {
+        auto meta = _registry->lookup_by_id(id);
+        if (meta && meta->mode == model::transform_mode::produce_path) {
+            continue;
+        }
         co_await start_processor(ntp, id);
     }
 }
@@ -338,6 +342,11 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     // applied.
     co_await _processors->erase_by_id(id);
 
+    // Clean up any existing produce-path entry for this transform
+    std::erase_if(_produce_path_transforms, [id](const auto& entry) {
+        return entry.second == id;
+    });
+
     auto transform = _registry->lookup_by_id(id);
     // If there is no transform OR the transform is paused, we're good to go,
     // everything is shutdown if needed.
@@ -346,6 +355,13 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     // cluster-wide transform report.
     // see `transform::service::compute_default_report` for detail.
     if (!transform || transform->paused) {
+        co_return;
+    }
+
+    // Produce-path transforms are executed inline during produce, so they
+    // don't need sidecar processors. Just register the mapping.
+    if (transform->mode == model::transform_mode::produce_path) {
+        _produce_path_transforms[transform->input_topic] = id;
         co_return;
     }
 
@@ -469,6 +485,17 @@ ss::future<> manager<ClockType>::drain_queue_for_test() {
         return ss::now();
     });
     co_await std::move(f);
+}
+
+template<typename ClockType>
+std::optional<model::transform_id>
+manager<ClockType>::get_produce_path_transform(
+  model::topic_namespace_view topic) const {
+    auto it = _produce_path_transforms.find(model::topic_namespace(topic));
+    if (it == _produce_path_transforms.end()) {
+        return std::nullopt;
+    }
+    return it->second;
 }
 
 template<typename ClockType>

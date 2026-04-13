@@ -108,6 +108,7 @@ redpanda_cc_library(
         ":memory_limiter",
         ":transfer_queue",
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
         "//src/v/model",
         "//src/v/ssx:work_queue",
         "//src/v/transform/logging",
