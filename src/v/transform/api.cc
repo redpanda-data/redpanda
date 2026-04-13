@@ -656,6 +656,40 @@ ss::future<std::error_code> service::deploy_transform(
           meta.name);
         co_return wasm::make_error_code(ex.error_code());
     }
+
+    if (meta.mode == model::transform_mode::produce_path) {
+        // During development the mode defaults to produce_path, so
+        // output_topics may be set by the CLI. Clear them silently --
+        // produce-path transforms don't use output topics.
+        meta.output_topics.clear();
+        if (!model::is_user_topic(meta.input_topic)) {
+            vlog(
+              tlog.warn,
+              "produce-path transform {} cannot target non-user topic {}",
+              meta.name,
+              meta.input_topic);
+            co_return cluster::make_error_code(
+              cluster::errc::transform_invalid_create);
+        }
+        for (const auto& [id, existing] :
+             _plugin_frontend->local().all_transforms()) {
+            if (
+              existing.mode == model::transform_mode::produce_path
+              && existing.input_topic == meta.input_topic
+              && existing.name != meta.name) {
+                vlog(
+                  tlog.warn,
+                  "produce-path transform {} conflicts with existing "
+                  "produce-path transform {} on topic {}",
+                  meta.name,
+                  existing.name,
+                  meta.input_topic);
+                co_return cluster::make_error_code(
+                  cluster::errc::transform_invalid_create);
+            }
+        }
+    }
+
     vlog(
       tlog.info,
       "deploying wasm binary (size={}) for transform {}",
