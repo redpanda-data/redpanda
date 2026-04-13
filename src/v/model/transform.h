@@ -21,6 +21,7 @@
 #include "model/record.h"
 #include "serde/envelope.h"
 #include "serde/rw/bool_class.h"
+#include "serde/rw/enum.h"
 #include "serde/rw/iobuf.h"
 #include "serde/rw/map.h"
 #include "serde/rw/named_type.h"
@@ -194,13 +195,20 @@ struct transform_offset_options
     void serde_write(iobuf& out) const;
 };
 
+enum class transform_mode : int8_t {
+    sidecar = 0,
+    produce_path = 1,
+};
+
+std::string_view to_string_view(const transform_mode&);
+
 /**
  * Metadata for a WebAssembly powered data transforms.
  */
 struct transform_metadata
   : serde::envelope<
       transform_metadata,
-      serde::version<2>,
+      serde::version<3>,
       serde::compat_version<0>> {
     // The user specified name of the transform.
     transform_name name;
@@ -224,6 +232,8 @@ struct transform_metadata
     model::is_transform_paused paused{false};
 
     model::compression compression_mode{model::compression::none};
+
+    model::transform_mode mode{model::transform_mode::produce_path};
 
     friend bool
     operator==(const transform_metadata&, const transform_metadata&) = default;
