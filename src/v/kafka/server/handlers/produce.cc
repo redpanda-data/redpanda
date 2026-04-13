@@ -26,10 +26,13 @@
 #include "pandaproxy/schema_registry/validation.h"
 #include "raft/errc.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
+#include "transform/api.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/log.hh>
 
 #include <chrono>
@@ -298,6 +301,8 @@ ss::future<produce_response::partition> do_produce_topic_partition(
         timeout = max_timeout;
     }
 
+    auto& transform_svc = octx.rctx.server().local().transform_service();
+
     auto p = co_await octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
@@ -306,15 +311,35 @@ ss::future<produce_response::partition> do_produce_topic_partition(
        dispatch = std::move(dispatched),
        acks = octx.request.data.acks,
        timeout,
-       source_shard = ss::this_shard_id()](
-        cluster::partition_manager& mgr) mutable {
+       source_shard = ss::this_shard_id(),
+       &transform_svc](this auto, cluster::partition_manager& mgr)
+        -> ss::future<produce_response::partition> {
           auto partition = kafka::make_partition_proxy(ntp, mgr);
           if (!partition || !partition->is_leader()) {
-              return ss::as_ready_future(finalize_request_with_error_code(
+              co_return finalize_request_with_error_code(
                 error_code::not_leader_for_partition,
                 std::move(dispatch),
                 ntp,
-                source_shard));
+                source_shard);
+          }
+
+          // Run produce-path transform if one exists for this topic.
+          // Guard: transform_service may not be initialized in test
+          // fixtures that don't wire up the full transform subsystem.
+          if (transform_svc.local_is_initialized()) {
+              try {
+                  batch = co_await transform_svc.local().executor().execute(
+                    model::topic_namespace_view(ntp), std::move(batch));
+              } catch (...) {
+                  co_return finalize_request_with_error_code(
+                    error_code::unknown_server_error,
+                    std::move(dispatch),
+                    ntp,
+                    source_shard,
+                    ssx::sformat(
+                      "produce-path transform failed: {}",
+                      std::current_exception()));
+              }
           }
 
           auto bid = model::batch_identity::from(batch->header());
@@ -329,28 +354,29 @@ ss::future<produce_response::partition> do_produce_topic_partition(
             num_records,
             batch_size,
             timeout);
-          return stages.dispatched
-            .then_wrapped([source_shard, dispatch = std::move(dispatch)](
-                            ss::future<> f) mutable {
-                if (f.failed()) {
-                    ssx::background = ss::smp::submit_to(
-                      source_shard,
-                      [dispatch = std::move(dispatch),
-                       e = f.get_exception()]() mutable {
-                          dispatch->set_exception(e);
-                          dispatch.reset();
-                      });
-                    return;
-                }
-                ssx::background = ss::smp::submit_to(
-                  source_shard, [dispatch = std::move(dispatch)]() mutable {
-                      dispatch->set_value();
-                      dispatch.reset();
-                  });
-            })
-            .then([f = std::move(stages.produced)]() mutable {
-                return std::move(f);
-            });
+
+          auto dispatched_fut = std::move(stages.dispatched);
+          auto produced_fut = std::move(stages.produced);
+
+          auto dispatch_result = co_await ss::coroutine::as_future(
+            std::move(dispatched_fut));
+          if (dispatch_result.failed()) {
+              ssx::background = ss::smp::submit_to(
+                source_shard,
+                [dispatch = std::move(dispatch),
+                 e = dispatch_result.get_exception()]() mutable {
+                    dispatch->set_exception(e);
+                    dispatch.reset();
+                });
+          } else {
+              ssx::background = ss::smp::submit_to(
+                source_shard, [dispatch = std::move(dispatch)]() mutable {
+                    dispatch->set_value();
+                    dispatch.reset();
+                });
+          }
+
+          co_return co_await std::move(produced_fut);
       });
     if (p.error_code == error_code::none) {
         auto dur = std::chrono::steady_clock::now() - start;
