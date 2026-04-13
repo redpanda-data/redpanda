@@ -118,9 +118,7 @@ initialize_result<initialize_return> initialize_openssl(
         vlog(lg.debug, "Set default properties to \"fips=yes\"");
     }
 
-    if (!OPENSSL_init_ssl(
-          OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_NO_LOAD_CONFIG,
-          nullptr)) {
+    if (!OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS, nullptr)) {
         return make_ssl_error_response("Failed to initialize OpenSSL");
     }
 
@@ -189,6 +187,46 @@ public:
 
     ss::future<> start() {
         vlog(lg.debug, "Starting OpenSSL Context service...");
+
+        // Prevent the default OpenSSL config from being loaded (OPENSSL_CONF
+        // env var or /etc/ssl/openssl.cnf file) as we want to control the
+        // initialization of OpenSSL and avoid any incompatibilities between the
+        // OS-provided openssl.cnf and our statically linked OpenSSL version.
+        //
+        // OpenSSL uses internal RUN_ONCE guards for initialization flags.
+        // When OPENSSL_init_ssl/OPENSSL_init_crypto is called, each flag
+        // (like LOAD_CONFIG vs NO_LOAD_CONFIG) races to be the first to set
+        // its corresponding one-shot initializer. The "NO_*" flags are
+        // sticky: once NO_LOAD_CONFIG wins, subsequent calls with LOAD_CONFIG
+        // are silently ignored. By calling this early with NO_LOAD_CONFIG, we
+        // ensure no other code path can accidentally trigger config loading
+        // first.
+        //
+        // Note that most OpenSSL APIs (e.g. SSL_CTX_new) will trigger implicit
+        // initialization if it hasn't already occurred, so it's important to
+        // call this before any other OpenSSL usage.
+        if (!OPENSSL_init_crypto(OPENSSL_INIT_NO_LOAD_CONFIG, nullptr)) {
+            throw exception(make_ssl_error_response(
+              "Failed to initialize OpenSSL with NO_LOAD_CONFIG"));
+        }
+
+        // Per the OPENSSL_load_builtin_modules(3) docs: "Applications which
+        // use the configuration functions directly will need to call
+        // OPENSSL_load_builtin_modules() themselves before any other
+        // configuration code." Since NO_LOAD_CONFIG above opts out of
+        // automatic config loading (which would have called this
+        // internally), and we later call OSSL_LIB_CTX_load_config directly,
+        // we must call it ourselves.
+        //
+        // This also must happen while the thread-local default is still the
+        // global default context: the CONF module list is protected by a
+        // global RCU lock (conf_mod.c) initialized once via pthread_once
+        // with ossl_rcu_lock_new(1, NULL), which resolves NULL to the
+        // current thread-local default OSSL_LIB_CTX and permanently stores
+        // the pointer. If a custom context were the default at that point,
+        // the lock would hold a dangling pointer after that context is freed.
+        OPENSSL_load_builtin_modules();
+
         vassert(
           OSSL_LIB_CTX_get0_global_default()
             == OSSL_LIB_CTX_set0_default(nullptr),
