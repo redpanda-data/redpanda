@@ -11,11 +11,13 @@
 
 #include "transform/produce_path_executor.h"
 
+#include "cluster/errc.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/transform.h"
 #include "transform/api.h"
 #include "transform/logger.h"
+#include "transform/rpc/client.h"
 #include "wasm/engine.h"
 #include "wasm/transform_probe.h"
 
@@ -77,6 +79,39 @@ ss::future<std::unique_ptr<model::record_batch>> produce_path_executor::execute(
         throw std::runtime_error(
           "produce-path transform dropped all records from input topic "
           "for an idempotent producer (would break sequence tracking)");
+    }
+
+    // Write fan-out batches to output topics before returning the input
+    // batch. Failure here throws, so the caller never writes the input
+    // batch -- giving us all-or-nothing semantics.
+    for (auto& [topic_ns, recs] : output_records) {
+        if (recs.empty()) {
+            continue;
+        }
+        auto fanout_batch = model::transformed_data::make_batch(
+          model::timestamp::now(), std::move(recs));
+
+        ss::chunked_fifo<model::record_batch> batches;
+        batches.push_back(std::move(fanout_batch));
+
+        // TODO: route fan-out writes across output partitions instead
+        // of always targeting partition 0. The sidecar path does linear
+        // probing from the input partition to find a non-disabled
+        // candidate (see compute_output_partition in api.cc). Until we
+        // replicate that logic, fan-out writes will fail if partition 0
+        // of the output topic is disabled, and all fan-out traffic from
+        // every input partition funnels into a single output partition.
+        auto ec = co_await _svc.rpc_client().produce(
+          model::topic_partition(topic_ns.tp, model::partition_id(0)),
+          std::move(batches));
+
+        if (ec != cluster::errc::success) {
+            throw std::runtime_error(
+              ss::format(
+                "produce-path fan-out write to {} failed: {}",
+                topic_ns,
+                cluster::error_category().message(int(ec))));
+        }
     }
 
     if (!input_records.empty()) {

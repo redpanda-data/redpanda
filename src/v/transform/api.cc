@@ -990,4 +990,6 @@ ss::future<std::error_code> service::patch_transform_metadata(
     co_return cluster::make_error_code(ec);
 }
 
+rpc::client& service::rpc_client() { return _rpc_client->local(); }
+
 } // namespace transform

@@ -138,6 +138,9 @@ public:
     /// Get the produce-path executor for this shard.
     produce_path_executor& executor() { return _executor; }
 
+    /// Get the transform RPC client for this shard.
+    rpc::client& rpc_client();
+
     /**
      * Create a reporter of the transform subsystem.
      */
