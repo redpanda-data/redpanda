@@ -84,7 +84,7 @@ total_diff_lines = 0
 
 for path in eligible:
     diff = subprocess.check_output(
-        ["git", "show", "-U0"] + BACKPORT_COMMITS.split() + ["--", path]
+        ["git", "log", "-p", "-U0", "--reverse"] + BACKPORT_COMMITS.split() + ["--", path]
     ).decode(errors="replace")
 
     diff_lines = diff.splitlines()
