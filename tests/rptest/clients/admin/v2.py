@@ -12,6 +12,10 @@ from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
     cluster_pb2,
     cluster_pb2_connect,
     kafka_connections_pb2,
+    plugin_pb2,
+    plugin_pb2_connect,
+    plugin_debug_pb2,
+    plugin_debug_pb2_connect,
     security_pb2,
     security_pb2_connect,
     shadow_link_pb2,
@@ -60,6 +64,8 @@ breakglass_pb = breakglass_pb2
 metastore_pb = metastore_pb2
 l0_pb = level_zero_pb2
 ntp_pb = ntp_pb2
+plugin_pb = plugin_pb2
+plugin_debug_pb = plugin_debug_pb2
 
 
 # A hacky workaround for https://github.com/connectrpc/connect-python/issues/37
@@ -164,6 +170,16 @@ class Admin:
     def l0(self, **kwargs: Any) -> level_zero_pb2_connect.LevelZeroServiceClient:
         return self._make_service(
             level_zero_pb2_connect.LevelZeroServiceClient, **kwargs
+        )
+
+    def plugin(self, **kwargs: Any) -> plugin_pb2_connect.PluginServiceClient:
+        return self._make_service(plugin_pb2_connect.PluginServiceClient, **kwargs)
+
+    def plugin_debug(
+        self, **kwargs: Any
+    ) -> plugin_debug_pb2_connect.PluginDebugServiceClient:
+        return self._make_service(
+            plugin_debug_pb2_connect.PluginDebugServiceClient, **kwargs
         )
 
     def internal_shadow_link(

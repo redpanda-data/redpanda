@@ -707,6 +707,69 @@ ss::future<std::error_code> service::deploy_transform(
     co_return cluster::make_error_code(ec);
 }
 
+ss::future<result<service::stored_binary, std::error_code>>
+service::store_wasm_binary(model::wasm_binary_iobuf binary) {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    }
+
+    auto _ = _gate.hold();
+    try {
+        co_await _runtime->validate(model::share_wasm_binary(binary));
+    } catch (const wasm::wasm_exception& ex) {
+        vlog(
+          tlog.warn, "invalid wasm binary when storing plugin binary: {}", ex);
+        co_return wasm::make_error_code(ex.error_code());
+    }
+    vlog(tlog.info, "storing plugin binary (size={})", binary()->size_bytes());
+    auto result = co_await _rpc_client->local().store_wasm_binary(
+      std::move(binary), wasm_binary_timeout);
+    if (result.has_error()) {
+        vlog(tlog.warn, "storing plugin binary failed");
+        co_return cluster::make_error_code(result.error());
+    }
+    auto [key, offset] = result.value();
+    vlog(tlog.debug, "stored plugin binary at offset {}", offset);
+    co_return stored_binary{.uuid = key, .source_ptr = offset};
+}
+
+ss::future<std::error_code>
+service::deploy_plugin(model::transform_metadata meta) {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    } else if (
+      !_feature_table->local().is_active(
+        features::feature::transforms_specify_offset)
+      && !meta.offset_options.is_legacy_compat()) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    }
+
+    auto _ = _gate.hold();
+
+    if (
+      std::holds_alternative<model::transform_offset_options::latest_offset>(
+        meta.offset_options.position)) {
+        meta.offset_options = model::transform_offset_options{
+          .position = model::new_timestamp(),
+        };
+    }
+
+    vlog(tlog.info, "deploying plugin {}", meta.name);
+    cluster::errc ec = co_await _plugin_frontend->local().upsert_transform(
+      meta, model::timeout_clock::now() + metadata_timeout);
+    vlog(
+      tlog.debug,
+      "deploying plugin {} result: {}",
+      meta.name,
+      cluster::error_category().message(int(ec)));
+    if (ec != cluster::errc::success) {
+        co_await cleanup_wasm_binary(meta.uuid);
+    }
+    co_return cluster::make_error_code(ec);
+}
+
 ss::future<model::cluster_transform_report> service::list_transforms() {
     if (!_feature_table->local().is_active(
           features::feature::wasm_transforms)) {
@@ -720,6 +783,23 @@ ss::future<model::cluster_transform_report> service::list_transforms() {
     auto report = compute_default_report();
     report.merge(co_await _rpc_client->local().generate_report());
     co_return report;
+}
+
+ss::future<std::error_code> service::delete_wasm_binary(uuid_t key) {
+    if (!_feature_table->local().is_active(
+          features::feature::wasm_transforms)) {
+        co_return cluster::make_error_code(cluster::errc::feature_disabled);
+    }
+    auto _ = _gate.hold();
+    vlog(tlog.info, "deleting plugin binary {}", key);
+    auto ec = co_await _rpc_client->local().delete_wasm_binary(
+      key, wasm_binary_timeout);
+    vlog(
+      tlog.debug,
+      "deleting plugin binary {} result: {}",
+      key,
+      cluster::error_category().message(int(ec)));
+    co_return cluster::make_error_code(ec);
 }
 
 ss::future<> service::cleanup_wasm_binary(uuid_t key) {

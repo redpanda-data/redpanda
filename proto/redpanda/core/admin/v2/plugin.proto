@@ -1,0 +1,317 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.admin.v2;
+
+import "proto/redpanda/core/common/v1/compression.proto";
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
+
+option (pbgen.cpp_namespace) = "proto::admin";
+
+// PluginService manages plugin resources — user-defined extensions that run
+// alongside the broker. It exposes two resource collections:
+//
+//   - transforms: data-transform plugins and their runtime configuration
+//   - binaries:   the binary artifacts (e.g. WebAssembly modules) that back
+//                 transform deployments
+//
+// Typical deploy workflow:
+//   1. CreateBinary   → validates and stores the artifact, returns a binary_id
+//   2. CreateTransform → creates the transform referencing that binary_id
+service PluginService {
+    // --- transforms resource ---
+
+    // CreateTransform
+    //
+    // Creates or replaces a transform. The binary referenced by binary_id
+    // must have been previously stored via UploadBinary.
+    rpc CreateTransform(CreateTransformRequest)
+        returns (CreateTransformResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // GetTransform
+    //
+    // Returns the current state of a single transform.
+    rpc GetTransform(GetTransformRequest) returns (GetTransformResponse) {
+        option (pbgen.rpc) = {
+            authz: USER
+        };
+    }
+
+    // ListTransforms
+    //
+    // Returns the current state of all transforms. Status fields reflect a
+    // cluster-wide, aggregated view of live execution state.
+    rpc ListTransforms(ListTransformsRequest) returns (ListTransformsResponse) {
+        option (pbgen.rpc) = {
+            authz: USER
+        };
+    }
+
+    // UpdateTransform
+    //
+    // Applies a partial metadata update to a transform. Only fields explicitly
+    // marked as present are modified; omitted fields are left unchanged. Use
+    // CreateTransform to change the binary.
+    rpc UpdateTransform(UpdateTransformRequest)
+        returns (UpdateTransformResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // DeleteTransform
+    //
+    // Removes a transform. In-flight records being processed at the time of
+    // deletion may or may not be committed.
+    rpc DeleteTransform(DeleteTransformRequest)
+        returns (DeleteTransformResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // --- binaries resource ---
+
+    // CreateBinary
+    //
+    // Validates and stores a plugin binary (e.g. a WebAssembly module). Returns
+    // a binary_id suitable for use in CreateTransform.
+    rpc CreateBinary(CreateBinaryRequest) returns (CreateBinaryResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // ListBinaries
+    //
+    // Returns all binaries currently referenced by at least one transform,
+    // along with the names of the transforms that reference each binary.
+    rpc ListBinaries(ListBinariesRequest) returns (ListBinariesResponse) {
+        option (pbgen.rpc) = {
+            authz: USER
+        };
+    }
+
+    // DeleteBinary
+    //
+    // Removes a stored binary. Returns FAILED_PRECONDITION if any active
+    // transform still references the binary.
+    rpc DeleteBinary(DeleteBinaryRequest) returns (DeleteBinaryResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+}
+
+// ---- transforms resource messages ----
+
+// Transform represents a deployed transform and its runtime status.
+message Transform {
+    // Human-readable name that uniquely identifies the transform.
+    string name = 1;
+
+    // The input topic the transform consumes from.
+    string input_topic = 2;
+
+    // The output topics the transform writes to, in order.
+    repeated string output_topics = 3;
+
+    // Environment variables passed to the transform at runtime.
+    repeated TransformEnvironmentVariable environment = 4;
+
+    // Output batch compression applied by the transform.
+    redpanda.core.common.v1.CompressionMode compression = 5;
+
+    // Whether the transform is paused (stopped but not removed).
+    bool is_paused = 6;
+
+    // Per-partition execution status aggregated across the cluster.
+    repeated TransformPartitionStatus status = 7;
+}
+
+// TransformEnvironmentVariable is a single key/value environment entry.
+message TransformEnvironmentVariable {
+    string key = 1;
+    string value = 2;
+}
+
+// TransformPartitionStatus describes the execution state of a transform on one
+// partition.
+message TransformPartitionStatus {
+    // The broker that owns this partition.
+    int32 node_id = 1;
+
+    // The partition index in the input topic.
+    int32 partition = 2;
+
+    // The current execution state.
+    TransformPartitionState status = 3;
+
+    // Number of records yet to be processed on this partition.
+    int64 lag = 4;
+}
+
+// TransformPartitionState enumerates the possible execution states for a
+// transform partition.
+enum TransformPartitionState {
+    TRANSFORM_PARTITION_STATE_UNSPECIFIED = 0;
+    TRANSFORM_PARTITION_STATE_RUNNING = 1;
+    TRANSFORM_PARTITION_STATE_INACTIVE = 2;
+    TRANSFORM_PARTITION_STATE_ERRORED = 3;
+    TRANSFORM_PARTITION_STATE_UNKNOWN = 4;
+}
+
+// TransformConsumeOffset specifies where a transform begins consuming its
+// input topic. If absent, the transform starts at the time of the
+// CreateTransform call.
+message TransformConsumeOffset {
+    oneof position {
+        // Start this many records from the beginning of each partition.
+        int64 from_start = 1;
+
+        // Start this many records before the end of each partition.
+        int64 from_end = 2;
+
+        // Start at the record at or after this Unix timestamp (milliseconds).
+        int64 timestamp_ms = 3;
+    }
+}
+
+// CreateTransformRequest creates or replaces a transform. The binary referenced
+// by binary_id must exist (stored via CreateBinary).
+message CreateTransformRequest {
+    // Unique name for the transform.
+    string name = 1;
+
+    // Input topic the transform consumes.
+    string input_topic = 2;
+
+    // Output topics the transform produces to, in order.
+    repeated string output_topics = 3;
+
+    // Environment variables to expose to the transform.
+    repeated TransformEnvironmentVariable environment = 4;
+
+    // Output compression mode. Defaults to COMPRESSION_MODE_NONE.
+    redpanda.core.common.v1.CompressionMode compression = 5;
+
+    // Where to begin consuming the input topic.
+    // If absent, defaults to the current time of the CreateTransform call.
+    TransformConsumeOffset consume_offset = 6;
+
+    // Opaque identifier for the transform binary, as returned by CreateBinary.
+    string binary_id = 7;
+}
+
+// CreateTransformResponse is returned on a successful CreateTransform.
+message CreateTransformResponse {}
+
+// GetTransformRequest identifies a transform by name.
+message GetTransformRequest {
+    string name = 1;
+}
+
+// GetTransformResponse returns the current state of a transform.
+message GetTransformResponse {
+    Transform transform = 1;
+}
+
+// ListTransformsRequest has no required fields.
+message ListTransformsRequest {}
+
+// ListTransformsResponse contains all transforms with their current status.
+message ListTransformsResponse {
+    repeated Transform transforms = 1;
+}
+
+// UpdateTransformRequest carries a partial metadata update for a transform.
+// Fields not explicitly marked as present are left unchanged. Use
+// CreateTransform to change the binary.
+message UpdateTransformRequest {
+    // Name of the transform to update.
+    string name = 1;
+
+    // If has_environment is true, replaces the transform's environment map
+    // wholesale.
+    repeated TransformEnvironmentVariable environment = 2;
+    bool has_environment = 3;
+
+    // If has_is_paused is true, sets the transform's paused state.
+    bool is_paused = 4;
+    bool has_is_paused = 5;
+
+    // If has_compression is true, sets the output compression mode.
+    redpanda.core.common.v1.CompressionMode compression = 6;
+    bool has_compression = 7;
+}
+
+// UpdateTransformResponse is returned on a successful UpdateTransform.
+message UpdateTransformResponse {}
+
+// DeleteTransformRequest identifies a transform to remove.
+message DeleteTransformRequest {
+    string name = 1;
+}
+
+// DeleteTransformResponse is returned on a successful DeleteTransform.
+message DeleteTransformResponse {}
+
+// ---- binaries resource messages ----
+
+// TransformBinary represents a stored plugin binary and the transforms that
+// reference it.
+message TransformBinary {
+    // Opaque identifier for the stored binary.
+    string binary_id = 1;
+
+    // Names of transforms that currently reference this binary.
+    repeated string referenced_by = 2;
+}
+
+// CreateBinaryRequest carries the raw binary to store.
+message CreateBinaryRequest {
+    // The raw plugin binary (e.g. a WebAssembly module).
+    bytes binary = 1;
+}
+
+// CreateBinaryResponse is returned when the binary has been validated and
+// stored successfully.
+message CreateBinaryResponse {
+    // Opaque identifier for the stored binary. Pass this value as the
+    // binary_id field in CreateTransformRequest.
+    string binary_id = 1;
+}
+
+// ListBinariesRequest has no required fields.
+message ListBinariesRequest {}
+
+// ListBinariesResponse contains all binaries referenced by active transforms.
+message ListBinariesResponse {
+    repeated TransformBinary binaries = 1;
+}
+
+// DeleteBinaryRequest identifies a binary to remove.
+message DeleteBinaryRequest {
+    string binary_id = 1;
+}
+
+// DeleteBinaryResponse is returned on a successful DeleteBinary.
+message DeleteBinaryResponse {}

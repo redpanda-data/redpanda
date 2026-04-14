@@ -66,3 +66,45 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "plugin_debug",
+    srcs = ["plugin_debug.cc"],
+    hdrs = ["plugin_debug.h"],
+    implementation_deps = [
+        "//src/v/cluster",
+        "//src/v/wasm:api",
+    ],
+    deps = [
+        "//proto/redpanda/core/admin/v2:plugin_debug_redpanda_proto",
+        "//src/v/redpanda/admin/proxy:client",
+        "//src/v/serde/protobuf:rpc",
+        "//src/v/transform",
+        "//src/v/transform:fwd",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "plugin",
+    srcs = ["plugin.cc"],
+    hdrs = ["plugin.h"],
+    implementation_deps = [
+        "//src/v/bytes",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/wasm:api",
+    ],
+    deps = [
+        "//proto/redpanda/core/admin/v2:plugin_redpanda_proto",
+        "//proto/redpanda/core/common/v1:compression_redpanda_proto",
+        "//src/v/redpanda/admin/proxy:client",
+        "//src/v/serde/protobuf:rpc",
+        "//src/v/transform",
+        "//src/v/transform:fwd",
+        "//src/v/utils:uuid",
+        "@fmt",
+        "@seastar",
+    ],
+)

@@ -98,6 +98,47 @@ redpanda_proto_library(
 )
 
 proto_library(
+    name = "plugin_proto",
+    srcs = ["plugin.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/common/v1:compression_proto",
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
+    ],
+)
+
+redpanda_proto_library(
+    name = "plugin_redpanda_proto",
+    protos = [
+        ":plugin_proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/common/v1:compression_redpanda_proto",
+    ],
+)
+
+proto_library(
+    name = "plugin_debug_proto",
+    srcs = ["plugin_debug.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
+    ],
+)
+
+redpanda_proto_library(
+    name = "plugin_debug_redpanda_proto",
+    protos = [
+        ":plugin_debug_proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [],
+)
+
+proto_library(
     name = "security_proto",
     srcs = ["security.proto"],
     visibility = ["//visibility:public"],

@@ -22,9 +22,14 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from requests.exceptions import RequestException
 
+from connectrpc.client_connect import ConnectProtocolError
+from connectrpc.errors import ConnectError
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.admin import Admin, CommittedWasmOffset
+from rptest.clients.admin import v2 as admin_v2
+from rptest.clients.admin.proto.redpanda.core.admin.v2 import plugin_pb2, plugin_debug_pb2
+from rptest.clients.admin.proto.redpanda.core.common.v1 import compression_pb2
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
 from rptest.services.redpanda_installer import RedpandaInstaller
@@ -38,6 +43,32 @@ from rptest.services.transform_verifier_service import (
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until_result
+
+_COMPRESSION_TO_PROTO: dict[TopicSpec.CompressionTypes, int] = {
+    TopicSpec.CompressionTypes.NONE: compression_pb2.COMPRESSION_MODE_NONE,
+    TopicSpec.CompressionTypes.GZIP: compression_pb2.COMPRESSION_MODE_GZIP,
+    TopicSpec.CompressionTypes.SNAPPY: compression_pb2.COMPRESSION_MODE_SNAPPY,
+    TopicSpec.CompressionTypes.LZ4: compression_pb2.COMPRESSION_MODE_LZ4,
+    TopicSpec.CompressionTypes.ZSTD: compression_pb2.COMPRESSION_MODE_ZSTD,
+}
+
+_PROTO_TO_COMPRESSION: dict[int, TopicSpec.CompressionTypes] = {
+    v: k for k, v in _COMPRESSION_TO_PROTO.items()
+}
+
+
+def _parse_consume_offset(
+    offset: str | None,
+) -> plugin_pb2.TransformConsumeOffset | None:
+    if offset is None:
+        return None
+    if offset.startswith("+"):
+        return plugin_pb2.TransformConsumeOffset(from_start=int(offset[1:]))
+    elif offset.startswith("-"):
+        return plugin_pb2.TransformConsumeOffset(from_end=int(offset[1:]))
+    elif offset.startswith("@"):
+        return plugin_pb2.TransformConsumeOffset(timestamp_ms=int(offset[1:]))
+    raise ValueError(f"unrecognized offset format: {offset!r}")
 
 
 class WasmException(Exception):
@@ -62,6 +93,7 @@ class BaseDataTransformsTest(RedpandaTest):
         )
         self._rpk = RpkTool(self.redpanda)
         self._admin = Admin(self.redpanda)
+        self._adminv2 = admin_v2.Admin(self.redpanda)
 
     def _deploy_wasm(
         self,
@@ -80,15 +112,29 @@ class BaseDataTransformsTest(RedpandaTest):
         if not isinstance(output_topic, list):
             output_topic = [output_topic]
 
+        if compression_type is not None and compression_type not in _COMPRESSION_TO_PROTO:
+            raise ValueError(f"unsupported compression type for v2 API: {compression_type}")
+
+        node = self.redpanda.started_nodes()[0]
+        wasm_binary = node.account.ssh_output(f"cat /opt/transforms/{file}")
+
+        consume_offset = _parse_consume_offset(from_offset)
+
         def do_deploy():
-            self._rpk.deploy_wasm(
-                name,
-                input_topic.name,
-                [o.name for o in output_topic],
-                file=file,
-                compression_type=compression_type,
-                from_offset=from_offset,
+            binary_resp = self._adminv2.plugin().create_binary(
+                plugin_pb2.CreateBinaryRequest(binary=wasm_binary)
             )
+            req = plugin_pb2.CreateTransformRequest(
+                name=name,
+                input_topic=input_topic.name,
+                output_topics=[o.name for o in output_topic],
+                binary_id=binary_resp.binary_id,
+            )
+            if compression_type is not None:
+                req.compression = _COMPRESSION_TO_PROTO[compression_type]
+            if consume_offset is not None:
+                req.consume_offset.CopyFrom(consume_offset)
+            self._adminv2.plugin().create_transform(req)
             return True
 
         wait_until(
@@ -103,8 +149,10 @@ class BaseDataTransformsTest(RedpandaTest):
             return
 
         def is_all_running():
-            transforms = self._rpk.list_wasm()
-            transform = next((x for x in transforms if x.name == name), None)
+            resp = self._adminv2.plugin().list_transforms(
+                plugin_pb2.ListTransformsRequest()
+            )
+            transform = next((t for t in resp.transforms if t.name == name), None)
             if not transform:
                 raise WasmException(f"missing transform {name} from report")
             for partition_id in range(0, input_topic.partition_count):
@@ -115,7 +163,7 @@ class BaseDataTransformsTest(RedpandaTest):
                     raise WasmException(
                         f"missing processor {name}/{partition_id} from report"
                     )
-                if processor.status != "running":
+                if processor.status != plugin_pb2.TRANSFORM_PARTITION_STATE_RUNNING:
                     raise WasmException(
                         f"processor {name}/{partition_id} is not running: {processor.status}"
                     )
@@ -135,7 +183,9 @@ class BaseDataTransformsTest(RedpandaTest):
         """
 
         def do_delete():
-            self._rpk.delete_wasm(name)
+            self._adminv2.plugin().delete_transform(
+                plugin_pb2.DeleteTransformRequest(name=name)
+            )
             return True
 
         wait_until(
@@ -147,8 +197,10 @@ class BaseDataTransformsTest(RedpandaTest):
         )
 
         def transform_is_gone():
-            transforms = self._rpk.list_wasm()
-            transform = next((x for x in transforms if x.name == name), None)
+            resp = self._adminv2.plugin().list_transforms(
+                plugin_pb2.ListTransformsRequest()
+            )
+            transform = next((t for t in resp.transforms if t.name == name), None)
             if transform:
                 raise WasmException(f"transform {name} still in report")
             return True
@@ -161,12 +213,14 @@ class BaseDataTransformsTest(RedpandaTest):
             retry_on_exc=True,
         )
 
-    def _list_committed_offsets(self) -> list[CommittedWasmOffset]:
-        response = []
+    def _list_committed_offsets(self):
+        response = None
 
         def do_list():
             nonlocal response
-            response = self._admin.transforms_list_committed_offsets(show_unknown=True)
+            response = self._adminv2.plugin_debug().list_committed_offsets(
+                plugin_debug_pb2.ListCommittedOffsetsRequest(show_unknown=True)
+            )
             return True
 
         wait_until(
@@ -176,11 +230,13 @@ class BaseDataTransformsTest(RedpandaTest):
             err_msg="unable to list committed offsets",
             retry_on_exc=True,
         )
-        return response
+        return response.offsets
 
     def _gc_committed_offsets(self):
         def do_gc():
-            self._admin.transforms_gc_committed_offsets()
+            self._adminv2.plugin_debug().garbage_collect_offsets(
+                plugin_debug_pb2.GarbageCollectOffsetsRequest()
+            )
             return True
 
         wait_until(
@@ -232,12 +288,17 @@ class BaseDataTransformsTest(RedpandaTest):
     def _deploy_invalid(self, file: str, expected_msg: str):
         def do_deploy():
             try:
-                self._rpk.deploy_wasm(
-                    "invalid", self.topics[0].name, [self.topics[1].name], file=file
+                self._deploy_wasm(
+                    "invalid",
+                    self.topics[0],
+                    [self.topics[1]],
+                    file=file,
+                    wait_running=False,
+                    retry_on_exc=False,
                 )
                 raise AssertionError("Unexpectedly was able to deploy transform")
-            except RpkException as e:
-                if expected_msg in e.stdout or expected_msg in e.stderr:
+            except (ConnectError, ConnectProtocolError) as e:
+                if expected_msg.lower() in str(e).lower():
                     return True
                 # Could be a flaky thing that needs to be retried due to network, etc.
                 return False
@@ -357,24 +418,35 @@ class DataTransformsTest(BaseDataTransformsTest):
             wait_running=True,
         )
 
-        def all_partitions_status(stat: str):
-            report = self._rpk.list_wasm()
-            return all(s.status == stat for s in report[0].status)
+        def get_transform():
+            resp = self._adminv2.plugin().list_transforms(
+                plugin_pb2.ListTransformsRequest()
+            )
+            t = next((t for t in resp.transforms if t.name == "identity-xform"), None)
+            if t is None:
+                raise WasmException("missing transform identity-xform")
+            return t
+
+        def all_partitions_status(state: int):
+            return all(s.status == state for s in get_transform().status)
 
         def env_is(env: dict[str, str]):
-            report = self._rpk.list_wasm()
-            return report[0].environment == env
+            actual = {ev.key: ev.value for ev in get_transform().environment}
+            return actual == env
 
         if use_rpk:
             self._rpk.pause_wasm("identity-xform")
         else:
-            rsp = self._admin.transforms_patch_meta("identity-xform", pause=True)
-            assert rsp.status_code == 200, (
-                f"/meta request failed, status: {rsp.status_code}"
+            self._adminv2.plugin().update_transform(
+                plugin_pb2.UpdateTransformRequest(
+                    name="identity-xform",
+                    is_paused=True,
+                    has_is_paused=True,
+                )
             )
 
         wait_until(
-            lambda: all_partitions_status("inactive"),
+            lambda: all_partitions_status(plugin_pb2.TRANSFORM_PARTITION_STATE_INACTIVE),
             timeout_sec=30,
             backoff_sec=1,
             err_msg="some partitions didn't become inactive",
@@ -383,7 +455,9 @@ class DataTransformsTest(BaseDataTransformsTest):
 
         with expect_exception(TimeoutError, lambda _: True):
             wait_until(
-                lambda: all_partitions_status("running"),
+                lambda: all_partitions_status(
+                    plugin_pb2.TRANSFORM_PARTITION_STATE_RUNNING
+                ),
                 timeout_sec=15,
                 backoff_sec=1,
                 retry_on_exc=True,
@@ -392,7 +466,9 @@ class DataTransformsTest(BaseDataTransformsTest):
         if use_rpk:
             self._rpk.resume_wasm("identity-xform")
             wait_until(
-                lambda: all_partitions_status("running"),
+                lambda: all_partitions_status(
+                    plugin_pb2.TRANSFORM_PARTITION_STATE_RUNNING
+                ),
                 timeout_sec=30,
                 backoff_sec=1,
                 err_msg="some partitions didn't become active",
@@ -405,35 +481,58 @@ class DataTransformsTest(BaseDataTransformsTest):
             }
             env2 = {"FOO": "bells"}
 
-            rsp = self._admin.transforms_patch_meta(
-                "identity-xform", pause=False, env=env1
-            )
-            assert rsp.status_code == 200, (
-                f"/meta request failed, status: {rsp.status_code}"
+            self._adminv2.plugin().update_transform(
+                plugin_pb2.UpdateTransformRequest(
+                    name="identity-xform",
+                    is_paused=False,
+                    has_is_paused=True,
+                    environment=[
+                        plugin_pb2.TransformEnvironmentVariable(key=k, value=v)
+                        for k, v in env1.items()
+                    ],
+                    has_environment=True,
+                )
             )
 
             wait_until(
-                lambda: all_partitions_status("running") and env_is(env1),
+                lambda: all_partitions_status(plugin_pb2.TRANSFORM_PARTITION_STATE_RUNNING)
+                and env_is(env1),
                 timeout_sec=30,
                 backoff_sec=1,
                 err_msg="some partitions didn't come back",
                 retry_on_exc=True,
             )
 
-            rsp = self._admin.transforms_patch_meta("identity-xform", env=env2)
+            self._adminv2.plugin().update_transform(
+                plugin_pb2.UpdateTransformRequest(
+                    name="identity-xform",
+                    environment=[
+                        plugin_pb2.TransformEnvironmentVariable(key=k, value=v)
+                        for k, v in env2.items()
+                    ],
+                    has_environment=True,
+                )
+            )
 
             wait_until(
-                lambda: all_partitions_status("running") and env_is(env2),
+                lambda: all_partitions_status(plugin_pb2.TRANSFORM_PARTITION_STATE_RUNNING)
+                and env_is(env2),
                 timeout_sec=30,
                 backoff_sec=1,
                 err_msg="some partitions didn't take the env update",
                 retry_on_exc=True,
             )
 
-            rsp = self._admin.transforms_patch_meta("identity-xform", env={})
+            self._adminv2.plugin().update_transform(
+                plugin_pb2.UpdateTransformRequest(
+                    name="identity-xform",
+                    has_environment=True,
+                )
+            )
 
             wait_until(
-                lambda: all_partitions_status("running") and env_is({}),
+                lambda: all_partitions_status(plugin_pb2.TRANSFORM_PARTITION_STATE_RUNNING)
+                and env_is({}),
                 timeout_sec=30,
                 backoff_sec=1,
                 err_msg="some partitions did not clear their envs",
@@ -491,9 +590,7 @@ class DataTransformsTest(BaseDataTransformsTest):
             )
 
         if not valid:
-            with expect_exception(
-                RpkException, lambda e: "invalid JSON request body" in str(e)
-            ):
+            with expect_exception(ValueError, lambda e: True):
                 deploy()
             # just go ahead and deploy with no compression and let the test finish
             compression_type = TopicSpec.CompressionTypes.NONE
@@ -502,8 +599,13 @@ class DataTransformsTest(BaseDataTransformsTest):
             deploy()
 
         def compression_set(compression_type: TopicSpec.CompressionTypes):
-            report = self._rpk.list_wasm()
-            return report[0].compression == compression_type
+            resp = self._adminv2.plugin().list_transforms(
+                plugin_pb2.ListTransformsRequest()
+            )
+            if not resp.transforms:
+                return False
+            t = resp.transforms[0]
+            return t.compression == _COMPRESSION_TO_PROTO.get(compression_type)
 
         wait_until(
             lambda: compression_set(compression_type),
@@ -607,8 +709,9 @@ class DataTransformsTest(BaseDataTransformsTest):
         output_topic = self.topics[1]
 
         with expect_exception(
-            RpkException, lambda e: print(e) or "bad offset" in str(e).lower()
-        ):  # rpk returns 'bad offset', RP Admin returns 'Bad offset'.
+            (ValueError, ConnectError, ConnectProtocolError),
+            lambda e: True,
+        ):  # client raises ValueError on parse failure; server raises ConnectError on invalid values.
             self._deploy_wasm(
                 name="identity-xform",
                 input_topic=input_topic,

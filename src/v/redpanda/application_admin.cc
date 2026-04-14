@@ -19,6 +19,8 @@
 #include "redpanda/admin/services/internal/level_zero.h"
 #include "redpanda/admin/services/internal/metastore.h"
 #include "redpanda/admin/services/internal/shadow_link_internal.h"
+#include "redpanda/admin/services/plugin.h"
+#include "redpanda/admin/services/plugin_debug.h"
 #include "redpanda/admin/services/security.h"
 #include "redpanda/admin/services/shadow_link/shadow_link.h"
 #include "redpanda/application.h"
@@ -127,6 +129,12 @@ void application::configure_admin_server(model::node_id node_id) {
               controller.get(),
               _kafka_server.ref(),
               std::ref(metadata_cache)));
+          s.add_service(
+            std::make_unique<admin::plugin_service_impl>(
+              create_client(), &_transform_service));
+          s.add_service(
+            std::make_unique<admin::plugin_debug_service_impl>(
+              create_client(), &_transform_service));
       })
       .get();
 }

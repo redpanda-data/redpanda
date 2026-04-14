@@ -44,6 +44,19 @@ redpanda_proto_library(
 )
 
 proto_library(
+    name = "compression_proto",
+    srcs = ["compression.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["//proto/redpanda/core/pbgen:options_proto"],
+)
+
+redpanda_proto_library(
+    name = "compression_redpanda_proto",
+    protos = [":compression_proto"],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
     name = "security_types_proto",
     srcs = ["security_types.proto"],
     visibility = ["//visibility:public"],

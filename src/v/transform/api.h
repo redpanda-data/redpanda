@@ -79,6 +79,31 @@ public:
     ss::future<std::error_code>
       deploy_transform(model::transform_metadata, model::wasm_binary_iobuf);
 
+    /// Returned by store_wasm_binary() to identify a stored binary.
+    struct stored_binary {
+        /// Unique identifier for the binary.
+        uuid_t uuid;
+        /// Offset of the binary in the wasm_binaries internal topic.
+        model::offset source_ptr;
+    };
+
+    /**
+     * Validate and store a plugin binary, returning its identity on success.
+     *
+     * The returned stored_binary can later be passed to deploy_plugin() to
+     * set both meta.uuid and meta.source_ptr.
+     */
+    ss::future<result<stored_binary, std::error_code>>
+      store_wasm_binary(model::wasm_binary_iobuf);
+
+    /**
+     * Deploy a plugin whose binary has already been stored.
+     *
+     * The caller is responsible for setting meta.uuid and meta.source_ptr to
+     * the values returned by store_wasm_binary() before calling this function.
+     */
+    ss::future<std::error_code> deploy_plugin(model::transform_metadata meta);
+
     /**
      * Delete a transform from the cluster.
      */
@@ -117,6 +142,11 @@ public:
      */
     ss::future<std::error_code> patch_transform_metadata(
       model::transform_name, model::transform_metadata_patch data);
+
+    /**
+     * Delete a stored plugin binary by UUID.
+     */
+    ss::future<std::error_code> delete_wasm_binary(uuid_t);
 
     /**
      * Create a reporter of the transform subsystem.
