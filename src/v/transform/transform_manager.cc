@@ -249,7 +249,8 @@ manager<ClockType>::manager(
   std::unique_ptr<registry> r,
   std::unique_ptr<processor_factory> f,
   ss::scheduling_group sg,
-  std::unique_ptr<memory_limits> memory_limits)
+  std::unique_ptr<memory_limits> memory_limits,
+  engine_eviction_cb evict_engine)
   : _self(self)
   , _queue(
       sg,
@@ -259,7 +260,8 @@ manager<ClockType>::manager(
   , _memory_limits(std::move(memory_limits))
   , _registry(std::move(r))
   , _processors(std::make_unique<processor_table<ClockType>>())
-  , _processor_factory(std::move(f)) {}
+  , _processor_factory(std::move(f))
+  , _evict_engine(std::move(evict_engine)) {}
 
 template<typename ClockType>
 manager<ClockType>::~manager() = default;
@@ -342,10 +344,11 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     // applied.
     co_await _processors->erase_by_id(id);
 
-    // Clean up any existing produce-path entry for this transform
+    // Clean up any existing produce-path entry and cached engine
     std::erase_if(_produce_path_transforms, [id](const auto& entry) {
         return entry.second == id;
     });
+    co_await _evict_engine(id);
 
     auto transform = _registry->lookup_by_id(id);
     // If there is no transform OR the transform is paused, we're good to go,

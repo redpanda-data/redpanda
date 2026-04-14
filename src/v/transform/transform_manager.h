@@ -103,13 +103,17 @@ class manager {
         || std::is_same_v<ClockType, ss::manual_clock>,
       "Only lowres or manual clocks are supported");
 
+    using engine_eviction_cb
+      = ss::noncopyable_function<ss::future<>(model::transform_id)>;
+
 public:
     manager(
       model::node_id self,
       std::unique_ptr<registry>,
       std::unique_ptr<processor_factory>,
       ss::scheduling_group,
-      std::unique_ptr<memory_limits>);
+      std::unique_ptr<memory_limits>,
+      engine_eviction_cb = [](model::transform_id) { return ss::now(); });
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;
@@ -172,5 +176,9 @@ private:
     // Updated when transforms are deployed/deleted via handle_plugin_change.
     chunked_hash_map<model::topic_namespace, model::transform_id>
       _produce_path_transforms;
+
+    // Called to evict a cached produce-path engine when a transform is
+    // deleted or redeployed.
+    engine_eviction_cb _evict_engine;
 };
 } // namespace transform

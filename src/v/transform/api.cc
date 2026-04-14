@@ -546,7 +546,8 @@ ss::future<> service::start() {
         &_rpc_client->local(),
         _batcher.get()),
       _sg,
-      std::move(mem_limits));
+      std::move(mem_limits),
+      [this](model::transform_id id) { return _executor.evict(id); });
 
     co_await _log_manager->start();
     co_await _batcher->start();
