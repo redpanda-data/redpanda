@@ -657,10 +657,15 @@ ss::future<std::error_code> service::deploy_transform(
         co_return wasm::make_error_code(ex.error_code());
     }
 
+    // The cluster config overrides the mode for all deploys. This allows
+    // testing produce-path transforms without rpk/admin API changes.
+    if (config::shard_local_cfg().data_transforms_produce_path_enabled()) {
+        meta.mode = model::transform_mode::produce_path;
+    }
+
     if (meta.mode == model::transform_mode::produce_path) {
-        // During development the mode defaults to produce_path, so
-        // output_topics may be set by the CLI. Clear them silently --
-        // produce-path transforms don't use output topics.
+        // Produce-path transforms don't use output topics. Clear any that
+        // were set by the CLI (which always requires output topics).
         meta.output_topics.clear();
         if (!model::is_user_topic(meta.input_topic)) {
             vlog(

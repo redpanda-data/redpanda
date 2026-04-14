@@ -233,7 +233,7 @@ struct transform_metadata
 
     model::compression compression_mode{model::compression::none};
 
-    model::transform_mode mode{model::transform_mode::produce_path};
+    model::transform_mode mode{model::transform_mode::sidecar};
 
     friend bool
     operator==(const transform_metadata&, const transform_metadata&) = default;

@@ -283,6 +283,14 @@ configuration::configuration()
       },
       45,
       {.min = 1, .max = 99})
+  , data_transforms_produce_path_enabled(
+      *this,
+      "data_transforms_produce_path_enabled",
+      "When enabled, all deployed data transforms run on the produce path "
+      "instead of as sidecar processors. This is a development flag for "
+      "testing produce-path transforms.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",

@@ -322,9 +322,9 @@ TEST(TransformMetadataTest, TransformModeRoundTrip) {
     EXPECT_EQ(deserialized.name, m.name);
 }
 
-TEST(TransformMetadataTest, TransformModeDefaultIsProducePath) {
+TEST(TransformMetadataTest, TransformModeDefaultIsSidecar) {
     model::transform_metadata m;
-    EXPECT_EQ(m.mode, model::transform_mode::produce_path);
+    EXPECT_EQ(m.mode, model::transform_mode::sidecar);
 }
 
 TEST(TransformMetadataTest, TransformModeBackwardsCompat) {
