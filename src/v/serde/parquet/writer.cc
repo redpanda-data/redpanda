@@ -58,6 +58,8 @@ public:
                   element,
                   {
                     .compress = _opts.compress,
+                    .max_stats_truncate_length
+                    = _opts.max_stats_truncate_length,
                   }),
               });
         });
@@ -157,7 +159,7 @@ public:
         _row_groups.push_back(std::move(rg));
     }
 
-    ss::future<> close() {
+    ss::future<file_metadata> close() {
         co_await flush_row_group();
         int64_t num_rows = 0;
         for (const auto& rg : _row_groups) {
@@ -169,22 +171,23 @@ public:
                 orders.push_back(column_order::type_defined);
             }
         });
-        auto encoded_footer = encode(
-          file_metadata{
-            .version = 2,
-            .schema = flatten(_opts.schema),
-            .num_rows = num_rows,
-            .row_groups = std::move(_row_groups),
-            .key_value_metadata = std::move(_opts.metadata),
-            .created_by = fmt::format(
-              "Redpanda version {} (build {})", _opts.version, _opts.build),
-            .column_orders = std::move(orders),
-          });
+        file_metadata metadata{
+          .version = 2,
+          .schema = flatten(_opts.schema),
+          .num_rows = num_rows,
+          .row_groups = std::move(_row_groups),
+          .key_value_metadata = std::move(_opts.metadata),
+          .created_by = fmt::format(
+            "Redpanda version {} (build {})", _opts.version, _opts.build),
+          .column_orders = std::move(orders),
+        };
+        auto encoded_footer = encode(metadata);
         size_t footer_size = encoded_footer.size_bytes();
         co_await write_iobuf(std::move(encoded_footer));
         co_await write_iobuf(encode_footer_size(footer_size));
         co_await write_iobuf(iobuf::from("PAR1"));
         co_await _output.close();
+        co_return std::move(metadata);
     }
 
 private:
@@ -236,6 +239,6 @@ file_stats writer::stats() const { return _impl->stats(); }
 
 ss::future<> writer::flush_row_group() { return _impl->flush_row_group(); }
 
-ss::future<> writer::close() { return _impl->close(); }
+ss::future<file_metadata> writer::close() { return _impl->close(); }
 
 } // namespace serde::parquet
