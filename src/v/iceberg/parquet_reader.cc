@@ -35,6 +35,7 @@ struct file_leaf_info {
 struct read_from_file {
     int32_t file_leaf_index;
     const sp::schema_element* file_leaf;
+    sp::physical_type table_ptype;
 };
 
 struct fill_null {
@@ -164,6 +165,51 @@ make_null_column(const fill_null& spec, int64_t num_rows) {
     };
 }
 
+/// Promote a decoded column from file type to table type.
+/// Only int32->int64 and float32->float64 are valid Iceberg promotions.
+void promote_column(
+  sp::column_array& arr, const sp::physical_type& table_type) {
+    if (arr.ptype == table_type) {
+        return;
+    }
+    if (
+      std::holds_alternative<sp::i32_type>(arr.ptype)
+      && std::holds_alternative<sp::i64_type>(table_type)) {
+        auto* src = std::get_if<sp::column_array::i32_data>(&arr.data);
+        if (!src) {
+            return;
+        }
+        sp::column_array::i64_data promoted;
+        promoted.values.reserve(src->values.size());
+        for (const auto& v : src->values) {
+            promoted.values.push_back(static_cast<int64_t>(v));
+        }
+        arr.data = std::move(promoted);
+        arr.ptype = sp::i64_type{};
+        return;
+    }
+    if (
+      std::holds_alternative<sp::f32_type>(arr.ptype)
+      && std::holds_alternative<sp::f64_type>(table_type)) {
+        auto* src = std::get_if<sp::column_array::f32_data>(&arr.data);
+        if (!src) {
+            return;
+        }
+        sp::column_array::f64_data promoted;
+        promoted.values.reserve(src->values.size());
+        for (const auto& v : src->values) {
+            promoted.values.push_back(static_cast<double>(v));
+        }
+        arr.data = std::move(promoted);
+        arr.ptype = sp::f64_type{};
+        return;
+    }
+    throw std::runtime_error(
+      "incompatible type: file and table schemas have different "
+      "physical types for the same field ID, and the types are not "
+      "promotable");
+}
+
 /// Build a map from field_id to leaf info by walking the file schema
 /// depth-first.
 chunked_hash_map<int32_t, file_leaf_info>
@@ -211,6 +257,7 @@ struct table_walker {
       const primitive_type& pt,
       sp::field_repetition_type rep) {
         int32_t field_id = field.id;
+        auto [table_ptype, table_ltype] = iceberg_to_parquet_types(pt);
         auto it = file_index.find(field_id);
         if (it != file_index.end()) {
             const auto& info = it->second;
@@ -218,13 +265,14 @@ struct table_walker {
               read_from_file{
                 .file_leaf_index = info.leaf_index,
                 .file_leaf = info.element,
+                .table_ptype = table_ptype,
               });
             return sp::schema_element{
-              .type = info.element->type,
+              .type = table_ptype,
               .repetition_type = rep,
               .path = {field.name},
               .field_id = field_id,
-              .logical_type = info.element->logical_type,
+              .logical_type = table_ltype,
             };
         }
         auto [ptype, ltype] = iceberg_to_parquet_types(pt);
@@ -346,6 +394,7 @@ read_parquet(const struct_type& read_schema, sp::file_io& io) {
                 auto col_bytes = co_await io.read(offset, length);
                 col_data = co_await sp::decode_column_chunk(
                   std::move(col_bytes), cc.meta_data, *r->file_leaf);
+                promote_column(col_data.values, r->table_ptype);
             } else {
                 const auto& spec = std::get<fill_null>(action);
                 col_data = make_null_column(spec, rg.num_rows);
