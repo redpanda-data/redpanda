@@ -72,6 +72,19 @@ public:
         return lso.value() > kafka::next_offset(lro);
     }
 
+    int64_t pending_offset_lag() override {
+        auto lro = last_reconciled_offset();
+        auto lso = _fe->last_stable_offset();
+        if (!lso.has_value()) {
+            return 0;
+        }
+        auto next = kafka::next_offset(lro);
+        if (lso.value() <= next) {
+            return 0;
+        }
+        return (lso.value() - next)();
+    }
+
     kafka::offset last_reconciled_offset() override {
         ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());
         return api.get_last_reconciled_offset();

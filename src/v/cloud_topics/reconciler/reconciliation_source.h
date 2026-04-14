@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_topics/data_plane_api.h"
+#include "cloud_topics/reconciler/source_probe.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 
@@ -38,12 +39,17 @@ public:
 
     source(model::ntp ntp, model::topic_id_partition tidp)
       : _ntp(std::move(ntp))
-      , _tidp(tidp) {}
+      , _tidp(tidp)
+      , _probe(_ntp, *this) {}
     source(const source&) = delete;
     source(source&&) = delete;
     source& operator=(const source&) = delete;
     source& operator=(source&&) = delete;
     virtual ~source() = default;
+
+    // Deregister metrics so a new source for the same partition can be
+    // created while this shared_ptr is still alive.
+    void deregister_metrics() { _probe.clear(); }
 
     // The NTP for this source
     const model::ntp& ntp() const { return _ntp; }
@@ -54,6 +60,11 @@ public:
 
     // Returns true if there may be new data to reconcile (LSO > LRO).
     virtual bool has_pending_data() = 0;
+
+    // Returns the number of offsets pending reconciliation (LSO -
+    // next_offset(LRO)), or 0 if there is no pending data or LSO is
+    // unavailable.
+    virtual int64_t pending_offset_lag() = 0;
 
     // Get the last reconciled offset for this source, or kafka::offset::min()
     // if none.
@@ -86,6 +97,7 @@ public:
 private:
     model::ntp _ntp;
     model::topic_id_partition _tidp;
+    source_probe _probe;
 };
 
 // Make a reconciliation source from L0 components (data plane) and the cluster

@@ -208,7 +208,12 @@ void reconciler<Clock>::detach(const model::ntp& ntp) {
          * which means that once a reference to a source is held,
          * it shouldn't be assumed that the source remains in the
          * _sources collection.
+         *
+         * Eagerly deregister metrics before erasing so that a new source
+         * for the same partition can be created while the old shared_ptr
+         * is still alive (held by an in-flight reconciliation pass).
          */
+        it->second->deregister_metrics();
         _sources.erase(it);
 
         // Clean up topic scheduler if no partitions remain.
