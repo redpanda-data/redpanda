@@ -665,9 +665,11 @@ ss::future<std::error_code> service::deploy_transform(
     }
 
     if (meta.mode == model::transform_mode::produce_path) {
-        // Produce-path transforms don't use output topics. Clear any that
-        // were set by the CLI (which always requires output topics).
-        meta.output_topics.clear();
+        // Output topics are optional for produce-path transforms: if present
+        // they declare fan-out targets; if absent the transform writes only
+        // to the input topic. Strip self-references (input == output) which
+        // the CLI sends as a dummy because it always requires --output-topic.
+        std::erase(meta.output_topics, meta.input_topic);
         if (!model::is_user_topic(meta.input_topic)) {
             vlog(
               tlog.warn,
@@ -799,6 +801,7 @@ service::get_produce_path_engine(model::transform_id id) {
         co_return std::nullopt;
     }
     auto name = meta->name();
+    auto output_topics = meta->output_topics;
     auto engine = co_await create_engine(std::move(*meta));
     if (!engine) {
         co_return std::nullopt;
@@ -806,6 +809,7 @@ service::get_produce_path_engine(model::transform_id id) {
     co_return produce_path_engine_result{
       .engine = std::move(*engine),
       .name = std::move(name),
+      .output_topics = std::move(output_topics),
     };
 }
 

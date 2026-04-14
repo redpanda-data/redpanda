@@ -70,6 +70,7 @@ private:
     struct engine_entry {
         ss::shared_ptr<wasm::engine> engine;
         std::unique_ptr<wasm::transform_probe> probe;
+        std::vector<model::topic_namespace> output_topics;
     };
 
     ss::future<engine_entry*> get_or_create_engine(model::transform_id);

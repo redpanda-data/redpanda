@@ -122,6 +122,7 @@ public:
     struct produce_path_engine_result {
         ss::shared_ptr<wasm::engine> engine;
         ss::sstring name;
+        std::vector<model::topic_namespace> output_topics;
     };
 
     /// Acquire a WASM engine for a produce-path transform.
