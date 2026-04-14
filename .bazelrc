@@ -373,6 +373,10 @@ build:fuzztest --per_file_copt=src/v/.*@-fsanitize-coverage=trace-cmp
 build:fuzztest --per_file_copt=src/v/.*@-fsanitize-coverage=pc-table
 
 # Suppress warnings from FuzzTest headers included in our source files.
+# Two patterns: one for files with "fuzztest" in the path (including the
+# external fuzztest repo itself), one for *_pbt.cc files which include
+# fuzztest headers but don't have "fuzztest" in their filename.
 build --per_file_copt=.*fuzztest.*@-Wno-nullability-completeness,-Wno-unused-parameter,-Wno-deprecated-declarations,-Wno-sign-compare
+build --per_file_copt=.*_pbt\.cc@-Wno-deprecated-declarations,-Wno-sign-compare,-Wno-unused-parameter,-Wno-nullability-completeness
 
 try-import %workspace%/user.bazelrc

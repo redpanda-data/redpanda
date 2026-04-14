@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_fuzztest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
     name = "chunked_hash_map_test",
@@ -137,6 +137,21 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/container:priority_queue",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_fuzztest(
+    name = "chunked_pbt",
+    timeout = "short",
+    srcs = ["chunked_pbt.cc"],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/test_utils:fuzztest",
+        "@fuzztest//fuzztest",
         "@googletest//:gtest",
     ],
 )
