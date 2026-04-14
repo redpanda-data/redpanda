@@ -77,8 +77,10 @@ redpanda_cc_library(
         ":value",
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_vector",
         "//src/v/utils:vint",
+        "@seastar",
     ],
 )
 

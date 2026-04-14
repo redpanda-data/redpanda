@@ -59,6 +59,10 @@ schema_element unflatten(const chunked_vector<flattened_schema>& flat) {
     }
     size_t idx = 0;
     auto result = unflatten_recursive(flat, idx);
+    if (idx != flat.size()) {
+        throw std::runtime_error(
+          "malformed flattened schema: not all elements consumed");
+    }
     return result;
 }
 

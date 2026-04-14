@@ -183,4 +183,261 @@ iobuf encode_for_stats(float64_value v) {
 }
 iobuf encode_for_stats(const byte_array_value& v) { return v.val.copy(); }
 iobuf encode_for_stats(const fixed_byte_array_value& v) { return v.val.copy(); }
+
+boolean_value decode_stats_boolean(const iobuf& data) {
+    iobuf_const_parser parser(data);
+    plain_decoder<boolean_value> dec(parser);
+    return dec.read_value();
+}
+int32_value decode_stats_int32(const iobuf& data) {
+    iobuf_const_parser parser(data);
+    plain_decoder<int32_value> dec(parser);
+    return dec.read_value();
+}
+int64_value decode_stats_int64(const iobuf& data) {
+    iobuf_const_parser parser(data);
+    plain_decoder<int64_value> dec(parser);
+    return dec.read_value();
+}
+float32_value decode_stats_float32(const iobuf& data) {
+    iobuf_const_parser parser(data);
+    plain_decoder<float32_value> dec(parser);
+    return dec.read_value();
+}
+float64_value decode_stats_float64(const iobuf& data) {
+    iobuf_const_parser parser(data);
+    plain_decoder<float64_value> dec(parser);
+    return dec.read_value();
+}
+byte_array_value decode_stats_byte_array(const iobuf& data) {
+    return byte_array_value{data.copy()};
+}
+
+namespace {
+
+template<typename level_type>
+level_type read_level_value(iobuf_parser_base& parser, size_t bit_width) {
+    if (bit_width > CHAR_WIDTH) {
+        auto v = parser.consume_type<int16_t>();
+        return level_type(ss::le_to_cpu(v));
+    }
+    return level_type(parser.consume_type<uint8_t>());
+}
+
+template<typename level_type>
+chunked_vector<level_type> decode_levels_impl(
+  iobuf_parser_base& parser,
+  int32_t num_values,
+  int32_t byte_length,
+  level_type max_value) {
+    size_t bit_width = std::bit_width(static_cast<uint16_t>(max_value()));
+    chunked_vector<level_type> result;
+    result.reserve(num_values);
+    size_t start_pos = parser.bytes_consumed();
+    size_t end_pos = start_pos + byte_length;
+
+    if (bit_width == 0) {
+        // All values are 0. The encoder writes count << 1 and the value.
+        auto [header, _] = parser.read_unsigned_varint();
+        auto count = header >> 1U;
+        auto val = read_level_value<level_type>(parser, bit_width);
+        for (uint32_t i = 0;
+             i < count && result.size() < static_cast<size_t>(num_values);
+             ++i) {
+            result.push_back(val);
+        }
+        // Skip any remaining bytes
+        if (parser.bytes_consumed() < end_pos) {
+            parser.skip(end_pos - parser.bytes_consumed());
+        }
+        return result;
+    }
+
+    while (parser.bytes_consumed() < end_pos
+           && result.size() < static_cast<size_t>(num_values)) {
+        auto [header, _] = parser.read_unsigned_varint();
+        if ((header & 1U) == 0) {
+            // RLE run: count = header >> 1, followed by value
+            auto count = header >> 1U;
+            auto val = read_level_value<level_type>(parser, bit_width);
+            for (uint32_t i = 0;
+                 i < count && result.size() < static_cast<size_t>(num_values);
+                 ++i) {
+                result.push_back(val);
+            }
+        } else {
+            // Bitpack run: num_groups = header >> 1
+            // Each group has 8 values packed in bit_width bits
+            auto num_groups = header >> 1U;
+            auto total_values = num_groups * 8;
+            size_t bits_remaining = 0;
+            uint64_t buffer = 0;
+            uint64_t mask = (1ULL << bit_width) - 1;
+            for (uint32_t i = 0; i < total_values; ++i) {
+                while (bits_remaining < bit_width) {
+                    buffer
+                      |= static_cast<uint64_t>(parser.consume_type<uint8_t>())
+                         << bits_remaining;
+                    bits_remaining += 8;
+                }
+                auto val = static_cast<int16_t>(buffer & mask);
+                buffer >>= bit_width;
+                bits_remaining -= bit_width;
+                if (result.size() < static_cast<size_t>(num_values)) {
+                    result.push_back(level_type(val));
+                }
+            }
+        }
+    }
+    // Ensure we consumed exactly byte_length bytes
+    if (parser.bytes_consumed() < end_pos) {
+        parser.skip(end_pos - parser.bytes_consumed());
+    }
+    return result;
+}
+
+} // namespace
+
+chunked_vector<rep_level> decode_levels(
+  iobuf_parser_base& parser,
+  int32_t num_values,
+  int32_t byte_length,
+  rep_level max_value) {
+    return decode_levels_impl(parser, num_values, byte_length, max_value);
+}
+
+chunked_vector<def_level> decode_levels(
+  iobuf_parser_base& parser,
+  int32_t num_values,
+  int32_t byte_length,
+  def_level max_value) {
+    return decode_levels_impl(parser, num_values, byte_length, max_value);
+}
+
+chunked_vector<int32_t> decode_rle_bp_int32(
+  iobuf_parser_base& parser,
+  int32_t num_values,
+  int32_t byte_length,
+  int32_t bit_width) {
+    chunked_vector<int32_t> result;
+    result.reserve(num_values);
+    size_t start_pos = parser.bytes_consumed();
+    size_t end_pos = start_pos + byte_length;
+    size_t bw = static_cast<size_t>(bit_width);
+
+    if (bw == 0) {
+        auto [header, _] = parser.read_unsigned_varint();
+        auto count = header >> 1U;
+        // Value bytes: ceil(bit_width/8) = 0, but encoder writes 1 byte.
+        auto val = static_cast<int32_t>(parser.consume_type<uint8_t>());
+        for (uint32_t i = 0;
+             i < count && result.size() < static_cast<size_t>(num_values);
+             ++i) {
+            result.push_back(val);
+        }
+        if (parser.bytes_consumed() < end_pos) {
+            parser.skip(end_pos - parser.bytes_consumed());
+        }
+        return result;
+    }
+
+    size_t value_bytes = (bw + 7) / 8;
+
+    while (parser.bytes_consumed() < end_pos
+           && result.size() < static_cast<size_t>(num_values)) {
+        auto [header, _] = parser.read_unsigned_varint();
+        if ((header & 1U) == 0) {
+            // RLE run
+            auto count = header >> 1U;
+            int32_t val = 0;
+            for (size_t b = 0; b < value_bytes; ++b) {
+                val |= static_cast<int32_t>(parser.consume_type<uint8_t>())
+                       << (b * 8);
+            }
+            for (uint32_t i = 0;
+                 i < count && result.size() < static_cast<size_t>(num_values);
+                 ++i) {
+                result.push_back(val);
+            }
+        } else {
+            // Bitpack run
+            auto num_groups = header >> 1U;
+            auto total_values = num_groups * 8;
+            size_t bits_remaining = 0;
+            uint64_t buffer = 0;
+            uint64_t mask = (1ULL << bw) - 1;
+            for (uint32_t i = 0; i < total_values; ++i) {
+                while (bits_remaining < bw) {
+                    buffer
+                      |= static_cast<uint64_t>(parser.consume_type<uint8_t>())
+                         << bits_remaining;
+                    bits_remaining += 8;
+                }
+                auto val = static_cast<int32_t>(buffer & mask);
+                buffer >>= bw;
+                bits_remaining -= bw;
+                if (result.size() < static_cast<size_t>(num_values)) {
+                    result.push_back(val);
+                }
+            }
+        }
+    }
+    if (parser.bytes_consumed() < end_pos) {
+        parser.skip(end_pos - parser.bytes_consumed());
+    }
+    return result;
+}
+
+plain_decoder<boolean_value>::plain_decoder(iobuf_parser_base& parser)
+  : _parser(parser) {}
+
+boolean_value plain_decoder<boolean_value>::read_value() {
+    if (_shift >= CHAR_BIT) {
+        _bits = _parser.consume_type<uint8_t>();
+        _shift = 0;
+    }
+    bool val = (_bits >> _shift) & 1;
+    ++_shift;
+    return boolean_value{val};
+}
+
+template<typename value_type>
+numeric_plain_decoder<value_type>::numeric_plain_decoder(
+  iobuf_parser_base& parser)
+  : _parser(parser) {}
+
+template<typename value_type>
+value_type numeric_plain_decoder<value_type>::read_value() {
+    auto raw = _parser.consume_type<decltype(value_type::val)>();
+    if constexpr (std::is_integral_v<decltype(value_type::val)>) {
+        raw = ss::le_to_cpu(raw);
+    }
+    return value_type{raw};
+}
+
+template class numeric_plain_decoder<int32_value>;
+template class numeric_plain_decoder<int64_value>;
+template class numeric_plain_decoder<float32_value>;
+template class numeric_plain_decoder<float64_value>;
+
+plain_decoder<byte_array_value>::plain_decoder(iobuf_parser_base& parser)
+  : _parser(parser) {}
+
+byte_array_value plain_decoder<byte_array_value>::read_value() {
+    auto len = ss::le_to_cpu(_parser.consume_type<int32_t>());
+    if (len < 0) {
+        throw std::runtime_error("invalid parquet byte_array: negative length");
+    }
+    return byte_array_value{_parser.copy(static_cast<size_t>(len))};
+}
+
+plain_decoder<fixed_byte_array_value>::plain_decoder(
+  iobuf_parser_base& parser, int32_t fixed_length)
+  : _parser(parser)
+  , _fixed_length(fixed_length) {}
+
+fixed_byte_array_value plain_decoder<fixed_byte_array_value>::read_value() {
+    return fixed_byte_array_value{_parser.copy(_fixed_length)};
+}
+
 } // namespace serde::parquet
