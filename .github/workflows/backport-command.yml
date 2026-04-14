@@ -128,6 +128,7 @@ jobs:
       - name: Setup uv
         if: needs.backport-type.outputs.commented_on == 'pr'
         uses: astral-sh/setup-uv@v4
+        continue-on-error: true
       - name: Backport commits and get details
         if: needs.backport-type.outputs.commented_on == 'pr'
         env:
