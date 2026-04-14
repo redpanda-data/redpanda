@@ -1293,6 +1293,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "parquet_reader",
+    srcs = ["parquet_reader.cc"],
+    hdrs = ["parquet_reader.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":datatypes",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/serde/parquet:column_array",
+        "//src/v/serde/parquet:column_chunk_reader",
+        "//src/v/serde/parquet:file_io",
+        "//src/v/serde/parquet:metadata",
+        "//src/v/serde/parquet:schema",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "avro_decimal",
     srcs = [
     ],

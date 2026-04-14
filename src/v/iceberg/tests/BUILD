@@ -727,6 +727,27 @@ redpanda_cc_bench(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "parquet_reader_test",
+    timeout = "short",
+    srcs = ["parquet_reader_test.cc"],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:parquet_reader",
+        "//src/v/iceberg/conversion:schema_parquet",
+        "//src/v/serde/parquet:file_io",
+        "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:value",
+        "//src/v/serde/parquet:writer",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_bench(
     name = "iceberg_compatibility_rpbench",
     srcs = [
