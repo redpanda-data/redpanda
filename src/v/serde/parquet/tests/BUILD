@@ -5,6 +5,27 @@ load("//bazel:build.bzl", "redpanda_cc_binary")
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
+    name = "assembler_test",
+    timeout = "short",
+    srcs = [
+        "assembler_test.cc",
+    ],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        "//src/v/serde/parquet:assembler",
+        "//src/v/serde/parquet:column_array",
+        "//src/v/serde/parquet:encoding",
+        "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:shredder",
+        "//src/v/serde/parquet:value",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "column_chunk_reader_test",
     timeout = "short",
     srcs = [
