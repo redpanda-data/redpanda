@@ -252,6 +252,11 @@ assemble_records(const schema_element& schema, const columnar_batch& batch) {
           });
         ++col_idx;
     });
+    vassert(
+      col_idx == static_cast<int32_t>(batch.columns.size()),
+      "schema has {} leaf columns but batch has {} columns",
+      col_idx,
+      batch.columns.size());
 
     chunked_vector<group_value> records;
     for (int64_t row = 0; row < batch.num_rows; ++row) {
