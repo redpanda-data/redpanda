@@ -65,6 +65,45 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "column_chunk_reader",
+    srcs = [
+        "column_chunk_reader.cc",
+    ],
+    hdrs = [
+        "column_chunk_reader.h",
+    ],
+    deps = [
+        ":column_array",
+        ":encoding",
+        ":metadata",
+        ":schema",
+        ":value",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/compression",
+        "//src/v/container:chunked_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "column_array",
+    srcs = [
+        "column_array.cc",
+    ],
+    hdrs = [
+        "column_array.h",
+    ],
+    deps = [
+        ":schema",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+    ],
+)
+
+redpanda_cc_library(
     name = "encoding",
     srcs = [
         "encoding.cc",
