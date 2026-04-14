@@ -19,6 +19,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/utils:named_type",
         "//src/v/utils:vint",
         "@seastar",
