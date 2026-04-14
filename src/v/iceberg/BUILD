@@ -498,6 +498,34 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "row_delta_action",
+    srcs = [
+        "row_delta_action.cc",
+    ],
+    hdrs = [
+        "row_delta_action.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":manifest_file_packer",
+        ":snapshot",
+        ":table_requirement",
+        "//src/v/random:generators",
+    ],
+    deps = [
+        ":action",
+        ":manifest_entry",
+        ":manifest_io",
+        ":manifest_list",
+        ":manifest_utils",
+        ":merge_append_action",
+        ":schema",
+        ":table_metadata",
+        "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
     name = "metadata_io",
     hdrs = [
         "metadata_io.h",
