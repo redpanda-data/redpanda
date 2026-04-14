@@ -125,10 +125,14 @@ jobs:
           repository: ${{ steps.user.outputs.username }}/${{ steps.user.outputs.repo }}
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           path: ./fork
+      - name: Setup uv
+        if: needs.backport-type.outputs.commented_on == 'pr'
+        uses: astral-sh/setup-uv@v4
       - name: Backport commits and get details
         if: needs.backport-type.outputs.commented_on == 'pr'
         env:
           GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
           BACKPORT_COMMITS: ${{ steps.backport_commits.outputs.backport_commits }}
           IS_MERGED: ${{ github.event.client_payload.pull_request.merged }}
@@ -137,7 +141,9 @@ jobs:
           GIT_USER: ${{ steps.user.outputs.username }}
           GIT_EMAIL: ${{ steps.user.outputs.email }}
         id: pr_details
-        run: $SCRIPT_DIR/pr_details.sh
+        run: |
+          echo "::add-mask::$ANTHROPIC_API_KEY"
+          $SCRIPT_DIR/pr_details.sh
         shell: bash
       - name: Create pull request
         if: needs.backport-type.outputs.commented_on == 'pr'
@@ -151,6 +157,8 @@ jobs:
           ORIG_PR_NUMBER: ${{ github.event.client_payload.pull_request.number }}
           ORIG_PR_URL: ${{ github.event.client_payload.pull_request.html_url }}
           GIT_USER: ${{ steps.user.outputs.username }}
+          AI_RESOLVED_FILES: ${{ steps.pr_details.outputs.ai_resolved_files }}
+          AI_DIFFICULTY: ${{ steps.pr_details.outputs.ai_difficulty }}
         id: create_pr
         run: $SCRIPT_DIR/create_pr.sh
         shell: bash
