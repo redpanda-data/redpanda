@@ -119,9 +119,14 @@ public:
     ss::future<std::error_code> patch_transform_metadata(
       model::transform_name, model::transform_metadata_patch data);
 
+    struct produce_path_engine_result {
+        ss::shared_ptr<wasm::engine> engine;
+        ss::sstring name;
+    };
+
     /// Acquire a WASM engine for a produce-path transform.
     /// Called on the partition's shard during produce.
-    ss::future<ss::shared_ptr<wasm::engine>>
+    ss::future<std::optional<produce_path_engine_result>>
       get_produce_path_engine(model::transform_id);
 
     /// Look up a produce-path transform for the given topic.

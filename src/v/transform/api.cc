@@ -792,17 +792,21 @@ service::create_engine(model::transform_metadata meta) {
     co_return co_await (*factory)->make_engine(std::move(logger));
 }
 
-ss::future<ss::shared_ptr<wasm::engine>>
+ss::future<std::optional<service::produce_path_engine_result>>
 service::get_produce_path_engine(model::transform_id id) {
     auto meta = _plugin_frontend->local().lookup_transform(id);
     if (!meta) {
-        co_return nullptr;
+        co_return std::nullopt;
     }
+    auto name = meta->name();
     auto engine = co_await create_engine(std::move(*meta));
     if (!engine) {
-        co_return nullptr;
+        co_return std::nullopt;
     }
-    co_return std::move(*engine);
+    co_return produce_path_engine_result{
+      .engine = std::move(*engine),
+      .name = std::move(name),
+    };
 }
 
 std::optional<model::transform_id>

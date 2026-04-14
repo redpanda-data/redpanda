@@ -94,16 +94,18 @@ produce_path_executor::get_or_create_engine(model::transform_id id) {
     if (it != _engines.end()) {
         co_return &it->second;
     }
-    auto engine = co_await _svc.get_produce_path_engine(id);
-    if (!engine) {
+    auto result = co_await _svc.get_produce_path_engine(id);
+    if (!result) {
         co_return nullptr;
     }
-    co_await engine->start();
+    co_await result->engine->start();
+    auto probe = std::make_unique<wasm::transform_probe>();
+    probe->setup_metrics(result->name);
     auto [inserted, _] = _engines.emplace(
       id,
       engine_entry{
-        .engine = std::move(engine),
-        .probe = std::make_unique<wasm::transform_probe>(),
+        .engine = std::move(result->engine),
+        .probe = std::move(probe),
       });
     co_return &inserted->second;
 }
