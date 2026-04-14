@@ -51,7 +51,7 @@ if [[ $FIXING_ISSUE_URLS != "" ]]; then
 fi
 
 labels="kind/backport"
-if [[ -n "${AI_RESOLVED_FILES:-}" ]]; then
+if [[ -n ${AI_RESOLVED_FILES:-} ]]; then
   labels="$labels,ai-resolved-conflicts"
 fi
 
@@ -65,7 +65,7 @@ pr_url=$(gh pr create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
   --body "Backport of PR $ORIG_ISSUE_URL
 $backport_issue_urls")
 
-if [[ -n "${AI_RESOLVED_FILES:-}" && -n "${AI_DIFFICULTY:-}" ]]; then
+if [[ -n ${AI_RESOLVED_FILES:-} && -n ${AI_DIFFICULTY:-} ]]; then
   files_list=$(echo "$AI_RESOLVED_FILES" | sed 's/^/- /')
   gh pr comment "$pr_url" \
     --repo "$TARGET_ORG/$TARGET_REPO" \

@@ -13,8 +13,16 @@ import anthropic
 # Best-effort: unknown generated types not listed here will be sent to the
 # model, but conflict-marker validation and UNCERTAIN catches garbage output.
 GENERATED_PATTERNS = [
-    "*.pb.go", "*.pb.h", "*.pb.cc", "*.pb.rs", "*_pb2.py",
-    "MODULE.bazel", "*.lock", "go.sum", "package-lock.json", "Cargo.lock",
+    "*.pb.go",
+    "*.pb.h",
+    "*.pb.cc",
+    "*.pb.rs",
+    "*_pb2.py",
+    "MODULE.bazel",
+    "*.lock",
+    "go.sum",
+    "package-lock.json",
+    "Cargo.lock",
 ]
 
 MODEL = "claude-opus-4-6"
@@ -75,9 +83,11 @@ def difficulty_rating(resolved_count: int, total_diff_lines: int) -> str:
     return "medium"
 
 
-conflicted = subprocess.check_output(
-    ["git", "diff", "--name-only", "--diff-filter=U"]
-).decode().splitlines()
+conflicted = (
+    subprocess.check_output(["git", "diff", "--name-only", "--diff-filter=U"])
+    .decode()
+    .splitlines()
+)
 
 eligible = [f for f in conflicted if not matches_any(f, GENERATED_PATTERNS)]
 skipped = [f for f in conflicted if matches_any(f, GENERATED_PATTERNS)]
@@ -96,7 +106,9 @@ for path in eligible:
     # -U0: the conflicted file already provides context; sending it in the
     #      diff too would be redundant and waste tokens.
     diff = subprocess.check_output(
-        ["git", "log", "-p", "-U0", "--reverse"] + BACKPORT_COMMITS.split() + ["--", path]
+        ["git", "log", "-p", "-U0", "--reverse"]
+        + BACKPORT_COMMITS.split()
+        + ["--", path]
     ).decode(errors="replace")
 
     diff_lines = diff.splitlines()
@@ -118,7 +130,9 @@ for path in eligible:
     # Any stop reason other than "end_turn" means the output was cut off;
     # writing a partial file to disk would corrupt the cherry-pick.
     if response.stop_reason != "end_turn":
-        print(f"{path}: response truncated (stop_reason={response.stop_reason}). Skipping.")
+        print(
+            f"{path}: response truncated (stop_reason={response.stop_reason}). Skipping."
+        )
         continue
 
     text = response.content[0].text.strip()
