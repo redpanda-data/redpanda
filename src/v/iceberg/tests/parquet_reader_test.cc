@@ -463,6 +463,126 @@ TEST(IcebergParquetReader, InvalidPromotionError) {
     EXPECT_THROW(read_parquet(read_schema, io).get(), std::runtime_error);
 }
 
+TEST(IcebergParquetReader, PositionDeleteFiltering) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "val", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{10}));
+    rows.push_back(record(sp::int32_value{20}));
+    rows.push_back(record(sp::int32_value{30}));
+    rows.push_back(record(sp::int32_value{40}));
+    rows.push_back(record(sp::int32_value{50}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Delete rows at file-global positions 1 and 3.
+    chunked_vector<delete_file_entry> deletes;
+    position_delete_set pds;
+    pds.positions.push_back(1);
+    pds.positions.push_back(3);
+    deletes.push_back(std::move(pds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    ASSERT_EQ(batch.columns.size(), 1);
+    EXPECT_EQ(batch.num_rows, 3);
+
+    const auto& col = batch.columns[0];
+    ASSERT_TRUE(std::holds_alternative<sp::column_array::i32_data>(col.data));
+    const auto& vals = std::get<sp::column_array::i32_data>(col.data);
+    ASSERT_EQ(vals.values.size(), 3);
+    EXPECT_EQ(vals.values[0], 10);
+    EXPECT_EQ(vals.values[1], 30);
+    EXPECT_EQ(vals.values[2], 50);
+}
+
+TEST(IcebergParquetReader, NoDeletes) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "val", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{1}));
+    rows.push_back(record(sp::int32_value{2}));
+    rows.push_back(record(sp::int32_value{3}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 3);
+
+    const auto& col = batch.columns[0];
+    ASSERT_TRUE(std::holds_alternative<sp::column_array::i32_data>(col.data));
+    const auto& vals = std::get<sp::column_array::i32_data>(col.data);
+    ASSERT_EQ(vals.values.size(), 3);
+    EXPECT_EQ(vals.values[0], 1);
+    EXPECT_EQ(vals.values[1], 2);
+    EXPECT_EQ(vals.values[2], 3);
+}
+
+TEST(IcebergParquetReader, PositionDeleteNullable) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "val", field_required::no, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    // Write 5 rows: [1, null, 3, null, 5]
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{1}));
+    rows.push_back(record(sp::null_value{}));
+    rows.push_back(record(sp::int32_value{3}));
+    rows.push_back(record(sp::null_value{}));
+    rows.push_back(record(sp::int32_value{5}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Delete positions 0 and 2 -> remove [1] and [3].
+    chunked_vector<delete_file_entry> deletes;
+    position_delete_set pds;
+    pds.positions.push_back(0);
+    pds.positions.push_back(2);
+    deletes.push_back(std::move(pds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 3);
+
+    // Remaining rows: [null, null, 5]
+    // Only one non-null value (5) should remain in the data.
+    const auto& col = batch.columns[0];
+    ASSERT_TRUE(std::holds_alternative<sp::column_array::i32_data>(col.data));
+    const auto& vals = std::get<sp::column_array::i32_data>(col.data);
+    ASSERT_EQ(vals.values.size(), 1);
+    EXPECT_EQ(vals.values[0], 5);
+
+    // Def levels: null=0, non-null=1 for optional columns.
+    const auto& levels = batch.levels[0];
+    ASSERT_EQ(levels.def_levels.size(), 3);
+    EXPECT_EQ(levels.def_levels[0], sp::def_level(0));
+    EXPECT_EQ(levels.def_levels[1], sp::def_level(0));
+    EXPECT_EQ(levels.def_levels[2], sp::def_level(1));
+}
+
 // NOLINTEND(*magic-number*)
 
 } // namespace

@@ -17,7 +17,17 @@
 
 #include <seastar/core/future.hh>
 
+#include <variant>
+
 namespace iceberg {
+
+/// Sorted position delete entries for a specific data file.
+/// Positions are file-global row indices (not per row group).
+struct position_delete_set {
+    chunked_vector<int64_t> positions;
+};
+
+using delete_file_entry = std::variant<position_delete_set>;
 
 struct parquet_reader_result {
     /// Schema matching the columns in row_groups. Derived from the
@@ -31,7 +41,9 @@ struct parquet_reader_result {
 ///
 /// Matches columns by field ID between read_schema and the file's
 /// embedded schema. Results are in table schema order.
-ss::future<parquet_reader_result>
-read_parquet(const struct_type& read_schema, serde::parquet::file_io& io);
+ss::future<parquet_reader_result> read_parquet(
+  const struct_type& read_schema,
+  serde::parquet::file_io& io,
+  chunked_vector<delete_file_entry> delete_files = {});
 
 } // namespace iceberg

@@ -19,6 +19,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <cstdint>
 #include <stdexcept>
 
 namespace iceberg {
@@ -163,6 +164,241 @@ make_null_column(const fill_null& spec, int64_t num_rows) {
       .def_levels = std::move(def_levels),
       .rep_levels = std::move(rep_levels),
     };
+}
+
+/// Filter a chunked_vector, keeping only elements where keep[i] is true.
+template<typename T>
+chunked_vector<T>
+filter_vec(const chunked_vector<T>& src, const chunked_vector<bool>& keep) {
+    chunked_vector<T> out;
+    for (size_t i = 0; i < src.size(); ++i) {
+        if (keep[i]) {
+            out.push_back(src[i]);
+        }
+    }
+    return out;
+}
+
+/// Filter values from a column that stores only non-null entries.
+/// `keep` is indexed by row; def_levels maps rows to value indices.
+/// Returns a new container of kept non-null values.
+template<typename T>
+chunked_vector<T> filter_values(
+  const chunked_vector<T>& values,
+  const chunked_vector<sp::def_level>& def_levels,
+  sp::def_level max_def,
+  const chunked_vector<bool>& keep) {
+    chunked_vector<T> out;
+    size_t val_idx = 0;
+    for (size_t row = 0; row < def_levels.size(); ++row) {
+        bool has_value = def_levels[row] == max_def;
+        if (keep[row] && has_value) {
+            out.push_back(values[val_idx]);
+        }
+        if (has_value) {
+            ++val_idx;
+        }
+    }
+    return out;
+}
+
+/// Filter boolean packed bits, keeping only bits at non-null, kept positions.
+sp::column_array::boolean_data filter_boolean_data(
+  const sp::column_array::boolean_data& src,
+  const chunked_vector<sp::def_level>& def_levels,
+  sp::def_level max_def,
+  const chunked_vector<bool>& keep) {
+    sp::column_array::boolean_data out;
+
+    // Linearize source bits for random access.
+    auto src_bytes = iobuf_to_bytes(src.packed_bits);
+    auto get_bit = [&](size_t idx) -> bool {
+        return (src_bytes[idx / 8] >> (idx % 8)) & 1;
+    };
+
+    // Build filtered packed bits.
+    chunked_vector<uint8_t> tmp;
+    uint8_t cur_byte = 0;
+    int bit_pos = 0;
+    int64_t kept = 0;
+
+    size_t val_idx = 0;
+    for (size_t row = 0; row < def_levels.size(); ++row) {
+        bool has_value = def_levels[row] == max_def;
+        if (keep[row] && has_value) {
+            if (get_bit(val_idx)) {
+                cur_byte |= static_cast<uint8_t>(1 << bit_pos);
+            }
+            ++bit_pos;
+            ++kept;
+            if (bit_pos == 8) {
+                tmp.push_back(cur_byte);
+                cur_byte = 0;
+                bit_pos = 0;
+            }
+        }
+        if (has_value) {
+            ++val_idx;
+        }
+    }
+    if (bit_pos > 0) {
+        tmp.push_back(cur_byte);
+    }
+
+    iobuf result;
+    for (auto b : tmp) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        result.append(reinterpret_cast<const char*>(&b), 1);
+    }
+    out.packed_bits = std::move(result);
+    out.num_values = kept;
+    return out;
+}
+
+/// Filter byte_array_data, keeping only values at non-null, kept positions.
+sp::column_array::byte_array_data filter_byte_array_data(
+  sp::column_array::byte_array_data& src,
+  const chunked_vector<sp::def_level>& def_levels,
+  sp::def_level max_def,
+  const chunked_vector<bool>& keep) {
+    sp::column_array::byte_array_data out;
+    out.offsets.push_back(0);
+    int64_t current_offset = 0;
+
+    size_t val_idx = 0;
+    for (size_t row = 0; row < def_levels.size(); ++row) {
+        bool has_value = def_levels[row] == max_def;
+        if (keep[row] && has_value) {
+            auto start = src.offsets[val_idx];
+            auto len = src.offsets[val_idx + 1] - start;
+            if (len > 0) {
+                out.data.append(src.data.share(start, len));
+            }
+            current_offset += len;
+            out.offsets.push_back(current_offset);
+        }
+        if (has_value) {
+            ++val_idx;
+        }
+    }
+    return out;
+}
+
+/// Filter fixed_byte_array_data, keeping only values at non-null, kept
+/// positions.
+sp::column_array::fixed_byte_array_data filter_fixed_byte_array_data(
+  sp::column_array::fixed_byte_array_data& src,
+  const chunked_vector<sp::def_level>& def_levels,
+  sp::def_level max_def,
+  const chunked_vector<bool>& keep) {
+    sp::column_array::fixed_byte_array_data out;
+    out.fixed_length = src.fixed_length;
+
+    size_t val_idx = 0;
+    for (size_t row = 0; row < def_levels.size(); ++row) {
+        bool has_value = def_levels[row] == max_def;
+        if (keep[row] && has_value) {
+            int64_t start = static_cast<int64_t>(val_idx) * src.fixed_length;
+            out.data.append(src.data.share(start, src.fixed_length));
+        }
+        if (has_value) {
+            ++val_idx;
+        }
+    }
+    return out;
+}
+
+/// Filter a column_array by a row-level keep mask, respecting def_levels
+/// to correctly map row indices to value indices.
+sp::column_array filter_column(
+  sp::column_array& arr,
+  const chunked_vector<sp::def_level>& def_levels,
+  sp::def_level max_def,
+  const chunked_vector<bool>& keep,
+  int64_t kept_count) {
+    sp::column_array out;
+    out.ptype = arr.ptype;
+    out.ltype = arr.ltype;
+    out.length = kept_count;
+
+    ss::visit(
+      arr.data,
+      [&](sp::column_array::boolean_data& d) {
+          out.data = filter_boolean_data(d, def_levels, max_def, keep);
+      },
+      [&](sp::column_array::i32_data& d) {
+          out.data = sp::column_array::i32_data{
+            filter_values(d.values, def_levels, max_def, keep)};
+      },
+      [&](sp::column_array::i64_data& d) {
+          out.data = sp::column_array::i64_data{
+            filter_values(d.values, def_levels, max_def, keep)};
+      },
+      [&](sp::column_array::f32_data& d) {
+          out.data = sp::column_array::f32_data{
+            filter_values(d.values, def_levels, max_def, keep)};
+      },
+      [&](sp::column_array::f64_data& d) {
+          out.data = sp::column_array::f64_data{
+            filter_values(d.values, def_levels, max_def, keep)};
+      },
+      [&](sp::column_array::byte_array_data& d) {
+          out.data = filter_byte_array_data(d, def_levels, max_def, keep);
+      },
+      [&](sp::column_array::fixed_byte_array_data& d) {
+          out.data = filter_fixed_byte_array_data(d, def_levels, max_def, keep);
+      });
+    return out;
+}
+
+/// Collect the max_definition_level for each leaf column in schema order.
+chunked_vector<sp::def_level>
+leaf_max_def_levels(const sp::schema_element& schema) {
+    chunked_vector<sp::def_level> result;
+    schema.for_each([&](const sp::schema_element& elem) {
+        if (elem.is_leaf()) {
+            result.push_back(elem.max_definition_level);
+        }
+    });
+    return result;
+}
+
+/// Remove rows from a batch at positions listed in deleted_positions.
+/// row_offset is the file-global index of the first row in this batch.
+void apply_position_deletes(
+  sp::columnar_batch& batch,
+  const chunked_hash_set<int64_t>& deleted_positions,
+  int64_t row_offset,
+  const chunked_vector<sp::def_level>& max_def_levels) {
+    auto num_rows = batch.num_rows;
+    chunked_vector<bool> keep;
+    keep.reserve(num_rows);
+    int64_t kept_count = 0;
+    for (int64_t i = 0; i < num_rows; ++i) {
+        bool should_keep = !deleted_positions.contains(row_offset + i);
+        keep.push_back(should_keep);
+        if (should_keep) {
+            ++kept_count;
+        }
+    }
+
+    if (kept_count == num_rows) {
+        return;
+    }
+
+    for (size_t col = 0; col < batch.columns.size(); ++col) {
+        batch.columns[col] = filter_column(
+          batch.columns[col],
+          batch.levels[col].def_levels,
+          max_def_levels[col],
+          keep,
+          kept_count);
+        batch.levels[col].def_levels = filter_vec(
+          batch.levels[col].def_levels, keep);
+        batch.levels[col].rep_levels = filter_vec(
+          batch.levels[col].rep_levels, keep);
+    }
+    batch.num_rows = kept_count;
 }
 
 /// Promote a decoded column from file type to table type.
@@ -345,8 +581,10 @@ struct table_walker {
 
 } // namespace
 
-ss::future<parquet_reader_result>
-read_parquet(const struct_type& read_schema, sp::file_io& io) {
+ss::future<parquet_reader_result> read_parquet(
+  const struct_type& read_schema,
+  sp::file_io& io,
+  chunked_vector<delete_file_entry> delete_files) {
     // Step 1: Read and parse footer.
     auto file_size = io.size();
     auto tail = co_await io.read(file_size - 8, 8);
@@ -372,8 +610,22 @@ read_parquet(const struct_type& read_schema, sp::file_io& io) {
     }
     sp::index_schema(result_schema);
 
+    // Collect position deletes into a lookup set.
+    chunked_hash_set<int64_t> deleted_positions;
+    for (auto& entry : delete_files) {
+        if (auto* pds = std::get_if<position_delete_set>(&entry)) {
+            for (auto pos : pds->positions) {
+                deleted_positions.insert(pos);
+            }
+        }
+    }
+
+    // Precompute per-leaf max definition levels for position delete filtering.
+    auto max_def_levels = leaf_max_def_levels(result_schema);
+
     // Step 3: Read column chunks per row group.
     chunked_vector<sp::columnar_batch> row_group_batches;
+    int64_t row_offset = 0;
     for (const auto& rg : metadata.row_groups) {
         sp::columnar_batch batch;
         batch.num_rows = rg.num_rows;
@@ -408,6 +660,12 @@ read_parquet(const struct_type& read_schema, sp::file_io& io) {
               });
             co_await ss::coroutine::maybe_yield();
         }
+
+        if (!deleted_positions.empty()) {
+            apply_position_deletes(
+              batch, deleted_positions, row_offset, max_def_levels);
+        }
+        row_offset += rg.num_rows;
 
         row_group_batches.push_back(std::move(batch));
     }
