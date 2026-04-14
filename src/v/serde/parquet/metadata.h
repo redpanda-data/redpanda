@@ -309,7 +309,7 @@ struct data_page_header {
     definition_levels_byte_length + repetition_levels_byte_length + 1 and
     compressed_page_size (included) is compressed with the compression_codec. If
     missing it is considered compressed */
-    bool is_compressed;
+    bool is_compressed = true;
 
     /** Optional statistics for the data in this page **/
     std::optional<statistics> stats;

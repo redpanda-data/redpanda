@@ -11,6 +11,8 @@
 
 #include "serde/parquet/flattened_schema.h"
 
+#include <stdexcept>
+
 namespace serde::parquet {
 
 chunked_vector<flattened_schema> flatten(const schema_element& root) {
@@ -31,6 +33,10 @@ namespace {
 
 schema_element
 unflatten_recursive(const chunked_vector<flattened_schema>& flat, size_t& idx) {
+    if (idx >= flat.size()) {
+        throw std::runtime_error(
+          "malformed flattened schema: num_children exceeds element count");
+    }
     const auto& elem = flat[idx];
     schema_element result;
     result.type = elem.type;
@@ -53,6 +59,10 @@ schema_element unflatten(const chunked_vector<flattened_schema>& flat) {
     }
     size_t idx = 0;
     auto result = unflatten_recursive(flat, idx);
+    if (idx != flat.size()) {
+        throw std::runtime_error(
+          "malformed flattened schema: not all elements consumed");
+    }
     return result;
 }
 
