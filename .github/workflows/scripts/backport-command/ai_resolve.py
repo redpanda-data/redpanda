@@ -36,8 +36,10 @@ UNCERTAIN_RESPONSE = "UNCERTAIN"
 CONFLICT_MARKERS = ["<<<<<<<", "=======", ">>>>>>>"]
 
 SYSTEM_PROMPT = (
-    "You are a git conflict resolver. Return the resolved file with all conflict "
-    f"markers removed. If you cannot resolve it confidently, respond with: {UNCERTAIN_RESPONSE}"
+    "You are a git conflict resolver. Output ONLY the raw file content, exactly as "
+    "it should be written to disk. No markdown, no code fences, no explanations, no "
+    "preamble. Start with the first line of the file. If you cannot resolve it "
+    f"confidently, respond with exactly: {UNCERTAIN_RESPONSE}"
 )
 
 BACKPORT_COMMITS = os.environ["BACKPORT_COMMITS"]
@@ -146,6 +148,13 @@ for path in eligible:
         continue
 
     text = response.content[0].text.strip()
+
+    # Belt-and-suspenders: strip markdown fences if the model wraps the output
+    # despite the prompt instructions. Handles ```python, ```cpp, ``` etc.
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines[-1].strip() == "```":
+            text = "\n".join(lines[1:-1])
 
     if text.upper() == UNCERTAIN_RESPONSE:
         print(f"{path}: model uncertain. Skipping.")
