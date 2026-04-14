@@ -75,14 +75,6 @@ def call_with_retry(path: str, diff: str, file_content: str):
                 raise
 
 
-def difficulty_rating(resolved_count: int, total_diff_lines: int) -> str:
-    if resolved_count >= 3 or total_diff_lines > 150:
-        return "hairy"
-    if resolved_count == 1 and total_diff_lines <= 50:
-        return "easy"
-    return "medium"
-
-
 def build_comment(
     resolved: list[str], skipped: list[str], total_diff_lines: int
 ) -> str:
@@ -177,12 +169,6 @@ if not resolved:
 with open(os.environ["RESOLVED_FILES_OUT"], "w") as f:
     f.write("\n".join(resolved))
 
-rating = difficulty_rating(len(resolved), total_diff_lines)
-with open(os.environ["DIFFICULTY_OUT"], "w") as f:
-    f.write(rating)
-
 with open(os.environ["DIFFICULTY_COMMENT_OUT"], "w") as f:
     f.write(build_comment(resolved, skipped, total_diff_lines))
-
-print(f"Difficulty: {rating}")
 sys.exit(0)
