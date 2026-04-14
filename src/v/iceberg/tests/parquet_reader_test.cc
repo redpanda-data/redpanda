@@ -358,6 +358,111 @@ TEST(IcebergParquetReader, CompressedZstd) {
     }
 }
 
+TEST(IcebergParquetReader, IntToLongPromotion) {
+    // Write with int32 field (id=1)
+    struct_type write_schema;
+    write_schema.fields.push_back(
+      nested_field::create(
+        1, "x", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(write_schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{1}));
+    rows.push_back(record(sp::int32_value{2}));
+    rows.push_back(record(sp::int32_value{3}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Read with long_type (id=1) -- promotion int32 -> int64
+    struct_type read_schema;
+    read_schema.fields.push_back(
+      nested_field::create(
+        1, "x", field_required::yes, primitive_type{long_type{}}));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(read_schema, io).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    ASSERT_EQ(batch.columns.size(), 1);
+
+    const auto& col = batch.columns[0];
+    ASSERT_TRUE(std::holds_alternative<sp::column_array::i64_data>(col.data));
+    const auto& vals = std::get<sp::column_array::i64_data>(col.data);
+    ASSERT_EQ(vals.values.size(), 3);
+    EXPECT_EQ(vals.values[0], 1);
+    EXPECT_EQ(vals.values[1], 2);
+    EXPECT_EQ(vals.values[2], 3);
+
+    // Result schema should have the table's (promoted) type.
+    ASSERT_TRUE(
+      std::holds_alternative<sp::i64_type>(result.schema.children[0].type));
+}
+
+TEST(IcebergParquetReader, FloatToDoublePromotion) {
+    // Write with float32 field (id=1)
+    struct_type write_schema;
+    write_schema.fields.push_back(
+      nested_field::create(
+        1, "x", field_required::yes, primitive_type{float_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(write_schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::float32_value{1.5f}));
+    rows.push_back(record(sp::float32_value{2.5f}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Read with double_type (id=1) -- promotion float32 -> float64
+    struct_type read_schema;
+    read_schema.fields.push_back(
+      nested_field::create(
+        1, "x", field_required::yes, primitive_type{double_type{}}));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(read_schema, io).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    ASSERT_EQ(batch.columns.size(), 1);
+
+    const auto& col = batch.columns[0];
+    ASSERT_TRUE(std::holds_alternative<sp::column_array::f64_data>(col.data));
+    const auto& vals = std::get<sp::column_array::f64_data>(col.data);
+    ASSERT_EQ(vals.values.size(), 2);
+    EXPECT_DOUBLE_EQ(vals.values[0], 1.5);
+    EXPECT_DOUBLE_EQ(vals.values[1], 2.5);
+
+    ASSERT_TRUE(
+      std::holds_alternative<sp::f64_type>(result.schema.children[0].type));
+}
+
+TEST(IcebergParquetReader, InvalidPromotionError) {
+    // Write with string field (id=1)
+    struct_type write_schema;
+    write_schema.fields.push_back(
+      nested_field::create(
+        1, "x", field_required::yes, primitive_type{string_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(write_schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::byte_array_value{iobuf::from("hello")}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Read with long_type (id=1) -- invalid promotion
+    struct_type read_schema;
+    read_schema.fields.push_back(
+      nested_field::create(
+        1, "x", field_required::yes, primitive_type{long_type{}}));
+
+    sp::iobuf_file_io io(std::move(file));
+    EXPECT_THROW(read_parquet(read_schema, io).get(), std::runtime_error);
+}
+
 // NOLINTEND(*magic-number*)
 
 } // namespace
