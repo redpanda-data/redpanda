@@ -235,6 +235,33 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "row_delta_action_test",
+    timeout = "moderate",
+    srcs = [
+        "row_delta_action_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/iceberg:manifest_entry",
+        "//src/v/iceberg:manifest_io",
+        "//src/v/iceberg:merge_append_action",
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:row_delta_action",
+        "//src/v/iceberg:table_update",
+        "//src/v/iceberg:table_update_applier",
+        "//src/v/iceberg:values_bytes",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "partition_json_test",
     timeout = "short",
     srcs = [
