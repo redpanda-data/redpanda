@@ -160,6 +160,7 @@ jobs:
           GIT_USER: ${{ steps.user.outputs.username }}
           AI_RESOLVED_FILES: ${{ steps.pr_details.outputs.ai_resolved_files }}
           AI_DIFFICULTY: ${{ steps.pr_details.outputs.ai_difficulty }}
+          AI_DIFFICULTY_COMMENT: ${{ steps.pr_details.outputs.ai_difficulty_comment }}
         id: create_pr
         run: $SCRIPT_DIR/create_pr.sh
         shell: bash

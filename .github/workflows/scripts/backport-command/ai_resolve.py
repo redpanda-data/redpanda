@@ -83,6 +83,19 @@ def difficulty_rating(resolved_count: int, total_diff_lines: int) -> str:
     return "medium"
 
 
+def build_comment(resolved: list[str], skipped: list[str], total_diff_lines: int) -> str:
+    files_list = "\n".join(f"- `{f}`" for f in resolved)
+    file_word = "file" if len(resolved) == 1 else "files"
+    return (
+        f"**AI conflict resolution** — {len(resolved)} {file_word}, "
+        f"{total_diff_lines} diff lines\n\n"
+        f"Resolved in {len(resolved)} {file_word}. "
+        f"The original diff was {total_diff_lines} lines. "
+        f"Skipped {len(skipped)} files (generated).\n\n"
+        f"Resolved:\n{files_list}"
+    )
+
+
 conflicted = (
     subprocess.check_output(["git", "diff", "--name-only", "--diff-filter=U"])
     .decode()
@@ -162,6 +175,9 @@ with open(os.environ["RESOLVED_FILES_OUT"], "w") as f:
 rating = difficulty_rating(len(resolved), total_diff_lines)
 with open(os.environ["DIFFICULTY_OUT"], "w") as f:
     f.write(rating)
+
+with open(os.environ["DIFFICULTY_COMMENT_OUT"], "w") as f:
+    f.write(build_comment(resolved, skipped, total_diff_lines))
 
 print(f"Difficulty: {rating}")
 sys.exit(0)

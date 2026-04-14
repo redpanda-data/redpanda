@@ -47,12 +47,15 @@ if ! git cherry-pick -x $BACKPORT_COMMITS; then
   echo "Cherry-pick failed. Attempting AI conflict resolution..."
   RESOLVED_OUT=$(mktemp)
   DIFFICULTY_OUT=$(mktemp)
-  trap 'rm -f "$RESOLVED_OUT" "$DIFFICULTY_OUT"' EXIT
+  DIFFICULTY_COMMENT_OUT=$(mktemp)
+  trap 'rm -f "$RESOLVED_OUT" "$DIFFICULTY_OUT" "$DIFFICULTY_COMMENT_OUT"' EXIT
   export RESOLVED_FILES_OUT="$RESOLVED_OUT"
   export DIFFICULTY_OUT
+  export DIFFICULTY_COMMENT_OUT
   if uv run "$SCRIPT_DIR/ai_resolve.py"; then
     ai_resolved_files=$(cat "$RESOLVED_OUT")
     ai_difficulty=$(cat "$DIFFICULTY_OUT")
+    ai_difficulty_comment=$(cat "$DIFFICULTY_COMMENT_OUT")
     if ! git cherry-pick --continue --no-edit; then
       git cherry-pick --abort 2>/dev/null || true
       msg="AI resolution staged changes but cherry-pick --continue failed (unresolved conflicts remain). Manual backport required."
@@ -85,3 +88,8 @@ echo "fixing_issue_urls=$fixing_issue_urls" >>$GITHUB_OUTPUT
   echo 'EOF'
 } >>"$GITHUB_OUTPUT"
 echo "ai_difficulty=${ai_difficulty:-}" >>"$GITHUB_OUTPUT"
+{
+  echo 'ai_difficulty_comment<<EOF'
+  echo "${ai_difficulty_comment:-}"
+  echo 'EOF'
+} >>"$GITHUB_OUTPUT"
