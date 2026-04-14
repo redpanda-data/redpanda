@@ -527,4 +527,17 @@ struct file_metadata_tag {};
  */
 file_metadata decode(iobuf data, file_metadata_tag);
 
+/// Location of the footer within a parquet file.
+struct footer_location {
+    int64_t offset;
+    int64_t length;
+};
+
+/// Parse the footer location from the last 8 bytes of a parquet file.
+/// Validates the trailing PAR1 magic. `tail_bytes` must be exactly 8 bytes
+/// (4-byte LE footer length + 4-byte "PAR1" magic).
+/// `file_size` is the total file size.
+footer_location
+parse_footer_location(const iobuf& tail_bytes, int64_t file_size);
+
 } // namespace serde::parquet

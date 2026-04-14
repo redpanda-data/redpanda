@@ -14,6 +14,7 @@
 #include "serde/parquet/assembler.h"
 #include "serde/parquet/column_chunk_reader.h"
 #include "serde/parquet/flattened_schema.h"
+#include "serde/parquet/metadata.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 
@@ -22,45 +23,6 @@
 namespace serde::parquet {
 
 namespace {
-
-// File layout: [PAR1] [row group pages...] [footer (thrift)] [footer_size
-// (4B LE)] [PAR1]
-constexpr size_t magic_size = 4;
-constexpr size_t footer_suffix_size = magic_size + sizeof(uint32_t);
-constexpr std::string_view parquet_magic = "PAR1";
-
-void validate_magic(iobuf& file_data) {
-    auto file_size = file_data.size_bytes();
-    if (file_size < magic_size + footer_suffix_size) {
-        throw std::runtime_error("file too small to be a valid parquet file");
-    }
-    // Check trailing magic
-    auto tail = file_data.share(file_size - magic_size, magic_size);
-    iobuf_parser tail_parser(std::move(tail));
-    auto magic = tail_parser.read_string_unsafe(magic_size);
-    if (magic != parquet_magic) {
-        throw std::runtime_error("invalid parquet file: missing trailing PAR1");
-    }
-}
-
-file_metadata parse_footer(iobuf& file_data) {
-    auto file_size = file_data.size_bytes();
-    // Read footer length (4 bytes LE before trailing PAR1)
-    auto len_region = file_data.share(
-      file_size - footer_suffix_size, sizeof(uint32_t));
-    iobuf_parser len_parser(std::move(len_region));
-    auto footer_len = ss::le_to_cpu(len_parser.consume_type<uint32_t>());
-
-    if (footer_len > file_size - magic_size - footer_suffix_size) {
-        throw std::runtime_error(
-          "invalid parquet file: footer length exceeds "
-          "file size");
-    }
-
-    auto footer_bytes = file_data.share(
-      file_size - footer_suffix_size - footer_len, footer_len);
-    return decode(std::move(footer_bytes), file_metadata_tag{});
-}
 
 /// Resolve which leaf columns to read based on projection paths.
 /// Returns a set of schema positions for projected leaf columns.
@@ -170,8 +132,11 @@ schema_element project_schema(
 } // namespace
 
 ss::future<file_reader_result> read_file(iobuf file_data, reader_options opts) {
-    validate_magic(file_data);
-    auto metadata = parse_footer(file_data);
+    constexpr size_t tail_size = 8;
+    auto tail = file_data.share(file_data.size_bytes() - tail_size, tail_size);
+    auto loc = parse_footer_location(tail, file_data.size_bytes());
+    auto footer_bytes = file_data.share(loc.offset, loc.length);
+    auto metadata = decode(std::move(footer_bytes), file_metadata_tag{});
     auto schema = unflatten(metadata.schema);
     index_schema(schema);
 

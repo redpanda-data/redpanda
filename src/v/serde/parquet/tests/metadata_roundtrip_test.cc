@@ -13,6 +13,8 @@
 #include "serde/parquet/metadata.h"
 #include "serde/parquet/schema.h"
 
+#include <seastar/core/byteorder.hh>
+
 #include <gtest/gtest.h>
 
 using namespace serde::parquet;
@@ -342,4 +344,69 @@ TEST(MetadataRoundTrip, SchemaWithAllLogicalTypes) {
           decoded.schema[i].logical_type, original.schema[i].logical_type)
           << "mismatch at schema index " << i;
     }
+}
+
+// Build a minimal parquet file in memory:
+//   [PAR1] [encoded footer] [footer_len LE uint32] [PAR1]
+// Then verify parse_footer_location returns the correct offset/length
+// and that decoding the footer at that location succeeds.
+TEST(MetadataRoundTrip, ParseFooterLocation) {
+    file_metadata original{
+      .version = 2,
+      .schema = flatten(
+        schema_element{
+          .path = {"root"},
+          .children = list<schema_element>(schema_element{
+            .type = i64_type{},
+            .repetition_type = field_repetition_type::required,
+            .path = {"col"},
+          }),
+        }),
+      .num_rows = 42,
+      .created_by = "test",
+    };
+
+    auto encoded_footer = encode(original);
+    auto footer_len = static_cast<uint32_t>(encoded_footer.size_bytes());
+
+    // Assemble file: PAR1 + footer + footer_len(LE) + PAR1
+    iobuf file_data;
+    file_data.append("PAR1", 4);
+    file_data.append(encoded_footer.share(0, encoded_footer.size_bytes()));
+    auto le_len = ss::cpu_to_le(footer_len);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    file_data.append(reinterpret_cast<const char*>(&le_len), sizeof(le_len));
+    file_data.append("PAR1", 4);
+
+    auto file_size = static_cast<int64_t>(file_data.size_bytes());
+
+    // Extract last 8 bytes
+    auto tail = file_data.share(file_data.size_bytes() - 8, 8);
+    auto loc = parse_footer_location(tail, file_size);
+
+    EXPECT_EQ(loc.offset, 4);
+    EXPECT_EQ(loc.length, static_cast<int64_t>(footer_len));
+
+    // Decode the footer at the reported location
+    auto footer_bytes = file_data.share(loc.offset, loc.length);
+    auto decoded = decode(std::move(footer_bytes), file_metadata_tag{});
+    EXPECT_EQ(decoded.version, 2);
+    EXPECT_EQ(decoded.num_rows, 42);
+    EXPECT_EQ(decoded.created_by, "test");
+}
+
+TEST(MetadataRoundTrip, ParseFooterLocationBadMagic) {
+    iobuf tail;
+    uint32_t len = 10;
+    auto le_len = ss::cpu_to_le(len);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    tail.append(reinterpret_cast<const char*>(&le_len), sizeof(le_len));
+    tail.append("XXXX", 4);
+    EXPECT_THROW(parse_footer_location(tail, 100), std::runtime_error);
+}
+
+TEST(MetadataRoundTrip, ParseFooterLocationTooSmall) {
+    iobuf tail;
+    tail.append("PAR1", 4);
+    EXPECT_THROW(parse_footer_location(tail, 100), std::runtime_error);
 }

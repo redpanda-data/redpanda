@@ -1640,4 +1640,32 @@ file_metadata decode(iobuf data, file_metadata_tag) {
     return result;
 }
 
+footer_location
+parse_footer_location(const iobuf& tail_bytes, int64_t file_size) {
+    constexpr size_t magic_size = 4;
+    constexpr size_t suffix_size = magic_size + sizeof(uint32_t);
+    if (tail_bytes.size_bytes() < suffix_size) {
+        throw std::runtime_error("tail bytes too small for parquet footer");
+    }
+    if (file_size < static_cast<int64_t>(magic_size + suffix_size)) {
+        throw std::runtime_error("file too small to be a valid parquet file");
+    }
+    iobuf_const_parser parser(tail_bytes);
+    auto footer_len = ss::le_to_cpu(parser.consume_type<uint32_t>());
+    auto magic = parser.read_string_unsafe(magic_size);
+    if (magic != "PAR1") {
+        throw std::runtime_error("invalid parquet file: missing trailing PAR1");
+    }
+    if (
+      static_cast<int64_t>(footer_len)
+      > file_size - static_cast<int64_t>(magic_size + suffix_size)) {
+        throw std::runtime_error(
+          "invalid parquet file: footer length exceeds file size");
+    }
+    return footer_location{
+      .offset = file_size - static_cast<int64_t>(suffix_size) - footer_len,
+      .length = static_cast<int64_t>(footer_len),
+    };
+}
+
 } // namespace serde::parquet

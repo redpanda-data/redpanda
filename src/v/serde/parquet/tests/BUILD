@@ -5,6 +5,21 @@ load("//bazel:build.bzl", "redpanda_cc_binary")
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
+    name = "file_io_test",
+    timeout = "short",
+    srcs = ["file_io_test.cc"],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde/parquet:file_io",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "reader_test",
     timeout = "short",
     srcs = [
