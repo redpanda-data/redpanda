@@ -66,7 +66,7 @@ pr_url=$(gh pr create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
 $backport_issue_urls")
 
 if [[ -n "${AI_RESOLVED_FILES:-}" && -n "${AI_DIFFICULTY:-}" ]]; then
-  files_list=$(printf '%s\n' $AI_RESOLVED_FILES | sed 's/^/- /')
+  files_list=$(echo "$AI_RESOLVED_FILES" | sed 's/^/- /')
   gh pr comment "$pr_url" \
     --repo "$TARGET_ORG/$TARGET_REPO" \
     --body "AI conflict resolution — difficulty: **${AI_DIFFICULTY}**

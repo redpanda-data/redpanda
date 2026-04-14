@@ -15,9 +15,14 @@ GENERATED_PATTERNS = [
     "MODULE.bazel", "*.lock", "go.sum", "package-lock.json", "Cargo.lock",
 ]
 
+MODEL = "claude-opus-4-6"
+MAX_TOKENS = 2048
+UNCERTAIN_RESPONSE = "UNCERTAIN"
+CONFLICT_MARKERS = ["<<<<<<<", "=======", ">>>>>>>"]
+
 SYSTEM_PROMPT = (
     "You are a git conflict resolver. Return the resolved file with all conflict "
-    "markers removed. If you cannot resolve it confidently, respond with: UNCERTAIN"
+    f"markers removed. If you cannot resolve it confidently, respond with: {UNCERTAIN_RESPONSE}"
 )
 
 BACKPORT_COMMITS = os.environ["BACKPORT_COMMITS"]
@@ -39,8 +44,8 @@ def call_with_retry(path: str, diff: str, file_content: str):
     for attempt in range(2):
         try:
             return client.messages.create(
-                model="claude-opus-4-6",
-                max_tokens=2048,
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
                 timeout=30,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}],
@@ -101,11 +106,11 @@ for path in eligible:
 
     text = response.content[0].text.strip()
 
-    if text.upper() == "UNCERTAIN":
+    if text.upper() == UNCERTAIN_RESPONSE:
         print(f"{path}: model uncertain. Skipping.")
         continue
 
-    if any(m in text for m in ["<<<<<<<", "=======", ">>>>>>>"]):
+    if any(m in text for m in CONFLICT_MARKERS):
         print(f"{path}: model output still contains conflict markers. Skipping.")
         continue
 
