@@ -35,6 +35,7 @@ redpanda_cc_library(
         ":schema",
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_vector",
         "//src/v/hashing:crc32",
         "//src/v/serde/thrift:compact",

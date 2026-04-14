@@ -5,6 +5,39 @@ load("//bazel:build.bzl", "redpanda_cc_binary")
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
+    name = "metadata_roundtrip_test",
+    timeout = "short",
+    srcs = [
+        "metadata_roundtrip_test.cc",
+    ],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        "//src/v/serde/parquet:metadata",
+        "//src/v/serde/parquet:schema",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "flattened_schema_test",
+    timeout = "short",
+    srcs = [
+        "flattened_schema_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:schema",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "value_test",
     timeout = "short",
     srcs = [
