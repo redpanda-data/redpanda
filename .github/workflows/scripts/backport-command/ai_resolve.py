@@ -83,7 +83,9 @@ def difficulty_rating(resolved_count: int, total_diff_lines: int) -> str:
     return "medium"
 
 
-def build_comment(resolved: list[str], skipped: list[str], total_diff_lines: int) -> str:
+def build_comment(
+    resolved: list[str], skipped: list[str], total_diff_lines: int
+) -> str:
     files_list = "\n".join(f"- `{f}`" for f in resolved)
     file_word = "file" if len(resolved) == 1 else "files"
     return (
