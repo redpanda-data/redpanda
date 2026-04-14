@@ -5,6 +5,17 @@ package(
 )
 
 redpanda_cc_library(
+    name = "file_io",
+    srcs = ["file_io.cc"],
+    hdrs = ["file_io.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema",
     srcs = [
         "flattened_schema.cc",
