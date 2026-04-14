@@ -341,4 +341,38 @@ build:io_uring --//bazel:io_uring=True
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 
+# =================================
+# FuzzTest (Google FuzzTest)
+# =================================
+# We define our own config rather than using the generated fuzztest.bazelrc
+# because FuzzTest's coverage runtime (__sanitizer_cov_8bit_counters_init)
+# only tracks a single counter region. The generated config instruments
+# every TU via a global --copt, causing external deps to register their
+# counters first and shadow our code (0 edges covered). Our config applies
+# coverage only to src/v/ via per_file_copt so only Redpanda code is tracked.
+
+# ASan (from fuzztest.bazelrc, duplicated here so we don't need try-import)
+build:fuzztest --linkopt=-fsanitize=address
+build:fuzztest --copt=-fsanitize=address
+build:fuzztest --copt=-DADDRESS_SANITIZER
+
+# Common fuzztest defines
+build:fuzztest --copt=-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+build:fuzztest --copt=-UNDEBUG
+
+# Link statically
+build:fuzztest --dynamic_mode=off
+
+# Seastar requires system allocator under ASan
+build:fuzztest --@seastar//:system_allocator=True
+build:fuzztest --linkopt=-fsanitize-link-c++-runtime
+
+# Coverage instrumentation ONLY for src/v/ (not global --copt).
+build:fuzztest --per_file_copt=src/v/.*@-fsanitize-coverage=inline-8bit-counters
+build:fuzztest --per_file_copt=src/v/.*@-fsanitize-coverage=trace-cmp
+build:fuzztest --per_file_copt=src/v/.*@-fsanitize-coverage=pc-table
+
+# Suppress warnings from FuzzTest headers included in our source files.
+build --per_file_copt=.*fuzztest.*@-Wno-nullability-completeness,-Wno-unused-parameter,-Wno-deprecated-declarations,-Wno-sign-compare
+
 try-import %workspace%/user.bazelrc

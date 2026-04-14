@@ -30,6 +30,36 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "fuzztest",
+    srcs = [
+        "fuzztest_main.cc",
+        "gtest_utils.cc",
+    ],
+    hdrs = [
+        "async.h",
+        "gtest_exception.h",
+        "gtest_utils.h",
+        "test.h",
+        "test_macros.h",
+        "tmp_dir.h",
+    ],
+    implementation_deps = [
+        ":global_test_hooks",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/model:timeout_clock",
+        "//src/v/ssx:sformat",
+        "@fmt",
+        "@fuzztest//fuzztest:init_fuzztest",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "seastar_boost",
     srcs = [
         "seastar_testing_main.cc",

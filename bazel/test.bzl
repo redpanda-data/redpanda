@@ -330,6 +330,34 @@ def redpanda_cc_fuzz_test(
         custom_args = args,
     )
 
+def redpanda_cc_fuzztest(
+        name,
+        timeout,
+        srcs = [],
+        defines = [],
+        deps = [],
+        args = [],
+        env = {},
+        cpu = None,
+        memory = None,
+        data = [],
+        tags = []):
+    _redpanda_cc_unit_test(
+        dash_dash_protocol = False,
+        name = name,
+        timeout = timeout,
+        srcs = srcs,
+        defines = defines,
+        cpu = cpu,
+        memory = memory,
+        deps = deps,
+        custom_args = args,
+        env = env,
+        data = data,
+        local_defines = ["IS_GTEST"],
+        tags = tags,
+    )
+
 def redpanda_cc_btest_no_seastar(
         name,
         timeout,
