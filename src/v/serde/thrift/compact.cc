@@ -128,4 +128,138 @@ void list_encoder::write_long_form_field_header(
     write_uvint<int32_t>(_buf, static_cast<int32_t>(field_id));
 }
 
+struct_decoder::struct_decoder(iobuf_parser_base& parser)
+  : _parser(parser) {}
+
+std::optional<struct_decoder::field_header>
+struct_decoder::read_field_header() {
+    auto byte = _parser.consume_type<uint8_t>();
+    if (byte == 0) {
+        return std::nullopt;
+    }
+    auto type = static_cast<field_type>(byte & 0x0FU);
+    auto delta = static_cast<uint8_t>(byte >> 4U);
+    field_id id;
+    if (delta != 0) {
+        id = field_id(_last_field_id() + delta);
+    } else {
+        id = field_id(decode_i16(_parser));
+    }
+    _last_field_id = id;
+    // Booleans are encoded in the type byte itself — no additional value bytes.
+    // The caller should check the type for boolean_true/boolean_false rather
+    // than reading a separate value.
+    return field_header{id, type};
+}
+
+void struct_decoder::skip_field(field_type type) {
+    switch (type) {
+    case field_type::boolean_true:
+    case field_type::boolean_false:
+        break;
+    case field_type::i8:
+        _parser.skip(1);
+        break;
+    case field_type::i16:
+        decode_i16(_parser);
+        break;
+    case field_type::i32:
+        decode_i32(_parser);
+        break;
+    case field_type::i64:
+        decode_i64(_parser);
+        break;
+    case field_type::f64:
+        _parser.skip(8);
+        break;
+    case field_type::binary:
+        decode_binary(_parser);
+        break;
+    case field_type::uuid:
+        _parser.skip(16);
+        break;
+    case field_type::list:
+    case field_type::set: {
+        list_decoder list(_parser);
+        for (size_t i = 0; i < list.size(); ++i) {
+            skip_field(list.element_type());
+        }
+        break;
+    }
+    case field_type::map: {
+        auto [count, _] = _parser.read_unsigned_varint();
+        if (count == 0) {
+            break;
+        }
+        auto kv_byte = _parser.consume_type<uint8_t>();
+        auto key_type = static_cast<field_type>(kv_byte >> 4U);
+        auto val_type = static_cast<field_type>(kv_byte & 0x0FU);
+        for (size_t i = 0; i < count; ++i) {
+            skip_field(key_type);
+            skip_field(val_type);
+        }
+        break;
+    }
+    case field_type::structure: {
+        struct_decoder nested(_parser);
+        while (auto hdr = nested.read_field_header()) {
+            nested.skip_field(hdr->type);
+        }
+        break;
+    }
+    }
+}
+
+list_decoder::list_decoder(iobuf_parser_base& parser) {
+    auto byte = parser.consume_type<uint8_t>();
+    _type = static_cast<field_type>(byte & 0x0FU);
+    auto size_nibble = static_cast<uint8_t>(byte >> 4U);
+    constexpr uint8_t long_form_marker = 0x0FU;
+    if (size_nibble == long_form_marker) {
+        auto [val, _] = parser.read_unsigned_varint();
+        _size = val;
+    } else {
+        _size = size_nibble;
+    }
+}
+
+field_type list_decoder::element_type() const { return _type; }
+
+size_t list_decoder::size() const { return _size; }
+
+int16_t decode_i16(iobuf_parser_base& parser) {
+    auto [val, _] = parser.read_varlong();
+    if (
+      val < std::numeric_limits<int16_t>::min()
+      || val > std::numeric_limits<int16_t>::max()) {
+        throw std::out_of_range("thrift i16 value out of range");
+    }
+    return static_cast<int16_t>(val);
+}
+
+int32_t decode_i32(iobuf_parser_base& parser) {
+    auto [val, _] = parser.read_varlong();
+    if (
+      val < std::numeric_limits<int32_t>::min()
+      || val > std::numeric_limits<int32_t>::max()) {
+        throw std::out_of_range("thrift i32 value out of range");
+    }
+    return static_cast<int32_t>(val);
+}
+
+int64_t decode_i64(iobuf_parser_base& parser) {
+    auto [val, _] = parser.read_varlong();
+    return val;
+}
+
+ss::sstring decode_string(iobuf_parser_base& parser) {
+    auto [len, _] = parser.read_unsigned_varint();
+    return parser.read_string_unsafe(len);
+}
+
+iobuf decode_binary(iobuf_parser_base& parser) {
+    auto [len, _] = parser.read_unsigned_varint();
+    return parser.copy(len);
+}
+
 } // namespace serde::thrift
