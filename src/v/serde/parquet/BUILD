@@ -65,6 +65,25 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "assembler",
+    srcs = [
+        "assembler.cc",
+    ],
+    hdrs = [
+        "assembler.h",
+    ],
+    deps = [
+        ":column_array",
+        ":schema",
+        ":value",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "column_chunk_reader",
     srcs = [
         "column_chunk_reader.cc",
