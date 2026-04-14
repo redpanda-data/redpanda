@@ -44,25 +44,46 @@ head_branch=$(echo "backport-pr-$PR_NUMBER-$BACKPORT_BRANCH-$suffix" | sed 's/ /
 git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
 
 if ! git cherry-pick -x $BACKPORT_COMMITS; then
-  msg="Failed to create a backport PR to $BACKPORT_BRANCH branch. I tried:\n
-\`\`\`\r
-git remote add upstream "https://github.com/$TARGET_FULL_REPO.git"
-git fetch --all
-git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
-git cherry-pick -x $BACKPORT_COMMITS
-\`\`\`"
-
-  # Multiline workaround for GitHub Actions.
-  {
-    echo 'BACKPORT_ERROR<<EOF'
-    echo -e "$msg"
-    echo 'EOF'
-  } >>"$GITHUB_ENV"
-
-  backport_failure "$msg"
+  echo "Cherry-pick failed. Attempting AI conflict resolution..."
+  RESOLVED_OUT=$(mktemp)
+  DIFFICULTY_OUT=$(mktemp)
+  export RESOLVED_FILES_OUT="$RESOLVED_OUT"
+  export DIFFICULTY_OUT
+  if uv run "$SCRIPT_DIR/ai_resolve.py"; then
+    ai_resolved_files=$(cat "$RESOLVED_OUT")
+    ai_difficulty=$(cat "$DIFFICULTY_OUT")
+    if ! git cherry-pick --continue --no-edit; then
+      git cherry-pick --abort 2>/dev/null || true
+      rm -f "$RESOLVED_OUT" "$DIFFICULTY_OUT"
+      msg="AI resolution staged changes but cherry-pick --continue failed (unresolved conflicts remain). Manual backport required."
+      {
+        echo 'BACKPORT_ERROR<<EOF'
+        echo -e "$msg"
+        echo 'EOF'
+      } >>"$GITHUB_ENV"
+      backport_failure "$msg"
+    fi
+  else
+    git cherry-pick --abort 2>/dev/null || true
+    rm -f "$RESOLVED_OUT" "$DIFFICULTY_OUT"
+    msg="Cherry-pick failed and AI resolution could not resolve conflicts automatically. Manual backport required."
+    {
+      echo 'BACKPORT_ERROR<<EOF'
+      echo -e "$msg"
+      echo 'EOF'
+    } >>"$GITHUB_ENV"
+    backport_failure "$msg"
+  fi
+  rm -f "$RESOLVED_OUT" "$DIFFICULTY_OUT"
 fi
 
 git push --set-upstream origin "$head_branch"
 git remote rm upstream
 echo "head_branch=$head_branch" >>$GITHUB_OUTPUT
 echo "fixing_issue_urls=$fixing_issue_urls" >>$GITHUB_OUTPUT
+{
+  echo 'ai_resolved_files<<EOF'
+  echo "${ai_resolved_files:-}"
+  echo 'EOF'
+} >>"$GITHUB_OUTPUT"
+echo "ai_difficulty=${ai_difficulty:-}" >>"$GITHUB_OUTPUT"

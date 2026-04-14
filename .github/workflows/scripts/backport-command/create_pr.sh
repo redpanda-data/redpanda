@@ -50,12 +50,29 @@ if [[ $FIXING_ISSUE_URLS != "" ]]; then
   backport_issue_urls=$(echo "$backport_issue_urls" | sed 's/.$//')
 fi
 
-gh pr create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
+labels="kind/backport"
+if [[ -n "${AI_RESOLVED_FILES:-}" ]]; then
+  labels="$labels,ai-resolved-conflicts"
+fi
+
+pr_url=$(gh pr create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
   --base "$BACKPORT_BRANCH" \
-  --label "kind/backport" \
+  --label "$labels" \
   --head "$GIT_USER:$HEAD_BRANCH" \
   --repo "$TARGET_ORG/$TARGET_REPO" \
   --reviewer "$AUTHOR" \
   --milestone "$TARGET_MILESTONE" \
   --body "Backport of PR $ORIG_ISSUE_URL
-$backport_issue_urls"
+$backport_issue_urls")
+
+if [[ -n "${AI_RESOLVED_FILES:-}" && -n "${AI_DIFFICULTY:-}" ]]; then
+  files_list=$(printf '%s\n' $AI_RESOLVED_FILES | sed 's/^/- /')
+  gh pr comment "$pr_url" \
+    --repo "$TARGET_ORG/$TARGET_REPO" \
+    --body "AI conflict resolution — difficulty: **${AI_DIFFICULTY}**
+
+Conflicts resolved automatically in:
+${files_list}
+
+Review the resolved hunks carefully before merging."
+fi
