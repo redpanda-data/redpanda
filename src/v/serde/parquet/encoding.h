@@ -11,8 +11,11 @@
 
 #pragma once
 
+#include "bytes/iobuf_parser.h"
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
+
+#include <climits>
 
 namespace serde::parquet {
 
@@ -107,5 +110,112 @@ iobuf encode_for_stats(float32_value);
 iobuf encode_for_stats(float64_value);
 iobuf encode_for_stats(const byte_array_value&);
 iobuf encode_for_stats(const fixed_byte_array_value&);
+
+// Decode stats-encoded values (inverse of encode_for_stats).
+// For byte arrays, the entire iobuf is the value (no length prefix).
+boolean_value decode_stats_boolean(const iobuf& data);
+int32_value decode_stats_int32(const iobuf& data);
+int64_value decode_stats_int64(const iobuf& data);
+float32_value decode_stats_float32(const iobuf& data);
+float64_value decode_stats_float64(const iobuf& data);
+byte_array_value decode_stats_byte_array(const iobuf& data);
+
+// Decode RLE/bitpack hybrid encoded levels. Handles both RLE runs (from
+// our own encoder) and bitpack runs (from external writers like Arrow).
+//
+// `byte_length` is the number of encoded bytes (from page header V2).
+// `max_value` provides the bit width for decoding.
+chunked_vector<rep_level> decode_levels(
+  iobuf_parser_base& parser,
+  int32_t num_values,
+  int32_t byte_length,
+  rep_level max_value);
+
+chunked_vector<def_level> decode_levels(
+  iobuf_parser_base& parser,
+  int32_t num_values,
+  int32_t byte_length,
+  def_level max_value);
+
+// Decode RLE/bitpack hybrid encoded int32 values. Same wire format as
+// definition/repetition levels. Used for dictionary indices.
+//
+// `bit_width` is the number of bits per value (provided by the caller,
+// not derived from a max_value).
+// `byte_length` is the total encoded byte count.
+chunked_vector<int32_t> decode_rle_bp_int32(
+  iobuf_parser_base& parser,
+  int32_t num_values,
+  int32_t byte_length,
+  int32_t bit_width);
+
+// Decode PLAIN encoded values.
+template<typename value_type>
+class plain_decoder;
+
+template<>
+class plain_decoder<boolean_value> {
+public:
+    explicit plain_decoder(iobuf_parser_base& parser);
+    boolean_value read_value();
+
+private:
+    iobuf_parser_base& _parser;
+    uint8_t _bits{0};
+    uint8_t _shift{CHAR_BIT}; // start exhausted so first read fetches a byte
+};
+
+template<typename value_type>
+class numeric_plain_decoder {
+public:
+    explicit numeric_plain_decoder(iobuf_parser_base& parser);
+    value_type read_value();
+
+private:
+    iobuf_parser_base& _parser;
+};
+
+template<>
+class plain_decoder<int32_value> : public numeric_plain_decoder<int32_value> {
+    using numeric_plain_decoder::numeric_plain_decoder;
+};
+
+template<>
+class plain_decoder<int64_value> : public numeric_plain_decoder<int64_value> {
+    using numeric_plain_decoder::numeric_plain_decoder;
+};
+
+template<>
+class plain_decoder<float32_value>
+  : public numeric_plain_decoder<float32_value> {
+    using numeric_plain_decoder::numeric_plain_decoder;
+};
+
+template<>
+class plain_decoder<float64_value>
+  : public numeric_plain_decoder<float64_value> {
+    using numeric_plain_decoder::numeric_plain_decoder;
+};
+
+template<>
+class plain_decoder<byte_array_value> {
+public:
+    explicit plain_decoder(iobuf_parser_base& parser);
+    byte_array_value read_value();
+
+private:
+    iobuf_parser_base& _parser;
+};
+
+template<>
+class plain_decoder<fixed_byte_array_value> {
+public:
+    plain_decoder(iobuf_parser_base& parser, int32_t fixed_length);
+    fixed_byte_array_value read_value();
+
+private:
+    iobuf_parser_base& _parser;
+    int32_t _fixed_length;
+};
 
 } // namespace serde::parquet

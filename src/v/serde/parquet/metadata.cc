@@ -1032,8 +1032,7 @@ time_unit decode_time_unit(iobuf_parser_base& parser) {
     return result;
 }
 
-logical_type
-decode_logical_type(iobuf_parser_base& parser, int32_t& out_scale) {
+logical_type decode_logical_type(iobuf_parser_base& parser) {
     enum logical_type_id : int16_t {
         string = 1,
         map = 2,
@@ -1087,7 +1086,6 @@ decode_logical_type(iobuf_parser_base& parser, int32_t& out_scale) {
                     break;
                 }
             }
-            out_scale = dt.scale;
             result = dt;
             break;
         }
@@ -1222,8 +1220,7 @@ decode_flattened_schema(iobuf_parser_base& parser, bool /*is_root*/) {
         } else if (hdr->id == field_id_field_id) {
             result.field_id = thrift::decode_i32(parser);
         } else if (hdr->id == logical_type_field_id) {
-            int32_t scale = 0;
-            result.logical_type = decode_logical_type(parser, scale);
+            result.logical_type = decode_logical_type(parser);
         } else {
             dec.skip_field(hdr->type);
         }

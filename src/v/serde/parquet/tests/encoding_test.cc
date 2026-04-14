@@ -348,6 +348,233 @@ INSTANTIATE_TEST_SUITE_P(
       }
     }));
 
+// --- Decoder Round-Trip Tests ---
+
+TEST(LevelDecoding, RoundTripRLE) {
+    chunked_vector<def_level> levels;
+    for (int i = 0; i < 100; ++i) {
+        levels.push_back(def_level(static_cast<int16_t>(i % 3)));
+    }
+    def_level max_val = def_level(2);
+    auto encoded = encode_levels(max_val, levels);
+    auto byte_length = static_cast<int32_t>(encoded.size_bytes());
+    iobuf_parser parser(std::move(encoded));
+    auto decoded = decode_levels(parser, 100, byte_length, max_val);
+    ASSERT_EQ(decoded.size(), levels.size());
+    for (size_t i = 0; i < levels.size(); ++i) {
+        EXPECT_EQ(decoded[i], levels[i]) << "mismatch at index " << i;
+    }
+}
+
+TEST(LevelDecoding, RoundTripAllSameValue) {
+    chunked_vector<rep_level> levels;
+    for (int i = 0; i < 50; ++i) {
+        levels.push_back(rep_level(3));
+    }
+    rep_level max_val = rep_level(3);
+    auto encoded = encode_levels(max_val, levels);
+    auto byte_length = static_cast<int32_t>(encoded.size_bytes());
+    iobuf_parser parser(std::move(encoded));
+    auto decoded = decode_levels(parser, 50, byte_length, max_val);
+    ASSERT_EQ(decoded.size(), 50);
+    for (const auto& v : decoded) {
+        EXPECT_EQ(v, rep_level(3));
+    }
+}
+
+TEST(LevelDecoding, RoundTripAllZeros) {
+    chunked_vector<def_level> levels;
+    for (int i = 0; i < 20; ++i) {
+        levels.push_back(def_level(0));
+    }
+    def_level max_val = def_level(0);
+    auto encoded = encode_levels(max_val, levels);
+    auto byte_length = static_cast<int32_t>(encoded.size_bytes());
+    iobuf_parser parser(std::move(encoded));
+    auto decoded = decode_levels(parser, 20, byte_length, max_val);
+    ASSERT_EQ(decoded.size(), 20);
+    for (const auto& v : decoded) {
+        EXPECT_EQ(v, def_level(0));
+    }
+}
+
+TEST(LevelDecoding, BitpackedInput) {
+    // Hand-craft a bitpack encoded input:
+    // bit_width=2, 1 group of 8 values: [0, 1, 2, 3, 0, 1, 2, 3]
+    // Header: (1 << 1) | 1 = 3 (1 group, bitpack marker)
+    // Data: 8 values * 2 bits = 16 bits = 2 bytes
+    // Values packed LSB first:
+    //   0=00, 1=01, 2=10, 3=11, 0=00, 1=01, 2=10, 3=11
+    //   byte 0: 11 10 01 00 = 0xE4
+    //   byte 1: 11 10 01 00 = 0xE4
+    iobuf encoded;
+    uint8_t header = 3; // (1 group << 1) | 1
+    encoded.append(&header, 1);
+    uint8_t b0 = 0xE4;
+    uint8_t b1 = 0xE4;
+    encoded.append(&b0, 1);
+    encoded.append(&b1, 1);
+    auto byte_length = static_cast<int32_t>(encoded.size_bytes());
+    iobuf_parser parser(std::move(encoded));
+    auto decoded = decode_levels(parser, 8, byte_length, def_level(3));
+    ASSERT_EQ(decoded.size(), 8);
+    EXPECT_EQ(decoded[0], def_level(0));
+    EXPECT_EQ(decoded[1], def_level(1));
+    EXPECT_EQ(decoded[2], def_level(2));
+    EXPECT_EQ(decoded[3], def_level(3));
+    EXPECT_EQ(decoded[4], def_level(0));
+    EXPECT_EQ(decoded[5], def_level(1));
+    EXPECT_EQ(decoded[6], def_level(2));
+    EXPECT_EQ(decoded[7], def_level(3));
+}
+
+TEST(PlainDecoding, BooleanRoundTrip) {
+    plain_encoder<boolean_value> enc;
+    chunked_vector<boolean_value> values{
+      {true},
+      {false},
+      {true},
+      {true},
+      {false},
+      {false},
+      {true},
+      {false},
+      {true}};
+    for (auto& v : values) {
+        enc.add_value(v);
+    }
+    auto encoded = enc.get_encoded_buf();
+    iobuf_parser parser(std::move(encoded));
+    plain_decoder<boolean_value> dec(parser);
+    for (size_t i = 0; i < values.size(); ++i) {
+        EXPECT_EQ(dec.read_value(), values[i]) << "mismatch at " << i;
+    }
+}
+
+TEST(PlainDecoding, Int32RoundTrip) {
+    plain_encoder<int32_value> enc;
+    chunked_vector<int32_value> values{
+      {0},
+      {42},
+      {-1},
+      {std::numeric_limits<int32_t>::max()},
+      {std::numeric_limits<int32_t>::min()}};
+    for (auto& v : values) {
+        enc.add_value(v);
+    }
+    auto encoded = enc.get_encoded_buf();
+    iobuf_parser parser(std::move(encoded));
+    plain_decoder<int32_value> dec(parser);
+    for (size_t i = 0; i < values.size(); ++i) {
+        EXPECT_EQ(dec.read_value(), values[i]) << "mismatch at " << i;
+    }
+}
+
+TEST(PlainDecoding, Int64RoundTrip) {
+    plain_encoder<int64_value> enc;
+    chunked_vector<int64_value> values{
+      {0},
+      {-999},
+      {std::numeric_limits<int64_t>::max()},
+      {std::numeric_limits<int64_t>::min()}};
+    for (auto& v : values) {
+        enc.add_value(v);
+    }
+    auto encoded = enc.get_encoded_buf();
+    iobuf_parser parser(std::move(encoded));
+    plain_decoder<int64_value> dec(parser);
+    for (size_t i = 0; i < values.size(); ++i) {
+        EXPECT_EQ(dec.read_value(), values[i]) << "mismatch at " << i;
+    }
+}
+
+TEST(PlainDecoding, Float32RoundTrip) {
+    plain_encoder<float32_value> enc;
+    chunked_vector<float32_value> values{
+      {0.0f},
+      {-1.5f},
+      {std::numeric_limits<float>::max()},
+      {std::numeric_limits<float>::min()}};
+    for (auto& v : values) {
+        enc.add_value(v);
+    }
+    auto encoded = enc.get_encoded_buf();
+    iobuf_parser parser(std::move(encoded));
+    plain_decoder<float32_value> dec(parser);
+    for (size_t i = 0; i < values.size(); ++i) {
+        EXPECT_EQ(dec.read_value(), values[i]) << "mismatch at " << i;
+    }
+}
+
+TEST(PlainDecoding, Float64RoundTrip) {
+    plain_encoder<float64_value> enc;
+    chunked_vector<float64_value> values{
+      {0.0}, {3.14159}, {std::numeric_limits<double>::max()}};
+    for (auto& v : values) {
+        enc.add_value(v);
+    }
+    auto encoded = enc.get_encoded_buf();
+    iobuf_parser parser(std::move(encoded));
+    plain_decoder<float64_value> dec(parser);
+    for (size_t i = 0; i < values.size(); ++i) {
+        EXPECT_EQ(dec.read_value(), values[i]) << "mismatch at " << i;
+    }
+}
+
+TEST(PlainDecoding, ByteArrayRoundTrip) {
+    plain_encoder<byte_array_value> enc;
+    enc.add_value(byte_array_value{iobuf::from("hello")});
+    enc.add_value(byte_array_value{iobuf::from("")});
+    enc.add_value(byte_array_value{iobuf::from("world")});
+    auto encoded = enc.get_encoded_buf();
+    iobuf_parser parser(std::move(encoded));
+    plain_decoder<byte_array_value> dec(parser);
+    EXPECT_EQ(dec.read_value().val, iobuf::from("hello"));
+    EXPECT_EQ(dec.read_value().val, iobuf::from(""));
+    EXPECT_EQ(dec.read_value().val, iobuf::from("world"));
+}
+
+TEST(PlainDecoding, FixedByteArrayRoundTrip) {
+    plain_encoder<fixed_byte_array_value> enc;
+    enc.add_value(fixed_byte_array_value{iobuf::from("\x01\x02\x03\x04")});
+    enc.add_value(fixed_byte_array_value{iobuf::from("\x05\x06\x07\x08")});
+    auto encoded = enc.get_encoded_buf();
+    iobuf_parser parser(std::move(encoded));
+    plain_decoder<fixed_byte_array_value> dec(parser, 4);
+    EXPECT_EQ(dec.read_value().val, iobuf::from("\x01\x02\x03\x04"));
+    EXPECT_EQ(dec.read_value().val, iobuf::from("\x05\x06\x07\x08"));
+}
+
+TEST(RleBpInt32, RoundTripViaLevels) {
+    chunked_vector<def_level> levels;
+    for (int i = 0; i < 20; ++i) {
+        levels.push_back(def_level(static_cast<int16_t>(i % 4)));
+    }
+    auto encoded = encode_levels(def_level(3), levels);
+    auto byte_length = static_cast<int32_t>(encoded.size_bytes());
+    iobuf_parser parser(std::move(encoded));
+    auto decoded = decode_rle_bp_int32(parser, 20, byte_length, 2);
+    ASSERT_EQ(decoded.size(), 20);
+    for (int i = 0; i < 20; ++i) {
+        EXPECT_EQ(decoded[i], i % 4) << "index " << i;
+    }
+}
+
+TEST(RleBpInt32, AllZeros) {
+    chunked_vector<def_level> levels;
+    for (int i = 0; i < 10; ++i) {
+        levels.push_back(def_level(0));
+    }
+    auto encoded = encode_levels(def_level(0), levels);
+    auto byte_length = static_cast<int32_t>(encoded.size_bytes());
+    iobuf_parser parser(std::move(encoded));
+    auto decoded = decode_rle_bp_int32(parser, 10, byte_length, 0);
+    ASSERT_EQ(decoded.size(), 10);
+    for (const auto& v : decoded) {
+        EXPECT_EQ(v, 0);
+    }
+}
+
 // NOLINTEND(*magic-number*)
 
 } // namespace serde::parquet
