@@ -113,13 +113,13 @@ resolved = []
 total_diff_lines = 0
 
 for path in eligible:
-    # --reverse: chronological order so the model reasons oldest-to-newest.
-    # -U0: the conflicted file already provides context; sending it in the
-    #      diff too would be redundant and waste tokens.
+    # Only show the diff from the commit that actually conflicted (the one
+    # cherry-pick stopped on), not all commits in the sequence. The earlier
+    # commits applied cleanly so their diffs are noise that bloats past the
+    # complexity filter.
+    failing_commit = BACKPORT_COMMITS.split()[-1]
     diff = subprocess.check_output(
-        ["git", "log", "-p", "-U0", "--reverse"]
-        + BACKPORT_COMMITS.split()
-        + ["--", path]
+        ["git", "log", "-p", "-U0", "-1", failing_commit, "--", path]
     ).decode(errors="replace")
 
     diff_lines = diff.splitlines()
