@@ -12,6 +12,7 @@
 #include "iceberg/conversion/schema_parquet.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/parquet_reader.h"
+#include "serde/parquet/assembler.h"
 #include "serde/parquet/file_io.h"
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
@@ -215,8 +216,8 @@ TEST(IcebergParquetReader, DroppedColumn) {
     EXPECT_EQ(result.schema.children[1].name(), "b");
 }
 
-TEST(IcebergParquetReader, MissingColumnNoNullFill) {
-    // Write with {a: int32 (id=1)}
+TEST(IcebergParquetReader, MissingColumnNullFill) {
+    // Write with {a: int32 (id=1)}, 3 rows.
     struct_type write_schema;
     write_schema.fields.push_back(
       nested_field::create(
@@ -225,7 +226,9 @@ TEST(IcebergParquetReader, MissingColumnNoNullFill) {
     auto pq_schema = iceberg_to_write_schema(write_schema);
 
     chunked_vector<sp::group_value> rows;
-    rows.push_back(record(sp::int32_value{7}));
+    rows.push_back(record(sp::int32_value{1}));
+    rows.push_back(record(sp::int32_value{2}));
+    rows.push_back(record(sp::int32_value{3}));
 
     auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
 
@@ -236,22 +239,90 @@ TEST(IcebergParquetReader, MissingColumnNoNullFill) {
         1, "a", field_required::yes, primitive_type{int_type{}}));
     read_schema.fields.push_back(
       nested_field::create(
-        2, "b", field_required::yes, primitive_type{long_type{}}));
+        2, "b", field_required::no, primitive_type{long_type{}}));
 
     sp::iobuf_file_io io(std::move(file));
     auto result = read_parquet(read_schema, io).get();
 
     ASSERT_EQ(result.row_groups.size(), 1);
     const auto& batch = result.row_groups[0];
-    // Only column a is present (b absent from file, no null fill).
-    ASSERT_EQ(batch.columns.size(), 1);
+    ASSERT_EQ(batch.columns.size(), 2);
+    EXPECT_EQ(batch.num_rows, 3);
 
+    // Column a: [1, 2, 3]
     const auto& col_a = batch.columns[0];
     ASSERT_TRUE(std::holds_alternative<sp::column_array::i32_data>(col_a.data));
-    EXPECT_EQ(std::get<sp::column_array::i32_data>(col_a.data).values[0], 7);
+    const auto& a_vals = std::get<sp::column_array::i32_data>(col_a.data);
+    ASSERT_EQ(a_vals.values.size(), 3);
+    EXPECT_EQ(a_vals.values[0], 1);
+    EXPECT_EQ(a_vals.values[1], 2);
+    EXPECT_EQ(a_vals.values[2], 3);
 
-    ASSERT_EQ(result.schema.children.size(), 1);
+    // Column b: null-filled (length=3, all def_levels=0, no actual values)
+    const auto& col_b = batch.columns[1];
+    ASSERT_TRUE(std::holds_alternative<sp::column_array::i64_data>(col_b.data));
+    const auto& b_vals = std::get<sp::column_array::i64_data>(col_b.data);
+    EXPECT_EQ(b_vals.values.size(), 0);
+    EXPECT_EQ(col_b.length, 3);
+
+    const auto& b_levels = batch.levels[1];
+    ASSERT_EQ(b_levels.def_levels.size(), 3);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(b_levels.def_levels[i], sp::def_level(0));
+        EXPECT_EQ(b_levels.rep_levels[i], sp::rep_level(0));
+    }
+
+    ASSERT_EQ(result.schema.children.size(), 2);
     EXPECT_EQ(result.schema.children[0].name(), "a");
+    EXPECT_EQ(result.schema.children[1].name(), "b");
+    EXPECT_EQ(
+      result.schema.children[1].repetition_type,
+      sp::field_repetition_type::optional);
+}
+
+TEST(IcebergParquetReader, NullFillAssemblesRecords) {
+    // Write with {a: int32 (id=1)}, 3 rows.
+    struct_type write_schema;
+    write_schema.fields.push_back(
+      nested_field::create(
+        1, "a", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(write_schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{1}));
+    rows.push_back(record(sp::int32_value{2}));
+    rows.push_back(record(sp::int32_value{3}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Read with {a: int32 (id=1), b: int64 (id=2, optional)}
+    struct_type read_schema;
+    read_schema.fields.push_back(
+      nested_field::create(
+        1, "a", field_required::yes, primitive_type{int_type{}}));
+    read_schema.fields.push_back(
+      nested_field::create(
+        2, "b", field_required::no, primitive_type{long_type{}}));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(read_schema, io).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    auto records = sp::assemble_records(result.schema, result.row_groups[0]);
+    ASSERT_EQ(records.size(), 3);
+
+    // Each record: {a: int32, b: null}
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_EQ(records[i].size(), 2);
+        // a field
+        ASSERT_TRUE(
+          std::holds_alternative<sp::int32_value>(records[i][0].field));
+        EXPECT_EQ(std::get<sp::int32_value>(records[i][0].field).val, i + 1);
+        // b field: null
+        EXPECT_TRUE(
+          std::holds_alternative<sp::null_value>(records[i][1].field));
+    }
 }
 
 TEST(IcebergParquetReader, CompressedZstd) {

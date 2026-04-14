@@ -738,6 +738,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:parquet_reader",
         "//src/v/iceberg/conversion:schema_parquet",
+        "//src/v/serde/parquet:assembler",
         "//src/v/serde/parquet:file_io",
         "//src/v/serde/parquet:schema",
         "//src/v/serde/parquet:value",
