@@ -10,13 +10,28 @@ import time
 
 import anthropic
 
+# Best-effort: unknown generated types not listed here will be sent to the
+# model, but conflict-marker validation and UNCERTAIN catches garbage output.
 GENERATED_PATTERNS = [
-    "*.pb.go", "*.pb.h", "*.pb.cc", "*.pb.rs", "*_pb2.py",
-    "MODULE.bazel", "*.lock", "go.sum", "package-lock.json", "Cargo.lock",
+    "*.pb.go",
+    "*.pb.h",
+    "*.pb.cc",
+    "*.pb.rs",
+    "*_pb2.py",
+    "MODULE.bazel",
+    "*.lock",
+    "go.sum",
+    "package-lock.json",
+    "Cargo.lock",
 ]
 
 MODEL = "claude-opus-4-6"
+# Sized to hold a typical resolved source file. The model's context window
+# (200k) is not the constraint; output truncation is. If the resolved file
+# would exceed this, stop_reason != "end_turn" and we discard the response.
 MAX_TOKENS = 2048
+# The model signals uncertainty with this literal string rather than returning
+# a partial or empty file, which would be harder to detect reliably.
 UNCERTAIN_RESPONSE = "UNCERTAIN"
 CONFLICT_MARKERS = ["<<<<<<<", "=======", ">>>>>>>"]
 
@@ -51,6 +66,8 @@ def call_with_retry(path: str, diff: str, file_content: str):
                 messages=[{"role": "user", "content": prompt}],
             )
         except anthropic.RateLimitError:
+            # Only rate limits are worth retrying; auth/server errors won't
+            # resolve on a second attempt.
             if attempt == 0:
                 print(f"{path}: rate limited, retrying in 10s...")
                 time.sleep(10)
@@ -66,9 +83,11 @@ def difficulty_rating(resolved_count: int, total_diff_lines: int) -> str:
     return "medium"
 
 
-conflicted = subprocess.check_output(
-    ["git", "diff", "--name-only", "--diff-filter=U"]
-).decode().splitlines()
+conflicted = (
+    subprocess.check_output(["git", "diff", "--name-only", "--diff-filter=U"])
+    .decode()
+    .splitlines()
+)
 
 eligible = [f for f in conflicted if not matches_any(f, GENERATED_PATTERNS)]
 skipped = [f for f in conflicted if matches_any(f, GENERATED_PATTERNS)]
@@ -83,11 +102,19 @@ resolved = []
 total_diff_lines = 0
 
 for path in eligible:
+    # --reverse: chronological order so the model reasons oldest-to-newest.
+    # -U0: the conflicted file already provides context; sending it in the
+    #      diff too would be redundant and waste tokens.
     diff = subprocess.check_output(
-        ["git", "log", "-p", "-U0", "--reverse"] + BACKPORT_COMMITS.split() + ["--", path]
+        ["git", "log", "-p", "-U0", "--reverse"]
+        + BACKPORT_COMMITS.split()
+        + ["--", path]
     ).decode(errors="replace")
 
     diff_lines = diff.splitlines()
+    # 200-line cap is a complexity filter, not a token-exhaustion guard. A diff
+    # this large likely signals structural divergence that needs a human, not a
+    # mechanical conflict the model can fix reliably.
     if len(diff_lines) > 200:
         print(f"{path}: diff too large ({len(diff_lines)} lines). Skipping.")
         continue
@@ -100,8 +127,12 @@ for path in eligible:
         print(f"{path}: API error ({type(e).__name__}: {e}). Skipping.")
         continue
 
+    # Any stop reason other than "end_turn" means the output was cut off;
+    # writing a partial file to disk would corrupt the cherry-pick.
     if response.stop_reason != "end_turn":
-        print(f"{path}: response truncated (stop_reason={response.stop_reason}). Skipping.")
+        print(
+            f"{path}: response truncated (stop_reason={response.stop_reason}). Skipping."
+        )
         continue
 
     text = response.content[0].text.strip()
