@@ -63,4 +63,14 @@ struct flattened_schema {
  */
 chunked_vector<flattened_schema> flatten(const schema_element& root);
 
+/**
+ * Reconstruct a schema_element tree from a flattened (depth-first pre-order)
+ * schema list. This is the inverse of flatten().
+ *
+ * The resulting tree has only name, type, repetition_type, field_id, and
+ * logical_type populated. Call index_schema() to compute position, paths,
+ * and max definition/repetition levels.
+ */
+schema_element unflatten(const chunked_vector<flattened_schema>& flat);
+
 } // namespace serde::parquet

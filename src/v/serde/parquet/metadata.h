@@ -27,6 +27,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "container/chunked_vector.h"
 #include "hashing/crc32.h"
 #include "serde/parquet/flattened_schema.h"
@@ -263,6 +264,16 @@ struct dictionary_page_header {
     bool is_sorted;
 };
 
+/// Data Page V1 header. Used by Arrow, Spark, and most external writers.
+/// In V1 the entire page body (levels + data) is compressed together.
+struct data_page_header_v1 {
+    int32_t num_values = 0;
+    encoding data_encoding = encoding::plain;
+    encoding definition_level_encoding = encoding::rle;
+    encoding repetition_level_encoding = encoding::rle;
+    std::optional<statistics> stats;
+};
+
 /**
  * New page format allowing reading levels without decompressing the data
  * Repetition and definition levels are uncompressed
@@ -298,7 +309,7 @@ struct data_page_header {
     definition_levels_byte_length + repetition_levels_byte_length + 1 and
     compressed_page_size (included) is compressed with the compression_codec. If
     missing it is considered compressed */
-    bool is_compressed;
+    bool is_compressed{true};
 
     /** Optional statistics for the data in this page **/
     std::optional<statistics> stats;
@@ -332,7 +343,11 @@ struct page_header {
     crc::crc32 crc;
 
     // Headers for page specific data.  One only will be set.
-    std::variant<index_page_header, dictionary_page_header, data_page_header>
+    std::variant<
+      index_page_header,
+      dictionary_page_header,
+      data_page_header,
+      data_page_header_v1>
       type;
 };
 
@@ -341,6 +356,14 @@ struct page_header {
  * format.
  */
 iobuf encode(const page_header& header);
+
+struct page_header_tag {};
+
+/**
+ * Decode a page header from binary Thrift compact format.
+ * The parser position is advanced past the decoded bytes.
+ */
+page_header decode(iobuf_parser_base& parser, page_header_tag);
 
 /**
  * Description for column metadata
@@ -496,5 +519,12 @@ struct file_metadata {
  * format.
  */
 iobuf encode(const file_metadata& metadata);
+
+struct file_metadata_tag {};
+
+/**
+ * Decode file metadata from binary Thrift compact format.
+ */
+file_metadata decode(iobuf data, file_metadata_tag);
 
 } // namespace serde::parquet
