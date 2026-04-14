@@ -203,7 +203,7 @@ kafka::leader_epoch replicated_partition::leader_epoch() const {
 }
 
 // TODO: use previous translation speed up lookup
-ss::future<storage::translating_reader>
+ss::future<model::record_batch_reader>
 replicated_partition::make_reader(kafka::log_reader_config cfg) {
     if (
       _partition->is_read_replica_mode_enabled()
@@ -228,14 +228,12 @@ replicated_partition::make_reader(kafka::log_reader_config cfg) {
     config.type_filter = {model::record_batch_type::raft_data};
     config.translate_offsets = model::translate_offsets::yes;
 
-    auto rdr = co_await _partition->make_local_reader(config);
-    co_return storage::translating_reader(std::move(rdr), _translator);
+    co_return co_await _partition->make_local_reader(config);
 }
 
 ss::future<std::vector<cluster::tx::tx_range>>
 replicated_partition::aborted_transactions_local(
-  cloud_storage::offset_range offsets,
-  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+  cloud_storage::offset_range offsets) {
     // Note: here we expect that local _partition contains aborted transaction
     // ids for both local and remote offset ranges. This is true as long as
     // rm_stm state has not been reset (for example when there is a partition
@@ -266,8 +264,8 @@ replicated_partition::aborted_transactions_local(
     for (const auto& range : source) {
         target.emplace_back(
           range.pid,
-          ot_state->from_log_offset(std::max(trim_at, range.first)),
-          ot_state->from_log_offset(range.last));
+          _translator->from_log_offset(std::max(trim_at, range.first)),
+          _translator->from_log_offset(range.last));
     }
 
     co_return target;
@@ -275,16 +273,15 @@ replicated_partition::aborted_transactions_local(
 
 ss::future<std::vector<cluster::tx::tx_range>>
 replicated_partition::aborted_transactions_remote(
-  cloud_storage::offset_range offsets,
-  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+  cloud_storage::offset_range offsets) {
     auto source = co_await _partition->aborted_transactions_cloud(offsets);
     std::vector<cluster::tx::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
         target.emplace_back(
           range.pid,
-          ot_state->from_log_offset(std::max(offsets.begin_rp, range.first)),
-          ot_state->from_log_offset(range.last));
+          _translator->from_log_offset(std::max(offsets.begin_rp, range.first)),
+          _translator->from_log_offset(range.last));
     }
     co_return target;
 }
@@ -302,9 +299,7 @@ bool replicated_partition::may_read_from_cloud(
 
 ss::future<std::vector<cluster::tx::tx_range>>
 replicated_partition::aborted_transactions(
-  model::offset base,
-  model::offset last,
-  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+  model::offset base, model::offset last) {
     // We can extract information about aborted transactions from local raft log
     // or from the S3 bucket. The decision is made using the following logic:
     // - if the record batches were produced by shadow indexing (downloaded from
@@ -326,9 +321,8 @@ replicated_partition::aborted_transactions(
     // from offset 50, it will return data for range 50-100 and we won't be able
     // to tell if it didn't have data for 0-50 or there wasn't any transactions
     // in that range).
-    vassert(ot_state, "ntp {}: offset translator state must be present", ntp());
-    auto base_rp = ot_state->to_log_offset(base);
-    auto last_rp = ot_state->to_log_offset(last);
+    auto base_rp = _translator->to_log_offset(base);
+    auto last_rp = _translator->to_log_offset(last);
     cloud_storage::offset_range offsets = {
       .begin = model::offset_cast(base),
       .end = model::offset_cast(last),
@@ -337,12 +331,11 @@ replicated_partition::aborted_transactions(
     };
     if (_partition->is_read_replica_mode_enabled()) {
         // Always use SI for read replicas
-        co_return co_await aborted_transactions_remote(offsets, ot_state);
+        co_return co_await aborted_transactions_remote(offsets);
     }
     if (may_read_from_cloud(model::offset_cast(base))) {
         // The fetch request was satisfied using shadow indexing.
-        auto tx_remote = co_await aborted_transactions_remote(
-          offsets, ot_state);
+        auto tx_remote = co_await aborted_transactions_remote(offsets);
         if (!tx_remote.empty()) {
             // NOTE: we don't have a way to upload tx-manifests to the cloud
             // for segments which was uploaded by old redpanda version because
@@ -357,7 +350,7 @@ replicated_partition::aborted_transactions(
             co_return tx_remote;
         }
     }
-    co_return co_await aborted_transactions_local(offsets, ot_state);
+    co_return co_await aborted_transactions_local(offsets);
 }
 
 ss::future<std::optional<storage::timequery_result>>

@@ -23,9 +23,9 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "storage/offset_translator_state.h"
 #include "storage/parser.h"
 #include "storage/segment_reader.h"
-#include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 

@@ -140,7 +140,7 @@ static ss::future<read_result> read_from_partition(
     size_t batch_count = 0;
 
     try {
-        auto result = co_await rdr.reader.consume(
+        auto result = co_await rdr.consume(
           kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
         data = std::make_unique<iobuf>(std::move(result.data));
         data_base_offset = result.base_offset;
@@ -168,9 +168,7 @@ static ss::future<read_result> read_from_partition(
             // Reader should live at least until this point to hold on to the
             // segment locks so that prefix truncation doesn't happen.
             aborted_transactions = co_await part.aborted_transactions(
-              result.first_tx_batch_offset.value(),
-              result.last_offset,
-              std::move(rdr.ot_state));
+              result.first_tx_batch_offset.value(), result.last_offset);
 
             // Check that the underlying data did not get truncated while
             // consuming. If so, it's possible the search for aborted
@@ -190,7 +188,7 @@ static ss::future<read_result> read_from_partition(
         e = std::current_exception();
     }
 
-    co_await std::move(rdr.reader).release()->finally();
+    co_await std::move(rdr).release()->finally();
 
     if (e) {
         std::rethrow_exception(e);

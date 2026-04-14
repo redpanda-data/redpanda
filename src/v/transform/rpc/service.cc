@@ -259,9 +259,8 @@ local_service::load_wasm_binary(
             /*time=*/std::nullopt,
             /*as=*/std::nullopt);
           return partition->make_reader(reader_config)
-            .then([this, timeout](storage::translating_reader rdr) {
-                return consume_wasm_binary_reader(
-                  std::move(rdr.reader), timeout);
+            .then([this, timeout](model::record_batch_reader rdr) {
+                return consume_wasm_binary_reader(std::move(rdr), timeout);
             });
       });
 }

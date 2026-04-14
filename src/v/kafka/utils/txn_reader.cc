@@ -35,30 +35,23 @@ namespace {
 
 class aborted_transaction_tracker_impl : public aborted_transaction_tracker {
 public:
-    aborted_transaction_tracker_impl(
-      kafka::partition_proxy* partition,
-      ss::lw_shared_ptr<const storage::offset_translator_state> translator)
-      : _partition(partition)
-      , _translator(std::move(translator)) {}
+    explicit aborted_transaction_tracker_impl(kafka::partition_proxy* partition)
+      : _partition(partition) {}
 
     ss::future<std::vector<model::tx_range>>
     compute_aborted_transactions(model::offset base, model::offset max) final {
-        return _partition->aborted_transactions(base, max, _translator);
+        return _partition->aborted_transactions(base, max);
     }
 
 private:
     kafka::partition_proxy* _partition;
-    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
 
 } // namespace
 
 std::unique_ptr<aborted_transaction_tracker>
-aborted_transaction_tracker::create_default(
-  kafka::partition_proxy* proxy,
-  ss::lw_shared_ptr<const storage::offset_translator_state> translator) {
-    return std::make_unique<aborted_transaction_tracker_impl>(
-      proxy, std::move(translator));
+aborted_transaction_tracker::create_default(kafka::partition_proxy* proxy) {
+    return std::make_unique<aborted_transaction_tracker_impl>(proxy);
 }
 
 namespace {

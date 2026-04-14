@@ -210,7 +210,7 @@ public:
         // dynamically update this based on how much memory is available in the
         // transform subsystem.
         constexpr static size_t max_bytes = 128_KiB;
-        auto translater = co_await _partition.make_reader(
+        auto reader = co_await _partition.make_reader(
           kafka::log_reader_config(
             /*start_offset=*/start_offset,
             /*max_offset=*/max_offset,
@@ -224,9 +224,9 @@ public:
         //
         // This is documented as part of the contract for the source interface.
         auto tracker = kafka::aborted_transaction_tracker::create_default(
-          &_partition, std::move(translater.ot_state));
+          &_partition);
         co_return model::make_record_batch_reader<kafka::read_committed_reader>(
-          std::move(tracker), std::move(translater.reader));
+          std::move(tracker), std::move(reader));
     }
 
 private:

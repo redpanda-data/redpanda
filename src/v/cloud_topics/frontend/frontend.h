@@ -17,9 +17,9 @@
 #include "cloud_topics/log_reader_config.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
+#include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
-#include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
@@ -145,13 +145,11 @@ public:
       std::optional<std::reference_wrapper<ss::abort_source>> as,
       ss::shared_ptr<kafka::write_at_offset_stm> stm);
 
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(cloud_topic_log_reader_config cfg);
 
-    ss::future<std::vector<model::tx_range>> aborted_transactions(
-      kafka::offset base,
-      kafka::offset last,
-      ss::lw_shared_ptr<const storage::offset_translator_state>);
+    ss::future<std::vector<model::tx_range>>
+    aborted_transactions(kafka::offset base, kafka::offset last);
 
     ss::future<std::optional<kafka::offset>>
       get_leader_epoch_last_offset(model::term_id) const;

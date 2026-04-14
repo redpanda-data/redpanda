@@ -312,7 +312,6 @@ redpanda_cc_library(
         "segment_utils.h",
         "snapshot.h",
         "spill_key_index.h",
-        "translating_reader.h",
         "types.h",
         "version.h",
     ],

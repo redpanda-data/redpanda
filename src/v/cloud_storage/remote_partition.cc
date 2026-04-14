@@ -1230,11 +1230,11 @@ void remote_partition::return_segment_reader(
 }
 
 size_t remote_partition::reader_mem_use_estimate() noexcept {
-    return sizeof(storage::translating_reader)
+    return sizeof(model::record_batch_reader)
            + sizeof(partition_record_batch_reader_impl);
 }
 
-ss::future<storage::translating_reader>
+ss::future<model::record_batch_reader>
 remote_partition::make_reader(cloud_storage::cloud_log_reader_config config) {
     vlog(
       _ctxlog.debug,
@@ -1258,8 +1258,7 @@ remote_partition::make_reader(cloud_storage::cloud_log_reader_config config) {
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
       shared_from_this(), _gate.hold(), ot_state, std::move(units));
     co_await impl->start(config);
-    co_return storage::translating_reader{
-      model::record_batch_reader(std::move(impl)), std::move(ot_state)};
+    co_return model::record_batch_reader(std::move(impl));
 }
 
 ss::future<std::optional<storage::timequery_result>>
@@ -1288,11 +1287,11 @@ remote_partition::timequery(storage::timequery_config cfg) {
 
     // Construct a reader that will skip to the requested timestamp
     // by virtue of log_reader_config::start_timestamp
-    auto translating_reader = co_await make_reader(config);
+    auto reader = co_await make_reader(config);
 
     // Read one batch from the reader to learn the offset
     auto batches = co_await model::consume_reader_to_memory(
-      std::move(translating_reader.reader), model::no_timeout);
+      std::move(reader), model::no_timeout);
 
     vlog(_ctxlog.debug, "timequery: {} batches", batches.size());
 

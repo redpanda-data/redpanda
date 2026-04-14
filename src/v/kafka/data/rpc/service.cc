@@ -229,12 +229,12 @@ local_service::consume(
           auto deadline = model::timeout_clock::now() + timeout;
 
           // Create reader
-          auto translating_reader = co_await partition->make_reader(reader_cfg);
+          auto reader = co_await partition->make_reader(reader_cfg);
 
           // Consume batches from reader
           try {
               co_return co_await model::consume_reader_to_chunked_vector(
-                std::move(translating_reader.reader), deadline);
+                std::move(reader), deadline);
           } catch (const ss::timed_out_error&) {
               co_return cluster::errc::timeout;
           } catch (...) {

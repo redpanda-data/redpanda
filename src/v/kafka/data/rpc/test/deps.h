@@ -116,7 +116,7 @@ public:
     prefix_truncate(model::offset, ss::lowres_clock::time_point) final {
         throw std::runtime_error("unimplemented");
     }
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(kafka::log_reader_config config) final {
         if (config.first_timestamp.has_value()) {
             throw std::runtime_error("unimplemented");
@@ -142,10 +142,8 @@ public:
     timequery(storage::timequery_config) final {
         throw std::runtime_error("unimplemented");
     }
-    ss::future<std::vector<model::tx_range>> aborted_transactions(
-      model::offset,
-      model::offset,
-      ss::lw_shared_ptr<const storage::offset_translator_state>) final {
+    ss::future<std::vector<model::tx_range>>
+    aborted_transactions(model::offset, model::offset) final {
         throw std::runtime_error("unimplemented");
     }
     ss::future<kafka::error_code> validate_fetch_offset(

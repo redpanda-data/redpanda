@@ -23,7 +23,6 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "storage/log_reader.h"
-#include "storage/translating_reader.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -153,7 +152,7 @@ partition_proxy::prefix_truncate(model::offset, ss::lowres_clock::time_point) {
     co_return kafka::error_code::operation_not_attempted;
 }
 
-ss::future<storage::translating_reader>
+ss::future<model::record_batch_reader>
 partition_proxy::make_reader(kafka::log_reader_config cfg) {
     auto snap_res = co_await get_snapshot();
     if (!snap_res.has_value()) {
@@ -163,7 +162,7 @@ partition_proxy::make_reader(kafka::log_reader_config cfg) {
     co_return co_await make_reader(std::move(snap_res.value()), cfg);
 }
 
-ss::future<storage::translating_reader> partition_proxy::make_reader(
+ss::future<model::record_batch_reader> partition_proxy::make_reader(
   partition_proxy::snapshot snap, kafka::log_reader_config cfg) {
     cloud_topic_log_reader_config cloud_cfg(
       cfg.start_offset,
@@ -191,7 +190,7 @@ ss::future<storage::translating_reader> partition_proxy::make_reader(
     auto reader = model::make_record_batch_reader<snapshot_level_one_reader>(
       std::move(snap.metastore), std::move(reader_impl));
 
-    co_return storage::translating_reader(std::move(reader));
+    co_return reader;
 }
 
 ss::future<std::optional<storage::timequery_result>>
@@ -220,7 +219,7 @@ partition_proxy::timequery(storage::timequery_config cfg) {
       extent.last_offset, model::offset_cast(cfg.max_offset));
     kafka::log_reader_config reader_cfg(read_start, read_end, cfg.abort_source);
     auto reader = co_await make_reader(std::move(snap_res.value()), reader_cfg);
-    auto generator = std::move(reader.reader).generator(model::no_timeout);
+    auto generator = std::move(reader).generator(model::no_timeout);
     while (auto batch_opt = co_await generator()) {
         auto& batch = batch_opt->get();
         if (cfg.time > batch.header().max_timestamp) {
@@ -232,10 +231,8 @@ partition_proxy::timequery(storage::timequery_config cfg) {
     co_return std::nullopt;
 }
 
-ss::future<std::vector<model::tx_range>> partition_proxy::aborted_transactions(
-  model::offset,
-  model::offset,
-  ss::lw_shared_ptr<const storage::offset_translator_state>) {
+ss::future<std::vector<model::tx_range>>
+partition_proxy::aborted_transactions(model::offset, model::offset) {
     // Data in L1 is all committed.
     co_return std::vector<model::tx_range>{};
 }

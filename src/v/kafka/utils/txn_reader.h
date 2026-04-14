@@ -18,10 +18,6 @@
 
 #include <memory>
 
-namespace storage {
-class offset_translator_state;
-}
-
 namespace kafka {
 
 class partition_proxy;
@@ -39,11 +35,9 @@ public:
     operator=(aborted_transaction_tracker&&) = delete;
     virtual ~aborted_transaction_tracker() = default;
 
-    // Create the default tracker that uses a partition proxy and the
-    // offset_translator state.
-    static std::unique_ptr<aborted_transaction_tracker> create_default(
-      kafka::partition_proxy*,
-      ss::lw_shared_ptr<const storage::offset_translator_state>);
+    // Create the default tracker that uses a partition proxy.
+    static std::unique_ptr<aborted_transaction_tracker>
+    create_default(kafka::partition_proxy*);
 
     // Compute the ranges of transactions that are aborted for a given range
     // within the log.

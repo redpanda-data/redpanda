@@ -392,9 +392,9 @@ public:
            std::nullopt,
            as});
         auto tracker = kafka::aborted_transaction_tracker::create_default(
-          _partition_proxy.get(), std::move(log_reader.ot_state));
+          _partition_proxy.get());
         co_return model::make_record_batch_reader<kafka::read_committed_reader>(
-          std::move(tracker), std::move(log_reader.reader));
+          std::move(tracker), std::move(log_reader));
     }
 
     kafka::offset min_offset_for_translation() const final {

@@ -137,7 +137,7 @@ kafka::leader_epoch cloud_topic_partition::leader_epoch() const {
     return kafka::leader_epoch(static_cast<int32_t>(term()));
 }
 
-ss::future<storage::translating_reader>
+ss::future<model::record_batch_reader>
 cloud_topic_partition::make_reader(kafka::log_reader_config cfg) {
     auto config = kafka_to_cloud_topic_log_reader_config(cfg);
     return _fe->make_reader(config);
@@ -145,12 +145,10 @@ cloud_topic_partition::make_reader(kafka::log_reader_config cfg) {
 
 ss::future<std::vector<cluster::tx::tx_range>>
 cloud_topic_partition::aborted_transactions(
-  model::offset base,
-  model::offset last,
-  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+  model::offset base, model::offset last) {
     // The base and last offsets are kafka offsets here.
     return _fe->aborted_transactions(
-      model::offset_cast(base), model::offset_cast(last), std::move(ot_state));
+      model::offset_cast(base), model::offset_cast(last));
 }
 
 ss::future<std::optional<storage::timequery_result>>

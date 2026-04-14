@@ -19,8 +19,8 @@
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
+#include "model/record_batch_reader.h"
 #include "raft/replicate.h"
-#include "storage/translating_reader.h"
 #include "storage/types.h"
 
 #include <optional>
@@ -73,14 +73,12 @@ public:
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
         virtual ss::future<error_code>
           prefix_truncate(model::offset, ss::lowres_clock::time_point) = 0;
-        virtual ss::future<storage::translating_reader>
+        virtual ss::future<model::record_batch_reader>
           make_reader(kafka::log_reader_config) = 0;
         virtual ss::future<std::optional<storage::timequery_result>>
           timequery(storage::timequery_config) = 0;
-        virtual ss::future<std::vector<model::tx_range>> aborted_transactions(
-          model::offset,
-          model::offset,
-          ss::lw_shared_ptr<const storage::offset_translator_state>) = 0;
+        virtual ss::future<std::vector<model::tx_range>>
+          aborted_transactions(model::offset, model::offset) = 0;
         virtual ss::future<error_code> validate_fetch_offset(
           model::offset, bool, model::timeout_clock::time_point) = 0;
 
@@ -141,14 +139,12 @@ public:
 
     const model::ntp& ntp() const { return _impl->ntp(); }
 
-    ss::future<std::vector<model::tx_range>> aborted_transactions(
-      model::offset base,
-      model::offset last,
-      ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
-        return _impl->aborted_transactions(base, last, std::move(ot_state));
+    ss::future<std::vector<model::tx_range>>
+    aborted_transactions(model::offset base, model::offset last) {
+        return _impl->aborted_transactions(base, last);
     }
 
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(kafka::log_reader_config cfg) {
         return _impl->make_reader(cfg);
     }

@@ -250,7 +250,7 @@ model::term_id frontend::leader_epoch() const {
     return _partition->raft()->confirmed_term();
 }
 
-ss::future<storage::translating_reader>
+ss::future<model::record_batch_reader>
 frontend::make_reader(cloud_topic_log_reader_config cfg) {
     vassert(_data_plane != nullptr, "cloud topics api not initialized");
 
@@ -268,46 +268,24 @@ frontend::make_reader(cloud_topic_log_reader_config cfg) {
       lro);
 
     if (level_one) {
-        // For L1, we return a `null` translator because control batches
-        // are removed. This translator is passed back to
-        // `aborted_transactions`, and we use that to offset translate to get
-        // log ranges with aborted transactions. Since the offset range in L1
-        // maybe truncated away in the local log this will cause translation
-        // errors. By returning `null` and checking for it in
-        // `aborted_transactions` we ensure that we just assume there are no
-        // aborted transaction ranges for data from this reader.
-        //
-        // Tiered storage seems to return a noop translator here, which feels a
-        // bit sketchy and it's not clear if that can ever cause us to return
-        // incorrect aborted txn ranges from the local log if we're not doing
-        // translation.
-        //
-        // In reality we should probably clean up this interface because this
-        // relies on behavior of many layers up the stack, and we feel like
-        // we're hacking around. Maybe the `translating_reader` should take
-        // responsibility for returning aborted transactions directly instead of
-        // this roundabout way of doing it.
         auto tidp = topic_id_partition();
         if (!tidp) {
             throw topic_config_not_found_exception(ntp());
         }
-        co_return storage::translating_reader{
-          model::record_batch_reader(make_l1_reader(cfg, *tidp))};
+        co_return model::record_batch_reader(make_l1_reader(cfg, *tidp));
     }
-    co_return storage::translating_reader{
-      model::record_batch_reader(make_l0_reader(cfg)),
-      _partition->get_offset_translator_state()};
+    co_return model::record_batch_reader(make_l0_reader(cfg));
 }
 
-ss::future<std::vector<cluster::tx::tx_range>> frontend::aborted_transactions(
-  kafka::offset base,
-  kafka::offset last,
-  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
-    if (!ot_state) {
-        // This means we are reading from L1, and we don't have any aborted
-        // transactions, as they are already filtered out.
+ss::future<std::vector<cluster::tx::tx_range>>
+frontend::aborted_transactions(kafka::offset base, kafka::offset last) {
+    const auto lro = _ctp_stm_api->get_last_reconciled_offset();
+    if (lro > kafka::offset::min() && base <= lro) {
+        // L1 data: control batches are already filtered out, no aborted
+        // transactions to report.
         co_return std::vector<cluster::tx::tx_range>{};
     }
+    auto ot_state = _partition->get_offset_translator_state();
     auto base_rp = ot_state->to_log_offset(kafka::offset_cast(base));
     auto last_rp = ot_state->to_log_offset(kafka::offset_cast(last));
     cloud_storage::offset_range offsets = {
@@ -531,7 +509,7 @@ frontend::refine_timequery_result(
       /*as=*/abort_source,
       /*client_addr=*/std::nullopt);
     auto reader = co_await make_reader(reader_cfg);
-    auto generator = std::move(reader.reader).generator(model::no_timeout);
+    auto generator = std::move(reader).generator(model::no_timeout);
     auto query_interval = model::bounded_offset_interval::checked(
       kafka::offset_cast(input.start_offset),
       kafka::offset_cast(input.last_offset));

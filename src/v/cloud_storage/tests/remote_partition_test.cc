@@ -157,7 +157,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
       probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
@@ -319,7 +319,7 @@ test_remote_partition_cache_size_estimate_materialized_segments_args(
     auto max = segments[2].max_offset;
     cloud_log_reader_config reader_config(
       model::offset_cast(base), model::offset_cast(max));
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
     reader.consume(test_consumer(), model::no_timeout).get();
     std::move(reader).release();
 
@@ -1064,7 +1064,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
           segments.front().base_offset);
         reader_config.max_bytes = max_bytes_limit;
         vlog(test_log.info, "read first segment {}", reader_config);
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         BOOST_REQUIRE(!headers_read.empty());
@@ -1088,7 +1088,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
           segments.front().base_offset);
         reader_config.max_bytes = max_bytes_limit;
         vlog(test_log.info, "read last segment: {}", reader_config);
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         BOOST_REQUIRE(!headers_read.empty());
@@ -1111,7 +1111,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
           segments.front().base_offset);
         reader_config.max_bytes = max_bytes_limit;
         vlog(test_log.info, "read last segment: {}", reader_config);
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(slow_consumer(), model::timeout_clock::now() + 10ms)
               .get();
@@ -1189,7 +1189,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
           as);
 
         // Start consuming before truncation, only consume one batch
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(counting_batch_consumer(1), model::no_timeout).get();
 
@@ -1230,7 +1230,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
         vlog(test_log.debug, "Creating new reader {}", reader_config);
 
         // After truncation reading from the old end should be impossible
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(counting_batch_consumer(100), model::no_timeout)
               .get();
@@ -1380,7 +1380,7 @@ FIXTURE_TEST(
           as);
 
         // Start consuming before truncation, only consume one batch
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(counting_batch_consumer(1000), model::no_timeout)
               .get();
@@ -1403,7 +1403,7 @@ FIXTURE_TEST(
           as);
 
         // Start consuming before truncation, only consume one batch
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(counting_batch_consumer(50), model::no_timeout)
               .get();
@@ -1523,9 +1523,7 @@ read(cloud_log_reader_config reader_config, remote_partition* partition) {
     auto next = reader_config.start_offset;
     while (true) {
         reader_config.start_offset = next;
-        auto translating_reader = co_await partition->make_reader(
-          reader_config);
-        auto reader = std::move(translating_reader.reader);
+        auto reader = co_await partition->make_reader(reader_config);
         auto headers_read = co_await reader.consume(
           test_consumer(), model::no_timeout);
         if (headers_read.empty()) {
@@ -2078,7 +2076,7 @@ std::vector<model::record_batch_header> scan_remote_partition_with_replacements(
       test_log.debug,
       "Start remote_partition reader, reader config: {}",
       read_one);
-    auto reader_1 = partition->make_reader(read_one).get().reader;
+    auto reader_1 = partition->make_reader(read_one).get();
 
     auto to_json = [](const partition_manifest& m) {
         std::stringstream s;
@@ -2127,7 +2125,7 @@ std::vector<model::record_batch_header> scan_remote_partition_with_replacements(
     // should be able to detect the fact that the offset range that the
     // 'remote_segment' covers was replaced and to discard the stale
     // 'remote_segment'.
-    auto reader_2 = partition->make_reader(read_all).get().reader;
+    auto reader_2 = partition->make_reader(read_all).get();
     auto all_headers
       = reader_2.consume(test_consumer(), model::no_timeout).get();
     std::move(reader_2).release();
@@ -2577,7 +2575,7 @@ FIXTURE_TEST(test_small_segment_prefetch_disabled, cloud_storage_fixture) {
 
     cloud_log_reader_config reader_config(
       model::offset_cast(base), model::offset_cast(first_seg_max));
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
     auto headers = reader.consume(test_consumer(), model::no_timeout).get();
     std::move(reader).release();
     BOOST_REQUIRE(!headers.empty());
@@ -2619,7 +2617,7 @@ FIXTURE_TEST(test_small_segment_prefetch_enabled, cloud_storage_fixture) {
     // small segments.
     cloud_log_reader_config reader_config(
       model::offset_cast(base), model::offset_cast(first_seg_max));
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
     auto headers = reader.consume(test_consumer(), model::no_timeout).get();
     std::move(reader).release();
     BOOST_REQUIRE_EQUAL(headers.size(), 2);
@@ -2667,7 +2665,7 @@ FIXTURE_TEST(test_small_segment_prefetch_count_limit, cloud_storage_fixture) {
 
     cloud_log_reader_config reader_config(
       model::offset_cast(base), model::offset_cast(first_seg_max));
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
     auto headers = reader.consume(test_consumer(), model::no_timeout).get();
     std::move(reader).release();
     BOOST_REQUIRE(!headers.empty());
@@ -2724,7 +2722,7 @@ FIXTURE_TEST(
 
     cloud_log_reader_config reader_config(
       model::offset_cast(base), model::offset_cast(first_seg_max));
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
     auto headers = reader.consume(test_consumer(), model::no_timeout).get();
     std::move(reader).release();
     BOOST_REQUIRE(!headers.empty());

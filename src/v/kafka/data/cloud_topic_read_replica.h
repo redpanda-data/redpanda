@@ -94,7 +94,7 @@ public:
       prefix_truncate(model::offset, ss::lowres_clock::time_point) final;
 
     // Creates a reader from the cloud database snapshot.
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(kafka::log_reader_config cfg) final;
 
     // Queries the cloud database for the offset at the given timestamp.
@@ -102,10 +102,8 @@ public:
     timequery(storage::timequery_config cfg) final;
 
     // Returns empty - cloud topics don't support transactions.
-    ss::future<std::vector<model::tx_range>> aborted_transactions(
-      model::offset base,
-      model::offset last,
-      ss::lw_shared_ptr<const storage::offset_translator_state>) final;
+    ss::future<std::vector<model::tx_range>>
+    aborted_transactions(model::offset base, model::offset last) final;
 
     // Validates that the fetch offset is within bounds.
     ss::future<kafka::error_code> validate_fetch_offset(
@@ -150,7 +148,7 @@ private:
     };
     ss::future<std::expected<snapshot, ss::sstring>> get_snapshot() const;
 
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(snapshot, kafka::log_reader_config cfg);
 
     ss::lw_shared_ptr<cluster::partition> partition_;

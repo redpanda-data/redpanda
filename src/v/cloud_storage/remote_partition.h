@@ -18,7 +18,7 @@
 #include "cloud_storage/segment_state.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
-#include "storage/translating_reader.h"
+#include "model/record_batch_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
@@ -78,7 +78,7 @@ public:
     /// batch reader will produce batches with kafka offsets and the config will
     /// be updated using kafka offsets.
     /// \param config is a reader config
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(cloud_storage::cloud_log_reader_config config);
 
     static size_t reader_mem_use_estimate() noexcept;

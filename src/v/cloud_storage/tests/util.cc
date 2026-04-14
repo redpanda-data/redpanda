@@ -707,7 +707,7 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
               max_bytes_limit - 1);
         }
         vlog(test_util_log.info, "reader_config {}", reader_config);
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         if (headers_read.empty()) {
@@ -779,7 +779,7 @@ std::vector<model::record_batch_header> scan_remote_partition(
 
     partition->start().get();
 
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
@@ -846,7 +846,7 @@ scan_result scan_remote_partition(
     auto bytes_accept = probe.get_bytes_skip();
     auto records_read = probe.get_records_read();
 
-    auto reader = partition->make_reader(reader_config).get().reader;
+    auto reader = partition->make_reader(reader_config).get();
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
@@ -916,7 +916,7 @@ scan_remote_partition_incrementally_with_closest_lso(
         reader_config.start_offset = model::offset_cast(next);
         reader_config.max_offset = model::offset_cast(model::next_offset(next));
         vlog(test_util_log.info, "reader_config {}", reader_config);
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         if (headers_read.empty()) {

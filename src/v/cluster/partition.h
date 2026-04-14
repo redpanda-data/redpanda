@@ -23,7 +23,7 @@
 #include "model/timeout_clock.h"
 #include "raft/replicate.h"
 #include "storage/ntp_config.h"
-#include "storage/translating_reader.h"
+#include "storage/offset_translator_state.h"
 #include "storage/types.h"
 #include "utils/notification_list.h"
 
@@ -266,7 +266,7 @@ public:
     model::offset next_cloud_offset() const;
 
     /// Create a reader that will fetch data from remote storage
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_cloud_reader(cloud_storage::cloud_log_reader_config config);
 
     std::optional<model::offset> kafka_start_offset_override() const;

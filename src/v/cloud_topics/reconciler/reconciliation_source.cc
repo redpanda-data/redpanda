@@ -34,21 +34,18 @@ namespace {
 class aborted_transaction_tracker_impl
   : public kafka::aborted_transaction_tracker {
 public:
-    aborted_transaction_tracker_impl(
-      ss::lw_shared_ptr<cloud_topics::frontend> fe,
-      ss::lw_shared_ptr<const storage::offset_translator_state> translator)
-      : _fe(std::move(fe))
-      , _translator(std::move(translator)) {}
+    explicit aborted_transaction_tracker_impl(
+      ss::lw_shared_ptr<cloud_topics::frontend> fe)
+      : _fe(std::move(fe)) {}
 
     ss::future<std::vector<model::tx_range>>
     compute_aborted_transactions(model::offset base, model::offset max) final {
         return _fe->aborted_transactions(
-          model::offset_cast(base), model::offset_cast(max), _translator);
+          model::offset_cast(base), model::offset_cast(max));
     }
 
 private:
     ss::lw_shared_ptr<cloud_topics::frontend> _fe;
-    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
 
 class l0_source : public source {
@@ -140,14 +137,13 @@ public:
         // It's important the `aborted_transaction_tracker_impl` takes a shared
         // so we don't have to worry about the lifetimes of the reader and
         // source.
-        auto tracker = std::make_unique<aborted_transaction_tracker_impl>(
-          _fe, std::move(reader.ot_state));
+        auto tracker = std::make_unique<aborted_transaction_tracker_impl>(_fe);
 
         // Wrap the reader with some readahead to hide the latency of
         // downloading a bit.
         co_return model::make_readahead_record_batch_reader(
           model::make_record_batch_reader<kafka::read_committed_reader>(
-            std::move(tracker), std::move(reader.reader)));
+            std::move(tracker), std::move(reader)));
     }
 
 private:

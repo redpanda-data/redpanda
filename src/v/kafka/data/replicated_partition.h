@@ -72,13 +72,11 @@ public:
     std::unique_ptr<exact_offset_replicator> make_exact_offset_replicator()
       && final;
 
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(kafka::log_reader_config cfg) final;
 
-    ss::future<std::vector<model::tx_range>> aborted_transactions(
-      model::offset base,
-      model::offset last,
-      ss::lw_shared_ptr<const storage::offset_translator_state>) final;
+    ss::future<std::vector<model::tx_range>>
+    aborted_transactions(model::offset base, model::offset last) final;
 
     cluster::partition_probe& probe() final;
 
@@ -124,13 +122,11 @@ private:
     ss::future<std::optional<model::offset>>
       get_leader_epoch_last_offset_unbounded(kafka::leader_epoch) const;
 
-    ss::future<std::vector<model::tx_range>> aborted_transactions_local(
-      cloud_storage::offset_range,
-      ss::lw_shared_ptr<const storage::offset_translator_state>);
+    ss::future<std::vector<model::tx_range>>
+      aborted_transactions_local(cloud_storage::offset_range);
 
-    ss::future<std::vector<model::tx_range>> aborted_transactions_remote(
-      cloud_storage::offset_range offsets,
-      ss::lw_shared_ptr<const storage::offset_translator_state> ot_state);
+    ss::future<std::vector<model::tx_range>>
+    aborted_transactions_remote(cloud_storage::offset_range offsets);
 
     bool may_read_from_cloud(kafka::offset) const;
 

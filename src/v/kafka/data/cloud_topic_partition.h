@@ -75,13 +75,11 @@ public:
     std::unique_ptr<exact_offset_replicator> make_exact_offset_replicator()
       && final;
 
-    ss::future<storage::translating_reader>
+    ss::future<model::record_batch_reader>
     make_reader(kafka::log_reader_config cfg) final;
 
-    ss::future<std::vector<model::tx_range>> aborted_transactions(
-      model::offset base,
-      model::offset last,
-      ss::lw_shared_ptr<const storage::offset_translator_state>) final;
+    ss::future<std::vector<model::tx_range>>
+    aborted_transactions(model::offset base, model::offset last) final;
 
     cluster::partition_probe& probe() final;
 

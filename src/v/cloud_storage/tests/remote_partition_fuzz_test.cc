@@ -181,7 +181,7 @@ scan_remote_partition_incrementally_with_reuploads(
         drop_reupload_flag();
         maybe_reupload_range(next);
         vlog(test_log.info, "reader_config {}", reader_config);
-        auto reader = partition->make_reader(reader_config).get().reader;
+        auto reader = partition->make_reader(reader_config).get();
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         if (headers_read.empty()) {
@@ -435,9 +435,7 @@ ss::future<> scan_until_close(
     while (!g.is_closed()) {
         try {
             test_log.info("running scan loop nr {}", counter);
-            auto translating_reader = co_await partition->make_reader(
-              reader_config);
-            auto reader = std::move(translating_reader.reader);
+            auto reader = co_await partition->make_reader(reader_config);
             auto headers_read = co_await reader.consume(
               test_consumer(), model::no_timeout);
             test_log.info("done scan loop {}", counter);

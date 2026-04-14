@@ -329,7 +329,7 @@ model::offset partition::next_cloud_offset() const {
     return kafka::offset_cast(_cloud_storage_partition->next_kafka_offset());
 }
 
-ss::future<storage::translating_reader>
+ss::future<model::record_batch_reader>
 partition::make_cloud_reader(cloud_storage::cloud_log_reader_config config) {
     vassert(
       cloud_data_available(),
