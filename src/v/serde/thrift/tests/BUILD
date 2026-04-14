@@ -11,6 +11,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/serde/thrift:compact",
         "//src/v/test_utils:gtest",
         "//src/v/utils:vint",

@@ -13,9 +13,11 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "utils/named_type.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace serde::thrift {
 
@@ -127,5 +129,71 @@ bytes encode_string(std::string_view str);
  * First an unsigned varint for the length, then the binary contents itself.
  */
 iobuf encode_binary(iobuf b);
+
+// A Struct decoder reads fields from Thrift compact encoded data. Fields are
+// decoded one at a time; the caller reads each field's value based on its type.
+// Unknown fields can be skipped for forward compatibility.
+//
+// Usage:
+//   struct_decoder dec(parser);
+//   while (auto hdr = dec.read_field_header()) {
+//       switch (hdr->id()) {
+//       case 1: my_field = decode_i32(parser); break;
+//       default: dec.skip_field(parser, hdr->type); break;
+//       }
+//   }
+class struct_decoder {
+public:
+    struct field_header {
+        field_id id;
+        field_type type;
+    };
+
+    explicit struct_decoder(iobuf_parser_base& parser);
+
+    // Read the next field header. Returns std::nullopt at the stop field.
+    //
+    // Booleans: the value is encoded in the type nibble itself
+    // (boolean_true / boolean_false). No separate value read is needed.
+    std::optional<field_header> read_field_header();
+
+    // Skip a field value of the given type. Used for unknown fields.
+    void skip_field(field_type type);
+
+private:
+    iobuf_parser_base& _parser;
+    field_id _last_field_id = field_id(0);
+};
+
+// A List/Set decoder reads the header and provides element count and type.
+// The caller reads each element's value based on the element type.
+//
+// Usage:
+//   list_decoder dec(parser);
+//   for (size_t i = 0; i < dec.size(); ++i) {
+//       values.push_back(decode_i32(parser));
+//   }
+class list_decoder {
+public:
+    explicit list_decoder(iobuf_parser_base& parser);
+
+    field_type element_type() const;
+    size_t size() const;
+
+private:
+    field_type _type;
+    size_t _size;
+};
+
+// Decode a zigzag-encoded varint as int16_t.
+int16_t decode_i16(iobuf_parser_base& parser);
+// Decode a zigzag-encoded varint as int32_t.
+int32_t decode_i32(iobuf_parser_base& parser);
+// Decode a zigzag-encoded varint as int64_t.
+int64_t decode_i64(iobuf_parser_base& parser);
+// Decode a length-prefixed UTF-8 string.
+ss::sstring decode_string(iobuf_parser_base& parser);
+// Decode a length-prefixed binary blob.
+iobuf decode_binary(iobuf_parser_base& parser);
 
 } // namespace serde::thrift
