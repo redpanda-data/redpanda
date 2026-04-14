@@ -106,9 +106,8 @@ public:
           new_leader->raft()->term());
 
         // Verify offset delta is non-zero.
-        auto ot_state = new_leader->get_offset_translator_state();
         auto raft_committed = new_leader->raft()->committed_offset();
-        auto kafka_committed = ot_state->from_log_offset(raft_committed);
+        auto kafka_committed = new_leader->from_log_offset(raft_committed);
         vlog(
           test_log.info,
           "Raft committed: {}, kafka committed: {}, delta: {}",

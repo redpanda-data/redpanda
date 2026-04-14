@@ -1726,11 +1726,6 @@ model::offset partition::get_latest_configuration_offset() const {
     return _raft->get_latest_configuration_offset();
 }
 
-ss::lw_shared_ptr<const storage::offset_translator_state>
-partition::get_offset_translator_state() const {
-    return _raft->log()->get_offset_translator_state();
-}
-
 model::offset partition::from_log_offset(model::offset o) const {
     return _raft->log()->from_log_offset(o);
 }

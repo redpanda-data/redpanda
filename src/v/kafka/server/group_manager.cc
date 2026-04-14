@@ -1938,8 +1938,7 @@ group_manager::describe_partition_producers(const model::ntp& ntp) {
             auto& tx = state.transaction;
             int64_t start_offset = -1;
             if (tx && tx->begin_offset >= model::offset{0}) {
-                start_offset = partition->get_offset_translator_state()
-                                 ->from_log_offset(tx->begin_offset);
+                start_offset = partition->from_log_offset(tx->begin_offset);
             }
             int64_t last_timetamp = -1;
             if (tx) {

@@ -156,7 +156,6 @@ get_aborted_transactions_local(
     // This means that we should only read aborted transactions for
     // recent offsets which are not reconciled yet.
 
-    auto ot_state = p.get_offset_translator_state();
     auto source = co_await p.aborted_transactions(
       offsets.begin_rp, offsets.end_rp);
 
@@ -170,8 +169,8 @@ get_aborted_transactions_local(
     for (const auto& range : source) {
         target.emplace_back(
           range.pid,
-          ot_state->from_log_offset(std::max(trim_at, range.first)),
-          ot_state->from_log_offset(range.last));
+          p.from_log_offset(std::max(trim_at, range.first)),
+          p.from_log_offset(range.last));
     }
 
     co_return target;
@@ -188,14 +187,13 @@ frontend::frontend(
 const model::ntp& frontend::ntp() const { return _partition->ntp(); }
 
 kafka::offset frontend::get_log_end_offset() const {
-    auto ot_state = _partition->get_offset_translator_state();
     // Local log is empty
     if (_partition->dirty_offset() < _partition->raft_start_offset()) {
         return model::offset_cast(
-          ot_state->from_log_offset(_partition->raft_start_offset()));
+          _partition->from_log_offset(_partition->raft_start_offset()));
     }
     // Local log is not empty
-    return model::offset_cast(ot_state->from_log_offset(
+    return model::offset_cast(_partition->from_log_offset(
       model::next_offset(_partition->dirty_offset())));
 }
 
@@ -229,9 +227,8 @@ frontend::sync_effective_start(
 }
 
 kafka::offset frontend::high_watermark() const {
-    auto ot_state = _partition->get_offset_translator_state();
     return model::offset_cast(
-      ot_state->from_log_offset(_partition->high_watermark()));
+      _partition->from_log_offset(_partition->high_watermark()));
 }
 
 std::expected<kafka::offset, frontend_errc>
@@ -240,8 +237,8 @@ frontend::last_stable_offset() const {
     if (maybe_lso == model::invalid_lso) {
         return std::unexpected(frontend_errc::offset_not_available);
     }
-    auto ot_state = _partition->get_offset_translator_state();
-    return model::offset_cast(ot_state->from_log_offset(maybe_lso));
+
+    return model::offset_cast(_partition->from_log_offset(maybe_lso));
 }
 
 bool frontend::is_leader() const { return _partition->is_leader(); }
@@ -285,9 +282,9 @@ frontend::aborted_transactions(kafka::offset base, kafka::offset last) {
         // transactions to report.
         co_return std::vector<cluster::tx::tx_range>{};
     }
-    auto ot_state = _partition->get_offset_translator_state();
-    auto base_rp = ot_state->to_log_offset(kafka::offset_cast(base));
-    auto last_rp = ot_state->to_log_offset(kafka::offset_cast(last));
+
+    auto base_rp = _partition->to_log_offset(kafka::offset_cast(base));
+    auto last_rp = _partition->to_log_offset(kafka::offset_cast(last));
     cloud_storage::offset_range offsets = {
       .begin = base,
       .end = last,
@@ -482,13 +479,13 @@ frontend::l0_timequery(storage::timequery_config cfg) {
         // NOTE: we can't just return this offset verbatim, since we don't
         // record the same timestamp deltas inside batches for placeholder
         // batches (this would require unpacking batches during produce).
-        auto ot_state = _partition->get_offset_translator_state();
+
         co_return coarse_grained_timequery_result{
           .time = cfg.time,
           .start_offset = model::offset_cast(
-            ot_state->from_log_offset(batch.base_offset())),
+            _partition->from_log_offset(batch.base_offset())),
           .last_offset = model::offset_cast(
-            ot_state->from_log_offset(batch.last_offset())),
+            _partition->from_log_offset(batch.last_offset())),
         };
     }
     co_return std::nullopt;
@@ -965,7 +962,6 @@ raft::replicate_stages frontend::replicate(
 
 ss::future<std::optional<kafka::offset>>
 frontend::get_leader_epoch_last_offset(model::term_id term) const {
-    auto ot_state = _partition->get_offset_translator_state();
     auto first_local_offset = _partition->raft_start_offset();
     auto first_local_term = _partition->get_term(first_local_offset);
     auto last_local_term = _partition->term();
@@ -977,7 +973,7 @@ frontend::get_leader_epoch_last_offset(model::term_id term) const {
     if (term >= first_local_term) {
         auto last_offset = _partition->get_term_last_offset(term);
         if (last_offset) {
-            co_return ot_state->from_log_offset(*last_offset);
+            co_return _partition->from_log_offset(*last_offset);
         }
     }
 
@@ -1052,9 +1048,8 @@ frontend::validate_fetch_offset(
         kafka::offset available_to_read;
 
         if (!ec.has_value()) {
-            leader_hwm
-              = _partition->get_offset_translator_state()->from_log_offset(
-                _partition->leader_high_watermark());
+            leader_hwm = _partition->from_log_offset(
+              _partition->leader_high_watermark());
             available_to_read = std::min(
               model::offset_cast(leader_hwm), log_end_offset);
 
@@ -1099,7 +1094,6 @@ frontend::validate_fetch_offset(
 
 std::expected<partition_info, frontend_errc>
 frontend::get_partition_info() const {
-    auto ot_state = _partition->get_offset_translator_state();
     partition_info ret;
     ret.leader = _partition->get_leader_id();
     ret.replicas.reserve(_partition->raft()->get_follower_count() + 1);
@@ -1110,12 +1104,11 @@ frontend::get_partition_info() const {
     }
     auto start_offset = _partition->raft_start_offset();
 
-    auto clamped_translate = [ot_state,
-                              start_offset](model::offset to_translate) {
+    auto clamped_translate = [this, start_offset](model::offset to_translate) {
         return model::offset_cast(
           to_translate >= start_offset
-            ? ot_state->from_log_offset(to_translate)
-            : ot_state->from_log_offset(start_offset));
+            ? _partition->from_log_offset(to_translate)
+            : _partition->from_log_offset(start_offset));
     };
 
     for (const auto& follower_metric : followers.value()) {

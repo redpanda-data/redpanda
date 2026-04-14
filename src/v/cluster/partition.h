@@ -23,7 +23,6 @@
 #include "model/timeout_clock.h"
 #include "raft/replicate.h"
 #include "storage/ntp_config.h"
-#include "storage/offset_translator_state.h"
 #include "storage/types.h"
 #include "utils/notification_list.h"
 
@@ -207,9 +206,6 @@ public:
     model::offset get_latest_configuration_offset() const;
 
     ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() const;
-
-    ss::lw_shared_ptr<const storage::offset_translator_state>
-    get_offset_translator_state() const;
 
     model::offset from_log_offset(model::offset) const;
     model::offset to_log_offset(model::offset) const;

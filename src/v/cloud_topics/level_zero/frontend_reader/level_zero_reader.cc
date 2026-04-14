@@ -82,8 +82,8 @@ level_zero_log_reader_impl::read_some(
     // Like the storage layer log reader, stop when we've consumed all
     // committed data. The Kafka fetch handler owns the waiting policy
     // via the visible_offset_monitor / max_wait_ms.
-    auto ot_state = _ctp->get_offset_translator_state();
-    auto committed_kafka = ot_state->from_log_offset(
+
+    auto committed_kafka = _ctp->from_log_offset(
       _ctp->raft()->committed_offset());
     if (_next_offset > model::offset_cast(committed_kafka)) {
         vlog(
@@ -236,10 +236,9 @@ level_zero_log_reader_impl::ctp_read_config() const {
      * specified as offsets in the kafka address space and need to first be
      * converted into physical log offsets for log reader configuration.
      */
-    auto ot_state = _ctp->get_offset_translator_state();
-    auto start_offset = ot_state->to_log_offset(
-      kafka::offset_cast(_next_offset));
-    auto max_offset = ot_state->to_log_offset(
+
+    auto start_offset = _ctp->to_log_offset(kafka::offset_cast(_next_offset));
+    auto max_offset = _ctp->to_log_offset(
       kafka::offset_cast(_config.max_offset));
 
     /*
