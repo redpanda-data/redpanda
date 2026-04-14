@@ -445,6 +445,32 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_utils",
+    srcs = [
+        "manifest_utils.cc",
+    ],
+    hdrs = [
+        "manifest_utils.h",
+    ],
+    implementation_deps = [
+        ":compatibility",
+        ":logger",
+        ":manifest",
+        ":partition_key_type",
+        ":values_bytes",
+    ],
+    deps = [
+        ":action",
+        ":manifest_entry",
+        ":manifest_io",
+        ":manifest_list",
+        ":schema",
+        ":table_metadata",
+        "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
     name = "merge_append_action",
     srcs = [
         "merge_append_action.cc",
@@ -453,9 +479,7 @@ redpanda_cc_library(
         "merge_append_action.h",
     ],
     implementation_deps = [
-        ":compatibility",
         ":logger",
-        ":manifest",
         ":manifest_file_packer",
         ":snapshot",
         ":table_requirement",
@@ -466,9 +490,9 @@ redpanda_cc_library(
         ":manifest_entry",
         ":manifest_io",
         ":manifest_list",
+        ":manifest_utils",
         ":schema",
         ":table_metadata",
-        ":values_bytes",
         "//src/v/base",
     ],
 )
