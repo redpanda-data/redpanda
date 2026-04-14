@@ -1731,6 +1731,14 @@ partition::get_offset_translator_state() const {
     return _raft->log()->get_offset_translator_state();
 }
 
+model::offset partition::from_log_offset(model::offset o) const {
+    return _raft->log()->from_log_offset(o);
+}
+
+model::offset partition::to_log_offset(model::offset o) const {
+    return _raft->log()->to_log_offset(o);
+}
+
 size_t partition::size_bytes() const { return _raft->log()->size_bytes(); }
 size_t partition::reclaimable_size_bytes() const {
     return _raft->log()->reclaimable_size_bytes();

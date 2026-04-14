@@ -211,6 +211,9 @@ public:
     ss::lw_shared_ptr<const storage::offset_translator_state>
     get_offset_translator_state() const;
 
+    model::offset from_log_offset(model::offset) const;
+    model::offset to_log_offset(model::offset) const;
+
     ss::shared_ptr<cluster::rm_stm> rm_stm();
 
     size_t size_bytes() const;

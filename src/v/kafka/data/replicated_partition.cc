@@ -33,11 +33,10 @@
 namespace {
 
 storage::local_log_reader_config kafka_to_local_log_reader_config(
-  kafka::log_reader_config cfg,
-  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
-    auto start_offset = ot_state->to_log_offset(
+  kafka::log_reader_config cfg, const cluster::partition& partition) {
+    auto start_offset = partition.to_log_offset(
       kafka::offset_cast(cfg.start_offset));
-    auto max_offset = ot_state->to_log_offset(
+    auto max_offset = partition.to_log_offset(
       kafka::offset_cast(cfg.max_offset));
 
     return storage::local_log_reader_config(
@@ -70,11 +69,7 @@ kafka_to_cloud_log_reader_config(kafka::log_reader_config cfg) {
 namespace kafka {
 replicated_partition::replicated_partition(
   ss::lw_shared_ptr<cluster::partition> p) noexcept
-  : _partition(p)
-  , _translator(_partition->get_offset_translator_state()) {
-    vassert(
-      _translator, "ntp {}: offset translator must be initialized", p->ntp());
-}
+  : _partition(p) {}
 
 const model::ntp& replicated_partition::ntp() const {
     return _partition->ntp();
@@ -112,7 +107,7 @@ replicated_partition::sync_effective_start(
 }
 
 model::offset replicated_partition::local_start_offset() const {
-    return _translator->from_log_offset(_partition->raft_start_offset());
+    return _partition->from_log_offset(_partition->raft_start_offset());
 }
 
 model::offset replicated_partition::start_offset() const {
@@ -132,7 +127,7 @@ model::offset replicated_partition::high_watermark() const {
             return model::offset(0);
         }
     }
-    return _translator->from_log_offset(_partition->high_watermark());
+    return _partition->from_log_offset(_partition->high_watermark());
 }
 /**
  * According to Kafka protocol semantics a log_end_offset is an offset that
@@ -151,12 +146,12 @@ model::offset replicated_partition::log_end_offset() const {
      * assigned to the next batch produced to the log.
      */
     if (_partition->dirty_offset() < _partition->raft_start_offset()) {
-        return _translator->from_log_offset(_partition->raft_start_offset());
+        return _partition->from_log_offset(_partition->raft_start_offset());
     }
     /**
      * By default we return a dirty_offset + 1
      */
-    return _translator->from_log_offset(
+    return _partition->from_log_offset(
       model::next_offset(_partition->dirty_offset()));
 }
 
@@ -164,7 +159,7 @@ model::offset replicated_partition::leader_high_watermark() const {
     if (_partition->is_read_replica_mode_enabled()) {
         return high_watermark();
     }
-    return _translator->from_log_offset(_partition->leader_high_watermark());
+    return _partition->from_log_offset(_partition->leader_high_watermark());
 }
 
 checked<model::offset, error_code>
@@ -181,7 +176,7 @@ replicated_partition::last_stable_offset() const {
     if (maybe_lso == model::invalid_lso) {
         return error_code::offset_not_available;
     }
-    return _translator->from_log_offset(maybe_lso);
+    return _partition->from_log_offset(maybe_lso);
 }
 
 bool replicated_partition::is_leader() const { return _partition->is_leader(); }
@@ -224,7 +219,7 @@ replicated_partition::make_reader(kafka::log_reader_config cfg) {
         co_return co_await _partition->make_cloud_reader(config);
     }
 
-    auto config = kafka_to_local_log_reader_config(cfg, _translator);
+    auto config = kafka_to_local_log_reader_config(cfg, *_partition);
     config.type_filter = {model::record_batch_type::raft_data};
     config.translate_offsets = model::translate_offsets::yes;
 
@@ -264,8 +259,8 @@ replicated_partition::aborted_transactions_local(
     for (const auto& range : source) {
         target.emplace_back(
           range.pid,
-          _translator->from_log_offset(std::max(trim_at, range.first)),
-          _translator->from_log_offset(range.last));
+          _partition->from_log_offset(std::max(trim_at, range.first)),
+          _partition->from_log_offset(range.last));
     }
 
     co_return target;
@@ -280,8 +275,8 @@ replicated_partition::aborted_transactions_remote(
     for (const auto& range : source) {
         target.emplace_back(
           range.pid,
-          _translator->from_log_offset(std::max(offsets.begin_rp, range.first)),
-          _translator->from_log_offset(range.last));
+          _partition->from_log_offset(std::max(offsets.begin_rp, range.first)),
+          _partition->from_log_offset(range.last));
     }
     co_return target;
 }
@@ -294,7 +289,7 @@ bool replicated_partition::may_read_from_cloud(
   kafka::offset start_offset) const {
     return _partition->is_remote_fetch_enabled()
            && _partition->cloud_data_available()
-           && (start_offset < model::offset_cast(_translator->from_log_offset(_partition->raft_start_offset())));
+           && (start_offset < model::offset_cast(_partition->from_log_offset(_partition->raft_start_offset())));
 }
 
 ss::future<std::vector<cluster::tx::tx_range>>
@@ -321,8 +316,8 @@ replicated_partition::aborted_transactions(
     // from offset 50, it will return data for range 50-100 and we won't be able
     // to tell if it didn't have data for 0-50 or there wasn't any transactions
     // in that range).
-    auto base_rp = _translator->to_log_offset(base);
-    auto last_rp = _translator->to_log_offset(last);
+    auto base_rp = _partition->to_log_offset(base);
+    auto last_rp = _partition->to_log_offset(last);
     cloud_storage::offset_range offsets = {
       .begin = model::offset_cast(base),
       .end = model::offset_cast(last),
@@ -465,7 +460,7 @@ model::offset replicated_partition::partition_kafka_start_offset() const {
         return _partition->start_cloud_offset();
     }
 
-    auto local_kafka_start_offset = _translator->from_log_offset(
+    auto local_kafka_start_offset = _partition->from_log_offset(
       _partition->raft_start_offset());
     if (
       _partition->is_remote_fetch_enabled()
@@ -543,7 +538,7 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     if (!is_read_replica && term >= first_local_term) {
         auto last_offset = _partition->get_term_last_offset(term);
         if (last_offset) {
-            co_return _translator->from_log_offset(*last_offset);
+            co_return _partition->from_log_offset(*last_offset);
         }
     }
     // The requested term falls below our earliest local segment.
@@ -570,7 +565,7 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     }
 
     // Return the offset of this next-highest term.
-    co_return _translator->from_log_offset(first_local_offset);
+    co_return _partition->from_log_offset(first_local_offset);
 }
 
 ss::future<error_code> replicated_partition::prefix_truncate(
@@ -586,11 +581,10 @@ ss::future<error_code> replicated_partition::prefix_truncate(
         co_return error_code::offset_out_of_range;
     }
     model::offset rp_truncate_offset{};
-    auto local_kafka_start_offset = _translator->from_log_offset(
+    auto local_kafka_start_offset = _partition->from_log_offset(
       _partition->raft_start_offset());
     if (kafka_truncation_offset > local_kafka_start_offset) {
-        rp_truncate_offset = _translator->to_log_offset(
-          kafka_truncation_offset);
+        rp_truncate_offset = _partition->to_log_offset(kafka_truncation_offset);
     }
     auto errc = co_await _partition->prefix_truncate(
       rp_truncate_offset,
@@ -722,8 +716,8 @@ result<partition_info> replicated_partition::get_partition_info() const {
 
     auto clamped_translate = [this, start_offset](model::offset to_translate) {
         return to_translate >= start_offset
-                 ? _translator->from_log_offset(to_translate)
-                 : _translator->from_log_offset(start_offset);
+                 ? _partition->from_log_offset(to_translate)
+                 : _partition->from_log_offset(start_offset);
     };
 
     for (const auto& follower_metric : followers.value()) {
@@ -760,12 +754,12 @@ size_t replicated_partition::estimate_size_between(
         auto& m = _partition->archival_meta_stm()->manifest();
         return m.estimate_size_between(begin, end);
     }
-    auto ot = _partition->log()->get_offset_translator_state();
     auto local_log_start = _partition->raft_start_offset();
     auto local_kafka_start = model::offset_cast(
-      ot->from_log_offset(local_log_start));
+      _partition->from_log_offset(local_log_start));
     auto local_kafka_end = kafka::prev_offset(
-      model::offset_cast(ot->from_log_offset(_partition->high_watermark())));
+      model::offset_cast(
+        _partition->from_log_offset(_partition->high_watermark())));
 
     size_t cloud_sz = 0;
     if (may_read_from_cloud(begin)) {
@@ -786,9 +780,9 @@ size_t replicated_partition::estimate_size_between(
         // Clamp the target offsets with what is actually available in the log.
         auto local_clamped_kafka_begin = std::max(begin, local_kafka_start);
         auto local_clamped_kafka_end = std::min(end, local_kafka_end);
-        auto local_clamped_begin = ot->to_log_offset(
+        auto local_clamped_begin = _partition->to_log_offset(
           kafka::offset_cast(local_clamped_kafka_begin));
-        auto local_clamped_end = model::prev_offset(ot->to_log_offset(
+        auto local_clamped_end = model::prev_offset(_partition->to_log_offset(
           kafka::offset_cast(kafka::next_offset(local_clamped_kafka_end))));
 
         auto log = _partition->log();

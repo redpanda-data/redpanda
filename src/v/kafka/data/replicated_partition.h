@@ -131,7 +131,6 @@ private:
     bool may_read_from_cloud(kafka::offset) const;
 
     ss::lw_shared_ptr<cluster::partition> _partition;
-    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
 
 } // namespace kafka
