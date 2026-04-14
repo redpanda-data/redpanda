@@ -25,6 +25,8 @@
             config.allowUnfree = true;
           };
 
+          # ── Base builds ──
+          # Default fastbuild — fastest compilation, no optimizations.
           redpanda = pkgs.callPackage ./nix/redpanda.nix { };
 
           redpanda-cached = pkgs.callPackage ./nix/redpanda.nix {
@@ -33,13 +35,44 @@
 
           rpk = pkgs.callPackage ./nix/rpk.nix { };
 
-          # PGO (Profile-Guided Optimization) variants.
+          # ── Optimization tiers ──
+          # Nix makes it trivial to offer every combination of optimization
+          # level.  Each tier is a one-line parameter change — the build
+          # system handles the rest.
+          #
+          #   Tier      │ Flags                   │ What it adds
+          #   ──────────┼─────────────────────────┼──────────────────────
+          #   default   │ (fastbuild)             │ fastest compile
+          #   release   │ --config=release        │ -O2, secure, stripped
+          #   lto       │ --config=lto            │ ThinLTO cross-module
+          #   pgo       │ lto + profile data      │ branch/call frequency
+          #
+
+          # Release: -O2 optimized, security hardened.
+          redpanda-release = pkgs.callPackage ./nix/redpanda.nix {
+            optimizationLevel = "release";
+          };
+          redpanda-release-cached = pkgs.callPackage ./nix/redpanda.nix {
+            optimizationLevel = "release";
+            bazelCacheDir = "/var/cache/bazel-nix";
+          };
+
+          # LTO: ThinLTO cross-module optimization (slower to link).
+          redpanda-lto = pkgs.callPackage ./nix/redpanda.nix {
+            optimizationLevel = "lto";
+          };
+          redpanda-lto-cached = pkgs.callPackage ./nix/redpanda.nix {
+            optimizationLevel = "lto";
+            bazelCacheDir = "/var/cache/bazel-nix";
+          };
+
+          # ── PGO (Profile-Guided Optimization) ──
           # Instrumented binary for external profiling workflows.
           redpanda-pgo-instrument = pkgs.callPackage ./nix/redpanda.nix {
             pgoMode = "instrument";
           };
 
-          # Automated PGO: instrument -> lightweight training -> optimized build.
+          # Automated PGO: instrument → train (~15k msgs, 5 size tiers) → optimize.
           redpanda-pgo = let
             instrumented = pkgs.callPackage ./nix/redpanda.nix {
               pgoMode = "instrument";
@@ -82,6 +115,19 @@
           };
 
           bench = import ./nix/bench.nix { inherit pkgs mkApp; };
+
+          tests = import ./nix/tests {
+            inherit pkgs mkApp;
+            redpandaDrv = redpanda;
+            rpkDrv = rpk;
+          };
+
+          # Tests using the cached build (faster for repeat testing).
+          testsCached = import ./nix/tests {
+            inherit pkgs mkApp;
+            redpandaDrv = redpanda-cached;
+            rpkDrv = rpk;
+          };
         in
         {
           packages = {
@@ -89,11 +135,15 @@
               redpanda
               rpk
               redpanda-cached
+              redpanda-release
+              redpanda-release-cached
+              redpanda-lto
+              redpanda-lto-cached
               redpanda-pgo
               redpanda-pgo-instrument
               redpanda-pgo-cached
               ;
-            default = redpanda;
+            default = redpanda-pgo;
 
             # OCI container images (use plain redpanda so they work without
             # /var/cache/bazel-nix sandbox passthrough in nix.conf)
@@ -115,11 +165,15 @@
             rpk-image = pkgs.callPackage ./nix/rpk-image.nix {
               rpkDrv = rpk;
             };
+          } // tests.packages // {
+            # Cached variants for faster iteration (requires /var/cache/bazel-nix)
+            test-single-node-cached = testsCached.packages.test-single-node;
+            test-lifecycle-cached = testsCached.packages.test-lifecycle;
+            test-all = tests.packages.test-all;
+            test-all-cached = testsCached.packages.test-all;
           };
 
-          apps = bench // {
-            test-images = import ./nix/test-images.nix { inherit pkgs mkApp; };
-          };
+          apps = bench // tests.apps;
 
           devShells.default = pkgs.callPackage ./nix/shell.nix { };
 
@@ -132,7 +186,7 @@
               ${rpk}/bin/rpk version
               touch $out
             '';
-          };
+          } // tests.checks;
         }
       );
 }

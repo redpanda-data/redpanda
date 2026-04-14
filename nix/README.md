@@ -145,13 +145,22 @@ The Nix build provides an automated 3-phase PGO pipeline:
 3. **Optimize** (`--config=pgo-optimize --fdo_optimize=...`) — rebuild
    using the collected profile data to optimize hot code paths.
 
-The lightweight training exercises the core hot paths: Kafka protocol
-handling, Raft consensus, batch processing, and log segment storage.
-It uses ~15k messages with varying sizes (small strings, key-value pairs,
-and larger payloads) across multiple topics with different partition counts.
-This could be extended in the future with mixed message types, schema
-registry workloads, and Iceberg format translation to cover additional
-code paths.
+The training workload mirrors a realistic Kafka message-size distribution
+across ~15k total messages and 5 topics:
+
+| Tier | Size Range | Messages | % of Total | Simulates |
+|------|-----------|----------|------------|-----------|
+| Tiny | 0.1–1 KB | 6,750 | 45% | Metrics, events, log lines |
+| Small | 1–5 KB | 4,500 | 30% | JSON events, small Avro |
+| Medium | 10–50 KB | 2,250 | 15% | Enriched events, nested docs |
+| Large | 50–500 KB | 1,200 | 8% | Bulk data, images, aggregates |
+| XL | 500 KB–1 MB | 300 | 2% | Near-max payloads |
+
+This exercises the core hot paths — Kafka protocol handling, Raft consensus,
+batch splitting, memory allocation, compression, and fetch chunking — at
+every size tier, giving the compiler realistic branch-probability data.
+The distribution can be extended in the future with schema registry
+workloads and Iceberg format translation to cover additional code paths.
 
 For production deployments requiring maximum optimization, you can supply
 profiles generated from the full `tools/pgo_bolt/train_pgo.py` pipeline
@@ -234,16 +243,56 @@ date > nix/entropy                     # Nix cache (changes derivation hash)
 
 ## Build Targets
 
-### Packages
+### Packages — Optimization Tiers
+
+Nix makes it trivial to offer every optimization level as a one-command
+build target.  Each tier is a single parameter change in `redpanda.nix`
+— the build system handles the rest:
+
+```
+ Tier      │ Bazel Config              │ What it adds
+ ──────────┼───────────────────────────┼──────────────────────────────
+ default   │ (fastbuild)               │ Fastest compilation, debug info
+ release   │ --config=release          │ -O2, security hardening, stripped
+ lto       │ --config=lto              │ ThinLTO cross-module optimization
+ pgo       │ lto + profile-guided      │ Branch/call frequency optimization
+```
+
+`nix build` (no target) produces the **PGO-optimized** binary by default —
+the same optimization level as official Redpanda releases.
 
 | Target | Command | Description |
 |--------|---------|-------------|
-| `redpanda` | `nix build .#redpanda` | Build without persistent cache |
-| `redpanda-cached` | `nix build .#redpanda-cached` | Build with persistent Bazel cache |
-| `rpk` | `nix build .#rpk` | Build the rpk Go CLI only |
-| `redpanda-pgo` | `nix build .#redpanda-pgo` | PGO-optimized build (automated training) |
-| `redpanda-pgo-cached` | `nix build .#redpanda-pgo-cached` | PGO-optimized with persistent cache |
+| `default` | `nix build` | **PGO-optimized build** (same as `redpanda-pgo`) |
+| `redpanda` | `nix build .#redpanda` | Fast dev build (no optimizations) |
+| `redpanda-release` | `nix build .#redpanda-release` | Release build (-O2, hardened) |
+| `redpanda-lto` | `nix build .#redpanda-lto` | LTO build (ThinLTO cross-module) |
+| `redpanda-pgo` | `nix build .#redpanda-pgo` | PGO build (LTO + profile-guided) |
+| `rpk` | `nix build .#rpk` | rpk Go CLI only |
+
+Each target also has a `-cached` variant for repeat builders with
+`/var/cache/bazel-nix` configured (e.g. `nix build .#redpanda-lto-cached`).
+
+Additional PGO targets:
+
+| Target | Command | Description |
+|--------|---------|-------------|
+| `redpanda-pgo-cached` | `nix build .#redpanda-pgo-cached` | PGO with persistent Bazel cache |
 | `redpanda-pgo-instrument` | `nix build .#redpanda-pgo-instrument` | Instrumented binary for external profiling |
+
+This is the power of Nix: **one derivation, four optimization levels,
+zero maintenance burden**.  Adding a new tier means adding three lines
+to `flake.nix` — no Dockerfiles, no CI scripts, no shell wrappers.
+
+### Test Targets
+
+| Target | Command | Description |
+|--------|---------|-------------|
+| `test-all` | `nix run .#test-all` | Run single-node + lifecycle tests in sequence |
+| `test-all-cached` | `nix run .#test-all-cached` | Run all tests (cached build) |
+| `test-single-node` | `nix run .#test-single-node` | Single-node integration (15+ checks) |
+| `test-lifecycle` | `nix run .#test-lifecycle` | Restart, persistence, graceful shutdown |
+| `test-images` | `nix run .#test-images` | OCI container tests (requires Docker) |
 
 ### OCI Container Images
 
@@ -286,15 +335,63 @@ nix build .#rpk-image && ./result | docker load
 docker run --net=host redpanda-rpk:nix cluster info
 ```
 
-### Testing
+### Automated Testing
 
-Run the automated smoke test (requires Docker):
+The Nix build includes a self-validating layered test suite. If the Nix
+build breaks after upstream changes, the tests catch it immediately —
+reducing maintenance burden to near zero.
 
-    nix run .#test-images
+#### Run All Tests
 
-This builds all three images, starts a redpanda server, verifies Kafka
-produce/consume via rpk, and checks the debug image shell. Uses `--net=host`
-so ports 9092 and 9644 must be free.
+```bash
+# Run the full test suite (smoke + single-node + lifecycle):
+nix run .#test-all
+
+# With persistent Bazel cache (faster rebuilds):
+nix run .#test-all-cached
+```
+
+#### Individual Test Layers
+
+| Layer | Command | What it verifies | Time |
+|-------|---------|-----------------|------|
+| Smoke | `nix flake check` | Binaries exist, rpk CLI works (sandboxed) | ~5s |
+| Single-node | `nix run .#test-single-node` | Kafka protocol, Admin API, Schema Registry, Pandaproxy, rpk CLI | ~30s |
+| Lifecycle | `nix run .#test-lifecycle` | Data persistence across restart, restart recovery, graceful shutdown | ~90s |
+| Containers | `nix run .#test-images` | OCI image build, size regression, Docker round-trip | ~120s |
+| **All** | **`nix run .#test-all`** | **Layers 2+3 in sequence** | **~2 min** |
+
+> **Cached variants** (for repeat builders with `/var/cache/bazel-nix`):
+> `nix run .#test-single-node-cached`, `nix run .#test-lifecycle-cached`,
+> `nix run .#test-all-cached`
+
+#### Prerequisites
+
+- **Ports 9092, 9644, 8081, 8082** must be free (tests start a real
+  Redpanda instance in developer mode on localhost).
+- **Docker** is required only for `nix run .#test-images`.
+- The smoke check (`nix flake check`) runs fully sandboxed with no
+  network or port requirements.
+
+#### What the Tests Cover
+
+The **single-node** test runs 6 phases with 15+ individual checks:
+1. Start a Redpanda node in developer mode
+2. Admin API — health, cluster config, brokers, status endpoints
+3. Kafka protocol — topic CRUD, produce/consume round-trips (multiple sizes)
+4. Schema Registry — register Avro schema, get, list, compatibility
+5. Pandaproxy — HTTP produce, topic listing via REST
+6. rpk CLI — cluster info, health, topic list, config export
+
+The **lifecycle** test validates operational resilience:
+1. Clean startup
+2. Produce 100 messages → shutdown → restart → verify all messages survive
+3. Restart recovery (healthy after restart)
+4. Graceful shutdown via SIGTERM
+
+Each test uses structured phases with colored pass/fail output and timing.
+The check modules under `nix/tests/checks/` are composable bash fragments
+that can be reused across test orchestrators.
 
 ### Dev Shell
 
@@ -327,9 +424,17 @@ Generates `.bazelrc.nix` with Nix-specific Bazel settings.
 | `nix/redpanda.nix` | Main C++ server build derivation (~1100 lines) |
 | `nix/rpk.nix` | Go CLI package (`buildGoModule`, stripped with `-s -w` ldflags) |
 | `nix/shell.nix` | Development shell with clang, LLVM, Python, JDK, autotools |
-| `nix/pgo-train.nix` | Lightweight PGO training derivation (single-node rpk workloads) |
+| `nix/pgo-train.nix` | PGO training derivation (~15k messages, 5 size tiers, realistic distribution) |
+| `nix/tests/default.nix` | Test orchestrator — wires checks, packages, apps into flake |
+| `nix/tests/constants.nix` | Shared test config: ports, timeouts, YAML template |
+| `nix/tests/lib.nix` | Reusable bash helpers: color, timing, assertions, process mgmt |
+| `nix/tests/smoke.nix` | Sandboxed smoke test for `nix flake check` |
+| `nix/tests/single-node.nix` | Single-node integration test (all APIs) |
+| `nix/tests/lifecycle.nix` | Lifecycle test: restart, persistence, shutdown |
+| `nix/tests/containers.nix` | OCI container image tests (Docker-based) |
+| `nix/tests/checks/` | Composable check modules (kafka, admin, schema, proxy, rpk, resilience) |
 | `nix/bench.nix` | Benchmark and cache-clearing targets |
-| `nix/test-images.nix` | OCI container image smoke test (`nix run .#test-images`) |
+| `nix/test-images.nix` | Legacy container test (superseded by `nix/tests/containers.nix`) |
 | `nix/redpanda-image.nix` | OCI container image for the redpanda server |
 | `nix/rpk-image.nix` | OCI container image for the rpk CLI |
 

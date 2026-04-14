@@ -51,6 +51,26 @@ mkShell {
   ];
 
   shellHook = ''
+    echo -e "\033[31m"
+    cat <<'LOGO'
+        ____           __                      __
+       / __ \___  ____/ /___  ____ _____  ____/ /___ _
+      / /_/ / _ \/ __  / __ \/ __ `/ __ \/ __  / __ `/
+     / _, _/  __/ /_/ / /_/ / /_/ / / / / /_/ / /_/ /
+    /_/ |_|\___/\__,_/ .___/\__,_/_/ /_/\__,_/\__,_/
+                     /_/
+    LOGO
+    echo -e "\033[0m"
+    echo -e "\033[1m  Nix Development Shell\033[0m"
+    echo ""
+    echo "  Build:   bazel build //src/v/redpanda:redpanda"
+    echo "  Test:    bazel test //..."
+    echo "  Nix:     nix build .#redpanda-cached"
+    echo "  PGO:     nix build .#redpanda-pgo-cached"
+    echo "  Check:   nix flake check"
+    echo "  Integ:   nix run .#test-single-node"
+    echo ""
+
     # Bazelisk reads .bazelversion to pick the right Bazel version.
     # Alias so that "bazel" invokes bazelisk.
     alias bazel=bazelisk

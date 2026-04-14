@@ -52,10 +52,12 @@
   lndir,
   protobuf,
   bazelCacheDir ? "",
+  optimizationLevel ? "default", # "default" | "release" | "lto"
   pgoMode ? "off", # "off" | "instrument" | "optimize"
   pgoProfilePath ? null, # path to .profdata file (required when pgoMode == "optimize")
 }:
 
+assert builtins.elem optimizationLevel [ "default" "release" "lto" ];
 assert builtins.elem pgoMode [ "off" "instrument" "optimize" ];
 assert pgoMode == "optimize" -> pgoProfilePath != null;
 
@@ -645,9 +647,18 @@ REPOS_PATCH
   in "${bazel}/bin/bazel-8.5.0-${os}-${arch}";
   targets = [ "//src/v/redpanda:redpanda" ];
 
+  # Optimization level flags (orthogonal to PGO).
+  # See .bazelrc: --config=release (opt + secure), --config=lto (ThinLTO).
+  optimizationArgs = lib.optionals (optimizationLevel == "release") [
+    "--config=release"
+  ] ++ lib.optionals (optimizationLevel == "lto") [
+    "--config=lto"
+  ];
+
   # PGO (Profile-Guided Optimization) flags.
   # Phase 1 (instrument): build with profiling instrumentation enabled.
   # Phase 3 (optimize): rebuild using collected profile data.
+  # PGO configs already include --config=lto internally.
   # See .bazelrc for the underlying config definitions.
   pgoArgs = lib.optionals (pgoMode == "instrument") [
     "--config=pgo-instrument"
@@ -1110,6 +1121,7 @@ stdenv.mkDerivation {
       build \
       --verbose_failures \
       ${lib.escapeShellArgs commonArgs} \
+      ${lib.escapeShellArgs optimizationArgs} \
       ${lib.escapeShellArgs pgoArgs} \
       ${lib.escapeShellArgs targets}
 

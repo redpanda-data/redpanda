@@ -1,11 +1,22 @@
-# Lightweight PGO training derivation.
+# PGO training derivation.
 #
 # Runs a single-node Redpanda instance (developer mode) with rpk-based
 # produce/consume workloads to generate LLVM profile data.  The output
 # is a merged .profdata file suitable for --fdo_optimize.
 #
-# This exercises the core hot paths (Kafka protocol, Raft, log storage)
-# but not schema registry, Iceberg, or multi-node replication.  For
+# The workload mirrors a realistic Kafka message-size distribution:
+#   ~45% tiny (0.1–1 KB)   metrics, events, log lines
+#   ~30% small (1–5 KB)    JSON application events, small Avro
+#   ~15% medium (10–50 KB) enriched events, nested documents
+#    ~8% large (50–500 KB) bulk data, images, aggregates
+#    ~2% XL (500 KB–1 MB)  near-max payloads, batch splitting
+#
+# This exercises core hot paths (Kafka protocol, Raft, log storage) at
+# every size tier, giving the compiler realistic branch-probability
+# data for batch splitting, memory allocation, compression, and fetch
+# chunking.  ~15k total messages across 5 topics.
+#
+# Not covered: schema registry, Iceberg, multi-node replication.  For
 # production-quality profiles, use the full train_pgo.py pipeline and
 # pass the result via lib.mkRedpandaPgo.
 {
@@ -88,45 +99,104 @@ runCommand "redpanda-pgo-profile"
       sleep 1
     done
 
-    echo "=== Creating topics ==="
-    ${rpkDrv}/bin/rpk topic create pgo-train-1 -p 12 -r 1 \
-      --brokers 127.0.0.1:9092
-    ${rpkDrv}/bin/rpk topic create pgo-train-2 -p 6 -r 1 \
-      --brokers 127.0.0.1:9092
-    ${rpkDrv}/bin/rpk topic create pgo-train-3 -p 3 -r 1 \
-      --brokers 127.0.0.1:9092
+    # ---------------------------------------------------------------
+    # Workload design: realistic Kafka message-size distribution.
+    #
+    # Real Kafka traffic spans several orders of magnitude:
+    #   ~45% metrics/events/logs    0.1 – 1 KB
+    #   ~30% application events     1   – 10 KB  (JSON, small Avro)
+    #   ~15% enriched events        10  – 50 KB
+    #    ~8% bulk / batch           50  – 500 KB  (large JSON, images)
+    #    ~2% near-max               500 KB – 1 MB
+    #
+    # We mirror that distribution across ~15k total messages so the
+    # compiler sees realistic branch weights for batch splitting,
+    # memory allocation, compression, and fetch chunking at every
+    # size tier.  Each tier uses its own topic with partition counts
+    # chosen to exercise the partition-routing hot path.
+    #
+    # llvm-profdata merge combines all .profraw files (one per shard)
+    # into a single weighted .profdata.  More diverse profiles →
+    # better branch-probability estimates → better PGO.
+    # ---------------------------------------------------------------
 
-    echo "=== Producing messages (exercises Kafka protocol, batching, storage) ==="
-    # Topic 1: small messages (typical Kafka workload)
-    for i in $(seq 1 10000); do
-      echo "msg-$i-small-$(date +%s%N)"
-    done | ${rpkDrv}/bin/rpk topic produce pgo-train-1 --brokers 127.0.0.1:9092
+    RPK="${rpkDrv}/bin/rpk"
+    BROKERS="--brokers 127.0.0.1:9092"
 
-    # Topic 2: medium messages with key-value pairs
-    for i in $(seq 1 3000); do
-      printf "key-%04d\tvalue-payload-%d-$(head -c 100 /dev/urandom | base64 | head -c 80)" "$i" "$i"
+    # Helper: generate a payload of exactly N bytes (base64 from urandom).
+    gen_payload() {
+      local size=$1
+      head -c "$size" /dev/urandom | base64 -w0
+    }
+
+    echo "=== Creating topics (5 size tiers) ==="
+    $RPK topic create pgo-tiny   -p 12 -r 1 $BROKERS   # 0.1–1 KB
+    $RPK topic create pgo-small  -p 8  -r 1 $BROKERS   # 1–10 KB
+    $RPK topic create pgo-medium -p 6  -r 1 $BROKERS   # 10–50 KB
+    $RPK topic create pgo-large  -p 4  -r 1 $BROKERS   # 50–500 KB
+    $RPK topic create pgo-xlarge -p 3  -r 1 $BROKERS   # 500 KB–1 MB
+
+    echo "=== Producing messages (realistic size distribution) ==="
+
+    # Tier 1: tiny messages — 0.1–1 KB  (~45% = 6,750 messages)
+    # Simulates metrics, events, and log lines.
+    echo "  Tier 1: 6750 tiny messages (0.1–1 KB)..."
+    for i in $(seq 1 6750); do
+      # ~200 bytes average: short key + small payload
+      printf "key-%05d\tmsg-%d-ts-%s-$(head -c 128 /dev/urandom | base64 -w0 | head -c 150)" "$i" "$i" "$(date +%s%N)"
       echo
-    done | ${rpkDrv}/bin/rpk topic produce pgo-train-2 -f '%k\t%v\n' \
-      --brokers 127.0.0.1:9092
+    done | $RPK topic produce pgo-tiny -f '%k\t%v\n' $BROKERS
 
-    # Topic 3: larger messages
-    for i in $(seq 1 2000); do
-      head -c 500 /dev/urandom | base64
-    done | ${rpkDrv}/bin/rpk topic produce pgo-train-3 --brokers 127.0.0.1:9092
+    # Tier 2: small messages — 1–5 KB  (~30% = 4,500 messages)
+    # Simulates JSON application events and small Avro records.
+    echo "  Tier 2: 4500 small messages (1–5 KB)..."
+    for i in $(seq 1 4500); do
+      printf "evt-%05d\t" "$i"
+      gen_payload 2048  # ~2.7 KB after base64
+      echo
+    done | $RPK topic produce pgo-small -f '%k\t%v\n' $BROKERS
 
-    echo "=== Consuming messages (exercises fetch path) ==="
-    ${rpkDrv}/bin/rpk topic consume pgo-train-1 -n 10000 \
-      --brokers 127.0.0.1:9092 > /dev/null
-    ${rpkDrv}/bin/rpk topic consume pgo-train-2 -n 3000 \
-      --brokers 127.0.0.1:9092 > /dev/null
-    ${rpkDrv}/bin/rpk topic consume pgo-train-3 -n 2000 \
-      --brokers 127.0.0.1:9092 > /dev/null
+    # Tier 3: medium messages — 10–50 KB  (~15% = 2,250 messages)
+    # Simulates enriched events, nested JSON documents.
+    echo "  Tier 3: 2250 medium messages (10–50 KB)..."
+    for i in $(seq 1 2250); do
+      printf "enrich-%05d\t" "$i"
+      gen_payload 20480  # ~27 KB after base64
+      echo
+    done | $RPK topic produce pgo-medium -f '%k\t%v\n' $BROKERS
+
+    # Tier 4: large messages — 50–500 KB  (~8% = 1,200 messages)
+    # Simulates bulk data, images, large aggregates.
+    echo "  Tier 4: 1200 large messages (50–500 KB)..."
+    for i in $(seq 1 1200); do
+      printf "bulk-%05d\t" "$i"
+      gen_payload 131072  # ~175 KB after base64
+      echo
+    done | $RPK topic produce pgo-large -f '%k\t%v\n' $BROKERS
+
+    # Tier 5: extra-large messages — 500 KB–1 MB  (~2% = 300 messages)
+    # Simulates near-max payloads that stress batch splitting.
+    echo "  Tier 5: 300 XL messages (500 KB–1 MB)..."
+    for i in $(seq 1 300); do
+      printf "xl-%05d\t" "$i"
+      gen_payload 524288  # ~700 KB after base64
+      echo
+    done | $RPK topic produce pgo-xlarge -f '%k\t%v\n' $BROKERS
+
+    echo "=== Consuming messages (exercises fetch path at every size) ==="
+    $RPK topic consume pgo-tiny   -n 6750 $BROKERS > /dev/null
+    $RPK topic consume pgo-small  -n 4500 $BROKERS > /dev/null
+    $RPK topic consume pgo-medium -n 2250 $BROKERS > /dev/null
+    $RPK topic consume pgo-large  -n 1200 $BROKERS > /dev/null
+    $RPK topic consume pgo-xlarge -n 300  $BROKERS > /dev/null
 
     echo "=== Exercising admin/metadata paths ==="
-    ${rpkDrv}/bin/rpk topic list --brokers 127.0.0.1:9092
-    ${rpkDrv}/bin/rpk topic describe pgo-train-1 --brokers 127.0.0.1:9092
-    ${rpkDrv}/bin/rpk cluster info --brokers 127.0.0.1:9092
-    ${rpkDrv}/bin/rpk cluster health --api-urls 127.0.0.1:9644
+    $RPK topic list $BROKERS
+    for t in pgo-tiny pgo-small pgo-medium pgo-large pgo-xlarge; do
+      $RPK topic describe "$t" $BROKERS
+    done
+    $RPK cluster info $BROKERS
+    $RPK cluster health --api-urls 127.0.0.1:9644
 
     echo "=== Shutting down Redpanda (SIGTERM flushes profile data) ==="
     kill -TERM $RP_PID
