@@ -50,6 +50,10 @@ struct snapshot_summary {
     std::optional<int64_t> total_records;
     std::optional<int64_t> added_files_size;
     std::optional<int64_t> total_files_size;
+    std::optional<int64_t> deleted_data_files;
+    std::optional<int64_t> added_delete_files;
+    std::optional<int64_t> total_delete_files;
+    std::optional<int64_t> deleted_records;
 
     // All other properties of the snapshot, besides 'operation'.
     // NOTE: these aren't necessarily important to Redpanda's Iceberg write
