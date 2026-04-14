@@ -41,36 +41,61 @@ ss::future<std::unique_ptr<model::record_batch>> produce_path_executor::execute(
 
     auto orig_header = batch->header();
 
-    ss::chunked_fifo<model::transformed_data> records;
+    ss::chunked_fifo<model::transformed_data> input_records;
+    chunked_hash_map<
+      model::topic_namespace,
+      ss::chunked_fifo<model::transformed_data>>
+      output_records;
     co_await entry->engine->transform(
       std::move(*batch),
       entry->probe.get(),
-      [&records](
+      [&input_records, &output_records, &entry](
         this auto,
         std::optional<model::topic_view> topic,
         model::transformed_data data) -> ss::future<wasm::write_success> {
-          if (topic) {
-              co_return wasm::write_success::no;
+          if (!topic) {
+              input_records.push_back(std::move(data));
+              co_return wasm::write_success::yes;
           }
-          records.push_back(std::move(data));
-          co_return wasm::write_success::yes;
+          for (const auto& out : entry->output_topics) {
+              if (std::string_view{out.tp()} == topic.value()()) {
+                  output_records[out].push_back(std::move(data));
+                  co_return wasm::write_success::yes;
+              }
+          }
+          co_return wasm::write_success::no;
       });
 
-    if (records.empty()) {
+    size_t total_records = input_records.size();
+    for (const auto& [_, recs] : output_records) {
+        total_records += recs.size();
+    }
+    if (total_records == 0) {
         throw std::runtime_error("produce-path transform produced no records");
     }
+    if (input_records.empty() && orig_header.producer_id >= 0) {
+        throw std::runtime_error(
+          "produce-path transform dropped all records from input topic "
+          "for an idempotent producer (would break sequence tracking)");
+    }
 
-    auto new_batch = model::transformed_data::make_batch(
-      orig_header.first_timestamp, std::move(records));
-    new_batch.header().producer_id = orig_header.producer_id;
-    new_batch.header().producer_epoch = orig_header.producer_epoch;
-    new_batch.header().base_sequence = orig_header.base_sequence;
-    new_batch.header().attrs = orig_header.attrs;
-    new_batch.header().crc = model::crc_record_batch(new_batch);
-    new_batch.header().header_crc = model::internal_header_only_crc(
-      new_batch.header());
+    if (!input_records.empty()) {
+        auto new_batch = model::transformed_data::make_batch(
+          orig_header.first_timestamp, std::move(input_records));
+        new_batch.header().producer_id = orig_header.producer_id;
+        new_batch.header().producer_epoch = orig_header.producer_epoch;
+        new_batch.header().base_sequence = orig_header.base_sequence;
+        new_batch.header().attrs = orig_header.attrs;
+        new_batch.header().crc = model::crc_record_batch(new_batch);
+        new_batch.header().header_crc = model::internal_header_only_crc(
+          new_batch.header());
 
-    co_return std::make_unique<model::record_batch>(std::move(new_batch));
+        co_return std::make_unique<model::record_batch>(std::move(new_batch));
+    }
+
+    // All records were routed to output topics. Return nullptr to signal
+    // "nothing to write to input topic."
+    co_return std::unique_ptr<model::record_batch>(nullptr);
 }
 
 ss::future<> produce_path_executor::stop() {
@@ -106,6 +131,7 @@ produce_path_executor::get_or_create_engine(model::transform_id id) {
       engine_entry{
         .engine = std::move(result->engine),
         .probe = std::move(probe),
+        .output_topics = std::move(result->output_topics),
       });
     co_return &inserted->second;
 }

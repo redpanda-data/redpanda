@@ -342,6 +342,21 @@ ss::future<produce_response::partition> do_produce_topic_partition(
               }
           }
 
+          // Transform filtered all records from the input topic
+          // (non-idempotent producer, everything routed to output
+          // topics). Nothing to write to this partition.
+          if (!batch) {
+              ssx::background = ss::smp::submit_to(
+                source_shard, [dispatch = std::move(dispatch)]() mutable {
+                    dispatch->set_value();
+                    dispatch.reset();
+                });
+              co_return produce_response::partition{
+                .partition_index = ntp.tp.partition,
+                .error_code = error_code::none,
+              };
+          }
+
           auto bid = model::batch_identity::from(batch->header());
           auto num_records = batch->record_count();
           auto batch_size = batch->size_bytes();
