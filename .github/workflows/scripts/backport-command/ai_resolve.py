@@ -71,8 +71,8 @@ def call_with_retry(path: str, diff: str, file_content: str):
             if attempt == 0:
                 print(f"{path}: rate limited, retrying in 10s...")
                 time.sleep(10)
-                continue
-            raise
+            else:
+                raise
 
 
 def difficulty_rating(resolved_count: int, total_diff_lines: int) -> str:
@@ -86,12 +86,13 @@ def difficulty_rating(resolved_count: int, total_diff_lines: int) -> str:
 def build_comment(
     resolved: list[str], skipped: list[str], total_diff_lines: int
 ) -> str:
+    n = len(resolved)
+    file_word = "file" if n == 1 else "files"
     files_list = "\n".join(f"- `{f}`" for f in resolved)
-    file_word = "file" if len(resolved) == 1 else "files"
     return (
-        f"**AI conflict resolution** — {len(resolved)} {file_word}, "
+        f"**AI conflict resolution** — {n} {file_word}, "
         f"{total_diff_lines} diff lines\n\n"
-        f"Resolved in {len(resolved)} {file_word}. "
+        f"Resolved in {n} {file_word}. "
         f"The original diff was {total_diff_lines} lines. "
         f"Skipped {len(skipped)} files (generated).\n\n"
         f"Resolved:\n{files_list}"
@@ -104,8 +105,9 @@ conflicted = (
     .splitlines()
 )
 
-eligible = [f for f in conflicted if not matches_any(f, GENERATED_PATTERNS)]
-skipped = [f for f in conflicted if matches_any(f, GENERATED_PATTERNS)]
+eligible, skipped = [], []
+for f in conflicted:
+    (skipped if matches_any(f, GENERATED_PATTERNS) else eligible).append(f)
 
 if skipped:
     print(f"Skipping generated files: {skipped}")
@@ -134,7 +136,8 @@ for path in eligible:
         print(f"{path}: diff too large ({len(diff_lines)} lines). Skipping.")
         continue
 
-    file_content = open(path, encoding="utf-8", errors="replace").read()
+    with open(path, encoding="utf-8", errors="replace") as f:
+        file_content = f.read()
 
     try:
         response = call_with_retry(path, diff, file_content)
