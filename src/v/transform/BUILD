@@ -128,9 +128,11 @@ redpanda_cc_library(
     name = "transform",
     srcs = [
         "api.cc",
+        "produce_path_executor.cc",
     ],
     hdrs = [
         "api.h",
+        "produce_path_executor.h",
     ],
     implementation_deps = [
         ":commit_batcher",
@@ -144,6 +146,7 @@ redpanda_cc_library(
         "//src/v/ssx:semaphore",
         "//src/v/transform/rpc",
         "//src/v/wasm:cache",
+        "//src/v/wasm:transform_probe",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@boost//:range",
     ],
@@ -153,6 +156,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/cluster/utils:partition_change_notifier_api",
+        "//src/v/container:chunked_hash_map",
         "//src/v/features",
         "//src/v/model",
         "//src/v/storage",

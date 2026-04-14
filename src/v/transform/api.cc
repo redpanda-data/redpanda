@@ -497,7 +497,8 @@ service::service(
   , _rpc_client(rpc_client)
   , _metadata_cache(metadata_cache)
   , _sg(sg)
-  , _total_memory_limit(memory_limit) {}
+  , _total_memory_limit(memory_limit)
+  , _executor(*this) {}
 
 service::~service() = default;
 
@@ -591,6 +592,7 @@ void service::unregister_notifications() { _notification_cleanups.clear(); }
 
 ss::future<> service::stop() {
     unregister_notifications();
+    co_await _executor.stop();
     co_await _gate.close();
     // It's possible to call stop before start, so make sure we created the
     // manager.

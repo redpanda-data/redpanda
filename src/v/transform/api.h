@@ -18,6 +18,7 @@
 #include "model/transform.h"
 #include "transform/fwd.h"
 #include "transform/logging/fwd.h"
+#include "transform/produce_path_executor.h"
 #include "wasm/fwd.h"
 
 #include <seastar/core/gate.hh>
@@ -128,6 +129,9 @@ public:
     std::optional<model::transform_id>
       get_produce_path_transform(model::topic_namespace_view) const;
 
+    /// Get the produce-path executor for this shard.
+    produce_path_executor& executor() { return _executor; }
+
     /**
      * Create a reporter of the transform subsystem.
      */
@@ -172,6 +176,8 @@ private:
 
     // The total amount of memory available to transforms
     size_t _total_memory_limit;
+
+    produce_path_executor _executor;
 };
 
 } // namespace transform
