@@ -547,7 +547,9 @@ ss::future<> service::start() {
         _batcher.get()),
       _sg,
       std::move(mem_limits),
-      [this](model::transform_id id) { return _executor.evict(id); });
+      [this](model::transform_id id) { return _executor.evict(id); },
+      [this](model::transform_id id) { return _executor.warm(id); },
+      [this](model::transform_id id) { return _executor.is_running(id); });
 
     co_await _log_manager->start();
     co_await _batcher->start();

@@ -169,6 +169,21 @@ ss::future<> produce_path_executor::stop() {
     _engines.clear();
 }
 
+ss::future<> produce_path_executor::warm(model::transform_id id) {
+    // Pre-fetch the engine and start it. If a concurrent produce
+    // triggers get_or_create_engine for the same id, it will find
+    // the engine already in the map.
+    auto it = _engines.find(id);
+    if (it != _engines.end()) {
+        co_return;
+    }
+    co_await get_or_create_engine(id);
+}
+
+bool produce_path_executor::is_running(model::transform_id id) const {
+    return _engines.contains(id);
+}
+
 ss::future<> produce_path_executor::evict(model::transform_id id) {
     auto it = _engines.find(id);
     if (it != _engines.end()) {
@@ -188,6 +203,14 @@ produce_path_executor::get_or_create_engine(model::transform_id id) {
         co_return nullptr;
     }
     co_await result->engine->start();
+    // Re-check after the co_awaits: another coroutine (warm() or a
+    // concurrent produce) may have created the engine while we were
+    // suspended. If so, stop the one we just created and use theirs.
+    it = _engines.find(id);
+    if (it != _engines.end()) {
+        co_await result->engine->stop();
+        co_return &it->second;
+    }
     auto probe = std::make_unique<wasm::transform_probe>();
     probe->setup_metrics(result->name);
     auto [inserted, _] = _engines.emplace(

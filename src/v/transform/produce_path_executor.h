@@ -91,6 +91,13 @@ public:
     /// Stop all engines. Called during service shutdown.
     ss::future<> stop();
 
+    /// Pre-create and start the engine for a transform so it's
+    /// ready when the first produce arrives. Called on deploy.
+    ss::future<> warm(model::transform_id);
+
+    /// Check if the engine for a transform is started.
+    bool is_running(model::transform_id) const;
+
     /// Evict the engine for a given transform. Called when a
     /// transform is deleted or redeployed.
     ss::future<> evict(model::transform_id);

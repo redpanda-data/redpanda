@@ -103,8 +103,10 @@ class manager {
         || std::is_same_v<ClockType, ss::manual_clock>,
       "Only lowres or manual clocks are supported");
 
-    using engine_eviction_cb
+    using engine_lifecycle_cb
       = ss::noncopyable_function<ss::future<>(model::transform_id)>;
+    using engine_status_cb
+      = ss::noncopyable_function<bool(model::transform_id)>;
 
 public:
     manager(
@@ -113,7 +115,12 @@ public:
       std::unique_ptr<processor_factory>,
       ss::scheduling_group,
       std::unique_ptr<memory_limits>,
-      engine_eviction_cb = [](model::transform_id) { return ss::now(); });
+      engine_lifecycle_cb evict_engine =
+        [](model::transform_id) { return ss::now(); },
+      engine_lifecycle_cb warm_engine =
+        [](model::transform_id) { return ss::now(); },
+      engine_status_cb is_engine_running =
+        [](model::transform_id) { return false; });
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;
@@ -177,8 +184,9 @@ private:
     chunked_hash_map<model::topic_namespace, model::transform_id>
       _produce_path_transforms;
 
-    // Called to evict a cached produce-path engine when a transform is
-    // deleted or redeployed.
-    engine_eviction_cb _evict_engine;
+    // Called to evict/warm cached produce-path engines on deploy/delete.
+    engine_lifecycle_cb _evict_engine;
+    engine_lifecycle_cb _warm_engine;
+    engine_status_cb _is_engine_running;
 };
 } // namespace transform
