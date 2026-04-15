@@ -303,18 +303,35 @@ ss::future<produce_response::partition> do_produce_topic_partition(
         timeout = max_timeout;
     }
 
+    // Capture the sharded transform service by pointer. The pointer to
+    // the ss::sharded<> object itself is safe across shards -- we call
+    // .local() inside the lambda to get the per-shard instance.
     auto& transform_svc = octx.rctx.server().local().transform_service();
 
-    auto principal = octx.rctx.connection()->get_principal();
-    auto request_info = wasm::request_metadata{
-      .principal_name = ss::sstring(principal.name_view()),
-      .principal_type = ss::sstring(security::to_string_view(principal.type())),
-      .client_id = ss::sstring(
-        octx.rctx.header().client_id.value_or(std::string_view{})),
-      .client_host = fmt::format("{}", octx.rctx.connection()->client_host()),
-      .client_port = octx.rctx.connection()->client_port(),
-      .tls_enabled = octx.rctx.connection()->tls_enabled(),
-    };
+    // Build request metadata on the connection shard where the context
+    // is safe to access. Only bother when the transform service is
+    // initialized (avoids allocations on the hot path when transforms
+    // are disabled).
+    auto request_info = [&]() -> std::optional<wasm::request_metadata> {
+        if (!transform_svc.local_is_initialized()) {
+            return std::nullopt;
+        }
+        auto conn = octx.rctx.connection();
+        if (!conn) {
+            return std::nullopt;
+        }
+        auto principal = conn->get_principal();
+        return wasm::request_metadata{
+          .principal_name = ss::sstring(principal.name_view()),
+          .principal_type = ss::sstring(
+            security::to_string_view(principal.type())),
+          .client_id = ss::sstring(
+            octx.rctx.header().client_id.value_or(std::string_view{})),
+          .client_host = fmt::format("{}", conn->client_host()),
+          .client_port = conn->client_port(),
+          .tls_enabled = conn->tls_enabled(),
+        };
+    }();
 
     auto p = co_await octx.rctx.partition_manager().invoke_on(
       *shard,
@@ -337,9 +354,6 @@ ss::future<produce_response::partition> do_produce_topic_partition(
                 source_shard);
           }
 
-          // Run produce-path transform if one exists for this topic.
-          // Guard: transform_service may not be initialized in test
-          // fixtures that don't wire up the full transform subsystem.
           if (transform_svc.local_is_initialized()) {
               try {
                   batch = co_await transform_svc.local().executor().execute(
