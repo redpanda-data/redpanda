@@ -520,7 +520,7 @@ public:
       model::record_batch batch,
       transform_probe* probe,
       transform_callback cb,
-      std::optional<request_metadata> /*metadata*/) override {
+      std::optional<request_metadata> metadata) override {
         vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
         if (batch.record_count() == 0) {
             co_return;
@@ -528,8 +528,8 @@ public:
         if (batch.compressed()) {
             batch = co_await model::decompress_batch(batch);
         }
-        ss::future<> fut = co_await ss::coroutine::as_future(
-          invoke_transform(std::move(batch), probe, std::move(cb)));
+        ss::future<> fut = co_await ss::coroutine::as_future(invoke_transform(
+          std::move(batch), probe, std::move(cb), std::move(metadata)));
         report_memory_usage();
         if (fut.failed()) {
             probe->transform_error();
@@ -792,7 +792,10 @@ private:
     }
 
     ss::future<> invoke_transform(
-      model::record_batch batch, transform_probe* p, transform_callback cb) {
+      model::record_batch batch,
+      transform_probe* p,
+      transform_callback cb,
+      std::optional<request_metadata> metadata) {
         class callback_impl final : public record_callback {
         public:
             callback_impl(
@@ -834,7 +837,7 @@ private:
           p);
 
         co_await _transform_module.for_each_record_async(
-          std::move(batch), &callback);
+          std::move(batch), &callback, std::move(metadata));
     }
 
     wasmtime_runtime* _runtime;

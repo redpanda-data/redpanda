@@ -62,7 +62,9 @@ transform_module::transform_module(wasi::preview1_module* m)
   : _wasi_module(m) {}
 
 ss::future<> transform_module::for_each_record_async(
-  model::record_batch input, record_callback* cb) {
+  model::record_batch input,
+  record_callback* cb,
+  std::optional<wasm::request_metadata> request_info) {
     vassert(
       input.header().attrs.compression() == model::compression::none,
       "wasm transforms expect uncompressed batches");
@@ -105,6 +107,7 @@ ss::future<> transform_module::for_each_record_async(
         .max_input_record_size = max_size,
         .records = std::move(records),
         .callback = cb,
+        .request_info = std::move(request_info),
       });
 
     return host_wait_for_proccessing().finally(

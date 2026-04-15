@@ -17,6 +17,7 @@
 #include "model/transform.h"
 #include "wasm/engine.h"
 #include "wasm/ffi.h"
+#include "wasm/request_metadata.h"
 #include "wasm/wasi.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -85,6 +86,8 @@ struct batch_transform_context {
     // The remaining records to transform
     ss::chunked_fifo<record_metadata> records;
     record_callback* callback;
+    // Metadata from the produce request context (empty in sidecar mode).
+    std::optional<wasm::request_metadata> request_info;
 };
 
 /**
@@ -109,7 +112,10 @@ public:
      * batch, transform all the records, with a callback everytime a record is
      * consumed by the VM.
      */
-    ss::future<> for_each_record_async(model::record_batch, record_callback*);
+    ss::future<> for_each_record_async(
+      model::record_batch,
+      record_callback*,
+      std::optional<wasm::request_metadata> = std::nullopt);
 
     /**
      * Start the transform module, marking it that the guest is about to start
