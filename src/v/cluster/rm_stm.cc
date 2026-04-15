@@ -212,7 +212,7 @@ ss::future<> rm_stm::cleanup_evicted_producers() {
         if (producer.is_evicted() && producer.id() == pid) {
             if (producer._active_transaction_hook.is_linked()) {
                 vlog(
-                  _ctx_log.error,
+                  _ctx_log.info,
                   "Ignoring cleanup request of producer {} due to in progress "
                   "transaction.",
                   producer);
@@ -222,7 +222,7 @@ ss::future<> rm_stm::cleanup_evicted_producers() {
             vlog(_ctx_log.trace, "removed producer: {}", pid);
         } else {
             vlog(
-              _ctx_log.error,
+              _ctx_log.info,
               "Skipping cleanup of evicted pid: {} and associated producer: {}",
               pid,
               producer);
