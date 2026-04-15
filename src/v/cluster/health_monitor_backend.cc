@@ -50,6 +50,7 @@
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
 
+#include <boost/container/static_vector.hpp>
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 
@@ -1678,3 +1679,184 @@ health_monitor_backend::get_partition_high_watermark(
 }
 
 } // namespace cluster
+
+namespace cluster::health {
+
+void diff_store::add(diff_entry&& entry) {
+    if (_diffs.size() == max_diffs) {
+        _diffs.pop_front();
+    }
+    _diffs.push_back(std::move(entry));
+}
+
+const diff_entry* diff_store::get_diff(node_health_version from) {
+    auto it = std::ranges::find(_diffs, from, &diff_entry::start);
+    if (it == _diffs.end()) {
+        return nullptr;
+    }
+
+    auto latest = *latest_version();
+
+    // Walk the version chain from `it` to latest, collecting iterators.
+    boost::container::static_vector<diffs_t::iterator, max_diffs> chain;
+    chain.push_back(it);
+    while (chain.back()->end != latest) {
+        auto next = std::ranges::find(
+          chain.back() + 1,
+          _diffs.end(),
+          chain.back()->end,
+          &diff_entry::start);
+        vassert(
+          next != _diffs.end(),
+          "diff chain broken at {}..{}: no diff starts at its end but its end "
+          "is not latest {}",
+          chain.back()->start,
+          chain.back()->end,
+          latest);
+        chain.push_back(next);
+    }
+
+    // Compose tail-to-head: each diff absorbs all successors.
+    for (auto&& [later, earlier] :
+         chain | std::views::reverse | std::views::pairwise) {
+        (*earlier).compose(*later);
+    }
+
+    vassert(
+      it->end == latest,
+      "after composition, diff starting at {} should end at latest {}, but "
+      "ends {}",
+      it->start,
+      latest,
+      it->end);
+
+    return &*it;
+}
+
+void diff_store::update_latest_diff(const diff_entry& incremental) {
+    vassert(!_diffs.empty(), "cannot update latest diff in empty store");
+    auto& latest = _diffs.back();
+
+    // The incremental diff is current..new. Compose it into the latest
+    // diff (base..current) to get base..new.
+    vassert(
+      latest.end == incremental.start,
+      "update_latest_diff: incremental start {} does not match latest end {}",
+      incremental.start,
+      latest.end);
+
+    latest.compose(incremental);
+}
+
+void diff_store::clear() { _diffs.clear(); }
+
+std::optional<node_health_version> diff_store::latest_version() const {
+    if (_diffs.empty()) [[unlikely]] {
+        return std::nullopt;
+    }
+    return (--_diffs.cend())->end;
+}
+
+const node_health* versioned_health_store::current() const {
+    if (_current.has_value()) [[likely]] {
+        return &_current->health;
+    }
+    return nullptr;
+}
+
+std::optional<node_health_version> versioned_health_store::version() const {
+    if (_current.has_value()) [[likely]] {
+        return _current->version;
+    }
+    return std::nullopt;
+}
+
+ss::lowres_clock::time_point versioned_health_store::freshness() const {
+    if (_last_failed_at) {
+        return *_last_failed_at;
+    }
+    if (const auto* nh = current()) {
+        return nh->snapshot->src_timestamp.value;
+    }
+    return ss::lowres_clock::time_point::min();
+}
+
+versioned_health_store::send_result versioned_health_store::get_for_sending(
+  std::optional<node_health_version> peer_version) {
+    if (!_current.has_value()) [[unlikely]] {
+        return std::monostate{};
+    }
+
+    if (peer_version.has_value()) {
+        if (*peer_version >= _current->version) {
+            return std::monostate{}; // already up to date
+        }
+        if (auto* diff = _diffs.get_diff(*peer_version)) {
+            _current->sent = true;
+            return diff;
+        }
+    }
+
+    _current->sent = true;
+    return static_cast<const versioned_report*>(&*_current);
+}
+
+void versioned_health_store::update_self(
+  node_health report, model::node_boot_id self_boot) {
+    _last_failed_at = std::nullopt;
+    if (!_current.has_value()) [[unlikely]] {
+        _current = stored_report{
+          {std::move(report), node_health_version{self_boot, 1}}};
+        return;
+    }
+
+    if (!_current->sent && !_diffs.latest_version().has_value()) [[unlikely]] {
+        // Unsent with no diffs (e.g., after bootstrap): just replace.
+        _current->health = std::move(report);
+        return;
+    }
+
+    diff_entry diff{_current->health, report};
+
+    if (_current->sent) {
+        auto prev = _current->version;
+        ++_current->version.counter;
+        diff.start = prev;
+        diff.end = _current->version;
+        _diffs.add(std::move(diff));
+        _current->sent = false;
+    } else {
+        diff.start = diff.end = _current->version;
+        _diffs.update_latest_diff(diff);
+    }
+    _current->health = std::move(report);
+}
+
+bool versioned_health_store::update_from_report(versioned_report report) {
+    if (_current.has_value() && report.version <= _current->version) {
+        return false;
+    }
+    stored_report sr;
+    sr.health = std::move(report.health);
+    sr.version = report.version;
+    sr.sent = true;
+    _current = std::move(sr);
+    _diffs.clear();
+    _last_failed_at = std::nullopt;
+    return true;
+}
+
+bool versioned_health_store::update_from_diff(diff_entry&& diff) {
+    if (!_current.has_value() || _current->version != diff.start) {
+        return false;
+    }
+
+    diff.apply_to(_current->health);
+    _current->version = diff.end;
+    _current->sent = true; // foreign data, always considered sent
+    _diffs.add(std::move(diff));
+    _last_failed_at = std::nullopt;
+    return true;
+}
+
+} // namespace cluster::health

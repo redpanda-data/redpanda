@@ -23,8 +23,10 @@
 #include "rpc/types.h"
 #include "serde/async.h"
 #include "serde/rw/bool_class.h"
+#include "serde/rw/chrono.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/optional.h"
+#include "serde/rw/pair.h"
 #include "serde/rw/rw.h"
 #include "serde/rw/scalar.h"
 #include "serde/rw/vector.h"
@@ -700,5 +702,353 @@ partition_statuses_t copy_to_vector(const partition_statuses_map_t&);
 partition_statuses_t move_to_vector(partition_statuses_map_t&&);
 partition_statuses_map_t move_to_map(partition_statuses_t&&);
 partition_statuses_map_t copy_to_map(const partition_statuses_t&);
+
+} // namespace cluster
+
+/*
+ * Dissemination types
+ *
+ * These types support the demand-driven pull protocol with delta encoding.
+ * Partition data is split into two tiers:
+ *   - metadata (term, leader, followers, etc.): diffed, changes rarely
+ *   - data (sizes, watermarks): always sent in full, changes continuously
+ */
+
+namespace cluster::health {
+
+/// Health version tag carried by every report
+struct node_health_version
+  : serde::envelope<
+      node_health_version,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::node_boot_id boot{}; // changes across restarts
+    int64_t counter{0};         // advances within a single boot
+
+    node_health_version() = default;
+    node_health_version(model::node_boot_id b, int64_t c)
+      : boot(b)
+      , counter(c) {}
+    explicit node_health_version(int64_t c)
+      : counter(c) {}
+
+    auto operator<=>(const node_health_version&) const = default;
+    bool operator==(const node_health_version&) const = default;
+
+    auto serde_fields() { return std::tie(boot, counter); }
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+/// Per-partition metadata fields: included in diffs only when changed.
+struct partition_metadata
+  : serde::envelope<
+      partition_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::term_id term;
+    std::optional<model::node_id> leader_id;
+    model::revision_id revision_id;
+    std::optional<uint8_t> under_replicated_replicas;
+    std::optional<followers_stats> followers_stats;
+    uint32_t shard = partition_status::invalid_shard_id;
+
+    auto serde_fields() {
+        return std::tie(
+          term,
+          leader_id,
+          revision_id,
+          under_replicated_replicas,
+          followers_stats,
+          shard);
+    }
+
+    friend bool
+    operator==(const partition_metadata&, const partition_metadata&) = default;
+};
+
+/// Per-partition data fields: always included for all partitions.
+struct partition_data
+  : serde::
+      envelope<partition_data, serde::version<0>, serde::compat_version<0>> {
+    size_t size_bytes = partition_status::invalid_size_bytes;
+    kafka::offset high_watermark;
+    std::optional<kafka::offset> log_start_offset;
+    std::optional<size_t> reclaimable_size_bytes;
+    std::optional<int64_t> cloud_topic_max_gc_eligible_epoch;
+
+    auto serde_fields() {
+        return std::tie(
+          size_bytes,
+          high_watermark,
+          log_start_offset,
+          reclaimable_size_bytes,
+          cloud_topic_max_gc_eligible_epoch);
+    }
+
+    friend bool
+    operator==(const partition_data&, const partition_data&) = default;
+};
+
+/// Two-level map: topic_namespace → partition_id → T.
+template<typename T>
+using topic_partition_map = chunked_hash_map<
+  model::topic_namespace,
+  chunked_hash_map<model::partition_id, T>,
+  model::topic_namespace_hash,
+  model::topic_namespace_eq>;
+
+using topic_partition_metadata_map = topic_partition_map<partition_metadata>;
+using topic_partition_data_map = topic_partition_map<partition_data>;
+
+/// Metadata diff: nullopt = partition removed, value = changed/added,
+/// absent key = no change.
+
+/// Stored as vec-of-pairs of vec-of-pairs for fast iteration & serialization:
+using partition_metadata_diff_list = chunked_vector<
+  std::pair<model::partition_id, std::optional<partition_metadata>>>;
+using topic_partition_metadata_diff = chunked_vector<
+  std::pair<model::topic_namespace, partition_metadata_diff_list>>;
+// Same as a map
+using topic_partition_metadata_diff_map
+  = topic_partition_map<std::optional<partition_metadata>>;
+// Same as a map on topic level, vector on partition level
+using topic_partition_metadata_diff_semimap = chunked_hash_map<
+  model::topic_namespace,
+  partition_metadata_diff_list,
+  model::topic_namespace_hash,
+  model::topic_namespace_eq>;
+
+topic_partition_metadata_diff_map as_map(const topic_partition_metadata_diff&);
+
+/// A timestamp that serializes as age (duration since now) and
+/// deserializes back to a time_point on the receiver using its local clock.
+/// Poor man's clock sync: the receiver reconstructs an approximate
+/// absolute time from the relative age on the wire. Can drift by the latency of
+/// the RPC round trip, but that's acceptable for our use case since these are
+/// used for staleness checks and not precise ordering.
+struct approx_timestamp
+  : serde::
+      envelope<approx_timestamp, serde::version<0>, serde::compat_version<0>> {
+    using clock_t = model::timeout_clock;
+    using underlying_t = clock_t::time_point;
+    underlying_t value;
+
+    constexpr approx_timestamp() = default;
+    // implicit
+    constexpr approx_timestamp(underlying_t tp)
+      : value(tp) {}
+    // implicit
+    constexpr operator underlying_t() const { return value; }
+
+    void serde_write(iobuf& out) const;
+    void serde_read(iobuf_parser& in, const serde::header& h);
+
+    static constexpr approx_timestamp min() { return underlying_t::min(); }
+
+    friend auto
+    operator<=>(const approx_timestamp&, const approx_timestamp&) = default;
+    friend bool
+    operator==(const approx_timestamp&, const approx_timestamp&) = default;
+};
+
+/// Always-full data, replaced wholesale during diff composition/application.
+/// Combines node-level state with per-partition data fields.
+struct health_snapshot
+  : serde::
+      envelope<health_snapshot, serde::version<0>, serde::compat_version<0>> {
+    approx_timestamp src_timestamp;
+    node::local_state local_state;
+    std::optional<cluster::drain_status> drain_status;
+    node_liveness_report liveness;
+    topic_partition_data_map data;
+
+    auto serde_fields() {
+        return std::tie(
+          src_timestamp, local_state, drain_status, liveness, data);
+    }
+
+    // ignores src_timestamp as it's not reliably comparable across nodes
+    friend bool operator==(const health_snapshot& a, const health_snapshot& b);
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+using health_snapshot_ptr = ss::lw_shared_ptr<const health_snapshot>;
+using metadata_diff_ptr = ss::lw_shared_ptr<topic_partition_metadata_diff>;
+using metadata_map_ptr = ss::lw_shared_ptr<topic_partition_metadata_map>;
+
+/// Consumer-facing health data for a single node. No version awareness.
+/// Replaces node_health_report for consumers.
+struct node_health {
+    health_snapshot_ptr snapshot;
+    metadata_map_ptr metadata;
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+/// A diff entry. Contains always-full snapshot (replaced wholesale) and
+/// metadata changes (only changed partitions).
+/// In metadata_diff: nullopt value = partition removed, present value =
+/// changed/added, absent key = no change.
+struct diff_entry_serde;
+struct versioned_report_serde;
+struct diff_entry {
+    diff_entry()
+      : metadata_diff(ss::make_lw_shared<topic_partition_metadata_diff>()) {}
+
+    /// Compute a diff from old_report to new_report.
+    diff_entry(const node_health& old_report, const node_health& new_report);
+
+    /// Construct from serde type (receiver side).
+    explicit diff_entry(diff_entry_serde&& s);
+
+    /// Compose `later` into `this`: A..B + B..C → A..C (in-place).
+    /// `later` is not consumed.
+    void compose(const diff_entry& later);
+
+    /// Apply this diff to `target` in-place.
+    void apply_to(node_health& target) const;
+
+    node_health_version start;
+    node_health_version end;
+    health_snapshot_ptr snapshot;
+    metadata_diff_ptr metadata_diff;
+
+    fmt::iterator format_to(fmt::iterator it) const;
+};
+
+/// A health report bundled with its version, for sending to peers.
+struct versioned_report {
+    node_health health;
+    node_health_version version;
+
+    versioned_report() = default;
+    versioned_report(node_health h, node_health_version v)
+      : health(std::move(h))
+      , version(v) {}
+    explicit versioned_report(versioned_report_serde&& s);
+};
+
+// holds either T by value (receiver side) or
+// foreign_ptr<lw_shared_ptr<const T>> (sender side, zero-copy ref).
+// On the wire they're identical.
+template<typename T>
+class value_or_foreign {
+    using lw_shared_t = ss::lw_shared_ptr<const T>;
+    using foreign_t = ss::foreign_ptr<lw_shared_t>;
+    std::variant<T, foreign_t> _data;
+
+public:
+    value_or_foreign()
+    requires std::is_default_constructible_v<T>
+      : _data(T{}) {}
+    explicit value_or_foreign(T val)
+      : _data(std::move(val)) {}
+    explicit value_or_foreign(lw_shared_t ptr)
+      : _data(ss::make_foreign(std::move(ptr))) {}
+
+    const T& operator*() const& {
+        return ss::visit(
+          _data,
+          [](const T& v) -> const T& { return v; },
+          [](const foreign_t& fp) -> const T& { return *fp; });
+    }
+
+    T&& operator*() && {
+        vassert(
+          std::holds_alternative<T>(_data),
+          "rvalue operator* called on foreign pointer branch");
+        return std::move(std::get<T>(_data));
+    }
+};
+
+template<typename T>
+bool operator==(const value_or_foreign<T>& a, const value_or_foreign<T>& b) {
+    return *a == *b;
+}
+
+// Serde types for RPC wire format
+struct diff_entry_serde
+  : serde::
+      envelope<diff_entry_serde, serde::version<0>, serde::compat_version<0>> {
+    node_health_version start;
+    node_health_version end;
+    value_or_foreign<health_snapshot> snapshot;
+    value_or_foreign<topic_partition_metadata_diff> metadata_diff;
+
+    diff_entry_serde() = default;
+    explicit diff_entry_serde(const diff_entry& d);
+
+    ss::future<> serde_async_write(iobuf& out);
+    ss::future<> serde_async_read(iobuf_parser& in, const serde::header h);
+
+    friend bool
+    operator==(const diff_entry_serde&, const diff_entry_serde&) = default;
+};
+
+struct versioned_report_serde
+  : serde::envelope<
+      versioned_report_serde,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    value_or_foreign<health_snapshot> snapshot;
+    value_or_foreign<topic_partition_metadata_map> metadata;
+    node_health_version version;
+
+    versioned_report_serde() = default;
+    explicit versioned_report_serde(const versioned_report& r);
+
+    ss::future<> serde_async_write(iobuf& out);
+    ss::future<> serde_async_read(iobuf_parser& in, const serde::header h);
+
+    friend bool operator==(
+      const versioned_report_serde&, const versioned_report_serde&) = default;
+};
+
+using health_update_serde
+  = serde::variant<diff_entry_serde, versioned_report_serde>;
+
+} // namespace cluster::health
+
+namespace cluster {
+
+/// RPC request: pull health data from a peer.
+/// Carries a version vector (what the requester already has for each node)
+/// and a freshness threshold.
+struct health_pull_request
+  : serde::envelope<
+      health_pull_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    /// Double check the requested node is the one we intended to reach out to.
+    model::node_id target_node_id;
+    /// For each node the requester knows about: the version it already has.
+    chunked_hash_map<model::node_id, health::node_health_version>
+      existing_versions;
+    /// Minimum acceptable source timestamp for health data.
+    health::approx_timestamp min_src_timestamp;
+
+    auto serde_fields() {
+        return std::tie(target_node_id, existing_versions, min_src_timestamp);
+    }
+};
+
+/// RPC reply: health data updates for requested nodes.
+/// Custom async serde: write dereferences foreign_ptrs, read creates them.
+struct health_pull_reply
+  : serde::
+      envelope<health_pull_reply, serde::version<0>, serde::compat_version<0>> {
+    errc error = errc::success;
+    chunked_vector<std::pair<model::node_id, health::health_update_serde>>
+      items;
+
+    friend bool
+    operator==(const health_pull_reply& a, const health_pull_reply& b) {
+        return a.error == b.error && std::ranges::equal(a.items, b.items);
+    }
+
+    ss::future<> serde_async_write(iobuf& out);
+    ss::future<> serde_async_read(iobuf_parser& in, const serde::header h);
+};
 
 } // namespace cluster

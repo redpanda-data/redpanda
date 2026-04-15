@@ -25,6 +25,7 @@
 #include "storage/disk.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/circular_buffer_fixed_capacity.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -279,3 +280,106 @@ private:
 };
 
 } // namespace cluster
+
+namespace cluster::health {
+
+/// Ring buffer of up to 8 diffs, ordered by start version.
+/// On receipt stores a diff as it comes. On request, which is always of form
+/// some_version..latest, existing diffs are composed.
+class diff_store {
+public:
+    /// Add a new diff. If the buffer is full, the oldest-start diff is evicted.
+    void add(diff_entry&& entry);
+
+    /// Get a composed diff from version `from` to the latest stored version.
+    /// Composes forward if needed, replacing intermediate diffs with
+    /// composed results (e.g., A..B + B..C → replaces A..B with A..C,
+    /// keeps B..C).
+    /// Returns nullptr if relevant diff is not available.
+    /// The returned pointer is valid until the next mutation of the store.
+    const diff_entry* get_diff(node_health_version from);
+
+    /// Replace the content of the most recent diff (the one ending at the
+    /// latest version) with new data. Used when the latest version is
+    /// regenerated in-place (version not sent, content updated).
+    /// The diff's start and end versions are unchanged.
+    void update_latest_diff(const diff_entry& incremental);
+
+    /// Drop all stored diffs.
+    void clear();
+
+    /// The latest end version across all stored diffs, or nullopt if empty.
+    std::optional<node_health_version> latest_version() const;
+
+private:
+    static constexpr size_t max_diffs = 8;
+    using diffs_t = ss::circular_buffer_fixed_capacity<diff_entry, max_diffs>;
+    diffs_t _diffs;
+};
+
+/// Manages versioned health data for a single source node.
+/// Owns the diff_store plus version collapsing logic (sent-flag,
+/// version reuse on regeneration).
+///
+/// On the source node, this is the authoritative state for self-reports.
+/// On retransmitter nodes, sent_flag is not used (always considered sent).
+class versioned_health_store {
+public:
+    /// The latest health data, or nullptr if no report has been produced yet.
+    const node_health* current() const;
+
+    /// The latest version, or nullopt if no report has been produced yet.
+    std::optional<node_health_version> version() const;
+
+    /// To be used on source node only: regenerate self-report. Computes and
+    /// saves the diff from the previous report (if present) internally. If the
+    /// previous version was never sent, the version number is reused and the
+    /// latest diff is updated in-place. Otherwise a new version is created.
+    void update_self(node_health report, model::node_boot_id self_boot);
+
+    /// Receiving a full report from a peer. Replaces everything.
+    /// Returns false if the report is stale (version <= current).
+    bool update_from_report(versioned_report report);
+
+    /// Receiving a diff from a peer. Applies it to the existing report.
+    /// Returns false if the diff can't be applied (no current report,
+    /// or diff.start doesn't match current version).
+    bool update_from_diff(diff_entry&& diff);
+
+    /// Get data for sending to a peer at the given version.
+    /// Returns:
+    ///   const diff_entry*       if a diff from `peer_version` is available
+    ///   const versioned_report* if diff unavailable, sends full report
+    ///   std::monostate          if no more fresh data available to send
+    /// Marks the current version as sent.
+    /// Returned pointers are valid until the next mutation of the store.
+    using send_result = std::
+      variant<std::monostate, const diff_entry*, const versioned_report*>;
+    send_result
+    get_for_sending(std::optional<node_health_version> peer_version);
+
+    /// Timestamp of the last observed failure (heartbeat-down or RPC error)
+    /// for this source. nullopt = no known failure since the last success.
+    /// Stale entries keep their data and diff history; consumers should
+    /// treat them as "no fresh data" and use the timestamp to back off
+    /// retries.
+    std::optional<ss::lowres_clock::time_point> last_failed_at() const {
+        return _last_failed_at;
+    }
+
+    /// Mark this source as failed at \p t. Does not touch data or diffs.
+    void mark_failed(ss::lowres_clock::time_point t) { _last_failed_at = t; }
+
+    ss::lowres_clock::time_point freshness() const;
+
+private:
+    struct stored_report : versioned_report {
+        bool sent = false;
+    };
+
+    std::optional<stored_report> _current;
+    diff_store _diffs;
+    std::optional<ss::lowres_clock::time_point> _last_failed_at;
+};
+
+} // namespace cluster::health
