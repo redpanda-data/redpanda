@@ -1,0 +1,5 @@
+name: tenant-region
+input-topic: events
+output-topics:
+  - events
+language: tinygo-no-goroutines

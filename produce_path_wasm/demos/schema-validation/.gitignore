@@ -1,0 +1,3 @@
+data/
+*.wasm
+go.sum

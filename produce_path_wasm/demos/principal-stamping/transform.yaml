@@ -1,0 +1,5 @@
+name: principal-stamper
+input-topic: events
+output-topics:
+  - events
+language: tinygo-no-goroutines
