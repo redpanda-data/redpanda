@@ -30,7 +30,8 @@ produce_path_executor::produce_path_executor(service& svc)
 
 ss::future<std::unique_ptr<model::record_batch>> produce_path_executor::execute(
   model::topic_namespace_view topic,
-  std::unique_ptr<model::record_batch> batch) {
+  std::unique_ptr<model::record_batch> batch,
+  std::optional<wasm::request_metadata> request_info) {
     auto transform_id = _svc.get_produce_path_transform(topic);
     if (!transform_id) {
         co_return batch;
@@ -66,7 +67,8 @@ ss::future<std::unique_ptr<model::record_batch>> produce_path_executor::execute(
               }
           }
           co_return wasm::write_success::no;
-      });
+      },
+      std::move(request_info));
 
     size_t total_records = input_records.size();
     for (const auto& [_, recs] : output_records) {

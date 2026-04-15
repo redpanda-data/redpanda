@@ -17,6 +17,7 @@
 #include "model/record.h"
 #include "model/transform.h"
 #include "wasm/fwd.h"
+#include "wasm/request_metadata.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -57,7 +58,9 @@ public:
     ///
     /// Throws on transform error (trap, timeout, zero output records).
     ss::future<std::unique_ptr<model::record_batch>> execute(
-      model::topic_namespace_view, std::unique_ptr<model::record_batch>);
+      model::topic_namespace_view,
+      std::unique_ptr<model::record_batch>,
+      std::optional<wasm::request_metadata> = std::nullopt);
 
     /// Stop all engines. Called during service shutdown.
     ss::future<> stop();

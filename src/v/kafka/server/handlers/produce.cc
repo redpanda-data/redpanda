@@ -25,9 +25,11 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/validation.h"
 #include "raft/errc.h"
+#include "security/acl.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "transform/api.h"
+#include "wasm/request_metadata.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -303,6 +305,17 @@ ss::future<produce_response::partition> do_produce_topic_partition(
 
     auto& transform_svc = octx.rctx.server().local().transform_service();
 
+    auto principal = octx.rctx.connection()->get_principal();
+    auto request_info = wasm::request_metadata{
+      .principal_name = ss::sstring(principal.name_view()),
+      .principal_type = ss::sstring(security::to_string_view(principal.type())),
+      .client_id = ss::sstring(
+        octx.rctx.header().client_id.value_or(std::string_view{})),
+      .client_host = fmt::format("{}", octx.rctx.connection()->client_host()),
+      .client_port = octx.rctx.connection()->client_port(),
+      .tls_enabled = octx.rctx.connection()->tls_enabled(),
+    };
+
     auto p = co_await octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
@@ -312,6 +325,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
        acks = octx.request.data.acks,
        timeout,
        source_shard = ss::this_shard_id(),
+       request_info = std::move(request_info),
        &transform_svc](this auto, cluster::partition_manager& mgr)
         -> ss::future<produce_response::partition> {
           auto partition = kafka::make_partition_proxy(ntp, mgr);
@@ -329,7 +343,9 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           if (transform_svc.local_is_initialized()) {
               try {
                   batch = co_await transform_svc.local().executor().execute(
-                    model::topic_namespace_view(ntp), std::move(batch));
+                    model::topic_namespace_view(ntp),
+                    std::move(batch),
+                    std::move(request_info));
               } catch (...) {
                   co_return finalize_request_with_error_code(
                     error_code::unknown_server_error,
