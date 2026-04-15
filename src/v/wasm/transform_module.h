@@ -163,6 +163,11 @@ public:
     ss::future<int32_t>
       write_record_with_options(ffi::array<uint8_t>, ffi::array<uint8_t>);
 
+    void check_abi_version_3();
+
+    ss::future<int32_t>
+    read_batch_metadata(int32_t key, ffi::array<uint8_t> buf);
+
     // End ABI exports
 
 private:

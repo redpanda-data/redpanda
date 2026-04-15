@@ -1254,8 +1254,10 @@ void register_transform_module(
     host_function<&transform_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(check_abi_version_1);
     REG_HOST_FN(check_abi_version_2);
+    REG_HOST_FN(check_abi_version_3);
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_next_record);
+    REG_HOST_FN(read_batch_metadata);
     REG_HOST_FN(write_record);
     REG_HOST_FN(write_record_with_options);
 #undef REG_HOST_FN
@@ -1661,7 +1663,7 @@ bool is_exported_memory(const parser::module_export& mod_export) {
 }
 
 bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
-    constexpr std::array version = {1, 2};
+    constexpr std::array version = {1, 2, 3};
     return std::ranges::any_of(version, [&mod_import](int version) {
         return mod_import
                == parser::module_import{

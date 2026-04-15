@@ -25,6 +25,7 @@
 #include <seastar/core/condition-variable.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
+#include <cstring>
 #include <exception>
 #include <optional>
 
@@ -122,6 +123,73 @@ void transform_module::check_abi_version_1() {
 void transform_module::check_abi_version_2() {
     // This function does nothing at runtime, it's only an opportunity for
     // static analysis of the module to determine which ABI version to use.
+}
+
+void transform_module::check_abi_version_3() {
+    // This function does nothing at runtime, it's only an opportunity for
+    // static analysis of the module to determine which ABI version to use.
+}
+
+ss::future<int32_t>
+transform_module::read_batch_metadata(int32_t key, ffi::array<uint8_t> buf) {
+    if (!_call_ctx) {
+        co_return NO_ACTIVE_TRANSFORM;
+    }
+    if (!_call_ctx->request_info) {
+        co_return 0;
+    }
+    const auto& info = *_call_ctx->request_info;
+    auto k = static_cast<metadata_key>(key);
+    switch (k) {
+    case metadata_key::principal_name: {
+        if (buf.size() < info.principal_name.size()) {
+            co_return INVALID_BUFFER;
+        }
+        std::memcpy(
+          buf.data(), info.principal_name.data(), info.principal_name.size());
+        co_return static_cast<int32_t>(info.principal_name.size());
+    }
+    case metadata_key::principal_type: {
+        if (buf.size() < info.principal_type.size()) {
+            co_return INVALID_BUFFER;
+        }
+        std::memcpy(
+          buf.data(), info.principal_type.data(), info.principal_type.size());
+        co_return static_cast<int32_t>(info.principal_type.size());
+    }
+    case metadata_key::client_id: {
+        if (buf.size() < info.client_id.size()) {
+            co_return INVALID_BUFFER;
+        }
+        std::memcpy(buf.data(), info.client_id.data(), info.client_id.size());
+        co_return static_cast<int32_t>(info.client_id.size());
+    }
+    case metadata_key::client_host: {
+        if (buf.size() < info.client_host.size()) {
+            co_return INVALID_BUFFER;
+        }
+        std::memcpy(
+          buf.data(), info.client_host.data(), info.client_host.size());
+        co_return static_cast<int32_t>(info.client_host.size());
+    }
+    case metadata_key::client_port: {
+        auto port_str = fmt::format("{}", info.client_port);
+        if (buf.size() < port_str.size()) {
+            co_return INVALID_BUFFER;
+        }
+        std::memcpy(buf.data(), port_str.data(), port_str.size());
+        co_return static_cast<int32_t>(port_str.size());
+    }
+    case metadata_key::tls_enabled: {
+        std::string_view tls_str = info.tls_enabled ? "true" : "false";
+        if (buf.size() < tls_str.size()) {
+            co_return INVALID_BUFFER;
+        }
+        std::memcpy(buf.data(), tls_str.data(), tls_str.size());
+        co_return static_cast<int32_t>(tls_str.size());
+    }
+    }
+    co_return 0;
 }
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
