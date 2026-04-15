@@ -22,15 +22,12 @@
 #include "container/chunked_vector.h"
 #include "model/metadata.h"
 #include "ssx/future-util.h"
-#include "ssx/semaphore.h"
-#include "ssx/watchdog.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
-#include <seastar/util/variant_utils.hh>
 
 #include <boost/beast/http/field.hpp>
 #include <boost/lexical_cast.hpp>
