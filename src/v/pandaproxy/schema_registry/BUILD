@@ -221,6 +221,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":core",
+        ":iceberg_compat",
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/cluster",
