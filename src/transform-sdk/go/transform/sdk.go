@@ -33,6 +33,11 @@ type OnRecordWrittenCallback func(e WriteEvent, w RecordWriter) error
 type WriteEvent interface {
 	// Access the record associated with this event
 	Record() Record
+	// Metadata returns the value for the given metadata key, or ""
+	// if the key is not present. Available keys: "principal_name",
+	// "principal_type", "client_id", "client_host", "client_port",
+	// "tls_enabled".
+	Metadata(key string) string
 }
 
 type (
@@ -104,4 +109,23 @@ type Record struct {
 
 type RecordAttrs struct {
 	attr uint8
+}
+
+// Metadata key constants for readBatchMetadata ABI calls.
+const (
+	metadataKeyPrincipalName int32 = 1
+	metadataKeyPrincipalType int32 = 2
+	metadataKeyClientID      int32 = 3
+	metadataKeyClientHost    int32 = 4
+	metadataKeyClientPort    int32 = 5
+	metadataKeyTLSEnabled    int32 = 6
+)
+
+var metadataKeysByName = map[string]int32{
+	"principal_name": metadataKeyPrincipalName,
+	"principal_type": metadataKeyPrincipalType,
+	"client_id":      metadataKeyClientID,
+	"client_host":    metadataKeyClientHost,
+	"client_port":    metadataKeyClientPort,
+	"tls_enabled":    metadataKeyTLSEnabled,
 }

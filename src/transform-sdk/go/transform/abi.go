@@ -25,8 +25,17 @@ import (
 
 // An imported function to ensure that the broker supports this ABI version.
 //
-//go:wasmimport redpanda_transform check_abi_version_2
+//go:wasmimport redpanda_transform check_abi_version_3
 func checkAbiVersion()
+
+// readBatchMetadata reads a metadata value for the current batch.
+//
+// The key parameter selects which metadata field to read.
+// The value is written into buf (up to bufLen bytes).
+// Returns the number of bytes written, or 0 if the key is not present.
+//
+//go:wasmimport redpanda_transform read_batch_metadata
+func readBatchMetadata(key int32, buf unsafe.Pointer, bufLen int32) int32
 
 // readRecordHeader reads all the data from the batch header into memory.
 //

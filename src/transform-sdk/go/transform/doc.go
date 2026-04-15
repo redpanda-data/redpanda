@@ -16,7 +16,7 @@
 Package transform is the SDK for Redpanda's inline Data Transforms, based on WebAssembly.
 
 This library provides a framework for transforming records written within Redpanda from
-an input to an output topic. This version of the SDK is compatible with Redpanda 24.1 or
-greater.
+an input to an output topic. This version of the SDK is compatible with Redpanda 25.2 or
+greater (ABI v3: batch metadata support).
 */
 package transform
