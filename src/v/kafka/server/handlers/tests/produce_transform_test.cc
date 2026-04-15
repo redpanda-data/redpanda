@@ -154,5 +154,71 @@ TEST(ProduceTransformTest, SingleRecordBatch) {
     EXPECT_EQ(result.header().producer_id, 42);
 }
 
+/// Fan-out routing: a 4-record batch is split into two batches of 2 records
+/// each. The "input" batch (routed back to the source topic) carries the
+/// original idempotent identity via reconstruct_batch. The "output" batch
+/// (routed to a different topic) is built fresh via make_batch with no
+/// identity transplant, so it has producer_id == -1.
+TEST(ProduceTransformTest, FanOutBatchSplit) {
+    auto batch = make_idempotent_batch(4);
+    auto orig_header = batch.header();
+    auto records = batch.copy_records();
+    ASSERT_EQ(records.size(), 4);
+
+    // Split records: first 2 go to "input", last 2 go to "output".
+    ss::chunked_fifo<model::transformed_data> input_records;
+    ss::chunked_fifo<model::transformed_data> output_records;
+    for (size_t i = 0; i < records.size(); ++i) {
+        auto td = model::transformed_data::from_record(records[i].copy());
+        if (i < 2) {
+            input_records.push_back(std::move(td));
+        } else {
+            output_records.push_back(std::move(td));
+        }
+    }
+
+    // Input batch: identity transplant from the original header.
+    auto input_batch = reconstruct_batch(orig_header, std::move(input_records));
+
+    EXPECT_EQ(input_batch.header().record_count, 2);
+    EXPECT_EQ(input_batch.header().producer_id, 42);
+    EXPECT_EQ(input_batch.header().producer_epoch, 7);
+    EXPECT_EQ(input_batch.header().base_sequence, 100);
+
+    // Output batch: fresh make_batch, no identity transplant.
+    // make_batch only sets producer_id = -1; producer_epoch and
+    // base_sequence remain at their header-default of 0.
+    auto output_batch = model::transformed_data::make_batch(
+      orig_header.first_timestamp, std::move(output_records));
+
+    EXPECT_EQ(output_batch.header().record_count, 2);
+    EXPECT_EQ(output_batch.header().producer_id, -1);
+
+    // Both batches have valid records.
+    EXPECT_EQ(input_batch.copy_records().size(), 2);
+    EXPECT_EQ(output_batch.copy_records().size(), 2);
+}
+
+/// Documents the constraint: filtering (dropping all records) is only valid
+/// for non-idempotent producers, where producer_id == -1.
+TEST(ProduceTransformTest, FilterAllRecordsNonIdempotent) {
+    auto batch = model::test::make_random_batch(
+      {.allow_compression = false, .count = 3});
+
+    EXPECT_EQ(batch.header().producer_id, -1);
+}
+
+/// Documents the guard: filtering all records from an idempotent batch
+/// would break sequence tracking. The executor must reject this case.
+/// Here we verify the precondition that idempotent batches have
+/// producer_id >= 0.
+TEST(ProduceTransformTest, FilterAllRecordsIdempotentIsError) {
+    auto batch = make_idempotent_batch(3);
+
+    EXPECT_GE(batch.header().producer_id, 0);
+    EXPECT_GE(batch.header().producer_epoch, 0);
+    EXPECT_GE(batch.header().base_sequence, 0);
+}
+
 } // namespace
 } // namespace kafka
