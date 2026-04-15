@@ -171,9 +171,13 @@ redpanda_cc_library(
     srcs = ["iceberg_compat.cc"],
     hdrs = ["iceberg_compat.h"],
     implementation_deps = [
+        ":core",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:compatibility_types",
-        "//src/v/iceberg:schema_avro",
         "//src/v/iceberg:simulate_evolution",
+        "//src/v/iceberg/conversion:schema_avro",
+        "@avro",
+        "@fmt",
     ],
     visibility = ["//visibility:public"],
     deps = [

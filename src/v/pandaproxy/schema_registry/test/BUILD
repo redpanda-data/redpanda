@@ -508,6 +508,24 @@ redpanda_cc_bench(
     ],
 )
 
+redpanda_cc_btest(
+    name = "iceberg_compat",
+    timeout = "short",
+    srcs = [
+        "iceberg_compat_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/pandaproxy/schema_registry:core",
+        "//src/v/pandaproxy/schema_registry:iceberg_compat",
+        "//src/v/pandaproxy/schema_registry:types",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_test_cc_library(
     name = "random",
     hdrs = [
