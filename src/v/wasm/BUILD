@@ -177,6 +177,7 @@ redpanda_cc_library(
         "engine.h",
         "errc.h",
         "fwd.h",
+        "request_metadata.h",
     ],
     visibility = ["//visibility:public"],
     deps = [

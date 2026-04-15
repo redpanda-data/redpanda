@@ -519,7 +519,8 @@ public:
     ss::future<> transform(
       model::record_batch batch,
       transform_probe* probe,
-      transform_callback cb) override {
+      transform_callback cb,
+      std::optional<request_metadata> /*metadata*/) override {
         vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
         if (batch.record_count() == 0) {
             co_return;

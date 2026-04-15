@@ -55,7 +55,8 @@ public:
     ss::future<> transform(
       model::record_batch batch,
       wasm::transform_probe*,
-      wasm::transform_callback) override;
+      wasm::transform_callback,
+      std::optional<wasm::request_metadata>) override;
 
     void set_output_topics(std::vector<model::topic> topics);
     void set_use_default_output_topic();

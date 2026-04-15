@@ -17,12 +17,14 @@
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "wasm/fwd.h"
+#include "wasm/request_metadata.h"
 
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
 #include <memory>
+#include <optional>
 
 namespace wasm {
 
@@ -45,8 +47,11 @@ using transform_callback = ss::noncopyable_function<ss::future<write_success>(
  */
 class engine {
 public:
-    virtual ss::future<>
-    transform(model::record_batch, transform_probe*, transform_callback) = 0;
+    virtual ss::future<> transform(
+      model::record_batch,
+      transform_probe*,
+      transform_callback,
+      std::optional<request_metadata> = std::nullopt) = 0;
 
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;
