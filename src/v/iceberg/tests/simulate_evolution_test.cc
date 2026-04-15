@@ -140,7 +140,7 @@ TEST(SimulateEvolutionTest, DropAndReintroduceDifferentType) {
     auto res = simulate_evolution(std::move(seq));
     ASSERT_TRUE(res.has_error())
       << "expected failure reintroducing field with different type";
-    EXPECT_EQ(res.error().errc, schema_evolution_errc::type_mismatch);
+    EXPECT_EQ(res.error().errc, schema_evolution_errc::incompatible);
     EXPECT_EQ(res.error().step, 2);
 }
 
@@ -152,20 +152,21 @@ TEST(SimulateEvolutionTest, IncompatibleTypeChange) {
     auto res = simulate_evolution(std::move(seq));
     ASSERT_TRUE(res.has_error())
       << "expected failure for incompatible type change";
-    EXPECT_EQ(res.error().errc, schema_evolution_errc::type_mismatch);
+    EXPECT_EQ(res.error().errc, schema_evolution_errc::incompatible);
     EXPECT_EQ(res.error().step, 1);
 }
 
-TEST(SimulateEvolutionTest, TypeNarrowingRejected) {
+TEST(SimulateEvolutionTest, WriterWithNarrowerTypeAccepted) {
     chunked_vector<struct_type> seq;
     seq.push_back(make_struct(make_optional("a", int_type{})));
-    seq.push_back(make_struct(make_optional("a", long_type{})));
-    seq.push_back(make_struct(make_optional("a", int_type{})));
+    seq.push_back(make_struct(make_optional("a", long_type{}))); // promote
+    seq.push_back(make_struct(
+      make_optional("a", int_type{}))); // writer uses int, table stays long
 
     auto res = simulate_evolution(std::move(seq));
-    ASSERT_TRUE(res.has_error())
-      << "expected failure for type narrowing long->int";
-    EXPECT_EQ(res.error().step, 2);
+    // This should PASS: the table stays at long, and int writes are fine.
+    // try_fill_field_ids handles int->long promotion for writing.
+    ASSERT_TRUE(res.has_value()) << "int writing to long column should succeed";
 }
 
 TEST(SimulateEvolutionTest, NestedStructAddField) {

@@ -61,31 +61,6 @@ void clear_all_metadata(struct_type& st) {
     }
 }
 
-/// Build a merged struct that includes all fields from the writer (with
-/// annotations from evolve_schema) plus any accumulated fields that were
-/// "removed" (i.e. not present in the writer).
-struct_type
-build_merged(const struct_type& accumulated, struct_type writer_evolved) {
-    struct_type result;
-
-    // Add all writer fields first (they have annotations from evolve_schema).
-    for (auto& wf : writer_evolved.fields) {
-        result.fields.push_back(std::move(wf));
-    }
-
-    // Add accumulated fields that were removed (not present in writer).
-    for (const auto& af : accumulated.fields) {
-        if (af->is_drop()) {
-            result.fields.push_back(af->copy());
-            // Mark the re-added field to preserve its existing ID during
-            // assign_fresh_ids (it has src_info or removed metadata, neither
-            // of which is is_new, so is_add() returns false).
-        }
-    }
-
-    return result;
-}
-
 } // namespace
 
 simulation_result
@@ -115,26 +90,44 @@ simulate_evolution(chunked_vector<struct_type> schema_sequence) {
     const partition_spec empty_spec;
 
     for (size_t i = 1; i < schema_sequence.size(); ++i) {
-        // Always check compatibility via evolve_schema. This catches type
-        // narrowing and other incompatible changes that try_fill_field_ids
-        // would accept (since it only checks data-write compatibility).
+        // Step 1: Check if writer is a compatible subset of accumulated.
         auto writer_copy = schema_sequence[i].copy();
-        auto evo_res = evolve_schema(accumulated, writer_copy, empty_spec);
+        auto fill_res = try_fill_field_ids(accumulated, writer_copy);
+
+        if (fill_res == ids_filled::yes) {
+            // Writer is a subset (possibly with narrower-but-promotable
+            // types). No schema change needed.
+            continue;
+        }
+
+        // Step 2: Writer has new fields or structural differences.
+        // Merge writer into a copy of accumulated.
+        auto merged = accumulated.copy();
+        auto merge_res = merge_struct_types(schema_sequence[i], merged);
+        if (merge_res.has_error()) {
+            return simulation_step_failure{
+              .errc = merge_res.error(), .step = i};
+        }
+
+        // Step 3: Validate the merged schema is a valid evolution of
+        // accumulated.
+        auto evo_res = evolve_schema(accumulated, merged, empty_spec);
         if (evo_res.has_error()) {
             return simulation_step_failure{.errc = evo_res.error(), .step = i};
         }
 
         if (evo_res.value() == schema_changed::no) {
-            // Writer is a compatible subset with no type promotions or new
-            // fields. No schema update needed.
-            clear_all_metadata(accumulated);
-            continue;
+            // try_fill_field_ids said the writer can't write to the
+            // accumulated schema, yet merging and evolving produced no
+            // schema change. This happens when the writer re-introduces
+            // a previously-dropped field with an incompatible type: the
+            // merge places the field but it conflicts with the existing
+            // column in the accumulated schema.
+            return simulation_step_failure{
+              .errc = schema_evolution_errc::incompatible, .step = i};
         }
 
-        // Build merged schema: writer fields (annotated by evolve_schema)
-        // plus any accumulated fields that were removed.
-        auto merged = build_merged(accumulated, std::move(writer_copy));
-
+        // Assign fresh IDs to any new fields in the merged schema.
         schema merged_schema{.schema_struct = std::move(merged)};
         auto fresh_res = merged_schema.assign_fresh_ids(
           nested_field::id_t{last_column_id() + 1});
