@@ -18,6 +18,8 @@
 //! [redpanda-transform-sdk](https://crates.io/crates/redpanda-transform-sdk). These types are
 //! re-exported there for usage.
 
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::SystemTime;
 
 /// An event generated after a write event within the broker.
@@ -28,6 +30,26 @@ use std::time::SystemTime;
 pub struct WriteEvent<'a> {
     /// The record for which the event was generated for.
     pub record: WrittenRecord<'a>,
+    // Shared across every record in a batch. Rc (not Arc) because
+    // the WASM transform SDK runs single-threaded. Exposed only via
+    // the read-only `metadata` accessor below, matching the Go SDK's
+    // shared-map-per-batch pattern.
+    metadata: Rc<HashMap<String, String>>,
+}
+
+impl<'a> WriteEvent<'a> {
+    /// Create a new WriteEvent with a record and batch metadata.
+    pub fn new(record: WrittenRecord<'a>, metadata: Rc<HashMap<String, String>>) -> Self {
+        Self { record, metadata }
+    }
+
+    /// Returns the value for the given metadata key, or None if not present.
+    ///
+    /// Available keys: "principal_name", "principal_type", "client_id",
+    /// "client_host", "client_port", "tls_enabled".
+    pub fn metadata(&self, key: &str) -> Option<&str> {
+        self.metadata.get(key).map(|s| s.as_str())
+    }
 }
 
 /// A written [`Record`] within Redpanda.
@@ -401,5 +423,46 @@ impl Record {
 impl<'a> From<&'a Record> for BorrowedRecord<'a> {
     fn from(record: &'a Record) -> Self {
         Self::new_with_headers(record.key(), record.value(), record.headers().collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_event_metadata_returns_known_keys() {
+        let mut metadata = HashMap::new();
+        metadata.insert("principal_name".to_string(), "alice".to_string());
+        metadata.insert("client_id".to_string(), "my-app".to_string());
+
+        let event = WriteEvent::new(
+            WrittenRecord::new(Some(b"k"), Some(b"v"), SystemTime::UNIX_EPOCH),
+            Rc::new(metadata),
+        );
+
+        assert_eq!(event.metadata("principal_name"), Some("alice"));
+        assert_eq!(event.metadata("client_id"), Some("my-app"));
+    }
+
+    #[test]
+    fn write_event_metadata_returns_none_for_missing_key() {
+        let event = WriteEvent::new(
+            WrittenRecord::new(Some(b"k"), Some(b"v"), SystemTime::UNIX_EPOCH),
+            Rc::new(HashMap::new()),
+        );
+
+        assert_eq!(event.metadata("nonexistent"), None);
+    }
+
+    #[test]
+    fn write_event_metadata_empty_map() {
+        let event = WriteEvent::new(
+            WrittenRecord::new(None, None, SystemTime::UNIX_EPOCH),
+            Rc::new(HashMap::new()),
+        );
+
+        assert_eq!(event.metadata("principal_name"), None);
+        assert_eq!(event.metadata("client_id"), None);
     }
 }

@@ -56,3 +56,7 @@ pub(crate) unsafe fn write_record_with_options(
 ) -> i32 {
     panic!("stub");
 }
+
+pub(crate) unsafe fn read_batch_metadata(_key: i32, _buf: *mut u8, _len: i32) -> i32 {
+    panic!("stub");
+}
