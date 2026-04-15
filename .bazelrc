@@ -379,4 +379,19 @@ build:fuzztest --per_file_copt=src/v/.*@-fsanitize-coverage=pc-table
 build --per_file_copt=.*fuzztest.*@-Wno-nullability-completeness,-Wno-unused-parameter,-Wno-deprecated-declarations,-Wno-sign-compare
 build --per_file_copt=.*_pbt\.cc@-Wno-deprecated-declarations,-Wno-sign-compare,-Wno-unused-parameter,-Wno-nullability-completeness
 
+# fuzztest-cov: same as fuzztest but adds LLVM source-level coverage
+# instrumentation so you can generate an HTML/text coverage report after a run.
+# Usage:
+#   LLVM_PROFILE_FILE=/tmp/fuzz.profraw \
+#     bazel run --config=fuzztest-cov //target -- --fuzz=Suite.Test
+#   (Ctrl-C after a while)
+#   llvm-profdata merge /tmp/fuzz.profraw -o /tmp/fuzz.profdata
+#   llvm-cov show bazel-bin/path/to/binary \
+#     -instr-profile=/tmp/fuzz.profdata \
+#     -sources src/v/container/chunked_vector.h
+build:fuzztest-cov --config=fuzztest
+build:fuzztest-cov --copt=-fprofile-instr-generate
+build:fuzztest-cov --copt=-fcoverage-mapping
+build:fuzztest-cov --linkopt=-fprofile-instr-generate
+
 try-import %workspace%/user.bazelrc
