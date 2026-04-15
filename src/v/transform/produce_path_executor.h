@@ -21,7 +21,9 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sstring.hh>
 
+#include <expected>
 #include <memory>
 
 namespace wasm {
@@ -31,6 +33,32 @@ class transform_probe;
 namespace transform {
 
 class service;
+
+/// Error from produce-path transform execution.
+enum class execute_errc {
+    /// The WASM engine could not be created or started.
+    engine_unavailable,
+    /// The WASM transform trapped or timed out.
+    transform_failed,
+    /// The transform produced zero output records.
+    no_output_records,
+    /// The transform dropped all records from the input topic for
+    /// an idempotent producer (would break sequence tracking).
+    empty_batch_idempotent,
+    /// Writing to a fan-out output topic failed.
+    fanout_write_failed,
+};
+
+struct execute_error {
+    execute_errc code;
+    ss::sstring message;
+};
+
+/// Result of execute(): either the (possibly null) transformed batch,
+/// or an error. A null batch means the transform routed everything
+/// to output topics and nothing should be written to the input topic.
+using execute_result
+  = std::expected<std::unique_ptr<model::record_batch>, execute_error>;
 
 /// Executes produce-path WASM transforms inline during Kafka produce.
 ///
@@ -55,9 +83,7 @@ public:
     /// batch unchanged. If a transform exists, runs the WASM engine
     /// inline and returns the transformed batch with the original
     /// batch identity preserved.
-    ///
-    /// Throws on transform error (trap, timeout, zero output records).
-    ss::future<std::unique_ptr<model::record_batch>> execute(
+    ss::future<execute_result> execute(
       model::topic_namespace_view,
       std::unique_ptr<model::record_batch>,
       std::optional<wasm::request_metadata> = std::nullopt);

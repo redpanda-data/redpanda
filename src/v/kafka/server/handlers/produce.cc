@@ -355,21 +355,31 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           }
 
           if (transform_svc.local_is_initialized()) {
-              try {
-                  batch = co_await transform_svc.local().executor().execute(
-                    model::topic_namespace_view(ntp),
-                    std::move(batch),
-                    std::move(request_info));
-              } catch (...) {
+              auto result = co_await transform_svc.local().executor().execute(
+                model::topic_namespace_view(ntp),
+                std::move(batch),
+                std::move(request_info));
+              if (!result) {
+                  auto ec = [&] {
+                      using enum transform::execute_errc;
+                      switch (result.error().code) {
+                      case transform_failed:
+                          return error_code::invalid_record;
+                      case no_output_records:
+                      case empty_batch_idempotent:
+                      case engine_unavailable:
+                      case fanout_write_failed:
+                          return error_code::unknown_server_error;
+                      }
+                  }();
                   co_return finalize_request_with_error_code(
-                    error_code::invalid_record,
+                    ec,
                     std::move(dispatch),
                     ntp,
                     source_shard,
-                    ssx::sformat(
-                      "produce-path transform rejected record: {}",
-                      std::current_exception()));
+                    result.error().message);
               }
+              batch = std::move(*result);
           }
 
           // Transform filtered all records from the input topic
