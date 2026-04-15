@@ -167,6 +167,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "iceberg_compat",
+    srcs = ["iceberg_compat.cc"],
+    hdrs = ["iceberg_compat.h"],
+    implementation_deps = [
+        "//src/v/iceberg:compatibility_types",
+        "//src/v/iceberg:schema_avro",
+        "//src/v/iceberg:simulate_evolution",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":types",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "server",
     srcs = [
         "api.cc",
