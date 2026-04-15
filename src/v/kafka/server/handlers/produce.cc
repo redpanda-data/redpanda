@@ -362,12 +362,12 @@ ss::future<produce_response::partition> do_produce_topic_partition(
                     std::move(request_info));
               } catch (...) {
                   co_return finalize_request_with_error_code(
-                    error_code::unknown_server_error,
+                    error_code::invalid_record,
                     std::move(dispatch),
                     ntp,
                     source_shard,
                     ssx::sformat(
-                      "produce-path transform failed: {}",
+                      "produce-path transform rejected record: {}",
                       std::current_exception()));
               }
           }
