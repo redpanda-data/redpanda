@@ -49,8 +49,6 @@ enum class execute_errc {
     /// expected sequence wouldn't match the broker's. Fan-out to other
     /// topics is fine since those don't affect the input topic's seq.
     idempotent_record_count_mismatch,
-    /// Writing to a fan-out output topic failed.
-    fanout_write_failed,
 };
 
 struct execute_error {

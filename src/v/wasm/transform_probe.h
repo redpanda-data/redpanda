@@ -45,6 +45,7 @@ public:
     }
     void record_latency(uint64_t v) { _transform_latency.record(v); }
     void transform_error() { ++_transform_errors; }
+    void fanout_error() { ++_fanout_errors; }
 
     void setup_metrics(ss::sstring transform_name);
     void clear_metrics() { _public_metrics.clear(); }
@@ -55,6 +56,7 @@ protected:
 
 private:
     uint64_t _transform_errors{0};
+    uint64_t _fanout_errors{0};
     hist_t _transform_latency;
 };
 } // namespace wasm

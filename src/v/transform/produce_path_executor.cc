@@ -114,12 +114,18 @@ ss::future<execute_result> produce_path_executor::execute(
           });
     }
 
-    // Write fan-out batches to output topics before returning the input
-    // batch. If a fan-out write fails, the produce is rejected entirely,
-    // so no input-topic record is written either. However, if fan-out
-    // succeeds but the subsequent input-batch replication fails, the
-    // fan-out records will have been written without the corresponding
-    // input record -- this is best-effort, not atomic.
+    // Write fan-out batches to output topics. These writes are
+    // best-effort: failures are logged and counted but do not abort
+    // the parent produce. The client's contract is with the input
+    // topic; fan-out is a derived side-effect. If fan-out fails we
+    // still commit the input batch, so the client sees success and
+    // the operator sees the failure via metrics/logs.
+    //
+    // TODO: make this configurable per-transform. A "strict" mode
+    // where fan-out failure aborts the produce belongs to use cases
+    // like audit logging where fan-out delivery is part of the
+    // produce contract. Strict mode has to stay fan-out-first (can't
+    // un-commit an input write), so we keep that ordering here.
     for (auto& [topic_ns, recs] : output_records) {
         if (recs.empty()) {
             continue;
@@ -146,14 +152,12 @@ ss::future<execute_result> produce_path_executor::execute(
           std::move(batches));
 
         if (ec != cluster::errc::success) {
-            co_return std::unexpected(
-              execute_error{
-                .code = execute_errc::fanout_write_failed,
-                .message = ss::format(
-                  "produce-path fan-out write to {} failed: {}",
-                  topic_ns,
-                  cluster::error_category().message(int(ec))),
-              });
+            entry->probe->fanout_error();
+            vlog(
+              tlog.warn,
+              "produce-path fan-out write to {} failed: {}",
+              topic_ns,
+              cluster::error_category().message(int(ec)));
         }
     }
 
