@@ -296,8 +296,8 @@ struct partition_metadata
     std::optional<model::node_id> leader_node;
 
     friend std::ostream& operator<<(std::ostream&, const partition_metadata&);
-    friend bool operator==(const partition_metadata&, const partition_metadata&)
-      = default;
+    friend bool
+    operator==(const partition_metadata&, const partition_metadata&) = default;
 
     auto serde_fields() { return std::tie(id, replicas, leader_node); }
 };
@@ -355,8 +355,8 @@ struct topic_namespace {
         return tp == other.tp && ns == other.ns;
     }
 
-    friend bool operator==(const topic_namespace&, const topic_namespace&)
-      = default;
+    friend bool
+    operator==(const topic_namespace&, const topic_namespace&) = default;
 
     bool operator<(const topic_namespace_view& other) const {
         return topic_namespace_view(*this) < other;
@@ -438,8 +438,8 @@ struct topic_metadata
     std::vector<partition_metadata> partitions;
 
     friend std::ostream& operator<<(std::ostream&, const topic_metadata&);
-    friend bool operator==(const topic_metadata&, const topic_metadata&)
-      = default;
+    friend bool
+    operator==(const topic_metadata&, const topic_metadata&) = default;
 
     auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
@@ -505,6 +505,7 @@ inline std::ostream& operator<<(std::ostream& os, cloud_storage_backend csb) {
 enum class leader_balancer_mode : uint8_t {
     calibrated = 0,
     random = 1,
+    greedy = 2,
 };
 
 constexpr const char*
@@ -514,6 +515,8 @@ leader_balancer_mode_to_string(leader_balancer_mode mode) {
         return "calibrated";
     case leader_balancer_mode::random:
         return "random";
+    case leader_balancer_mode::greedy:
+        return "greedy";
     default:
         throw std::invalid_argument("unknown leader_balancer_mode");
     }
@@ -611,6 +614,7 @@ enum class redpanda_storage_mode : uint8_t {
     local = 0,
     tiered = 1,
     cloud = 2,
+    tiered_cloud = 3,
     unset = 255
 };
 
@@ -622,6 +626,8 @@ constexpr const char* redpanda_storage_mode_to_string(redpanda_storage_mode m) {
         return "tiered";
     case redpanda_storage_mode::cloud:
         return "cloud";
+    case redpanda_storage_mode::tiered_cloud:
+        return "tiered_cloud";
     case redpanda_storage_mode::unset:
         return "unset";
     }

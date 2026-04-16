@@ -417,6 +417,7 @@ struct convert<model::leader_balancer_mode> {
     static constexpr auto acceptable_values = std::to_array(
       {model::leader_balancer_mode_to_string(type::calibrated),
        model::leader_balancer_mode_to_string(type::random),
+       model::leader_balancer_mode_to_string(type::greedy),
        "greedy_balanced_shards",
        "random_hill_climbing"});
 
@@ -439,6 +440,9 @@ struct convert<model::leader_balancer_mode> {
                 .match(
                   model::leader_balancer_mode_to_string(type::random),
                   type::random)
+                .match(
+                  model::leader_balancer_mode_to_string(type::greedy),
+                  type::greedy)
                 .match("greedy_balanced_shards", type::calibrated)
                 .match("random_hill_climbing", type::calibrated);
 

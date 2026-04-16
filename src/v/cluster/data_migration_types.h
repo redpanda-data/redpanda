@@ -137,9 +137,8 @@ struct cloud_storage_location
 
     ss::sstring hint;
 
-    friend bool
-    operator==(const cloud_storage_location&, const cloud_storage_location&)
-      = default;
+    friend bool operator==(
+      const cloud_storage_location&, const cloud_storage_location&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const cloud_storage_location&);
@@ -179,8 +178,8 @@ struct inbound_topic
         return std::tie(source_topic_name, alias, cloud_storage_location);
     }
 
-    friend bool operator==(const inbound_topic&, const inbound_topic&)
-      = default;
+    friend bool
+    operator==(const inbound_topic&, const inbound_topic&) = default;
     friend std::ostream& operator<<(std::ostream&, const inbound_topic&);
 };
 
@@ -202,8 +201,8 @@ struct inbound_migration
 
     auto serde_fields() { return std::tie(topics, groups, auto_advance); }
 
-    friend bool operator==(const inbound_migration&, const inbound_migration&)
-      = default;
+    friend bool
+    operator==(const inbound_migration&, const inbound_migration&) = default;
     friend std::ostream& operator<<(std::ostream&, const inbound_migration&);
 
     auto topic_nts() const {
@@ -249,8 +248,8 @@ struct topic_location
 
     auto serde_fields() { return std::tie(remote_topic, location); }
 
-    friend bool operator==(const topic_location&, const topic_location&)
-      = default;
+    friend bool
+    operator==(const topic_location&, const topic_location&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const topic_location&);
 };
@@ -282,8 +281,8 @@ struct outbound_migration
         return std::tie(topics, groups, copy_to, auto_advance, topic_locations);
     }
 
-    friend bool operator==(const outbound_migration&, const outbound_migration&)
-      = default;
+    friend bool
+    operator==(const outbound_migration&, const outbound_migration&) = default;
     friend std::ostream& operator<<(std::ostream&, const outbound_migration&);
 
     auto topic_nts() const {
@@ -386,8 +385,8 @@ struct migration_metadata
           revision_id);
     }
 
-    friend bool operator==(const migration_metadata&, const migration_metadata&)
-      = default;
+    friend bool
+    operator==(const migration_metadata&, const migration_metadata&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const migration_metadata&);
 };
@@ -424,8 +423,8 @@ struct create_migration_cmd_data
           id, migration, op_timestamp, fill_outbound_topic_locations);
     }
     friend bool operator==(
-      const create_migration_cmd_data&, const create_migration_cmd_data&)
-      = default;
+      const create_migration_cmd_data&,
+      const create_migration_cmd_data&) = default;
     friend std::ostream&
     operator<<(std::ostream&, const create_migration_cmd_data&);
 };
@@ -442,8 +441,7 @@ struct update_migration_state_cmd_data
     auto serde_fields() { return std::tie(id, requested_state, op_timestamp); }
     friend bool operator==(
       const update_migration_state_cmd_data&,
-      const update_migration_state_cmd_data&)
-      = default;
+      const update_migration_state_cmd_data&) = default;
     friend std::ostream&
     operator<<(std::ostream&, const update_migration_state_cmd_data&);
 };
@@ -457,8 +455,8 @@ struct remove_migration_cmd_data
 
     auto serde_fields() { return std::tie(id); }
     friend bool operator==(
-      const remove_migration_cmd_data&, const remove_migration_cmd_data&)
-      = default;
+      const remove_migration_cmd_data&,
+      const remove_migration_cmd_data&) = default;
     friend std::ostream&
     operator<<(std::ostream&, const remove_migration_cmd_data&);
 };
@@ -486,9 +484,8 @@ struct create_migration_reply
     cluster::errc ec;
     auto serde_fields() { return std::tie(id, ec); }
 
-    friend bool
-    operator==(const create_migration_reply&, const create_migration_reply&)
-      = default;
+    friend bool operator==(
+      const create_migration_reply&, const create_migration_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const create_migration_reply&);
@@ -504,8 +501,7 @@ struct update_migration_state_request
     auto serde_fields() { return std::tie(id, state); }
     friend bool operator==(
       const update_migration_state_request&,
-      const update_migration_state_request&)
-      = default;
+      const update_migration_state_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const update_migration_state_request&);
@@ -520,8 +516,8 @@ struct update_migration_state_reply
     auto serde_fields() { return std::tie(ec); }
 
     friend bool operator==(
-      const update_migration_state_reply&, const update_migration_state_reply&)
-      = default;
+      const update_migration_state_reply&,
+      const update_migration_state_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const update_migration_state_reply&);
@@ -549,9 +545,8 @@ struct remove_migration_reply
 
     auto serde_fields() { return std::tie(ec); }
 
-    friend bool
-    operator==(const remove_migration_reply&, const remove_migration_reply&)
-      = default;
+    friend bool operator==(
+      const remove_migration_reply&, const remove_migration_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream&, const remove_migration_reply&);

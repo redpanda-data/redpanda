@@ -45,8 +45,9 @@ struct walk_accumulator {
         if (entry.type && entry.type == ss::directory_entry_type::regular) {
             size_t file_size{0};
             std::chrono::system_clock::time_point atime;
-            if (const auto tracker_entry = tracker.get(entry_path);
-                tracker_entry.has_value()) {
+            if (
+              const auto tracker_entry = tracker.get(entry_path);
+              tracker_entry.has_value()) {
                 file_size = tracker_entry->size;
                 atime = tracker_entry->time_point();
             } else {

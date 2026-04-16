@@ -701,6 +701,29 @@ state_reader::get_term_keys(
     co_return keys;
 }
 
+ss::future<std::expected<chunked_vector<term_start>, state_reader::error>>
+state_reader::get_all_terms(const model::topic_id_partition& tidp) {
+    chunked_vector<term_start> terms;
+    try {
+        auto iter = co_await snap_.create_iterator();
+        co_await iter.seek(term_row_key::encode(tidp, model::term_id(0)));
+
+        term_row_key decoded;
+        while (is_at_term(iter, tidp, &decoded)) {
+            auto val = serde::from_iobuf<term_row_value>(iter.value());
+            terms.push_back(
+              term_start{
+                .term_id = decoded.term,
+                .start_offset = val.term_start_offset,
+              });
+            co_await iter.next();
+        }
+    } catch (...) {
+        co_return std::unexpected(to_error(std::current_exception()));
+    }
+    co_return terms;
+}
+
 namespace {
 
 bool is_at_metadata(

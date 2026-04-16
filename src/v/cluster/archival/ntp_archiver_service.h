@@ -55,10 +55,10 @@ public:
     ntp_archiver_upload_result() = default;
     ntp_archiver_upload_result(const ntp_archiver_upload_result&) = default;
     ntp_archiver_upload_result(ntp_archiver_upload_result&&) = default;
-    ntp_archiver_upload_result& operator=(const ntp_archiver_upload_result&)
-      = default;
-    ntp_archiver_upload_result& operator=(ntp_archiver_upload_result&&)
-      = default;
+    ntp_archiver_upload_result&
+    operator=(const ntp_archiver_upload_result&) = default;
+    ntp_archiver_upload_result&
+    operator=(ntp_archiver_upload_result&&) = default;
     ~ntp_archiver_upload_result() = default;
 
     /// Result without the value (error or success)
@@ -216,6 +216,17 @@ public:
         auto operator<=>(const batch_result&) const = default;
     };
 
+    enum class [[nodiscard]] housekeeping_result : uint8_t {
+        /// The run completed some work and should be scheduled again soon.
+        /// Return `error` instead if the run failed before committing progress.
+        partial,
+        /// The run finished all available work and should be retried after a
+        /// longer delay.
+        complete,
+        /// The run failed and should fall back to the normal cadence.
+        error
+    };
+
     /// Compute the maximum offset that is safe to be uploaded to the cloud.
     ///
     /// It must be guaranteed that this offset is monotonically increasing/
@@ -248,7 +259,7 @@ public:
     maybe_truncate_manifest();
 
     /// \brief Perform housekeeping operations.
-    ss::future<> housekeeping();
+    ss::future<housekeeping_result> housekeeping();
 
     /// \brief Advance the start offest for the remote partition
     /// according to the retention policy specified by the partition
@@ -266,7 +277,7 @@ public:
     ss::future<> apply_archive_retention();
 
     /// \brief Remove segments and manifests below the archive_start_offset.
-    ss::future<> garbage_collect_archive();
+    ss::future<housekeeping_result> garbage_collect_archive();
 
     /// \brief If the size of the manifest exceeds the limit
     /// move some segments into a separate immutable manifest and
@@ -470,6 +481,9 @@ private:
 
     /// Create a fence value for the next STM operation
     archival_stm_fence emit_rw_fence();
+
+    ss::future<std::error_code>
+    maybe_repair_manifest(ss::lowres_clock::time_point deadline);
 
     /// Delete objects, return true on success and false otherwise
     ss::future<bool>
@@ -736,6 +750,7 @@ private:
     ss::lw_shared_ptr<const configuration> _conf;
     config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
     config::binding<size_t> _max_segments_pending_deletion;
+    config::binding<size_t> _gc_max_segments;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
 

@@ -31,12 +31,17 @@ class FetchFrom(str, Enum):
     LOCAL = "fetch-from-local"
     TIERED_STORAGE = "fetch-from-tiered-storage"
     CLOUD_TOPIC = "fetch-from-cloud-topic"
+    TIERED_CLOUD_TOPIC = "fetch-from-tiered-cloud-topic"
 
 
 def make_topic_config(fetch_from):
     if fetch_from == FetchFrom.CLOUD_TOPIC:
         config = {
             TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+        }
+    elif fetch_from == FetchFrom.TIERED_CLOUD_TOPIC:
+        config = {
+            TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED_CLOUD,
         }
     elif fetch_from == FetchFrom.TIERED_STORAGE:
         config = {
@@ -167,7 +172,12 @@ class FollowerFetchingTest(PreallocNodesTest):
 
     @cluster(num_nodes=5)
     @matrix(
-        fetch_from=[FetchFrom.LOCAL, FetchFrom.TIERED_STORAGE, FetchFrom.CLOUD_TOPIC]
+        fetch_from=[
+            FetchFrom.LOCAL,
+            FetchFrom.TIERED_STORAGE,
+            FetchFrom.CLOUD_TOPIC,
+            FetchFrom.TIERED_CLOUD_TOPIC,
+        ]
     )
     def test_basic_follower_fetching(self, fetch_from):
         rack_layout_str = "ABC"
@@ -185,6 +195,10 @@ class FollowerFetchingTest(PreallocNodesTest):
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
         self.redpanda.start()
+        if fetch_from == FetchFrom.TIERED_CLOUD_TOPIC:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
         topic = TopicSpec(partition_count=1, replication_factor=3)
 
         config = make_topic_config(fetch_from)
@@ -240,7 +254,12 @@ class FollowerFetchingTest(PreallocNodesTest):
 
     @cluster(num_nodes=5)
     @matrix(
-        fetch_from=[FetchFrom.LOCAL, FetchFrom.TIERED_STORAGE, FetchFrom.CLOUD_TOPIC]
+        fetch_from=[
+            FetchFrom.LOCAL,
+            FetchFrom.TIERED_STORAGE,
+            FetchFrom.CLOUD_TOPIC,
+            FetchFrom.TIERED_CLOUD_TOPIC,
+        ]
     )
     def test_with_leadership_transfers(self, fetch_from):
         """
@@ -255,6 +274,10 @@ class FollowerFetchingTest(PreallocNodesTest):
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
         self.redpanda.start()
+        if fetch_from == FetchFrom.TIERED_CLOUD_TOPIC:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
 
         topic = TopicSpec(name="mytopic", partition_count=1, replication_factor=3)
 
@@ -320,7 +343,12 @@ class FollowerFetchingTest(PreallocNodesTest):
 
     @cluster(num_nodes=5)
     @matrix(
-        fetch_from=[FetchFrom.LOCAL, FetchFrom.TIERED_STORAGE, FetchFrom.CLOUD_TOPIC]
+        fetch_from=[
+            FetchFrom.LOCAL,
+            FetchFrom.TIERED_STORAGE,
+            FetchFrom.CLOUD_TOPIC,
+            FetchFrom.TIERED_CLOUD_TOPIC,
+        ]
     )
     def test_follower_fetching_with_maintenance_mode(self, fetch_from):
         rack_layout_str = "ABC"
@@ -338,6 +366,10 @@ class FollowerFetchingTest(PreallocNodesTest):
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
         self.redpanda.start()
+        if fetch_from == FetchFrom.TIERED_CLOUD_TOPIC:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
         topic = TopicSpec(partition_count=1, replication_factor=3)
 
         config = make_topic_config(fetch_from)

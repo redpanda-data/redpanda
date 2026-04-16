@@ -246,7 +246,8 @@ db_domain_manager::db_domain_manager(
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
   io* object_io,
-  ss::scheduling_group sg)
+  ss::scheduling_group sg,
+  domain_manager_probe* probe)
   : expected_term_(expected_term)
   , staging_dir_(std::move(staging_dir))
   , remote_(remote)
@@ -256,7 +257,8 @@ db_domain_manager::db_domain_manager(
   , stm_(std::move(stm))
   , gc_interval_(
       config::shard_local_cfg()
-        .cloud_topics_long_term_garbage_collection_interval) {
+        .cloud_topics_long_term_garbage_collection_interval)
+  , probe_(probe) {
     gc_interval_.watch([this]() { sem_.signal(); });
 }
 
@@ -1440,6 +1442,7 @@ db_domain_manager::preregister_objects(rpc::preregister_objects_request req) {
         };
     }
 
+    probe_->objects_preregistered(req.count);
     co_return rpc::preregister_objects_reply{
       .ec = rpc::errc::ok,
       .object_ids = std::move(update.object_ids),
@@ -1633,7 +1636,7 @@ ss::future<> db_domain_manager::gc_loop() {
     }
 
     auto ntp = stm_->raft()->log()->config().ntp();
-    db_garbage_collector gc(object_io_);
+    db_garbage_collector gc(object_io_, probe_);
     while (!as_.abort_requested()) {
         // NOTE: even though the garbage collector will remove objects and
         // actually write to the database, we don't need to take entity locks.
@@ -1884,6 +1887,7 @@ db_domain_manager::expire_preregistered_objects(chunked_vector<object_id> ids) {
           locks_res.error());
         co_return;
     }
+    auto num_ids = ids.size();
     expire_preregistered_objects_db_update update{.object_ids = std::move(ids)};
     auto reader = state_reader(db_->db().create_snapshot());
     chunked_vector<write_batch_row> rows;
@@ -1903,7 +1907,9 @@ db_domain_manager::expire_preregistered_objects(chunked_vector<object_id> ids) {
           cd_log.warn,
           "Error writing preregistered object expiry rows: {}",
           write_res.error());
+        co_return;
     }
+    probe_->gc_objects_expired(num_ids);
 }
 
 ss::future<std::expected<void, rpc::errc>>
@@ -1965,6 +1971,30 @@ db_domain_manager::read_debug_rows(
         vlog(cd_log.warn, "read_debug_rows exception: {}", ex);
         co_return std::unexpected(rpc::errc::timed_out);
     }
+}
+
+ss::future<
+  std::expected<partition_validation_result, partition_validator::error>>
+db_domain_manager::validate_partition(validate_partition_options opts) {
+    auto gl_res = co_await gate_and_open_reads();
+    if (!gl_res.has_value()) {
+        co_return std::unexpected(
+          partition_validator::error(
+            partition_validator::errc::io_error, "failed to open database"));
+    }
+    if (opts.remote == nullptr) {
+        opts.remote = remote_;
+    }
+    if (opts.bucket == nullptr) {
+        opts.bucket = &bucket_;
+    }
+    if (opts.as == nullptr) {
+        opts.as = &as_;
+    }
+
+    auto reader = state_reader(db_->db().create_snapshot());
+    partition_validator validator(reader);
+    co_return co_await validator.validate(opts);
 }
 
 } // namespace cloud_topics::l1

@@ -60,7 +60,16 @@ public:
     void add_bytes_sent(size_t bytes) { _bytes_sent += bytes; }
 
     std::unique_ptr<hist_t::measurement> auto_latency_measurement() {
-        return _latency.auto_measure();
+        if (_latency) {
+            return _latency->auto_measure();
+        }
+        return nullptr;
+    }
+
+    void enable_histogram() {
+        if (!_latency.has_value()) {
+            _latency.emplace();
+        }
     }
 
 private:
@@ -75,7 +84,7 @@ private:
     uint64_t _bytes_received{0};
     uint64_t _bytes_sent{0};
 
-    hist_t _latency{};
+    std::optional<hist_t> _latency;
 };
 
 /**

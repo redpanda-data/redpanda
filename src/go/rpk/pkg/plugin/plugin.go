@@ -285,7 +285,7 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 func uniqueTrimmedStrs(in []string) []string {
 	seen := make(map[string]bool)
 	keep := in[:0]
-	for i := 0; i < len(in); i++ {
+	for i := range in {
 		path := in[i]
 		path = strings.TrimSpace(path)
 		if seen[path] || len(path) == 0 {

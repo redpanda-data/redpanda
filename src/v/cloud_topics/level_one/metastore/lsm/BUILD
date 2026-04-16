@@ -326,6 +326,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/common:abstract_io",
+        "//src/v/cloud_topics/level_one/domain:domain_manager_probe",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -335,7 +336,6 @@ redpanda_cc_library(
         "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/utils:detailed_error",
-        "//src/v/utils:named_type",
         "@seastar",
     ],
 )

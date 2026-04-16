@@ -10,10 +10,62 @@
 import json
 import os
 import subprocess
+import time
 from logging import Logger
 from typing import Any, Generator, Union, overload, Literal
 
 SUPPORTED_PROVIDERS = ["aws", "gcp", "azure"]
+
+# Default retry settings for transient tsh/ssh failures
+TSH_RETRY_COUNT = 3
+TSH_RETRY_BACKOFF_SEC = 5
+
+
+def run_with_retries(
+    cmd: list[str],
+    retries: int = TSH_RETRY_COUNT,
+    backoff_sec: float = TSH_RETRY_BACKOFF_SEC,
+    logger=None,
+    **kwargs,
+) -> bytes:
+    """Run a subprocess command with retries on CalledProcessError.
+
+    Intended for tsh/ssh commands that may fail transiently due to
+    connectivity or auth issues. Makes ``retries`` total attempts with
+    exponential backoff (backoff_sec, 2*backoff_sec, ...) between them.
+    """
+    if retries < 1:
+        raise ValueError(f"retries must be >= 1, got {retries}")
+
+    # Capture stderr so that error output is available for logging.
+    kwargs.setdefault("stderr", subprocess.STDOUT)
+
+    last_err: subprocess.CalledProcessError | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            return subprocess.check_output(cmd, **kwargs)
+        except subprocess.CalledProcessError as e:
+            last_err = e
+            output = ""
+            if e.output:
+                output = e.output.decode("utf-8", errors="replace")[:300]
+            if attempt < retries:
+                if logger:
+                    logger.warning(
+                        f"Command failed (attempt {attempt}/{retries}, "
+                        f"rc={e.returncode}): {' '.join(cmd)}"
+                        + (f"\n{output}" if output else "")
+                    )
+                time.sleep(backoff_sec * (2 ** (attempt - 1)))
+    if logger and last_err:
+        output = ""
+        if last_err.output:
+            output = last_err.output.decode("utf-8", errors="replace")[:300]
+        logger.error(
+            f"Command failed after {retries} attempts: {' '.join(cmd)}"
+            + (f"\n{output}" if output else "")
+        )
+    raise last_err  # type: ignore[misc]
 
 
 def is_redpanda_pod(pod_obj: dict[str, Any], cluster_id: str) -> bool:
@@ -446,7 +498,7 @@ class KubectlTool:
         self._redpanda.logger.info(filename_path)
         setup_cmd = self._scp_cmd(filename_path, f"{self._remote_uri}:")
         self._redpanda.logger.info(setup_cmd)
-        subprocess.check_output(setup_cmd)
+        run_with_retries(setup_cmd, logger=self._redpanda.logger)
         apply_cmd = ["kubectl", "apply", "-f", filename]
         self._ssh_cmd(apply_cmd)
 

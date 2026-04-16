@@ -357,6 +357,8 @@ struct batch_max_bytes_limits_validator {
 //   tiered -> local: Permitted (with caution)
 //   unset -> local: Permitted (with caution)
 //   unset -> tiered: Permitted
+//   cloud -> tiered_cloud: Permitted
+//   tiered_cloud -> cloud: Permitted
 // Not permitted:
 //   local -> unset: Not permitted
 //   local -> cloud: Not permitted
@@ -365,6 +367,11 @@ struct batch_max_bytes_limits_validator {
 //   cloud -> local: Not permitted
 //   cloud -> tiered: Not permitted
 //   unset <-> cloud: Not permitted (cloud requires explicit choice)
+//   local -> tiered_cloud: Not permitted
+//   tiered -> tiered_cloud: Not permitted
+//   tiered_cloud -> local: Not permitted
+//   tiered_cloud -> tiered: Not permitted
+//   unset <-> tiered_cloud: Not permitted
 inline bool is_storage_mode_transition_permitted(
   model::redpanda_storage_mode from, model::redpanda_storage_mode to) {
     using sm = model::redpanda_storage_mode;
@@ -389,6 +396,14 @@ inline bool is_storage_mode_transition_permitted(
         return true;
     }
     if (from == sm::unset && to == sm::tiered) {
+        return true;
+    }
+
+    // cloud <-> tiered_cloud: Permitted
+    if (from == sm::cloud && to == sm::tiered_cloud) {
+        return true;
+    }
+    if (from == sm::tiered_cloud && to == sm::cloud) {
         return true;
     }
 

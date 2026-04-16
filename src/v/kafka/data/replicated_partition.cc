@@ -16,6 +16,7 @@
 #include "kafka/data/log_reader_config.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/write_at_offset_stm.h"
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
@@ -407,6 +408,60 @@ raft::replicate_stages replicated_partition::replicate(
             raft::replicate_result{model::offset(r.value().last_offset())});
       });
     return out;
+}
+
+namespace {
+class stm_exact_offset_replicator final : public exact_offset_replicator {
+public:
+    explicit stm_exact_offset_replicator(
+      ss::shared_ptr<write_at_offset_stm> stm)
+      : _stm(std::move(stm)) {}
+
+    raft::replicate_stages replicate(
+      chunked_vector<model::record_batch> batches,
+      chunked_vector<kafka::offset> expected_base_offsets,
+      std::optional<kafka::offset> prev_log_offset,
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as) final {
+        return _stm->replicate(
+          std::move(batches),
+          std::move(expected_base_offsets),
+          prev_log_offset,
+          timeout,
+          as);
+    }
+
+    ss::future<result<kafka::offset>> get_last_offset(
+      model::timeout_clock::duration sync_timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>>) final {
+        return _stm->get_expected_last_offset(sync_timeout);
+    }
+
+    ss::future<std::error_code> ensure_truncatable(
+      kafka::offset new_start_offset,
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as) final {
+        auto err = co_await _stm->ensure_truncatable(
+          new_start_offset, timeout, as);
+        if (err != write_at_offset_stm::errc::success) {
+            co_return _stm->make_error_code(err);
+        }
+        co_return std::error_code{};
+    }
+
+private:
+    ss::shared_ptr<write_at_offset_stm> _stm;
+};
+} // namespace
+
+std::unique_ptr<exact_offset_replicator>
+replicated_partition::make_exact_offset_replicator() && {
+    auto stm
+      = _partition->raft()->stm_manager()->get<kafka::write_at_offset_stm>();
+    if (!stm) {
+        return nullptr;
+    }
+    return std::make_unique<stm_exact_offset_replicator>(std::move(stm));
 }
 
 model::offset replicated_partition::partition_kafka_start_offset() const {

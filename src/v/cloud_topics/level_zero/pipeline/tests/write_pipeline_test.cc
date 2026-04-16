@@ -90,7 +90,7 @@ TEST_CORO(write_pipeline_test, single_write_request) {
     ASSERT_TRUE_CORO(res.complete);
     ASSERT_TRUE_CORO(res.requests.size() == 1);
 
-    res.requests.front().set_value(chunked_vector<cloud_topics::extent_meta>{});
+    res.requests.front().set_value(cloud_topics::upload_meta{});
 
     auto write_res = co_await std::move(fut);
     ASSERT_TRUE_CORO(write_res.has_value());
@@ -128,7 +128,7 @@ TEST_CORO(batcher_test, expired_write_request) {
 
     // One req has already expired at this point
     ASSERT_EQ_CORO(res.requests.size(), 1);
-    res.requests.back().set_value(chunked_vector<cloud_topics::extent_meta>{});
+    res.requests.back().set_value(cloud_topics::upload_meta{});
 
     auto [pass_result, fail_result] = co_await ss::when_all_succeed(
       std::move(expect_pass_fut), std::move(expect_fail_fut));
@@ -167,7 +167,7 @@ TEST_CORO(write_pipeline_test, stage_bytes_accounting) {
     auto res = stage.pull_write_requests(std::numeric_limits<size_t>::max());
     ASSERT_EQ_CORO(pipeline.stage_bytes(stage.id()), 0);
 
-    res.requests.front().set_value(chunked_vector<cloud_topics::extent_meta>{});
+    res.requests.front().set_value(cloud_topics::upload_meta{});
     auto write_res = co_await std::move(fut);
     ASSERT_TRUE_CORO(write_res.has_value());
 }
@@ -274,7 +274,7 @@ TEST_CORO(write_pipeline_test, interleaving_stages_bug) {
         // Stage should be unassigned after extraction
         ASSERT_TRUE_CORO(
           req.stage == cloud_topics::l0::unassigned_pipeline_stage);
-        req.set_value(chunked_vector<cloud_topics::extent_meta>{});
+        req.set_value(cloud_topics::upload_meta{});
     }
 
     // The remaining 3 requests should still be in the pending queue
@@ -288,7 +288,7 @@ TEST_CORO(write_pipeline_test, interleaving_stages_bug) {
     for (auto& req : result2.requests) {
         ASSERT_TRUE_CORO(
           req.stage == cloud_topics::l0::unassigned_pipeline_stage);
-        req.set_value(chunked_vector<cloud_topics::extent_meta>{});
+        req.set_value(cloud_topics::upload_meta{});
     }
 
     ASSERT_EQ_CORO(accessor.write_requests_pending(0), true);
@@ -360,8 +360,7 @@ TEST_CORO(write_pipeline_test, oversized_request) {
 
     // Should return exactly 1 request (the oversized one)
     ASSERT_EQ_CORO(result.requests.size(), 1);
-    result.requests.front().set_value(
-      chunked_vector<cloud_topics::extent_meta>{});
+    result.requests.front().set_value(cloud_topics::upload_meta{});
 
     // Second request should still be pending
     ASSERT_EQ_CORO(accessor.write_requests_pending(1), true);
@@ -370,8 +369,7 @@ TEST_CORO(write_pipeline_test, oversized_request) {
     auto result2 = stage.pull_write_requests(
       std::numeric_limits<size_t>::max());
     ASSERT_EQ_CORO(result2.requests.size(), 1);
-    result2.requests.front().set_value(
-      chunked_vector<cloud_topics::extent_meta>{});
+    result2.requests.front().set_value(cloud_topics::upload_meta{});
 
     ASSERT_EQ_CORO(accessor.write_requests_pending(0), true);
 }
@@ -439,7 +437,7 @@ TEST_CORO(write_pipeline_test, multiple_requests_within_limit) {
     ASSERT_EQ_CORO(result_all.requests.size(), 3);
 
     for (auto& req : result_all.requests) {
-        req.set_value(chunked_vector<cloud_topics::extent_meta>{});
+        req.set_value(cloud_topics::upload_meta{});
     }
 
     ASSERT_TRUE_CORO(accessor.write_requests_pending(0));
@@ -499,7 +497,7 @@ TEST_CORO(write_pipeline_test, max_requests_limit) {
     size_t first_batch_size = result.requests.size();
 
     for (auto& req : result.requests) {
-        req.set_value(chunked_vector<cloud_topics::extent_meta>{});
+        req.set_value(cloud_topics::upload_meta{});
     }
 
     // Remaining requests should still be pending
@@ -511,7 +509,7 @@ TEST_CORO(write_pipeline_test, max_requests_limit) {
     ASSERT_EQ_CORO(result2.requests.size(), 5 - first_batch_size);
 
     for (auto& req : result2.requests) {
-        req.set_value(chunked_vector<cloud_topics::extent_meta>{});
+        req.set_value(cloud_topics::upload_meta{});
     }
 
     ASSERT_TRUE_CORO(accessor.write_requests_pending(0));
@@ -555,5 +553,5 @@ TEST_CORO(write_pipeline_test, enqueue_foreign_request_accounts_bytes) {
     ASSERT_EQ_CORO(res.requests.size(), 1);
     ASSERT_EQ_CORO(pipeline.stage_bytes(stage2.id()), 0);
 
-    res.requests.front().set_value(chunked_vector<cloud_topics::extent_meta>{});
+    res.requests.front().set_value(cloud_topics::upload_meta{});
 }

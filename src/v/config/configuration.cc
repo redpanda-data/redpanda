@@ -886,6 +886,14 @@ configuration::configuration()
       "Use separate scheduler group to handle parsing Kafka protocol requests",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , kafka_handler_latency_all(
+      *this,
+      "kafka_handler_latency_all",
+      "Enable latency histograms for all Kafka API handlers. When disabled, "
+      "only important handlers (produce, fetch, metadata, api_versions, "
+      "offset_commit) have latency histograms.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , kafka_tcp_keepalive_idle_timeout_seconds(
       *this,
       "kafka_tcp_keepalive_timeout",
@@ -949,14 +957,9 @@ configuration::configuration()
       "Maximum number of active producer sessions per shard. Each shard "
       "tracks producer IDs using an LRU (Least Recently Used) eviction "
       "policy. When the configured limit is exceeded, the least recently "
-      "used producer IDs are evicted from the cache. IMPORTANT: The default "
-      "value is unlimited, which can lead to unbounded memory growth and "
-      "out-of-memory (OOM) crashes in production environments with heavy "
-      "producer usage, especially when using transactions or idempotent "
-      "producers. It is strongly recommended to set a reasonable limit in "
-      "production deployments.",
+      "used producer IDs are evicted from the cache.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::numeric_limits<uint64_t>::max(),
+      100000,
       {.min = 1})
   , max_transactions_per_coordinator(
       *this,
@@ -968,7 +971,7 @@ configuration::configuration()
       "invalid producer epoch or invalid_producer_id_mapping error (depends on "
       "the transaction execution phase).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::numeric_limits<uint64_t>::max(),
+      10000,
       {.min = 1})
   , enable_idempotence(
       *this,
@@ -2418,9 +2421,20 @@ configuration::configuration()
       "The per-partition limit for the number of segments pending deletion "
       "from the cloud. Segments can be deleted due to retention or compaction. "
       "If this limit is breached and deletion fails, then segments will be "
-      "orphaned in the cloud and will have to be removed manually",
+      "orphaned in the cloud and will have to be removed manually. Applies "
+      "only the the in-memory manifest. Spillover manifests are not affected "
+      "by this limit.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5000)
+  , cloud_storage_gc_max_segments_per_run(
+      *this,
+      "cloud_storage_gc_max_segments_per_run",
+      "Maximum number of segments to delete per housekeeping run. Each segment "
+      "maps to up to three object keys (data, index, tx manifest), so a value "
+      "of 300 produces 600 to 900 deletes plus one per spillover manifest.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      300,
+      {.min = 1})
   , cloud_storage_enable_compacted_topic_reupload(
       *this,
       "cloud_storage_enable_compacted_topic_reupload",
@@ -3379,6 +3393,7 @@ configuration::configuration()
       {
         model::leader_balancer_mode::calibrated,
         model::leader_balancer_mode::random,
+        model::leader_balancer_mode::greedy,
       })
   , leader_balancer_idle_timeout(
       *this,
@@ -4536,6 +4551,14 @@ configuration::configuration()
       "cluster for data replication.",
       meta{.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , shadow_link_failover_batch_size(
+      *this,
+      "shadow_link_failover_batch_size",
+      "Maximum number of mirror topics to include in a single batched "
+      "failover controller command.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000,
+      {.min = 1})
   , internal_rpc_request_timeout_ms(
       *this,
       "internal_rpc_request_timeout_ms",
@@ -4712,6 +4735,12 @@ configuration::configuration()
       "The local cache duration of a cluster wide epoch.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1min)
+  , cloud_topics_epoch_service_max_same_epoch_duration(
+      *this,
+      "cloud_topics_epoch_service_max_same_epoch_duration",
+      "The duration of time that a node can use the exact same epoch.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      24 * 60min)
   , cloud_topics_short_term_gc_minimum_object_age(
       *this,
       "cloud_topics_short_term_gc_minimum_object_age",
@@ -4795,6 +4824,24 @@ configuration::configuration()
       "topic is first created.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       3,
+      {.min = 1})
+  , cloud_topics_produce_write_inflight_limit(
+      *this,
+      "cloud_topics_produce_write_inflight_limit",
+      "Maximum number of in-flight write requests per shard in the cloud "
+      "topics write pipeline. Requests that exceed this limit are queued "
+      "until a slot becomes available.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      1024,
+      {.min = 1})
+  , cloud_topics_produce_no_pid_concurrency(
+      *this,
+      "cloud_topics_produce_no_pid_concurrency",
+      "Maximum number of concurrent raft replication requests for producers "
+      "without a producer ID (idempotency disabled). Limits how many no-PID "
+      "writes can proceed past the producer queue into raft simultaneously.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      32,
       {.min = 1})
   , development_feature_property_testing_only(
       *this,

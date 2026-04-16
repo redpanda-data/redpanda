@@ -153,6 +153,9 @@ public:
     add_mirror_topic(add_mirror_topic_request, rpc::streaming_context&) final;
     ss::future<update_mirror_topic_status_response> update_mirror_topic_status(
       update_mirror_topic_status_request, rpc::streaming_context&) final;
+    ss::future<batch_update_mirror_topic_status_response>
+    batch_update_mirror_topic_status(
+      batch_update_mirror_topic_status_request, rpc::streaming_context&) final;
     ss::future<update_mirror_topic_properties_response>
     update_mirror_topic_properties(
       update_mirror_topic_properties_request, rpc::streaming_context&) final;

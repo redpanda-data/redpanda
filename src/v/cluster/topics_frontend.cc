@@ -100,11 +100,11 @@ get_enterprise_features(const cluster::topic_configuration& cfg) {
     }
 
     // We are always enforcing leadership preference restrictions
-    if (const auto& leaders_pref = cfg.properties.leaders_preference;
-        leaders_pref.has_value()
-        && config::shard_local_cfg()
-             .default_leaders_preference.check_restricted(
-               leaders_pref.value())) {
+    if (
+      const auto& leaders_pref = cfg.properties.leaders_preference;
+      leaders_pref.has_value()
+      && config::shard_local_cfg().default_leaders_preference.check_restricted(
+        leaders_pref.value())) {
         features.emplace_back("leadership pinning");
     }
 
@@ -114,8 +114,7 @@ get_enterprise_features(const cluster::topic_configuration& cfg) {
         }
     }
     if (config::shard_local_cfg().cloud_topics_enabled.is_restricted()) {
-        if (
-          cfg.properties.storage_mode == model::redpanda_storage_mode::cloud) {
+        if (cfg.is_cloud_topic()) {
             features.emplace_back("cloud topics");
         }
     }
@@ -212,12 +211,11 @@ std::vector<std::string_view> get_enterprise_features(
         }
     }
 
-    if (const auto& updated_pref = updated_properties.leaders_preference;
-        updated_pref != properties.leaders_preference
-        && updated_pref.has_value()
-        && config::shard_local_cfg()
-             .default_leaders_preference.check_restricted(
-               updated_pref.value())) {
+    if (
+      const auto& updated_pref = updated_properties.leaders_preference;
+      updated_pref != properties.leaders_preference && updated_pref.has_value()
+      && config::shard_local_cfg().default_leaders_preference.check_restricted(
+        updated_pref.value())) {
         features.emplace_back("leadership pinning");
     }
     if (config::shard_local_cfg().iceberg_enabled.is_restricted()) {
@@ -226,7 +224,7 @@ std::vector<std::string_view> get_enterprise_features(
         }
     }
     if (config::shard_local_cfg().cloud_topics_enabled.is_restricted()) {
-        if (properties.storage_mode == model::redpanda_storage_mode::cloud) {
+        if (properties.is_cloud_topic()) {
             features.emplace_back("cloud topics");
         }
     }
@@ -487,8 +485,9 @@ topics_frontend::update_topic_properties(
               if (
                 _features.local().should_sanction()
                 && is_user_topic(update.tp_ns)) {
-                  if (auto f = get_enterprise_features(_metadata_cache, update);
-                      !f.empty()) {
+                  if (
+                    auto f = get_enterprise_features(_metadata_cache, update);
+                    !f.empty()) {
                       auto msg
                         = features::enterprise_error_message::topic_property(f);
                       vlog(clusterlog.warn, "{}", msg);
@@ -671,8 +670,8 @@ topic_result topics_frontend::validate_topic_configuration(
     if (
       _features.local().should_sanction()
       && is_user_topic(assignable_config.cfg.tp_ns)) {
-        if (auto f = get_enterprise_features(assignable_config.cfg);
-            !f.empty()) {
+        if (
+          auto f = get_enterprise_features(assignable_config.cfg); !f.empty()) {
             auto msg = features::enterprise_error_message::topic_property(f);
             vlog(clusterlog.warn, "{}", msg);
             return make_result(errc::topic_invalid_config, std::move(msg));
@@ -829,22 +828,23 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         }
         auto validation_map = co_await maybe_validate_recovery_topic(
           assignable_config, bucket, _cloud_storage_api.local(), _as.local());
-        if (std::ranges::any_of(
-              validation_map,
-              [](const std::pair<model::partition_id, validation_result>& vp) {
-                  using enum validation_result;
-                  switch (vp.second) {
-                  case passed:
-                  case missing_manifest:
-                      // passed or missing_manifest do not fail validation
-                      return false;
-                  case anomaly_detected:
-                  case download_issue:
-                      // failure needs to be handled by an operator,
-                      // download_issue likely is a config issue
-                      return true;
-                  }
-              })) {
+        if (
+          std::ranges::any_of(
+            validation_map,
+            [](const std::pair<model::partition_id, validation_result>& vp) {
+                using enum validation_result;
+                switch (vp.second) {
+                case passed:
+                case missing_manifest:
+                    // passed or missing_manifest do not fail validation
+                    return false;
+                case anomaly_detected:
+                case download_issue:
+                    // failure needs to be handled by an operator,
+                    // download_issue likely is a config issue
+                    return true;
+                }
+            })) {
             vlog(
               clusterlog.error,
               "Stopping recovery of {} due to validation error",

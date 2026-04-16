@@ -1127,9 +1127,10 @@ ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
                         r.release_value()));
                     break;
                 case read_write_fence_cmd::key:
-                    if (apply_read_write_fence(
-                          serde::from_iobuf<read_write_fence_cmd>(
-                            r.release_value()))) {
+                    if (
+                      apply_read_write_fence(
+                        serde::from_iobuf<read_write_fence_cmd>(
+                          r.release_value()))) {
                         // This means that there is a concurrency violation. The
                         // fence was created before some other command was
                         // applied. We can't apply the commands from this batch.

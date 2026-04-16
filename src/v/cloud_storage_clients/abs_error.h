@@ -48,7 +48,7 @@ enum class abs_error_code {
 std::istream& operator>>(std::istream& i, abs_error_code& code);
 
 /// Error received in a response from the server
-class abs_rest_error_response : std::exception {
+class abs_rest_error_response : public std::exception {
 public:
     abs_rest_error_response(
       ss::sstring code,

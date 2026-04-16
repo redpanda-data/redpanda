@@ -1167,8 +1167,8 @@ struct delete_subject_key {
     context_subject sub;
     topic_key_magic magic{0};
 
-    friend bool operator==(const delete_subject_key&, const delete_subject_key&)
-      = default;
+    friend bool
+    operator==(const delete_subject_key&, const delete_subject_key&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& os, const delete_subject_key& v) {
@@ -1323,9 +1323,8 @@ public:
 struct delete_subject_value {
     context_subject sub;
 
-    friend bool
-    operator==(const delete_subject_value&, const delete_subject_value&)
-      = default;
+    friend bool operator==(
+      const delete_subject_value&, const delete_subject_value&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& os, const delete_subject_value& v) {
@@ -1461,8 +1460,8 @@ struct context_value {
     ss::sstring tenant{"default"};
     context ctx;
 
-    friend bool operator==(const context_value&, const context_value&)
-      = default;
+    friend bool
+    operator==(const context_value&, const context_value&) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const context_value& v) {
         fmt::print(os, "tenant: {}, context: {}", v.tenant, v.ctx);

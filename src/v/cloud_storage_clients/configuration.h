@@ -51,7 +51,8 @@ struct common_configuration {
     /// @{
     net::unresolved_address server_addr;
 
-    std::optional<ss::tls::credentials_builder> tls_credentials_builder;
+    bool disable_tls = false;
+    std::optional<ca_trust_file> tls_truststore_path;
 
     /// Optional server name indication (SNI) for TLS connection
     std::optional<ss::sstring> tls_sni_hostname;

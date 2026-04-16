@@ -590,8 +590,9 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
           fmt::format("Invalid SCRAM username {{{}}}", username()));
     }
 
-    if (is_no_op_user_write(
-          _controller->get_credential_store().local(), username, credential)) {
+    if (
+      is_no_op_user_write(
+        _controller->get_credential_store().local(), username, credential)) {
         vlog(
           adminlog.debug,
           "User {} already exists with matching credential",
@@ -672,8 +673,9 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
 
     auto credential = parse_scram_credential(doc);
 
-    if (is_no_op_user_write(
-          _controller->get_credential_store().local(), user, credential)) {
+    if (
+      is_no_op_user_write(
+        _controller->get_credential_store().local(), user, credential)) {
         vlog(
           adminlog.debug,
           "User {} already exists with matching credential",
@@ -832,8 +834,9 @@ admin_server::update_role_members_handler(
     auto role_name = security::role_name(std::move(role_v));
     auto add = parse_json_members_list(doc, "add");
     auto remove = parse_json_members_list(doc, "remove");
-    if (std::ranges::any_of(
-          remove, [&add](auto m) { return add.contains(m); })) {
+    if (std::ranges::any_of(remove, [&add](auto m) {
+            return add.contains(m);
+        })) {
         throw_role_exception(role_errc::member_list_conflict);
     }
 
@@ -1496,13 +1499,12 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
         interfaces_report.schema_registry
           = generate_schema_registry_interface_report(
             alerts, _schema_registry->get_config());
-        interfaces_report.schema_registry_client
-          = generate_kafka_client_interface_report(
-            alerts,
-            affected_interface::schema_registry_client,
-            _schema_registry->get_client_config(),
-            ephemeral_credentials{
-              _schema_registry->has_ephemeral_credentials()});
+        interfaces_report
+          .schema_registry_client = generate_kafka_client_interface_report(
+          alerts,
+          affected_interface::schema_registry_client,
+          _schema_registry->get_client_config(),
+          ephemeral_credentials{_schema_registry->has_ephemeral_credentials()});
     }
     if (
       config::shard_local_cfg().audit_enabled()

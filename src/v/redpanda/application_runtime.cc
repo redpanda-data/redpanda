@@ -128,7 +128,12 @@ void application::wire_up_runtime_services(
           node_id,
           &controller->get_plugin_frontend(),
           &controller->get_feature_table(),
-          &raft_group_manager,
+          ss::sharded_parameter([this] {
+              return cluster::partition_change_notifier_impl::make_default(
+                raft_group_manager,
+                partition_manager,
+                controller->get_topics_state());
+          }),
           &controller->get_topics_state(),
           &partition_manager,
           &_transform_rpc_client,
@@ -302,7 +307,11 @@ void application::wire_up_runtime_services(
 
     construct_service(_debug_bundle_service, &storage.local().kvs()).get();
 
-    construct_single_service(_host_metrics_watcher, std::ref(_log));
+    auto data_dir = config::node().data_directory().as_sstring();
+    auto cache_dir = ss::sstring(
+      config::node().cloud_storage_cache_path().string());
+    construct_single_service(
+      _host_metrics_watcher, std::ref(_log), data_dir, cache_dir);
 
     construct_service(_kafka_connections_service, std::ref(_kafka_server.ref()))
       .get();

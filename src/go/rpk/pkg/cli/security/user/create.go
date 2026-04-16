@@ -165,14 +165,14 @@ func generatePassword(passLength int) (string, error) {
 	allCharSet := lowercase + uppercase + numbers
 
 	randSize := big.NewInt(int64(len(allCharSet)))
-	var pass string
-	for i := 0; i < passLength; i++ {
+	var pass strings.Builder
+	for range passLength {
 		r, err := rand.Int(rand.Reader, randSize)
 		if err != nil {
 			return "", fmt.Errorf("unable to generate secure random number: %v", err)
 		}
-		pass += string(allCharSet[r.Int64()])
+		pass.WriteString(string(allCharSet[r.Int64()]))
 	}
 
-	return pass, nil
+	return pass.String(), nil
 }

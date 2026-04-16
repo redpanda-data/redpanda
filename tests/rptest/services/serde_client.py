@@ -51,6 +51,8 @@ class SerdeClient(BackgroundThreadService):
         subject_name_strategy: Optional[str] = None,
         payload_class: Optional[str] = None,
         compression_type: Optional[TopicSpec.CompressionTypes] = None,
+        context_name_strategy: Optional[str] = None,
+        context_name: Optional[str] = None,
     ):
         if num_nodes is None and nodes is None:
             num_nodes = 1
@@ -91,6 +93,13 @@ class SerdeClient(BackgroundThreadService):
         if compression_type is not None:
             assert self._serde_client_type == SerdeClientType.Python
             self._cmd_args += f" --compression-type {compression_type}"
+
+        if context_name_strategy is not None:
+            assert self._serde_client_type == SerdeClientType.Java
+            self._cmd_args += f" --context-name-strategy {context_name_strategy}"
+        if context_name is not None:
+            assert self._serde_client_type == SerdeClientType.Java
+            self._cmd_args += f" --context-name {context_name}"
 
         if self._serde_client_type == SerdeClientType.Golang:
             self._cmd_args += " --debug"

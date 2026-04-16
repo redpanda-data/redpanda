@@ -59,12 +59,15 @@ public class JavaKafkaSerdeClientMain {
     int count = ns.getInt("count");
     boolean skipKnownTypes = ns.getBoolean("skip_known_types");
     boolean useLatestVersion = ns.getBoolean("use_latest_version");
+    String contextNameStrategy = ns.getString("context_name_strategy");
+    String contextName = ns.getString("context_name");
 
     JavaKafkaSerdeClient.Protocol protocol = ns.get("protocol");
 
     JavaKafkaSerdeClient client = new JavaKafkaSerdeClient(
         brokers, topic, srAdr, consumerGroup, protocol, securitySettings,
-        skipKnownTypes, useLatestVersion, log);
+        skipKnownTypes, useLatestVersion, contextNameStrategy, contextName,
+        log);
 
     try {
       client.run(count);
@@ -119,6 +122,14 @@ public class JavaKafkaSerdeClientMain {
         .setDefault(false)
         .action(Arguments.storeTrue())
         .type(Boolean.class);
+    parser.addArgument("--context-name-strategy")
+        .help("Fully qualified class name of the ContextNameStrategy to use")
+        .setDefault((String)null)
+        .type(String.class);
+    parser.addArgument("--context-name")
+        .help("Context name to pass to the ContextNameStrategy")
+        .setDefault((String)null)
+        .type(String.class);
 
     return parser;
   }

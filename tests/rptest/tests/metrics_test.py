@@ -7,13 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
+
 from ducktape.mark import matrix
 from ducktape.tests.test import Test
 
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import make_redpanda_service
+from rptest.services.redpanda import MetricsEndpoint, make_redpanda_service
+from rptest.tests.redpanda_test import RedpandaTest
 
 BOOTSTRAP_CONFIG = {
     "disable_metrics": False,
@@ -79,3 +82,67 @@ class MetricsTest(Test):
 
         assert len(metrics_pre_change) != len(metrics_post_change)
         assert len(metrics_pre_change) == len(metrics_pre_chanage_again)
+
+
+class DisableMetricsTest(RedpandaTest):
+    # Allowlist of Seastar metric group prefixes that are expected to
+    # remain on the internal endpoint even with disable_metrics=True.
+    # Any metric family not matching is a Redpanda application metric
+    # and should not be present.
+    SEASTAR_METRIC_RE = re.compile(
+        r"^vectorized_("
+        r"alien|"
+        r"httpd|"
+        r"io_queue|"
+        r"memory|"
+        r"network|"
+        r"reactor|"
+        r"scheduler|"
+        r"stall_detector"
+        r")_"
+    )
+
+    def __init__(self, test_ctx):
+        super().__init__(
+            test_ctx,
+            num_brokers=1,
+            extra_rp_conf={
+                "disable_metrics": True,
+                "disable_public_metrics": True,
+            },
+        )
+
+    @cluster(num_nodes=1)
+    def test_disable_metrics(self):
+        """
+        Verify that starting Redpanda with both disable_metrics and
+        disable_public_metrics causes the internal endpoint to contain
+        only Seastar metrics (no Redpanda application metrics) and the
+        public endpoint to be completely empty.
+        """
+        node = self.redpanda.nodes[0]
+
+        # Check internal metrics: only Seastar metrics should remain.
+        internal_families = self.redpanda.metrics(node, MetricsEndpoint.METRICS)
+        non_seastar = [
+            f.name
+            for f in internal_families
+            if f.samples and not self.SEASTAR_METRIC_RE.match(f.name)
+        ]
+        for name in non_seastar:
+            self.redpanda.logger.debug(f"unexpected internal metric family: {name}")
+        assert len(non_seastar) == 0, (
+            f"Expected only Seastar metrics on internal endpoint, "
+            f"got {len(non_seastar)} Redpanda metric families: "
+            f"{non_seastar[:10]}"
+        )
+
+        # Check public metrics: should be completely empty.
+        public_families = self.redpanda.metrics(node, MetricsEndpoint.PUBLIC_METRICS)
+        non_empty = [f.name for f in public_families if f.samples]
+        for name in non_empty:
+            self.redpanda.logger.debug(f"unexpected public metric family: {name}")
+        assert len(non_empty) == 0, (
+            f"Expected no public metrics, got {len(non_empty)} "
+            f"families: {non_empty[:10]}"
+        )

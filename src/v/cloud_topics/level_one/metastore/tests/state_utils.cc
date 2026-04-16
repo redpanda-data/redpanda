@@ -58,8 +58,7 @@ state snapshot_to_state(lsm::database& db) {
               std::move(val));
             result.topic_to_state[comp_key->tidp.topic_id]
               .pid_to_state[comp_key->tidp.partition]
-              .compaction_state
-              = std::move(comp_val.state);
+              .compaction_state = std::move(comp_val.state);
         } else if (auto obj_key = object_row_key::decode(key)) {
             auto obj_val = serde::from_iobuf<object_row_value>(std::move(val));
             result.objects[obj_key->oid] = obj_val.object;

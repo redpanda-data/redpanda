@@ -124,8 +124,8 @@ public:
     sliding_window_reducer(const sliding_window_reducer&) = delete;
     sliding_window_reducer& operator=(const sliding_window_reducer&) = delete;
     sliding_window_reducer(sliding_window_reducer&&) noexcept = default;
-    sliding_window_reducer& operator=(sliding_window_reducer&&) noexcept
-      = default;
+    sliding_window_reducer&
+    operator=(sliding_window_reducer&&) noexcept = default;
     ~sliding_window_reducer() noexcept = default;
 
     ss::future<> run() &&;

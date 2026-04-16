@@ -410,7 +410,6 @@ class ControllerLogLimitMirrorMakerTests(MirrorMakerService):
         self.start_workload()
 
         self.run_validation(consumer_timeout_sec=120)
-        self.mirror_maker.stop()
 
         def _all_topics_are_present():
             for t in topics:
@@ -426,6 +425,8 @@ class ControllerLogLimitMirrorMakerTests(MirrorMakerService):
             backoff_sec=2,
             err_msg="Not all the topics are present in the target cluster",
         )
+
+        self.mirror_maker.stop()
 
 
 class ControllerLogLimitPartitionBalancerTests(PartitionBalancerService):

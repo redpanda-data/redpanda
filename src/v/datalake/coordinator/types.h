@@ -420,8 +420,7 @@ struct reset_topic_state_request
       model::revision_id topic_revision,
       bool reset_all_partitions = false,
       chunked_hash_map<model::partition_id, partition_state_override>
-        partition_overrides
-      = {})
+        partition_overrides = {})
       : coordinator_partition(coordinator_partition)
       , topic(std::move(topic))
       , topic_revision(topic_revision)

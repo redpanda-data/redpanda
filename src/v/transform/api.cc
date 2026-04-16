@@ -483,7 +483,7 @@ service::service(
   model::node_id self,
   ss::sharded<cluster::plugin_frontend>* plugin_frontend,
   ss::sharded<features::feature_table>* feature_table,
-  ss::sharded<raft::group_manager>* group_manager,
+  std::unique_ptr<cluster::partition_change_notifier> partition_change_notifier,
   ss::sharded<cluster::topic_table>* topic_table,
   ss::sharded<cluster::partition_manager>* partition_manager,
   ss::sharded<rpc::client>* rpc_client,
@@ -494,7 +494,7 @@ service::service(
   , _self(self)
   , _plugin_frontend(plugin_frontend)
   , _feature_table(feature_table)
-  , _group_manager(group_manager)
+  , _partition_change_notifier(std::move(partition_change_notifier))
   , _topic_table(topic_table)
   , _partition_manager(partition_manager)
   , _rpc_client(rpc_client)
@@ -564,63 +564,29 @@ void service::register_notifications() {
     _notification_cleanups.emplace_back([this, plugin_notif_id] {
         _plugin_frontend->local().unregister_for_updates(plugin_notif_id);
     });
-    auto leadership_notif_id
-      = _group_manager->local().register_leadership_notification(
+    // NOTE: notify_current_state::yes will also trigger notifications for
+    // existing partitions, which will effectively bootstrap the transform
+    // manager.
+    using notify_current_state
+      = cluster::partition_change_notifier::notify_current_state;
+    using partition_state = cluster::partition_change_notifier::partition_state;
+    auto partition_notif_id
+      = _partition_change_notifier->register_partition_notifications(
         [this](
-          raft::group_id group_id,
-          model::term_id,
-          std::optional<model::node_id> leader) {
-            auto partition = _partition_manager->local().partition_for(
-              group_id);
-            if (!partition) {
-                vlog(
-                  tlog.debug,
-                  "got leadership notification for unknown partition: {}",
-                  group_id);
+          cluster::partition_change_notifier::notification_type,
+          const model::ntp& ntp,
+          std::optional<partition_state> state) {
+            if (ntp.ns != model::kafka_namespace) {
                 return;
             }
-            bool node_is_leader = leader.has_value() && leader == _self;
-            if (!node_is_leader) {
-                _manager->on_leadership_change(
-                  partition->ntp(), ntp_leader::no);
-                return;
-            }
-            if (partition->ntp().ns != model::kafka_namespace) {
-                return;
-            }
-            ntp_leader is_leader = partition && partition->is_elected_leader()
-                                     ? ntp_leader::yes
-                                     : ntp_leader::no;
-            _manager->on_leadership_change(partition->ntp(), is_leader);
-        });
-    _notification_cleanups.emplace_back([this, leadership_notif_id] {
-        _group_manager->local().unregister_leadership_notification(
-          leadership_notif_id);
-    });
-    auto unmanage_notification_id
-      = _partition_manager->local().register_unmanage_notification(
-        model::kafka_namespace, [this](model::topic_partition_view tp) {
-            _manager->on_leadership_change(
-              model::ntp(model::kafka_namespace, tp.topic, tp.partition),
-              ntp_leader::no);
-        });
-    _notification_cleanups.emplace_back([this, unmanage_notification_id] {
-        _partition_manager->local().unregister_unmanage_notification(
-          unmanage_notification_id);
-    });
-    // NOTE: this will also trigger notifications for existing partitions, which
-    // will effectively bootstrap the transform manager.
-    auto manage_notification_id
-      = _partition_manager->local().register_manage_notification(
-        model::kafka_namespace,
-        [this](const ss::lw_shared_ptr<cluster::partition>& p) {
-            ntp_leader is_leader = p->is_elected_leader() ? ntp_leader::yes
-                                                          : ntp_leader::no;
-            _manager->on_leadership_change(p->ntp(), is_leader);
-        });
-    _notification_cleanups.emplace_back([this, manage_notification_id] {
-        _partition_manager->local().unregister_manage_notification(
-          manage_notification_id);
+            ntp_leader is_leader = state && state->is_leader ? ntp_leader::yes
+                                                             : ntp_leader::no;
+            _manager->on_leadership_change(ntp, is_leader);
+        },
+        notify_current_state::yes);
+    _notification_cleanups.emplace_back([this, partition_notif_id] {
+        _partition_change_notifier->unregister_partition_notifications(
+          partition_notif_id);
     });
 }
 
@@ -711,8 +677,9 @@ ss::future<std::error_code> service::deploy_transform(
     // expose this option through the API anyway, and already-serialized
     // transform metadata (i.e. legacy deployments) won't traverse this code.
     // Otherwise, respect whatever offset was specifified in the request.
-    if (std::holds_alternative<model::transform_offset_options::latest_offset>(
-          meta.offset_options.position)) {
+    if (
+      std::holds_alternative<model::transform_offset_options::latest_offset>(
+        meta.offset_options.position)) {
         meta.offset_options = model::transform_offset_options{
           // Set the transform to start processing new records starting now,
           // this is the default expectations for developers, as once deploy

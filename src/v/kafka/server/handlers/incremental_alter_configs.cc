@@ -12,6 +12,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/incremental_alter_configs.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
@@ -482,11 +483,27 @@ create_topic_properties_update(
             }
 
             if (cfg.name == topic_property_redpanda_storage_mode) {
+                auto validator = [current_storage_mode,
+                                  &feature_table = ctx.feature_table().local()](
+                                   const ss::sstring& raw,
+                                   const model::redpanda_storage_mode& value)
+                  -> std::optional<ss::sstring> {
+                    auto transition_err = storage_mode_validator{
+                      current_storage_mode}(raw, value);
+                    if (transition_err) {
+                        return transition_err;
+                    }
+                    if (
+                      value == model::redpanda_storage_mode::tiered_cloud
+                      && !feature_table.is_active(
+                        features::feature::tiered_cloud_topics)) {
+                        return "tiered_cloud storage mode requires the "
+                               "tiered_cloud_topics feature to be enabled";
+                    }
+                    return std::nullopt;
+                };
                 parse_and_set_optional(
-                  update.properties.storage_mode,
-                  cfg.value,
-                  op,
-                  storage_mode_validator{current_storage_mode});
+                  update.properties.storage_mode, cfg.value, op, validator);
                 continue;
             }
         } catch (const validation_error& e) {

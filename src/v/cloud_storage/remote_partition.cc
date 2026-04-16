@@ -318,17 +318,13 @@ public:
         }
     }
     partition_record_batch_reader_impl(
-      partition_record_batch_reader_impl&& o) noexcept
-      = delete;
+      partition_record_batch_reader_impl&& o) noexcept = delete;
     partition_record_batch_reader_impl&
-    operator=(partition_record_batch_reader_impl&& o) noexcept
-      = delete;
+    operator=(partition_record_batch_reader_impl&& o) noexcept = delete;
     partition_record_batch_reader_impl(
-      const partition_record_batch_reader_impl& o)
-      = delete;
+      const partition_record_batch_reader_impl& o) = delete;
     partition_record_batch_reader_impl&
-    operator=(const partition_record_batch_reader_impl& o)
-      = delete;
+    operator=(const partition_record_batch_reader_impl& o) = delete;
 
     bool is_end_of_stream() const override { return _seg_reader == nullptr; }
 
@@ -1220,9 +1216,10 @@ ss::future<> remote_partition::stop() {
 void remote_partition::return_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
     auto offset = reader->base_rp_offset();
-    if (auto it = _segments.find(offset);
-        it != _segments.end()
-        && reader->reads_from_segment(*it->second->segment)) {
+    if (
+      auto it = _segments.find(offset);
+      it != _segments.end()
+      && reader->reads_from_segment(*it->second->segment)) {
         // The segment may already be replaced by compacted segment at this
         // point. In this case it's possible that the remote_segment instance
         // which 'it' points to belongs to the new segment.

@@ -14,7 +14,7 @@
 #include "iceberg/values.h"
 
 namespace iceberg {
-class partition_spec_field_error : std::exception {
+class partition_spec_field_error : public std::exception {
 public:
     explicit partition_spec_field_error(std::string msg) noexcept
       : msg_(std::move(msg)) {}

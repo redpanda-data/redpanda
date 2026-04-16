@@ -40,11 +40,10 @@ public:
     coordinated_recovery_throttle(const coordinated_recovery_throttle&)
       = delete;
     coordinated_recovery_throttle&
-    operator=(const coordinated_recovery_throttle&)
-      = delete;
+    operator=(const coordinated_recovery_throttle&) = delete;
     coordinated_recovery_throttle(coordinated_recovery_throttle&&) = delete;
-    coordinated_recovery_throttle& operator=(coordinated_recovery_throttle&&)
-      = delete;
+    coordinated_recovery_throttle&
+    operator=(coordinated_recovery_throttle&&) = delete;
     ~coordinated_recovery_throttle() noexcept = default;
 
     void shutdown();

@@ -28,19 +28,22 @@ struct handler_info {
       api_version min_api,
       api_version max_api,
       memory_estimate_fn* mem_estimate,
-      scheduling_group_provider_fn* sg_provider) noexcept
+      scheduling_group_provider_fn* sg_provider,
+      bool has_latency_histogram) noexcept
       : _key(key)
       , _name(name)
       , _min_api(min_api)
       , _max_api(max_api)
       , _mem_estimate(mem_estimate)
-      , _sg_provider(sg_provider) {}
+      , _sg_provider(sg_provider)
+      , _has_latency_histogram(has_latency_histogram) {}
 
     api_key _key;
     const char* _name;
     api_version _min_api, _max_api;
     memory_estimate_fn* _mem_estimate;
     scheduling_group_provider_fn* _sg_provider;
+    bool _has_latency_histogram;
 };
 
 /**
@@ -96,6 +99,10 @@ struct handler_base final : public handler_interface {
         return _info._sg_provider(conn_ctx);
     }
 
+    bool has_latency_histogram() const override {
+        return _info._has_latency_histogram;
+    }
+
 private:
     handler_info _info;
     fn_type* _handle_fn;
@@ -118,7 +125,8 @@ struct handler_holder {
         H::min_supported,
         H::max_supported,
         H::memory_estimate,
-        H::scheduling_group_override},
+        H::scheduling_group_override,
+        H::has_latency_histogram},
       H::handle};
 };
 

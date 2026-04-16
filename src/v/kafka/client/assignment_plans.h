@@ -36,8 +36,7 @@ struct assignment_plan {
 
     virtual assignments plan(
       const chunked_vector<member_id>& members,
-      const chunked_vector<metadata_response::topic>& topics)
-      = 0;
+      const chunked_vector<metadata_response::topic>& topics) = 0;
 
     sync_group_request_assignment
     encode(const assignments::value_type& m) const;

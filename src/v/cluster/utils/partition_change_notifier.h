@@ -64,15 +64,14 @@ public:
     partition_change_notifier() = default;
     partition_change_notifier(const partition_change_notifier&) = delete;
     partition_change_notifier(partition_change_notifier&&) = delete;
-    partition_change_notifier& operator=(const partition_change_notifier&)
-      = delete;
+    partition_change_notifier&
+    operator=(const partition_change_notifier&) = delete;
     partition_change_notifier& operator=(partition_change_notifier&&) = delete;
 
     virtual ~partition_change_notifier() = default;
 
     virtual notification_id_type register_partition_notifications(
-      notification_cb_t, notify_current_state = notify_current_state::no)
-      = 0;
+      notification_cb_t, notify_current_state = notify_current_state::no) = 0;
 
     virtual void unregister_partition_notifications(notification_id_type) = 0;
 };

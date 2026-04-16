@@ -129,9 +129,10 @@ ss::future<> rpc_server::dispatch_method_once(
       = ssx::spawn_with_gate_then(
           conn_gate(),
           [this, method_id, ctx]() mutable {
-              if (unlikely(
-                    ctx->get_header().version
-                    > transport_version::max_supported)) {
+              if (
+                unlikely(
+                  ctx->get_header().version
+                  > transport_version::max_supported)) {
                   vlog(
                     rpclog.debug,
                     "Received a request at an unsupported transport version {} "

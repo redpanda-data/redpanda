@@ -165,8 +165,9 @@ controller_snapshot_reconciler::get_actions(
         }
     }
 
-    if (needs_actions(
-          cur_stage, recovery_stage::recovered_cloud_topics_metastore)) {
+    if (
+      needs_actions(
+        cur_stage, recovery_stage::recovered_cloud_topics_metastore)) {
         const auto& snap_tables = snap.topics.topics;
         auto snap_it = snap_tables.find(model::l1_metastore_nt);
         if (snap_it != snap_tables.end()) {

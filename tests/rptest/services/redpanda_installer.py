@@ -46,6 +46,11 @@ RP_GIT_RELEASED_VERSIONS = "RP_GIT_RELEASED_VERSIONS"
 
 REDPANDA_INSTALLER_HEAD_TAG = "head"
 
+# The latest major version that has been released (binaries available on S3).
+# Update this when a new major version is published. No need to update it for
+# minors.
+LATEST_RELEASED_MAJOR: tuple[int, int, int] = (26, 1, 1)
+
 RedpandaVersionTriple = tuple[int, int, int]
 RedpandaVersionLine = tuple[int, int]
 RedpandaVersion = Literal["head"] | RedpandaVersionLine | RedpandaVersionTriple
@@ -517,6 +522,22 @@ class RedpandaInstaller:
         """
         self.start()
         return self.released_versions[-1]
+
+    @staticmethod
+    def next_major_version(line: RedpandaVersionLine) -> RedpandaVersionLine:
+        """
+        Given a release line like (25, 3), return the next release line
+        in sequence. The scheme has 3 minor versions per major year:
+        X.1 -> X.2 -> X.3 -> (X+1).1
+        """
+        if line[0] == 0:
+            raise ValueError(
+                f"Cannot compute next major version from dev version {line}. "
+                "Build with --config=stamp to get a real version tag."
+            )
+        if line[1] == 3:
+            return (line[0] + 1, 1)
+        return (line[0], line[1] + 1)
 
     def latest_unsupported_line(self) -> tuple[int, int]:
         """

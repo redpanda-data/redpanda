@@ -179,9 +179,8 @@ T handle_error(
     if (result.has_value()) {
         return std::move(result.value());
     }
-    if constexpr (std::is_same_v<
-                    T,
-                    cloud_topics::l1::metastore::offsets_response>) {
+    if constexpr (
+      std::is_same_v<T, cloud_topics::l1::metastore::offsets_response>) {
         if (result.error() == cloud_topics::l1::metastore::errc::missing_ntp) {
             return {
               .start_offset = kafka::offset::min(),

@@ -130,9 +130,8 @@ protected:
      * is in place to enforce that. It is const qualified to ensure the apply
      * impelementors do not control their lifetime.
      */
-    virtual ss::future<>
-    apply(const model::record_batch&, const ssx::semaphore_units& apply_units)
-      = 0;
+    virtual ss::future<> apply(
+      const model::record_batch&, const ssx::semaphore_units& apply_units) = 0;
 
     /**
      *  Lifecycle is managed by state_machine_manager

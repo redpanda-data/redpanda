@@ -304,7 +304,7 @@ func (y *RedpandaYaml) UnmarshalYAML(n *yaml.Node) error {
 		SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry"`
 		SchemaRegistryClient *KafkaClient       `yaml:"schema_registry_client"`
 
-		Other map[string]interface{} `yaml:",inline"`
+		Other map[string]any `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -344,7 +344,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		DeveloperMode              weakBool                  `yaml:"developer_mode"`
 		RecoveryModeEnabled        weakBool                  `yaml:"recovery_mode_enabled"`
 		CrashLoopLimit             *weakInt                  `yaml:"crash_loop_limit"`
-		Other                      map[string]interface{}    `yaml:",inline"`
+		Other                      map[string]any            `yaml:",inline"`
 	}
 
 	if err := n.Decode(&internal); err != nil {
@@ -537,7 +537,7 @@ func (p *Pandaproxy) UnmarshalYAML(n *yaml.Node) error {
 		PandaproxyAPI           namedAuthNSocketAddresses `yaml:"pandaproxy_api"`
 		PandaproxyAPITLS        serverTLSArray            `yaml:"pandaproxy_api_tls"`
 		AdvertisedPandaproxyAPI namedSocketAddresses      `yaml:"advertised_pandaproxy_api"`
-		Other                   map[string]interface{}    `yaml:",inline"`
+		Other                   map[string]any            `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -551,12 +551,12 @@ func (p *Pandaproxy) UnmarshalYAML(n *yaml.Node) error {
 
 func (k *KafkaClient) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		Brokers       socketAddresses        `yaml:"brokers"`
-		BrokerTLS     ServerTLS              `yaml:"broker_tls"`
-		SASLMechanism *weakString            `yaml:"sasl_mechanism"`
-		SCRAMUsername *weakString            `yaml:"scram_username"`
-		SCRAMPassword *weakString            `yaml:"scram_password"`
-		Other         map[string]interface{} `yaml:",inline"`
+		Brokers       socketAddresses `yaml:"brokers"`
+		BrokerTLS     ServerTLS       `yaml:"broker_tls"`
+		SASLMechanism *weakString     `yaml:"sasl_mechanism"`
+		SCRAMUsername *weakString     `yaml:"scram_username"`
+		SCRAMPassword *weakString     `yaml:"scram_password"`
+		Other         map[string]any  `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -588,13 +588,13 @@ func (s *SchemaRegistry) UnmarshalYAML(n *yaml.Node) error {
 
 func (s *ServerTLS) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		Name              weakString             `yaml:"name"`
-		KeyFile           weakString             `yaml:"key_file"`
-		CertFile          weakString             `yaml:"cert_file"`
-		TruststoreFile    weakString             `yaml:"truststore_file"`
-		Enabled           weakBool               `yaml:"enabled"`
-		RequireClientAuth weakBool               `yaml:"require_client_auth"`
-		Other             map[string]interface{} `yaml:",inline"`
+		Name              weakString     `yaml:"name"`
+		KeyFile           weakString     `yaml:"key_file"`
+		CertFile          weakString     `yaml:"cert_file"`
+		TruststoreFile    weakString     `yaml:"truststore_file"`
+		Enabled           weakBool       `yaml:"enabled"`
+		RequireClientAuth weakBool       `yaml:"require_client_auth"`
+		Other             map[string]any `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err

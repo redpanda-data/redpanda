@@ -83,10 +83,12 @@ public:
     /// epoch is at least equal to the max_seen_epoch epoch.
     ///
     /// \return max_seen_epoch epoch.
-    std::optional<cluster_epoch> get_max_seen_epoch() const noexcept;
+    std::optional<cluster_epoch>
+    get_max_seen_epoch(model::term_id term) const noexcept;
 
     /// Return the previous_seen_epoch epoch.
-    std::optional<cluster_epoch> get_previous_seen_epoch() const noexcept;
+    std::optional<cluster_epoch>
+      get_previous_seen_epoch(model::term_id) const noexcept;
 
     /// Estimate the minimum epoch referenced by this ctp_stm.
     /// \note This value might be stale.

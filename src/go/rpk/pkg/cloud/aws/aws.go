@@ -10,11 +10,13 @@
 package aws
 
 import (
+	"context"
 	"errors"
+	"io"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 )
 
@@ -23,7 +25,7 @@ const name = "aws"
 type AwsProvider struct{}
 
 type InitializedAwsProvider struct {
-	client *ec2metadata.EC2Metadata
+	client *imds.Client
 }
 
 func (*AwsProvider) Name() string {
@@ -31,36 +33,39 @@ func (*AwsProvider) Name() string {
 }
 
 func (*AwsProvider) Init() (provider.InitializedProvider, error) {
-	s, err := session.NewSession()
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	client := ec2metadata.New(s)
-	if available(client, 500*time.Millisecond) {
-		return &InitializedAwsProvider{client}, nil
+	client := imds.NewFromConfig(cfg)
+
+	// Check availability by attempting a metadata request.
+	resp, err := client.GetMetadata(ctx, &imds.GetMetadataInput{Path: "instance-type"})
+	if err != nil {
+		return nil, errors.New("provider AWS couldn't be initialized")
 	}
-	return nil, errors.New("provider AWS couldn't be initialized")
+	resp.Content.Close()
+	return &InitializedAwsProvider{client: client}, nil
 }
 
 func (v *InitializedAwsProvider) VMType() (string, error) {
-	return v.client.GetMetadata("instance-type")
+	resp, err := v.client.GetMetadata(context.Background(), &imds.GetMetadataInput{
+		Path: "instance-type",
+	})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Content.Close()
+	b, err := io.ReadAll(resp.Content)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func (*InitializedAwsProvider) Name() string {
 	return name
-}
-
-func available(client *ec2metadata.EC2Metadata, timeout time.Duration) bool {
-	result := make(chan bool)
-
-	go func(c *ec2metadata.EC2Metadata, res chan<- bool) {
-		res <- c.Available()
-	}(client, result)
-
-	select {
-	case res := <-result:
-		return res
-	case <-time.After(timeout):
-		return false
-	}
 }

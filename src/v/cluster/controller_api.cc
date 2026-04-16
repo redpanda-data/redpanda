@@ -76,7 +76,7 @@ controller_api::get_reconciliation_state(chunked_vector<model::ntp> ntps) {
 
 ss::future<result<bool>>
 controller_api::all_reconciliations_done(std::deque<model::ntp> ntps) {
-    const size_t batch_size = 4096;
+    const size_t batch_size = 512;
     // For a huge topic with e.g. 100k partitions, this will be a huge loop:
     // that means we need parallelism, but not so much that we totally
     // saturate inter-core queues.
@@ -437,8 +437,9 @@ controller_api::get_decommission_allocation_failures(model::node_id node) {
       });
 
     cluster::partition_balancer_overview_reply overview;
-    if (std::holds_alternative<cluster::partition_balancer_overview_reply>(
-          result)) {
+    if (
+      std::holds_alternative<cluster::partition_balancer_overview_reply>(
+        result)) {
         overview = std::move(
           std::get<cluster::partition_balancer_overview_reply>(result));
     } else if (std::holds_alternative<model::node_id>(result)) {

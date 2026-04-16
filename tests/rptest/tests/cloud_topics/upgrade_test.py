@@ -31,10 +31,6 @@ class CloudTopicsUpgradeTest(RedpandaTest):
     completes.
     """
 
-    # The cloud_topics feature is gated at v26.1.1, so we start the cluster
-    # on v25.3.x and upgrade to HEAD.
-    OLD_VERSION = (25, 3)
-
     def __init__(self, test_context: TestContext):
         si_settings = SISettings(
             test_context,
@@ -59,6 +55,10 @@ class CloudTopicsUpgradeTest(RedpandaTest):
         self.installer = self.redpanda._installer
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
+
+    # cloud_topics feature is gated at v26.1, so start on v25.3 (pre-feature)
+    OLD_VERSION = (25, 3)
+    NEW_VERSION = RedpandaInstaller.next_major_version(OLD_VERSION)
 
     def setUp(self):
         self.installer.install(self.redpanda.nodes, self.OLD_VERSION)
@@ -113,13 +113,10 @@ class CloudTopicsUpgradeTest(RedpandaTest):
         should succeed.
         """
         initial_version = self.admin.get_features()["cluster_version"]
-        self.logger.info(
-            f"Starting upgrade test: initial_version={initial_version}, "
-            f"old_version={self.OLD_VERSION}"
-        )
+        self.logger.info(f"Starting upgrade test: initial_version={initial_version}")
 
         # Upgrade all nodes to HEAD one at a time.
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, self.NEW_VERSION)
         for node in self.redpanda.nodes:
             self.redpanda.restart_nodes([node])
 

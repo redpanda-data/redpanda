@@ -164,6 +164,10 @@ public:
       const model::topic_id_partition&,
       std::optional<kafka::offset> upper_bound);
 
+    // Returns all terms for the given partition, ordered by term_id.
+    ss::future<std::expected<chunked_vector<term_start>, error>>
+    get_all_terms(const model::topic_id_partition&);
+
     // Returns all partition IDs that have metadata for the given topic.
     ss::future<std::expected<chunked_vector<model::partition_id>, error>>
     get_partitions_for_topic(const model::topic_id&);

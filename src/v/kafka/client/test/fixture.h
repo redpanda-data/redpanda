@@ -33,6 +33,7 @@ public:
         }).get();
         app.initialize(proxy_config(), proxy_client_config());
         app.check_environment();
+        app.wire_up_and_start_crypto_services();
         app.wire_up_and_start(*app_signal, test_mode);
     }
 

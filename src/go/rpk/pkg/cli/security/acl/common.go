@@ -12,6 +12,7 @@ package acl
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/redpanda-data/common-go/rpsr"
@@ -568,17 +569,11 @@ func kafkaOrSRFilters(cmd *cobra.Command, checkSubsystem bool) (isKafka, isSR bo
 		// If both kafka and registry are included, fall through to flag-based detection.
 	}
 
-	for _, flag := range kFlags {
-		if cmd.Flags().Changed(flag) {
-			isKafka = true
-			break
-		}
+	if slices.ContainsFunc(kFlags, cmd.Flags().Changed) {
+		isKafka = true
 	}
-	for _, flag := range srFlags {
-		if cmd.Flags().Changed(flag) {
-			isSR = true
-			break
-		}
+	if slices.ContainsFunc(srFlags, cmd.Flags().Changed) {
+		isSR = true
 	}
 	return isKafka, isSR, nil
 }

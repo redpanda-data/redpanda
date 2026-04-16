@@ -147,7 +147,6 @@
         "rptest/tests/index_recovery_test.py",
         "rptest/tests/internal_topic_protection_test.py",
         "rptest/tests/isolated_decommissioned_node_test.py",
-        "rptest/tests/leadership_transfer_test.py",
         "rptest/tests/librdkafka_test.py",
         "rptest/tests/license_upgrade_test.py",
         "rptest/tests/log_level_test.py",

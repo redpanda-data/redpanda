@@ -142,6 +142,7 @@ redpanda_cc_btest(
         "//src/v/cluster",
         "//src/v/config",
         "//src/v/model",
+        "//src/v/random:generators",
         "//src/v/ssx:sformat",
         "//src/v/storage",
         "//src/v/test_utils:scoped_config",

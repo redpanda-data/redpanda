@@ -34,15 +34,15 @@ type Serde struct {
 func NewSerde(ctx context.Context, cl *sr.Client, schema *sr.Schema, schemaID int, protoFQN string) (*Serde, error) {
 	switch schema.Type {
 	case sr.TypeAvro:
-		codec, err := generateAvroCodec(ctx, cl, schema)
+		avroSchema, err := generateAvroSchema(ctx, cl, schema)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse avro schema: %v", err)
 		}
-		encFn, err := newAvroEncoder(codec, schemaID)
+		encFn, err := newAvroEncoder(avroSchema, schemaID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to build avro encoder: %v", err)
 		}
-		decFn, err := newAvroDecoder(codec)
+		decFn, err := newAvroDecoder(avroSchema)
 		if err != nil {
 			return nil, fmt.Errorf("unable to build avro decoder: %v", err)
 		}

@@ -73,8 +73,8 @@ struct requests_list {
     requests_list(const requests_list<Pipeline, Request>&) = delete;
     requests_list& operator=(const requests_list<Pipeline, Request>&) = delete;
     requests_list(requests_list<Pipeline, Request>&&) noexcept = default;
-    requests_list& operator=(requests_list<Pipeline, Request>&&) noexcept
-      = default;
+    requests_list&
+    operator=(requests_list<Pipeline, Request>&&) noexcept = default;
 
     // Intrusive list of pending requests
     intrusive_request_list<Request> requests;
@@ -96,11 +96,11 @@ public:
       , _stages(max_pipeline_stages) {}
     ~base_pipeline() = default;
     base_pipeline(const base_pipeline<Request, Derived, Clock>&) = delete;
-    base_pipeline& operator=(const base_pipeline<Request, Derived, Clock>&)
-      = delete;
+    base_pipeline&
+    operator=(const base_pipeline<Request, Derived, Clock>&) = delete;
     base_pipeline(base_pipeline<Request, Derived, Clock>&&) noexcept = delete;
-    base_pipeline& operator=(base_pipeline<Request, Derived, Clock>&&) noexcept
-      = delete;
+    base_pipeline&
+    operator=(base_pipeline<Request, Derived, Clock>&&) noexcept = delete;
 
     /// Subscribe to events of certain type
     ///

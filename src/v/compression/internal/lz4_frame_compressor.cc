@@ -158,8 +158,9 @@ iobuf lz4_frame_compressor::compress_with_block_size(
         output_cursor += code;
     }
 
-    if (const auto sz_for_compress_end = LZ4F_compressBound(0, &prefs);
-        output_sz - output_cursor < sz_for_compress_end) {
+    if (
+      const auto sz_for_compress_end = LZ4F_compressBound(0, &prefs);
+      output_sz - output_cursor < sz_for_compress_end) {
         obuf.trim(output_cursor);
         ret.append(std::move(obuf));
         obuf = ss::temporary_buffer<char>(sz_for_compress_end);

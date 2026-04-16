@@ -414,19 +414,6 @@ void source_topic_syncer::enqueue_create_mirror_topic_commands(
             continue;
         }
 
-        // Cloud topics cannot be mirrored via cluster linking.
-        auto storage_mode_it = configs->find(
-          ss::sstring(kafka::topic_property_redpanda_storage_mode));
-        if (
-          storage_mode_it != configs->end()
-          && storage_mode_it->second == "cloud") {
-            vlog(
-              logger().info,
-              "Skipping topic {} with redpanda.storage.mode=cloud",
-              describe_result.resource_name);
-            continue;
-        }
-
         commands.emplace_back(
           model::add_mirror_topic_cmd{
             .topic = it->first,
@@ -541,27 +528,6 @@ void source_topic_syncer::enqueue_update_mirror_topic_commands(
 
         auto configs = validate_and_get_configs_from_response(
           logger(), describe_result);
-
-        // If the source topic was changed to cloud storage mode, mark the
-        // mirror topic as failed — cloud topics cannot be mirrored.
-        if (configs.has_value()) {
-            auto storage_mode_it = configs->find(
-              ss::sstring(kafka::topic_property_redpanda_storage_mode));
-            if (
-              storage_mode_it != configs->end()
-              && storage_mode_it->second == "cloud") {
-                vlog(
-                  logger().info,
-                  "Topic {} redpanda.storage.mode=cloud, marking as failed",
-                  topic);
-                commands.emplace_back(
-                  model::update_mirror_topic_status_cmd{
-                    .topic = topic,
-                    .status = model::mirror_topic_status::failed,
-                  });
-                continue;
-            }
-        }
 
         if (configs.has_value()) {
             // Now check to see if the the properties on the topic have differed
@@ -758,10 +724,11 @@ source_topic_syncer::find_candidate_topics_for_creation(
             continue;
         }
 
-        if (get_link()
-              ->topic_metadata_cache()
-              .find_topic_cfg({::model::kafka_namespace, topic})
-              .has_value()) {
+        if (
+          get_link()
+            ->topic_metadata_cache()
+            .find_topic_cfg({::model::kafka_namespace, topic})
+            .has_value()) {
             if (topic == ::model::schema_registry_internal_tp.topic) {
                 // It is possible that the _schemas topic already exists.  The
                 // Schema Registry service will create the topic if it doesn't

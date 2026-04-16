@@ -190,9 +190,9 @@ ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
 
 ss::future<> log_manager::start() {
     _probe->setup_metrics();
-    if (unlikely(
-          config::shard_local_cfg()
-            .log_disable_housekeeping_for_tests.value())) {
+    if (
+      unlikely(
+        config::shard_local_cfg().log_disable_housekeeping_for_tests.value())) {
         co_return;
     }
 
@@ -216,8 +216,8 @@ ss::future<> log_manager::stop() {
     _gc_sem.broken();
 
     co_await _gate.close();
-    co_await ss::coroutine::parallel_for_each(
-      _logs, [this](logs_type::value_type& entry) -> ss::future<> {
+    co_await ss::max_concurrent_for_each(
+      _logs, 128, [this](logs_type::value_type& entry) -> ss::future<> {
           auto close_fut = entry.second->housekeeping_gate.close();
           return clean_close(entry.second->handle)
             .then(
@@ -869,9 +869,10 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
 
 std::optional<batch_cache_index>
 log_manager::create_cache(with_cache ntp_cache_enabled) {
-    if (unlikely(
-          _config.cache == with_cache::no
-          || ntp_cache_enabled == with_cache::no)) {
+    if (
+      unlikely(
+        _config.cache == with_cache::no
+        || ntp_cache_enabled == with_cache::no)) {
         return std::nullopt;
     }
 

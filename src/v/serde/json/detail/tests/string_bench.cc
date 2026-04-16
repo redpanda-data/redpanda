@@ -39,8 +39,7 @@ void run_bench(std::string_view seed) {
         // Start and end of JSON string.
         *buffers[0].get_write() = '"';
         *(buffers[buffers_count - 1].get_write()
-          + buffers[buffers_count - 1].size() - 1)
-          = '"';
+          + buffers[buffers_count - 1].size() - 1) = '"';
     }
 
     string_parser p;

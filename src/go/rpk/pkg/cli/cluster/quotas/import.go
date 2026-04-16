@@ -151,7 +151,6 @@ func responseToDescribed(quotas describeResponse) ([]kadm.DescribedClientQuota, 
 			values []kadm.ClientQuotaValue
 		)
 		for _, e := range q.Entity {
-			e := e
 			entity = append(entity, kadm.ClientQuotaEntityComponent{
 				Type: e.Type,
 				Name: &e.Name,

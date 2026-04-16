@@ -69,6 +69,9 @@ public:
       model::record_batch,
       raft::replicate_options) final;
 
+    std::unique_ptr<exact_offset_replicator> make_exact_offset_replicator()
+      && final;
+
     ss::future<storage::translating_reader>
     make_reader(kafka::log_reader_config cfg) final;
 

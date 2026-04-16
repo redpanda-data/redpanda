@@ -167,7 +167,7 @@ std::ostream& operator<<(std::ostream& o, s3_error_code code);
 std::istream& operator>>(std::istream& i, s3_error_code& code);
 
 /// Error received in a response from the server
-class rest_error_response : std::exception {
+class rest_error_response : public std::exception {
 public:
     rest_error_response(
       std::string_view code,

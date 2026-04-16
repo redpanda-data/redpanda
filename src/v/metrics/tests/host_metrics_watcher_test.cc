@@ -189,4 +189,93 @@ UdpLite: 0 0 0 0 0 0 0 0 0
     ASSERT_EQ(stats.packets_sent, 40889375);
 }
 
+TEST(DiskStatsParser, ParseDiskStatsWithFiltering) {
+    std::string_view diskstats = R""""(
+ 259       0 nvme0n1 26762678 20908 1428918348 3325593 26050590 3838657 2151727147 62187634 0 12832786 96772628 375506 274438 6540552016 27659340 958797 3600058
+ 259       1 nvme0n1p1 1182 1570 22668 1480 2 0 2 0 0 8279 9695 28 0 8307432 8215 0 0
+ 8         0 sda 1000000 1000 50000000 100000 2000000 2000 100000000 200000 0 150000 300000 500 500 25000000 10000 0 0
+ 8         1 sda1 500000 500 25000000 50000 1000000 1000 50000000 100000 0 75000 150000 250 250 12500000 5000 0 0
+ 253       0 dm-0 1217871 0 42450873 168534 6682917 0 267304519 81228952 0 9277885 127118565 66000 0 1199395944 45721079 0 0
+)"""";
+
+    // Test with no filtering (backward compatibility)
+    host_metrics_watcher::diskstats_map disk_stats_all;
+    std::unordered_set<ss::sstring> no_filter;
+    host_metrics_watcher::parse_diskstats(diskstats, disk_stats_all, no_filter);
+
+    ASSERT_EQ(disk_stats_all.size(), 5);
+    ASSERT_TRUE(disk_stats_all.contains("nvme0n1"));
+    ASSERT_TRUE(disk_stats_all.contains("nvme0n1p1"));
+    ASSERT_TRUE(disk_stats_all.contains("sda"));
+    ASSERT_TRUE(disk_stats_all.contains("sda1"));
+    ASSERT_TRUE(disk_stats_all.contains("dm-0"));
+
+    // Test with filtering for nvme0n1 only
+    host_metrics_watcher::diskstats_map disk_stats_nvme;
+    std::unordered_set<ss::sstring> nvme_filter = {"nvme0n1"};
+    host_metrics_watcher::parse_diskstats(
+      diskstats, disk_stats_nvme, nvme_filter);
+
+    ASSERT_EQ(disk_stats_nvme.size(), 1);
+    ASSERT_TRUE(disk_stats_nvme.contains("nvme0n1"));
+    ASSERT_FALSE(disk_stats_nvme.contains("nvme0n1p1"));
+    ASSERT_FALSE(disk_stats_nvme.contains("sda"));
+    ASSERT_EQ(disk_stats_nvme["nvme0n1"][0], 26762678);
+
+    // Test with filtering for multiple devices
+    host_metrics_watcher::diskstats_map disk_stats_multi;
+    std::unordered_set<ss::sstring> multi_filter = {"nvme0n1", "sda"};
+    host_metrics_watcher::parse_diskstats(
+      diskstats, disk_stats_multi, multi_filter);
+
+    ASSERT_EQ(disk_stats_multi.size(), 2);
+    ASSERT_TRUE(disk_stats_multi.contains("nvme0n1"));
+    ASSERT_TRUE(disk_stats_multi.contains("sda"));
+    ASSERT_FALSE(disk_stats_multi.contains("nvme0n1p1"));
+    ASSERT_FALSE(disk_stats_multi.contains("sda1"));
+    ASSERT_FALSE(disk_stats_multi.contains("dm-0"));
+
+    // Test with filtering for non-existent device
+    host_metrics_watcher::diskstats_map disk_stats_none;
+    std::unordered_set<ss::sstring> nonexistent_filter = {"vda"};
+    host_metrics_watcher::parse_diskstats(
+      diskstats, disk_stats_none, nonexistent_filter);
+
+    ASSERT_EQ(disk_stats_none.size(), 0);
+}
+
+TEST(DiskStatsParser, ParseDiskStatsValuesNonZero) {
+    // This test verifies that disk stats contain reasonable non-zero values
+    std::string_view diskstats = R""""(
+ 259       0 nvme0n1 26762678 20908 1428918348 3325593 26050590 3838657 2151727147 62187634 0 12832786 96772628 375506 274438 6540552016 27659340 958797 3600058
+)"""";
+
+    host_metrics_watcher::diskstats_map disk_stats;
+    host_metrics_watcher::parse_diskstats(diskstats, disk_stats);
+
+    ASSERT_EQ(disk_stats.size(), 1);
+    ASSERT_TRUE(disk_stats.contains("nvme0n1"));
+
+    const auto& stats = disk_stats["nvme0n1"];
+    ASSERT_EQ(stats.size(), 17);
+
+    ASSERT_EQ(stats[0], 26762678);    // reads
+    ASSERT_EQ(stats[1], 20908);       // reads_merged
+    ASSERT_EQ(stats[2], 1428918348);  // sectors_read
+    ASSERT_EQ(stats[3], 3325593);     // reads_ms
+    ASSERT_EQ(stats[4], 26050590);    // writes
+    ASSERT_EQ(stats[5], 3838657);     // writes_merged
+    ASSERT_EQ(stats[6], 2151727147);  // sectors_written
+    ASSERT_EQ(stats[7], 62187634);    // writes_ms
+    ASSERT_EQ(stats[8], 0);           // io_in_progress
+    ASSERT_EQ(stats[9], 12832786);    // io_ms
+    ASSERT_EQ(stats[10], 96772628);   // io_weighted_ms
+    ASSERT_EQ(stats[11], 375506);     // discards
+    ASSERT_EQ(stats[12], 274438);     // discards_merged
+    ASSERT_EQ(stats[13], 6540552016); // sectors_discarded
+    ASSERT_EQ(stats[14], 27659340);   // discards_ms
+    ASSERT_EQ(stats[15], 958797);     // flush_requests
+    ASSERT_EQ(stats[16], 3600058);    // flush_ms
+}
+
 } // namespace metrics

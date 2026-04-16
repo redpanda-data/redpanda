@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/oncore.h"
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/types.h"
@@ -63,9 +64,10 @@ private:
     std::optional<tagged_fields> _tags;
     iobuf _buf;
     protocol::encoder _writer;
+    oncore_auto _oncore;
 };
 
-using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
+using response_ptr = std::unique_ptr<response>;
 
 struct process_result_stages {
     process_result_stages(

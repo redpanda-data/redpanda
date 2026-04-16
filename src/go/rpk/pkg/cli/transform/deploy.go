@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"strconv"
 	"strings"
@@ -180,15 +181,15 @@ type environment struct {
 }
 
 func (e *environment) Set(s string) error {
-	i := strings.IndexByte(s, '=')
-	if i == -1 {
+	before, after, ok := strings.Cut(s, "=")
+	if !ok {
 		return errors.New("missing value")
 	}
-	k := s[:i]
+	k := before
 	if k == "" {
 		return errors.New("missing key")
 	}
-	v := s[i+1:]
+	v := after
 	if v == "" {
 		return errors.New("missing value")
 	}
@@ -244,14 +245,10 @@ func mergeProjectConfigs(lhs project.Config, rhs project.Config) (out project.Co
 	// precedence over the config file.
 	m := map[string]string{}
 	if lhs.Env != nil {
-		for k, v := range lhs.Env {
-			m[k] = v
-		}
+		maps.Copy(m, lhs.Env)
 	}
 	if rhs.Env != nil {
-		for k, v := range rhs.Env {
-			m[k] = v
-		}
+		maps.Copy(m, rhs.Env)
 	}
 	out.Env = m
 	if rhs.InputTopic != "" {

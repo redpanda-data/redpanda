@@ -30,6 +30,10 @@ public interface KafkaMessagingInterface {
    *     dependencies
    * @param useLatestVersion   Whether to use the latest schema version for
    *     lookup
+   * @param contextNameStrategy Fully qualified class name of the
+   *     ContextNameStrategy to use (may be null)
+   * @param contextName Context name to pass to the ContextNameStrategy
+   *     (may be null)
    * @return Instance of Properties
    *
    * @see java.util.Properties
@@ -38,7 +42,7 @@ public interface KafkaMessagingInterface {
   Properties getProducerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
       boolean autoRegisterSchema, boolean skipKnownTypes,
-      boolean useLatestVersion);
+      boolean useLatestVersion, String contextNameStrategy, String contextName);
 
   /**
    * Generates properties for a Kafka consumer
@@ -48,6 +52,10 @@ public interface KafkaMessagingInterface {
    * @param securitySettings The security settings (may be null)
    * @param consumerGroup The consumer group to use
    * @param useLatestVersion Whether to use the latest schema version for lookup
+   * @param contextNameStrategy Fully qualified class name of the
+   *     ContextNameStrategy to use (may be null)
+   * @param contextName Context name to pass to the ContextNameStrategy
+   *     (may be null)
    * @return Instance of Properties
    *
    * @see java.util.Properties
@@ -55,7 +63,8 @@ public interface KafkaMessagingInterface {
    */
   Properties getConsumerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
-      String consumerGroup, boolean useLatestVersion);
+      String consumerGroup, boolean useLatestVersion,
+      String contextNameStrategy, String contextName);
 
   /**
    * Tests production of messages

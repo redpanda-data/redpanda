@@ -114,7 +114,7 @@ public:
 
     std::optional<cluster_epoch> get_max_epoch() const;
 
-    std::optional<cluster_epoch> get_max_seen_epoch() const;
+    std::optional<cluster_epoch> get_max_seen_epoch(model::term_id) const;
 
     l0::producer_queue& producer_queue();
 

@@ -515,6 +515,18 @@ TEST_P(StateUpdateParamTest, TestDuplicateAddSingleUpdate) {
     EXPECT_FALSE(res.has_value());
 }
 
+TEST_P(StateUpdateParamTest, TestAddRejectsInvertedExtent) {
+    // An extent with base_offset > last_offset should be rejected.
+    auto update = add_objects_builder()
+                    .add(new_obj_builder(oid1, 100, 1100)
+                           .add(tidp_a, 10_o, 5_o, 1999_t, 0, 99)
+                           .build())
+                    .add_term_start(tidp_a, 0_tm, 10_o)
+                    .build();
+    auto res = can_apply_add_objects(std::move(update));
+    EXPECT_FALSE(res.has_value());
+}
+
 TEST_P(StateUpdateParamTest, TestStartAfterZero) {
     auto update = add_objects_builder()
                     .add(new_obj_builder(oid1, 100, 1100)
@@ -815,6 +827,26 @@ TEST_P(StateUpdateParamTest, TestReplaceBadOrdering) {
                             .build())
                      .build();
 
+    auto replace_res = apply_replace_objects(std::move(replace));
+    EXPECT_FALSE(replace_res.has_value());
+}
+
+TEST_P(StateUpdateParamTest, TestReplaceRejectsInvertedExtent) {
+    auto add = add_objects_builder()
+                 .add(new_obj_builder(oid1, 100, 1100)
+                        .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
+                        .build())
+                 .add_term_start(tidp_a, 0_tm, 0_o)
+                 .build();
+    auto add_res = apply_add_objects(std::move(add));
+    ASSERT_TRUE(add_res.has_value());
+
+    // Replacement with an inverted extent should be rejected.
+    auto replace = replace_objects_builder()
+                     .add(new_obj_builder(oid2, 100, 1100)
+                            .add(tidp_a, 10_o, 0_o, 1999_t, 0, 99)
+                            .build())
+                     .build();
     auto replace_res = apply_replace_objects(std::move(replace));
     EXPECT_FALSE(replace_res.has_value());
 }

@@ -258,18 +258,6 @@ void probe::setup_metrics(const model::ntp& ntp) {
       },
       {},
       {sm::shard_label, metrics::partition_label});
-
-    _metrics.add_group(
-      group_name,
-      {
-        // compaction_ratio cannot easily be aggregated since aggregation always
-        // sums values and sum is nonsensical for a compaction ratio
-        sm::make_total_bytes(
-          "compaction_ratio",
-          [this] { return _compaction_ratio; },
-          sm::description("Average segment compaction ratio"),
-          labels),
-      });
 }
 
 void probe::add_initial_segment(const segment& s) {

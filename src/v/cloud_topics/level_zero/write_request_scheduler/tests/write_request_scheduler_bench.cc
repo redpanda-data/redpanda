@@ -80,7 +80,7 @@ struct pipeline_sink {
             auto result = stage.pull_write_requests(
               std::numeric_limits<size_t>::max());
             for (auto& r : result.requests) {
-                r.set_value(chunked_vector<extent_meta>{});
+                r.set_value(upload_meta{});
             }
         }
     }

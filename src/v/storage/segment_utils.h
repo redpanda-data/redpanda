@@ -334,8 +334,9 @@ inline bool can_discard(
   bool past_tombstone_delete_horizon,
   bool past_tx_delete_horizon,
   bool tx_batch_compaction_enabled) {
-    if (compaction::is_removable_control_batch(
-          ntp, b.header().type, tx_batch_compaction_enabled)) {
+    if (
+      compaction::is_removable_control_batch(
+        ntp, b.header().type, tx_batch_compaction_enabled)) {
         return true;
     }
 
@@ -409,13 +410,14 @@ ss::future<bool> should_keep(
     // Before considering `is_latest_key()`, remove
     // records/batches which are always considered removable as well as expired
     // tombstone records/control batches.
-    if (can_discard(
-          b,
-          r,
-          ntp,
-          past_tombstone_delete_horizon,
-          past_tx_delete_horizon,
-          tx_batch_compaction_enabled)) {
+    if (
+      can_discard(
+        b,
+        r,
+        ntp,
+        past_tombstone_delete_horizon,
+        past_tx_delete_horizon,
+        tx_batch_compaction_enabled)) {
         if (is_tombstone) {
             pb.add_removed_tombstone();
         }

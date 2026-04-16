@@ -21,8 +21,9 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
         auto& partition = *it->partition;
         model::kitp_view kitp(topic.topic_id, topic.topic, partition.partition);
 
-        if (auto s_it = session.partitions().find(kitp);
-            s_it != session.partitions().end()) {
+        if (
+          auto s_it = session.partitions().find(kitp);
+          s_it != session.partitions().end()) {
             s_it->second->partition.max_bytes = partition.partition_max_bytes;
             s_it->second->partition.fetch_offset = partition.fetch_offset;
             s_it->second->partition.current_leader_epoch
@@ -137,9 +138,10 @@ fetch_session_cache::maybe_get_session(const fetch_request& req) {
 
 // we split whole range from 1 to max int32_t betewen all shards
 std::optional<fetch_session_id> fetch_session_cache::new_session_id() {
-    if (unlikely(
-          mem_usage() > max_mem_usage
-          || _sessions.size() > max_sessions_per_core())) {
+    if (
+      unlikely(
+        mem_usage() > max_mem_usage
+        || _sessions.size() > max_sessions_per_core())) {
         return std::nullopt;
     }
 

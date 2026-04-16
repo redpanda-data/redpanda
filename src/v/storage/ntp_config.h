@@ -446,8 +446,19 @@ public:
             return false;
         }
         return _overrides
+               && (_overrides->storage_mode
+                     == model::redpanda_storage_mode::cloud
+                   || _overrides->storage_mode
+                        == model::redpanda_storage_mode::tiered_cloud);
+    }
+
+    bool is_tiered_cloud() const {
+        if (!config::shard_local_cfg().cloud_topics_enabled()) {
+            return false;
+        }
+        return _overrides
                && _overrides->storage_mode
-                    == model::redpanda_storage_mode::cloud;
+                    == model::redpanda_storage_mode::tiered_cloud;
     }
 
     std::optional<double> min_cleanable_dirty_ratio() const {

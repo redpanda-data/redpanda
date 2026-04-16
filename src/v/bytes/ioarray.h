@@ -86,6 +86,16 @@ public:
     // `max_chunk_size` and that size is a multiple of alignment.
     static ioarray aligned(size_t alignment, size_t size);
 
+    // Concatenate two ioarrays. Both inputs are consumed.
+    //
+    // Fast path (zero-copy): when a's data ends on a chunk boundary
+    // (offset + size is a multiple of max_chunk_size) and b has offset 0,
+    // the underlying buffers are moved directly.
+    //
+    // Slow path (copy): otherwise, both arrays are copied byte-by-byte into
+    // a fresh ioarray.
+    static ioarray concat(ioarray a, ioarray b);
+
     // Create the ioarray from copying out of an iobuf.
     //
     // NOTE: This intended to be used for testing.

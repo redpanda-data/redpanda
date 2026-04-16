@@ -55,5 +55,5 @@ licenses           @emaxerrno
 #
 # automatically tag docs team and API reviewers for any changes to our public proto files
 #
-/proto/redpanda/core/admin/v2/*.proto    @redpanda-data/documentation @rockwotj @redpanda-data/core-enterprise
-/proto/redpanda/core/common/*.proto      @redpanda-data/documentation @rockwotj @redpanda-data/core-enterprise
+/proto/redpanda/core/admin/v2/*.proto    @redpanda-data/documentation @redpanda-data/core-enterprise
+/proto/redpanda/core/common/*.proto      @redpanda-data/documentation @redpanda-data/core-enterprise

@@ -28,11 +28,13 @@ enum class storage_mode_mask : uint8_t {
     local = 1 << 0,
     tiered = 1 << 1,
     cloud = 1 << 2,
-    unset = 1 << 3,
+    tiered_cloud = 1 << 3,
+    unset = 1 << 4,
     // Common combinations
     local_tiered = local | tiered,
-    tiered_cloud = tiered | cloud,
-    all = local | tiered | cloud | unset,
+    tiered_and_cloud = tiered | cloud,
+    cloud_family = cloud | tiered_cloud,
+    all = local | tiered | cloud | tiered_cloud | unset,
 };
 
 constexpr storage_mode_mask
@@ -89,12 +91,19 @@ inline constexpr auto storage_mode_properties
     {topic_property_record_value_subject_name_strategy_compat,
      storage_mode_mask::all},
 
-    // Properties valid for local and tiered only (NOT cloud)
-    {topic_property_flush_bytes, storage_mode_mask::local_tiered},
-    {topic_property_flush_ms, storage_mode_mask::local_tiered},
-    {topic_property_segment_size, storage_mode_mask::local_tiered},
-    {topic_property_segment_ms, storage_mode_mask::local_tiered},
-    {topic_property_write_caching, storage_mode_mask::local_tiered},
+    // Properties valid for local, tiered, and tiered_cloud (NOT cloud).
+    // In tiered_cloud mode data goes through raft and local storage,
+    // so segment and flush settings apply.
+    {topic_property_flush_bytes,
+     storage_mode_mask::local_tiered | storage_mode_mask::tiered_cloud},
+    {topic_property_flush_ms,
+     storage_mode_mask::local_tiered | storage_mode_mask::tiered_cloud},
+    {topic_property_segment_size,
+     storage_mode_mask::local_tiered | storage_mode_mask::tiered_cloud},
+    {topic_property_segment_ms,
+     storage_mode_mask::local_tiered | storage_mode_mask::tiered_cloud},
+    {topic_property_write_caching,
+     storage_mode_mask::local_tiered | storage_mode_mask::tiered_cloud},
 
     // Properties valid for tiered only
     {topic_property_initial_retention_local_target_bytes,
@@ -108,14 +117,20 @@ inline constexpr auto storage_mode_properties
     {topic_property_remote_allow_gaps, storage_mode_mask::tiered},
 
     // Properties valid for tiered and cloud only (NOT local)
-    {topic_property_iceberg_mode, storage_mode_mask::tiered_cloud},
-    {topic_property_iceberg_delete, storage_mode_mask::tiered_cloud},
-    {topic_property_iceberg_partition_spec, storage_mode_mask::tiered_cloud},
+    {topic_property_iceberg_mode,
+     storage_mode_mask::tiered_and_cloud | storage_mode_mask::tiered_cloud},
+    {topic_property_iceberg_delete,
+     storage_mode_mask::tiered_and_cloud | storage_mode_mask::tiered_cloud},
+    {topic_property_iceberg_partition_spec,
+     storage_mode_mask::tiered_and_cloud | storage_mode_mask::tiered_cloud},
     {topic_property_iceberg_invalid_record_action,
-     storage_mode_mask::tiered_cloud},
-    {topic_property_iceberg_target_lag_ms, storage_mode_mask::tiered_cloud},
-    {topic_property_remote_delete, storage_mode_mask::tiered_cloud},
-    {topic_property_read_replica, storage_mode_mask::tiered_cloud},
+     storage_mode_mask::tiered_and_cloud | storage_mode_mask::tiered_cloud},
+    {topic_property_iceberg_target_lag_ms,
+     storage_mode_mask::tiered_and_cloud | storage_mode_mask::tiered_cloud},
+    {topic_property_remote_delete,
+     storage_mode_mask::tiered_and_cloud | storage_mode_mask::tiered_cloud},
+    {topic_property_read_replica,
+     storage_mode_mask::tiered_and_cloud | storage_mode_mask::tiered_cloud},
   });
 
 // Convert a storage mode enum to its corresponding mask bit
@@ -128,6 +143,8 @@ storage_mode_to_mask(model::redpanda_storage_mode mode) {
         return storage_mode_mask::tiered;
     case model::redpanda_storage_mode::cloud:
         return storage_mode_mask::cloud;
+    case model::redpanda_storage_mode::tiered_cloud:
+        return storage_mode_mask::tiered_cloud;
     case model::redpanda_storage_mode::unset:
         return storage_mode_mask::unset;
     }
@@ -187,6 +204,16 @@ get_valid_storage_modes_string(std::string_view property_name) {
                     result += ", ";
                 }
                 result += "cloud";
+                first = false;
+            }
+            if (
+              (entry.valid_modes & storage_mode_mask::tiered_cloud)
+              != storage_mode_mask::none) {
+                if (!first) {
+                    result += ", ";
+                }
+                result += "tiered_cloud";
+                first = false;
             }
             return result;
         }

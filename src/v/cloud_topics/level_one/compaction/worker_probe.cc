@@ -53,7 +53,7 @@ void compaction_worker_probe::setup_metrics() {
             "Number of tombstone records removed across all cloud topic "
             "partitions on this shard")),
         sm::make_histogram(
-          "compaction_duration_seconds",
+          "compaction_duration_microseconds",
           [this] { return _compaction_runs.internal_histogram_logform(); },
           sm::description(
             "The duration of a compaction run for cloud topic partitions on "

@@ -238,9 +238,10 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     // When making RPC call we make sure that we do not check the state of the
     // current shard, because recovery is in starting state here.
-    if (co_await _topic_recovery_status_frontend.local().is_recovery_running(
-          container(),
-          cluster::topic_recovery_status_frontend::skip_this_node::yes)) {
+    if (
+      co_await _topic_recovery_status_frontend.local().is_recovery_running(
+        container(),
+        cluster::topic_recovery_status_frontend::skip_this_node::yes)) {
         vlog(cst_log.warn, "A recovery is already active");
         _state = state::inactive;
         co_return recovery_error_ctx::make(

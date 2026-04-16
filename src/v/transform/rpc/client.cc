@@ -134,9 +134,11 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
           ss::futurize_invoke(func));
         backoff.next_backoff();
         if (fut.failed()) {
-            if (attempts < max_client_retries) {
+            if (attempts >= max_client_retries) {
                 co_return co_await std::move(fut);
             }
+            auto ex = fut.get_exception();
+            vlog(log.debug, "Retrying after error: {}", ex);
             continue;
         }
         result_type r = fut.get();
@@ -549,8 +551,9 @@ ss::future<std::optional<model::node_id>>
 client::compute_wasm_binary_ntp_leader() {
     auto leader = _leaders->get_leader_node(model::wasm_binaries_internal_ntp);
     if (!leader.has_value()) {
-        if (_topic_metadata->find_topic_cfg(
-              model::topic_namespace_view(model::wasm_binaries_internal_ntp))) {
+        if (
+          _topic_metadata->find_topic_cfg(
+            model::topic_namespace_view(model::wasm_binaries_internal_ntp))) {
             co_return std::nullopt;
         }
         bool success = co_await try_create_wasm_binary_ntp();

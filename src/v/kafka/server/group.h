@@ -860,18 +860,20 @@ private:
     bool has_transactions_in_progress() const;
 
     bool has_pending_transaction(const model::topic_partition& tp) {
-        if (std::any_of(
-              _pending_offset_commits.begin(),
-              _pending_offset_commits.end(),
-              [&tp](const auto& tp_info) { return tp_info.first == tp; })) {
+        if (
+          std::any_of(
+            _pending_offset_commits.begin(),
+            _pending_offset_commits.end(),
+            [&tp](const auto& tp_info) { return tp_info.first == tp; })) {
             return true;
         }
 
-        if (std::any_of(
-              _producers.begin(), _producers.end(), [&tp](const auto& p) {
-                  return p.second.transaction
-                         && p.second.transaction->offsets.contains(tp);
-              })) {
+        if (
+          std::any_of(
+            _producers.begin(), _producers.end(), [&tp](const auto& p) {
+                return p.second.transaction
+                       && p.second.transaction->offsets.contains(tp);
+            })) {
             return true;
         }
 

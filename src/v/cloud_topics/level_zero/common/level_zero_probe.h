@@ -52,6 +52,7 @@ public:
         _memory_pressure_blocked += mem;
         return ss::defer([this, mem] { _memory_pressure_blocked -= mem; });
     }
+    void register_request_limit_blocked() { ++_request_limit_waits; }
     void register_bytes_in(uint64_t bytes) {
         _total_bytes_in += bytes;
         _request_memory_histogram.record(bytes);
@@ -80,6 +81,8 @@ private:
     uint64_t _memory_pressure_waits{0};
     // memory pressure (memory blocked by waiting for semaphore)
     uint64_t _memory_pressure_blocked{0};
+    // request count limit pressure (req. waits for inflight slot)
+    uint64_t _request_limit_waits{0};
     // total bytes in (for write pipeline)
     uint64_t _total_bytes_in{0};
     // total bytes out (for read pipeline)

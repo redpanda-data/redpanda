@@ -52,8 +52,8 @@ private:
         operator=(const GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) &)  \
           = delete; /* NOLINT */                                               \
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)                     \
-        (GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) &&) noexcept       \
-          = delete;                                                            \
+        (GTEST_TEST_CLASS_NAME_(                                               \
+          test_suite_name, test_name) &&) noexcept = delete;                   \
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) & operator=(        \
           GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) &&) noexcept      \
           = delete; /* NOLINT */                                               \
@@ -65,29 +65,29 @@ private:
     };                                                                         \
                                                                                \
     constexpr auto GTEST_CONCAT_TOKEN_(                                        \
-      GTEST_TEST_CLASS_NAME_(test_suite_name, test_name), _init)               \
-      = []() noexcept {                                                        \
-            try {                                                              \
-                /* NOLINTNEXTLINE(cppcoreguidelines-owning-memory) */          \
-                auto test_factory = new ::testing::internal::TestFactoryImpl<  \
-                  GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)>;         \
-                return ::testing::internal::MakeAndRegisterTestInfo(           \
-                  #test_suite_name,                                            \
-                  #test_name,                                                  \
-                  nullptr,                                                     \
-                  nullptr,                                                     \
-                  ::testing::internal::CodeLocation(__FILE__, __LINE__),       \
-                  (parent_id),                                                 \
-                  ::testing::internal::SuiteApiResolver<                       \
-                    parent_class>::GetSetUpCaseOrSuite(__FILE__, __LINE__),    \
-                  ::testing::internal::SuiteApiResolver<                       \
-                    parent_class>::GetTearDownCaseOrSuite(__FILE__, __LINE__), \
-                  test_factory);                                               \
-            } catch (...) {                                                    \
-                std::print(std::cerr, "Unknown exception during test init.");  \
-                std::terminate();                                              \
-            }                                                                  \
-        };                                                                     \
+      GTEST_TEST_CLASS_NAME_(test_suite_name, test_name),                      \
+      _init) = []() noexcept {                                                 \
+        try {                                                                  \
+            /* NOLINTNEXTLINE(cppcoreguidelines-owning-memory) */              \
+            auto test_factory = new ::testing::internal::TestFactoryImpl<      \
+              GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)>;             \
+            return ::testing::internal::MakeAndRegisterTestInfo(               \
+              #test_suite_name,                                                \
+              #test_name,                                                      \
+              nullptr,                                                         \
+              nullptr,                                                         \
+              ::testing::internal::CodeLocation(__FILE__, __LINE__),           \
+              (parent_id),                                                     \
+              ::testing::internal::SuiteApiResolver<                           \
+                parent_class>::GetSetUpCaseOrSuite(__FILE__, __LINE__),        \
+              ::testing::internal::SuiteApiResolver<                           \
+                parent_class>::GetTearDownCaseOrSuite(__FILE__, __LINE__),     \
+              test_factory);                                                   \
+        } catch (...) {                                                        \
+            std::print(std::cerr, "Unknown exception during test init.");      \
+            std::terminate();                                                  \
+        }                                                                      \
+    };                                                                         \
     ::testing::TestInfo* const GTEST_TEST_CLASS_NAME_(                         \
       test_suite_name, test_name)::test_info_                                  \
       = GTEST_CONCAT_TOKEN_(                                                   \
@@ -139,8 +139,8 @@ private:
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)                     \
         (GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) const&) = delete;  \
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) &                   \
-        operator=(GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) const&)   \
-          = delete;                                                            \
+        operator=(GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)           \
+                    const&) = delete;                                          \
     };                                                                         \
     int GTEST_TEST_CLASS_NAME_(                                                \
       test_suite_name, test_name)::gtest_registering_dummy_                    \

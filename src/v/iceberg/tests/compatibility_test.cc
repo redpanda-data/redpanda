@@ -686,12 +686,13 @@ static const std::vector<struct_evolution_test_case> valid_cases{
       [](const struct_type& src, const struct_type& dst) {
           bool all_updated = true;
 
-          if (auto res = for_each_field(
-                dst,
-                [&all_updated](const nested_field* f) {
-                    all_updated = all_updated && updated(*f);
-                });
-              res.has_error()) {
+          if (
+            auto res = for_each_field(
+              dst,
+              [&all_updated](const nested_field* f) {
+                  all_updated = all_updated && updated(*f);
+              });
+            res.has_error()) {
               return false;
           }
 

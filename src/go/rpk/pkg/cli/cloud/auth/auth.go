@@ -38,6 +38,7 @@ only use a single SSO based login.
 		newEditCommand(fs, p),
 		newListCommand(fs, p),
 		newRenameToCommand(fs, p),
+		newTokenCommand(fs, p),
 		newUseCommand(fs, p),
 	)
 

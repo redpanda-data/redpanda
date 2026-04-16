@@ -33,6 +33,10 @@ default_scheduling_group_provider(const connection_context&) {
     return std::nullopt;
 }
 
+// Whether a handler should have a per-handler latency histogram registered.
+// Only enable for very important common methods.
+enum class latency_hist : bool { no = false, yes = true };
+
 /**
  * Handlers are generally specializations of this template, via one of the
  * two aliases (handler or two_phase_hander) declared below, though it is
@@ -48,11 +52,14 @@ template<
   api_version::type MaxSupported,
   typename HandleRetType,
   memory_estimate_fn MemEstimator,
-  scheduling_group_provider_fn SgProvider>
+  scheduling_group_provider_fn SgProvider,
+  latency_hist LatencyHistogram>
 struct handler_template {
     using api = RequestApi;
     static constexpr api_version min_supported = api_version(MinSupported);
     static constexpr api_version max_supported = api_version(MaxSupported);
+    static constexpr bool has_latency_histogram = LatencyHistogram
+                                                  == latency_hist::yes;
 
     static HandleRetType handle(request_context, ss::smp_service_group);
 
@@ -91,14 +98,16 @@ template<
   api_version::type MinSupported,
   api_version::type MaxSupported,
   memory_estimate_fn MemEstimator = default_estimate_adaptor,
-  scheduling_group_provider_fn SgProvider = default_scheduling_group_provider>
+  scheduling_group_provider_fn SgProvider = default_scheduling_group_provider,
+  latency_hist LatencyHistogram = latency_hist::no>
 using single_stage_handler = handler_template<
   RequestApi,
   MinSupported,
   MaxSupported,
   ss::future<response_ptr>,
   MemEstimator,
-  SgProvider>;
+  SgProvider,
+  LatencyHistogram>;
 
 /**
  * A two-stage handler has an initial stage which happens before any other
@@ -112,14 +121,16 @@ template<
   api_version::type MinSupported,
   api_version::type MaxSupported,
   memory_estimate_fn MemEstimator = default_estimate_adaptor,
-  scheduling_group_provider_fn SgProvider = default_scheduling_group_provider>
+  scheduling_group_provider_fn SgProvider = default_scheduling_group_provider,
+  latency_hist LatencyHistogram = latency_hist::no>
 using two_phase_handler = handler_template<
   RequestApi,
   MinSupported,
   MaxSupported,
   process_result_stages,
   MemEstimator,
-  SgProvider>;
+  SgProvider,
+  LatencyHistogram>;
 
 template<typename T>
 concept KafkaApiHandler

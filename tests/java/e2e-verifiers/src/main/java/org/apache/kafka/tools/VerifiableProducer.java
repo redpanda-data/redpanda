@@ -307,10 +307,12 @@ public class VerifiableProducer implements AutoCloseable {
     // explicitly specified to remain fully backward compatible with older
     // clients.
     if (createTime != null) {
-      record = new ProducerRecord<>(topic, null, createTime, key, value);
+      record
+      = new ProducerRecord<>(topic, null, createTime, key, value);
       createTime += System.currentTimeMillis() - startTime;
     } else {
-      record = new ProducerRecord<>(topic, key, value);
+      record
+      = new ProducerRecord<>(topic, key, value);
     }
 
     numSent++;

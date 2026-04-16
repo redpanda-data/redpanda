@@ -74,6 +74,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "readahead_file_reader",
+    srcs = ["readahead_file_reader.cc"],
+    hdrs = ["readahead_file_reader.h"],
+    deps = [
+        ":persistence",
+        "//src/v/bytes:ioarray",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "file_io",
     srcs = ["file_io.cc"],
     hdrs = ["file_io.h"],

@@ -55,8 +55,7 @@ public:
 
     /// Add write request to the pipeline
     /// The revision id is the topic creation revision id for the ntp.
-    ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
-    write_and_debounce(
+    ss::future<std::expected<upload_meta, std::error_code>> write_and_debounce(
       model::ntp ntp,
       cluster_epoch min_epoch,
       chunked_vector<model::record_batch> batches,
@@ -64,14 +63,16 @@ public:
 
     struct prepared_data {
         serialized_chunk data_chunk;
-        ss::semaphore_units<ss::named_semaphore_exception_factory, Clock> units;
+        ss::semaphore_units<ss::named_semaphore_exception_factory, Clock>
+          mem_units;
+        ss::semaphore_units<ss::named_semaphore_exception_factory, Clock>
+          req_units;
     };
 
     ss::future<std::expected<prepared_data, std::error_code>>
     prepare_write(chunked_vector<model::record_batch> batches);
 
-    ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
-    execute_write(
+    ss::future<std::expected<upload_meta, std::error_code>> execute_write(
       model::ntp ntp,
       cluster_epoch min_epoch,
       prepared_data prepped,
@@ -284,6 +285,7 @@ private:
     size_t _bytes_total{0};
     // Semaphore that represents memory budget that we have
     ssx::named_semaphore<Clock> _mem_budget;
+    ssx::named_semaphore<Clock> _req_budget;
 
     pipeline_probe _probe;
 };

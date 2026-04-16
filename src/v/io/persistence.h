@@ -74,20 +74,20 @@ public:
         /**
          * Required alignment for offsets being read.
          */
-        [[nodiscard]] virtual uint64_t disk_read_dma_alignment() const noexcept
-          = 0;
+        [[nodiscard]] virtual uint64_t
+        disk_read_dma_alignment() const noexcept = 0;
 
         /**
          * Required alignment for offsets being written.
          */
-        [[nodiscard]] virtual uint64_t disk_write_dma_alignment() const noexcept
-          = 0;
+        [[nodiscard]] virtual uint64_t
+        disk_write_dma_alignment() const noexcept = 0;
 
         /**
          * Required alignment for I/O memory.
          */
-        [[nodiscard]] virtual uint64_t memory_dma_alignment() const noexcept
-          = 0;
+        [[nodiscard]] virtual uint64_t
+        memory_dma_alignment() const noexcept = 0;
 
         /**
          * Arrange for the next invocation of \ref read to return an exceptional

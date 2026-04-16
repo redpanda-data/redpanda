@@ -146,9 +146,9 @@ struct timeout_spec {
      */
     static constexpr timeout_spec
     from_either(RpcDurationOrPoint auto point_or_duration) {
-        if constexpr (std::is_same<
-                        decltype(point_or_duration),
-                        clock_type::time_point>::value) {
+        if constexpr (
+          std::is_same<decltype(point_or_duration), clock_type::time_point>::
+            value) {
             return from_point(point_or_duration);
         } else {
             return from_now(point_or_duration);

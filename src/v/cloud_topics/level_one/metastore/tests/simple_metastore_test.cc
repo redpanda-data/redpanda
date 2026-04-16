@@ -1090,6 +1090,39 @@ TEST(SimpleMetastoreTest, TestObjectBuilderCreatesNewObjects) {
     ASSERT_EQ(oids.size(), num_objects);
 }
 
+TEST(SimpleMetastoreTest, TestObjectBuilderRejectsInvertedExtent) {
+    simple_metastore m;
+    auto ob = m.object_builder().get().value();
+    auto tp = model::topic_id_partition::from(tid_a);
+    auto oid = ob->create_object_for(tp).get().value();
+
+    // base_offset > last_offset should be rejected.
+    auto res = ob->add(
+      oid,
+      metastore::object_metadata::ntp_metadata{
+        .tidp = tp,
+        .base_offset = 10_o,
+        .last_offset = 5_o,
+        .max_timestamp = 1000_t,
+        .pos = 0,
+        .size = 100,
+      });
+    EXPECT_FALSE(res.has_value());
+
+    // A valid extent should still be accepted.
+    auto res2 = ob->add(
+      oid,
+      metastore::object_metadata::ntp_metadata{
+        .tidp = tp,
+        .base_offset = 0_o,
+        .last_offset = 10_o,
+        .max_timestamp = 1000_t,
+        .pos = 0,
+        .size = 100,
+      });
+    EXPECT_TRUE(res2.has_value());
+}
+
 TEST(SimpleMetastoreTest, TestObjectBuilderBadObjects) {
     // Test calls for objects that don't exist in the builder.
     simple_metastore m;

@@ -39,7 +39,7 @@ import (
 // For text files, if the line is empty or begins with "// ", the line is
 // skipped.
 func ParseFileArray[T any](fs afero.Fs, file string) ([]T, error) {
-	var unmarshal func([]byte, interface{}) error
+	var unmarshal func([]byte, any) error
 	switch ext := filepath.Ext(file); ext {
 	case ".txt", "":
 		f, err := fs.Open(file)
@@ -191,8 +191,8 @@ func ParsePartitionString(ntp string) (ns, topic string, partitions []int, rerr 
 	if ns == "" {
 		ns = "kafka"
 	}
-	partitionString := strings.Split(match[3], ",")
-	for _, str := range partitionString {
+	partitionString := strings.SplitSeq(match[3], ",")
+	for str := range partitionString {
 		p, err := strconv.Atoi(str)
 		if err != nil {
 			return "", "", nil, fmt.Errorf("unable to parse partition %v from string %v: %v", str, ntp, err)
@@ -205,8 +205,8 @@ func ParsePartitionString(ntp string) (ns, topic string, partitions []int, rerr 
 // ParseFileOrStringFlag parses a flag string, if it starts with '@' it
 // will treat it as a filepath and will attempt to read the file.
 func ParseFileOrStringFlag(fs afero.Fs, flag string) ([]byte, error) {
-	if strings.HasPrefix(flag, "@") {
-		file, err := afero.ReadFile(fs, strings.TrimPrefix(flag, "@"))
+	if after, ok := strings.CutPrefix(flag, "@"); ok {
+		file, err := afero.ReadFile(fs, after)
 		if err != nil {
 			return nil, fmt.Errorf("unable to read file: %v", err)
 		}

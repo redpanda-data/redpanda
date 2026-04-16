@@ -40,6 +40,11 @@ public:
      */
     virtual seastar::future<cluster_epoch>
     current_epoch(seastar::abort_source*) = 0;
+
+    /*
+     * Invalidatae any epoch caching that maybe happening is below
+     */
+    virtual seastar::future<> invalidate_epoch_below(cluster_epoch) = 0;
 };
 
 } // namespace cloud_topics

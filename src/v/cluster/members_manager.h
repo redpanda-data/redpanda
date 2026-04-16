@@ -96,8 +96,8 @@ public:
         // recommission node_update
         std::optional<model::revision_id> decommission_update_revision;
 
-        friend bool operator==(const node_update&, const node_update&)
-          = default;
+        friend bool
+        operator==(const node_update&, const node_update&) = default;
 
         friend std::ostream& operator<<(std::ostream&, const node_update&);
     };

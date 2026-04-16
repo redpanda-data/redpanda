@@ -125,7 +125,6 @@ public:
     size_t partition_size() const { return _partition_bytes; }
     void add_initial_segment(const segment&);
     void remove_partition_bytes(size_t remove) { _partition_bytes -= remove; }
-    void set_compaction_ratio(double r) { _compaction_ratio = r; }
 
     int64_t get_batch_parse_errors() const { return _batch_parse_errors; }
     /**
@@ -164,7 +163,6 @@ private:
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
 
-    double _compaction_ratio = 1.0;
     uint64_t _tombstones_removed = 0;
     uint64_t _control_batches_removed = 0;
     uint64_t _segment_cleanly_compacted = 0;

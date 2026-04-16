@@ -85,7 +85,7 @@ make_get_leadership_reply(partition_leaders_table& leaders) {
                                            model::topic_namespace_view tp_ns,
                                            model::partition_id pid,
                                            std::optional<model::node_id> leader,
-                                           model::term_id term) mutable {
+                                           model::term_id term) {
             ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
         });
         co_return get_leadership_reply{

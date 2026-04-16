@@ -30,7 +30,7 @@ from rptest.tests.cluster_linking_test_base import (
     ShadowLinkTestBase,
 )
 from rptest.tests.schema_registry_test import SchemaRegistryRedpandaClient
-from rptest.util import expect_exception, expect_timeout, wait_until
+from rptest.util import expect_exception, wait_until
 from typing import Any
 
 import ducktape.errors
@@ -1623,7 +1623,7 @@ class ClusterLinkingStorageModeSync(ClusterLinkingTopicSyncingTestBase):
 
 class ClusterLinkingCloudTopicSync(ShadowLinkTestBase):
     """
-    Tests that cloud topics (redpanda.storage.mode=cloud) are not
+    Tests that cloud topics (redpanda.storage.mode=cloud) are
     mirrored to the target cluster via cluster linking.
     """
 
@@ -1665,11 +1665,11 @@ class ClusterLinkingCloudTopicSync(ShadowLinkTestBase):
         )
 
     @cluster(num_nodes=6)
-    def test_cloud_topic_not_mirrored(self):
+    def test_cloud_topic_mirrored(self):
         """
-        A source topic with redpanda.storage.mode=cloud should not be
-        created on the target cluster. A non-cloud topic created alongside
-        it should still be mirrored normally.
+        A source topic with redpanda.storage.mode=cloud should be
+        mirrored to the target cluster via cluster linking, just like
+        a normal topic.
         """
         cloud_topic = TopicSpec(
             name="cloud-topic", partition_count=3, replication_factor=1
@@ -1706,7 +1706,7 @@ class ClusterLinkingCloudTopicSync(ShadowLinkTestBase):
 
         self.create_link("test-link")
 
-        # The normal topic should appear on the target
+        # Both topics should appear on the target
         target_rpk = RpkTool(self.target_cluster.service)
         wait_until(
             lambda: normal_topic.name in target_rpk.list_topics(),
@@ -1714,12 +1714,9 @@ class ClusterLinkingCloudTopicSync(ShadowLinkTestBase):
             backoff_sec=1,
             err_msg=f"Normal topic {normal_topic.name} not found in target cluster",
         )
-
-        # The cloud topic should NOT appear on the target.
-        with expect_timeout():
-            wait_until(
-                lambda: cloud_topic.name in target_rpk.list_topics(),
-                timeout_sec=15,
-                backoff_sec=1,
-                err_msg=f"Cloud topic {cloud_topic.name} should not be mirrored",
-            )
+        wait_until(
+            lambda: cloud_topic.name in target_rpk.list_topics(),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Cloud topic {cloud_topic.name} not found in target cluster",
+        )

@@ -235,6 +235,11 @@ struct topic_properties
     model::redpanda_storage_mode storage_mode{
       storage::ntp_config::default_storage_mode};
 
+    bool is_cloud_topic() const {
+        return storage_mode == model::redpanda_storage_mode::cloud
+               || storage_mode == model::redpanda_storage_mode::tiered_cloud;
+    }
+
     bool is_compacted() const;
     bool has_overrides() const;
     // Returns true if this topic is a tiered topic that requires
@@ -312,8 +317,8 @@ struct topic_properties
           storage_mode);
     }
 
-    friend bool operator==(const topic_properties&, const topic_properties&)
-      = default;
+    friend bool
+    operator==(const topic_properties&, const topic_properties&) = default;
 
 private:
     // This was deprecated in favour of redpanda.storage.mode, but is kept here

@@ -26,13 +26,14 @@ import (
 
 func Test_encodeDecodeAvroRecordNoReferences(t *testing.T) {
 	tests := []struct {
-		name      string
-		schema    string
-		schemaID  int
-		record    string
-		expRecord string
-		expErr    bool // error building the Serde.
-		expEncErr bool // error encoding the record.
+		name       string
+		schema     string
+		schemaID   int
+		record     string
+		expRecord  string
+		rawCompare bool // compare raw JSON output instead of unmarshaling (for precision tests).
+		expErr     bool // error building the Serde.
+		expEncErr  bool // error encoding the record.
 	}{
 		{
 			name: "Valid record and schema",
@@ -94,6 +95,83 @@ func Test_encodeDecodeAvroRecordNoReferences(t *testing.T) {
 			schemaID:  1,
 			record:    "{}",
 			expRecord: `{"name":null}`,
+		}, {
+			name: "Nullable string union with string value",
+			schema: `
+{
+  "type":"record",
+  "name":"test",
+  "fields":
+    [{
+      "name":"value",
+      "type":["null","string"]
+    }]
+}`,
+			schemaID:  1,
+			record:    `{"value":"hello"}`,
+			expRecord: `{"value":"hello"}`,
+		}, {
+			name: "Nullable string union with null value",
+			schema: `
+{
+  "type":"record",
+  "name":"test",
+  "fields":
+    [{
+      "name":"value",
+      "type":["null","string"]
+    }]
+}`,
+			schemaID:  1,
+			record:    `{"value":null}`,
+			expRecord: `{"value":null}`,
+		}, {
+			name: "Multi-branch union",
+			schema: `
+{
+  "type":"record",
+  "name":"test",
+  "fields":
+    [{
+      "name":"value",
+      "type":["null","int","string"]
+    }]
+}`,
+			schemaID:  1,
+			record:    `{"value":42}`,
+			expRecord: `{"value":42}`,
+		}, {
+			name: "Union with default null and empty input",
+			schema: `
+{
+  "type":"record",
+  "name":"test",
+  "fields":
+    [{
+      "name":"value",
+      "type":["null","string"],
+      "default":null
+    }]
+}`,
+			schemaID:  1,
+			record:    `{}`,
+			expRecord: `{"value":null}`,
+		}, {
+			name: "Long value preserves precision beyond float64",
+			schema: `
+{
+  "type":"record",
+  "name":"test",
+  "fields":
+    [{
+      "name":"big_id",
+      "type":"long"
+    }]
+}`,
+			schemaID:   1,
+			record:     `{"big_id":9007199254740993}`,
+			expRecord:  `{"big_id":9007199254740993}`,
+			rawCompare: true,
 		}, {
 			name: "Invalid record for a valid schema",
 			schema: `
@@ -163,15 +241,19 @@ func Test_encodeDecodeAvroRecordNoReferences(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			// To avoid any mismatch in the decode order of the elements, we
-			// better unmarshal and compare the unmarshaled records.
-			var gotU, expU map[string]any
-			err = json.Unmarshal(gotDecoded, &gotU)
-			require.NoError(t, err)
-			err = json.Unmarshal([]byte(tt.expRecord), &expU)
-			require.NoError(t, err)
+			if tt.rawCompare {
+				require.Equal(t, tt.expRecord, string(gotDecoded))
+			} else {
+				// To avoid any mismatch in the decode order of the elements, we
+				// better unmarshal and compare the unmarshaled records.
+				var gotU, expU map[string]any
+				err = json.Unmarshal(gotDecoded, &gotU)
+				require.NoError(t, err)
+				err = json.Unmarshal([]byte(tt.expRecord), &expU)
+				require.NoError(t, err)
 
-			require.Equal(t, expU, gotU)
+				require.Equal(t, expU, gotU)
+			}
 		})
 	}
 }

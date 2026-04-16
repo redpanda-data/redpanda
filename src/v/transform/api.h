@@ -13,9 +13,9 @@
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
+#include "cluster/utils/partition_change_notifier.h"
 #include "features/fwd.h"
 #include "model/transform.h"
-#include "raft/fwd.h"
 #include "transform/fwd.h"
 #include "transform/logging/fwd.h"
 #include "wasm/fwd.h"
@@ -56,7 +56,8 @@ public:
       model::node_id self,
       ss::sharded<cluster::plugin_frontend>* plugin_frontend,
       ss::sharded<features::feature_table>* feature_table,
-      ss::sharded<raft::group_manager>* group_manager,
+      std::unique_ptr<cluster::partition_change_notifier>
+        partition_change_notifier,
       ss::sharded<cluster::topic_table>* topic_table,
       ss::sharded<cluster::partition_manager>* partition_manager,
       ss::sharded<rpc::client>* rpc_client,
@@ -146,7 +147,8 @@ private:
     model::node_id _self;
     ss::sharded<cluster::plugin_frontend>* _plugin_frontend;
     ss::sharded<features::feature_table>* _feature_table;
-    ss::sharded<raft::group_manager>* _group_manager;
+    std::unique_ptr<cluster::partition_change_notifier>
+      _partition_change_notifier;
     ss::sharded<cluster::topic_table>* _topic_table;
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<rpc::client>* _rpc_client;

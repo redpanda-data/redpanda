@@ -665,7 +665,7 @@ TEST_F_CORO(unsupported_describe_configs_test, unsupported_describe_configs) {
                             source_topic_syncer::task_name);
     EXPECT_EQ(task_report.task_state, model::task_state::link_unavailable);
 }
-TEST_F_CORO(source_topic_syncer_test, cloud_topic_not_mirrored) {
+TEST_F_CORO(source_topic_syncer_test, cloud_topic_mirrored) {
     auto cloud_topic = ::model::topic("cloud-topic");
     auto normal_topic = ::model::topic("normal-topic");
 
@@ -674,7 +674,6 @@ TEST_F_CORO(source_topic_syncer_test, cloud_topic_not_mirrored) {
     fixture()->get_cluster_mock().add_topic(
       normal_topic, 3, 3, kafka::topic_authorized_operations(0x508));
 
-    // Set the cloud topic's storage mode to cloud
     ::cluster::topic_properties cloud_props;
     cloud_props.storage_mode = ::model::redpanda_storage_mode::cloud;
     fixture()->get_cluster_mock().set_topic_properties(
@@ -682,55 +681,17 @@ TEST_F_CORO(source_topic_syncer_test, cloud_topic_not_mirrored) {
 
     co_await fixture()->upsert_link(get_default_metadata());
 
-    // The normal topic should be mirrored
+    // Both topics should be mirrored
     RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &normal_topic] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
         return link_metadata->state.mirror_topics.contains(normal_topic);
     });
 
-    // The cloud topic should not be mirrored. Let the syncer run a few more
-    // times to be sure.
-    co_await ss::sleep(3s);
-
-    auto link_metadata = fixture()->find_link_by_name(
-      model::name_t("test_link"));
-    auto& mirror_topics = link_metadata->state.mirror_topics;
-    EXPECT_EQ(mirror_topics.find(cloud_topic), mirror_topics.end())
-      << "Cloud topic should not be mirrored";
-}
-
-TEST_F_CORO(source_topic_syncer_test, cloud_topic_update_fails_mirror) {
-    auto topic_name = ::model::topic("test-topic");
-
-    fixture()->get_cluster_mock().add_topic(
-      topic_name, 3, 3, kafka::topic_authorized_operations(0x508));
-
-    co_await fixture()->upsert_link(get_default_metadata());
-
-    // Wait for the topic to be mirrored
-    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &topic_name] {
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &cloud_topic] {
         auto link_metadata = fixture()->find_link_by_name(
           model::name_t("test_link"));
-        return link_metadata->state.mirror_topics.contains(topic_name);
-    });
-
-    // Now change the topic's storage mode to cloud
-    ::cluster::topic_properties cloud_props;
-    cloud_props.storage_mode = ::model::redpanda_storage_mode::cloud;
-    fixture()->get_cluster_mock().set_topic_properties(
-      topic_name, std::move(cloud_props));
-
-    // The mirror topic should be marked as failed
-    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &topic_name] {
-        auto link_metadata = fixture()->find_link_by_name(
-          model::name_t("test_link"));
-        auto& mirror_topics = link_metadata->state.mirror_topics;
-        auto it = mirror_topics.find(topic_name);
-        if (it == mirror_topics.end()) {
-            return false;
-        }
-        return it->second.status == model::mirror_topic_status::failed;
+        return link_metadata->state.mirror_topics.contains(cloud_topic);
     });
 }
 

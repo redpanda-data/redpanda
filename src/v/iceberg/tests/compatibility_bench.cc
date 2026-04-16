@@ -59,9 +59,10 @@ void run_basic_field_assign_bench(const struct_type& source) {
     while (!source_stack.empty() && !dest_stack.empty()) {
         auto* dst = dest_stack.back();
         auto* src = source_stack.back();
-        if (auto compatibility = check_types(src->type, dst->type);
-            dst->name != src->name || dst->required != src->required
-            || compatibility.has_error()) {
+        if (
+          auto compatibility = check_types(src->type, dst->type);
+          dst->name != src->name || dst->required != src->required
+          || compatibility.has_error()) {
             errc = schema_evolution_errc::type_mismatch;
             break;
         }

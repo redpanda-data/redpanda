@@ -95,9 +95,18 @@ class EndToEndCloudTopicsBase(EndToEndTest):
     def setUp(self):
         assert self.redpanda
         self.redpanda.start()
+        # Allow tests to select storage mode via @matrix(storage_mode=...).
+        # Default to cloud if not specified.
+        storage_mode = (self.test_context.injected_args or {}).get(
+            "storage_mode", TopicSpec.STORAGE_MODE_CLOUD
+        )
+        if storage_mode == TopicSpec.STORAGE_MODE_TIERED_CLOUD:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
         for topic in self.topics:
             config = {
-                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                TopicSpec.PROPERTY_STORAGE_MODE: storage_mode,
                 "cleanup.policy": topic.cleanup_policy,
             }
             if topic.min_cleanable_dirty_ratio is not None:
@@ -168,7 +177,13 @@ class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
         )
 
     @cluster(num_nodes=5)
-    def test_write(self):
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_write(self, storage_mode: str):
         self.start_producer()
 
         self.await_num_produced(min_records=50000)
@@ -179,7 +194,13 @@ class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
         self.wait_until_all_reconciled()
 
     @cluster(num_nodes=5)
-    def test_delete_records(self):
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_delete_records(self, storage_mode: str):
         self.start_producer()
         self.await_num_produced(min_records=50000)
         self.producer.stop()
@@ -203,7 +224,13 @@ class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
         self.wait_until_all_reconciled()
 
     @cluster(num_nodes=4)
-    def test_get_size(self):
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_get_size(self, storage_mode: str):
         """
         Test that the metastore GetSize RPC returns the correct partition size.
 
@@ -298,7 +325,13 @@ class EndToEndCloudTopicsTxTest(EndToEndCloudTopicsBase):
         self.kgo_consumer.wait()
 
     @cluster(num_nodes=4)
-    def test_write(self):
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_write(self, storage_mode: str):
         self.start_producer_with_tx()
         self.start_consumer_with_tx()
         # Validate by checking stats

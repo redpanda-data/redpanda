@@ -91,6 +91,11 @@ public:
     current_epoch(seastar::abort_source*) override {
         return seastar::make_ready_future<cloud_topics::cluster_epoch>(0);
     }
+
+    seastar::future<>
+    invalidate_epoch_below(cloud_topics::cluster_epoch) override {
+        return ss::now();
+    }
 };
 
 namespace cloud_topics::l0 {
@@ -180,8 +185,8 @@ TEST_CORO(batcher_test, single_write_request) {
     // Check that uuid in the placeholder can be used to
     // access the data in S3.
     auto placeholder_batches = std::move(write_res.value());
-    ASSERT_EQ_CORO(placeholder_batches.size(), num_batches);
-    for (const cloud_topics::extent_meta& ext : placeholder_batches) {
+    ASSERT_EQ_CORO(placeholder_batches.extents.size(), num_batches);
+    for (const cloud_topics::extent_meta& ext : placeholder_batches.extents) {
         auto sid = cloud_topics::object_path_factory::level_zero_path(ext.id);
         ASSERT_EQ_CORO(sid, id);
     }
@@ -228,9 +233,8 @@ TEST_CORO(batcher_test, many_write_requests) {
 
     const auto timeout = 1s;
     auto deadline = ss::manual_clock::now() + timeout;
-    std::vector<ss::future<std::expected<
-      chunked_vector<cloud_topics::extent_meta>,
-      std::error_code>>>
+    std::vector<
+      ss::future<std::expected<cloud_topics::upload_meta, std::error_code>>>
       futures;
     futures.push_back(pipeline.write_and_debounce(
       model::controller_ntp, min_epoch, std::move(reader1), deadline));
@@ -261,8 +265,10 @@ TEST_CORO(batcher_test, many_write_requests) {
         // access the data in S3. All placeholders should share the same
         // uuid.
         auto placeholder_batches = std::move(write_res.value());
-        ASSERT_EQ_CORO(placeholder_batches.size(), expected_num_batches.at(ix));
-        for (const cloud_topics::extent_meta& ext : placeholder_batches) {
+        ASSERT_EQ_CORO(
+          placeholder_batches.extents.size(), expected_num_batches.at(ix));
+        for (const cloud_topics::extent_meta& ext :
+             placeholder_batches.extents) {
             auto sid = cloud_topics::object_path_factory::level_zero_path(
               ext.id);
             ASSERT_EQ_CORO(sid, id);
@@ -346,8 +352,8 @@ TEST_CORO(batcher_test, expired_write_request) {
     ASSERT_TRUE_CORO(pass_result.has_value());
     auto placeholder_batches = std::move(pass_result.value());
 
-    ASSERT_EQ_CORO(placeholder_batches.size(), expected_num_batches);
-    for (const cloud_topics::extent_meta& ext : placeholder_batches) {
+    ASSERT_EQ_CORO(placeholder_batches.extents.size(), expected_num_batches);
+    for (const cloud_topics::extent_meta& ext : placeholder_batches.extents) {
         auto sid = cloud_topics::object_path_factory::level_zero_path(ext.id);
         ASSERT_EQ_CORO(sid, id);
     }
@@ -378,9 +384,8 @@ TEST_CORO(batcher_test, chunk_splitting_balances_upload_sizes) {
     // (~3KB serialized), so 6 requests total ~18KB. With threshold=4096
     // this should produce multiple balanced chunks.
     const int num_requests = 6;
-    std::vector<ss::future<std::expected<
-      chunked_vector<cloud_topics::extent_meta>,
-      std::error_code>>>
+    std::vector<
+      ss::future<std::expected<cloud_topics::upload_meta, std::error_code>>>
       futures;
 
     const auto timeout = 10s;

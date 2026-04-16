@@ -884,7 +884,8 @@ version_set::pick_compaction() {
 }
 
 ss::future<std::unique_ptr<internal::iterator>>
-version_set::make_input_iterator(compaction* c) {
+version_set::make_input_iterator(
+  compaction* c, internal::iterator_options iter_opts) {
     // Level 0 files have to be merged together. For other levels, we will make
     // a concatenating iterator per level.
     size_t space = c->level() == 0_level
@@ -903,18 +904,19 @@ version_set::make_input_iterator(compaction* c) {
                 // rely on compaction for that.
                 list.push_back(
                   co_await _table_cache->create_iterator(
-                    file->handle, file->file_size));
+                    file->handle, file->file_size, iter_opts));
             }
         } else {
             auto index_iter = std::make_unique<level_file_num_iterator>(
               &inputs);
             list.push_back(
               internal::create_two_level_iterator(
-                std::move(index_iter), [self = c->_input_version](iobuf value) {
+                std::move(index_iter),
+                [self = c->_input_version, iter_opts](iobuf value) {
                     auto [handle, file_size]
                       = level_file_num_iterator::decode_value(value);
                     return self->_vset->_table_cache->create_iterator(
-                      handle, file_size);
+                      handle, file_size, iter_opts);
                 }));
         }
     }

@@ -34,32 +34,26 @@ public:
           vote(model::node_id, vote_request, rpc::client_opts) = 0;
 
         virtual ss::future<result<append_entries_reply>> append_entries(
-          model::node_id, append_entries_request, rpc::client_opts)
-          = 0;
+          model::node_id, append_entries_request, rpc::client_opts) = 0;
 
-        virtual ss::future<result<heartbeat_reply_v2>>
-          heartbeat_v2(model::node_id, heartbeat_request_v2, rpc::client_opts)
-          = 0;
+        virtual ss::future<result<heartbeat_reply_v2>> heartbeat_v2(
+          model::node_id, heartbeat_request_v2, rpc::client_opts) = 0;
 
         virtual ss::future<result<install_snapshot_reply>> install_snapshot(
-          model::node_id, install_snapshot_request, rpc::client_opts)
-          = 0;
+          model::node_id, install_snapshot_request, rpc::client_opts) = 0;
 
-        virtual ss::future<result<timeout_now_reply>>
-          timeout_now(model::node_id, timeout_now_request, rpc::client_opts)
-          = 0;
+        virtual ss::future<result<timeout_now_reply>> timeout_now(
+          model::node_id, timeout_now_request, rpc::client_opts) = 0;
 
         virtual ss::future<result<get_compaction_mcco_reply>>
           get_compaction_mcco(
-            model::node_id, get_compaction_mcco_request, rpc::client_opts)
-          = 0;
+            model::node_id, get_compaction_mcco_request, rpc::client_opts) = 0;
 
         virtual ss::future<result<distribute_compaction_mtro_reply>>
           distribute_compaction_mtro(
             model::node_id,
             distribute_compaction_mtro_request,
-            rpc::client_opts)
-          = 0;
+            rpc::client_opts) = 0;
 
         virtual ~impl() noexcept = default;
     };

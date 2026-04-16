@@ -24,6 +24,7 @@
 namespace cluster::cluster_link {
 
 using ::cluster_link::model::add_mirror_topic_cmd;
+using ::cluster_link::model::batch_update_mirror_topic_status_cmd;
 using ::cluster_link::model::connection_config;
 using ::cluster_link::model::id_t;
 using ::cluster_link::model::link_configuration;
@@ -942,6 +943,138 @@ TEST_F_CORO(cluster_link_table_test, update_non_existent_link) {
         id_t{1}, update_cmd.copy()));
 
     EXPECT_EQ(static_cast<errc>(ec.value()), errc::does_not_exist);
+}
+
+TEST_F_CORO(
+  cluster_link_table_test, test_batch_update_mirror_topic_state_all_topics) {
+    model::topic topic1("mirror-t1");
+    model::topic topic2("mirror-t2");
+    model::topic topic3("mirror-t3");
+
+    metadata link1{
+      .name = name_t("link1"),
+      .uuid = uuid_t(::uuid_t::create()),
+      .connection = connection_config{}};
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, std::move(link1)));
+    ASSERT_EQ_CORO(res.value(), int(errc::success));
+
+    for (const auto& t : {topic1, topic2, topic3}) {
+        res = co_await _table.local().apply_update(
+          testing::create_add_mirror_topic_command(
+            id_t{1},
+            add_mirror_topic_cmd{
+              .topic = t,
+              .metadata = testing::create_mirror_topic_metadata(
+                mirror_topic_status::active, t)}));
+        ASSERT_EQ_CORO(res.value(), int(errc::success));
+    }
+
+    // Batch update all three topics to failing_over
+    chunked_vector<model::topic> topics;
+    topics.push_back(topic1);
+    topics.push_back(topic2);
+    topics.push_back(topic3);
+
+    res = co_await _table.local().apply_update(
+      testing::create_batch_update_mirror_topic_status_command(
+        id_t{1},
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}));
+    ASSERT_EQ_CORO(res.value(), int(errc::success));
+
+    for (const auto& t : {topic1, topic2, topic3}) {
+        auto status = _table.local().find_mirror_topic_status(t);
+        ASSERT_TRUE_CORO(status.has_value());
+        EXPECT_EQ(status.value(), mirror_topic_status::failing_over);
+    }
+}
+
+TEST_F_CORO(
+  cluster_link_table_test,
+  test_batch_update_mirror_topic_state_unknown_topic_fails_batch) {
+    model::topic topic1("mirror-t1");
+    model::topic topic2("mirror-t2");
+    model::topic unknown_topic("unknown-topic");
+
+    metadata link1{
+      .name = name_t("link1"),
+      .uuid = uuid_t(::uuid_t::create()),
+      .connection = connection_config{}};
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, std::move(link1)));
+    ASSERT_EQ_CORO(res.value(), int(errc::success));
+
+    for (const auto& t : {topic1, topic2}) {
+        res = co_await _table.local().apply_update(
+          testing::create_add_mirror_topic_command(
+            id_t{1},
+            add_mirror_topic_cmd{
+              .topic = t,
+              .metadata = testing::create_mirror_topic_metadata(
+                mirror_topic_status::active, t)}));
+        ASSERT_EQ_CORO(res.value(), int(errc::success));
+    }
+
+    // Include a topic not registered to this link — entire batch fails
+    chunked_vector<model::topic> topics;
+    topics.push_back(topic1);
+    topics.push_back(unknown_topic);
+    topics.push_back(topic2);
+
+    res = co_await _table.local().apply_update(
+      testing::create_batch_update_mirror_topic_status_command(
+        id_t{1},
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}));
+    EXPECT_EQ(res.value(), int(errc::topic_not_being_mirrored));
+
+    // No topics should have been updated (copy was discarded)
+    for (const auto& t : {topic1, topic2}) {
+        auto status = _table.local().find_mirror_topic_status(t);
+        ASSERT_TRUE_CORO(status.has_value());
+        EXPECT_EQ(status.value(), mirror_topic_status::active);
+    }
+}
+
+TEST_F_CORO(
+  cluster_link_table_test, test_batch_update_mirror_topic_state_empty_batch) {
+    metadata link1{
+      .name = name_t("link1"),
+      .uuid = uuid_t(::uuid_t::create()),
+      .connection = connection_config{}};
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_upsert_command(model::offset{1}, std::move(link1)));
+    ASSERT_EQ_CORO(res.value(), int(errc::success));
+
+    chunked_vector<model::topic> topics;
+    res = co_await _table.local().apply_update(
+      testing::create_batch_update_mirror_topic_status_command(
+        id_t{1},
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}));
+    EXPECT_EQ(res.value(), int(errc::success));
+}
+
+TEST_F_CORO(
+  cluster_link_table_test,
+  test_batch_update_mirror_topic_state_link_not_found) {
+    chunked_vector<model::topic> topics;
+    topics.push_back(model::topic("some-topic"));
+
+    auto res = co_await _table.local().apply_update(
+      testing::create_batch_update_mirror_topic_status_command(
+        id_t{99},
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}));
+    EXPECT_EQ(res.value(), int(errc::does_not_exist));
 }
 
 } // namespace cluster::cluster_link

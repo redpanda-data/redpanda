@@ -894,6 +894,16 @@ service::update_mirror_topic_status(
     co_return update_mirror_topic_status_response{.ec = result};
 }
 
+ss::future<batch_update_mirror_topic_status_response>
+service::batch_update_mirror_topic_status(
+  batch_update_mirror_topic_status_request req, rpc::streaming_context&) {
+    auto deadline = model::timeout_clock::now() + req.timeout;
+    auto result = co_await _cluster_link_frontend.local()
+                    .batch_update_mirror_topic_status(
+                      req.link_id, std::move(req.cmd), deadline);
+    co_return batch_update_mirror_topic_status_response{.ec = result};
+}
+
 ss::future<update_mirror_topic_properties_response>
 service::update_mirror_topic_properties(
   update_mirror_topic_properties_request req, rpc::streaming_context&) {

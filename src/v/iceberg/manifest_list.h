@@ -22,8 +22,8 @@ struct field_summary {
     std::optional<bool> contains_nan;
     std::optional<bytes> lower_bound;
     std::optional<bytes> upper_bound;
-    friend bool operator==(const field_summary&, const field_summary&)
-      = default;
+    friend bool
+    operator==(const field_summary&, const field_summary&) = default;
 };
 
 enum class manifest_file_content {
@@ -56,8 +56,8 @@ struct manifest_file {
     // schema and then uncomment this.
     // std::optional<bytes> key_metadata;
 
-    friend bool operator==(const manifest_file&, const manifest_file&)
-      = default;
+    friend bool
+    operator==(const manifest_file&, const manifest_file&) = default;
 
     manifest_file copy() const {
         return manifest_file{
@@ -81,8 +81,8 @@ struct manifest_file {
 
 struct manifest_list {
     chunked_vector<manifest_file> files;
-    friend bool operator==(const manifest_list&, const manifest_list&)
-      = default;
+    friend bool
+    operator==(const manifest_list&, const manifest_list&) = default;
 };
 
 } // namespace iceberg

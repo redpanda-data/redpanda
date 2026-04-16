@@ -234,10 +234,11 @@ void application::start_bootstrap_services() {
 
     // Before we start up our bootstrapping RPC service, load any relevant
     // on-disk state we may need: existing cluster UUID, node ID, etc.
-    if (std::optional<iobuf> cluster_uuid_buf = storage.local().kvs().get(
-          cluster::cluster_uuid_key_space,
-          bytes::from_string(cluster::cluster_uuid_key));
-        cluster_uuid_buf) {
+    if (
+      std::optional<iobuf> cluster_uuid_buf = storage.local().kvs().get(
+        cluster::cluster_uuid_key_space,
+        bytes::from_string(cluster::cluster_uuid_key));
+      cluster_uuid_buf) {
         const auto cluster_uuid = model::cluster_uuid{
           serde::from_iobuf<uuid_t>(std::move(*cluster_uuid_buf))};
         storage
@@ -293,10 +294,11 @@ void application::start_bootstrap_services() {
     }
 
     auto configured_node_id = config::node().node_id();
-    if (auto invariants_buf = storage.local().kvs().get(
-          storage::kvstore::key_space::controller,
-          cluster::controller::invariants_key());
-        invariants_buf) {
+    if (
+      auto invariants_buf = storage.local().kvs().get(
+        storage::kvstore::key_space::controller,
+        cluster::controller::invariants_key());
+      invariants_buf) {
         auto invariants
           = reflection::from_iobuf<cluster::configuration_invariants>(
             std::move(*invariants_buf));
@@ -392,7 +394,6 @@ void application::wire_up_and_start(
     construct_service(_as).get();
 
     // Bootstrap services.
-    wire_up_and_start_crypto_services();
     wire_up_bootstrap_services();
     start_bootstrap_services();
 

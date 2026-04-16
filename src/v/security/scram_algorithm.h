@@ -32,7 +32,7 @@
  *
  * 1. unnecessary copying from std::array<char> for hash digest types and
  * built-in bytes type. the conversion is mostly mechanical, but std::array
- * needs to be propogated to all other types which need to be templated on the
+ * needs to be propagated to all other types which need to be templated on the
  * same scram_algorithm template parameters.
  */
 namespace security {

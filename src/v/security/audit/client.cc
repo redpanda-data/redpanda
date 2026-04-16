@@ -59,6 +59,10 @@ public:
             return kafka::error_code::unknown_server_error;
         };
 
+        static constexpr auto base_backoff = 500ms;
+        static constexpr uint32_t max_backoff = 8;
+        exp_backoff_policy backoff;
+
         std::optional<kafka::error_code> ec;
         while (!as().abort_requested() && ss::timer<>::clock::now() < timeout) {
             auto r = co_await _rpc_client->produce(
@@ -68,11 +72,19 @@ public:
             if (ec.value() == kafka::error_code::none) {
                 break;
             }
+            auto delay = base_backoff
+                         * std::min(max_backoff, backoff.next_backoff());
+            try {
+                co_await ss::sleep_abortable<ss::lowres_clock>(delay, as());
+            } catch (const ss::sleep_aborted&) {
+                break;
+            }
         }
 
         // report unknown server error if we aborted before making any attempt
-        if (auto errc = ec.value_or(kafka::error_code::unknown_server_error);
-            errc != kafka::error_code::none) {
+        if (
+          auto errc = ec.value_or(kafka::error_code::unknown_server_error);
+          errc != kafka::error_code::none) {
             vlog(
               adtlog.warn,
               "{} audit records dropped, shutting down. Last error: {}",
@@ -216,8 +228,9 @@ public:
         }
 
         // report unknown server error if we aborted before making any attempt
-        if (auto errc = ec.value_or(kafka::error_code::unknown_server_error);
-            errc != kafka::error_code::none) {
+        if (
+          auto errc = ec.value_or(kafka::error_code::unknown_server_error);
+          errc != kafka::error_code::none) {
             vlog(
               adtlog.warn,
               "{} audit records dropped, shutting down. Last error: {}",

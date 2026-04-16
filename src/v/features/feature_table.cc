@@ -44,6 +44,8 @@ std::string_view to_string_view(feature f) {
         return "consumer_groups_migrations";
     case feature::shadow_linking:
         return "shadow_linking";
+    case feature::batch_mirror_topic_status:
+        return "batch_mirror_topic_status";
     case feature::coordinated_compaction:
         return "coordinated_compaction";
     case feature::cloud_retention:
@@ -134,6 +136,8 @@ std::string_view to_string_view(feature f) {
         return "user_based_client_quota";
     case feature::cloud_topics:
         return "cloud_topics";
+    case feature::tiered_cloud_topics:
+        return "tiered_cloud_topics";
 
     /*
      * testing features
@@ -177,7 +181,7 @@ constexpr cluster_version latest_version = to_cluster_version(
 // a freshly initialized node will start at. All features up to this cluster
 // version will automatically be enabled when Redpanda starts.
 constexpr cluster_version earliest_version = to_cluster_version(
-  release_version::v25_3_1);
+  release_version::v26_1_1);
 
 static_assert(
   latest_version - earliest_version == 1L,
@@ -215,6 +219,7 @@ bool is_major_version_release(cluster::cluster_version version) {
     case release_version::v25_2_1:
     case release_version::v25_3_1:
     case release_version::v26_1_1:
+    case release_version::v26_2_1:
         return true;
     }
     __builtin_unreachable();

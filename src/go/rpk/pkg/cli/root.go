@@ -99,7 +99,7 @@ func Execute() {
 
 	root.RegisterFlagCompletionFunc("config-opt", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		var opts []string
-		for _, line := range strings.Split(config.ParamsList(), "\n") {
+		for line := range strings.SplitSeq(config.ParamsList(), "\n") {
 			opt := strings.SplitN(line, "=", 2)
 			if len(opt) != 2 {
 				continue

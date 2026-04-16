@@ -6,6 +6,7 @@ on:
       - cdt-command
       - ci-repeat-command
       - dt-command
+      - install-pack-command
       - microbench-command
       - rp-unit-test-command
       - test-arm64-command

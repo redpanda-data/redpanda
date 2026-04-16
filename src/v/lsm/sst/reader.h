@@ -44,7 +44,8 @@ public:
     //
     // The result of create_iterator is initially invalid (caller must call one
     // of the seek* methods on the iterator before using it).
-    std::unique_ptr<internal::iterator> create_iterator();
+    std::unique_ptr<internal::iterator>
+    create_iterator(internal::iterator_options opts = {});
 
     // Calls the function with the key/value pair with the entry found after a
     // call to `create_iterator()->seek(key)`. May not make such a call if the

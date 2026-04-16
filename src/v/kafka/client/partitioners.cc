@@ -149,8 +149,8 @@ void partitioners_cache::apply_metadata(const metadata_update& data) {
 
 model::partition_id partitioners_cache::partition_for(
   model::topic_view tv, const record_essence& rec) {
-    if (auto topic_it = _partitioners.find(tv);
-        topic_it != _partitioners.end()) {
+    if (
+      auto topic_it = _partitioners.find(tv); topic_it != _partitioners.end()) {
         auto& entry = topic_it->second;
         auto partition_opt = entry.partitioner(rec, entry.partition_count);
         if (partition_opt) {

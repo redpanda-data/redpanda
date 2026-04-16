@@ -25,8 +25,9 @@ namespace security::oidc {
 namespace detail {
 std::expected<chunked_vector<std::string_view>, errc>
 get_group_claim(const json::Pointer& p, const jwt& jwt) {
-    if (auto list_claim = jwt.claim<chunked_vector<std::string_view>>(p);
-        list_claim) {
+    if (
+      auto list_claim = jwt.claim<chunked_vector<std::string_view>>(p);
+      list_claim) {
         vlog(
           seclog.trace,
           "Group claim found as string list: {}",
@@ -100,9 +101,10 @@ group_policy_apply(const group_claim_policy& policy, const jwt& jwt) {
     }
 
     if (group_claim.error() == errc::group_claim_not_found) {
-        if (auto claim_names_groups = jwt.claim<std::string_view>(
-              json::Pointer("/_claim_names/groups"));
-            claim_names_groups) {
+        if (
+          auto claim_names_groups = jwt.claim<std::string_view>(
+            json::Pointer("/_claim_names/groups"));
+          claim_names_groups) {
             vlog(
               seclog.warn,
               "Azure AD group overage detected: JWT contains "

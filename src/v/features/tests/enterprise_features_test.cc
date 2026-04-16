@@ -100,33 +100,30 @@ struct EnterpriseFeatureTest : public ::testing::Test {
                .allowed_value = false,
                .restricted_value = true}};
         }
-        if constexpr (std::
-                        same_as<Property, config::enum_property<ss::sstring>>) {
+        if constexpr (
+          std::same_as<Property, config::enum_property<ss::sstring>>) {
             return {
               &cfg.enterprise_str_enum,
               {.default_value = "foo",
                .allowed_value = "baz",
                .restricted_value = "bar"}};
         }
-        if constexpr (std::same_as<
-                        Property,
-                        config::property<std::vector<ss::sstring>>>) {
+        if constexpr (
+          std::same_as<Property, config::property<std::vector<ss::sstring>>>) {
             return {
               &cfg.enterprise_str_vec,
               {.default_value{},
                .allowed_value = {"OTHER"},
                .restricted_value = {"GSSAPI", "OTHER"}}};
         }
-        if constexpr (std::same_as<
-                        Property,
-                        config::property<std::optional<int>>>) {
+        if constexpr (
+          std::same_as<Property, config::property<std::optional<int>>>) {
             return {
               &cfg.enterprise_opt_int,
               {.default_value{0}, .allowed_value{10}, .restricted_value{1010}}};
         }
-        if constexpr (std::same_as<
-                        Property,
-                        config::enum_property<config::tls_version>>) {
+        if constexpr (
+          std::same_as<Property, config::enum_property<config::tls_version>>) {
             return {
               &cfg.enterprise_enum,
               {.default_value = config::tls_version::v1_1,

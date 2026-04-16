@@ -509,9 +509,9 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
                   .error_code = errc}));
         };
 
-        if (unlikely(
-              disabled_set
-              && disabled_set->is_disabled(part.partition_index))) {
+        if (
+          unlikely(
+            disabled_set && disabled_set->is_disabled(part.partition_index))) {
             push_error_response(error_code::replica_not_available);
             continue;
         }
@@ -540,9 +540,9 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         // NOTE: for produce version 0 and 1 the adapter transparently converts
         // the batch into an v2 batch and sets the v2_format flag. conversion
         // also produces a single record batch by accumulating legacy messages.
-        if (unlikely(
-              !part.records->adapter.v2_format
-              || !part.records->adapter.batch)) {
+        if (
+          unlikely(
+            !part.records->adapter.v2_format || !part.records->adapter.batch)) {
             push_error_response(error_code::invalid_record);
             continue;
         }

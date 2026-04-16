@@ -31,10 +31,21 @@ handler_probe_manager::handler_probe_manager()
   : _metrics()
   , _probes(max_api_key() + 2) {
     const auto unknown_handler_key = max_api_key() + 1;
+    const bool handler_latency_all
+      = config::shard_local_cfg().kafka_handler_latency_all();
     for (size_t i = 0; i < _probes.size(); i++) {
         auto key = api_key(i);
+        auto handler = handler_for_key(key);
 
-        if (handler_for_key(key) || i == unknown_handler_key) {
+        if (handler || i == unknown_handler_key) {
+            bool enable_histogram
+              = handler_latency_all
+                || (handler && (*handler)->has_latency_histogram());
+
+            if (enable_histogram) {
+                _probes[i].enable_histogram();
+            }
+
             _probes[i].setup_metrics(_metrics, key);
 
             if (key == produce_api::key || key == fetch_api::key) {
@@ -95,14 +106,23 @@ void handler_probe::setup_metrics(
           [this] { return _bytes_sent; },
           sm::description("Number of bytes sent in kafka replies"),
           labels),
-        sm::make_histogram(
-          "latency_microseconds",
-          sm::description("Latency histogram of kafka requests"),
-          labels,
-          [this] { return _latency.internal_histogram_logform(); }),
       },
       {},
       {seastar::metrics::shard_label});
+
+    if (_latency) {
+        metrics.add_group(
+          prometheus_sanitize::metrics_name("kafka_handler"),
+          {
+            sm::make_histogram(
+              "latency_microseconds",
+              sm::description("Latency histogram of kafka requests"),
+              labels,
+              [this] { return _latency->internal_histogram_logform(); }),
+          },
+          {},
+          {seastar::metrics::shard_label});
+    }
 
     // Don't want to aggregate the shard label away so that we get per shard RPS
     // in any case
@@ -131,16 +151,18 @@ void handler_probe::setup_public_metrics(
 
     std::vector<sm::label_instance> labels{sm::label("handler")(handler_name)};
 
-    metrics.add_group(
-      prometheus_sanitize::metrics_name("kafka_handler"),
-      {
-        sm::make_histogram(
-          "latency_seconds",
-          sm::description("Latency histogram of kafka requests"),
-          labels,
-          [this] { return _latency.public_histogram_logform(); })
-          .aggregate({sm::shard_label}),
-      });
+    if (_latency) {
+        metrics.add_group(
+          prometheus_sanitize::metrics_name("kafka_handler"),
+          {
+            sm::make_histogram(
+              "latency_seconds",
+              sm::description("Latency histogram of kafka requests"),
+              labels,
+              [this] { return _latency->public_histogram_logform(); })
+              .aggregate({sm::shard_label}),
+          });
+    }
 }
 
 /*

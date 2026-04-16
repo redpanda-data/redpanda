@@ -292,14 +292,14 @@ checked<ss::gate::holder, coordinator::errc> coordinator::maybe_gate() {
 }
 
 struct coordinator::table_schema_provider {
-    virtual iceberg::table_identifier get_table_id(const model::topic&) const
-      = 0;
+    virtual iceberg::table_identifier
+    get_table_id(const model::topic&) const = 0;
 
     virtual ss::future<checked<iceberg::struct_type, coordinator::errc>>
       get_record_type(record_schema_components) const = 0;
 
-    virtual ss::sstring get_partition_spec(const cluster::topic_metadata&) const
-      = 0;
+    virtual ss::sstring
+    get_partition_spec(const cluster::topic_metadata&) const = 0;
 
     virtual ~table_schema_provider() = default;
 };

@@ -2678,6 +2678,32 @@ class AuditLogTestOauth(AuditLogTestBase):
             for g in user_groups
         )
 
+    @staticmethod
+    def oidc_authz_with_group_filter_function(
+        service_name: str,
+        username: str | None,
+        expected_group: str,
+        record,
+    ):
+        """Filter for authorization events that include an idp_group"""
+        if not (
+            record["class_uid"] == 6003
+            and record["api"]["service"]["name"] == service_name
+            and (record["actor"]["user"]["name"] == username if username else True)
+        ):
+            return False
+
+        # Check that group is present in groups
+        user_groups = record.get("actor", {}).get("user", {}).get("groups", [])
+        if not user_groups:
+            return False
+
+        # Check for expected group with type idp_group
+        return any(
+            g.get("type") == "idp_group" and g.get("name") == expected_group
+            for g in user_groups
+        )
+
     @skip_fips_mode
     @cluster(num_nodes=6)
     @matrix(audit_transport_mode=get_audit_modes())
@@ -2769,23 +2795,9 @@ class AuditLogTestOauth(AuditLogTestBase):
             lambda records: self.aggregate_count(records) >= 1,
         )
 
-        assert len(records) >= 1, (
-            f"Expected at least 1 authentication record with IDP group but received {len(records)}"
-        )
         self.logger.info(
             f"Found {len(records)} authentication record(s) with IDP group '{test_group}'"
         )
-
-        # Verify authentication record contains the IDP group
-        for record in records:
-            user_groups = record.get("user", {}).get("groups", [])
-            self.logger.debug(
-                f"Found groups in authentication audit record: {user_groups}"
-            )
-            idp_groups = [g for g in user_groups if g.get("type") == "idp_group"]
-            assert len(idp_groups) >= 1, (
-                f"Expected at least 1 IDP group in authentication record, found {idp_groups}"
-            )
 
         # Verify authorization event contains the role
         records = self.read_all_from_audit_log(
@@ -2798,27 +2810,78 @@ class AuditLogTestOauth(AuditLogTestBase):
             lambda records: self.aggregate_count(records) >= 1,
         )
 
-        assert len(records) >= 1, (
-            f"Expected at least 1 authorization record with role but received {len(records)}"
-        )
-
-        # Verify authorization record contains the role
-        for record in records:
-            user_groups = record.get("actor", {}).get("user", {}).get("groups", [])
-            self.logger.debug(
-                f"Found groups in authorization audit record: {user_groups}"
-            )
-            roles = [g for g in user_groups if g.get("type") == "role"]
-            assert len(roles) >= 1, (
-                f"Expected at least 1 role in authorization record, found {roles}"
-            )
-            assert any(g.get("name") == role_name for g in roles), (
-                f"Expected role '{role_name}' not found in {roles}"
-            )
-
         self.logger.info(
             f"Verified complete audit trail: authentication contains IDP group '{test_group}', "
             f"authorization contains role '{role_name}'"
+        )
+
+    @skip_fips_mode
+    @cluster(num_nodes=6)
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_kafka_oauth_with_group_acl_authz(self, audit_transport_mode):
+        """
+        Validate that when authorization matches a Group ACL (Group:groupname),
+        the matched group appears in the authorization audit event's
+        actor.user.groups with type "idp_group".
+
+        Unlike test_kafka_oauth_with_groups_and_role which tests Role-based
+        authorization, this test uses a direct Group ACL to verify group
+        principal propagation into audit events.
+        """
+        self.modify_audit_event_types(["describe", "authenticate"])
+        kc_node = self.keycloak.nodes[0]
+        self.super_rpk.create_topic(self.example_topic)
+
+        # Create Keycloak group and group mapper
+        test_group = "audit-group-acl-test"
+        self.keycloak.admin.create_group(test_group)
+        self.keycloak.admin.create_group_mapper(self.client_id, use_full_path=False)
+        self.keycloak.admin.add_service_user_to_group(self.client_id, test_group)
+
+        service_user_id = self.keycloak.admin_ll.get_user_id(
+            f"service-account-{self.client_id}"
+        )
+
+        # Grant permissions via a Group ACL (not a Role ACL)
+        self.super_rpk.sasl_allow_principal(
+            f"Group:{test_group}", ["all"], "topic", self.example_topic
+        )
+        self.logger.info(
+            f"Granted 'all' permission to Group:{test_group} on topic {self.example_topic}"
+        )
+
+        # Authenticate via OIDC and perform an action
+        cfg = self.keycloak.generate_oauth_config(kc_node, self.client_id)
+        assert cfg.client_secret is not None, "client_secret is None"
+        assert cfg.token_endpoint is not None, "token_endpoint is None"
+
+        k_client = PythonLibrdkafka(
+            self.redpanda, algorithm="OAUTHBEARER", oauth_config=cfg
+        )
+        producer = k_client.get_producer()
+        producer.poll(0.0)
+
+        expected_topics = set([self.example_topic])
+        wait_until(
+            lambda: (
+                set(producer.list_topics(timeout=5).topics.keys()) == expected_topics
+            ),
+            timeout_sec=5,
+        )
+
+        # Verify authorization event contains the group with type idp_group
+        self.read_all_from_audit_log(
+            partial(
+                self.oidc_authz_with_group_filter_function,
+                self.kafka_rpc_service_name,
+                service_user_id,
+                test_group,
+            ),
+            lambda records: self.aggregate_count(records) >= 1,
+        )
+
+        self.logger.info(
+            f"Verified authorization audit event contains group '{test_group}' with type 'idp_group'"
         )
 
 

@@ -15,6 +15,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
+    CLOUD_TOPICS_CONFIG_STR,
     SISettings,
 )
 from rptest.services.redpanda_installer import (
@@ -169,11 +170,12 @@ class StorageModeUpgradeTest(StorageModeTestBase):
         )
         self.installer = self.redpanda._installer
 
+    # storage_mode property introduced in v26.1, start on v25.3 (pre-feature)
+    FROM_VERSION = (25, 3)
+    TO_VERSION = RedpandaInstaller.next_major_version(FROM_VERSION)
+
     def setUp(self):
-        # Use v25.3 as the previous version (before storage_mode existed)
-        self.prev_version = (25, 3)
-        # Install old version before starting cluster
-        self.installer.install(self.redpanda.nodes, self.prev_version)
+        self.installer.install(self.redpanda.nodes, self.FROM_VERSION)
         super(StorageModeUpgradeTest, self).setUp()
 
     def _create_topic_with_tiered_storage_config(
@@ -226,8 +228,8 @@ class StorageModeUpgradeTest(StorageModeTestBase):
                 f"Topic {topic_name} remote_write mismatch: expected {str(remote_write).lower()}, got {actual_write}"
             )
 
-        # Upgrade all nodes to HEAD
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        # Upgrade all nodes to next version
+        self.installer.install(self.redpanda.nodes, self.TO_VERSION)
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # Wait for cluster to stabilize on new version
@@ -422,6 +424,11 @@ class StorageModeTransitionTest(StorageModeTestBase):
         - local -> unset
         - tiered -> unset
         - unset -> cloud
+        - unset -> tiered_cloud
+        - local -> tiered_cloud
+
+        Note: cloud <-> tiered_cloud transitions are tested in
+        StorageModeCloudTransitionTest (requires cloud_topics_enabled).
         """
         rpk = RpkTool(self.redpanda)
 
@@ -560,6 +567,50 @@ class StorageModeTransitionTest(StorageModeTestBase):
             == TopicSpec.STORAGE_MODE_UNSET
         ), "Storage mode should still be unset after rejected transition"
 
+        # Test blocked transition: unset -> tiered_cloud
+        self._create_topic(rpk, "topic-unset-to-tiered-cloud")
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-unset-to-tiered-cloud")
+            == TopicSpec.STORAGE_MODE_UNSET
+        )
+        try:
+            rpk.alter_topic_config(
+                "topic-unset-to-tiered-cloud",
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+            )
+            assert False, (
+                "Transition from unset to tiered_cloud should have been rejected"
+            )
+        except Exception:
+            pass  # Expected - transition should be rejected
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-unset-to-tiered-cloud")
+            == TopicSpec.STORAGE_MODE_UNSET
+        ), "Storage mode should still be unset after rejected transition"
+
+        # Test blocked transition: local -> tiered_cloud
+        self._create_topic(
+            rpk,
+            "topic-local-to-tiered-cloud",
+            config={TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_LOCAL},
+        )
+        try:
+            rpk.alter_topic_config(
+                "topic-local-to-tiered-cloud",
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+            )
+            assert False, (
+                "Transition from local to tiered_cloud should have been rejected"
+            )
+        except Exception:
+            pass  # Expected - transition should be rejected
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-local-to-tiered-cloud")
+            == TopicSpec.STORAGE_MODE_LOCAL
+        ), "Storage mode should still be local after rejected transition"
+
 
 class StorageModeValidationTest(RedpandaTest):
     """
@@ -612,3 +663,171 @@ class StorageModeValidationTest(RedpandaTest):
         assert config["default_redpanda_storage_mode"] != "cloud", (
             "default_redpanda_storage_mode should not be cloud"
         )
+
+        # Test: setting 'tiered_cloud' should fail without cloud_topics_enabled
+        with expect_http_error(400):
+            admin.patch_cluster_config(
+                upsert={"default_redpanda_storage_mode": "tiered_cloud"}
+            )
+        config = admin.get_cluster_config()
+        assert config["default_redpanda_storage_mode"] != "tiered_cloud", (
+            "default_redpanda_storage_mode should not be tiered_cloud"
+        )
+
+
+class StorageModeCloudTransitionTest(StorageModeTestBase):
+    """
+    Test storage mode transitions between cloud and tiered_cloud.
+    Requires cloud topics to be enabled.
+    """
+
+    def __init__(self, test_context: TestContext):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+        )
+
+        super(StorageModeCloudTransitionTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            si_settings=si_settings,
+            extra_rp_conf={
+                CLOUD_TOPICS_CONFIG_STR: True,
+            },
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.redpanda.set_feature_active("tiered_cloud_topics", True, timeout_sec=30)
+
+    @cluster(num_nodes=3)
+    def test_cloud_to_tiered_cloud_transition(self):
+        """
+        Test that cloud -> tiered_cloud and tiered_cloud -> cloud transitions
+        are permitted.
+        """
+        rpk = RpkTool(self.redpanda)
+
+        # Create a cloud topic
+        self._create_topic(
+            rpk,
+            "topic-cloud-to-tc",
+            config={TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD},
+        )
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-cloud-to-tc")
+            == TopicSpec.STORAGE_MODE_CLOUD
+        )
+
+        # Transition cloud -> tiered_cloud (permitted)
+        rpk.alter_topic_config(
+            "topic-cloud-to-tc",
+            TopicSpec.PROPERTY_STORAGE_MODE,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        )
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-cloud-to-tc")
+            == TopicSpec.STORAGE_MODE_TIERED_CLOUD
+        ), "Transition from cloud to tiered_cloud should succeed"
+
+        # Transition tiered_cloud -> cloud (permitted)
+        rpk.alter_topic_config(
+            "topic-cloud-to-tc",
+            TopicSpec.PROPERTY_STORAGE_MODE,
+            TopicSpec.STORAGE_MODE_CLOUD,
+        )
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-cloud-to-tc")
+            == TopicSpec.STORAGE_MODE_CLOUD
+        ), "Transition from tiered_cloud to cloud should succeed"
+
+    @cluster(num_nodes=3)
+    def test_tiered_cloud_blocked_transitions(self):
+        """
+        Test that tiered_cloud cannot transition to local, tiered, or unset.
+        """
+        rpk = RpkTool(self.redpanda)
+
+        # Create a tiered_cloud topic
+        self._create_topic(
+            rpk,
+            "topic-tc-blocked",
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED_CLOUD
+            },
+        )
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-tc-blocked")
+            == TopicSpec.STORAGE_MODE_TIERED_CLOUD
+        )
+
+        # tiered_cloud -> local (blocked)
+        try:
+            rpk.alter_topic_config(
+                "topic-tc-blocked",
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_LOCAL,
+            )
+            assert False, (
+                "Transition from tiered_cloud to local should have been rejected"
+            )
+        except Exception:
+            pass
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-tc-blocked")
+            == TopicSpec.STORAGE_MODE_TIERED_CLOUD
+        ), "Storage mode should still be tiered_cloud after rejected transition"
+
+        # tiered_cloud -> tiered (blocked)
+        try:
+            rpk.alter_topic_config(
+                "topic-tc-blocked",
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_TIERED,
+            )
+            assert False, (
+                "Transition from tiered_cloud to tiered should have been rejected"
+            )
+        except Exception:
+            pass
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-tc-blocked")
+            == TopicSpec.STORAGE_MODE_TIERED_CLOUD
+        ), "Storage mode should still be tiered_cloud after rejected transition"
+
+        # tiered_cloud -> unset (blocked)
+        try:
+            rpk.alter_topic_config(
+                "topic-tc-blocked",
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_UNSET,
+            )
+            assert False, (
+                "Transition from tiered_cloud to unset should have been rejected"
+            )
+        except Exception:
+            pass
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-tc-blocked")
+            == TopicSpec.STORAGE_MODE_TIERED_CLOUD
+        ), "Storage mode should still be tiered_cloud after rejected transition"
+
+    @cluster(num_nodes=3)
+    def test_tiered_cloud_topic_creation(self):
+        """
+        Test that a topic can be created directly with tiered_cloud mode.
+        """
+        rpk = RpkTool(self.redpanda)
+
+        self._create_topic(
+            rpk,
+            "topic-created-as-tc",
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED_CLOUD
+            },
+        )
+        assert (
+            self._get_topic_storage_mode(rpk, "topic-created-as-tc")
+            == TopicSpec.STORAGE_MODE_TIERED_CLOUD
+        ), "Topic should be created with storage_mode=tiered_cloud"

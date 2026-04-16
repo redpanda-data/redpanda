@@ -72,8 +72,7 @@ public:
       cloud_storage_clients::bucket_name bucket,
       ss::lowres_clock::time_point min_refresh_time,
       std::optional<lsm::sequence_number> min_seqno,
-      ss::lowres_clock::duration timeout)
-      = 0;
+      ss::lowres_clock::duration timeout) = 0;
 };
 
 } // namespace cloud_topics::read_replica

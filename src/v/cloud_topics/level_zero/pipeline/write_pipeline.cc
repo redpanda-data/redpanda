@@ -52,6 +52,9 @@ size_t get_cloud_topics_l0_write_path_memory() {
 template<class Clock>
 write_pipeline<Clock>::write_pipeline()
   : _mem_budget(get_cloud_topics_l0_write_path_memory(), "write-pipeline")
+  , _req_budget(
+      config::shard_local_cfg().cloud_topics_produce_write_inflight_limit(),
+      "write-pipeline-req-count")
   , _probe(
       "write",
       config::shard_local_cfg().disable_metrics(),
@@ -66,7 +69,7 @@ template<class Clock>
 write_pipeline<Clock>::~write_pipeline() = default;
 
 template<class Clock>
-ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
+ss::future<std::expected<upload_meta, std::error_code>>
 write_pipeline<Clock>::write_and_debounce(
   model::ntp ntp,
   cluster_epoch min_epoch,
@@ -99,11 +102,21 @@ auto write_pipeline<Clock>::prepare_write(
         units = co_await ss::get_units(
           _mem_budget, sz, this->get_root_rtc().root_abort_source());
     }
-    co_return prepared_data(std::move(data_chunk), std::move(units.value()));
+
+    auto req_units = ss::try_get_units(_req_budget, 1);
+    if (!req_units) {
+        _probe.register_request_limit_blocked();
+        req_units = co_await ss::get_units(
+          _req_budget, 1, this->get_root_rtc().root_abort_source());
+    }
+    co_return prepared_data{
+      .data_chunk = std::move(data_chunk),
+      .mem_units = std::move(units.value()),
+      .req_units = std::move(req_units.value())};
 }
 
 template<class Clock>
-ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
+ss::future<std::expected<upload_meta, std::error_code>>
 write_pipeline<Clock>::execute_write(
   model::ntp ntp,
   cluster_epoch min_epoch,

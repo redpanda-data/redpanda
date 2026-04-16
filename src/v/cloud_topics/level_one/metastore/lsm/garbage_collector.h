@@ -14,7 +14,6 @@
 #include "container/chunked_vector.h"
 #include "model/timestamp.h"
 #include "utils/detailed_error.h"
-#include "utils/named_type.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -24,6 +23,7 @@
 
 namespace cloud_topics::l1 {
 
+class domain_manager_probe;
 class io;
 class replicated_database;
 
@@ -46,7 +46,7 @@ public:
     };
     using error = detailed_error<errc>;
 
-    explicit db_garbage_collector(io* io);
+    explicit db_garbage_collector(io* io, domain_manager_probe* probe);
 
     // Removes all unreferenced objects from cloud storage, and collects stale
     // preregistered objects that need expiry. Returns the list of object IDs
@@ -76,6 +76,7 @@ private:
       chunked_vector<object_id>& to_expire_out);
 
     io* io_;
+    domain_manager_probe* probe_;
 };
 
 inline std::ostream& operator<<(std::ostream& o, db_garbage_collector::errc e) {

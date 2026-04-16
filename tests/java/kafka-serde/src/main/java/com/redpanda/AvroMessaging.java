@@ -47,7 +47,8 @@ public class AvroMessaging implements KafkaMessagingInterface {
   public Properties getProducerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
       boolean autoRegisterSchema, boolean skipKnownTypes,
-      boolean useLatestVersion) {
+      boolean useLatestVersion, String contextNameStrategy,
+      String contextName) {
     Properties prop = new Properties();
     prop.put("bootstrap.servers", brokers);
     prop.put("key.serializer", StringSerializer.class);
@@ -61,6 +62,12 @@ public class AvroMessaging implements KafkaMessagingInterface {
     if (securitySettings != null) {
       prop.putAll(securitySettings.toProperties());
     }
+    if (contextNameStrategy != null) {
+      prop.put(
+          AbstractKafkaSchemaSerDeConfig.CONTEXT_NAME_STRATEGY,
+          contextNameStrategy);
+      prop.put(TopicContextNameStrategy.CONTEXT_NAME_CONFIG, contextName);
+    }
 
     return prop;
   }
@@ -73,7 +80,8 @@ public class AvroMessaging implements KafkaMessagingInterface {
   @Override
   public Properties getConsumerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
-      String consumerGroup, boolean useLatestVersion) {
+      String consumerGroup, boolean useLatestVersion,
+      String contextNameStrategy, String contextName) {
     Properties prop = new Properties();
     prop.put("bootstrap.servers", brokers);
     prop.put("key.deserializer", StringDeserializer.class);
@@ -85,6 +93,12 @@ public class AvroMessaging implements KafkaMessagingInterface {
     prop.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     if (securitySettings != null) {
       prop.putAll(securitySettings.toProperties());
+    }
+    if (contextNameStrategy != null) {
+      prop.put(
+          AbstractKafkaSchemaSerDeConfig.CONTEXT_NAME_STRATEGY,
+          contextNameStrategy);
+      prop.put(TopicContextNameStrategy.CONTEXT_NAME_CONFIG, contextName);
     }
 
     return prop;
@@ -196,7 +210,8 @@ public class AvroMessaging implements KafkaMessagingInterface {
   createRecord(Schema schema, String fieldName, int val) {
     GenericData.Record record = new GenericData.Record(schema);
 
-    record.put(fieldName, val);
+    record.put(fieldName, val)
+    ;
 
     return record;
   }

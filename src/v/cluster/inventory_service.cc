@@ -116,8 +116,7 @@ default_leaders_provider::ntps(ss::abort_source& as) {
         std::exception_ptr ep;
         try {
             co_await _leaders_table.local().for_each_leader(
-              [&ntps,
-               self_node_id](auto tp_ns, auto pid, auto node_id, auto) mutable {
+              [&ntps, self_node_id](auto tp_ns, auto pid, auto node_id, auto) {
                   if (node_id == self_node_id) {
                       ntps.insert(model::ntp{tp_ns.ns, tp_ns.tp, pid});
                   }
@@ -188,9 +187,10 @@ ss::future<bool> inventory_service::maybe_create_inventory_config() {
     if (_should_create_report_config) {
         vlog(cst_log.info, "Attempting to create inventory configuration");
         auto rtc = make_rtc(_as);
-        if (const auto res = co_await _ops.maybe_create_inventory_configuration(
-              _remote->ref(), rtc);
-            res.has_error()) {
+        if (
+          const auto res = co_await _ops.maybe_create_inventory_configuration(
+            _remote->ref(), rtc);
+          res.has_error()) {
             vlog(
               cst_log.warn,
               "Inventory configuration creation failed, will retry later",
@@ -293,15 +293,16 @@ inventory_service::download_and_process_reports(csi::report_paths paths) {
           is_path_compressed);
 
         auto rtc = make_rtc(_as);
-        if (auto res = co_await _remote->ref().download_stream(
-              _ops.bucket(),
-              cloud_storage::remote_segment_path{path},
-              adaptor,
-              rtc,
-              "inventory-report",
-              // TODO add metrics
-              {});
-            res != cloud_storage::download_result::success) {
+        if (
+          auto res = co_await _remote->ref().download_stream(
+            _ops.bucket(),
+            cloud_storage::remote_segment_path{path},
+            adaptor,
+            rtc,
+            "inventory-report",
+            // TODO add metrics
+            {});
+          res != cloud_storage::download_result::success) {
             // We may end up here for download failures, failures to parse
             // report and failures to write the parsed data to disk. In all
             // cases it is unsafe to read the results from disk. Exit here and

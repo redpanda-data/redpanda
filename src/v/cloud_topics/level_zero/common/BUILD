@@ -73,6 +73,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/config",
         "//src/v/model",
         "@seastar",
     ],

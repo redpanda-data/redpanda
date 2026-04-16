@@ -81,7 +81,6 @@ func newMovePartitionReplicasCommand(fs afero.Fs, p *config.Params) *cobra.Comma
 				mu sync.Mutex
 			)
 			for i, newa := range newAssignmentList {
-				i, newa := i, newa
 				wg.Add(1)
 				go func(newa newAssignment) {
 					defer wg.Done()
@@ -101,9 +100,7 @@ func newMovePartitionReplicasCommand(fs afero.Fs, p *config.Params) *cobra.Comma
 			wg.Wait()
 			if coreAssignmentOn {
 				for i, newCore := range coreAssignmentList {
-					i, newCore := i, newCore
 					for _, rc := range newCore.NewReplicas {
-						rc := rc
 						wg.Add(1)
 						go func(newCore newAssignment, rc rpadmin.Replica) {
 							defer wg.Done()
@@ -163,7 +160,6 @@ func parseAssignments(ctx context.Context, cl *rpadmin.AdminAPI, partitionsFlag,
 	// find current replica assignments
 	g, egCtx := errgroup.WithContext(ctx)
 	for _, pFlag := range partitionsFlag {
-		pFlag := pFlag
 		g.Go(func() error {
 			if len(topics) > 0 { // foo -p 0:1,2,3
 				for _, t := range topics {
@@ -269,7 +265,6 @@ func fillAssignmentList(ctx context.Context, cl *rpadmin.AdminAPI, assignmentLis
 	}
 	g, egCtx := errgroup.WithContext(ctx)
 	for node := range brokerReqs {
-		node := node
 		g.Go(func() error {
 			broker, err := cl.Broker(egCtx, node)
 			mu.Lock()
@@ -285,7 +280,6 @@ func fillAssignmentList(ctx context.Context, cl *rpadmin.AdminAPI, assignmentLis
 	var filledAssignments []newAssignment
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for _, newa := range assignmentList {
-		newa := newa
 		for j, nr := range newa.NewReplicas {
 			if nr.Core == -1 {
 				numCore := knownNodeCore[nr.NodeID]

@@ -182,9 +182,10 @@ public:
     }
 
     ss::future<> clear() {
-        co_await ss::parallel_for_each(
+        co_await ss::max_concurrent_for_each(
           _table.begin(),
           _table.end(),
+          64,
           // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
           [](auto& e) { return e.second.processor()->stop(); });
         _table.clear();

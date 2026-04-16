@@ -212,7 +212,7 @@ ss::future<> rm_stm::cleanup_evicted_producers() {
         if (producer.is_evicted() && producer.id() == pid) {
             if (producer._active_transaction_hook.is_linked()) {
                 vlog(
-                  _ctx_log.error,
+                  _ctx_log.info,
                   "Ignoring cleanup request of producer {} due to in progress "
                   "transaction.",
                   producer);
@@ -222,7 +222,7 @@ ss::future<> rm_stm::cleanup_evicted_producers() {
             vlog(_ctx_log.trace, "removed producer: {}", pid);
         } else {
             vlog(
-              _ctx_log.error,
+              _ctx_log.info,
               "Skipping cleanup of evicted pid: {} and associated producer: {}",
               pid,
               producer);
@@ -1293,9 +1293,10 @@ model::offset rm_stm::last_stable_offset() {
     auto next_to_apply = model::next_offset(last_applied);
 
     // scenario 1: still bootstrapping
-    if (unlikely(
-          !_bootstrap_committed_offset
-          || last_applied < _bootstrap_committed_offset.value())) {
+    if (
+      unlikely(
+        !_bootstrap_committed_offset
+        || last_applied < _bootstrap_committed_offset.value())) {
         // To preserve the monotonicity of LSO from a client perspective,
         // we return this unknown offset marker that is translated to
         // an appropriate retry-able Kafka error code for clients.
@@ -2012,6 +2013,8 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               snapshot_opt.value());
         }
     }
+
+    _apply_watermark = hdr.offset;
     co_return raft::local_snapshot_applied::yes;
 }
 
@@ -2034,8 +2037,6 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
       version == tx_snapshot_v5::version || version == tx_snapshot_v6::version,
       "Unsupported snapshot version requested: {}",
       version);
-
-    auto units = co_await _state_lock.hold_read_lock();
 
     auto start_offset = _raft->start_offset();
     vlog(
@@ -2134,7 +2135,9 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
           snap.finished_requests, [start_kafka_offset](const auto& req) {
               return req.last_offset < start_kafka_offset;
           });
-        if (!snap.finished_requests.empty()) {
+        if (
+          !snap.finished_requests.empty()
+          || state->has_transaction_in_progress()) {
             stm_snapshot.producers.push_back(std::move(snap));
         }
     }
@@ -2302,9 +2305,6 @@ rm_stm::take_raft_snapshot(model::offset last_included_offset) {
     // this is always called under apply lock, so we can be sure
     // that no concurrent modifications to the state are happening via apply
     // path.
-
-    // write lock is probably excessive here because the loop below is
-    // synchronous
     auto units = co_await _state_lock.hold_write_lock();
     tx::raft_snapshot snapshot;
     auto kafka_offset = from_log_offset(last_included_offset);

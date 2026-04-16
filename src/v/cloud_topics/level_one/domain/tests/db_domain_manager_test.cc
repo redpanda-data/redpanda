@@ -15,6 +15,7 @@
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/common/object_utils.h"
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
+#include "cloud_topics/level_one/domain/domain_manager_probe.h"
 #include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
 #include "cloud_topics/level_one/metastore/lsm/state_update.h"
@@ -77,7 +78,8 @@ struct domain_manager_node {
           remote,
           bucket,
           &object_io,
-          ss::default_scheduling_group());
+          ss::default_scheduling_group(),
+          &probe);
         if (start_gc) {
             mgr->start();
         }
@@ -118,6 +120,7 @@ struct domain_manager_node {
     const cloud_storage_clients::bucket_name& bucket;
     temporary_dir staging_directory;
     file_io object_io;
+    domain_manager_probe probe;
 
     // Active managers on this node. These managers may be operated on by
     // callers. Not all of these managers are expected to actually work, e.g.

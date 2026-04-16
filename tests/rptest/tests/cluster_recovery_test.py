@@ -19,7 +19,7 @@ import ducktape.errors
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.services.admin import RoleMember
+from rptest.services.admin import Admin as ServiceAdmin, RoleMember
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import security_pb2
 from rptest.clients.admin.v2 import Admin as AdminV2
 from rptest.clients.rpk import RPKACLInput, RpkTool
@@ -1237,3 +1237,136 @@ class CloudTopicsClusterRecoveryTest(RedpandaTest):
             )
 
         self.logger.info("Cloud topics recovery with bootstrap params test PASSED")
+
+    def _transfer_leadership(self, topic: str, partition: int, target_id: int) -> None:
+        """Transfer leadership for a partition and wait for it to complete."""
+        svc_admin = ServiceAdmin(self.redpanda)
+        transferred = svc_admin.transfer_leadership_to(
+            namespace="kafka",
+            topic=topic,
+            partition=partition,
+            target_id=target_id,
+        )
+        assert transferred, (
+            f"Leadership transfer to {target_id} for {topic}/{partition} failed"
+        )
+
+    @cluster(num_nodes=4)
+    def test_cloud_topics_recovery_with_leadership_changes(self):
+        """
+        Test that cloud topics recovery works when partitions have multiple
+        terms from leadership changes.
+
+        This catches bugs where the bootstrap snapshot uses the wrong term.
+        After recovery, new writes must reconcile successfully, which requires
+        term consistency between the Raft log and the metastore.
+        """
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda)
+
+        self.logger.info("Creating cloud topic")
+        self._create_cloud_topic(rpk)
+
+        self.logger.info("Producing initial data")
+        self._produce_data(msg_count=500)
+
+        self.logger.info("Waiting for initial metastore sync")
+        for part in rpk.describe_topic(self.topic_name):
+            self._wait_for_metastore_sync(
+                admin,
+                self.topic_name,
+                part.id,
+                expected_min_next_offset=part.high_watermark,
+                timeout_sec=120,
+            )
+
+        broker_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
+
+        self.logger.info("Forcing leadership transfers and producing more data")
+        for i, target_id in enumerate(broker_ids):
+            for part in rpk.describe_topic(self.topic_name):
+                self.logger.info(
+                    f"Transferring partition {part.id} leadership to "
+                    f"broker {target_id} (round {i})"
+                )
+                self._transfer_leadership(self.topic_name, part.id, target_id)
+
+            self.logger.info(f"Producing data after leadership transfer round {i}")
+            self._produce_data(msg_count=500)
+
+        self.logger.info("Waiting for metastore sync after leadership changes")
+        baseline = {}
+        for part in rpk.describe_topic(self.topic_name):
+            baseline[part.id] = part.high_watermark
+            offsets = self._wait_for_metastore_sync(
+                admin,
+                self.topic_name,
+                part.id,
+                expected_min_next_offset=part.high_watermark,
+                timeout_sec=120,
+            )
+            self.logger.info(
+                f"Metastore offsets for partition {part.id}: "
+                f"start_offset={offsets.start_offset}, "
+                f"next_offset={offsets.next_offset}"
+            )
+
+        self.logger.info("Waiting 30s for metastore manifest flush")
+        time.sleep(30)
+
+        self.logger.info("Waiting for controller metadata upload")
+        self.redpanda.wait_for_controller_snapshot(self.redpanda.nodes[0])
+
+        self.logger.info("Performing cluster recovery")
+        self._perform_cluster_recovery(rpk)
+
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda)
+        topics = set(rpk.list_topics())
+        assert self.topic_name in topics, (
+            f"Topic {self.topic_name} not restored. Available: {topics}"
+        )
+
+        adjustment = {}
+
+        def all_partitions_ready():
+            adjustment.clear()
+            for part in rpk.describe_topic(self.topic_name):
+                adjustment[part.id] = part.high_watermark
+            if len(adjustment) != len(baseline):
+                return False
+            return all(adjustment.get(pid) == hwm for pid, hwm in baseline.items())
+
+        wait_until(
+            all_partitions_ready,
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg=f"Partitions not ready: baseline={baseline}, "
+            f"adjustment={adjustment}",
+        )
+
+        self.logger.info("Producing new data to recovered topic")
+        self._produce_data(msg_count=500)
+
+        self.logger.info("Waiting for post-recovery data to reconcile to metastore")
+        for part in rpk.describe_topic(self.topic_name):
+            prev_hwm = adjustment[part.id]
+            assert part.high_watermark > prev_hwm, (
+                f"Prev HWM {prev_hwm} >= actual HWM {part.high_watermark}"
+            )
+
+        for part in rpk.describe_topic(self.topic_name):
+            offsets = self._wait_for_metastore_sync(
+                admin,
+                self.topic_name,
+                part.id,
+                expected_min_next_offset=part.high_watermark,
+                timeout_sec=120,
+            )
+            self.logger.info(
+                f"Post-recovery metastore offsets for partition {part.id}: "
+                f"start_offset={offsets.start_offset}, "
+                f"next_offset={offsets.next_offset}"
+            )
+
+        self.logger.info("Cloud topics recovery with leadership changes test PASSED")

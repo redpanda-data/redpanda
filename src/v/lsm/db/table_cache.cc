@@ -93,10 +93,12 @@ class table_cache::impl {
     class wrapped_iterator : public internal::iterator {
     public:
         wrapped_iterator(
-          table_cache::impl* cache, ss::lw_shared_ptr<sst::reader> reader)
+          table_cache::impl* cache,
+          ss::lw_shared_ptr<sst::reader> reader,
+          internal::iterator_options opts)
           : _cache(cache)
           , _reader(std::move(reader))
-          , _underlying(_reader->create_iterator()) {}
+          , _underlying(_reader->create_iterator(opts)) {}
         wrapped_iterator(const wrapped_iterator&) = delete;
         wrapped_iterator(wrapped_iterator&&) = delete;
         wrapped_iterator& operator=(const wrapped_iterator&) = delete;
@@ -139,10 +141,12 @@ public:
           vlog(log.error, "table_cache_cleanup_error error=\"{}\"", ex);
       }) {}
 
-    ss::future<std::unique_ptr<internal::iterator>>
-    create_iterator(internal::file_handle h, uint64_t file_size) {
+    ss::future<std::unique_ptr<internal::iterator>> create_iterator(
+      internal::file_handle h,
+      uint64_t file_size,
+      internal::iterator_options opts) {
         auto table = co_await find_reader(h, file_size);
-        co_return std::make_unique<wrapped_iterator>(this, table);
+        co_return std::make_unique<wrapped_iterator>(this, table, opts);
     }
 
     ss::future<> get(
@@ -361,9 +365,11 @@ table_cache::table_cache(
 
 table_cache::~table_cache() = default;
 
-ss::future<std::unique_ptr<internal::iterator>>
-table_cache::create_iterator(internal::file_handle h, uint64_t file_size) {
-    return _impl->create_iterator(h, file_size);
+ss::future<std::unique_ptr<internal::iterator>> table_cache::create_iterator(
+  internal::file_handle h,
+  uint64_t file_size,
+  internal::iterator_options opts) {
+    return _impl->create_iterator(h, file_size, opts);
 }
 
 ss::future<> table_cache::get(

@@ -112,7 +112,7 @@ TEST_CORO(EventFilterTest, filter_triggered_once) {
     auto pending = stage.pull_write_requests(
       std::numeric_limits<size_t>::max());
     for (auto& req : pending.requests) {
-        req.set_value(chunked_vector<extent_meta>());
+        req.set_value(upload_meta{});
     }
     std::ignore = co_await std::move(write);
 }
@@ -154,7 +154,7 @@ TEST_CORO(EventFilterTest, filter_has_memory) {
     auto pending = stage.pull_write_requests(
       std::numeric_limits<size_t>::max());
     for (auto& req : pending.requests) {
-        req.set_value(chunked_vector<extent_meta>());
+        req.set_value(upload_meta{});
     }
     std::ignore = co_await std::move(write);
     co_return;
@@ -233,7 +233,7 @@ TEST_CORO(EventFilterTest, filter_min_write_bytes) {
     auto pending = stage.pull_write_requests(
       std::numeric_limits<size_t>::max());
     for (auto& req : pending.requests) {
-        req.set_value(chunked_vector<extent_meta>());
+        req.set_value(upload_meta{});
     }
     std::ignore = co_await std::move(write1);
     std::ignore = co_await std::move(write2);

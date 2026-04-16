@@ -68,10 +68,11 @@ ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
                                       &ret,
                                       &offset_deltas](model::record record) {
         // contains the key
-        if (std::count(
-              offset_deltas.begin(),
-              offset_deltas.end(),
-              record.offset_delta())) {
+        if (
+          std::count(
+            offset_deltas.begin(),
+            offset_deltas.end(),
+            record.offset_delta())) {
             /*
              * TODO when we further optimize lazy record materialization ot
              * make use of views we can avoid this re-encoding by copying or

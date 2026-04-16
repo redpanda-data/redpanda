@@ -80,8 +80,7 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
-      std::string_view object_type)
-      = 0;
+      std::string_view object_type) = 0;
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
@@ -95,8 +94,7 @@ public:
       const reset_input_stream& reset_str,
       lazy_abort_source& lazy_abort_source,
       const std::string_view stream_label,
-      std::optional<size_t> max_retries)
-      = 0;
+      std::optional<size_t> max_retries) = 0;
 
     virtual ss::future<download_result> download_stream(
       transfer_details transfer_details,
@@ -105,8 +103,7 @@ public:
       bool acquire_hydration_units,
       std::optional<cloud_storage_clients::http_byte_range> byte_range
       = std::nullopt,
-      std::function<void(size_t)> throttle_metric_ms_cb = {})
-      = 0;
+      std::function<void(size_t)> throttle_metric_ms_cb = {}) = 0;
 };
 
 } // namespace cloud_io

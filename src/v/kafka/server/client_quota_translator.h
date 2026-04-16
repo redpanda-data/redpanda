@@ -59,9 +59,8 @@ struct client_quota_limits {
     std::optional<uint64_t> fetch_limit;
     std::optional<uint64_t> partition_mutation_limit;
 
-    friend bool
-    operator==(const client_quota_limits&, const client_quota_limits&)
-      = default;
+    friend bool operator==(
+      const client_quota_limits&, const client_quota_limits&) = default;
     friend std::ostream&
     operator<<(std::ostream& os, const client_quota_limits& l);
 };

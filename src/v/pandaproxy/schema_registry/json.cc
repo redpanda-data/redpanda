@@ -486,8 +486,8 @@ result<document_context> parse_json(iobuf buf) {
     if (schema.is_object()) {
         // "true/false" are valid schemas so here we need to check that the
         // schema is an actual object
-        if (auto it = schema.find("$schema");
-            it != schema.object_range().end()) {
+        if (
+          auto it = schema.find("$schema"); it != schema.object_range().end()) {
             if (it->value().is_string()) {
                 maybe_dialect = from_uri(it->value().as_string_view());
             }
@@ -798,8 +798,9 @@ merge_references(std::span<json::Value::ConstObject> references_objects) {
 // parsing it
 json::Pointer to_json_pointer(std::string_view sv) {
     auto candidate = json::Pointer{sv.data(), sv.size()};
-    if (auto ec = candidate.GetParseErrorCode();
-        ec != rapidjson::kPointerParseErrorNone) {
+    if (
+      auto ec = candidate.GetParseErrorCode();
+      ec != rapidjson::kPointerParseErrorNone) {
         throw_invalid_schema(
           "invalid fragment '{}' error {} at {}",
           sv,
@@ -868,8 +869,9 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
 
         // step 3: check if the referenced object has a $ref field, and if so
         // resolve it
-        if (auto next_ref_it = referenced_obj.FindMember("$ref");
-            next_ref_it != referenced_obj.MemberEnd()) {
+        if (
+          auto next_ref_it = referenced_obj.FindMember("$ref");
+          next_ref_it != referenced_obj.MemberEnd()) {
             std::tie(id_uri, fragment_p) = get_uri_fragment(
               next_ref_it->value.GetString());
         } else {
@@ -1133,8 +1135,9 @@ json_compatibility_result is_additional_superset(
                 return json_compatibility_result{};
             }
             // likely false, but need to check
-            if (is_superset(ctx, get_false_schema(), *newer, ignored_path)
-                  .has_error()) {
+            if (
+              is_superset(ctx, get_false_schema(), *newer, ignored_path)
+                .has_error()) {
                 return json_compatibility_result::of<json_incompatibility>(
                   std::move(additional_path), removed_errt);
             }
@@ -1147,8 +1150,9 @@ json_compatibility_result is_additional_superset(
                 return json_compatibility_result{};
             }
             // convert newer to {} and check against that
-            if (is_superset(ctx, *older, get_true_schema(), ignored_path)
-                  .has_error()) {
+            if (
+              is_superset(ctx, *older, get_true_schema(), ignored_path)
+                .has_error()) {
                 return json_compatibility_result::of<json_incompatibility>(
                   std::move(additional_path), narrowed_errt);
             }
@@ -1597,8 +1601,9 @@ json_compatibility_result is_object_properties_superset(
         };
 
         // it is either an evolution of a schema in older["properties"]
-        if (auto older_it = older_properties.FindMember(prop);
-            older_it != older_properties.MemberEnd()) {
+        if (
+          auto older_it = older_properties.FindMember(prop);
+          older_it != older_properties.MemberEnd()) {
             // prop exists in both
             res.merge(is_superset(ctx, older_it->value, schema, prop_path()));
             // check next property
@@ -2326,9 +2331,10 @@ void process_work_item(
         // we are visiting a bundled schema.
 
         // run validation since we are not a guaranteed to be in proper schema
-        if (auto validation = validate_json_schema(
-              maybe_new_dialect.value(), *item.obj);
-            validation.has_error()) {
+        if (
+          auto validation = validate_json_schema(
+            maybe_new_dialect.value(), *item.obj);
+          validation.has_error()) {
             // stop exploring this branch, the schema is invalid
             throw as_exception(invalid_schema(
               fmt::format(
@@ -2347,8 +2353,9 @@ void process_work_item(
           std::pair{json::Pointer{item.obj_ptr.to_string()}, item.dialect});
     }
 
-    if (auto ref_it = item.obj->find("$ref");
-        ref_it != item.obj->object_range().end()) {
+    if (
+      auto ref_it = item.obj->find("$ref");
+      ref_it != item.obj->object_range().end()) {
         // ensure refs are absolute uris
         ref_it->value() = jsoncons::uri{ref_it->value().as_string()}
                             .resolve(item.base_uri)

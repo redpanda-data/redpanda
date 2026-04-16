@@ -114,7 +114,10 @@ void aggregator<Clock>::ack() {
     for (auto& p : _aggregated) {
         if (p->ref != nullptr) {
             try {
-                p->ref->set_value(std::move(p->extents));
+                p->ref->set_value(
+                  upload_meta{
+                    .shard = ss::this_shard_id(),
+                    .extents = std::move(p->extents)});
             } catch (const ss::broken_promise& e) {
                 std::ignore = e;
             }

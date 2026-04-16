@@ -15,6 +15,13 @@
 
 namespace lsm::internal {
 
+// Options that control the behavior of iterators over SST files.
+struct iterator_options {
+    // The amount of extra data to read ahead on each block read. Buffered
+    // data is served to subsequent sequential reads without I/O.
+    size_t readahead_size = 0;
+};
+
 // A bi-directional iterator over sorted key-value pairs.
 class iterator {
 public:

@@ -17,6 +17,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
+#include "config/configuration.h"
 #include "raft/notification.h"
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
@@ -320,6 +321,13 @@ template<typename Clock>
 ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
   int64_t epoch_causing_monotonicity_violation) {
     auto holder = _gate.hold();
+    // Don't do the cross shard calls if our local shard is up to date or we
+    // already are going to get a new epoch from another invalidation.
+    if (
+      _cached_epoch > epoch_causing_monotonicity_violation
+      || _cached_epoch_time == Clock::time_point::min()) {
+        co_return;
+    }
     co_await this->container().invoke_on_all(
       [epoch_causing_monotonicity_violation](cluster_epoch_service<Clock>& s) {
           s._gate.check();
@@ -333,9 +341,9 @@ ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
           // epoch and we need to refetch the epoch).
           if (s._cached_epoch <= epoch_causing_monotonicity_violation) {
               s._cached_epoch_time = Clock::time_point::min();
-              // Force this to be a blocking update so we don't get another
-              // sequence violation from the async update.
-              s._epoch_updated_time = Clock::time_point::min();
+              // We can't set the update time because we only advance that if
+              // the epoch changes, so we may run into a situation where we
+              // don't update the epoch and that causes epoch requests to fail
           }
       });
 }
@@ -530,7 +538,12 @@ bool cluster_epoch_service<Clock>::cache_entry_expired() const noexcept {
 }
 template<typename Clock>
 bool cluster_epoch_service<Clock>::cache_entry_needs_updated() const noexcept {
-    return Clock::now() > (_epoch_updated_time + max_same_epoch_cache_duration);
+    const auto max_same_epoch_cache_duration
+      = config::shard_local_cfg()
+          .cloud_topics_epoch_service_max_same_epoch_duration();
+    return Clock::now() > (_epoch_updated_time + max_same_epoch_cache_duration)
+           || Clock::now()
+                > (_cached_epoch_time + max_same_epoch_cache_duration);
 }
 
 template class cluster_epoch_service<ss::lowres_clock>;

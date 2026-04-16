@@ -73,9 +73,10 @@ cgroups:
     const auto get_match_index =
       [&cfg](
         std::optional<std::string_view> client_id) -> std::optional<size_t> {
-        if (const auto i = config::find_throughput_control_group(
-              cfg.cgroups().cbegin(), cfg.cgroups().cend(), client_id);
-            i != cfg.cgroups().cend()) {
+        if (
+          const auto i = config::find_throughput_control_group(
+            cfg.cgroups().cbegin(), cfg.cgroups().cend(), client_id);
+          i != cfg.cgroups().cend()) {
             return std::distance(cfg.cgroups().cbegin(), i);
         }
         return std::nullopt;

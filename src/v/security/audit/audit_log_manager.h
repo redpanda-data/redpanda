@@ -94,14 +94,16 @@ public:
       security::auth_result result,
       Args&&... args) {
         if constexpr (std::is_same_v<T, model::topic>) {
-            if (auto val = should_enqueue_audit_event(
-                  api, result.principal, resource_name);
-                val.has_value()) {
+            if (
+              auto val = should_enqueue_audit_event(
+                api, result.principal, resource_name);
+              val.has_value()) {
                 return (bool)*val;
             }
         } else {
-            if (auto val = should_enqueue_audit_event(api, result.principal);
-                val.has_value()) {
+            if (
+              auto val = should_enqueue_audit_event(api, result.principal);
+              val.has_value()) {
                 return (bool)*val;
             }
         }
@@ -121,14 +123,16 @@ public:
       security::auth_result result,
       Args&&... args) {
         if constexpr (std::is_same_v<T, model::topic>) {
-            if (auto val = should_enqueue_audit_event(
-                  api, result.principal, resource_name);
-                val.has_value()) {
+            if (
+              auto val = should_enqueue_audit_event(
+                api, result.principal, resource_name);
+              val.has_value()) {
                 return (bool)*val;
             }
         } else {
-            if (auto val = should_enqueue_audit_event(api, result.principal);
-                val.has_value()) {
+            if (
+              auto val = should_enqueue_audit_event(api, result.principal);
+              val.has_value()) {
                 return (bool)*val;
             }
         }
@@ -145,8 +149,9 @@ public:
       ss::httpd::const_req req,
       std::string_view operation_name,
       security::auth_result&& result) {
-        if (auto val = should_enqueue_audit_event(event_type, result.principal);
-            val.has_value()) {
+        if (
+          auto val = should_enqueue_audit_event(event_type, result.principal);
+          val.has_value()) {
             return (bool)*val;
         }
         return do_enqueue_audit_event<api_activity>(
@@ -162,9 +167,10 @@ public:
       bool is_authorized,
       security::acl_operation operation,
       std::optional<std::string_view> reason) {
-        if (auto val = should_enqueue_audit_event(
-              event_type, auth_result.get_username());
-            val.has_value()) {
+        if (
+          auto val = should_enqueue_audit_event(
+            event_type, auth_result.get_username());
+          val.has_value()) {
             return (bool)*val;
         }
         return do_enqueue_audit_event<api_activity>(
@@ -187,9 +193,10 @@ public:
       bool is_authorized,
       security::acl_operation operation,
       chunked_vector<resource_detail>&& resources) {
-        if (auto val = should_enqueue_audit_event(
-              event_type, auth_result.get_username());
-            val.has_value()) {
+        if (
+          auto val = should_enqueue_audit_event(
+            event_type, auth_result.get_username());
+          val.has_value()) {
             return (bool)*val;
         }
         return do_enqueue_audit_event<api_activity>(
@@ -204,9 +211,10 @@ public:
     }
 
     bool enqueue_authn_event(authentication_event_options options) {
-        if (auto val = should_enqueue_audit_event(
-              event_type::authenticate, options.user);
-            val.has_value()) {
+        if (
+          auto val = should_enqueue_audit_event(
+            event_type::authenticate, options.user);
+          val.has_value()) {
             return (bool)*val;
         }
         return do_enqueue_audit_event<authentication>(std::move(options));
@@ -228,9 +236,10 @@ public:
       const ss::sstring& svc_name,
       bool authorized,
       const std::optional<std::string_view>& reason) {
-        if (auto val = should_enqueue_audit_event(
-              type, auth_result.get_username());
-            val.has_value()) {
+        if (
+          auto val = should_enqueue_audit_event(
+            type, auth_result.get_username());
+          val.has_value()) {
             return (bool)*val;
         }
         return do_enqueue_audit_event<api_activity>(
@@ -242,8 +251,8 @@ public:
       ss::httpd::const_req req,
       const ss::sstring& user,
       const ss::sstring& svc_name) {
-        if (auto val = should_enqueue_audit_event(type, user);
-            val.has_value()) {
+        if (
+          auto val = should_enqueue_audit_event(type, user); val.has_value()) {
             return (bool)*val;
         }
         return do_enqueue_audit_event<api_activity>(req, user, svc_name);
@@ -374,9 +383,8 @@ private:
     template<security::audit::returns_auditable_resource_vector Func>
     auto restrict_topics(Func&& func) const noexcept {
         auto result = func();
-        if constexpr (std::is_same_v<
-                        std::vector<model::topic>,
-                        decltype(result)>) {
+        if constexpr (
+          std::is_same_v<std::vector<model::topic>, decltype(result)>) {
             std::erase_if(result, [this](const model::topic& t) {
                 return _audit_excluded_topics.contains(t);
             });

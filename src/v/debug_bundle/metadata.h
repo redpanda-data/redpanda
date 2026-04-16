@@ -39,8 +39,8 @@ struct process_output
 
     auto serde_fields() { return std::tie(cout, cerr); }
 
-    friend bool operator==(const process_output&, const process_output&)
-      = default;
+    friend bool
+    operator==(const process_output&, const process_output&) = default;
 };
 
 struct process_wait_exited
@@ -52,9 +52,8 @@ struct process_wait_exited
 
     auto serde_fields() { return std::tie(exit_code); }
 
-    friend auto
-    operator<=>(const process_wait_exited&, const process_wait_exited&)
-      = default;
+    friend auto operator<=>(
+      const process_wait_exited&, const process_wait_exited&) = default;
 };
 
 struct process_wait_signaled
@@ -66,9 +65,8 @@ struct process_wait_signaled
 
     auto serde_fields() { return std::tie(signal); }
 
-    friend auto
-    operator<=>(const process_wait_signaled&, const process_wait_signaled&)
-      = default;
+    friend auto operator<=>(
+      const process_wait_signaled&, const process_wait_signaled&) = default;
 };
 
 using serde_process_result

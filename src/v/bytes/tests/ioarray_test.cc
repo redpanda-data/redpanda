@@ -17,7 +17,33 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
+#include <random>
+
 // NOLINTBEGIN(*magic-numbers*)
+
+namespace {
+
+// Build a string where byte i = (base + i) & 0xFF.
+std::string make_pattern(size_t size, size_t base = 0) {
+    std::string s(size, '\0');
+    for (size_t i = 0; i < size; ++i) {
+        s[i] = static_cast<char>((base + i) & 0xFF);
+    }
+    return s;
+}
+
+// Fill an ioarray with the default pattern (byte i = i & 0xFF).
+ioarray make_filled(size_t size) {
+    return ioarray::copy_from(iobuf::from(make_pattern(size)));
+}
+
+// Check that arr's contents equal the pattern starting at base.
+void verify_pattern(const ioarray& arr, size_t base) {
+    auto expected = make_pattern(arr.size(), base);
+    EXPECT_TRUE(std::ranges::equal(arr.as_range(), expected));
+}
+
+} // namespace
 
 TEST(IOArray, StringView) {
     iobuf b;
@@ -461,6 +487,124 @@ TEST(IOArray, FromSizedBuffers) {
         EXPECT_THROW(
           { auto arr = ioarray::from_sized_buffers(bufs); },
           std::invalid_argument);
+    }
+}
+
+// -- concat tests --
+
+TEST(IOArray, ConcatEmpty) {
+    // Both empty
+    auto r1 = ioarray::concat(ioarray{}, ioarray{});
+    EXPECT_TRUE(r1.empty());
+
+    // Empty + non-empty
+    auto r2 = ioarray::concat(ioarray{}, make_filled(1000));
+    EXPECT_EQ(1000, r2.size());
+    verify_pattern(r2, 0);
+
+    // Non-empty + empty
+    auto r3 = ioarray::concat(make_filled(128_KiB), ioarray{});
+    EXPECT_EQ(128_KiB, r3.size());
+    verify_pattern(r3, 0);
+}
+
+TEST(IOArray, ConcatFastPath) {
+    // Fast path: a ends on a chunk boundary, b has offset 0.
+    struct testcase {
+        size_t a_size;
+        size_t b_size;
+    };
+    for (auto [a_size, b_size] : std::to_array<testcase>({
+           {.a_size = 128_KiB, .b_size = 50_KiB},
+           {.a_size = 128_KiB, .b_size = 128_KiB},
+           {.a_size = 3 * 128_KiB, .b_size = 2 * 128_KiB + 64_KiB},
+         })) {
+        auto result = ioarray::concat(
+          make_filled(a_size),
+          ioarray::copy_from(iobuf::from(make_pattern(b_size, a_size))));
+        verify_pattern(result, 0);
+    }
+
+    // Verify read_fixed32 across the chunk boundary
+    auto result = ioarray::concat(
+      make_filled(128_KiB),
+      ioarray::copy_from(iobuf::from(make_pattern(128_KiB, 128_KiB))));
+    auto byte = [](size_t i) -> uint32_t { return i & 0xFF; };
+    uint32_t expected = byte(128_KiB - 2) | (byte(128_KiB - 1) << 8u)
+                        | (byte(128_KiB) << 16u) | (byte(128_KiB + 1) << 24u);
+    EXPECT_EQ(expected, result.read_fixed32(128_KiB - 2));
+}
+
+TEST(IOArray, ConcatFastPathWithNonZeroOffset) {
+    // Fast path with a._offset != 0: offset+size = 128_KiB (chunk boundary).
+    auto full = make_filled(256_KiB);
+    auto a = full.share(100, 128_KiB - 100);
+    auto b = ioarray::copy_from(iobuf::from(make_pattern(50_KiB, 128_KiB)));
+    auto result = ioarray::concat(std::move(a), std::move(b));
+
+    auto expected = make_pattern(128_KiB - 100, 100)
+                    + make_pattern(50_KiB, 128_KiB);
+    EXPECT_TRUE(std::ranges::equal(result.as_range(), expected));
+
+    // read_fixed32 across the a/b boundary
+    size_t boundary = 128_KiB - 100;
+    auto byte = [](size_t i) -> uint32_t { return i & 0xFF; };
+    uint32_t exp32 = byte(100 + boundary - 2) | (byte(100 + boundary - 1) << 8u)
+                     | (byte(128_KiB) << 16u) | (byte(128_KiB + 1) << 24u);
+    EXPECT_EQ(exp32, result.read_fixed32(boundary - 2));
+}
+
+TEST(IOArray, ConcatSlowPath) {
+    // Small strings
+    {
+        auto result = ioarray::concat(
+          ioarray::copy_from(iobuf::from("hello")),
+          ioarray::copy_from(iobuf::from("world")));
+        EXPECT_TRUE(
+          std::ranges::equal(result.as_range(), std::string("helloworld")));
+    }
+    // Both misaligned (offsets + non-chunk-multiple size)
+    {
+        auto full_a = make_filled(300_KiB);
+        auto full_b = make_filled(200_KiB);
+        auto result = ioarray::concat(
+          full_a.share(10, 100_KiB), full_b.share(20, 80_KiB));
+
+        auto expected = make_pattern(100_KiB, 10) + make_pattern(80_KiB, 20);
+        EXPECT_TRUE(std::ranges::equal(result.as_range(), expected));
+    }
+}
+
+TEST(IOArray, ConcatRandomized) {
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<size_t> size_dist(0, 512_KiB);
+    std::uniform_int_distribution<size_t> off_dist(0, 1000);
+
+    for (int iter = 0; iter < 100; ++iter) {
+        size_t a_size = size_dist(rng);
+        size_t b_size = size_dist(rng);
+        bool use_shares = iter >= 50;
+
+        size_t a_off = 0, b_off = 0;
+        size_t a_len = a_size, b_len = b_size;
+        if (use_shares && a_size > 1) {
+            a_off = std::min(off_dist(rng), a_size - 1);
+            a_len = a_size - a_off;
+        }
+        if (use_shares && b_size > 1) {
+            b_off = std::min(off_dist(rng), b_size - 1);
+            b_len = b_size - b_off;
+        }
+
+        auto src_a = make_filled(a_size);
+        auto a = use_shares ? src_a.share(a_off, a_len) : std::move(src_a);
+        auto src_b = make_filled(b_size);
+        auto b = use_shares ? src_b.share(b_off, b_len) : std::move(src_b);
+
+        auto result = ioarray::concat(std::move(a), std::move(b));
+        auto expected = make_pattern(a_len, a_off) + make_pattern(b_len, b_off);
+        ASSERT_TRUE(std::ranges::equal(result.as_range(), expected))
+          << "iter=" << iter;
     }
 }
 

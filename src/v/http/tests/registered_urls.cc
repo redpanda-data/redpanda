@@ -128,8 +128,9 @@ response registered_urls::lookup(const request_info& req) const {
 
     auto content_mapping = m_it->second;
     auto content = req.content;
-    if (auto c_it = content_mapping.find(content);
-        c_it != content_mapping.end()) {
+    if (
+      auto c_it = content_mapping.find(content);
+      c_it != content_mapping.end()) {
         return c_it->second;
     }
 

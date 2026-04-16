@@ -99,7 +99,14 @@ level_zero_log_reader_impl::read_some(
     // Wait briefly for the write path to cache the batch we need.
     // This closes the race window between replicate() completing (HWM
     // advance) and cache_put() running on the write continuation.
-    if (cache_enabled() && _ctp->is_leader()) {
+    //
+    // In tiered_cloud mode the write path replicates raft_data directly
+    // through raft without populating the cloud topics batch cache, so
+    // waiting here would always time out and add 500ms of latency to
+    // every tailing fetch.
+    if (
+      cache_enabled() && _ctp->is_leader()
+      && !_ctp->get_ntp_config().is_tiered_cloud()) {
         auto tidp = require_topic_id_partition();
         auto wait_deadline = model::timeout_clock::now()
                              + std::chrono::milliseconds(500);
@@ -121,9 +128,10 @@ level_zero_log_reader_impl::read_some(
     // the 'empty' state. It doesn't make any difference if the reader is in
     // the 'materialized' state. If we're in 'ready' state we risk to go out
     // of sync with cached metadata so it's safer to hydrate.
-    if (auto cached = maybe_read_batches_from_cache(
-          model::offset_cast(committed_kafka));
-        !cached.empty()) {
+    if (
+      auto cached = maybe_read_batches_from_cache(
+        model::offset_cast(committed_kafka));
+      !cached.empty()) {
         co_return cached;
     }
 
@@ -247,9 +255,14 @@ level_zero_log_reader_impl::ctp_read_config() const {
      * writing). This is a small size used across all existing workloads, and
      * for cloud topics it provides plenty of metadata to drive large scans when
      * materialized batches are big.
+     *
+     * In tiered_cloud mode, raft_data batches are full-size (not placeholders),
+     * so we use the caller's max_bytes to avoid under-reading.
      */
     const auto ctp_reader_max_bytes
-      = storage::local_log_reader_config::segment_reader_max_buffer_size;
+      = _ctp->get_ntp_config().is_tiered_cloud()
+          ? _config.max_bytes
+          : storage::local_log_reader_config::segment_reader_max_buffer_size;
 
     storage::local_log_reader_config cfg(
       start_offset,

@@ -11,9 +11,15 @@
 # by the Apache License, Version 2.0
 # ==================================================================
 #
-# Start a 3 node cluster:
+# Start a 3 node cluster via bazel (builds redpanda automatically):
 #
-#   [jerry@winterland]$ dev_cluster.py -e vbuild/debug/clang/bin/redpanda
+#   bazel run --config=fastbuild //tools:dev_cluster -- [dev_cluster args] -- [redpanda args]
+#
+# Examples:
+#
+#   bazel run --config=fastbuild //tools:dev_cluster
+#   bazel run --config=fastbuild //tools:dev_cluster -- --nodes 1
+#   bazel run --config=release //tools:dev_cluster -- --nodes 1 -- --logger-log-level=io=debug
 #
 import argparse
 import asyncio

@@ -177,9 +177,8 @@ struct context_subject {
       : ctx{std::move(c)}
       , sub{std::move(s)} {}
 
-    friend auto
-    operator<=>(const context_subject& lhs, const context_subject& rhs)
-      = default;
+    friend auto operator<=>(
+      const context_subject& lhs, const context_subject& rhs) = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const context_subject& ctx_sub) {
@@ -264,8 +263,7 @@ struct context_subject_reference {
 
     friend bool operator==(
       const context_subject_reference& lhs,
-      const context_subject_reference& rhs)
-      = default;
+      const context_subject_reference& rhs) = default;
 
     /// Comparison is done by string representation for compatibility with the
     /// reference implementation where normalization sorts references by string.
@@ -291,9 +289,8 @@ using schema_version = named_type<int32_t, struct schema_version_tag>;
 inline constexpr schema_version invalid_schema_version{-1};
 
 struct schema_reference {
-    friend bool
-    operator==(const schema_reference& lhs, const schema_reference& rhs)
-      = default;
+    friend bool operator==(
+      const schema_reference& lhs, const schema_reference& rhs) = default;
 
     friend std::ostream&
     operator<<(std::ostream& os, const schema_reference& ref);
@@ -309,9 +306,8 @@ struct schema_reference {
 struct schema_metadata {
     std::optional<absl::btree_map<ss::sstring, ss::sstring>> properties;
 
-    friend bool
-    operator==(const schema_metadata& lhs, const schema_metadata& rhs)
-      = default;
+    friend bool operator==(
+      const schema_metadata& lhs, const schema_metadata& rhs) = default;
 
     fmt::iterator format_to(fmt::iterator it) const;
 };
@@ -356,9 +352,8 @@ public:
       , _refs{std::move(refs)}
       , _meta{std::move(meta)} {}
 
-    friend bool
-    operator==(const schema_definition& lhs, const schema_definition& rhs)
-      = default;
+    friend bool operator==(
+      const schema_definition& lhs, const schema_definition& rhs) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const schema_definition&);
 
@@ -574,9 +569,8 @@ struct context_schema_id {
       : ctx{std::move(c)}
       , id{s} {}
 
-    friend auto
-    operator<=>(const context_schema_id& lhs, const context_schema_id& rhs)
-      = default;
+    friend auto operator<=>(
+      const context_schema_id& lhs, const context_schema_id& rhs) = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const context_schema_id& ctx_id) {
@@ -646,8 +640,8 @@ public:
       : _sub{std::move(sub)}
       , _def{std::move(def)} {}
 
-    friend bool operator==(const subject_schema& lhs, const subject_schema& rhs)
-      = default;
+    friend bool
+    operator==(const subject_schema& lhs, const subject_schema& rhs) = default;
 
     friend std::ostream&
     operator<<(std::ostream& os, const subject_schema& schema);
@@ -758,9 +752,8 @@ from_string_view<compatibility_level>(std::string_view sv) {
 }
 
 struct compatibility_result {
-    friend bool
-    operator==(const compatibility_result&, const compatibility_result&)
-      = default;
+    friend bool operator==(
+      const compatibility_result&, const compatibility_result&) = default;
     friend std::ostream& operator<<(std::ostream&, const compatibility_result&);
 
     bool is_compat;

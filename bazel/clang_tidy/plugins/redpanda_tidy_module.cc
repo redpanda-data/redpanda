@@ -11,7 +11,6 @@
 #include "redpanda_noop_check.h"
 
 #include <clang-tidy/ClangTidyModule.h>
-#include <clang-tidy/ClangTidyModuleRegistry.h>
 
 namespace clang::tidy {
 

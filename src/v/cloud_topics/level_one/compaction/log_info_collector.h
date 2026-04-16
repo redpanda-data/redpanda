@@ -52,8 +52,7 @@ public:
     // NTPs that cannot be looked up (e.g. partition not found) will not have
     // an entry added to the map.
     virtual ss::future<> fill_max_compactible_offsets(
-      chunked_hash_map<model::ntp, kafka::offset>&) const
-      = 0;
+      chunked_hash_map<model::ntp, kafka::offset>&) const = 0;
 };
 
 // Default max_compactible_offset_provider, which uses the `shard_table` and

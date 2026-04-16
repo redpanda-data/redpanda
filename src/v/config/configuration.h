@@ -220,6 +220,7 @@ struct configuration final : public config_store {
     property<bool> use_fetch_scheduler_group;
     property<bool> use_produce_scheduler_group;
     property<bool> use_kafka_handler_scheduler_group;
+    property<bool> kafka_handler_latency_all;
     property<std::chrono::seconds> kafka_tcp_keepalive_idle_timeout_seconds;
     property<std::chrono::seconds> kafka_tcp_keepalive_probe_interval_seconds;
     property<uint32_t> kafka_tcp_keepalive_probes;
@@ -438,6 +439,7 @@ struct configuration final : public config_store {
     property<bool> enable_cluster_metadata_upload_loop;
     property<std::optional<ss::sstring>> cloud_storage_cluster_name;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
+    bounded_property<size_t> cloud_storage_gc_max_segments_per_run;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
     property<size_t> cloud_storage_recovery_temporary_retention_bytes_default;
     // validation of topic manifest during recovery
@@ -773,6 +775,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> datalake_scheduler_disk_reservation_block_size;
     property<bool> consumer_offsets_topic_batch_cache_enabled;
     enterprise<property<bool>> enable_shadow_linking;
+    bounded_property<uint32_t> shadow_link_failover_batch_size;
     property<std::chrono::milliseconds> internal_rpc_request_timeout_ms;
 
     configuration();
@@ -807,6 +810,8 @@ public:
       cloud_topics_epoch_service_epoch_increment_interval;
     property<std::chrono::milliseconds>
       cloud_topics_epoch_service_local_epoch_cache_duration;
+    property<std::chrono::milliseconds>
+      cloud_topics_epoch_service_max_same_epoch_duration;
 
     property<std::chrono::milliseconds>
       cloud_topics_short_term_gc_minimum_object_age;
@@ -829,6 +834,9 @@ public:
     property<std::chrono::milliseconds>
       cloud_topics_long_term_file_deletion_delay;
     bounded_property<int32_t> cloud_topics_num_metastore_partitions;
+
+    bounded_property<size_t> cloud_topics_produce_write_inflight_limit;
+    bounded_property<size_t> cloud_topics_produce_no_pid_concurrency;
 
     development_feature_property<int> development_feature_property_testing_only;
 

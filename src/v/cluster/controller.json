@@ -193,6 +193,11 @@
             "output_type": "update_mirror_topic_status_response"
         },
         {
+            "name": "batch_update_mirror_topic_status",
+            "input_type": "batch_update_mirror_topic_status_request",
+            "output_type": "batch_update_mirror_topic_status_response"
+        },
+        {
             "name": "update_mirror_topic_properties",
             "input_type": "update_mirror_topic_properties_request",
             "output_type": "update_mirror_topic_properties_response"

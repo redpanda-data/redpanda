@@ -807,7 +807,11 @@ class QuotaManagementUpgradeTest(EndToEndTest, QuotaManagementUtils):
 
     @cluster(num_nodes=2, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_upgrade(self):
-        install_opts = InstallOptions(version=RedpandaVersionTriple((25, 3, 1)))
+        # user_based_client_quota feature introduced in v26.1, start on v25.3
+        from_version = (25, 3, 1)
+        to_version = RedpandaInstaller.next_major_version(from_version[0:2])
+
+        install_opts = InstallOptions(version=RedpandaVersionTriple(from_version))
         self.start_redpanda(
             num_nodes=2,
             si_settings=SISettings(test_context=self.test_context),
@@ -847,8 +851,8 @@ class QuotaManagementUpgradeTest(EndToEndTest, QuotaManagementUtils):
             f"Unexpected entry: {entry}"
         )
 
-        # Upgrade one node to the head version.
-        self.redpanda._installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        # Upgrade one node to the next version.
+        self.redpanda._installer.install(self.redpanda.nodes, to_version)
         self.redpanda.restart_nodes([first_node])
         wait_for_num_versions(self.redpanda, 2)
 
@@ -877,7 +881,11 @@ class QuotaManagementUpgradeTest(EndToEndTest, QuotaManagementUtils):
 
     @cluster(num_nodes=2, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_quotas_during_upgrade(self):
-        install_opts = InstallOptions(version=RedpandaVersionTriple((25, 3, 1)))
+        # client-id quotas predate v25.3, test they survive the upgrade
+        from_version = (25, 3, 1)
+        to_version = RedpandaInstaller.next_major_version(from_version[0:2])
+
+        install_opts = InstallOptions(version=RedpandaVersionTriple(from_version))
         self.start_redpanda(
             num_nodes=2,
             si_settings=SISettings(test_context=self.test_context),
@@ -934,8 +942,8 @@ class QuotaManagementUpgradeTest(EndToEndTest, QuotaManagementUtils):
         for etype, quota in all_quotas.values():
             check_all_nodes(etype, quota)
 
-        # Upgrade one node to the head version.
-        self.redpanda._installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        # Upgrade one node to the next version.
+        self.redpanda._installer.install(self.redpanda.nodes, to_version)
         self.redpanda.restart_nodes([first_node])
         wait_for_num_versions(self.redpanda, 2)
 

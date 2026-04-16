@@ -36,12 +36,10 @@ public:
     base_named_type(const base_named_type& o) noexcept = default;
     base_named_type& operator=(const base_named_type& o) noexcept = default;
 
-    friend constexpr bool
-    operator==(const base_named_type&, const base_named_type&) noexcept
-      = default;
-    friend constexpr auto
-    operator<=>(const base_named_type&, const base_named_type&) noexcept
-      = default;
+    friend constexpr bool operator==(
+      const base_named_type&, const base_named_type&) noexcept = default;
+    friend constexpr auto operator<=>(
+      const base_named_type&, const base_named_type&) noexcept = default;
 
     constexpr base_named_type& operator++() {
         ++_value;
@@ -128,8 +126,8 @@ public:
 
     base_named_type(base_named_type&& o) noexcept(move_noexcept) = default;
 
-    base_named_type& operator=(base_named_type&& o) noexcept(move_noexcept)
-      = default;
+    base_named_type&
+    operator=(base_named_type&& o) noexcept(move_noexcept) = default;
 
     base_named_type(const base_named_type& o) = default;
 

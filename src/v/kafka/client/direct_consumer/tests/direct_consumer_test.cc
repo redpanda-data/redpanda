@@ -456,8 +456,7 @@ TEST_F(consumer_test_mock, TestLeadershipChange) {
         .leader);
     cluster_mock.get_topics()[test_topic]
       .partitions[model::partition_id(0)]
-      .leader
-      = model::node_id(2);
+      .leader = model::node_id(2);
     // add some more data to partition 0
     make_data_available(test_topic, 0, 23);
 

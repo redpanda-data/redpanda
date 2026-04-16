@@ -49,7 +49,8 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
   public Properties getProducerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
       boolean autoRegisterSchema, boolean skipKnownTypes,
-      boolean useLatestVersion) {
+      boolean useLatestVersion, String contextNameStrategy,
+      String contextName) {
     Properties prop = new Properties();
 
     prop.put("bootstrap.servers", brokers);
@@ -66,6 +67,12 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
     if (securitySettings != null) {
       prop.putAll(securitySettings.toProperties());
     }
+    if (contextNameStrategy != null) {
+      prop.put(
+          AbstractKafkaSchemaSerDeConfig.CONTEXT_NAME_STRATEGY,
+          contextNameStrategy);
+      prop.put(TopicContextNameStrategy.CONTEXT_NAME_CONFIG, contextName);
+    }
 
     return prop;
   }
@@ -78,7 +85,8 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
   @Override
   public Properties getConsumerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
-      String consumerGroup, boolean useLatestVersion) {
+      String consumerGroup, boolean useLatestVersion,
+      String contextNameStrategy, String contextName) {
     Properties prop = new Properties();
 
     prop.put("bootstrap.servers", brokers);
@@ -91,6 +99,12 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
     prop.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     if (securitySettings != null) {
       prop.putAll(securitySettings.toProperties());
+    }
+    if (contextNameStrategy != null) {
+      prop.put(
+          AbstractKafkaSchemaSerDeConfig.CONTEXT_NAME_STRATEGY,
+          contextNameStrategy);
+      prop.put(TopicContextNameStrategy.CONTEXT_NAME_CONFIG, contextName);
     }
 
     return prop;

@@ -583,13 +583,13 @@ message Person {
 	var wg sync.WaitGroup
 
 	// Launch multiple goroutines that encode records concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
 
 			// Each goroutine encodes the same record multiple times to simulate concurrent access.
-			for j := 0; j < numIterations; j++ {
+			for range numIterations {
 				_, err := serde.EncodeRecord([]byte(`{"name":"igor","id":123,"isAdmin":true,"email":"test@redpanda.com"}`))
 				require.NoError(t, err)
 			}

@@ -543,15 +543,17 @@ find_multipart_boundary(const http::client::response_header& headers) {
         return std::unexpected("find_multipart_boundary: Content-Type missing");
     }
     std::string_view content_type{content_type_it->value()};
-    if (auto pos = content_type.find(content_type_multipart);
-        pos == content_type.npos) {
+    if (
+      auto pos = content_type.find(content_type_multipart);
+      pos == content_type.npos) {
         return std::unexpected(
           ssx::sformat(
             "find_multipart_boundary: Expected multipart Content-Type: {}",
             content_type));
     }
-    if (auto boundary_pos = content_type.find(boundary_name);
-        boundary_pos != content_type.npos) {
+    if (
+      auto boundary_pos = content_type.find(boundary_name);
+      boundary_pos != content_type.npos) {
         boundary = content_type.substr(boundary_pos + boundary_name.size());
         // remove whitespace (if present) and find exactly one equals sign
         int n_eq = 0;

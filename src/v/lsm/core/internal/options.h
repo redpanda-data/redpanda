@@ -172,6 +172,12 @@ struct options {
     constexpr static size_t default_sst_block_size = 16_KiB;
     size_t sst_block_size = default_sst_block_size;
 
+    // The amount of extra data to read ahead when reading SST data blocks
+    // during compaction. Buffered data is served to subsequent sequential
+    // reads without I/O. Set to 0 to disable readahead.
+    constexpr static size_t default_compaction_readahead_size = 256_KiB;
+    size_t compaction_readahead_size = default_compaction_readahead_size;
+
     // The frequency at which to generate a new bloom filter.
     //
     // If set to 0 then no bloom filters will be generated.

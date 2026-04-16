@@ -18,7 +18,7 @@
 #include <exception>
 
 namespace rpc {
-class request_timeout_exception final : std::exception {
+class request_timeout_exception final : public std::exception {
 public:
     explicit request_timeout_exception(ss::sstring what)
       : what_(std::move(what)) {}

@@ -64,51 +64,48 @@ func (t *TransactionSTM) TryEndTransaction() error {
 	return nil
 }
 
-// Returns true iff a new transaction was started and/or a current
-// transaction ended. This is to notify any producers that control
-// markers will be added to a partition's log.
-func (t *TransactionSTM) BeforeMessageSent() (int64, error) {
-	// EndTransaction/abort and BeginTransaction will each leave
-	// one control record in each partition's log.
-	var addedControlMarkers int64 = 0
-
+// BeforeMessageSent ends the current transaction if it has reached
+// msgsPerTransaction, then begins a new one if needed. Must be called
+// before each produce.
+func (t *TransactionSTM) BeforeMessageSent() error {
 	if t.currentMgsProduced == t.config.msgsPerTransaction {
 		if err := t.client.Flush(t.ctx); err != nil {
 			log.Errorf("Unable to flush: %v", err)
-			return addedControlMarkers, err
+			return err
 		}
 		if err := t.client.EndTransaction(t.ctx, kgo.TransactionEndTry(!t.abortedTransaction)); err != nil {
 			log.Errorf("Unable to end transaction: %v", err)
-			return addedControlMarkers, err
+			return err
 		}
 
 		log.Debugf("Ended transaction; aborted = %t", t.abortedTransaction)
 
 		t.currentMgsProduced = 0
 		t.activeTransaction = false
-
-		addedControlMarkers += 1
 	}
 
-	// Begin new transaction if one doesn't exist
 	if !t.activeTransaction {
+		if err := t.client.BeginTransaction(); err != nil {
+			log.Errorf("Couldn't start a transaction: %v", err)
+			return err
+		}
+
 		t.abortedTransaction = t.config.abortRate >= rand.Float64()
 		t.activeTransaction = true
 
-		if err := t.client.BeginTransaction(); err != nil {
-			log.Errorf("Couldn't start a transaction: %v", err)
-			return 0, err
-		}
-
 		log.Debugf("Started transaction; will abort = %t", t.abortedTransaction)
-
-		addedControlMarkers += 1
 	}
 
 	t.currentMgsProduced += 1
-	return addedControlMarkers, nil
+	return nil
 }
 
 func (t *TransactionSTM) InAbortedTransaction() bool {
 	return t.abortedTransaction
+}
+
+// WillEndTransaction returns true if the next call to BeforeMessageSent
+// will end the current transaction (msgsPerTransaction has been reached).
+func (t *TransactionSTM) WillEndTransaction() bool {
+	return t.activeTransaction && t.currentMgsProduced == t.config.msgsPerTransaction
 }

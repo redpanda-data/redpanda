@@ -634,23 +634,19 @@ public:
     void
     log(ss::log_level lvl, fmt::format_string<Args...> format, Args&&... args)
       const {
-        std::optional<ss::sstring> trace;
+        if (!_has_tracing && !_log.is_enabled(lvl)) {
+            return;
+        }
+        auto msg = ssx::sformat(format, std::forward<Args>(args)...);
         if (_has_tracing) {
-            trace = ssx::sformat(format, std::forward<Args>(args)...);
-            _node.maybe_add_trace(trace.value());
+            _node.maybe_add_trace(msg);
         }
         if (_log.is_enabled(lvl)) {
             auto lambda = [&](ss::logger& logger, ss::log_level lvl) {
-                auto msg = trace.value_or(
-                  ssx::sformat(format, std::forward<Args>(args)...));
                 if (_ctx) {
-                    logger.log(
-                      lvl,
-                      "{} - {}",
-                      _node("{}", _ctx.value()),
-                      std::move(msg));
+                    logger.log(lvl, "{} - {}", _node("{}", _ctx.value()), msg);
                 } else {
-                    logger.log(lvl, "{} - {}", _node(), std::move(msg));
+                    logger.log(lvl, "{} - {}", _node(), msg);
                 }
             };
             do_log(lvl, std::move(lambda));

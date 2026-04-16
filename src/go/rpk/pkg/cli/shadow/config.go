@@ -361,8 +361,8 @@ func writeFieldTemplate(sb *strings.Builder, field protoreflect.FieldDescriptor,
 	comment := getCommentForField(field)
 	if comment != "" {
 		// Write comment lines with proper indentation
-		lines := strings.Split(comment, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(comment, "\n")
+		for line := range lines {
 			line = strings.TrimSpace(line)
 			if line != "" {
 				fmt.Fprintf(sb, "%s# %s\n", indentStr, line)

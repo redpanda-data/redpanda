@@ -280,7 +280,7 @@ ss::future<errc> worker::do_work(
     } catch (...) {
         vlog(
           dm_log.warn,
-          "exception occured during partition work on migration {} ntp {} "
+          "exception occurred during partition work on migration {} ntp {} "
           "towards {} state: {}",
           running_work.work->migration_id,
           ntp,

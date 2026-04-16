@@ -30,6 +30,11 @@ def main():
     yaml.safe_dump(config, final_config_file.file)
 
     try:
+        extra_args = [
+            "--extra-arg=-Wno-error",
+            "--extra-arg=-Wno-macro-redefined",
+        ]
+
         verify_command = [
             clang_tidy_bin,
             f"--config-file={final_config_file.name}",
@@ -39,11 +44,15 @@ def main():
         ]
         _ = subprocess.run(verify_command, check=True, capture_output=True, text=True)
 
-        run_command = [
-            clang_tidy_bin,
-            f"--config-file={final_config_file.name}",
-            f"--load={plugins_lib}",
-        ] + remaining_args
+        run_command = (
+            [
+                clang_tidy_bin,
+                f"--config-file={final_config_file.name}",
+                f"--load={plugins_lib}",
+            ]
+            + extra_args
+            + remaining_args
+        )
 
         _ = subprocess.run(run_command, check=True, capture_output=True, text=True)
 

@@ -19,6 +19,7 @@
 namespace cluster::cluster_link {
 
 using ::cluster_link::model::add_mirror_topic_cmd;
+using ::cluster_link::model::batch_update_mirror_topic_status_cmd;
 using ::cluster_link::model::connection_config;
 using ::cluster_link::model::delete_mirror_topic_cmd;
 using ::cluster_link::model::id_t;
@@ -166,6 +167,13 @@ public:
         }
 
         co_return ec;
+    }
+
+    cluster::cluster_link::errc batch_update_mirror_topic_status_validate(
+      id_t id, batch_update_mirror_topic_status_cmd cmd) {
+        cluster::cluster_link_batch_update_mirror_topic_status_cmd update_cmd{
+          id, std::move(cmd)};
+        return _validator->validate_mutation(std::move(update_cmd));
     }
 
     ss::future<cluster::cluster_link::errc>
@@ -1207,14 +1215,104 @@ TEST_F_CORO(
             .bootstrap_servers = {net::unresolved_address{"localhost", 9093}}}};
 
         update_cmd.link_config.topic_metadata_mirroring_cfg
-          .topic_properties_to_mirror
-          = ::cluster_link::model::topic_metadata_mirroring_config::
-            properties_set{"redpanda.remote.readreplica"};
+          .topic_properties_to_mirror = ::cluster_link::model::
+          topic_metadata_mirroring_config::properties_set{
+            "redpanda.remote.readreplica"};
 
         EXPECT_EQ(
           co_await update_cluster_link_configuration(*id, update_cmd.copy()),
           errc::topic_property_excluded_from_mirroring);
     }
+}
+
+TEST_F_CORO(
+  frontend_validation_test, batch_update_mirror_topic_status_success) {
+    model::topic test_topic("mirror-link1");
+
+    auto m = create_base_metadata();
+    testing::set_link_mirror_topics(
+      m, test_topic, mirror_topic_status::active, test_topic);
+    ASSERT_EQ_CORO(co_await upsert_cluster_link(std::move(m)), errc::success);
+    auto id = _table.local().find_id_by_name(name_t("link1"));
+    ASSERT_TRUE_CORO(id.has_value());
+
+    chunked_vector<model::topic> topics;
+    topics.push_back(test_topic);
+
+    EXPECT_EQ(
+      batch_update_mirror_topic_status_validate(
+        id.value(),
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}),
+      errc::success);
+}
+
+TEST_F_CORO(
+  frontend_validation_test, batch_update_mirror_topic_status_link_not_found) {
+    chunked_vector<model::topic> topics;
+    topics.push_back(model::topic("some-topic"));
+
+    EXPECT_EQ(
+      batch_update_mirror_topic_status_validate(
+        id_t{99},
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}),
+      errc::does_not_exist);
+    co_return;
+}
+
+TEST_F_CORO(
+  frontend_validation_test,
+  batch_update_mirror_topic_status_topic_not_mirrored) {
+    auto m = create_base_metadata();
+    ASSERT_EQ_CORO(co_await upsert_cluster_link(std::move(m)), errc::success);
+    auto id = _table.local().find_id_by_name(name_t("link1"));
+    ASSERT_TRUE_CORO(id.has_value());
+
+    chunked_vector<model::topic> topics;
+    topics.push_back(model::topic("nonexistent-topic"));
+
+    EXPECT_EQ(
+      batch_update_mirror_topic_status_validate(
+        id.value(),
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}),
+      errc::topic_not_being_mirrored);
+}
+
+TEST_F_CORO(
+  frontend_validation_test,
+  batch_update_mirror_topic_status_invalid_transition) {
+    model::topic test_topic("mirror-link1");
+
+    auto m = create_base_metadata();
+    testing::set_link_mirror_topics(
+      m, test_topic, mirror_topic_status::active, test_topic);
+    ASSERT_EQ_CORO(co_await upsert_cluster_link(std::move(m)), errc::success);
+    auto id = _table.local().find_id_by_name(name_t("link1"));
+    ASSERT_TRUE_CORO(id.has_value());
+
+    // First failover the topic
+    update_mirror_topic_status_cmd failover_cmd{
+      .topic = test_topic, .status = mirror_topic_status::failing_over};
+    ASSERT_EQ_CORO(
+      co_await update_mirror_topic_status(id.value(), std::move(failover_cmd)),
+      errc::success);
+
+    // Now try to batch-failover again — failing_over → failing_over is invalid
+    chunked_vector<model::topic> topics;
+    topics.push_back(test_topic);
+
+    EXPECT_EQ(
+      batch_update_mirror_topic_status_validate(
+        id.value(),
+        batch_update_mirror_topic_status_cmd{
+          .status = mirror_topic_status::failing_over,
+          .topics = std::move(topics)}),
+      errc::invalid_update);
 }
 
 } // namespace cluster::cluster_link

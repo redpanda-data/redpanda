@@ -13,6 +13,7 @@
 #include "base/vlog.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/domain/domain_manager_probe.h"
 #include "cloud_topics/level_one/metastore/lsm/keys.h"
 #include "cloud_topics/level_one/metastore/lsm/replicated_db.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
@@ -81,8 +82,9 @@ db_garbage_collector::error wrap_db_err(
 }
 } // namespace
 
-db_garbage_collector::db_garbage_collector(io* io)
-  : io_(io) {}
+db_garbage_collector::db_garbage_collector(io* io, domain_manager_probe* probe)
+  : io_(io)
+  , probe_(probe) {}
 
 ss::future<std::expected<std::optional<object_id>, db_garbage_collector::error>>
 db_garbage_collector::remove_unreferenced_batch(
@@ -197,11 +199,13 @@ db_garbage_collector::remove_unreferenced_batch(
         co_return next_batch_start;
     }
 
+    auto num_to_remove = to_remove.size();
     auto del_res = co_await io_->delete_objects(to_remove.copy(), as);
     if (!del_res.has_value()) {
         co_return std::unexpected(
           error(errc::io_error, "Error deleting objects: {}", del_res.error()));
     }
+    probe_->gc_objects_deleted(num_to_remove);
     remove_objects_db_update update{std::move(to_remove)};
     chunked_vector<write_batch_row> rows;
     auto build_res = co_await update.build_rows(rows);
@@ -218,6 +222,7 @@ db_garbage_collector::remove_unreferenced_batch(
               "Error replicating rows for object removal"));
         }
     }
+    probe_->gc_object_deletions_replicated(num_to_remove);
     co_return next_batch_start;
 }
 

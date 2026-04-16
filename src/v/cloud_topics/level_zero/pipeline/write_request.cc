@@ -49,10 +49,9 @@ size_t write_request<Clock>::size_bytes() const noexcept {
 }
 
 template<class Clock>
-void write_request<Clock>::set_value(
-  chunked_vector<extent_meta> placeholders) noexcept {
+void write_request<Clock>::set_value(upload_meta meta) noexcept {
     try {
-        response.set_value(std::move(placeholders));
+        response.set_value(std::move(meta));
     } catch (const ss::broken_promise&) {
         vlog(cd_log.error, "Can't acknowledge request for {}", ntp);
     }

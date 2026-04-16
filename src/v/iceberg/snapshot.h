@@ -57,8 +57,8 @@ struct snapshot_summary {
     // optimization by Iceberg readers.
     absl::btree_map<ss::sstring, ss::sstring> other;
 
-    friend bool operator==(const snapshot_summary&, const snapshot_summary&)
-      = default;
+    friend bool
+    operator==(const snapshot_summary&, const snapshot_summary&) = default;
 };
 
 // Represents a point-in-time snapshot of an Iceberg table. Each snapshot
@@ -132,8 +132,8 @@ struct snapshot_reference {
     // snapshots to keep in a branch while expiring snapshots.
     std::optional<int32_t> min_snapshots_to_keep;
 
-    friend bool operator==(const snapshot_reference&, const snapshot_reference&)
-      = default;
+    friend bool
+    operator==(const snapshot_reference&, const snapshot_reference&) = default;
 };
 
 } // namespace iceberg

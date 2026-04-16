@@ -20,6 +20,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
+        "//src/v/utils:device_utils",
         "//src/v/utils:file_io",
         "//src/v/utils:hdr_hist",
         "@abseil-cpp//absl/container:flat_hash_map",

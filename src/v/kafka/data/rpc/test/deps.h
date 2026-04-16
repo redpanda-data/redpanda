@@ -7,6 +7,12 @@
 #include "model/record.h"
 #include "model/tests/random_batch.h"
 
+#include <seastar/core/condition-variable.hh>
+
+namespace rpc {
+class rpc_server;
+} // namespace rpc
+
 namespace kafka::data::rpc::test {
 
 // A small helper struct to allow copies for easier to read tests and
@@ -188,6 +194,10 @@ public:
     ss::future<cluster::partition_cloud_storage_status>
     get_cloud_storage_status() const override {
         throw std::runtime_error("unimplemented");
+    }
+    std::unique_ptr<kafka::exact_offset_replicator>
+      make_exact_offset_replicator() && final {
+        return nullptr;
     }
 
 private:
@@ -448,6 +458,9 @@ public:
             --_errors_to_inject;
             co_return cluster::errc::timeout;
         }
+        if (_stalled) {
+            co_await _stall_cv.wait([this] { return !_stalled; });
+        }
         auto pp = kafka::partition_proxy(
           std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
         co_return co_await fn(&pp);
@@ -459,6 +472,8 @@ public:
 
 private:
     int _errors_to_inject = 0;
+    bool _stalled{false};
+    ss::condition_variable _stall_cv;
     ss::chunked_fifo<produced_batch> _produced_batches;
     model::ntp_map_type<ss::shard_id> _shard_locations;
 };
@@ -557,8 +572,9 @@ public:
 
     void wire_up_and_start();
 
-    void
-    register_services(std::vector<std::unique_ptr<::rpc::service>>& services);
+    void register_services(
+      std::vector<std::unique_ptr<::rpc::service>>& services,
+      ::rpc::rpc_server* server = nullptr);
 
     fake_topic_metadata_cache* remote_metadata_cache() { return _remote_ftmc; }
     fake_partition_manager* remote_partition_manager() { return _remote_fpm; }

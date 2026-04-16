@@ -61,6 +61,8 @@ class DucktapeRunner:
         # Bazel config
         self.build_type = args.build_type if hasattr(args, "build_type") else None
         self.bazel_config = f"--config={self.build_type}"
+        if getattr(args, "stamp", False):
+            self.bazel_config += " --config=stamp"
         if hasattr(args, "bazel_args"):
             self.bazel_config += f" {args.bazel_args}"
 
@@ -402,7 +404,7 @@ class DucktapeRunner:
         ]
 
         # Pass through some optional environment variables if they exist
-        for env_var in ["REDPANDA_SAMPLE_LICENSE", "REDPANDA_SECOND_SAMPLE_LICENSE"]:
+        for env_var in ["REDPANDA_SAMPLE_LICENSE", "REDPANDA_SECOND_SAMPLE_LICENSE", "RP_GIT_RELEASED_VERSIONS"]:
             if env_var in os.environ:
                 docker_cmd.extend(["--env", f"{env_var}={os.environ[env_var]}"])
 
@@ -776,6 +778,11 @@ def main():
         "--bazel-args", default="", help="Additional bazel arguments"
     )
     run_parser.add_argument(
+        "--stamp",
+        action="store_true",
+        help="Stamp the build with the git tag version (needed for upgrade tests)",
+    )
+    run_parser.add_argument(
         "--skip-bazel-build",
         action="store_true",
         help="Skip building bazel package (use existing artifacts)",
@@ -791,8 +798,8 @@ def main():
     run_parser.add_argument(
         "--max-parallel",
         type=int,
-        default=1,
-        help="Maximum parallel tests (default: 1)",
+        default=1000,
+        help="Maximum parallel tests (default: 1000)",
     )
     run_parser.add_argument(
         "--repeat",
@@ -869,6 +876,11 @@ def main():
         "--bazel-args", default="", help="Additional bazel arguments"
     )
     test_parser.add_argument(
+        "--stamp",
+        action="store_true",
+        help="Stamp the build with the git tag version (needed for upgrade tests)",
+    )
+    test_parser.add_argument(
         "--skip-bazel-build",
         action="store_true",
         help="Skip building bazel package (use existing artifacts)",
@@ -876,8 +888,8 @@ def main():
     test_parser.add_argument(
         "--max-parallel",
         type=int,
-        default=1,
-        help="Maximum parallel tests (default: 1)",
+        default=1000,
+        help="Maximum parallel tests (default: 1000)",
     )
     test_parser.add_argument(
         "--repeat",
@@ -940,6 +952,11 @@ def main():
         "--bazel-args", default="", help="Additional bazel arguments"
     )
     repl_parser.add_argument(
+        "--stamp",
+        action="store_true",
+        help="Stamp the build with the git tag version (needed for upgrade tests)",
+    )
+    repl_parser.add_argument(
         "--skip-bazel-build",
         action="store_true",
         help="Skip building bazel package (use existing artifacts)",
@@ -955,8 +972,8 @@ def main():
     repl_parser.add_argument(
         "--max-parallel",
         type=int,
-        default=1,
-        help="Maximum parallel tests (default: 1)",
+        default=1000,
+        help="Maximum parallel tests (default: 1000)",
     )
     repl_parser.add_argument(
         "--repeat",

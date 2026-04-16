@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_topics/types.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 
 #include <fmt/core.h>
@@ -45,6 +46,13 @@ struct extent_meta {
     // Kafka metadata
     kafka::offset base_offset;
     kafka::offset last_offset;
+};
+
+// The result of a successful upload of data in level zero.
+struct upload_meta {
+    // The shard that uploaded the data
+    ss::shard_id shard;
+    chunked_vector<extent_meta> extents;
 };
 
 } // namespace cloud_topics

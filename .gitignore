@@ -290,3 +290,6 @@ perf.data*
 
 #nix
 result*
+
+# rpk binary
+src/go/rpk/cmd/rpk/rpk

@@ -121,6 +121,9 @@ public:
       model::record_batch,
       raft::replicate_options) final;
 
+    std::unique_ptr<kafka::exact_offset_replicator>
+      make_exact_offset_replicator() && final;
+
     // Returns partition info built from raft state.
     result<kafka::partition_info> get_partition_info() const final;
 

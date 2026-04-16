@@ -614,6 +614,10 @@ redpanda_storage_mode_from_string(std::string_view s) {
         model::redpanda_storage_mode::cloud)
       .match(
         model::redpanda_storage_mode_to_string(
+          model::redpanda_storage_mode::tiered_cloud),
+        model::redpanda_storage_mode::tiered_cloud)
+      .match(
+        model::redpanda_storage_mode_to_string(
           model::redpanda_storage_mode::unset),
         model::redpanda_storage_mode::unset)
       .default_match(std::nullopt);

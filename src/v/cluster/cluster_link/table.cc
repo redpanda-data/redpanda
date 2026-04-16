@@ -36,6 +36,7 @@ static constexpr auto accepted_commands = cluster::make_commands_list<
   cluster::cluster_link_add_mirror_topic_cmd,
   cluster::cluster_link_delete_mirror_topic_cmd,
   cluster::cluster_link_update_mirror_topic_status_cmd,
+  cluster::cluster_link_batch_update_mirror_topic_status_cmd,
   cluster::cluster_link_update_mirror_topic_properties_cmd,
   cluster::cluster_link_update_cluster_link_configuration_cmd>();
 
@@ -255,6 +256,12 @@ ss::future<std::error_code> table::apply_update(model::record_batch b) {
             const cluster::cluster_link_update_mirror_topic_status_cmd& state) {
               return table.update_mirror_topic_state(
                 state.key, state.value, revision);
+          },
+          [&table, revision](
+            const cluster::cluster_link_batch_update_mirror_topic_status_cmd&
+              cmd) {
+              return table.batch_update_mirror_topic_state(
+                cmd.key, cmd.value, revision);
           },
           [&table, revision](
             const cluster::cluster_link_update_mirror_topic_properties_cmd&
@@ -480,6 +487,37 @@ ss::future<cluster::cluster_link::errc> table::update_mirror_topic_state(
     link_metadata->state.mirror_topics[cmd.topic].status = cmd.status;
     _link_metadata[id] = std::move(link_metadata);
 
+    _link_revision_index[id] = revision;
+    run_callbacks(id, revision);
+    co_return errc::success;
+}
+
+ss::future<cluster::cluster_link::errc> table::batch_update_mirror_topic_state(
+  id_t id,
+  const ::cluster_link::model::batch_update_mirror_topic_status_cmd& cmd,
+  model::revision_id revision) {
+    auto link_it = _link_metadata.find(id);
+    if (link_it == _link_metadata.end()) {
+        vlog(
+          cluster::clusterlog.info,
+          "Unable to batch update mirror topics: link {} not found",
+          id);
+        co_return errc::does_not_exist;
+    }
+
+    // Single deep copy for the entire batch
+    auto link_metadata = ss::make_lw_shared<metadata>(
+      co_await link_it->second->copy());
+
+    for (const auto& topic : cmd.topics) {
+        auto it = link_metadata->state.mirror_topics.find(topic);
+        if (it == link_metadata->state.mirror_topics.end()) {
+            co_return errc::topic_not_being_mirrored;
+        }
+        it->second.status = cmd.status;
+    }
+
+    _link_metadata[id] = std::move(link_metadata);
     _link_revision_index[id] = revision;
     run_callbacks(id, revision);
     co_return errc::success;

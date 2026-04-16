@@ -1107,8 +1107,9 @@ ss::future<> do_write_concatenated_compacted_index(
             std::move(readers),
             [cfg, target_path = std::move(target_path), &resources](
               chunked_vector<compacted_index_reader>& readers) mutable {
-                return ss::parallel_for_each(
+                return ss::max_concurrent_for_each(
                          readers,
+                         32,
                          [](compacted_index_reader& reader) {
                              return reader.verify_integrity();
                          })
@@ -1139,9 +1140,10 @@ ss::future<> do_write_concatenated_compacted_index(
                         std::move(writer), readers);
                   })
                   .finally([&readers] {
-                      return ss::parallel_for_each(
-                        readers,
-                        [](compacted_index_reader& r) { return r.close(); });
+                      return ss::max_concurrent_for_each(
+                        readers, 32, [](compacted_index_reader& r) {
+                            return r.close();
+                        });
                   });
             });
       });

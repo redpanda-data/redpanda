@@ -33,8 +33,7 @@ public:
     virtual ss::future<checked<table_metadata, errc>> create_table(
       const table_identifier& table_ident,
       const schema& schema,
-      const partition_spec& spec)
-      = 0;
+      const partition_spec& spec) = 0;
 
     // Gets and returns the resulting table_metadata. Callers are free to use
     // the returned table_metadata to construct transactions.

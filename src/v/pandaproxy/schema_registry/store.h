@@ -126,10 +126,11 @@ public:
             if (s.first.ctx != id.ctx) {
                 continue;
             }
-            if (std::ranges::any_of(
-                  s.second.versions, [&id, inc_del](const auto& vs) {
-                      return vs.id == id.id && (inc_del || !vs.deleted);
-                  })) {
+            if (
+              std::ranges::any_of(
+                s.second.versions, [&id, inc_del](const auto& vs) {
+                    return vs.id == id.id && (inc_del || !vs.deleted);
+                })) {
                 subs.emplace_back(s.first);
             }
         }
@@ -608,8 +609,9 @@ public:
     result<mode>
     get_mode(const context& ctx, default_to_global fallback) const {
         // Check context's own mode
-        if (auto it = _context_stores.find(ctx);
-            it != _context_stores.end() && it->second._mode.has_value()) {
+        if (
+          auto it = _context_stores.find(ctx);
+          it != _context_stores.end() && it->second._mode.has_value()) {
             return it->second._mode.value();
         }
 
@@ -621,9 +623,10 @@ public:
         // return the hard-coded default.
         if (fallback || ctx == default_context || ctx == global_context) {
             if (fallback && ctx != global_context) {
-                if (auto global_it = _context_stores.find(global_context);
-                    global_it != _context_stores.end()
-                    && global_it->second._mode.has_value()) {
+                if (
+                  auto global_it = _context_stores.find(global_context);
+                  global_it != _context_stores.end()
+                  && global_it->second._mode.has_value()) {
                     return *global_it->second._mode;
                 }
             }
@@ -703,9 +706,10 @@ public:
     result<compatibility_level>
     get_compatibility(const context& ctx, default_to_global fallback) const {
         // Check context's own config
-        if (auto it = _context_stores.find(ctx);
-            it != _context_stores.end()
-            && it->second._compatibility.has_value()) {
+        if (
+          auto it = _context_stores.find(ctx);
+          it != _context_stores.end()
+          && it->second._compatibility.has_value()) {
             return it->second._compatibility.value();
         }
 
@@ -717,9 +721,10 @@ public:
         // return the hard-coded default.
         if (fallback || ctx == default_context || ctx == global_context) {
             if (fallback && ctx != global_context) {
-                if (auto global_it = _context_stores.find(global_context);
-                    global_it != _context_stores.end()
-                    && global_it->second._compatibility.has_value()) {
+                if (
+                  auto global_it = _context_stores.find(global_context);
+                  global_it != _context_stores.end()
+                  && global_it->second._compatibility.has_value()) {
                     return *global_it->second._compatibility;
                 }
             }

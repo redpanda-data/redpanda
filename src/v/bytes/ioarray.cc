@@ -97,6 +97,44 @@ ioarray::string_view::operator<=>(std::string_view other) const {
     return _views[1] <=> other;
 }
 
+ioarray ioarray::concat(ioarray a, ioarray b) {
+    if (a.empty()) {
+        return b;
+    }
+    if (b.empty()) {
+        return a;
+    }
+    // Fast path: when a's data ends on a chunk boundary and b has no offset,
+    // we can move buffers directly since the indexing math is preserved.
+    bool fast = b._offset == 0 && (a._offset + a._size) % max_chunk_size == 0;
+    if (fast) {
+        ioarray out(
+          uninitialized_t{},
+          (a._buffers.size() + b._buffers.size()) * max_chunk_size);
+        out._offset = a._offset;
+        out._size = a._size + b._size;
+        size_t i = 0;
+        for (auto& buf : a._buffers) {
+            out._buffers[i++] = std::move(buf);
+        }
+        for (auto& buf : b._buffers) {
+            out._buffers[i++] = std::move(buf);
+        }
+        return out;
+    }
+    // Slow path: copy both into a fresh ioarray.
+    size_t total = a._size + b._size;
+    ioarray out(total);
+    size_t pos = 0;
+    for (auto c : a.as_range()) {
+        out[pos++] = c;
+    }
+    for (auto c : b.as_range()) {
+        out[pos++] = c;
+    }
+    return out;
+}
+
 ioarray ioarray::copy_from(const iobuf& buf) {
     ioarray c(uninitialized_t{}, buf.size_bytes());
     iobuf_const_parser parser(buf);

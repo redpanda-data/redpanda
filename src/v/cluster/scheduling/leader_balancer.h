@@ -73,8 +73,7 @@ class leader_balancer {
      * replica the balancer is trying to transfer leadership to.
      */
     static constexpr std::chrono::milliseconds
-      transfer_leadership_recovery_timeout
-      = 25ms;
+      transfer_leadership_recovery_timeout = 25ms;
     /*
      * after node maintenance change or its health report appears, wait for a
      * while to make sure node is ready to accept leaders.

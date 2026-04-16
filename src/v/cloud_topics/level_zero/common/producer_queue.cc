@@ -10,9 +10,11 @@
 
 #include "cloud_topics/level_zero/common/producer_queue.h"
 
+#include "config/configuration.h"
 #include "container/chunked_hash_map.h"
 #include "model/record.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
@@ -33,14 +35,29 @@ public:
 
 namespace {
 
-/// A noop ticket that doesn't enforce any ordering. Used for no_producer_id.
-class noop_ticket_impl final : public producer_ticket::impl {
+class nopid_ticket_impl final : public producer_ticket::impl {
 public:
-    ~noop_ticket_impl() override = default;
+    explicit nopid_ticket_impl(ss::semaphore& s)
+      : _s(s) {}
+    ~nopid_ticket_impl() override = default;
 
-    ss::future<> redeem() override { return ss::now(); }
+    ss::future<> redeem() override {
+        try {
+            _units = co_await ss::get_units(_s, 1, _as);
+        } catch (const ss::abort_requested_exception&) {
+            // release() was called before the semaphore was acquired;
+            // return normally so the caller can propagate the abort.
+        }
+    }
 
-    void release() override {}
+    void release() override {
+        _units = {};
+        _as.request_abort();
+    }
+
+    ss::semaphore& _s;
+    ss::semaphore_units<> _units;
+    ss::abort_source _as;
 };
 
 /// A real ticket that enforces ordering by chaining futures.
@@ -113,9 +130,15 @@ private:
 
 class producer_queue::impl {
 public:
+    impl()
+      : _no_pid(
+          config::shard_local_cfg().cloud_topics_produce_no_pid_concurrency()) {
+    }
+
     producer_ticket reserve(model::producer_id pid) {
         if (pid == model::no_producer_id) {
-            return producer_ticket{std::make_unique<noop_ticket_impl>()};
+            return producer_ticket{
+              std::make_unique<nopid_ticket_impl>(_no_pid)};
         }
         auto it = _producer_states->find(pid);
         ticket_impl* prev = nullptr;
@@ -133,6 +156,8 @@ public:
 private:
     ss::lw_shared_ptr<producer_state_map> _producer_states
       = ss::make_lw_shared<producer_state_map>();
+
+    ss::semaphore _no_pid;
 };
 
 producer_ticket::producer_ticket() = default;
@@ -144,8 +169,8 @@ producer_ticket::~producer_ticket() = default;
 
 producer_ticket::producer_ticket(producer_ticket&&) noexcept = default;
 
-producer_ticket& producer_ticket::operator=(producer_ticket&&) noexcept
-  = default;
+producer_ticket&
+producer_ticket::operator=(producer_ticket&&) noexcept = default;
 
 ss::future<> producer_ticket::redeem() { return _impl->redeem(); }
 ss::future<> producer_ticket::redeem(ss::abort_source& as) {

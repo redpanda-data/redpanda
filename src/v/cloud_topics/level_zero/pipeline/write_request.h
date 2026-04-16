@@ -49,7 +49,7 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     /// List of all write requests
     intrusive_list_hook _hook;
 
-    using response_t = std::expected<chunked_vector<extent_meta>, errc>;
+    using response_t = std::expected<upload_meta, errc>;
     /// The promise is used to signal to the caller
     /// after the upload is completed
     ss::promise<response_t> response;
@@ -73,7 +73,7 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
 
     void set_value(errc e) noexcept;
 
-    void set_value(chunked_vector<extent_meta> placeholders) noexcept;
+    void set_value(upload_meta meta) noexcept;
 
     bool has_expired() const noexcept;
 };

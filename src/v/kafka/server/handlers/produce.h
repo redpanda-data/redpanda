@@ -22,7 +22,8 @@ using produce_handler = two_phase_handler<
   0,
   7,
   default_estimate_adaptor,
-  produce_scheduling_group_provider>;
+  produce_scheduling_group_provider,
+  latency_hist::yes>;
 
 struct partition_produce_stages {
     ss::future<> dispatched;

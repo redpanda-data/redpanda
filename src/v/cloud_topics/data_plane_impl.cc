@@ -148,8 +148,7 @@ public:
         co_return staged_write{.staged = std::move(staged)};
     }
 
-    ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
-    execute_write(
+    ss::future<std::expected<upload_meta, std::error_code>> execute_write(
       model::ntp ntp,
       cluster_epoch min_epoch,
       staged_write reservation,
@@ -235,6 +234,10 @@ public:
             co_return std::nullopt;
         }
         co_return epoch_fut.get();
+    }
+
+    ss::future<> invalidate_epoch_below(cluster_epoch epoch) noexcept final {
+        co_await _cluster_services.local().invalidate_epoch_below(epoch);
     }
 
 private:

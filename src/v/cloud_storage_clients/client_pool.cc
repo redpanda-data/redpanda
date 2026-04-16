@@ -13,6 +13,7 @@
 #include "cloud_storage_clients/logger.h"
 #include "crash_tracker/recorder.h"
 #include "model/timeout_clock.h"
+#include "random/generators.h"
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 
@@ -30,6 +31,47 @@ using namespace std::chrono_literals;
 
 namespace {
 constexpr auto pool_ready_timeout = 15s;
+
+/// Picks two distinct random shards, excluding self. Used for "power of two
+/// choices" load balancing.
+///
+/// Uses rejection-free sampling: instead of picking from [0,n) and retrying on
+/// excluded values, we pick from a smaller range [0,n-k) and map to valid
+/// values by skipping over excluded ones. This guarantees O(1) with exactly one
+/// random draw per selection.
+[[nodiscard]] std::pair<ss::shard_id, ss::shard_id> pick_two_random_shards() {
+    using dist_t = std::uniform_int_distribution<ss::shard_id>;
+
+    const ss::shard_id n = ss::smp::count;
+    const ss::shard_id self = ss::this_shard_id();
+
+    vassert(n > 1, "At least two shards are required");
+
+    if (n == 2) {
+        ss::shard_id other = (self == 0) ? 1 : 0;
+        return {other, other};
+    }
+
+    auto& eng = random_generators::global().engine();
+
+    // Pick cpu_a from [0, n), excluding self
+    dist_t dist(0, n - 2);
+    auto r = dist(eng);
+    const ss::shard_id cpu_a = r < self ? r : r + 1;
+
+    // Pick cpu_b from [0, n), excluding self and cpu_a
+    dist.param(dist_t::param_type{0, n - 3});
+    auto cpu_b = dist(eng);
+    const auto [lo, hi] = std::minmax(self, cpu_a);
+    if (cpu_b >= lo) {
+        ++cpu_b;
+    }
+    if (cpu_b >= hi) {
+        ++cpu_b;
+    }
+
+    return {cpu_a, cpu_b};
+}
 } // namespace
 
 namespace cloud_storage_clients {
@@ -153,26 +195,6 @@ void client_pool::shutdown_connections() {
 
 bool client_pool::shutdown_initiated() { return _as.abort_requested(); }
 
-std::tuple<unsigned int, unsigned int> pick_two_random_shards() {
-    static thread_local std::vector<unsigned> shards = [] {
-        std::vector<unsigned> res;
-        for (auto i = 0UL; i < ss::smp::count; i++) {
-            if (i != ss::this_shard_id()) {
-                res.push_back(i);
-            }
-        }
-        return res;
-    }();
-    vassert(ss::smp::count > 1, "At least two shards are required");
-    if (shards.size() == 1) {
-        return std::tie(shards.at(0), shards.at(0));
-    }
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::shuffle(shards.begin(), shards.end(), gen);
-    return std::tie(shards.at(0), shards.at(1));
-}
-
 /// \brief Acquire http client from the pool.
 ///
 /// as: An abort source which must outlive the lease, that will
@@ -205,9 +227,10 @@ ss::future<client_pool::client_lease> client_pool::acquire(
         // starts, and we have not had a response from the credentials API yet,
         // but we have scheduled an upload. This wait ensures that when we call
         // the storage API we have a set of valid credentials.
-        if (std::optional<ssx::semaphore_units> u = ss::try_get_units(
-              _pool_ready_barrier, 1);
-            !u.has_value()) {
+        if (
+          std::optional<ssx::semaphore_units> u = ss::try_get_units(
+            _pool_ready_barrier, 1);
+          !u.has_value()) {
             const auto ready_deadline = std::min(
               deadline.value_or(ss::lowres_clock::time_point::max()),
               ss::lowres_clock::now() + pool_ready_timeout);

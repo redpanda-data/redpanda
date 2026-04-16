@@ -41,11 +41,12 @@ constexpr std::string_view schema_def = R"({
 
 int main() {
     sr_client = sr::new_client();
-    if (auto res = sr_client->create_schema(
-          "avro-value",
-          sr::schema::new_avro(
-            std::string{schema_def.data(), schema_def.size()}));
-        !res.has_value()) {
+    if (
+      auto res = sr_client->create_schema(
+        "avro-value",
+        sr::schema::new_avro(
+          std::string{schema_def.data(), schema_def.size()}));
+      !res.has_value()) {
         return 0;
     }
     redpanda::on_record_written(do_transform);
@@ -67,8 +68,9 @@ do_transform(redpanda::write_event event, redpanda::record_writer* writer) {
         return id_e.error();
     }
     std::optional<sr::schema> raw_schema;
-    if (auto rs_e = sr_client->lookup_schema_by_id(id.value());
-        rs_e.has_value()) {
+    if (
+      auto rs_e = sr_client->lookup_schema_by_id(id.value());
+      rs_e.has_value()) {
         raw_schema.emplace(std::move(rs_e).value());
     } else {
         return rs_e.error();
@@ -77,17 +79,19 @@ do_transform(redpanda::write_event event, redpanda::record_writer* writer) {
     // auto schema = avro::schema::parse_str(raw_schema.value().schema());
 
     std::optional<sr::subject_schema> latest_schema;
-    if (auto latest_e = sr_client->lookup_latest_schema("avro-value");
-        latest_e.has_value()) {
+    if (
+      auto latest_e = sr_client->lookup_latest_schema("avro-value");
+      latest_e.has_value()) {
         latest_schema.emplace(std::move(latest_e).value());
     } else {
         return latest_e.error();
     }
 
     std::optional<sr::subject_schema> latest_direct;
-    if (auto latest_e = sr_client->lookup_schema_by_version(
-          "avro-value", latest_schema->version);
-        latest_e.has_value()) {
+    if (
+      auto latest_e = sr_client->lookup_schema_by_version(
+        "avro-value", latest_schema->version);
+      latest_e.has_value()) {
         latest_direct.emplace(std::move(latest_e).value());
     } else {
         return latest_e.error();

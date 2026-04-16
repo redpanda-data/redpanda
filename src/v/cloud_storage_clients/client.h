@@ -68,8 +68,7 @@ public:
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt)
-      = 0;
+      std::optional<http_byte_range> byte_range = std::nullopt) = 0;
 
     struct head_object_result {
         uint64_t object_size;
@@ -85,8 +84,7 @@ public:
     virtual ss::future<result<head_object_result, error_outcome>> head_object(
       const plain_bucket_name& name,
       const object_key& key,
-      ss::lowres_clock::duration timeout)
-      = 0;
+      ss::lowres_clock::duration timeout) = 0;
 
     /// Upload object to cloud storage
     ///
@@ -103,8 +101,7 @@ public:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false)
-      = 0;
+      bool accept_no_content = false) = 0;
 
     /// Initiate a multipart upload state
     ///
@@ -128,8 +125,7 @@ public:
       const plain_bucket_name& bucket,
       const object_key& key,
       size_t part_size,
-      ss::lowres_clock::duration timeout)
-      = 0;
+      ss::lowres_clock::duration timeout) = 0;
 
     struct list_bucket_item {
         ss::sstring key{};
@@ -170,8 +166,7 @@ public:
       std::optional<ss::sstring> continuation_token = std::nullopt,
       ss::lowres_clock::duration timeout = http::default_connect_timeout,
       std::optional<char> delimiter = std::nullopt,
-      std::optional<item_filter> collect_item_if = std::nullopt)
-      = 0;
+      std::optional<item_filter> collect_item_if = std::nullopt) = 0;
 
     /// Delete object from cloud storage
     ///
@@ -182,8 +177,7 @@ public:
     virtual ss::future<result<no_response, error_outcome>> delete_object(
       const plain_bucket_name& bucket,
       const object_key& key,
-      ss::lowres_clock::duration timeout)
-      = 0;
+      ss::lowres_clock::duration timeout) = 0;
 
     struct delete_objects_result {
         struct key_reason {
@@ -212,8 +206,7 @@ public:
     delete_objects(
       const plain_bucket_name& bucket,
       const chunked_vector<object_key>& keys,
-      ss::lowres_clock::duration timeout)
-      = 0;
+      ss::lowres_clock::duration timeout) = 0;
 
     /// Returns true if the client is in a valid state to perform operations.
     /// If this returns false, the client should be discarded and a new one

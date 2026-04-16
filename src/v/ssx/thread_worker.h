@@ -51,8 +51,7 @@ public:
 
     virtual ss::stop_iteration process(ss::alien::instance&, ss::shard_id) = 0;
     virtual void
-    set_exception(ss::alien::instance&, ss::shard_id, std::exception_ptr)
-      = 0;
+    set_exception(ss::alien::instance&, ss::shard_id, std::exception_ptr) = 0;
     virtual ~task_base() = default;
 };
 

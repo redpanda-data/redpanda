@@ -18,6 +18,7 @@
 #include "raft/group_configuration.h"
 #include "raft/rpc_client_protocol.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/scheduling.hh>
 
 #include <optional>
@@ -107,8 +108,8 @@ ss::future<> group_manager::stop() {
 
     return f
       .then([this] {
-          return ss::parallel_for_each(
-            _groups, [](ss::lw_shared_ptr<consensus> raft) {
+          return ss::max_concurrent_for_each(
+            _groups, 128, [](ss::lw_shared_ptr<consensus> raft) {
                 return raft->stop().discard_result();
             });
       })

@@ -59,7 +59,7 @@ bytes encode(int_type value) {
     return output;
 }
 
-class decode_exception : std::exception {};
+class decode_exception : public std::exception {};
 
 template<typename int_type>
 int_type decode(iobuf_parser_base* stream) {

@@ -14,10 +14,10 @@ from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 from rptest.services.redpanda import SISettings
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.perf.redpanda_perf_test import RedpandaPerfTest
 
 
-class TSReadSingleConsumerOMBTest(RedpandaTest):
+class TSReadSingleConsumerOMBTest(RedpandaPerfTest):
     BENCHMARK_WAIT_TIME_MIN = 15
 
     def __init__(self, ctx: TestContext):

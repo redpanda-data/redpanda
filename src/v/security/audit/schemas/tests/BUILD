@@ -14,6 +14,7 @@ redpanda_cc_btest(
         "//src/v/security/audit:types",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
+        "@fmt",
         "@rapidjson",
         "@seastar",
     ],

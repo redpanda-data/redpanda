@@ -763,8 +763,9 @@ admin_server::cloud_storage_usage_handler(
   std::unique_ptr<ss::http::request> req) {
     auto batch_size
       = cluster::topic_table_partition_generator::default_batch_size;
-    if (auto batch_size_param = req->get_query_param("batch_size");
-        !batch_size_param.empty()) {
+    if (
+      auto batch_size_param = req->get_query_param("batch_size");
+      !batch_size_param.empty()) {
         try {
             batch_size = std::stoi(batch_size_param);
         } catch (...) {
@@ -776,8 +777,9 @@ admin_server::cloud_storage_usage_handler(
 
     auto retries_allowed
       = cluster::cloud_storage_size_reducer::default_retries_allowed;
-    if (auto retries_param = req->get_query_param("retries_allowed");
-        !retries_param.empty()) {
+    if (
+      auto retries_param = req->get_query_param("retries_allowed");
+      !retries_param.empty()) {
         try {
             retries_allowed = std::stoi(retries_param);
         } catch (...) {

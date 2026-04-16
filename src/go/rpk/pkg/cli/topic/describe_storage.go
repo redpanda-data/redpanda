@@ -84,7 +84,6 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				mu     sync.Mutex
 			)
 			for _, pd := range topicMeta.Partitions {
-				pd := pd
 				grp.Go(func() error {
 					st, err := adminCl.CloudStorageStatus(context.Background(), topic, strconv.Itoa(int(pd.Partition)))
 					if err != nil {

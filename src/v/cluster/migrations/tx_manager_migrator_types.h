@@ -32,9 +32,8 @@ struct tx_manager_read_request
     model::ntp ntp;
     model::offset start_offset;
 
-    friend bool
-    operator==(const tx_manager_read_request&, const tx_manager_read_request&)
-      = default;
+    friend bool operator==(
+      const tx_manager_read_request&, const tx_manager_read_request&) = default;
 
     auto serde_fields() { return std::tie(ntp, start_offset); }
 };
@@ -95,8 +94,8 @@ struct tx_manager_replicate_request
       , batches(std::move(batches)) {}
 
     tx_manager_replicate_request(tx_manager_replicate_request&&) = default;
-    tx_manager_replicate_request& operator=(tx_manager_replicate_request&&)
-      = default;
+    tx_manager_replicate_request&
+    operator=(tx_manager_replicate_request&&) = default;
     /**
      * This type must be copyable to operate with leader_router
      */
@@ -134,8 +133,8 @@ struct tx_manager_replicate_reply
     errc ec;
 
     friend bool operator==(
-      const tx_manager_replicate_reply&, const tx_manager_replicate_reply&)
-      = default;
+      const tx_manager_replicate_reply&,
+      const tx_manager_replicate_reply&) = default;
 
     auto serde_fields() { return std::tie(ec); }
 };

@@ -701,15 +701,18 @@ class AccessControlListTestUpgrade(AccessControlListTest):
 
     @cluster(num_nodes=3)
     def test_upgrade_gbac(self):
-        # Start with a version installed that's not aware of GBAC
-        self.installer.install(self.redpanda.nodes, (25, 3, 1))
+        # GBAC was introduced in v26.1, so start on v25.3 (pre-GBAC)
+        from_version = (25, 3)
+        to_version = RedpandaInstaller.next_major_version(from_version)
+
+        self.installer.install(self.redpanda.nodes, from_version)
         self.prepare_cluster(use_tls=False, use_sasl=True)
 
         # Upgrades nodes 0 and 1 and halt node 2
         # This ensures we have controller quorum but the old version node
         # is stopped so ACL creation fails due to the GBAC feature not being active
         self.installer.install(
-            [self.redpanda.nodes[0], self.redpanda.nodes[1]], RedpandaInstaller.HEAD
+            [self.redpanda.nodes[0], self.redpanda.nodes[1]], to_version
         )
         self.redpanda.restart_nodes([self.redpanda.nodes[0], self.redpanda.nodes[1]])
         self.redpanda.stop_node(self.redpanda.nodes[2])
@@ -737,7 +740,7 @@ class AccessControlListTestUpgrade(AccessControlListTest):
         )
 
         # Upgrade remaining nodes
-        self.installer.install([self.redpanda.nodes[2]], RedpandaInstaller.HEAD)
+        self.installer.install([self.redpanda.nodes[2]], to_version)
         self.redpanda.start_node(self.redpanda.nodes[2])
 
         wait_until(

@@ -543,9 +543,12 @@ class Verifier {
       long last_offset = 0;
       for (int i = 0; i < 3; i++) {
         TxRecord record = new TxRecord();
-        record.key = "key" + i;
-        record.value = "value" + i;
-        record.offset = stream.commitTx(topic1, record.key, record.value);
+        record.key
+        = "key" + i;
+        record.value
+        = "value" + i;
+        record.offset
+        = stream.commitTx(topic1, record.key, record.value);
         first_offset = Math.min(first_offset, record.offset);
         last_offset = record.offset;
         input.put(record.offset, record);

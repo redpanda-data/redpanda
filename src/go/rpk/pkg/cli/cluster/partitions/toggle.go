@@ -190,7 +190,6 @@ func runToggle(ctx context.Context, cl *rpadmin.AdminAPI, all bool, topicArg, pa
 			topicName = topicArg[0]
 		}
 		for _, p := range partitions {
-			p := p
 			g.Go(func() error {
 				err := cl.ToggleTopicPartitions(egCtx, isDisable, ns, topicName, p)
 				if err != nil {

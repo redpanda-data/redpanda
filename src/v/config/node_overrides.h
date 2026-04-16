@@ -58,8 +58,8 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const node_id_override& v);
     friend std::istream& operator>>(std::istream& is, node_id_override& v);
-    friend bool operator==(const node_id_override&, const node_id_override&)
-      = default;
+    friend bool
+    operator==(const node_id_override&, const node_id_override&) = default;
 };
 
 /**

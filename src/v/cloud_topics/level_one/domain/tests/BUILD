@@ -32,6 +32,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/level_one/common:object_id",
         "//src/v/cloud_topics/level_one/common:object_utils",
         "//src/v/cloud_topics/level_one/domain:db_domain_manager",
+        "//src/v/cloud_topics/level_one/domain:domain_manager_probe",
         "//src/v/cloud_topics/level_one/metastore:domain_uuid",
         "//src/v/cloud_topics/level_one/metastore:rpc_types",
         "//src/v/cloud_topics/level_one/metastore:state_update",

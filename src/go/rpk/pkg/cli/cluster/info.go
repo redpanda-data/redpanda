@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -143,8 +143,8 @@ included.
 
 func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 	headers := []string{"ID", "HOST", "PORT"}
-	args := func(b *kadm.BrokerDetail) []interface{} {
-		ret := []interface{}{b.NodeID, b.Host, b.Port}
+	args := func(b *kadm.BrokerDetail) []any {
+		ret := []any{b.NodeID, b.Host, b.Port}
 		if b.NodeID == controllerID {
 			ret[0] = fmt.Sprintf("%d*", b.NodeID)
 		}
@@ -156,7 +156,7 @@ func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 		if brokers[i].Rack != nil {
 			headers = append(headers, "RACK")
 			orig := args
-			args = func(b *kadm.BrokerDetail) []interface{} {
+			args = func(b *kadm.BrokerDetail) []any {
 				var rack string
 				if b.Rack != nil {
 					rack = *b.Rack
@@ -244,8 +244,8 @@ func PrintTopics(topics kadm.TopicDetails, internal, detailed bool) {
 			headers = append(headers, "load-error")
 		}
 
-		args := func(p *kadm.PartitionDetail) []interface{} {
-			ret := []interface{}{"", p.Partition, p.Leader}
+		args := func(p *kadm.PartitionDetail) []any {
+			ret := []any{"", p.Partition, p.Leader}
 			if useEpoch {
 				ret = append(ret, p.LeaderEpoch)
 			}
@@ -361,6 +361,6 @@ func printRawMetadataToW(w io.Writer, f config.OutFormatter, m kadm.Metadata) er
 type int32s []int32
 
 func (is int32s) sort() []int32 {
-	sort.Slice(is, func(i, j int) bool { return is[i] < is[j] })
+	slices.Sort(is)
 	return is
 }

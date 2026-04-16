@@ -1,11 +1,10 @@
 import json
 import os
-import subprocess
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from rptest.clients.kubectl import KubeNodeShell
+from rptest.clients.kubectl import KubeNodeShell, run_with_retries
 
 
 @dataclass
@@ -108,7 +107,7 @@ class CloudBroker:
             script_path, f"{self._kubeclient._remote_uri}:{unique_script_name}"
         )
         self.logger.debug(_scp_cmd)
-        subprocess.check_output(_scp_cmd)
+        run_with_retries(_scp_cmd, logger=self.logger)
         # Copy agent -> broker node
         remote_path = os.path.join("/tmp", script_name)
         _cp_cmd = self._kubeclient._ssh_prefix() + [
@@ -120,7 +119,7 @@ class CloudBroker:
             f"{self.nodeshell.pod_name}:{remote_path}",
         ]
         self.logger.debug(_cp_cmd)
-        subprocess.check_output(_cp_cmd)
+        run_with_retries(_cp_cmd, logger=self.logger)
 
         # Remove script from agent node
         self._kubeclient._ssh_cmd(["rm", unique_script_name])

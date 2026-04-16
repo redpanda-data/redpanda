@@ -61,9 +61,9 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
     }
     // check if requested reader belongs to one of the locked range
     // range locked, do not insert into the cache
-    if (intersects_with_locked_range(
-          reader->lease_range_base_offset(),
-          reader->lease_range_end_offset())) {
+    if (
+      intersects_with_locked_range(
+        reader->lease_range_base_offset(), reader->lease_range_end_offset())) {
         vlog(
           stlog.trace,
           "{} - range is locked, not adding reader with lease [{},{}]",
@@ -259,8 +259,8 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
         cached_reader_impl& operator=(cached_reader_impl&&) noexcept = default;
 
         cached_reader_impl(const cached_reader_impl&) noexcept = delete;
-        cached_reader_impl& operator=(const cached_reader_impl&) noexcept
-          = delete;
+        cached_reader_impl&
+        operator=(const cached_reader_impl&) noexcept = delete;
 
         bool is_end_of_stream() const final {
             return _underlying->is_end_of_stream();

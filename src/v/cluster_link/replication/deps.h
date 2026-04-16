@@ -50,8 +50,7 @@ public:
     virtual raft::replicate_stages replicate(
       chunked_vector<::model::record_batch> batches,
       ::model::timeout_clock::duration timeout,
-      ss::abort_source& as)
-      = 0;
+      ss::abort_source& as) = 0;
 
     // Notifies the sink of any terminal failure that can
     // result in replicator not being able to start/progress.
@@ -65,8 +64,8 @@ public:
 
     // Performs a prefix truncation on the sink partition
     virtual ss::future<kafka::error_code> prefix_truncate(
-      kafka::offset truncation_offset, ss::lowres_clock::time_point deadline)
-      = 0;
+      kafka::offset truncation_offset,
+      ss::lowres_clock::time_point deadline) = 0;
 
     virtual kafka::offset start_offset() = 0;
 

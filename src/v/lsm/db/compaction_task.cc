@@ -164,7 +164,8 @@ ss::future<ss::lw_shared_ptr<version_edit>> do_run_compaction_task(
       .compression = opts->levels[output_level].compression,
     };
     try {
-        auto input = co_await versions->make_input_iterator(compaction);
+        auto input = co_await versions->make_input_iterator(
+          compaction, {.readahead_size = opts->compaction_readahead_size});
         std::optional<internal::key> current_key;
         internal::sequence_number last_seqno_for_key
           = internal::sequence_number::max();

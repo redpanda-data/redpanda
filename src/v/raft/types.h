@@ -54,8 +54,8 @@ struct protocol_metadata
     friend std::ostream&
     operator<<(std::ostream& o, const protocol_metadata& m);
 
-    friend bool operator==(const protocol_metadata&, const protocol_metadata&)
-      = default;
+    friend bool
+    operator==(const protocol_metadata&, const protocol_metadata&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -119,8 +119,8 @@ struct append_entries_request
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
     append_entries_request(append_entries_request&&) noexcept = default;
-    append_entries_request& operator=(append_entries_request&&) noexcept
-      = default;
+    append_entries_request&
+    operator=(append_entries_request&&) noexcept = default;
 
     raft::group_id target_group() const { return _meta.group; }
     vnode source_node() const { return _source_node; }
@@ -223,9 +223,8 @@ struct append_entries_reply
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
 
-    friend bool
-    operator==(const append_entries_reply&, const append_entries_reply&)
-      = default;
+    friend bool operator==(
+      const append_entries_reply&, const append_entries_reply&) = default;
 
     auto serde_fields() {
         return std::tie(
@@ -246,8 +245,8 @@ struct heartbeat_metadata {
     vnode node_id;
     vnode target_node_id;
 
-    friend bool operator==(const heartbeat_metadata&, const heartbeat_metadata&)
-      = default;
+    friend bool
+    operator==(const heartbeat_metadata&, const heartbeat_metadata&) = default;
     friend std::ostream&
     operator<<(std::ostream& o, const heartbeat_metadata& r);
 };
@@ -457,9 +456,8 @@ struct install_snapshot_reply
     friend std::ostream&
     operator<<(std::ostream&, const install_snapshot_reply&);
 
-    friend bool
-    operator==(const install_snapshot_reply&, const install_snapshot_reply&)
-      = default;
+    friend bool operator==(
+      const install_snapshot_reply&, const install_snapshot_reply&) = default;
 
     auto serde_fields() {
         return std::tie(target_node_id, term, bytes_stored, success, node_id);
@@ -496,9 +494,8 @@ struct timeout_now_request
     vnode source_node() const { return node_id; }
     vnode target_node() const { return target_node_id; }
 
-    friend bool
-    operator==(const timeout_now_request&, const timeout_now_request&)
-      = default;
+    friend bool operator==(
+      const timeout_now_request&, const timeout_now_request&) = default;
 
     auto serde_fields() {
         return std::tie(target_node_id, node_id, group, term);
@@ -527,8 +524,8 @@ struct timeout_now_reply
     model::term_id term;
     status result;
 
-    friend bool operator==(const timeout_now_reply&, const timeout_now_reply&)
-      = default;
+    friend bool
+    operator==(const timeout_now_reply&, const timeout_now_reply&) = default;
 
     auto serde_fields() { return std::tie(target_node_id, term, result); }
 

@@ -41,11 +41,9 @@ struct variant : public std::variant<Types...> {
                                  std::variant_alternative_t<0, type>>)
       = default;
     constexpr variant(const variant&) noexcept(
-      std::is_nothrow_copy_constructible_v<type>)
-      = default;
+      std::is_nothrow_copy_constructible_v<type>) = default;
     constexpr variant(variant&&) noexcept(
-      std::is_nothrow_move_constructible_v<type>)
-      = default;
+      std::is_nothrow_move_constructible_v<type>) = default;
 
     // Ensure that this is not implicitly convertable from std::variant
     // but allow assignment from each individual type. For example:
@@ -63,7 +61,7 @@ struct variant : public std::variant<Types...> {
     requires(
       !std::is_same_v<std::decay_t<T>, type>
       && std::is_constructible_v<type, T>)
-      : type(std::forward<T>(t)){};
+      : type(std::forward<T>(t)) {};
     // Allow explicit conversion from std::variant
     explicit constexpr variant(type v) noexcept(
       std::is_nothrow_move_constructible_v<type>)
@@ -83,12 +81,10 @@ struct variant : public std::variant<Types...> {
                                    Args...>)
       : type(in_place, std::forward<Args...>(args)...) {}
 
-    variant&
-    operator=(const variant&) noexcept(std::is_nothrow_copy_assignable_v<type>)
-      = default;
-    variant&
-    operator=(variant&&) noexcept(std::is_nothrow_move_assignable_v<type>)
-      = default;
+    variant& operator=(const variant&) noexcept(
+      std::is_nothrow_copy_assignable_v<type>) = default;
+    variant& operator=(variant&&) noexcept(
+      std::is_nothrow_move_assignable_v<type>) = default;
 
     constexpr ~variant() noexcept = default;
 

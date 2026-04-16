@@ -159,8 +159,9 @@ ss::future<offsets_recovery_reply> offsets_recoverer::recover(
                 for (auto& po : tp.partitions) {
                     auto ntp = model::ntp{
                       model::kafka_namespace, tp.topic, po.partition};
-                    if (auto offset_it = offsets_by_ntp.find(ntp);
-                        offset_it != offsets_by_ntp.end()) {
+                    if (
+                      auto offset_it = offsets_by_ntp.find(ntp);
+                      offset_it != offsets_by_ntp.end()) {
                         auto hwm = offset_it->second;
                         if (po.offset > hwm) {
                             // The recovered partition doesn't have all the data

@@ -83,12 +83,12 @@ auto random_chunked_vector(Fn&& gen, size_t size = 20) -> chunked_vector<T> {
 template<
   typename Fn,
   typename... Args,
-  typename T = std::invoke_result_t<Fn, Args...>>
-inline auto random_frag_vector(Fn&& gen, size_t size = 20, Args&&... args)
+  typename T = std::invoke_result_t<Fn, Args&&...>>
+inline auto random_frag_vector(const Fn& gen, size_t size = 20, Args&&... args)
   -> chunked_vector<T> {
     chunked_vector<T> v;
     while (size-- > 0) {
-        v.push_back(gen(std::forward<Args>(args)...));
+        v.push_back(gen(args...));
     }
     return v;
 }
@@ -96,12 +96,13 @@ inline auto random_frag_vector(Fn&& gen, size_t size = 20, Args&&... args)
 template<
   typename Fn,
   typename... Args,
-  typename T = std::invoke_result_t<Fn, Args...>>
-inline auto random_chunked_vector(Fn&& gen, size_t size = 20, Args&&... args)
+  typename T = std::invoke_result_t<Fn, const Args&...>>
+inline auto
+random_chunked_vector(Fn&& gen, size_t size = 20, const Args&... args)
   -> chunked_vector<T> {
     chunked_vector<T> v;
     while (size-- > 0) {
-        v.push_back(gen(std::forward<Args>(args)...));
+        v.push_back(gen(args...));
     }
     return v;
 }

@@ -369,6 +369,8 @@ ntp_archiver::ntp_archiver(
   , _max_segments_pending_deletion(
       config::shard_local_cfg()
         .cloud_storage_max_segments_pending_deletion_per_partition.bind())
+  , _gc_max_segments(
+      config::shard_local_cfg().cloud_storage_gc_max_segments_per_run.bind())
   , _housekeeping_interval(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _housekeeping_jitter(_housekeeping_interval(), housekeeping_jit)
@@ -416,6 +418,40 @@ archival_stm_fence ntp_archiver::emit_rw_fence() {
       // major version upgrade.
       .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
     };
+}
+
+ss::future<std::error_code>
+ntp_archiver::maybe_repair_manifest(ss::lowres_clock::time_point deadline) {
+    auto repaired_copy = _parent.archival_meta_stm()->manifest().repair_state();
+    if (!repaired_copy) {
+        co_return std::error_code{};
+    }
+
+    vlog(
+      _rtclog.warn, "Manifest repair created a new manifest. Replicating it.");
+    auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    auto fence = emit_rw_fence();
+    if (fence.emit_rw_fence_cmd) {
+        vlog(
+          _rtclog.debug,
+          "replace manifest with repair, read-write fence: {}",
+          fence.read_write_fence);
+        batch.read_write_fence(fence.read_write_fence);
+    }
+
+    batch.replace_manifest(repaired_copy->to_iobuf());
+    auto ec = co_await batch.replicate();
+    if (ec) {
+        vlog(
+          _rtclog.error,
+          "Failed to replace manifest with repaired version: {}",
+          ec);
+    } else {
+        vlog(
+          _rtclog.debug, "Finished replacing manifest with repaired version");
+    }
+
+    co_return ec;
 }
 
 void ntp_archiver::log_collected_traces() noexcept {
@@ -577,9 +613,10 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
 }
 
 ss::future<> ntp_archiver::upload_until_abort() {
-    if (unlikely(
-          config::shard_local_cfg()
-            .cloud_storage_disable_upload_loop_for_tests.value())) {
+    if (
+      unlikely(
+        config::shard_local_cfg()
+          .cloud_storage_disable_upload_loop_for_tests.value())) {
         vlog(_rtclog.warn, "Skipping upload loop start");
         co_return;
     }
@@ -698,6 +735,14 @@ ss::future<> ntp_archiver::upload_until_abort() {
             }
         }
 
+        if (
+          auto ec = co_await maybe_repair_manifest(
+            ss::lowres_clock::now() + sync_timeout);
+          ec) {
+            vlog(_rtclog.warn, "Failed to repair manifest: {}, retrying", ec);
+            continue;
+        }
+
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
         if (!may_begin_uploads()) {
             continue;
@@ -764,9 +809,10 @@ ss::future<> ntp_archiver::upload_until_abort() {
 }
 
 ss::future<> ntp_archiver::sync_manifest_until_abort() {
-    if (unlikely(
-          config::shard_local_cfg()
-            .cloud_storage_disable_read_replica_loop_for_tests.value())) {
+    if (
+      unlikely(
+        config::shard_local_cfg()
+          .cloud_storage_disable_read_replica_loop_for_tests.value())) {
         vlog(_rtclog.warn, "Skipping read replica sync loop start");
         co_return;
     }
@@ -1117,8 +1163,16 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
         }
 
         if (ss::lowres_clock::now() >= _next_housekeeping) {
-            co_await housekeeping();
-            _next_housekeeping = _housekeeping_jitter();
+            if (co_await housekeeping() == housekeeping_result::partial) {
+                // Only apply the very short jitter if there is more pending
+                // housekeeping work to do.
+                // NB: The actual duration between housekeeping runs is
+                // bounded by upload loop scheduling. Here we establish a lower
+                // bound on duration between housekeeping runs.
+                _next_housekeeping = ss::lowres_clock::now() + housekeeping_jit;
+            } else {
+                _next_housekeeping = _housekeeping_jitter();
+            }
         }
 
         if (!may_begin_uploads()) {
@@ -2692,7 +2746,8 @@ std::ostream& operator<<(std::ostream& os, wait_result fr) {
     return os;
 }
 
-ss::future<> ntp_archiver::housekeeping() {
+ss::future<ntp_archiver::housekeeping_result> ntp_archiver::housekeeping() {
+    auto result = housekeeping_result::complete;
     try {
         if (may_begin_uploads()) {
             // Acquire mutex to prevent concurrency between
@@ -2704,7 +2759,7 @@ ss::future<> ntp_archiver::housekeeping() {
                 co_await garbage_collect();
             } else {
                 co_await apply_archive_retention();
-                co_await garbage_collect_archive();
+                result = co_await garbage_collect_archive();
                 co_await garbage_collect();
             }
             co_await apply_spillover();
@@ -2719,8 +2774,11 @@ ss::future<> ntp_archiver::housekeeping() {
     } catch (const std::exception& e) {
         // Unexpected exceptions are logged, and suppressed: we do not
         // want to stop who upload loop because of issues in housekeeping
+        result = housekeeping_result::error;
         vlog(_rtclog.warn, "Error occurred during housekeeping: {}", e.what());
     }
+
+    co_return result;
 }
 
 ss::future<> ntp_archiver::apply_archive_retention() {
@@ -2801,9 +2859,10 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     }
 }
 
-ss::future<> ntp_archiver::garbage_collect_archive() {
+ss::future<ntp_archiver::housekeeping_result>
+ntp_archiver::garbage_collect_archive() {
     if (!may_begin_uploads()) {
-        co_return;
+        co_return housekeeping_result::complete;
     }
     auto fence = emit_rw_fence();
     auto backlog = co_await _manifest_view->get_retention_backlog();
@@ -2812,7 +2871,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
             vlog(
               _rtclog.debug,
               "Skipping archive GC as Redpanda is shutting down");
-            co_return;
+            co_return housekeeping_result::complete;
         }
 
         vlog(
@@ -2827,12 +2886,15 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
 
     const auto clean_offset = manifest().get_archive_clean_offset();
     const auto start_offset = manifest().get_archive_start_offset();
+    const size_t max_segments = _gc_max_segments();
 
     vlog(
       _rtclog.info,
-      "Garbage collecting archive segments in offest range [{}, {})",
+      "Garbage collecting archive segments in offset range [{}, {}) with batch "
+      "limit {}",
       clean_offset,
-      start_offset);
+      start_offset,
+      max_segments);
 
     if (clean_offset == start_offset) {
         vlog(
@@ -2840,7 +2902,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
           "Garbage collection in the archive not required as clean offset "
           "equals the start offset ({})",
           clean_offset);
-        co_return;
+        co_return housekeeping_result::complete;
     } else if (clean_offset > start_offset) {
         vlog(
           _rtclog.error,
@@ -2848,10 +2910,10 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
           "at {}. Skipping garbage collection.",
           clean_offset,
           start_offset);
-        co_return;
+        co_return housekeeping_result::error;
     }
 
-    model::offset new_clean_offset;
+    model::offset new_clean_offset{clean_offset};
     // Value includes segments but doesn't include manifests
     size_t bytes_to_remove = 0;
     size_t segments_to_remove_count = 0;
@@ -2874,6 +2936,9 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
                       continue;
                   }
                   if (meta.committed_offset < start_offset) {
+                      if (segments_to_remove_count >= max_segments) {
+                          return true;
+                      }
                       const auto path = manifest.generate_segment_path(
                         meta, remote_path_provider());
                       vlog(
@@ -2919,13 +2984,17 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
           path);
         manifests_to_remove.emplace_back(path);
 
+        if (segments_to_remove_count >= max_segments) {
+            break;
+        }
+
         auto res = co_await cursor->next();
         if (res.has_failure()) {
             if (res.error() == cloud_storage::error_outcome::shutting_down) {
                 vlog(
                   _rtclog.debug,
                   "Stopping archive GC as Redpanda is shutting down");
-                co_return;
+                co_return housekeeping_result::complete;
             }
 
             vlog(
@@ -2939,12 +3008,23 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         }
     }
 
+    if (segments_to_remove_count >= max_segments) {
+        vlog(
+          _rtclog.trace,
+          "Archive GC batch limit reached, initial clean offset {}, new clean "
+          "offset {}, start offset {}, segments to remove {}",
+          clean_offset,
+          new_clean_offset,
+          start_offset,
+          segments_to_remove_count);
+    }
+
     // Drop out if we have no work to do, avoid doing things like the following
     // manifest flushing unnecessarily. This is problematic since, we've already
     // checked that the clean offset is greater than the start offset.
     if (objects_to_remove.empty() && manifests_to_remove.empty()) {
         vlog(_rtclog.error, "Nothing to remove in archive GC");
-        co_return;
+        co_return housekeeping_result::error;
     }
 
     if (
@@ -2952,7 +3032,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
       != cluster::archival_metadata_stm::state_dirty::clean) {
         auto result = co_await upload_manifest("pre-garbage-collect-archive");
         if (result != cloud_storage::upload_result::success) {
-            co_return;
+            co_return housekeeping_result::error;
         }
     }
 
@@ -2962,29 +3042,16 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
       &_rtcnode);
     const auto delete_result = co_await _remote.delete_objects(
       get_bucket_name(), objects_to_remove, fib);
-    const auto backlog_size_exceeded = segments_to_remove_count
-                                       > _max_segments_pending_deletion();
     const auto all_deletes_succeeded = delete_result
                                        == cloud_storage::upload_result::success;
 
-    if (!all_deletes_succeeded && backlog_size_exceeded) {
-        vlog(
-          _rtclog.warn,
-          "The current number of spillover segments pending deletion has "
-          "exceeded the configurable limit ({} > {}) and deletion of some "
-          "segments failed. Metadata for all remaining segments pending "
-          "deletion will be removed and these segments will have to be removed "
-          "manually.",
-          objects_to_remove.size(),
-          _max_segments_pending_deletion());
-    }
-    if (!all_deletes_succeeded && !backlog_size_exceeded) {
+    if (!all_deletes_succeeded) {
         vlog(
           _rtclog.info,
           "Failed to delete all selected segments from cloud storage. Will "
           "retry on the next housekeeping run.");
-    }
-    if (all_deletes_succeeded || backlog_size_exceeded) {
+        co_return housekeeping_result::error;
+    } else {
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
@@ -3012,15 +3079,20 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
             std::ignore = co_await _remote.delete_objects(
               get_bucket_name(), manifests_to_remove, fib);
         }
-    }
 
-    _probe.value().segments_deleted(
-      static_cast<int64_t>(
-        all_deletes_succeeded ? segments_to_remove_count : 0));
-    vlog(
-      _rtclog.debug,
-      "Deleted {} spillover segments from the cloud",
-      all_deletes_succeeded ? segments_to_remove_count : 0);
+        _probe.value().segments_deleted(
+          static_cast<int64_t>(segments_to_remove_count));
+        vlog(
+          _rtclog.info,
+          "Archive GC deleted {} segments, clean offset {}, start offset {}",
+          segments_to_remove_count,
+          new_clean_offset,
+          start_offset);
+
+        co_return new_clean_offset < start_offset
+          ? housekeeping_result::partial
+          : housekeeping_result::complete;
+    }
 }
 
 ss::future<> ntp_archiver::apply_spillover() {
@@ -3045,8 +3117,9 @@ ss::future<> ntp_archiver::apply_spillover() {
     // Check the spillover invariant.
     // The start_offset of the manifest must be equal to the begin_offset of
     // the first segment in the manifest.
-    if (auto so = manifest().get_start_offset();
-        so.has_value() && !manifest().empty()) {
+    if (
+      auto so = manifest().get_start_offset();
+      so.has_value() && !manifest().empty()) {
         auto fo = manifest().begin()->base_offset;
         if (fo != so.value()) {
             vlog(

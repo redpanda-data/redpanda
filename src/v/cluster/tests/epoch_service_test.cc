@@ -9,6 +9,7 @@
 
 #include "cluster/cluster_epoch_service.h"
 #include "cluster/errc.h"
+#include "config/configuration.h"
 #include "gmock/gmock.h"
 #include "ssx/abort_source.h"
 #include "test_utils/async.h"
@@ -113,7 +114,9 @@ TEST_F_CORO(ClusterEpochService, TestCaching) {
     // After the max duration we wait to fetch the value
     ++cluster_epoch;
     ss::manual_clock::advance(
-      epoch_service::max_same_epoch_cache_duration + 1us);
+      config::shard_local_cfg()
+        .cloud_topics_epoch_service_max_same_epoch_duration()
+      + 1us);
     EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
     EXPECT_EQ(accesses, 3);
 }
@@ -121,8 +124,10 @@ TEST_F_CORO(ClusterEpochService, TestCaching) {
 TEST_F_CORO(ClusterEpochService, IncrementMustHappenEventually) {
     EXPECT_EQ(co_await get_cached_epoch(), cluster_epoch);
     EXPECT_EQ(accesses, 1);
-    auto must_refresh_deadline = ss::manual_clock::now()
-                                 + epoch_service::max_same_epoch_cache_duration;
+    auto must_refresh_deadline
+      = ss::manual_clock::now()
+        + config::shard_local_cfg()
+            .cloud_topics_epoch_service_max_same_epoch_duration();
     // After the timeout we async re-fetch the value
     ss::manual_clock::advance(
       config::shard_local_cfg()

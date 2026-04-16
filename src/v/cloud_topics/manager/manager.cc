@@ -87,8 +87,7 @@ ss::future<> cloud_topics_manager::start() {
               return;
           }
           if (
-            config->properties.storage_mode
-              != model::redpanda_storage_mode::cloud
+            !config->is_cloud_topic()
             && model::topic_namespace_view(ntp) != model::l1_metastore_nt) {
               return;
           }

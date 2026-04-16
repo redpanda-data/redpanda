@@ -614,13 +614,13 @@ write_request_scheduler<Clock>::proxy_write_request(
     auto fut = proxy.response.get_future();
     _stage.enqueue_foreign_request(proxy, false);
     target_gate_holder.release();
-    auto extents_fut = co_await ss::coroutine::as_future(std::move(fut));
-    if (extents_fut.failed()) {
-        auto ex = extents_fut.get_exception();
+    auto upload_fut = co_await ss::coroutine::as_future(std::move(fut));
+    if (upload_fut.failed()) {
+        auto ex = upload_fut.get_exception();
         vlog(cd_log.error, "Proxy write request failed: {}", ex);
         co_return std::unexpected(errc::upload_failure);
     }
-    auto extents = extents_fut.get();
+    auto extents = upload_fut.get();
     if (!extents.has_value()) {
         // Normal errors (S3 upload failure or timeout)
         // are handled here
@@ -628,7 +628,7 @@ write_request_scheduler<Clock>::proxy_write_request(
         vlog(cd_log.info, "Proxy write request failed: {}", e);
         co_return std::unexpected(e);
     }
-    auto ptr = ss::make_lw_shared<chunked_vector<extent_meta>>();
+    auto ptr = ss::make_lw_shared<upload_meta>();
     *ptr = std::move(extents.value());
     foreign_ptr_t fp(ss::make_foreign(std::move(ptr)));
     co_return std::move(fp);

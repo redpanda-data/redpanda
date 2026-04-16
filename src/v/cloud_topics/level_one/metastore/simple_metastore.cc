@@ -79,6 +79,16 @@ simple_object_builder::add(
         return std::unexpected(
           error{fmt::format("Object {} is not a pending object", oid)});
     }
+    if (ntp_meta.base_offset > ntp_meta.last_offset) {
+        return std::unexpected(
+          error{fmt::format(
+            "Metadata has inverted offsets for partition {}, object {}: "
+            "base_offset {} > last_offset {}",
+            ntp_meta.tidp,
+            oid,
+            ntp_meta.base_offset,
+            ntp_meta.last_offset)});
+    }
     auto& pending_metas = it->second;
     pending_metas.emplace_back(ntp_meta);
     return {};

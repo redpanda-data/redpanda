@@ -710,10 +710,11 @@ private:
      * iterator is guaranteed to point to a live batch.
      */
     index_type::iterator find_first_contains(model::offset offset) {
-        if (auto it = find_first(offset);
-            it != _index.end() && it->second.range()
-            && it->second.range()->valid()
-            && it->second.header().contains(offset)) {
+        if (
+          auto it = find_first(offset);
+          it != _index.end() && it->second.range()
+          && it->second.range()->valid()
+          && it->second.header().contains(offset)) {
             return it;
         }
         return _index.end();

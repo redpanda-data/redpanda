@@ -219,7 +219,7 @@ partition_proxy::timequery(storage::timequery_config cfg) {
     auto read_end = std::min(
       extent.last_offset, model::offset_cast(cfg.max_offset));
     kafka::log_reader_config reader_cfg(read_start, read_end, cfg.abort_source);
-    auto reader = co_await make_reader(reader_cfg);
+    auto reader = co_await make_reader(std::move(snap_res.value()), reader_cfg);
     auto generator = std::move(reader.reader).generator(model::no_timeout);
     while (auto batch_opt = co_await generator()) {
         auto& batch = batch_opt->get();
@@ -268,6 +268,11 @@ raft::replicate_stages partition_proxy::replicate(
       ss::now(),
       ss::make_ready_future<result<raft::replicate_result>>(
         make_error_code(kafka::error_code::invalid_topic_exception))};
+}
+
+std::unique_ptr<kafka::exact_offset_replicator>
+partition_proxy::make_exact_offset_replicator() && {
+    return nullptr;
 }
 
 result<kafka::partition_info> partition_proxy::get_partition_info() const {
@@ -330,7 +335,10 @@ partition_proxy::get_metastore_size() const {
 
 ss::future<std::optional<size_t>> partition_proxy::cloud_size_bytes() const {
     auto size_res = co_await get_metastore_size();
-    co_return size_res.value().size;
+    if (!size_res) {
+        co_return std::nullopt;
+    }
+    co_return size_res->size;
 }
 
 model::offset partition_proxy::offset_lag() const { return model::offset(0); }

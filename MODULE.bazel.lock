@@ -105,8 +105,8 @@
     "https://bcr.bazel.build/modules/lexy/2025.05.0/MODULE.bazel": "3edc26065513800529f59dc5238bfabf5c02dc4af855f32988542108b5088daf",
     "https://bcr.bazel.build/modules/lexy/2025.05.0/source.json": "774f00d9e2ced9f33cdac96d5b2909c511ae33699a38dfa2b42e701975f33f88",
     "https://bcr.bazel.build/modules/libpfm/4.11.0/MODULE.bazel": "45061ff025b301940f1e30d2c16bea596c25b176c8b6b3087e92615adbd52902",
-    "https://bcr.bazel.build/modules/liburing/2.5/MODULE.bazel": "51768194b0b344123b2d7237b65928c9c119e7fc18a3f86f4870e83c0b71c00a",
-    "https://bcr.bazel.build/modules/liburing/2.5/source.json": "1ff3e7c04563757f99cc7d33c2d4cb4900c45d6aca2cf54d58a1b199e66460ec",
+    "https://bcr.bazel.build/modules/liburing/2.14/MODULE.bazel": "83a452082f02c8fc4a19a8b379356d8a990fe4b2a2cd33beb6478a1a6611c1bc",
+    "https://bcr.bazel.build/modules/liburing/2.14/source.json": "8af2769c7cd50cc015eb1a20ed85c721f5b5422d67d7d8dd281099bfccea28aa",
     "https://bcr.bazel.build/modules/lz4/1.9.4/MODULE.bazel": "e3d307b1d354d70f6c809167eafecf5d622c3f27e3971ab7273410f429c7f83a",
     "https://bcr.bazel.build/modules/lz4/1.9.4/source.json": "233f0bdfc21f254e3dda14683ddc487ca68c6a3a83b7d5db904c503f85bd089b",
     "https://bcr.bazel.build/modules/nlohmann_json/3.11.3/MODULE.bazel": "87023db2f55fc3a9949c7b08dc711fae4d4be339a80a99d04453c4bb3998eefc",
@@ -179,7 +179,8 @@
     "https://bcr.bazel.build/modules/rules_cc/0.1.2/MODULE.bazel": "557ddc3a96858ec0d465a87c0a931054d7dcfd6583af2c7ed3baf494407fd8d0",
     "https://bcr.bazel.build/modules/rules_cc/0.1.5/MODULE.bazel": "88dfc9361e8b5ae1008ac38f7cdfd45ad738e4fa676a3ad67d19204f045a1fd8",
     "https://bcr.bazel.build/modules/rules_cc/0.2.0/MODULE.bazel": "b5c17f90458caae90d2ccd114c81970062946f49f355610ed89bebf954f5783c",
-    "https://bcr.bazel.build/modules/rules_cc/0.2.0/source.json": "5f7f4e578e950adbf194217d4b607237a8197fc53ba46c367b3d61a86ecf35c2",
+    "https://bcr.bazel.build/modules/rules_cc/0.2.17/MODULE.bazel": "1849602c86cb60da8613d2de887f9566a6d354a6df6d7009f9d04a14402f9a84",
+    "https://bcr.bazel.build/modules/rules_cc/0.2.17/source.json": "3832f45d145354049137c0090df04629d9c2b5493dc5c2bf46f1834040133a07",
     "https://bcr.bazel.build/modules/rules_foreign_cc/0.10.1/MODULE.bazel": "b9527010e5fef060af92b6724edb3691970a5b1f76f74b21d39f7d433641be60",
     "https://bcr.bazel.build/modules/rules_foreign_cc/0.12.0/MODULE.bazel": "d850fab025ce79a845077035861034393f1cc1efc1d9d58d766272a26ba67def",
     "https://bcr.bazel.build/modules/rules_foreign_cc/0.12.0/source.json": "c97ddc022179fe30d1a9b94425d1e56d0a633f72332c55463e584a52ce1b38ac",
@@ -253,7 +254,6 @@
     "https://bcr.bazel.build/modules/rules_python/0.33.2/MODULE.bazel": "3e036c4ad8d804a4dad897d333d8dce200d943df4827cb849840055be8d2e937",
     "https://bcr.bazel.build/modules/rules_python/0.4.0/MODULE.bazel": "9208ee05fd48bf09ac60ed269791cf17fb343db56c8226a720fbb1cdf467166c",
     "https://bcr.bazel.build/modules/rules_python/0.40.0/MODULE.bazel": "9d1a3cd88ed7d8e39583d9ffe56ae8a244f67783ae89b60caafc9f5cf318ada7",
-    "https://bcr.bazel.build/modules/rules_python/1.5.1/MODULE.bazel": "acfe65880942d44a69129d4c5c3122d57baaf3edf58ae5a6bd4edea114906bf5",
     "https://bcr.bazel.build/modules/rules_python/1.6.0/MODULE.bazel": "7e04ad8f8d5bea40451cf80b1bd8262552aa73f841415d20db96b7241bd027d8",
     "https://bcr.bazel.build/modules/rules_python/1.6.0/source.json": "e980f654cf66ec4928672f41fc66c4102b5ea54286acf4aecd23256c84211be6",
     "https://bcr.bazel.build/modules/rules_rust/0.60.0/MODULE.bazel": "911ff2a12d01ac574fd6dfec0b05fa976ff8693d8c2420db637a9f98f697b0ae",
@@ -303,7 +303,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "imVq/Zl1YH4M/22NJ9WbE3zIAXH1N0Mvvp8kx+LL4oo=",
+        "bzlTransitiveDigest": "G21akrZz7lt26dMKLVJ0IvM1AUCU8dzDuF6Uksw4ifQ=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -483,9 +483,9 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:seastar.BUILD",
-              "sha256": "b697dbed6afd966feae8bf58a3a3af704cb74ef4ee699c70506533948b23c740",
-              "strip_prefix": "seastar-7780db6428357bca114d405ee2c7c24c52db6901",
-              "url": "https://github.com/redpanda-data/seastar/archive/7780db6428357bca114d405ee2c7c24c52db6901.tar.gz"
+              "sha256": "9c572c5111ef6b4f0afc6ba358696c0e2a78e118bc3c3617cf6454a9d98970de",
+              "strip_prefix": "seastar-617d3c421a949f449942d7ce0d275af0997efb48",
+              "url": "https://github.com/redpanda-data/seastar/archive/617d3c421a949f449942d7ce0d275af0997efb48.tar.gz"
             }
           },
           "unordered_dense": {
@@ -547,7 +547,7 @@
     },
     "@@apple_support+//crosstool:setup.bzl%apple_cc_configure_extension": {
       "general": {
-        "bzlTransitiveDigest": "xcBTf2+GaloFpg7YEh/Bv+1yAczRkiCt3DGws4K7kSk=",
+        "bzlTransitiveDigest": "KeQesfCOrAU1zyxCC2+z+3iMtc6ETRRZn7w+WqPasSM=",
         "usagesDigest": "39X2JjPCOAk6sThDALGv1L4q85GNjda2yfszm/phxxw=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -2100,7 +2100,7 @@
     },
     "@@rules_rust+//crate_universe:extension.bzl%crate": {
       "general": {
-        "bzlTransitiveDigest": "3OBoetJUyL+gKi8+zKLBxer1HfUHxhs38NyKkHpP8/w=",
+        "bzlTransitiveDigest": "6dweJIn2jue6jXLsKdJmGasm4r9KLHL1Z2VV19RNhD0=",
         "usagesDigest": "ik68B3Un/74y+E605ZBhV6WSyOt4Sb/m8ZgtWkGvm6Q=",
         "recordedFileInputs": {
           "@@//bazel/thirdparty/Cargo.lock": "ccf410ef5c36e9543e1aacb4c1a6bee1d0e93c21a7b2e23adb16ef0e81140b23",
@@ -4119,6 +4119,16 @@
           ],
           [
             "rules_cc+",
+            "cc_compatibility_proxy",
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
+          ],
+          [
+            "rules_cc+",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
             "rules_cc",
             "rules_cc+"
           ],
@@ -4460,188 +4470,12 @@
     "@@toolchains_llvm+//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "c1HwgmsVfl3HQfJp5j/lYNFyGkE5EiG6RookiyKG0oM=",
-        "usagesDigest": "RyrGkIFp3swLydAVOUytW/zr4jpgLj3Af+cQ8J7aW3Y=",
+        "usagesDigest": "S1C9TzTqc2dmdWgxm10Muv026TnJE7omf/Z8kaPlVTc=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
         "generatedRepoSpecs": {
           "current_llvm_toolchain_llvm": {
-            "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%llvm",
-            "attributes": {
-              "alternative_llvm_sources": [],
-              "auth_patterns": {},
-              "distribution": "auto",
-              "exec_arch": "",
-              "exec_os": "",
-              "extra_llvm_distributions": {},
-              "libclang_rt": {},
-              "llvm_mirror": "",
-              "llvm_version": "20.1.8",
-              "llvm_versions": {},
-              "netrc": "",
-              "sha256": {
-                "linux-aarch64": "f51afb38ca39cc93c6ed065a0c463d3587b975204d6028a63de33153caf3e104",
-                "linux-x86_64": "616e3f50b1f03b61ec712f4f28fa67668d60ae3edccea8508065a3f49dbbb24a"
-              },
-              "strip_prefix": {},
-              "urls": {
-                "linux-aarch64": [
-                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-20.1.8/llvm-20.1.8-debian-11-aarch64-2025-11-14.tar.zst"
-                ],
-                "linux-x86_64": [
-                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-20.1.8/llvm-20.1.8-debian-11-x86_64-2025-11-14.tar.zst"
-                ]
-              }
-            }
-          },
-          "current_llvm_toolchain": {
-            "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%toolchain",
-            "attributes": {
-              "absolute_paths": false,
-              "archive_flags": {},
-              "compile_flags": {
-                "linux-aarch64": [
-                  "--target=aarch64-unknown-linux-gnu",
-                  "-march=armv8-a+crc+crypto",
-                  "-U_FORTIFY_SOURCE",
-                  "-fstack-protector",
-                  "-fno-omit-frame-pointer",
-                  "-fcolor-diagnostics",
-                  "-Wall",
-                  "-Wthread-safety",
-                  "-Wself-assign"
-                ],
-                "linux-x86_64": [
-                  "--target=x86_64-unknown-linux-gnu",
-                  "-march=westmere",
-                  "-U_FORTIFY_SOURCE",
-                  "-fstack-protector",
-                  "-fno-omit-frame-pointer",
-                  "-fcolor-diagnostics",
-                  "-Wall",
-                  "-Wthread-safety",
-                  "-Wself-assign"
-                ]
-              },
-              "conly_flags": {},
-              "coverage_compile_flags": {},
-              "coverage_link_flags": {},
-              "cxx_builtin_include_directories": {},
-              "cxx_flags": {},
-              "cxx_standard": {
-                "": "c++23"
-              },
-              "dbg_compile_flags": {},
-              "exec_arch": "",
-              "exec_os": "",
-              "extra_exec_compatible_with": {},
-              "extra_target_compatible_with": {},
-              "link_flags": {},
-              "link_libs": {},
-              "llvm_versions": {
-                "": "20.1.8"
-              },
-              "opt_compile_flags": {},
-              "opt_link_flags": {},
-              "stdlib": {},
-              "target_settings": {},
-              "unfiltered_compile_flags": {},
-              "toolchain_roots": {},
-              "sysroot": {
-                "linux-x86_64": "'@@+non_module_dependencies+x86_64_sysroot//:sysroot'",
-                "linux-aarch64": "'@@+non_module_dependencies+aarch64_sysroot//:sysroot'"
-              }
-            }
-          },
-          "next_llvm_toolchain_llvm": {
-            "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%llvm",
-            "attributes": {
-              "alternative_llvm_sources": [],
-              "auth_patterns": {},
-              "distribution": "auto",
-              "exec_arch": "",
-              "exec_os": "",
-              "extra_llvm_distributions": {},
-              "libclang_rt": {},
-              "llvm_mirror": "",
-              "llvm_version": "21.1.6",
-              "llvm_versions": {},
-              "netrc": "",
-              "sha256": {
-                "linux-aarch64": "37257804087a26b0ede7c0349d3f44db7b7439e551fc6c753f7934ead654c1b8",
-                "linux-x86_64": "b3aa9cb72c2e46bd1cc3f17f3772b37a424e54f796253961382163eab2f4a9c0"
-              },
-              "strip_prefix": {},
-              "urls": {
-                "linux-aarch64": [
-                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-21.1.6/llvm-21.1.6-debian-11-aarch64-2025-11-25.tar.zst"
-                ],
-                "linux-x86_64": [
-                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-21.1.6/llvm-21.1.6-debian-11-x86_64-2025-11-25.tar.zst"
-                ]
-              }
-            }
-          },
-          "next_llvm_toolchain": {
-            "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%toolchain",
-            "attributes": {
-              "absolute_paths": false,
-              "archive_flags": {},
-              "compile_flags": {
-                "linux-aarch64": [
-                  "--target=aarch64-unknown-linux-gnu",
-                  "-march=armv8-a+crc+crypto",
-                  "-U_FORTIFY_SOURCE",
-                  "-fstack-protector",
-                  "-fno-omit-frame-pointer",
-                  "-fcolor-diagnostics",
-                  "-Wall",
-                  "-Wthread-safety",
-                  "-Wself-assign"
-                ],
-                "linux-x86_64": [
-                  "--target=x86_64-unknown-linux-gnu",
-                  "-march=westmere",
-                  "-U_FORTIFY_SOURCE",
-                  "-fstack-protector",
-                  "-fno-omit-frame-pointer",
-                  "-fcolor-diagnostics",
-                  "-Wall",
-                  "-Wthread-safety",
-                  "-Wself-assign"
-                ]
-              },
-              "conly_flags": {},
-              "coverage_compile_flags": {},
-              "coverage_link_flags": {},
-              "cxx_builtin_include_directories": {},
-              "cxx_flags": {},
-              "cxx_standard": {
-                "": "c++23"
-              },
-              "dbg_compile_flags": {},
-              "exec_arch": "",
-              "exec_os": "",
-              "extra_exec_compatible_with": {},
-              "extra_target_compatible_with": {},
-              "link_flags": {},
-              "link_libs": {},
-              "llvm_versions": {
-                "": "21.1.6"
-              },
-              "opt_compile_flags": {},
-              "opt_link_flags": {},
-              "stdlib": {},
-              "target_settings": {},
-              "unfiltered_compile_flags": {},
-              "toolchain_roots": {},
-              "sysroot": {
-                "linux-x86_64": "'@@+non_module_dependencies+x86_64_sysroot//:sysroot'",
-                "linux-aarch64": "'@@+non_module_dependencies+aarch64_sysroot//:sysroot'"
-              }
-            }
-          },
-          "clang-22_llvm_toolchain_llvm": {
             "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%llvm",
             "attributes": {
               "alternative_llvm_sources": [],
@@ -4670,7 +4504,7 @@
               }
             }
           },
-          "clang-22_llvm_toolchain": {
+          "current_llvm_toolchain": {
             "repoRuleId": "@@toolchains_llvm+//toolchain:rules.bzl%toolchain",
             "attributes": {
               "absolute_paths": false,

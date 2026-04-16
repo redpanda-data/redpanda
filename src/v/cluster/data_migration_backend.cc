@@ -286,8 +286,9 @@ backend::get_entities_status(id migration_id) {
           migration_id,
           groups_by_partition.size());
         errc last_errc = errc::success;
-        co_await ss::parallel_for_each(
+        co_await ss::max_concurrent_for_each(
           std::move(groups_by_partition),
+          64,
           [this, &ret, &last_errc](auto&& pair) {
               // TODO: retry per-partition
               auto&& [pid, groups] = pair;
@@ -405,8 +406,9 @@ backend::set_entities_status(id migration_id, entities_status status) {
                   std::move(status.groups),
                   [&rev_map, &requests, migration_id](group_offsets& group) {
                       kafka::group_id gid{group.group_id};
-                      if (auto it = rev_map.find(gid);
-                          likely(it != rev_map.end())) {
+                      if (
+                        auto it = rev_map.find(gid);
+                        likely(it != rev_map.end())) {
                           auto pid = it->second;
                           requests[pid].groups.push_back(std::move(group));
                       } else {
@@ -420,8 +422,9 @@ backend::set_entities_status(id migration_id, entities_status status) {
                   });
 
                 errc last_error = errc::success;
-                co_await ss::parallel_for_each(
+                co_await ss::max_concurrent_for_each(
                   *mrstate.partition_group_map,
+                  64,
                   [&requests, this, &last_error](const auto& pair) {
                       auto& [pid, groups] = pair;
                       auto& request = requests.at(pid);
@@ -835,7 +838,7 @@ backend::do_topic_work(model::topic_namespace nt, topic_work tw) noexcept {
     } catch (...) {
         vlog(
           dm_log.warn,
-          "exception occured during topic work {} on nt={}",
+          "exception occurred during topic work {} on nt={}",
           tw,
           nt,
           std::current_exception());

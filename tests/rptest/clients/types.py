@@ -27,6 +27,7 @@ class TopicSpec:
     STORAGE_MODE_LOCAL = "local"
     STORAGE_MODE_TIERED = "tiered"
     STORAGE_MODE_CLOUD = "cloud"
+    STORAGE_MODE_TIERED_CLOUD = "tiered_cloud"
     STORAGE_MODE_UNSET = "unset"
 
     PROPERTY_COMPRESSSION = "compression.type"

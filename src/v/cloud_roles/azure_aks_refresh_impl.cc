@@ -65,8 +65,8 @@ azure_aks_refresh_impl::azure_aks_refresh_impl(
           // try to interpret AZURE_AUTHORITY_HOST as a URL, if it fails,
           // assume it's an hostname
           auto authority_host = load_from_env(env_var_azure_authority_host);
-          if (auto url = ada::parse<ada::url>(authority_host);
-              url.has_value()) {
+          if (
+            auto url = ada::parse<ada::url>(authority_host); url.has_value()) {
               auto is_https = url->get_protocol() == "https:";
               // use port if it's set, otherwise fallback on the default 443 for
               // https and 80 for http

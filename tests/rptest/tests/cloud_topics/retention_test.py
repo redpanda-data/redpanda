@@ -124,8 +124,16 @@ class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
         self.logger.info(f"Successfully consumed from offset {offset}")
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_size_based_retention(self, cloud_storage_type: CloudStorageType):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(),
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_size_based_retention(
+        self, cloud_storage_type: CloudStorageType, storage_mode: str
+    ):
         """
         Test that size-based retention (retention.bytes) correctly deletes
         old data from cloud topics.
@@ -144,7 +152,7 @@ class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
             partitions=1,
             replicas=3,
             config={
-                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                TopicSpec.PROPERTY_STORAGE_MODE: storage_mode,
                 "cleanup.policy": TopicSpec.CLEANUP_DELETE,
                 "retention.bytes": str(initial_retention),
             },
@@ -211,8 +219,16 @@ class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
         )
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_time_based_retention(self, cloud_storage_type: CloudStorageType):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(),
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_time_based_retention(
+        self, cloud_storage_type: CloudStorageType, storage_mode: str
+    ):
         """
         Test that time-based retention (retention.ms) correctly deletes
         old data from cloud topics based on message timestamps.
@@ -228,7 +244,7 @@ class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
             partitions=1,
             replicas=3,
             config={
-                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                TopicSpec.PROPERTY_STORAGE_MODE: storage_mode,
                 "cleanup.policy": TopicSpec.CLEANUP_DELETE,
                 "retention.ms": str(3600000),  # 1 hour - data won't be deleted yet
             },

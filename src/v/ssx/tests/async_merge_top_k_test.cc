@@ -21,11 +21,11 @@ struct move_only {
     move_only& operator=(const move_only&) = delete;
     ~move_only() noexcept = default;
 
-    friend bool operator==(const move_only&, const move_only&) noexcept
-      = default;
+    friend bool
+    operator==(const move_only&, const move_only&) noexcept = default;
 
-    friend auto operator<=>(const move_only&, const move_only&) noexcept
-      = default;
+    friend auto
+    operator<=>(const move_only&, const move_only&) noexcept = default;
 
     int val;
 };

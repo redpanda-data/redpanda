@@ -22,12 +22,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate/graf"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
@@ -756,7 +758,7 @@ func fetchMetrics(
 	if err != nil {
 		return nil, err
 	}
-	parser := &expfmt.TextParser{}
+	parser := expfmt.NewTextParser(model.UTF8Validation)
 	return parser.TextToMetricFamilies(bytes.NewBuffer(bs))
 }
 
@@ -889,29 +891,23 @@ func newDefaultTemplateVar(
 
 func legendFormat(m *dto.MetricFamily) string {
 	duplicate := func(s string, ls []string) bool {
-		for _, l := range ls {
-			if s == l {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(ls, s)
 	}
 	labels := []string{}
-	legend := "node: {{instance}}"
+	var legend strings.Builder
+	legend.WriteString("node: {{instance}}")
 	for _, metric := range m.GetMetric() {
 		for _, label := range metric.GetLabel() {
 			name := label.GetName()
 			if name != "type" && !duplicate(name, labels) {
-				legend += fmt.Sprintf(
-					", %s: {{%s}}",
+				fmt.Fprintf(&legend, ", %s: {{%s}}",
 					name,
-					name,
-				)
+					name)
 				labels = append(labels, name)
 			}
 		}
 	}
-	return legend
+	return legend.String()
 }
 
 func subtype(m *dto.MetricFamily) string {
@@ -980,7 +976,7 @@ To learn more about these dashboards you can visit:
 // wrap auxiliary function that wraps the string s to the given width with a
 // leading indent.
 func wrap(s string, width, indent int) string {
-	var wrapped string
+	var wrapped strings.Builder
 
 	// Split the string into words
 	words := strings.Fields(s)
@@ -993,15 +989,15 @@ func wrap(s string, width, indent int) string {
 		// If the word doesn't fit on the current line, add a newline and the
 		// indent
 		if lineLength+len(word)+1 > width {
-			wrapped += "\n" + strings.Repeat(" ", indent)
+			wrapped.WriteString("\n" + strings.Repeat(" ", indent))
 			lineLength = indent
 		}
 
 		// Add the word to the current line
-		wrapped += word + " "
+		wrapped.WriteString(word + " ")
 		lineLength += len(word) + 1
 	}
 
 	// Return the wrapped string
-	return wrapped
+	return wrapped.String()
 }

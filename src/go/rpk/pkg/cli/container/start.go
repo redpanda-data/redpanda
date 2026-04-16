@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -770,7 +771,7 @@ func parsePorts(ports []string, nNodes, defPort int) ([]uint, error) {
 	}
 	// If the user didn't specify enough ports, we fill the rest based on the last port passed.
 	if len(ret) < nNodes {
-		sort.Slice(ret, func(i, j int) bool { return ret[i] < ret[j] })
+		slices.Sort(ret)
 		for nNodes-len(ret) > 0 {
 			ret = append(ret, ret[len(ret)-1]+1000)
 		}

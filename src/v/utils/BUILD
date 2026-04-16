@@ -689,6 +689,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "device_utils",
+    srcs = [
+        "device_utils.cc",
+    ],
+    hdrs = [
+        "device_utils.h",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:sformat",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "offset_monitor",
     hdrs = [
         "offset_monitor.h",

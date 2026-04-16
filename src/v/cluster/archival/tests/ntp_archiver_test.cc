@@ -22,6 +22,7 @@
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "random/generators.h"
 #include "ssx/sformat.h"
 #include "storage/parser.h"
 #include "storage/types.h"
@@ -654,7 +655,10 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
         return archive_clean_offset_reset && archive_start_offset_reset
                && deletes_sent;
     }).get();
-    fut.get();
+    auto archive_gc_result = fut.get();
+    BOOST_REQUIRE(
+      archive_gc_result
+      == archival::ntp_archiver::housekeeping_result::complete);
 
     BOOST_REQUIRE_EQUAL(
       part->archival_meta_stm()->manifest().get_spillover_map().size(), 0);
@@ -685,6 +689,430 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
     bool spill_manifest_deleted = delete_payloads.find(spill_path().string())
                                   != ss::sstring::npos;
     BOOST_REQUIRE_EQUAL(true, spill_manifest_deleted);
+}
+
+FIXTURE_TEST(test_archive_retention_incremental, archiver_fixture) {
+    // Constants chosen deliberately to cover all possible edge cases (partial
+    // spillover gc, multiple spillover gc, boundary gc, full archive gc).
+    const size_t num_segments = 12;
+    const size_t num_segments_pending_gc = 9;
+    const size_t num_segments_per_spill = 3;
+    const size_t gc_max_segments_per_run = 2;
+
+    auto cfg = scoped_config{};
+    cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::make_optional(num_segments_per_spill));
+    cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{std::nullopt});
+    cfg.get("cloud_storage_gc_max_segments_per_run")
+      .set_value(gc_max_segments_per_run);
+
+    auto old_stamp = model::timestamp{
+      model::timestamp::now().value()
+      - std::chrono::milliseconds{10min}.count()};
+
+    std::vector<segment_desc> segments;
+    segments.reserve(num_segments);
+    for (size_t i = 0; i < num_segments; i++) {
+        segments.push_back(
+          {.ntp = manifest_ntp,
+           .base_offset = model::offset(i * 1000),
+           .term = model::term_id(i + 1),
+           .num_records = 1000,
+           .timestamp = i < num_segments_pending_gc
+                          ? old_stamp
+                          : std::optional<model::timestamp>{}});
+    }
+
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(1);
+    }).get();
+
+    vlog(
+      test_log.info,
+      "Partition is a leader, HW {}, CO {}, partition: {}",
+      part->high_watermark(),
+      part->committed_offset(),
+      *part);
+
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name,
+      path_provider);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+    archiver.initialize_probe();
+    amv->start().get();
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    size_t total_uploaded = 0;
+    while (total_uploaded < num_segments) {
+        auto res = upload_next_with_retries(archiver).get();
+        total_uploaded += res.non_compacted_upload_result.num_succeeded;
+        BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+    }
+    BOOST_REQUIRE_EQUAL(total_uploaded, num_segments);
+
+    std::vector<std::pair<remote_segment_path, bool>> segment_urls;
+    for (const auto& seg : segments) {
+        auto name = cloud_storage::generate_local_segment_name(
+          seg.base_offset, seg.term);
+        auto path = get_segment_path(
+          part->archival_meta_stm()->manifest(), name);
+        bool deletion_expected = seg.timestamp == old_stamp;
+        segment_urls.emplace_back(path, deletion_expected);
+    }
+
+    archiver.apply_spillover().get();
+
+    const auto& manifest = part->archival_meta_stm()->manifest();
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_start_offset(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(manifest.get_start_offset(), model::offset(9000));
+
+    const auto& spills = manifest.get_spillover_map();
+    BOOST_REQUIRE_EQUAL(spills.size(), 3);
+
+    auto it = spills.begin();
+    BOOST_REQUIRE_EQUAL(it->base_offset, model::offset{0});
+    BOOST_REQUIRE_EQUAL(it->committed_offset, model::offset{2999});
+    auto spill_path_a = generate_spill_manifest_path(manifest, *it);
+
+    ++it;
+    BOOST_REQUIRE_EQUAL(it->base_offset, model::offset{3000});
+    BOOST_REQUIRE_EQUAL(it->committed_offset, model::offset{5999});
+    auto spill_path_b = generate_spill_manifest_path(manifest, *it);
+
+    ++it;
+    BOOST_REQUIRE_EQUAL(it->base_offset, model::offset{6000});
+    BOOST_REQUIRE_EQUAL(it->committed_offset, model::offset{8999});
+    auto spill_path_c = generate_spill_manifest_path(manifest, *it);
+
+    config::shard_local_cfg().log_retention_ms.set_value(
+      std::chrono::milliseconds{5min});
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().log_retention_ms.reset(); });
+
+    archiver.apply_archive_retention().get();
+    BOOST_REQUIRE_EQUAL(
+      manifest.get_archive_start_offset(), model::offset{9000});
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), model::offset{0});
+
+    // Expected cumulative state after each GC round (batch_size=2).
+
+    using hk_result = archival::ntp_archiver::housekeeping_result;
+    struct round {
+        hk_result result;
+        model::offset clean;
+        size_t spill_map_sz;
+        size_t num_deleted_segments;
+        std::array<bool, 3> manifest_deleted;
+    };
+
+    constexpr std::array<round, 5> rounds = {{
+      // Round 1: partial cleanup of spillover manifest A, B and C remain
+      // unaffected.
+      {
+        .result = hk_result::partial,
+        .clean = model::offset{2000},
+        .spill_map_sz = 3,
+        .num_deleted_segments = 2,
+        .manifest_deleted = {false, false, false},
+      },
+      // Round 2: complete cleanup of spillover manifest A, partial cleanup of
+      // B, C remains unaffected.
+      {
+        .result = hk_result::partial,
+        .clean = model::offset{4000},
+        .spill_map_sz = 2,
+        .num_deleted_segments = 4,
+        .manifest_deleted = {true, false, false},
+      },
+      // Round 3: all segments in B are cleaned.
+      {
+        .result = hk_result::partial,
+        .clean = model::offset{6000},
+        .spill_map_sz = 2,
+        .num_deleted_segments = 6,
+        .manifest_deleted = {true, true, false},
+      },
+      // Round 4: partial cleanup of spillover manifest C
+      {
+        .result = hk_result::partial,
+        .clean = model::offset{8000},
+        .spill_map_sz = 1,
+        .num_deleted_segments = 8,
+        .manifest_deleted = {true, true, false},
+      },
+      // Round 5: complete cleanup of spillover manifest C, archive is empty.
+      {.result = hk_result::complete,
+       .clean = model::offset{},
+       .spill_map_sz = 0,
+       .num_deleted_segments = 9,
+       .manifest_deleted = {true, true, true}},
+    }};
+
+    std::array<ss::sstring, 3> spill_urls = {
+      spill_path_a().string(),
+      spill_path_b().string(),
+      spill_path_c().string()};
+
+    // Count how many times a key appears in multi-delete XML payloads.
+    auto count_key = [&](const ss::sstring& path) -> size_t {
+        auto needle = ssx::sformat("<Key>{}</Key>", path);
+        ss::sstring payloads;
+        for (const auto& [url, req] : get_targets()) {
+            if (req.has_q_delete) {
+                payloads += req.content;
+            }
+        }
+        size_t count = 0;
+        size_t pos = 0;
+        while ((pos = payloads.find(needle, pos)) != ss::sstring::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+
+    for (size_t r = 0; r < rounds.size(); r++) {
+        const auto& e = rounds[r];
+        vlog(test_log.info, "GC round {}", r + 1);
+
+        auto result = archiver.garbage_collect_archive().get();
+        BOOST_REQUIRE(result == e.result);
+        BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), e.clean);
+        BOOST_REQUIRE_EQUAL(spills.size(), e.spill_map_sz);
+
+        for (size_t i = 0; i < num_segments_pending_gc; i++) {
+            BOOST_REQUIRE_EQUAL(
+              count_key(segment_urls.at(i).first().string()),
+              i < e.num_deleted_segments ? 1 : 0);
+        }
+        for (size_t i = 0; i < 3; i++) {
+            BOOST_REQUIRE_EQUAL(
+              count_key(spill_urls.at(i)), e.manifest_deleted.at(i) ? 1 : 0);
+        }
+    }
+
+    // Entire archive GCd.
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_start_offset(), model::offset{});
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), model::offset{});
+
+    // STM segments still present.
+    for (size_t i = num_segments_pending_gc; i < num_segments; i++) {
+        BOOST_REQUIRE_EQUAL(count_key(segment_urls[i].first().string()), 0);
+    }
+}
+
+FIXTURE_TEST(
+  test_archive_retention_incremental_with_http_failures, archiver_fixture) {
+    // Constants chosen deliberately to cover all possible edge cases (partial
+    // spillover gc, multiple spillover gc, boundary gc, full archive gc).
+    const size_t num_segments = 12;
+    const size_t num_segments_pending_gc = 9;
+    const size_t num_segments_per_spill = 3;
+    const size_t gc_max_segments_per_run = 2;
+
+    auto cfg = scoped_config{};
+    cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::make_optional(num_segments_per_spill));
+    cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{std::nullopt});
+    cfg.get("cloud_storage_gc_max_segments_per_run")
+      .set_value(gc_max_segments_per_run);
+
+    auto old_stamp = model::timestamp{
+      model::timestamp::now().value()
+      - std::chrono::milliseconds{10min}.count()};
+
+    std::vector<segment_desc> segments;
+    segments.reserve(num_segments);
+    for (size_t i = 0; i < num_segments; i++) {
+        segments.push_back(
+          {.ntp = manifest_ntp,
+           .base_offset = model::offset(i * 1000),
+           .term = model::term_id(i + 1),
+           .num_records = 1000,
+           .timestamp = i < num_segments_pending_gc
+                          ? old_stamp
+                          : std::optional<model::timestamp>{}});
+    }
+
+    init_storage_api_local(segments);
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(1);
+    }).get();
+
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name,
+      path_provider);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+    archiver.initialize_probe();
+    amv->start().get();
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    size_t total_uploaded = 0;
+    while (total_uploaded < num_segments) {
+        auto res = upload_next_with_retries(archiver).get();
+        total_uploaded += res.non_compacted_upload_result.num_succeeded;
+        BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+    }
+    BOOST_REQUIRE_EQUAL(total_uploaded, num_segments);
+
+    std::vector<std::pair<remote_segment_path, bool>> segment_urls;
+    for (const auto& seg : segments) {
+        auto name = cloud_storage::generate_local_segment_name(
+          seg.base_offset, seg.term);
+        auto path = get_segment_path(
+          part->archival_meta_stm()->manifest(), name);
+        bool deletion_expected = seg.timestamp == old_stamp;
+        segment_urls.emplace_back(path, deletion_expected);
+    }
+
+    archiver.apply_spillover().get();
+
+    const auto& manifest = part->archival_meta_stm()->manifest();
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_start_offset(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(manifest.get_start_offset(), model::offset(9000));
+
+    const auto& spills = manifest.get_spillover_map();
+    BOOST_REQUIRE_EQUAL(spills.size(), 3);
+
+    std::vector<ss::sstring> spill_urls;
+    for (const auto& s : spills) {
+        spill_urls.push_back(
+          generate_spill_manifest_path(manifest, s)().string());
+    }
+
+    config::shard_local_cfg().log_retention_ms.set_value(
+      std::chrono::milliseconds{5min});
+    auto reset_cfg = ss::defer(
+      [] { config::shard_local_cfg().log_retention_ms.reset(); });
+
+    archiver.apply_archive_retention().get();
+    BOOST_REQUIRE_EQUAL(
+      manifest.get_archive_start_offset(), model::offset{9000});
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), model::offset{0});
+
+    size_t injected_failures = 0;
+    fail_request_if(
+      [&injected_failures](const ss::http::request& req) {
+          if (
+            req._method == "POST" && req.has_query_param("delete")
+            && random_generators::get_int(3) > 0) {
+              ++injected_failures;
+              return true;
+          }
+          return false;
+      },
+      {.body = "",
+       .status = ss::http::reply::status_type::internal_server_error});
+
+    using hk_result = archival::ntp_archiver::housekeeping_result;
+
+    size_t iteration_ix = 0;
+    size_t errors = 0;
+
+    for (;; iteration_ix++) {
+        std::optional<hk_result> result;
+        try {
+            result = archiver.garbage_collect_archive().get();
+        } catch (...) {
+            vlog(
+              test_log.info,
+              "GC iteration {} failed with exception: {}",
+              iteration_ix,
+              std::current_exception());
+            result = hk_result::error;
+        }
+        if (result == hk_result::error) {
+            ++errors;
+        }
+        if (result == hk_result::complete) {
+            break;
+        }
+    }
+
+    vlog(
+      test_log.info,
+      "GC finished after {} iterations ({} errors, {} injected failures)",
+      iteration_ix,
+      errors,
+      injected_failures);
+
+    BOOST_REQUIRE_GT(injected_failures, 0);
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_start_offset(), model::offset{});
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), model::offset{});
+    BOOST_REQUIRE_EQUAL(spills.size(), 0);
+
+    auto count_key = [&](const ss::sstring& path) -> size_t {
+        auto needle = ssx::sformat("<Key>{}</Key>", path);
+        ss::sstring payloads;
+        for (const auto& [url, req] : get_targets()) {
+            if (req.has_q_delete) {
+                payloads += req.content;
+            }
+        }
+        size_t count = 0;
+        size_t pos = 0;
+        while ((pos = payloads.find(needle, pos)) != ss::sstring::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+
+    for (size_t i = 0; i < num_segments; i++) {
+        auto key = segment_urls[i].first().string();
+        if (i < num_segments_pending_gc) {
+            BOOST_REQUIRE_GE(count_key(key), 1);
+        } else {
+            BOOST_REQUIRE_EQUAL(count_key(key), 0);
+        }
+    }
+
+    for (const auto& sp : spill_urls) {
+        // At most one delete request for each spill manifest. We are optimistic
+        // with this delete.
+        BOOST_REQUIRE_GE(count_key(sp), 1);
+    }
 }
 
 FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
@@ -2264,4 +2692,160 @@ FIXTURE_TEST(
         // Upload at least two segments (segment + index)
         return get_requests().size() - initial_request > 4;
     });
+}
+
+// Regression test: archive_start_offset before the first spillover manifest's
+// base_offset creates a gap that causes time-based retention to give up. Such a
+// manifest could be created only by previous versions of the code (pre v25.3).
+// The archiver should detect and repair this on leader start.
+FIXTURE_TEST(test_repair_archive_start_before_spillover, archiver_fixture) {
+    auto cfg = scoped_config{};
+    cfg.get("cloud_storage_disable_upload_loop_for_tests").set_value(true);
+
+    std::vector<segment_desc> segments = {
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(0),
+       .term = model::term_id(1),
+       .num_records = 1000}};
+
+    init_storage_api_local(segments);
+    wait_for_partition_leadership(manifest_ntp);
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(1);
+    }).get();
+
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name,
+      path_provider);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+    archiver.initialize_probe();
+    amv->start().get();
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    // Build a bogus manifest with archive_start_offset below the first
+    // spillover entry, reproducing a pre-v25.3 bug.
+    //
+    //  archive_start=10    spillover[20..49]    stm[50..60]
+    //  archive_clean=10    (3 segments)         (1 segment)
+    //       ^--- gap ---^
+    //
+    // The first spillover segment [20..29] has an old timestamp so that
+    // time-based retention wants to remove it.
+    auto now = model::timestamp::now();
+    auto old_ts = model::timestamp{1000};
+    std::vector<cloud_storage::segment_meta> segs;
+    segs.push_back(
+      cloud_storage::segment_meta{
+        .size_bytes = 4097,
+        .base_offset = model::offset{20},
+        .committed_offset = model::offset{29},
+        .base_timestamp = old_ts,
+        .max_timestamp = old_ts,
+        .delta_offset = model::offset_delta{0},
+        .ntp_revision = manifest_revision,
+        .archiver_term = model::term_id{1},
+        .segment_term = model::term_id{1},
+        .delta_offset_end = model::offset_delta{0},
+        .sname_format = cloud_storage::segment_name_format::v3,
+      });
+    for (auto [base, committed] :
+         std::vector<std::pair<int, int>>{{30, 39}, {40, 49}, {50, 60}}) {
+        segs.push_back(
+          cloud_storage::segment_meta{
+            .size_bytes = 4097,
+            .base_offset = model::offset{base},
+            .committed_offset = model::offset{committed},
+            .base_timestamp = now,
+            .max_timestamp = now,
+            .delta_offset = model::offset_delta{0},
+            .ntp_revision = manifest_revision,
+            .archiver_term = model::term_id{1},
+            .segment_term = model::term_id{1},
+            .delta_offset_end = model::offset_delta{0},
+            .sname_format = cloud_storage::segment_name_format::v3,
+          });
+    }
+
+    // Build the spillover manifest from the first 3 segments and put it
+    // in the cache so async_manifest_view can materialize it.
+    cloud_storage::spillover_manifest spm(manifest_ntp, manifest_revision);
+    for (int i = 0; i < 3; ++i) {
+        spm.add(segs[i]);
+    }
+    auto spill_meta = spm.make_manifest_metadata();
+    {
+        auto spill_path = spm.get_manifest_path(path_provider);
+        auto [stream, size] = spm.serialize().get();
+        auto reservation
+          = app.shadow_index_cache.local().reserve_space(size, 1).get();
+        app.shadow_index_cache.local()
+          .put(spill_path, stream, reservation)
+          .get();
+        stream.close().get();
+    }
+
+    cloud_storage::partition_manifest bogus(manifest_ntp, manifest_revision);
+    for (int i = 0; i < 3; ++i) {
+        bogus.add(segs[i]);
+    }
+    bogus.add(segs[3]);
+    bogus.spillover(spill_meta);
+
+    bogus.set_archive_start_offset(model::offset{10}, model::offset_delta{0});
+    bogus.set_archive_clean_offset(model::offset{10}, 0);
+
+    auto first_spill_base = bogus.get_spillover_map().begin()->base_offset;
+    BOOST_REQUIRE_EQUAL(first_spill_base, model::offset{20});
+    BOOST_REQUIRE(bogus.get_archive_start_offset() < first_spill_base);
+
+    // Replicate the bogus manifest through the STM.
+    auto b = part->archival_meta_stm()->batch_start(
+      ss::lowres_clock::now() + 10s, never_abort);
+    b.replace_manifest(bogus.to_iobuf());
+    auto errc = b.replicate().get();
+    BOOST_REQUIRE(!errc);
+
+    const auto& manifest = part->archival_meta_stm()->manifest();
+    BOOST_REQUIRE(manifest.get_archive_start_offset() < first_spill_base);
+
+    // Before repair: the gap causes time-based retention to give up.
+    auto res = amv->compute_retention(std::nullopt, 1h).get();
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL(res.value().offset, model::offset{});
+    BOOST_REQUIRE_EQUAL(res.value().delta, model::offset_delta{});
+
+    // Enable the upload loop. The archiver should detect the misalignment
+    // and replicate a repaired manifest.
+    cfg.get("cloud_storage_disable_upload_loop_for_tests").set_value(false);
+    archiver.start().get();
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        return manifest.get_archive_start_offset() >= first_spill_base;
+    });
+
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_start_offset(), first_spill_base);
+    BOOST_REQUIRE_EQUAL(manifest.get_archive_clean_offset(), first_spill_base);
+
+    // After repair: retention correctly identifies the old segment for removal.
+    res = amv->compute_retention(std::nullopt, 1h).get();
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL(res.value().offset, model::offset{30});
+    BOOST_REQUIRE_EQUAL(res.value().delta, model::offset_delta{0});
 }

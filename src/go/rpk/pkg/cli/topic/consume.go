@@ -877,9 +877,9 @@ Consuming records reads from any amount of input topics, formats each record
 according to --format, and prints them to STDOUT. The output formatter
 understands a wide variety of formats.
 
-The default output format "--format json" is a special format that outputs each
-record as JSON. There may be more single-word-no-escapes formats added later.
-Outside of these special formats, formatting follows the rules described below.
+--format json is the default, and outputs each record as a JSON object. There
+may be more single-word-no-escapes formats added later. Outside of these special
+formats, formatting follows the rules described below.
 
 Formatting output is based on percent escapes and modifiers. Slashes can be
 used for common escapes:
@@ -1047,7 +1047,7 @@ specification, similar to timestamps above:
 
 Unpacking text can allow translating binary input into readable output. If a
 value is a big-endian uint32, %v will print the raw four bytes, while
-%v{unpack[>I]} will print the number in as ascii. If unpacking exhausts the
+%v{unpack[>I]} will print the number as ASCII. If unpacking exhausts the
 input before something is unpacked fully, an error message is appended to the
 output.
 
@@ -1065,9 +1065,10 @@ of the above rules about %K, %V, text, and numbers apply.
 VALUES
 
 Values for consumed records can be omitted by using the '--meta-only' flag.
+
 Tombstone records (records with a 'null' value) have their value omitted
 from the JSON output by default. All other records, including those with
-an empty-string value (""), will have their values printed.
+an empty-string value (""), have their values printed.
 
 EXAMPLES
 
@@ -1128,4 +1129,12 @@ For example,
     -o @-48h:-24h       consume from 2 days ago to 1 day ago
     -o @-1m:end         consume from 1m ago until now
     -o @:-1hr           consume from the start until an hour ago
+
+CONNECTION BEHAVIOR
+
+By default, 'rpk topic consume' runs continuously, waiting for new records to
+arrive. It does not exit after consuming existing records. To stop consuming,
+press Ctrl+C. You can also use '--num' to exit after a fixed number of records,
+or use '--offset' to define a stop point (for example, '-o :end' stops at the
+current log end).
 `

@@ -2,17 +2,18 @@ from ducktape.tests.test import TestContext
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.perf.redpanda_perf_test import RedpandaPerfTest
 
 
-class SmallBatchesTest(RedpandaTest):
+class SmallBatchesTest(RedpandaPerfTest):
     """
     A many clients and partitions test where producers send small batches to Redpanda.
     """
 
     def __init__(self, ctx: TestContext):
         super(SmallBatchesTest, self).__init__(
-            test_context=ctx, extra_rp_conf={"aggregate_metrics": True}
+            test_context=ctx,
+            extra_rp_conf={"aggregate_metrics": True},
         )
 
     @cluster(num_nodes=6)

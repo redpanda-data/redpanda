@@ -34,6 +34,7 @@ from rptest.services.redpanda import (
     get_cloud_storage_type,
 )
 from rptest.services.redpanda_installer import (
+    LATEST_RELEASED_MAJOR,
     InstallOptions,
     RedpandaInstaller,
     wait_for_num_versions,
@@ -697,6 +698,26 @@ class RedpandaInstallerTest(RedpandaTest):
         this isn't actually doing upgrades in the traditional sense,
         instead is intentionally wiping and restarting the cluster with new binaries
         """
+
+        # Verify next_line arithmetic
+        assert RedpandaInstaller.next_major_version((25, 1)) == (25, 2)
+        assert RedpandaInstaller.next_major_version((25, 2)) == (25, 3)
+        assert RedpandaInstaller.next_major_version((25, 3)) == (26, 1)
+        assert RedpandaInstaller.next_major_version((26, 3)) == (27, 1)
+
+        def match_major(a: tuple[int, int, int], b: tuple[int, int, int]) -> bool:
+            return a[0:2] == b[0:2]
+
+        # Verify LATEST_RELEASED_MAJOR is the newest in released_versions.
+        # If it's not, either github releases are not up to date (used
+        # locally), RP_GIT_RELEASED_VERSIONS is not set correctly in CI,
+        # or LATEST_RELEASED_MAJOR needs to be bumped.
+        released = self.redpanda._installer.released_versions
+        assert match_major(released[0], LATEST_RELEASED_MAJOR), (
+            f"Expected LATEST_RELEASED_MAJOR {LATEST_RELEASED_MAJOR} to be the "
+            f"newest released version, but got {released[0]} "
+            f"(first 10: {released[:10]})"
+        )
 
         # base step, exercise edge case of asking to install a release that is actually HEAD
         head_version, head_version_str = self.redpanda._installer.install(

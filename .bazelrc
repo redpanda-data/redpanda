@@ -6,11 +6,6 @@ common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
 
-common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
-
-# llvm 22.1.0
-common:clang-22 --extra_toolchains=@clang-22_llvm_toolchain//:all
-
 # Use Bash instead of system python for finding the hermetic interpreter
 # within Bazel due to the `python3` binary not being present on CI
 # (it has `python` version 3 but Bazel uses the `python3` executable).
@@ -31,13 +26,6 @@ build:system-clang --extra_toolchains=@local_config_cc_toolchains//:all
 build:system-clang --action_env=BAZEL_COMPILER=clang
 build:system-clang --cxxopt=-std=c++23 --host_cxxopt=-std=c++23
 build:system-clang --linkopt -fuse-ld=lld --host_linkopt -fuse-ld=lld
-# use a compiler name that doesn't symlink to ccache
-build:system-clang-19 --config=system-clang
-build:system-clang-19 --action_env=CC=clang-19 --host_action_env=CC=clang-19
-build:system-clang-19 --action_env=CXX=clang++-19 --host_action_env=CXX=clang++-19
-build:system-clang-20 --config=system-clang
-build:system-clang-20 --action_env=CC=clang-20 --host_action_env=CC=clang-20
-build:system-clang-20 --action_env=CXX=clang++-20 --host_action_env=CXX=clang++-20
 
 # Use new proto toolchain resolution
 build --incompatible_enable_proto_toolchain_resolution
@@ -84,6 +72,7 @@ build --per_file_copt=src/v/serde/protobuf/tests/round_trip_test.cc@-Wno-depreca
 build --per_file_copt=src/v/serde/protobuf/tests/parser_test.cc@-Wno-deprecated-declarations
 build --per_file_copt=src/v/iceberg/conversion/tests/iceberg_protobuf_tests.cc@-Wno-deprecated-declarations
 build --per_file_copt=src/v/pandaproxy/schema_registry/protobuf.cc@-Wno-deprecated-declarations
+build --per_file_copt=.*\\.pb\\.cc@-Wno-deprecated-declarations
 # Suppress deprecated declarations in the protobuf external module itself
 build --per_file_copt=external/protobuf.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/protobuf.*@-Wno-deprecated-declarations
@@ -319,9 +308,9 @@ build:antithesis --//bazel:antithesis=True
 build:antithesis --compilation_mode=opt
 build:antithesis --per_file_copt=src/v/.*@-fsanitize-coverage=trace-pc-guard
 build:antithesis --linkopt=-Wl,--build-id
+build:antithesis --linkopt=-Wl,--allow-shlib-undefined
 build:antithesis --copt=-g --strip=never
 build:antithesis --@seastar//:stack_guards=False
-build:antithesis --dynamic_mode=off
 
 # =================================
 # Testing
@@ -339,6 +328,14 @@ test:lldb --run_under='@current_llvm_toolchain_llvm//:bin/lldb-server g :7654 --
 # Bump timeout to 1h
 test:lldb --test_timeout=3600
 test:lldb --strategy=TestRunner=local
+
+# An indicator you want to use io_uring. Currently this
+# just enables the io_uring reactor backend when running
+# benchmarks and unit tests, but in the future it may do
+# more. Note there is also --@seastar//:io_uring, which
+# already defaults to true: that flag determines if Seastar
+# is built with io_uring support at all.
+build:io_uring --//bazel:io_uring=True
 
 # always pass through the following variables if they are set in the environment
 test --test_env=REDPANDA_RNG_SEEDING_MODE

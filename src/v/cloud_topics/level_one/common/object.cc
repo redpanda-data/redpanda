@@ -237,7 +237,7 @@ footer::seek_result footer::file_position_before_kafka_offset(
 }
 
 footer::seek_result footer::file_position_before_max_timestamp(
-  const model::topic_id_partition& tidp, model::timestamp target) {
+  const model::topic_id_partition& tidp, model::timestamp target) const {
     auto [begin, end] = partitions.equal_range(tidp);
     auto filtered = std::views::filter(
       std::ranges::subrange{begin, end}, [&target](const auto& entry) {
@@ -256,19 +256,19 @@ footer::seek_result footer::file_position_before_max_timestamp(
       index, target, std::less<>{}, [](const auto& entry) {
           return entry.max_timestamp;
       });
-    // If we're past all index entries, but still within the recorded file
-    // bounds, the best we can do is start at the last well known offset (the
-    // last index entry).
-    if (it == index.end()) {
-        --it;
-    }
-    // If at the first entry, we must start at the file beginning, because the
+    // If we're at the first entry, we must start at the file beginning because
     // the max is inclusive of those entries.
     if (it == index.begin()) {
         return {
           .file_position = partition.file_position,
           .length = partition.length,
         };
+    }
+    // If we're past all index entries, but still within the recorded file
+    // bounds, the best we can do is start at the last well known offset (the
+    // last index entry).
+    if (it == index.end()) {
+        --it;
     }
     auto delta = it->file_position - partition.file_position;
     return {

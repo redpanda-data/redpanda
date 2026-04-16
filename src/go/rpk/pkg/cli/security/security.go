@@ -11,7 +11,6 @@ package security
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/acl"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/group"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/role"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/secret"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/user"
@@ -29,7 +28,6 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 	cmd.AddCommand(
 		acl.NewCommand(fs, p),
-		group.NewCommand(fs, p),
 		role.NewCommand(fs, p),
 		user.NewCommand(fs, p),
 		secret.NewCommand(fs, p),

@@ -44,9 +44,8 @@ struct rest_authn_endpoint {
     net::unresolved_address address;
     std::optional<rest_authn_method> authn_method;
 
-    friend bool
-    operator==(const rest_authn_endpoint&, const rest_authn_endpoint&)
-      = default;
+    friend bool operator==(
+      const rest_authn_endpoint&, const rest_authn_endpoint&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& os, const rest_authn_endpoint& ep);

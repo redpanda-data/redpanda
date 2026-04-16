@@ -492,7 +492,7 @@ ss::future<std::error_code> security_frontend::wait_until_caughtup_with_leader(
     timeout -= elapsed;
 
     /// Waiting up until the leader committed offset means its possible that
-    /// waiting on an offset higher then neccessary is performed but the
+    /// waiting on an offset higher than necessary is performed but the
     /// alternative of waiting on the last_applied isn't a complete solution
     /// as its possible that this offset is behind the actual last_applied
     /// of a previously elected leader, resulting in a stale response being

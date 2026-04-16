@@ -22,3 +22,6 @@ e3c23b96330a88fba88b6f1bd4f1fa68086e53fb
 
 # ruff check . --select F401 --fix
 77f53ca22fb2ed2fe6cfba40ca6923928e8d8988
+
+# upgraded to clang-format 22
+efb217101ea58381443956ce0e9da3678857135c

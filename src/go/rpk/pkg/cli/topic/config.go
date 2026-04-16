@@ -88,7 +88,7 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 				cfg := kmsg.NewIncrementalAlterConfigsRequestResourceConfig()
 				cfg.Name = "redpanda.remote.write"
 				cfg.Op = kmsg.IncrementalAlterConfigOpSet
-				cfg.Value = kmsg.StringPtr(wv)
+				cfg.Value = new(wv)
 
 				for _, topic := range topics {
 					reqTopic := kmsg.NewIncrementalAlterConfigsRequestResource()
@@ -132,7 +132,7 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 					config := kmsg.NewIncrementalAlterConfigsRequestResourceConfig()
 					config.Name = k
 					config.Op = pair.op
-					config.Value = kmsg.StringPtr(v)
+					config.Value = new(v)
 					configs = append(configs, config)
 				}
 			}

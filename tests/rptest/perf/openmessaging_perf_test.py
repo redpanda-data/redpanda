@@ -12,16 +12,17 @@ from ducktape.tests.test import TestContext
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.perf.redpanda_perf_test import RedpandaPerfTest
 
 
-class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
+class RedPandaOpenMessagingBenchmarkPerf(RedpandaPerfTest):
     BENCHMARK_WAIT_TIME_MIN = 10
 
     def __init__(self, ctx: TestContext):
         self._ctx = ctx
         super(RedPandaOpenMessagingBenchmarkPerf, self).__init__(
-            test_context=ctx, num_brokers=3
+            test_context=ctx,
+            num_brokers=3,
         )
 
     @cluster(num_nodes=6)

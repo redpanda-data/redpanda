@@ -136,7 +136,7 @@ public:
     }
 
 private:
-    static constexpr int8_t supported_local_snapshot_version = 1;
+    static constexpr int8_t supported_local_snapshot_version = 2;
     struct snapshot
       : serde::envelope<snapshot, serde::version<2>, serde::compat_version<0>> {
         all_txs_t transactions;

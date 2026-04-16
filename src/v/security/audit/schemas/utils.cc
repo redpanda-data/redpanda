@@ -251,7 +251,11 @@ actor result_to_actor(const security::auth_result& result) {
       .groups = result.role ? chunked_vector<group>{group{
                                 .type = group::type_id::role,
                                 .name = result.role.value()}}
-                            : chunked_vector<group>{}};
+                : result.group
+                  ? chunked_vector<group>{group{
+                      .type = group::type_id::idp_group,
+                      .name = ss::sstring{result.group.value().name_view()}}}
+                  : chunked_vector<group>{}};
 
     policy policy;
     policy.name = "aclAuthorization";

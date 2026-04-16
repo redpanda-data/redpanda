@@ -147,14 +147,14 @@ public:
 
     cluster::controller* controller() { return _controller; }
     const ss::abort_source& as() const { return _as; }
+    ss::abort_source& as() { return _as; }
 
 protected:
     virtual ss::future<> do_produce(
       model::record_batch,
       model::partition_id,
       audit_probe&,
-      ss::timer<>::time_point timeout = ss::timer<>::time_point::max())
-      = 0;
+      ss::timer<>::time_point timeout = ss::timer<>::time_point::max()) = 0;
     virtual ss::future<> client_shutdown() = 0;
     virtual ss::future<> do_configure() = 0;
 

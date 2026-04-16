@@ -289,10 +289,6 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         return ("http", None, True)
 
     @cluster(num_nodes=4)
-    # https://redpandadata.atlassian.net/browse/ENG-307
-    # https://redpandadata.atlassian.net/browse/CORE-14840?focusedCommentId=110974
-    # https://redpandadata.atlassian.net/browse/CORE-14950
-    @skip_fips_mode
     def test_init(self):
         kc_node = self.keycloak.nodes[0]
 
@@ -379,10 +375,6 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         wait_until(check_sr_subjects, timeout_sec=10)
 
     @cluster(num_nodes=4)
-    # https://redpandadata.atlassian.net/browse/ENG-307
-    # https://redpandadata.atlassian.net/browse/CORE-14840?focusedCommentId=110974
-    # https://redpandadata.atlassian.net/browse/CORE-14950
-    @skip_fips_mode
     def test_admin_whoami(self):
         kc_node = self.keycloak.nodes[0]
         rp_node = self.redpanda.nodes[0]
@@ -483,10 +475,6 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         verify_response(resolve_oidc_identity(with_auth=True))
 
     @cluster(num_nodes=4)
-    # https://redpandadata.atlassian.net/browse/ENG-307
-    # https://redpandadata.atlassian.net/browse/CORE-14840?focusedCommentId=110974
-    # https://redpandadata.atlassian.net/browse/CORE-14950
-    @skip_fips_mode
     def test_admin_invalidate_keys(self):
         kc_node = self.keycloak.nodes[0]
         rp_node = self.redpanda.nodes[0]
@@ -611,10 +599,6 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
             )
 
     @cluster(num_nodes=4)
-    # https://redpandadata.atlassian.net/browse/ENG-307
-    # https://redpandadata.atlassian.net/browse/CORE-14840?focusedCommentId=110974
-    # https://redpandadata.atlassian.net/browse/CORE-14950
-    @skip_fips_mode
     def test_admin_revoke(self):
         FETCH_TIMEOUT_SEC = 10
         GROUP_ID = "test_admin_revoke"

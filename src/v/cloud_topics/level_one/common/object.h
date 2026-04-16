@@ -198,7 +198,7 @@ struct footer
     // While a search for timestamp 25 or 40 would yield batch[4] and the
     // timestamp 50 would yield `npos`.
     seek_result file_position_before_max_timestamp(
-      const model::topic_id_partition&, model::timestamp);
+      const model::topic_id_partition&, model::timestamp) const;
 
     // Read the footer using the suffix of an L1 object.
     //

@@ -490,12 +490,12 @@ ctp_stm::fence_epoch(cluster_epoch e) {
         // If we reach here, it means that we need to discard the batch.
         co_return std::unexpected(
           stale_cluster_epoch{
-            .window_min = _state.get_previous_seen_epoch()
+            .window_min = _state.get_previous_seen_epoch(term)
                             .or_else([this] {
                                 return _state.get_previous_applied_epoch();
                             })
                             .value_or(cluster_epoch{-1}),
-            .window_max = _state.get_max_seen_epoch()
+            .window_max = _state.get_max_seen_epoch(term)
                             .or_else(
                               [this] { return _state.get_max_applied_epoch(); })
                             .value_or(cluster_epoch{-1}),

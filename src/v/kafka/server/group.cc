@@ -934,9 +934,10 @@ group::join_group_known_member(join_group_request&& r) {
         kafka::member_id new_member_id = std::move(r.data.member_id);
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
 
-    } else if (auto ec = validate_existing_member(
-                 r.data.member_id, r.data.group_instance_id, "join");
-               ec != error_code::none) {
+    } else if (
+      auto ec = validate_existing_member(
+        r.data.member_id, r.data.group_instance_id, "join");
+      ec != error_code::none) {
         vlog(
           _ctxlog.trace,
           "Join rejected for invalid member {} - {}",
@@ -1496,9 +1497,10 @@ group::sync_group_stages group::handle_sync_group(sync_group_request&& r) {
         return sync_group_stages(
           sync_group_response(error_code::coordinator_not_available));
 
-    } else if (auto ec = validate_existing_member(
-                 r.data.member_id, r.data.group_instance_id, "sync");
-               ec != error_code::none) {
+    } else if (
+      auto ec = validate_existing_member(
+        r.data.member_id, r.data.group_instance_id, "sync");
+      ec != error_code::none) {
         vlog(
           _ctxlog.trace,
           "Sync rejected for invalid member {} - {}",
@@ -1667,9 +1669,10 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
         vlog(_ctxlog.trace, "Heartbeat rejected for group state {}", _state);
         return make_heartbeat_error(error_code::coordinator_not_available);
 
-    } else if (auto ec = validate_existing_member(
-                 r.data.member_id, r.data.group_instance_id, "heartbeat");
-               ec != error_code::none) {
+    } else if (
+      auto ec = validate_existing_member(
+        r.data.member_id, r.data.group_instance_id, "heartbeat");
+      ec != error_code::none) {
         vlog(
           _ctxlog.trace,
           "Heartbeat rejected for invalid member {} - {}",
@@ -1771,9 +1774,9 @@ kafka::error_code group::member_leave_group(
         remove_pending_member(member_id);
         return error_code::none;
 
-    } else if (auto ec = validate_existing_member(
-                 member_id, group_instance_id, "leave");
-               ec != error_code::none) {
+    } else if (
+      auto ec = validate_existing_member(member_id, group_instance_id, "leave");
+      ec != error_code::none) {
         vlog(
           _ctxlog.trace,
           "Leave rejected for invalid member {} - {}",
@@ -2470,9 +2473,10 @@ group::handle_offset_commit(offset_commit_request&& r) {
         // <kafka>The group is only using Kafka to store offsets.</kafka>
         return store_offsets(std::move(r));
 
-    } else if (auto ec = validate_existing_member(
-                 r.data.member_id, r.data.group_instance_id, "offset-commit");
-               ec != error_code::none) {
+    } else if (
+      auto ec = validate_existing_member(
+        r.data.member_id, r.data.group_instance_id, "offset-commit");
+      ec != error_code::none) {
         return offset_commit_stages(offset_commit_response(r, ec));
 
     } else if (r.data.generation_id != generation()) {

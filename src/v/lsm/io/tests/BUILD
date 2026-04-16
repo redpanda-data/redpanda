@@ -1,6 +1,24 @@
 load("//bazel:test.bzl", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
+    name = "readahead_file_reader_test",
+    timeout = "short",
+    srcs = [
+        "readahead_file_reader_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "//src/v/lsm/io:persistence",
+        "//src/v/lsm/io:readahead_file_reader",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "persistence_test",
     timeout = "short",
     srcs = [

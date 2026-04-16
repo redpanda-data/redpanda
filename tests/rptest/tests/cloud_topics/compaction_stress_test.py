@@ -9,6 +9,7 @@
 
 from typing import Any
 
+from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
@@ -262,19 +263,32 @@ class CompactionStressKeyCardinalityTest(CompactionStressBase):
     def setUp(self):
         assert self.redpanda
         self.redpanda.start()
+        storage_mode = (self.test_context.injected_args or {}).get(
+            "storage_mode", TopicSpec.STORAGE_MODE_CLOUD
+        )
+        if storage_mode == TopicSpec.STORAGE_MODE_TIERED_CLOUD:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
         self.rpk.create_topic(
             topic=self.TOPIC_NAME,
             partitions=1,
             replicas=3,
             config={
-                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                TopicSpec.PROPERTY_STORAGE_MODE: storage_mode,
                 "cleanup.policy": TopicSpec.CLEANUP_COMPACT,
                 "min.cleanable.dirty.ratio": "0.0",
             },
         )
 
     @cluster(num_nodes=4)
-    def test_key_cardinality_overflow(self):
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_key_cardinality_overflow(self, storage_mode: str):
         self.wait_for_managed_logs()
 
         producer = self.produce_and_wait(

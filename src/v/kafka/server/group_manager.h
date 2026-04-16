@@ -330,8 +330,8 @@ private:
     }
 
     ss::future<> shutdown_groups(std::vector<group_ptr> groups) {
-        return ss::parallel_for_each(
-          groups, [](auto group_ptr) { return group_ptr->shutdown(); });
+        return ss::max_concurrent_for_each(
+          groups, 64, [](auto group_ptr) { return group_ptr->shutdown(); });
     }
 
     ss::future<> collect_consumer_lag_metrics();

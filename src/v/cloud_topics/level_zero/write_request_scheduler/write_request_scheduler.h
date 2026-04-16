@@ -362,8 +362,7 @@ private:
     /// \return next wake up time
     ss::future<time_point> run_once();
 
-    using foreign_ptr_t
-      = ss::foreign_ptr<ss::lw_shared_ptr<chunked_vector<extent_meta>>>;
+    using foreign_ptr_t = ss::foreign_ptr<ss::lw_shared_ptr<upload_meta>>;
 
     using gate_holder_ptr = std::unique_ptr<ss::gate::holder>;
 

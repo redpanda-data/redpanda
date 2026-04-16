@@ -58,10 +58,10 @@ public:
 
     partition_recovery_manager(const partition_recovery_manager&) = delete;
     partition_recovery_manager(partition_recovery_manager&&) = delete;
-    partition_recovery_manager& operator=(const partition_recovery_manager&)
-      = delete;
-    partition_recovery_manager& operator=(partition_recovery_manager&&)
-      = delete;
+    partition_recovery_manager&
+    operator=(const partition_recovery_manager&) = delete;
+    partition_recovery_manager&
+    operator=(partition_recovery_manager&&) = delete;
 
     ~partition_recovery_manager();
 
@@ -156,8 +156,8 @@ private:
         model::offset min_offset;
         model::offset max_offset;
 
-        friend auto operator<=>(const offset_range&, const offset_range&)
-          = default;
+        friend auto
+        operator<=>(const offset_range&, const offset_range&) = default;
     };
 
     /// Represents file path of the downloaded file with

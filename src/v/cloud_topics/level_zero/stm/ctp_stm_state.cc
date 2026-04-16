@@ -55,7 +55,10 @@ ctp_stm_state::get_previous_applied_epoch() const noexcept {
 }
 
 std::optional<cluster_epoch>
-ctp_stm_state::get_previous_seen_epoch() const noexcept {
+ctp_stm_state::get_previous_seen_epoch(model::term_id term) const noexcept {
+    if (term > _seen_window_term) {
+        return std::nullopt;
+    }
     return _previous_seen_epoch;
 }
 
@@ -137,7 +140,10 @@ ctp_stm_state::get_max_applied_epoch() const noexcept {
 }
 
 std::optional<cluster_epoch>
-ctp_stm_state::get_max_seen_epoch() const noexcept {
+ctp_stm_state::get_max_seen_epoch(model::term_id term) const noexcept {
+    if (term > _seen_window_term) {
+        return std::nullopt;
+    }
     return _max_seen_epoch;
 }
 

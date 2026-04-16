@@ -134,8 +134,8 @@ debug_bundle::result<T> from_json(const json::Value& v) {
     } else if constexpr (std::is_same_v<T, time_variant>) {
         if (auto r = from_json<special_date>(v); r.has_value()) {
             return T{std::move(r).assume_value()};
-        } else if (auto res = from_json<clock::time_point>(v);
-                   res.has_value()) {
+        } else if (
+          auto res = from_json<clock::time_point>(v); res.has_value()) {
             return T{std::move(res).assume_value()};
         }
         return parse_error(": expected ISO 8601 date or special_date");
@@ -143,21 +143,23 @@ debug_bundle::result<T> from_json(const json::Value& v) {
         if (v.IsObject()) {
             auto o = v.GetObject();
             scram_creds sc;
-            if (auto r = from_json<decltype(sc.username)>(o, "username", true);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(sc.username)>(o, "username", true);
+              r.has_value()) {
                 sc.username = std::move(r).assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(sc.password)>(o, "password", true);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(sc.password)>(o, "password", true);
+              r.has_value()) {
                 sc.password = std::move(r).assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(sc.mechanism)>(
-                  o, "mechanism", true);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(sc.mechanism)>(o, "mechanism", true);
+              r.has_value()) {
                 sc.mechanism = std::move(r).assume_value();
             } else {
                 return std::move(r).assume_error();
@@ -223,14 +225,16 @@ debug_bundle::result<T> from_json(const json::Value& v) {
         if (v.IsObject()) {
             auto o = v.GetObject();
             label_selection ls;
-            if (auto r = from_json<decltype(ls.key)>(o, "key", true);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(ls.key)>(o, "key", true);
+              r.has_value()) {
                 ls.key = std::move(r).assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(ls.value)>(o, "value", true);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(ls.value)>(o, "value", true);
+              r.has_value()) {
                 ls.value = std::move(r).assume_value();
             } else {
                 return std::move(r).assume_error();
@@ -242,94 +246,107 @@ debug_bundle::result<T> from_json(const json::Value& v) {
         debug_bundle_parameters params;
         if (v.IsObject()) {
             const auto& obj = v.GetObject();
-            if (auto r = from_json<decltype(params.authn_options)>(
-                  obj, "authentication", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.authn_options)>(
+                obj, "authentication", false);
+              r.has_value()) {
                 params.authn_options = std::move(r).assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r
-                = from_json<decltype(params.controller_logs_size_limit_bytes)>(
-                  obj, "controller_logs_size_limit_bytes", false);
-                r.has_value()) {
+            if (
+              auto r
+              = from_json<decltype(params.controller_logs_size_limit_bytes)>(
+                obj, "controller_logs_size_limit_bytes", false);
+              r.has_value()) {
                 params.controller_logs_size_limit_bytes = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.cpu_profiler_wait_seconds)>(
-                  obj, "cpu_profiler_wait_seconds", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.cpu_profiler_wait_seconds)>(
+                obj, "cpu_profiler_wait_seconds", false);
+              r.has_value()) {
                 params.cpu_profiler_wait_seconds = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.logs_since)>(
-                  obj, "logs_since", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.logs_since)>(
+                obj, "logs_since", false);
+              r.has_value()) {
                 params.logs_since = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.logs_size_limit_bytes)>(
-                  obj, "logs_size_limit_bytes", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.logs_size_limit_bytes)>(
+                obj, "logs_size_limit_bytes", false);
+              r.has_value()) {
                 params.logs_size_limit_bytes = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.logs_until)>(
-                  obj, "logs_until", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.logs_until)>(
+                obj, "logs_until", false);
+              r.has_value()) {
                 params.logs_until = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.metrics_interval_seconds)>(
-                  obj, "metrics_interval_seconds", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.metrics_interval_seconds)>(
+                obj, "metrics_interval_seconds", false);
+              r.has_value()) {
                 params.metrics_interval_seconds = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.metrics_samples)>(
-                  obj, "metrics_samples", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.metrics_samples)>(
+                obj, "metrics_samples", false);
+              r.has_value()) {
                 params.metrics_samples = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.partition)>(
-                  obj, "partition", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.partition)>(
+                obj, "partition", false);
+              r.has_value()) {
                 params.partition = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.tls_enabled)>(
-                  obj, "tls_enabled", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.tls_enabled)>(
+                obj, "tls_enabled", false);
+              r.has_value()) {
                 params.tls_enabled = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.tls_insecure_skip_verify)>(
-                  obj, "tls_insecure_skip_verify", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.tls_insecure_skip_verify)>(
+                obj, "tls_insecure_skip_verify", false);
+              r.has_value()) {
                 params.tls_insecure_skip_verify = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.k8s_namespace)>(
-                  obj, "namespace", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.k8s_namespace)>(
+                obj, "namespace", false);
+              r.has_value()) {
                 params.k8s_namespace = r.assume_value();
             } else {
                 return std::move(r).assume_error();
             }
-            if (auto r = from_json<decltype(params.label_selector)>(
-                  obj, "label_selector", false);
-                r.has_value()) {
+            if (
+              auto r = from_json<decltype(params.label_selector)>(
+                obj, "label_selector", false);
+              r.has_value()) {
                 params.label_selector = r.assume_value();
             } else {
                 return std::move(r).assume_error();

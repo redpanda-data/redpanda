@@ -92,7 +92,7 @@ struct pipeline_sink {
                         continue;
                     }
                 }
-                r.set_value(chunked_vector<extent_meta>{});
+                r.set_value(upload_meta{});
                 write_requests_acked++;
                 vlog(
                   test_log.debug,
@@ -187,9 +187,7 @@ static ss::future<size_t> write_until_threshold(
   write_request_balancer_fixture& fix, size_t size_threshold) {
     size_t num_requests_sent = 0;
     size_t total_size = 0;
-    std::vector<
-      ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>>
-      wd;
+    std::vector<ss::future<std::expected<upload_meta, std::error_code>>> wd;
     while (total_size < size_threshold) {
         auto buf = co_await model::test::make_random_batches();
         chunked_vector<model::record_batch> batches;

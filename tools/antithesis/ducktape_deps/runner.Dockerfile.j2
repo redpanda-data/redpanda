@@ -1,0 +1,17 @@
+FROM {{ node_image }}
+COPY cluster.json /root/.ducktape/cluster.json
+COPY globals.json /root/.ducktape/globals.json
+COPY --from=deps ducktape_singleton_driver.sh /opt/antithesis/test/v1/ducktape/singleton_driver_ducktape.sh
+COPY --from=deps ducktape_entrypoint.sh /usr/bin/antithesis_entrypoint.sh
+COPY --from=rptest . /root/tests/rptest/
+# Install the Antithesis Python SDK and symlink test code into the catalog
+# directory so the Antithesis instrumentor can discover and catalog assertions
+# defined in the ducktape tests. See:
+# https://antithesis.com/docs/using_antithesis/sdk/python/#instrumentation
+ARG ANTITHESIS_SDK_VERSION=0.2.0
+RUN pip install --no-cache-dir antithesis==${ANTITHESIS_SDK_VERSION} \
+    && mkdir -p /opt/antithesis/catalog \
+    && ln -s /root/tests/rptest /opt/antithesis/catalog/rptest \
+    && chmod 755 /opt/antithesis/test/v1/ducktape/singleton_driver_ducktape.sh \
+    && chmod 755 /usr/bin/antithesis_entrypoint.sh
+CMD ["/usr/bin/bash", "/usr/bin/antithesis_entrypoint.sh"]

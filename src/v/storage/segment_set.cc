@@ -454,8 +454,9 @@ static ss::future<segment_set> do_recover(
         [copy = std::move(copy)](const std::exception_ptr& ex) mutable {
             return ss::do_with(
               std::move(copy), [ex](segment_set::underlying_t& segments) {
-                  return ss::parallel_for_each(
+                  return ss::max_concurrent_for_each(
                            segments,
+                           128,
                            [](segment_set::type& segment) {
                                if (segment && !segment->is_closed()) {
                                    return segment->close();

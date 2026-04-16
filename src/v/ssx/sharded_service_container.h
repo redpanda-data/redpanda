@@ -42,8 +42,8 @@ public:
 
     sharded_service_container(const sharded_service_container&) = delete;
     sharded_service_container(sharded_service_container&&) = delete;
-    sharded_service_container operator=(const sharded_service_container&)
-      = delete;
+    sharded_service_container
+    operator=(const sharded_service_container&) = delete;
     sharded_service_container operator=(sharded_service_container&&) = delete;
     explicit sharded_service_container(ss::sstring s)
       : _log(s) {}

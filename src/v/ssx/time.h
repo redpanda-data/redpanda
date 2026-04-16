@@ -124,11 +124,11 @@ public:
     Duration to_chrono() const noexcept {
         if constexpr (std::is_same_v<Duration, std::chrono::nanoseconds>) {
             return absl::ToChronoNanoseconds(_dur);
-        } else if constexpr (std::
-                               is_same_v<Duration, std::chrono::microseconds>) {
+        } else if constexpr (
+          std::is_same_v<Duration, std::chrono::microseconds>) {
             return absl::ToChronoMicroseconds(_dur);
-        } else if constexpr (std::
-                               is_same_v<Duration, std::chrono::milliseconds>) {
+        } else if constexpr (
+          std::is_same_v<Duration, std::chrono::milliseconds>) {
             return absl::ToChronoMilliseconds(_dur);
         } else if constexpr (std::is_same_v<Duration, std::chrono::seconds>) {
             return absl::ToChronoSeconds(_dur);

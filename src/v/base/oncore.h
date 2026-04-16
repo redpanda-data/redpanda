@@ -48,3 +48,11 @@ private:
     do {                                                                       \
         expression_in_debug_mode((member).assert_shard_source_location());     \
     } while (0)
+
+/// An oncore that debug-asserts same-shard in its destructor.
+/// Embed as a member to catch cross-shard destruction in debug builds.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions,hicpp-special-member-functions)
+struct oncore_auto final {
+    ~oncore_auto() noexcept { oncore_debug_verify(_oncore); }
+    oncore _oncore;
+};

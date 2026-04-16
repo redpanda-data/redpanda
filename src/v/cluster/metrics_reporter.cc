@@ -104,8 +104,9 @@ std::optional<metrics_reporter::kubernetes_metrics> get_kubernetes_metrics() {
         km.chart_version.emplace(v);
         any = true;
     }
-    if (auto v = std::getenv("REDPANDA_METRICS_K8S_OPERATOR_IMAGE_VERSION");
-        v && *v) {
+    if (
+      auto v = std::getenv("REDPANDA_METRICS_K8S_OPERATOR_IMAGE_VERSION");
+      v && *v) {
         km.operator_image_version.emplace(v);
         any = true;
     }

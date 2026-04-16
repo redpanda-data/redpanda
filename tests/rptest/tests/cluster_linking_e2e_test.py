@@ -53,11 +53,13 @@ from rptest.services.multi_cluster_services import (
     Service as MultiService,
 )
 from rptest.services.redpanda import (
+    CLOUD_TOPICS_CONFIG_STR,
     MetricSamples,
     MetricsEndpoint,
     RedpandaService,
     SchemaRegistryConfig,
     SecurityConfig,
+    SISettings,
 )
 from rptest.services.tls import TLSCertManager
 from rptest.tests.cluster_linking_test_base import (
@@ -2856,6 +2858,133 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
         producer.free()
 
 
+class ShadowLinkConsumerGroupPartitionCountMismatchTest(ShadowLinkTestBase):
+    """
+    Verifies that consumer group offset mirroring works correctly when the
+    __consumer_offsets topic has different partition counts on the source and
+    target clusters.
+    """
+
+    # Use asymmetric partition counts: 8 on source, 32 on target.
+    # This ensures groups map to different __consumer_offsets partitions on
+    # each side, exercising the logical-offset-forwarding design.
+    SOURCE_GROUP_TOPIC_PARTITIONS = 8
+    TARGET_GROUP_TOPIC_PARTITIONS = 32
+
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(
+            test_context=test_context,
+            num_prealloc_nodes=1,
+            secondary_cluster_args=SecondaryClusterArgs(
+                extra_rp_conf={
+                    "group_topic_partitions": self.SOURCE_GROUP_TOPIC_PARTITIONS,
+                },
+            ),
+            extra_rp_conf={
+                "group_topic_partitions": self.TARGET_GROUP_TOPIC_PARTITIONS,
+            },
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=7)
+    def test_consumer_group_offsets_with_partition_count_mismatch(self):
+        """
+        Produce data, consume with multiple groups on the source cluster, then
+        create a shadow link and verify that every group's per-partition
+        committed offsets are mirrored to the target cluster despite different
+        __consumer_offsets partition counts.
+        """
+        topic = TopicSpec(name="source-topic", partition_count=12, replication_factor=3)
+        self.source_default_client().create_topic(topic)
+
+        msg_count = 10000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.source_cluster.service,
+            topic.name,
+            128,
+            msg_count,
+            custom_node=self.preallocated_nodes,
+        )
+
+        # Consume with several groups so they span different
+        # __consumer_offsets partitions on each cluster
+        groups = [f"test-group-{i}" for i in range(5)]
+        source_rpk = RpkTool(self.source_cluster.service)
+        for group in groups:
+            source_rpk.consume(
+                topic=topic.name,
+                group=group,
+                n=1,
+                offset="start",
+            )
+
+        # Capture source offsets before creating the link
+        source_offsets: dict[str, dict[tuple[str, int], int | None]] = {}
+        for group in groups:
+            desc = source_rpk.group_describe(group=group)
+            source_offsets[group] = {
+                (p.topic, p.partition): p.current_offset for p in desc.partitions
+            }
+            self.logger.info(f"Source group {group} offsets: {source_offsets[group]}")
+
+        self.create_link("test-link")
+
+        target_rpk = RpkTool(self.target_cluster.service)
+
+        # Verify the precondition: __consumer_offsets must actually have
+        # different partition counts on each cluster, otherwise the test
+        # is not exercising the mismatch scenario.
+        co_topic = "__consumer_offsets"
+        source_co_partitions = len(list(source_rpk.describe_topic(co_topic)))
+        target_co_partitions = len(list(target_rpk.describe_topic(co_topic)))
+        self.logger.info(
+            f"__consumer_offsets partition counts: "
+            f"source={source_co_partitions}, target={target_co_partitions}"
+        )
+        assert source_co_partitions != target_co_partitions, (
+            f"Expected different __consumer_offsets partition counts, "
+            f"but both clusters have {source_co_partitions}"
+        )
+
+        def _offsets_consistent():
+            for group in groups:
+                try:
+                    t_desc = target_rpk.group_describe(group=group)
+                except Exception:
+                    self.logger.debug(f"Group {group} not yet available on target")
+                    return False
+                t_partitions = {
+                    (p.topic, p.partition): p.current_offset for p in t_desc.partitions
+                }
+                for key, src_offset in source_offsets[group].items():
+                    if key not in t_partitions:
+                        self.logger.debug(
+                            f"Group {group} partition {key} not in target"
+                        )
+                        return False
+                    if src_offset != t_partitions[key]:
+                        self.logger.debug(
+                            f"Group {group} partition {key}: "
+                            f"source={src_offset} target={t_partitions[key]}"
+                        )
+                        return False
+            return True
+
+        wait_until(
+            _offsets_consistent,
+            timeout_sec=60,
+            backoff_sec=3,
+            err_msg=(
+                "Consumer group offsets not consistent between source and "
+                "target clusters with different __consumer_offsets partition "
+                "counts"
+            ),
+            retry_on_exc=True,
+        )
+
+
 class ShadowLinkSecurityTests(ShadowLinkTestBase):
     """
     Tests that verify security settings syncing
@@ -4237,3 +4366,116 @@ class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
         assert source_last_record == target_first_record, (
             f"Record mismatch: source={source_last_record}, target={target_first_record}"
         )
+
+
+class ShadowLinkingCloudTopicReplicationTests(ShadowLinkPreAllocTestBase):
+    """
+    Tests cluster linking replication with cloud topics
+    (redpanda.storage.mode=cloud and tiered_cloud) on the source cluster.
+    """
+
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+
+        super().__init__(
+            test_context,
+            si_settings=si_settings,
+            extra_rp_conf={
+                CLOUD_TOPICS_CONFIG_STR: True,
+                "enable_cluster_metadata_upload_loop": False,
+            },
+            secondary_cluster_args=SecondaryClusterArgs(
+                si_settings=si_settings,
+                extra_rp_conf={
+                    CLOUD_TOPICS_CONFIG_STR: True,
+                    "enable_shadow_linking": True,
+                    "enable_cluster_metadata_upload_loop": False,
+                },
+            ),
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=7)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+        ],
+    )
+    def test_cloud_topic_replication(self, storage_mode):
+        """
+        Verify that data produced to a cloud/tiered_cloud topic on the source
+        cluster is replicated to the target cluster via cluster linking.
+        """
+        if storage_mode == TopicSpec.STORAGE_MODE_TIERED_CLOUD:
+            self.source_cluster_service.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+            self.target_cluster.service.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+
+        topic = TopicSpec(
+            name="ct-topic",
+            partition_count=3,
+            replication_factor=1,
+        )
+
+        source_rpk = RpkTool(self.source_cluster.service)
+
+        def create_source_topic():
+            try:
+                source_rpk.create_topic(
+                    topic=topic.name,
+                    partitions=topic.partition_count,
+                    replicas=topic.replication_factor,
+                    config={
+                        TopicSpec.PROPERTY_STORAGE_MODE: storage_mode,
+                    },
+                )
+                return True
+            except Exception as e:
+                if "INVALID_CONFIG" in str(e):
+                    return False
+                raise
+
+        # Retry topic creation: feature flag propagation may lag behind
+        # the admin API response on some nodes.
+        wait_until(
+            create_source_topic,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg=f"Failed to create source topic with storage_mode={storage_mode}",
+        )
+
+        source_configs = source_rpk.describe_topic_configs(topic.name)
+        assert source_configs[TopicSpec.PROPERTY_STORAGE_MODE][0] == storage_mode, (
+            f"Source topic storage mode: {source_configs[TopicSpec.PROPERTY_STORAGE_MODE]}"
+        )
+
+        self.create_link("test-link")
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        # Verify target topic has the same storage mode
+        target_rpk = RpkTool(self.target_cluster.service)
+        target_configs = target_rpk.describe_topic_configs(topic.name)
+        assert target_configs[TopicSpec.PROPERTY_STORAGE_MODE][0] == storage_mode, (
+            f"Target topic storage mode: {target_configs[TopicSpec.PROPERTY_STORAGE_MODE]}, "
+            f"expected: {storage_mode}"
+        )
+
+        with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=10000):
+            self.verify()

@@ -334,8 +334,9 @@ create_topic_properties_update(
             if (
               config::shard_local_cfg().enable_schema_id_validation()
               != pandaproxy::schema_registry::schema_id_validation_mode::none) {
-                if (schema_id_validation_config_parser(
-                      cfg, kafka::config_resource_operation::set)) {
+                if (
+                  schema_id_validation_config_parser(
+                    cfg, kafka::config_resource_operation::set)) {
                     continue;
                 }
             }
@@ -513,11 +514,30 @@ create_topic_properties_update(
                 continue;
             }
             if (cfg.name == topic_property_redpanda_storage_mode) {
+                auto validator = [current_storage_mode,
+                                  &feature_table = ctx.feature_table().local()](
+                                   const ss::sstring& raw,
+                                   const model::redpanda_storage_mode& value)
+                  -> std::optional<ss::sstring> {
+                    auto transition_err = storage_mode_validator{
+                      current_storage_mode}(raw, value);
+                    if (transition_err) {
+                        return transition_err;
+                    }
+                    if (
+                      value == model::redpanda_storage_mode::tiered_cloud
+                      && !feature_table.is_active(
+                        features::feature::tiered_cloud_topics)) {
+                        return "tiered_cloud storage mode requires the "
+                               "tiered_cloud_topics feature to be enabled";
+                    }
+                    return std::nullopt;
+                };
                 parse_and_set_optional(
                   update.properties.storage_mode,
                   cfg.value,
                   kafka::config_resource_operation::set,
-                  storage_mode_validator{current_storage_mode});
+                  validator);
                 continue;
             }
 

@@ -17,6 +17,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/scheduling/leader_balancer_random.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
@@ -139,8 +140,9 @@ void leader_balancer::on_leadership_change(
     const auto& group = assignment->group;
 
     // Update in flight state
-    if (auto it = _in_flight_changes.find(group);
-        it != _in_flight_changes.end()) {
+    if (
+      auto it = _in_flight_changes.find(group);
+      it != _in_flight_changes.end()) {
         vlog(
           clusterlog.trace,
           "transfer of group {} finished, removing from in-flight set",
@@ -645,6 +647,26 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           std::move(muted_index),
           std::move(preference_index));
         break;
+    case model::leader_balancer_mode::greedy: {
+        vlog(clusterlog.debug, "using greedy strategy");
+        // Collect non-user topic IDs so the greedy strategy can exclude
+        // them from cross-topic global counts.
+        absl::flat_hash_set<leader_balancer_types::topic_id_t> internal_topics;
+        for (const auto& t : _topics.topics_map()) {
+            if (!model::is_user_topic(t.first)) {
+                internal_topics.emplace(t.second.get_revision());
+            }
+        }
+        strategy = std::make_unique<
+          leader_balancer_types::greedy_topic_aware_strategy>(
+          _members.node_count(),
+          std::move(index),
+          std::move(group_id_to_topic),
+          std::move(internal_topics),
+          std::move(muted_index),
+          std::move(preference_index));
+        break;
+    }
     case model::leader_balancer_mode::calibrated:
         vlog(clusterlog.debug, "using calibrated_hill_climbing strategy");
         strategy = std::make_unique<
@@ -1034,8 +1056,9 @@ leader_balancer::index_type leader_balancer::build_index(
              * then assume that leadership will be transferred to the target
              * node and balance based off of that.
              */
-            if (auto it = _in_flight_changes.find(partition.group);
-                it != _in_flight_changes.end()) {
+            if (
+              auto it = _in_flight_changes.find(partition.group);
+              it != _in_flight_changes.end()) {
                 const auto& assignment = it->second.value;
                 index[assignment.to][partition.group] = std::move(replicas);
                 continue;
@@ -1083,8 +1106,9 @@ leader_balancer::index_type leader_balancer::build_index(
              */
             bool needs_mute = false;
             if (!leader_core) {
-                if (auto it = _last_leader.find(partition.group);
-                    it != _last_leader.end()) {
+                if (
+                  auto it = _last_leader.find(partition.group);
+                  it != _last_leader.end()) {
                     leader_core = it->second.shard;
                 } else {
                     /*

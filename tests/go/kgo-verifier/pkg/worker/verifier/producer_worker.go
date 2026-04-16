@@ -381,6 +381,14 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 		rlimiter = rate.NewLimiter(rate.Limit(pw.config.rateLimitBytes), pw.config.rateLimitBytes)
 	}
 
+	// Per-partition tracking for transaction control record offsets.
+	// txPartitions tracks which partitions the current transaction has
+	// produced to (for commit/abort marker offset prediction).
+	// txPartitionSeen tracks whether we've already accounted for the
+	// fence batch on a partition in this transaction.
+	txPartitions := make(map[int32]bool)
+	txPartitionSeen := make(map[int32]bool)
+
 	for i := int64(0); i < n && !errored; i = i + 1 {
 		concurrent.Acquire(context.Background(), 1)
 		produced += 1
@@ -388,7 +396,9 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 		var p = rand.Int31n(pw.config.nPartitions)
 
 		if pw.transactionsEnabled {
-			addedControlMarkers, err := pw.transactionSTM.BeforeMessageSent()
+			willEnd := pw.transactionSTM.WillEndTransaction()
+
+			err := pw.transactionSTM.BeforeMessageSent()
 			if err != nil {
 				log.Errorf("Transaction error %v", err)
 				errored = true
@@ -396,14 +406,24 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				break
 			}
 
-			if addedControlMarkers > 0 {
-				for i, _ := range nextOffset {
-					for j := int64(0); j < int64(addedControlMarkers); j = j + 1 {
-						pw.validOffsets.Insert(p, nextOffset[i]+j)
-					}
-					nextOffset[i] += addedControlMarkers
+			if willEnd {
+				// EndTransaction writes one commit/abort control
+				// batch to each partition the transaction touched
+				for tp := range txPartitions {
+					nextOffset[tp] += 1
 				}
+				txPartitions = make(map[int32]bool)
+				txPartitionSeen = make(map[int32]bool)
 			}
+
+			// First produce to this partition in this transaction
+			// triggers AddPartitionsToTxn which writes a fence
+			// batch (1 offset) before the data record
+			if !txPartitionSeen[p] {
+				nextOffset[p] += 1
+				txPartitionSeen[p] = true
+			}
+			txPartitions[p] = true
 		}
 
 		if pw.churnProducers && pw.Status.Sent > 0 && pw.Status.Sent%int64(pw.config.messagesPerProducerId) == 0 {

@@ -272,6 +272,40 @@ TEST_P(ReplicatedMetastoreTest, TestAddNotFinished) {
     ASSERT_EQ(commit_res.error(), metastore::errc::invalid_request);
 }
 
+TEST_P(ReplicatedMetastoreTest, TestBuilderRejectsInvertedOffsets) {
+    auto& app = get_ct_app(model::node_id{0});
+    auto& meta = app.get_sharded_replicated_metastore()->local();
+    auto tp = make_tp(0);
+    auto obj_builder = meta.object_builder().get().value();
+    auto oid = obj_builder->get_or_create_object_for(tp).get().value();
+
+    // base_offset > last_offset should be rejected.
+    auto add_res = obj_builder->add(
+      oid,
+      metastore::object_metadata::ntp_metadata{
+        .tidp = tp,
+        .base_offset = o{99},
+        .last_offset = o{0},
+        .max_timestamp = ts{10000},
+        .pos = 0,
+        .size = 500,
+      });
+    ASSERT_FALSE(add_res.has_value());
+
+    // A valid extent should still be accepted.
+    auto add_res2 = obj_builder->add(
+      oid,
+      metastore::object_metadata::ntp_metadata{
+        .tidp = tp,
+        .base_offset = o{0},
+        .last_offset = o{99},
+        .max_timestamp = ts{10000},
+        .pos = 0,
+        .size = 500,
+      });
+    ASSERT_TRUE(add_res2.has_value()) << add_res2.error();
+}
+
 TEST_P(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
     auto& app = get_ct_app(model::node_id{0});
     auto& m = app.get_sharded_replicated_metastore()->local();

@@ -41,14 +41,12 @@ public:
           const model::ntp& co_ntp,
           const chunked_vector<kafka::group_id>&,
           bool to_block,
-          model::revision_id revision_id)
-          = 0;
+          model::revision_id revision_id) = 0;
 
         virtual ss::future<std::error_code> delete_groups(
           const model::ntp& co_ntp,
           const chunked_vector<kafka::group_id>& groups,
-          model::revision_id revision_id)
-          = 0;
+          model::revision_id revision_id) = 0;
 
         virtual ss::future<bool>
         assure_topic_exists(model::timeout_clock::time_point deadline) = 0;

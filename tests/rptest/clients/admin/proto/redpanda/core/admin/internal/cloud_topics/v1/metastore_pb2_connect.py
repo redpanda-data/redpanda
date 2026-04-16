@@ -109,6 +109,36 @@ class MetastoreServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    def call_list_cloud_topics(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsResponse]:
+        """Low-level method to call ListCloudTopics, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ListCloudTopics'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsResponse, extra_headers, timeout_seconds)
+
+    def list_cloud_topics(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsResponse:
+        response = self.call_list_cloud_topics(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    def call_validate_partition(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionResponse]:
+        """Low-level method to call ValidatePartition, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ValidatePartition'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionResponse, extra_headers, timeout_seconds)
+
+    def validate_partition(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionResponse:
+        response = self.call_validate_partition(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 class AsyncMetastoreServiceClient:
 
     def __init__(self, base_url: str, http_client: aiohttp.ClientSession, protocol: ConnectProtocol=ConnectProtocol.CONNECT_PROTOBUF):
@@ -190,6 +220,36 @@ class AsyncMetastoreServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    async def call_list_cloud_topics(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsResponse]:
+        """Low-level method to call ListCloudTopics, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ListCloudTopics'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsResponse, extra_headers, timeout_seconds)
+
+    async def list_cloud_topics(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsResponse:
+        response = await self.call_list_cloud_topics(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
+    async def call_validate_partition(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionResponse]:
+        """Low-level method to call ValidatePartition, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ValidatePartition'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionResponse, extra_headers, timeout_seconds)
+
+    async def validate_partition(self, req: proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionResponse:
+        response = await self.call_validate_partition(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 @typing.runtime_checkable
 class MetastoreServiceProtocol(typing.Protocol):
 
@@ -207,6 +267,12 @@ class MetastoreServiceProtocol(typing.Protocol):
 
     def read_rows(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsResponse]:
         ...
+
+    def list_cloud_topics(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsResponse]:
+        ...
+
+    def validate_partition(self, req: ClientRequest[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionResponse]:
+        ...
 METASTORE_SERVICE_PATH_PREFIX = '/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService'
 
 def wsgi_metastore_service(implementation: MetastoreServiceProtocol) -> WSGIApplication:
@@ -216,4 +282,6 @@ def wsgi_metastore_service(implementation: MetastoreServiceProtocol) -> WSGIAppl
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/GetDatabaseStats', implementation.get_database_stats, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.GetDatabaseStatsRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/WriteRows', implementation.write_rows, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.WriteRowsRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ReadRows', implementation.read_rows, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ReadRowsRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ListCloudTopics', implementation.list_cloud_topics, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ListCloudTopicsRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.cloud_topics.v1.MetastoreService/ValidatePartition', implementation.validate_partition, proto.redpanda.core.admin.internal.cloud_topics.v1.metastore_pb2.ValidatePartitionRequest)
     return app

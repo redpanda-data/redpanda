@@ -73,8 +73,8 @@ struct group_metadata_key {
     kafka::group_id group_id;
 
     friend std::ostream& operator<<(std::ostream&, const group_metadata_key&);
-    friend bool operator==(const group_metadata_key&, const group_metadata_key&)
-      = default;
+    friend bool
+    operator==(const group_metadata_key&, const group_metadata_key&) = default;
     static group_metadata_key decode(protocol::decoder&);
     static void encode(protocol::encoder&, const group_metadata_key&);
 };
@@ -110,9 +110,8 @@ struct group_metadata_value {
     }
 
     friend std::ostream& operator<<(std::ostream&, const group_metadata_value&);
-    friend bool
-    operator==(const group_metadata_value&, const group_metadata_value&)
-      = default;
+    friend bool operator==(
+      const group_metadata_value&, const group_metadata_value&) = default;
 
     static group_metadata_value decode(protocol::decoder&);
     static void encode(protocol::encoder&, const group_metadata_value&);
@@ -125,9 +124,8 @@ struct offset_metadata_key {
     model::partition_id partition;
 
     friend std::ostream& operator<<(std::ostream&, const offset_metadata_key&);
-    friend bool
-    operator==(const offset_metadata_key&, const offset_metadata_key&)
-      = default;
+    friend bool operator==(
+      const offset_metadata_key&, const offset_metadata_key&) = default;
     static offset_metadata_key decode(protocol::decoder&);
     static void encode(protocol::encoder&, const offset_metadata_key&);
 };
@@ -154,9 +152,8 @@ struct offset_metadata_value {
 
     friend std::ostream&
     operator<<(std::ostream&, const offset_metadata_value&);
-    friend bool
-    operator==(const offset_metadata_value&, const offset_metadata_value&)
-      = default;
+    friend bool operator==(
+      const offset_metadata_value&, const offset_metadata_value&) = default;
     static offset_metadata_value decode(protocol::decoder&);
     static void encode(protocol::encoder&, const offset_metadata_value&);
 };
@@ -186,8 +183,8 @@ struct group_block_info
     model::revision_id revision_id;
 
     auto serde_fields() { return std::tie(is_blocked, revision_id); }
-    friend bool operator==(const group_block_info&, const group_block_info&)
-      = default;
+    friend bool
+    operator==(const group_block_info&, const group_block_info&) = default;
 
     friend std::ostream& operator<<(std::ostream&, const group_block_info&);
 };

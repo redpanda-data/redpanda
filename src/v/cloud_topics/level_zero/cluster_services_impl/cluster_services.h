@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_topics/cluster_services.h"
+#include "cloud_topics/types.h"
 #include "cluster/cluster_epoch_service.h"
 
 #include <seastar/core/abort_source.hh>
@@ -35,6 +36,12 @@ public:
             throw std::system_error(epoch.error());
         }
         co_return cloud_topics::cluster_epoch(epoch.value());
+    }
+
+    seastar::future<>
+    invalidate_epoch_below(cloud_topics::cluster_epoch epoch) override {
+        auto prev = prev_cluster_epoch(epoch);
+        co_await _epoch_service.local().invalidate_epoch_cache(prev());
     }
 
 private:

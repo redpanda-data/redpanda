@@ -9,6 +9,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/cloud_topics/level_one/metastore:partition_validator",
         "//src/v/cloud_topics/level_one/metastore:rpc_types",
         "//src/v/cloud_topics/level_one/metastore/lsm:write_batch_row",
     ],
@@ -24,6 +25,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":db_domain_manager",
+        ":domain_manager_probe",
         ":simple_domain_manager",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/common:abstract_io",
@@ -73,6 +75,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "domain_manager_probe",
+    srcs = [
+        "domain_manager_probe.cc",
+    ],
+    hdrs = [
+        "domain_manager_probe.h",
+    ],
+    deps = [
+        "//src/v/config",
+        "//src/v/metrics",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "db_domain_manager",
     srcs = [
         "db_domain_manager.cc",
@@ -99,6 +116,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":domain_manager",
+        ":domain_manager_probe",
         "//src/v/base",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cloud_topics/level_one/common:object_id",

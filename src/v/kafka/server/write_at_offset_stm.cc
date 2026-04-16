@@ -469,9 +469,6 @@ write_at_offset_stm_factory::write_at_offset_stm_factory(
 
 bool write_at_offset_stm_factory::is_applicable_for(
   const storage::ntp_config& cfg) const {
-    if (cfg.cloud_topic_enabled()) {
-        return false;
-    }
     return model::is_shadow_link_enabled(cfg.ntp());
 }
 

@@ -106,6 +106,11 @@ private:
       const ::cluster_link::model::update_mirror_topic_status_cmd& cmd,
       model::revision_id);
 
+    ss::future<cluster::cluster_link::errc> batch_update_mirror_topic_state(
+      ::cluster_link::model::id_t,
+      const ::cluster_link::model::batch_update_mirror_topic_status_cmd& cmd,
+      model::revision_id);
+
     ss::future<cluster::cluster_link::errc> update_mirror_topic_properties(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::update_mirror_topic_properties_cmd&,

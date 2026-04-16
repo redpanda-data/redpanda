@@ -253,9 +253,8 @@ static constexpr msg_type map_msg_type() {
         return msg_type::timeout_now;
     } else if constexpr (std::is_same_v<ReqT, get_compaction_mcco_request>) {
         return msg_type::get_compaction_mcco;
-    } else if constexpr (std::is_same_v<
-                           ReqT,
-                           distribute_compaction_mtro_request>) {
+    } else if constexpr (
+      std::is_same_v<ReqT, distribute_compaction_mtro_request>) {
         return msg_type::distribute_compaction_mtro;
     }
     __builtin_unreachable();

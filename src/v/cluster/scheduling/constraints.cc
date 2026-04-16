@@ -340,8 +340,9 @@ min_count_in_map(std::string_view name, const node2count_t& node2count) {
           std::optional<model::node_id> prev) const final {
             return [this, prev](const allocation_node& node) {
                 size_t count = 0;
-                if (auto it = _node2count.find(node.id());
-                    it != _node2count.end()) {
+                if (
+                  auto it = _node2count.find(node.id());
+                  it != _node2count.end()) {
                     count = it->second;
                 }
                 if (node.id() != prev) {

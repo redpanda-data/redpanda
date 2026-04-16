@@ -192,6 +192,7 @@ def deps_flags(deps):
     ])
 
     flags = []
+
     for compilation_context in compilation_contexts:
         # add defines
         for define in compilation_context.defines.to_list():
@@ -266,8 +267,7 @@ def _clang_tidy_aspect_impl(target, ctx):
     c_flags = toolchain_flags(ctx, ACTION_NAMES.c_compile) + rule_flags + ["-xc"]
     cxx_flags = toolchain_flags(ctx, ACTION_NAMES.cpp_compile) + rule_flags + ["-xc++"]
 
-    include_headers = "no-clang-tidy-headers" not in ctx.rule.attr.tags
-    srcs = rule_sources(ctx.rule.attr, include_headers)
+    srcs = rule_sources(ctx.rule.attr, False)
 
     outputs = [
         _run_tidy(

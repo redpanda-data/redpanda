@@ -26,6 +26,9 @@ model::record_batch create_delete_mirror_topic_command(
 model::record_batch create_update_mirror_topic_status_command(
   ::cluster_link::model::id_t,
   ::cluster_link::model::update_mirror_topic_status_cmd);
+model::record_batch create_batch_update_mirror_topic_status_command(
+  ::cluster_link::model::id_t,
+  ::cluster_link::model::batch_update_mirror_topic_status_cmd);
 model::record_batch create_update_mirror_topic_properties_command(
   ::cluster_link::model::id_t,
   ::cluster_link::model::update_mirror_topic_properties_cmd);

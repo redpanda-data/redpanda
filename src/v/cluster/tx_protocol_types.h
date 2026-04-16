@@ -44,8 +44,8 @@ struct try_abort_reply
     explicit try_abort_reply(tx::errc ec)
       : ec(ec) {}
 
-    friend bool operator==(const try_abort_reply&, const try_abort_reply&)
-      = default;
+    friend bool
+    operator==(const try_abort_reply&, const try_abort_reply&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const try_abort_reply& r);
 
@@ -83,8 +83,8 @@ struct try_abort_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    friend bool operator==(const try_abort_request&, const try_abort_request&)
-      = default;
+    friend bool
+    operator==(const try_abort_request&, const try_abort_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const try_abort_request& r);
@@ -111,8 +111,8 @@ struct init_tm_tx_request
       , transaction_timeout_ms(tx_timeout)
       , timeout(timeout) {}
 
-    friend bool operator==(const init_tm_tx_request&, const init_tm_tx_request&)
-      = default;
+    friend bool
+    operator==(const init_tm_tx_request&, const init_tm_tx_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const init_tm_tx_request& r);
@@ -135,8 +135,8 @@ struct init_tm_tx_reply
       : pid(pid)
       , ec(ec) {}
 
-    friend bool operator==(const init_tm_tx_reply&, const init_tm_tx_reply&)
-      = default;
+    friend bool
+    operator==(const init_tm_tx_reply&, const init_tm_tx_reply&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const init_tm_tx_reply& r);
 
@@ -203,8 +203,8 @@ struct fetch_tx_request
       , term(term)
       , tm(tm) {}
 
-    friend bool operator==(const fetch_tx_request&, const fetch_tx_request&)
-      = default;
+    friend bool
+    operator==(const fetch_tx_request&, const fetch_tx_request&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_tx_request& r);
 
@@ -241,8 +241,8 @@ struct fetch_tx_reply
           , etag(etag)
           , topic_revision(topic_revision) {}
 
-        friend bool operator==(const tx_partition&, const tx_partition&)
-          = default;
+        friend bool
+        operator==(const tx_partition&, const tx_partition&) = default;
 
         friend std::ostream& operator<<(std::ostream& o, const tx_partition& r);
 
@@ -299,8 +299,8 @@ struct fetch_tx_reply
       , partitions(partitions)
       , groups(groups) {}
 
-    friend bool operator==(const fetch_tx_reply&, const fetch_tx_reply&)
-      = default;
+    friend bool
+    operator==(const fetch_tx_reply&, const fetch_tx_reply&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_tx_reply& r);
 
@@ -333,8 +333,8 @@ struct begin_tx_request
       , transaction_timeout_ms(transaction_timeout_ms)
       , tm_partition(tm_partition) {}
 
-    friend bool operator==(const begin_tx_request&, const begin_tx_request&)
-      = default;
+    friend bool
+    operator==(const begin_tx_request&, const begin_tx_request&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const begin_tx_request& r);
 
@@ -372,8 +372,8 @@ struct begin_tx_reply
       : ntp(std::move(ntp))
       , ec(ec) {}
 
-    friend bool operator==(const begin_tx_reply&, const begin_tx_reply&)
-      = default;
+    friend bool
+    operator==(const begin_tx_reply&, const begin_tx_reply&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const begin_tx_reply& r);
 
@@ -408,8 +408,8 @@ struct prepare_tx_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    friend bool operator==(const prepare_tx_request&, const prepare_tx_request&)
-      = default;
+    friend bool
+    operator==(const prepare_tx_request&, const prepare_tx_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const prepare_tx_request& r);
@@ -429,8 +429,8 @@ struct prepare_tx_reply
     explicit prepare_tx_reply(tx::errc ec)
       : ec(ec) {}
 
-    friend bool operator==(const prepare_tx_reply&, const prepare_tx_reply&)
-      = default;
+    friend bool
+    operator==(const prepare_tx_reply&, const prepare_tx_reply&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const prepare_tx_reply& r);
 
@@ -457,8 +457,8 @@ struct commit_tx_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    friend bool operator==(const commit_tx_request&, const commit_tx_request&)
-      = default;
+    friend bool
+    operator==(const commit_tx_request&, const commit_tx_request&) = default;
 
     auto serde_fields() { return std::tie(ntp, pid, tx_seq, timeout); }
 
@@ -476,8 +476,8 @@ struct commit_tx_reply
     explicit commit_tx_reply(tx::errc ec)
       : ec(ec) {}
 
-    friend bool operator==(const commit_tx_reply&, const commit_tx_reply&)
-      = default;
+    friend bool
+    operator==(const commit_tx_reply&, const commit_tx_reply&) = default;
 
     auto serde_fields() { return std::tie(ec); }
 
@@ -504,8 +504,8 @@ struct abort_tx_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    friend bool operator==(const abort_tx_request&, const abort_tx_request&)
-      = default;
+    friend bool
+    operator==(const abort_tx_request&, const abort_tx_request&) = default;
 
     auto serde_fields() { return std::tie(ntp, pid, tx_seq, timeout); }
 
@@ -522,8 +522,8 @@ struct abort_tx_reply
     explicit abort_tx_reply(tx::errc ec)
       : ec(ec) {}
 
-    friend bool operator==(const abort_tx_reply&, const abort_tx_reply&)
-      = default;
+    friend bool
+    operator==(const abort_tx_reply&, const abort_tx_reply&) = default;
 
     auto serde_fields() { return std::tie(ec); }
 
@@ -571,9 +571,8 @@ struct begin_group_tx_request
       : begin_group_tx_request(
           model::ntp(), std::move(group_id), pid, tx_seq, timeout, tm) {}
 
-    friend bool
-    operator==(const begin_group_tx_request&, const begin_group_tx_request&)
-      = default;
+    friend bool operator==(
+      const begin_group_tx_request&, const begin_group_tx_request&) = default;
 
     auto serde_fields() {
         return std::tie(ntp, group_id, pid, tx_seq, timeout, tm_partition);
@@ -600,9 +599,8 @@ struct begin_group_tx_reply
       : etag(etag)
       , ec(ec) {}
 
-    friend bool
-    operator==(const begin_group_tx_reply&, const begin_group_tx_reply&)
-      = default;
+    friend bool operator==(
+      const begin_group_tx_reply&, const begin_group_tx_reply&) = default;
 
     auto serde_fields() { return std::tie(etag, ec); }
 
@@ -675,9 +673,8 @@ struct prepare_group_tx_reply
     explicit prepare_group_tx_reply(tx::errc ec)
       : ec(ec) {}
 
-    friend bool
-    operator==(const prepare_group_tx_reply&, const prepare_group_tx_reply&)
-      = default;
+    friend bool operator==(
+      const prepare_group_tx_reply&, const prepare_group_tx_reply&) = default;
 
     auto serde_fields() { return std::tie(ec); }
 
@@ -722,9 +719,8 @@ struct commit_group_tx_request
       : commit_group_tx_request(
           model::ntp(), pid, tx_seq, std::move(group_id), timeout) {}
 
-    friend bool
-    operator==(const commit_group_tx_request&, const commit_group_tx_request&)
-      = default;
+    friend bool operator==(
+      const commit_group_tx_request&, const commit_group_tx_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const commit_group_tx_request& r);
@@ -746,9 +742,8 @@ struct commit_group_tx_reply
     explicit commit_group_tx_reply(tx::errc ec)
       : ec(ec) {}
 
-    friend bool
-    operator==(const commit_group_tx_reply&, const commit_group_tx_reply&)
-      = default;
+    friend bool operator==(
+      const commit_group_tx_reply&, const commit_group_tx_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const commit_group_tx_reply& r);
@@ -793,9 +788,8 @@ struct abort_group_tx_request
       : abort_group_tx_request(
           model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
 
-    friend bool
-    operator==(const abort_group_tx_request&, const abort_group_tx_request&)
-      = default;
+    friend bool operator==(
+      const abort_group_tx_request&, const abort_group_tx_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const abort_group_tx_request& r);
@@ -817,9 +811,8 @@ struct abort_group_tx_reply
     explicit abort_group_tx_reply(tx::errc ec)
       : ec(ec) {}
 
-    friend bool
-    operator==(const abort_group_tx_reply&, const abort_group_tx_reply&)
-      = default;
+    friend bool operator==(
+      const abort_group_tx_reply&, const abort_group_tx_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const abort_group_tx_reply& r);
@@ -864,9 +857,8 @@ struct find_coordinator_reply
       , ntp(ntp)
       , ec(ec) {}
 
-    friend bool
-    operator==(const find_coordinator_reply&, const find_coordinator_reply&)
-      = default;
+    friend bool operator==(
+      const find_coordinator_reply&, const find_coordinator_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const find_coordinator_reply& r);
@@ -908,9 +900,8 @@ struct idempotent_request_info
     int32_t last_sequence;
     model::term_id term;
 
-    friend bool
-    operator==(const idempotent_request_info&, const idempotent_request_info&)
-      = default;
+    friend bool operator==(
+      const idempotent_request_info&, const idempotent_request_info&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const idempotent_request_info&);
@@ -941,9 +932,8 @@ struct producer_state_info
     // only set for group transactions
     std::optional<ss::sstring> group_id;
 
-    friend bool
-    operator==(const producer_state_info&, const producer_state_info&)
-      = default;
+    friend bool operator==(
+      const producer_state_info&, const producer_state_info&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const producer_state_info& r);
@@ -975,9 +965,8 @@ struct get_producers_reply
     // denotes the actual number while the vector is a subset.
     size_t producer_count{0};
 
-    friend bool
-    operator==(const get_producers_reply&, const get_producers_reply&)
-      = default;
+    friend bool operator==(
+      const get_producers_reply&, const get_producers_reply&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_producers_reply&);
@@ -1008,9 +997,8 @@ struct get_producers_request
     // edge cases.
     size_t max_producers_to_include{0};
 
-    friend bool
-    operator==(const get_producers_request&, const get_producers_request&)
-      = default;
+    friend bool operator==(
+      const get_producers_request&, const get_producers_request&) = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_producers_request&);

@@ -69,6 +69,7 @@ redpanda_cc_library(
         "//src/v/lsm/core:compression",
         "//src/v/lsm/core:exceptions",
         "//src/v/lsm/core/internal:two_level_iterator",
+        "//src/v/lsm/io:readahead_file_reader",
     ],
     deps = [
         ":block_cache",

@@ -26,10 +26,10 @@ from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistr
 from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.utils import supported_storage_types
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.perf.redpanda_perf_test import RedpandaPerfTest
 
 
-class DatalakeTest(RedpandaTest):
+class DatalakeTest(RedpandaPerfTest):
     def __init__(self, test_ctx: TestContext, *args: Any, **kwargs: Any):
         self._ctx = test_ctx
         super(DatalakeTest, self).__init__(

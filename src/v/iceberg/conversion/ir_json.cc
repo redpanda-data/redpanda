@@ -279,12 +279,10 @@ schema_additional_properties& schema_additional_properties::operator=(
 }
 
 schema_additional_properties::schema_additional_properties(
-  schema_additional_properties&&) noexcept
-  = default;
+  schema_additional_properties&&) noexcept = default;
 
-schema_additional_properties&
-schema_additional_properties::operator=(schema_additional_properties&&) noexcept
-  = default;
+schema_additional_properties& schema_additional_properties::operator=(
+  schema_additional_properties&&) noexcept = default;
 
 schema_additional_properties::~schema_additional_properties() = default;
 
@@ -493,9 +491,10 @@ collect(collect_context& ctx, const conversion::json_schema::subschema& s) {
 /// Resolve object constraint to Iceberg struct or map.
 conversion_outcome<field_type>
 resolve_object(resolution_context& ctx, const constraint& c) {
-    if (const auto* additional_properties_schema
-        = as_schema_additional_properties(c.additional_properties);
-        additional_properties_schema != nullptr) {
+    if (
+      const auto* additional_properties_schema
+      = as_schema_additional_properties(c.additional_properties);
+      additional_properties_schema != nullptr) {
         vassert(
           c.properties.empty(),
           "Cannot resolve to map type with both properties and schema-valued "

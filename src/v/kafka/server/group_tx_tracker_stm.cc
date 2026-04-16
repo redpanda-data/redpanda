@@ -105,8 +105,9 @@ void group_tx_tracker_stm::maybe_end_tx(
 
 ss::future<> group_tx_tracker_stm::do_apply(const model::record_batch& b) {
     // fast path, check without a scheduling point.
-    if (unlikely(!_feature_table.local().is_active(
-          features::feature::group_tx_fence_dedicated_batch_type))) {
+    if (
+      unlikely(!_feature_table.local().is_active(
+        features::feature::group_tx_fence_dedicated_batch_type))) {
         // This is only relevant for upgrades from 24.1.x to 24.2.x where a
         // mixed mode cluster has this feature disabled until the upgrade is
         // done. Holding off stm updates ensures that max_removable offset
@@ -161,10 +162,32 @@ group_tx_tracker_stm::apply_local_snapshot(
 
 ss::future<raft::stm_snapshot>
 group_tx_tracker_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
-    // Copy over the snapshot state for a consistent view.
-    auto offset = last_applied_offset();
+    // Snapshot at max_removable_local_log_offset with open transaction state
+    // stripped. This prevents a bug where:
+    //
+    // 1. Snapshot captures an open tx (begin_offset in per_group_state)
+    // 2. The tx later commits, max_removable advances
+    // 3. Compaction removes the commit batch from the log
+    // 4. On restart, the stale open tx is loaded but its commit is gone
+    //    -> max_removable stuck permanently
+    //
+    // By definition, all open txs have begin_offset > max_removable, so they
+    // are all past the snapshot offset. On replay from offset+1, their fence
+    // batches are guaranteed to still be in the log (compaction is bounded by
+    // max_removable while the STM is live) and will re-establish the open tx
+    // state. Group existence (keys in _all_txs) must be preserved because
+    // maybe_add_tx_begin_offset() ignores fences for unknown groups, and the
+    // group_metadata batches that created them may be before the snapshot
+    // offset.
+    auto offset = max_removable_local_log_offset();
+
+    all_txs_t snap_txs;
+    for (const auto& [gid, _] : _all_txs) {
+        snap_txs[gid] = per_group_state{};
+    }
+
     snapshot snap{
-      .transactions{_all_txs},
+      .transactions{std::move(snap_txs)},
       .blocked_groups{
         std::from_range, _group_blocks | std::views::filter([](const auto& e) {
                              return e.second.is_blocked;

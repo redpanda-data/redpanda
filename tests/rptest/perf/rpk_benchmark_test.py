@@ -12,10 +12,10 @@ from typing import Any
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import ResourceSettings
 from rptest.services.rpk_benchmark_service import RpkBenchmarkService
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.perf.redpanda_perf_test import RedpandaPerfTest
 
 
-class RpkBenchmarkPerf(RedpandaTest):
+class RpkBenchmarkPerf(RedpandaPerfTest):
     PARTITIONS = 18
     REPLICAS = 3
     CLIENTS = 60
@@ -25,14 +25,18 @@ class RpkBenchmarkPerf(RedpandaTest):
         # drop shards to two to reduce noise
         resource_settings = ResourceSettings(num_cpus=2)
         super().__init__(
-            *args, num_brokers=3, resource_settings=resource_settings, **kwargs
+            *args,
+            num_brokers=3,
+            resource_settings=resource_settings,
+            **kwargs,
         )
 
-    def run_workload(self) -> None:
+    def run_workload(self, mode: str) -> None:
         svc = RpkBenchmarkService(
             self.test_context,
             self.redpanda,
             topic="rpk-bench-topic",
+            mode=mode,
             partitions=self.PARTITIONS,
             replicas=self.REPLICAS,
             clients=self.CLIENTS,
@@ -52,4 +56,4 @@ class RpkBenchmarkPerf(RedpandaTest):
 
     @cluster(num_nodes=6)
     def test_produce(self) -> None:
-        self.run_workload()
+        self.run_workload("produce")

@@ -37,8 +37,8 @@ public:
         /// Persisted across restarts.
         uint64_t kafka_bytes_processed{0};
 
-        friend bool operator==(const topic_usage&, const topic_usage&)
-          = default;
+        friend bool
+        operator==(const topic_usage&, const topic_usage&) = default;
         friend std::ostream& operator<<(std::ostream& os, const topic_usage& u);
 
         auto serde_fields() {
@@ -78,8 +78,8 @@ public:
         usage_stats& operator=(const usage_stats&);
         usage_stats& operator=(usage_stats&&) = default;
 
-        friend bool operator==(const usage_stats&, const usage_stats&)
-          = default;
+        friend bool
+        operator==(const usage_stats&, const usage_stats&) = default;
         friend std::ostream& operator<<(std::ostream& os, const usage_stats& u);
 
         auto serde_fields() { return std::tie(topic_stats, missing_reason); }

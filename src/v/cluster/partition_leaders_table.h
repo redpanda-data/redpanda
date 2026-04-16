@@ -78,7 +78,7 @@ public:
       model::term_id term) {
         { f(tp_ns, pid, leader, term) } -> std::same_as<void>;
     }
-    ss::future<> for_each_leader(Func&& f) {
+    ss::future<> for_each_leader(const Func& f) {
         auto holder = _gate.hold();
         auto u = co_await _mutex.get_units();
         ssx::async_counter counter;
@@ -87,8 +87,7 @@ public:
               counter,
               partition_leaders.begin(),
               partition_leaders.end(),
-              [&tp_ns, f = std::forward<Func>(f)](
-                const partition_leaders::value_type& p) mutable {
+              [&tp_ns, &f](const partition_leaders::value_type& p) {
                   f(tp_ns,
                     model::partition_id(p.first),
                     p.second.current_leader,

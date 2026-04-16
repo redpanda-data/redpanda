@@ -21,7 +21,7 @@
 
 namespace net {
 
-class batched_output_stream_closed : std::exception {
+class batched_output_stream_closed : public std::exception {
 public:
     batched_output_stream_closed(size_t ignored_bytes)
       : msg(

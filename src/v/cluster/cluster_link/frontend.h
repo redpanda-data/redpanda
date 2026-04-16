@@ -34,6 +34,7 @@ class frontend : public ss::peering_sharded_service<frontend> {
       cluster::cluster_link_add_mirror_topic_cmd,
       cluster::cluster_link_delete_mirror_topic_cmd,
       cluster::cluster_link_update_mirror_topic_status_cmd,
+      cluster::cluster_link_batch_update_mirror_topic_status_cmd,
       cluster::cluster_link_update_mirror_topic_properties_cmd,
       cluster::cluster_link_update_cluster_link_configuration_cmd>;
 
@@ -67,6 +68,10 @@ public:
     ss::future<errc> update_mirror_topic_status(
       ::cluster_link::model::id_t,
       ::cluster_link::model::update_mirror_topic_status_cmd,
+      model::timeout_clock::time_point);
+    ss::future<errc> batch_update_mirror_topic_status(
+      ::cluster_link::model::id_t,
+      ::cluster_link::model::batch_update_mirror_topic_status_cmd,
       model::timeout_clock::time_point);
     ss::future<errc> update_mirror_topic_properties(
       ::cluster_link::model::id_t,
@@ -154,6 +159,11 @@ private:
     cluster::cluster_link::errc
     validate_mutation(const cluster_link_cmd&) const;
 
+    ss::future<errc> failover_link_topics_batched(
+      ::cluster_link::model::id_t,
+      chunked_vector<::model::topic>,
+      model::timeout_clock::duration);
+
     bool is_sanctioned();
 
 public:
@@ -175,6 +185,11 @@ public:
         cluster::cluster_link::errc validate_metadata_mirroring_config(
           const ::cluster_link::model::topic_metadata_mirroring_config& config)
           const;
+        cluster::cluster_link::errc validate_mirror_topic_status_update(
+          ::cluster_link::model::id_t link_id,
+          const model::topic& topic,
+          ::cluster_link::model::mirror_topic_status target_status,
+          bool force_update) const;
 
     private:
         table* _table;

@@ -182,7 +182,7 @@ public:
 
     // Create an iterator that reads over the compaction inputs.
     ss::future<std::unique_ptr<internal::iterator>>
-    make_input_iterator(compaction*);
+    make_input_iterator(compaction*, internal::iterator_options);
 
     // Get all the files that are currently being used by any live version.
     chunked_hash_set<internal::file_handle> get_live_files();

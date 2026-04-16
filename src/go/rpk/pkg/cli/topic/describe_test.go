@@ -595,7 +595,7 @@ func TestPrintDescribedTopicsFormatter(t *testing.T) {
 			if tc.expectedReturn {
 				switch tc.format {
 				case "json":
-					var expected, actual interface{}
+					var expected, actual any
 					err := json.Unmarshal([]byte(tc.expectedOutput), &expected)
 					require.NoError(t, err)
 					err = json.Unmarshal(buf.Bytes(), &actual)

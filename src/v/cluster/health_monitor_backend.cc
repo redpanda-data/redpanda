@@ -306,8 +306,7 @@ public:
     constexpr underlying operator()() const { return _value; };
 
     friend constexpr bool
-    operator==(const partition_risk&, const partition_risk&)
-      = default;
+    operator==(const partition_risk&, const partition_risk&) = default;
 
     friend constexpr partition_risk
     operator&(const partition_risk x, const partition_risk y) {
@@ -1126,7 +1125,7 @@ bool is_partition_offline(
 ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
   const std::vector<model::node_id>& offline_nodes,
   aggregated_report& aggr_report) {
-    size_t retries_left = 5;
+    uint8_t retries_left = 5;
 
     ssx::async_counter counter;
     while (retries_left > 0) {
@@ -1136,12 +1135,17 @@ ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
                  ++it) {
                 const auto& topic = it->first;
                 const auto& assignment_set = it->second.get_assignments();
-                co_await ssx::async_for_each_counter(
+                auto inner_it = assignment_set.begin();
+                auto inner_end = assignment_set.end();
+                co_await ssx::async_while_counter(
                   counter,
-                  assignment_set,
-                  [&offline_nodes, &aggr_report, &topic, &it](
-                    const auto& p_as) {
+                  [&it, &inner_it, &inner_end] {
                       it.check();
+                      return inner_it != inner_end;
+                  },
+                  [&inner_it, &offline_nodes, &aggr_report, &topic] {
+                      const auto& p_as = *inner_it;
+                      ++inner_it;
                       if (!is_partition_offline(p_as.second, offline_nodes)) {
                           return;
                       }
@@ -1155,7 +1159,6 @@ ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
                         model::ntp(topic.ns, topic.tp, p_as.first));
                   });
             }
-            // success, return from the function
             co_return;
         } catch (const iterator_stability_violation&) {
             --retries_left;

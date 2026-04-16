@@ -212,7 +212,7 @@ private:
     ss::sharded<cluster_link::frontend>* _clfe;
     ss::sharded<ss::abort_source>& _as;
     prefix_logger _logger;
-    ss::timer<> _tick_timer;
+    ss::timer<ss::lowres_clock> _tick_timer;
     details::address _address;
     ss::gate _gate;
 

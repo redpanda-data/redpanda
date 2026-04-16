@@ -22,6 +22,7 @@
 #include <seastar/core/gate.hh>
 
 #include <expected>
+#include <limits>
 
 namespace cluster {
 
@@ -54,12 +55,6 @@ class cluster_epoch_service
     class raft0_state;
 
 public:
-    // TODO(cloud-topics): make these configuration knobs.
-    // Maximum amount of time to cache the same epoch before we block on the
-    // update.
-    constexpr static ss::lowres_clock::duration max_same_epoch_cache_duration
-      = 24 * 60min;
-
     cluster_epoch_service(
       model::node_id, ss::sharded<rpc::connection_cache>*) noexcept;
     // **For testing** support injecting a custom "remote fetch epoch" function.
@@ -137,7 +132,7 @@ private:
     fetch_leader_epoch(ss::abort_source*);
 
     // The currently cached epoch
-    int64_t _cached_epoch{-1};
+    int64_t _cached_epoch{std::numeric_limits<int64_t>::min()};
     // The last time the epoch was cached
     Clock::time_point _cached_epoch_time{Clock::time_point::min()};
     // The last time the epoch actually ratcheted forward

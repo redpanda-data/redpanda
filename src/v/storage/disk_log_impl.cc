@@ -59,6 +59,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
 #include <roaring/roaring.hh>
@@ -246,30 +247,24 @@ ss::future<> disk_log_impl::remove() {
     _closed = true;
     // wait for compaction to finish
     co_await _compaction_housekeeping_gate.close();
-    // gets all the futures started in the background
-    std::vector<ss::future<>> permanent_delete;
-    permanent_delete.reserve(_segs.size());
-    while (!_segs.empty()) {
-        auto s = _segs.back();
-        _segs.pop_back();
-        permanent_delete.emplace_back(
-          remove_segment_permanently(s, "disk_log_impl::remove()"));
-    }
-    co_await _offset_translator.remove_persistent_state();
 
-    co_await _readers_cache->stop()
-      .then([this, permanent_delete = std::move(permanent_delete)]() mutable {
-          // wait for all futures
-          return ss::when_all_succeed(
-                   permanent_delete.begin(), permanent_delete.end())
-            .then([this]() {
-                vlog(stlog.info, "Finished removing all segments:{}", config());
-            })
-            .then([this] {
-                return remove_kvstore_state(config().ntp(), _kvstore);
-            });
-      })
-      .finally([this] { _probe->clear_metrics(); });
+    auto _ = ss::defer([this] { _probe->clear_metrics(); });
+
+    // Clear segments.
+    auto segments_to_remove = std::move(_segs).release();
+    _segs = segment_set(segment_set::underlying_t{});
+
+    co_await ss::max_concurrent_for_each(
+      segments_to_remove, 128, [this](ss::lw_shared_ptr<segment>& s) {
+          return remove_segment_permanently(s, "disk_log_impl::remove()");
+      });
+
+    vlog(stlog.info, "Finished removing all segments:{}", config());
+
+    co_await _offset_translator.remove_persistent_state();
+    co_await _readers_cache->stop();
+
+    co_await remove_kvstore_state(config().ntp(), _kvstore);
 }
 
 ss::future<> disk_log_impl::start(
@@ -328,8 +323,8 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     bool errors = false;
 
     co_await _readers_cache->stop().then([this, &errors] {
-        return ss::parallel_for_each(
-          _segs, [&errors](ss::lw_shared_ptr<segment>& h) {
+        return ss::max_concurrent_for_each(
+          _segs, 128, [&errors](ss::lw_shared_ptr<segment>& h) {
               return h->close().handle_exception(
                 [&errors, h](std::exception_ptr e) {
                     vlog(stlog.error, "Error closing segment:{} - {}", e, h);
@@ -1057,8 +1052,9 @@ disk_log_impl::compact_adjacent_segment_ranges(
   compaction::compaction_config cfg,
   std::optional<model::offset> new_start_offset) {
     chunked_vector<compaction_result> rs;
-    if (auto ranges = find_adjacent_compaction_ranges(cfg, new_start_offset);
-        ranges) {
+    if (
+      auto ranges = find_adjacent_compaction_ranges(cfg, new_start_offset);
+      ranges) {
         // lightweight copy of segments in all of the found ranges. once a
         // scheduling event occurs in this method we can't rely on the iterators
         // in the range remaining valid. for example, a concurrent truncate may
@@ -1413,8 +1409,6 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
             std::rethrow_exception(fut.get_exception());
         }
     }
-
-    _probe->set_compaction_ratio(_compaction_ratio.get());
 }
 
 ss::future<> disk_log_impl::do_compact(
@@ -3071,8 +3065,9 @@ bool disk_log_impl::is_compacted(
 
 bool disk_log_impl::eligible_for_compacted_reupload(
   model::offset first, model::offset last) const {
-    if (auto mco = max_eligible_for_compacted_reupload_offset(first);
-        mco.has_value()) {
+    if (
+      auto mco = max_eligible_for_compacted_reupload_offset(first);
+      mco.has_value()) {
         return last <= mco.value();
     }
     return false;

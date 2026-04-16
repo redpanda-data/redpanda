@@ -35,6 +35,7 @@
 #
 
 import argparse
+import functools
 import re
 import shlex
 import shutil
@@ -80,6 +81,7 @@ class TargetInfo:
     rule_kind: str
     args: list[str]
     env: dict[str, str]
+    uses_seastar: bool
 
 
 @dataclass
@@ -111,23 +113,34 @@ def render_template(template_path: Path, **kwargs) -> str:
     return tmpl.render(**kwargs)
 
 
-_cquery_cache: dict[str, str] = {}
-_cquery_extra_args: list[str] = []
+@functools.cache
+def _cquery_file(label: str, extra_args: tuple[str, ...] = ()) -> str:
+    """Resolve a bazel label to its output file path.
 
-
-def _cquery_file(label: str) -> str:
-    """Resolve a bazel label to its output file path, with caching."""
-    if label not in _cquery_cache:
-        result = run(
-            ["bazel", "cquery", "--output=files"] + _cquery_extra_args + [label],
-            capture=True,
-        )
-        _cquery_cache[label] = result.stdout.strip().splitlines()[-1]
-    return _cquery_cache[label]
+    For built targets, uses cquery to get the output path. For source
+    files (which cquery can't resolve), falls back to locating the file
+    directly in the workspace.
+    """
+    result = run(
+        ["bazel", "cquery", "--output=files", *extra_args, label],
+        capture=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip().splitlines()[-1]
+    # Source file — resolve from workspace. Labels like
+    # ":foo" or "//pkg:foo" map to <pkg>/<name> in the repo.
+    pkg, name = parse_bazel_target(label)
+    src_path = pkg + "/" + name if pkg else name
+    if not (REPO_ROOT / src_path).exists():
+        sys.exit(f"Error: cannot resolve label {label}")
+    return src_path
 
 
 def resolve_rootpaths(
     env: dict[str, str],
+    pkg: str,
+    extra_bazel_args: tuple[str, ...] = (),
 ) -> tuple[dict[str, str], dict[str, Path]]:
     """Resolve $(rootpath <label>) references in env var values.
 
@@ -146,7 +159,9 @@ def resolve_rootpaths(
 
         new_value = value
         for label in labels:
-            rel_path = _cquery_file(label)
+            # Qualify relative labels (e.g. ":foo") with the target's package.
+            qualified = f"//{pkg}:{label[1:]}" if label.startswith(":") else label
+            rel_path = _cquery_file(qualified, extra_bazel_args)
             local_path = REPO_ROOT / rel_path
             new_value = new_value.replace(
                 f"$(rootpath {label})", f"{DATA_DIR}/{rel_path}"
@@ -167,20 +182,41 @@ def parse_bazel_target(target: str) -> tuple[str, str]:
     return pkg.lstrip("/"), name
 
 
+# If a target deps on one of these we assume its safe to pass
+# seastar args to it.
+_SEASTAR_TEST_DEPS = [
+    "//src/v/test_utils:gtest",
+    "@seastar//:testing",
+]
+
+
+def query_seastar_targets(patterns: list[str]) -> set[str]:
+    """Return the subset of targets matching patterns that use the Seastar test harness."""
+    pattern_set = " ".join(patterns)
+    dep_set = " ".join(_SEASTAR_TEST_DEPS)
+    query_expr = f"rdeps(set({pattern_set}), set({dep_set}))"
+    result = run(["bazel", "query", query_expr], capture=True)
+    return set(result.stdout.strip().splitlines())
+
+
 def resolve_and_query_targets(
     patterns: list[str],
+    tests_only: bool = False,
 ) -> tuple[list[str], dict[str, TargetInfo]]:
     """Resolve patterns and query target info in a single bazel query."""
-    query_expr = "kind('cc_test|cc_binary', set(" + " ".join(patterns) + "))"
+    kind_filter = "cc_test" if tests_only else "cc_test|cc_binary"
+    query_expr = f"kind('{kind_filter}', set(" + " ".join(patterns) + "))"
     print("==> Resolving and querying targets")
     result = run(["bazel", "query", "--output=xml", query_expr], capture=True)
 
     root = ET.fromstring(result.stdout)
-    targets: list[str] = []
+    rules = root.findall(".//rule")
+    targets = [rule.get("name", "") for rule in rules]
+    seastar_targets = query_seastar_targets(patterns) if targets else set()
+
     info: dict[str, TargetInfo] = {}
-    for rule in root.findall(".//rule"):
+    for rule in rules:
         label = rule.get("name", "")
-        targets.append(label)
 
         args_elem = rule.find("list[@name='args']")
         rule_args = [
@@ -190,7 +226,8 @@ def resolve_and_query_targets(
         ]
 
         env: dict[str, str] = {}
-        for pair in rule.find("dict[@name='env']") or []:
+        env_elem = rule.find("dict[@name='env']")
+        for pair in env_elem if env_elem is not None else []:
             strings = pair.findall("string")
             if len(strings) == 2 and strings[0].get("value"):
                 env[strings[0].get("value", "")] = strings[1].get("value", "")
@@ -199,6 +236,7 @@ def resolve_and_query_targets(
             rule_kind=rule.get("class", "cc_binary"),
             args=rule_args,
             env=env,
+            uses_seastar=label in seastar_targets,
         )
 
     if not targets:
@@ -215,21 +253,20 @@ def _flatten_args(args: list[str]) -> list[str]:
 
 
 def build_runtime_args(
-    rule_kind: str,
-    bazel_args: list[str],
+    ti: TargetInfo,
     binary_args: str,
     log_level: str = "",
 ) -> list[str]:
-    # Flatten bazel_args and _BASE_SEASTAR_ARGS which may contain
-    # multi-token entries like "--flag value".
-    args = _flatten_args(bazel_args) if rule_kind == "cc_test" else []
-    for flag in _BASE_SEASTAR_ARGS:
-        prefix = flag.split()[0] if " " in flag else flag.split("=")[0]
-        if not any(a.startswith(prefix) for a in args):
-            args.extend(flag.split())
-    if log_level:
-        args = [a for a in args if not a.startswith("--default-log-level")]
-        args.append(f"--default-log-level={log_level}")
+    # Flatten args which may contain multi-token entries like "--flag value".
+    args = _flatten_args(ti.args) if ti.rule_kind == "cc_test" else []
+    if ti.uses_seastar:
+        for flag in _BASE_SEASTAR_ARGS:
+            prefix = flag.split()[0] if " " in flag else flag.split("=")[0]
+            if not any(a.startswith(prefix) for a in args):
+                args.extend(flag.split())
+        if log_level:
+            args = [a for a in args if not a.startswith("--default-log-level")]
+            args.append(f"--default-log-level={log_level}")
     if binary_args:
         args.extend(shlex.split(binary_args))
     return args
@@ -274,6 +311,7 @@ def collect_binary_info(
     target_info: dict[str, TargetInfo],
     binary_args: str,
     log_level: str,
+    extra_bazel_args: tuple[str, ...] = (),
 ) -> list[BinaryInfo]:
     """Build BinaryInfo for each target from bazel query results."""
     binaries: list[BinaryInfo] = []
@@ -285,14 +323,12 @@ def collect_binary_info(
             print(f"    Skipping {target} (not built)")
             continue
         env = {k: v for k, v in ti.env.items() if k not in _EXCLUDED_ENV}
-        env, data_files = resolve_rootpaths(env)
+        env, data_files = resolve_rootpaths(env, pkg, extra_bazel_args)
         binaries.append(
             BinaryInfo(
                 label=target,
                 name=binary_name,
-                runtime_args=build_runtime_args(
-                    ti.rule_kind, ti.args, binary_args, log_level
-                ),
+                runtime_args=build_runtime_args(ti, binary_args, log_level),
                 env=env,
                 data_files=data_files,
             )
@@ -309,9 +345,8 @@ def build_workload_image(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         ctx = Path(tmpdir)
-        binary_names = [b.name for b in binaries]
 
-        # Bazel's output tree is all symlinks which Docker can't follow).
+        # Bazel's output tree is all symlinks which Docker can't follow.
         # So for at least the shared libraries we're copying them into a
         # single tmp dir.
         collect_shared_libs(binaries, ctx / "libs")
@@ -353,7 +388,6 @@ def build_workload_image(
                 data_files=data_files,
                 bin_paths=bin_paths,
                 driver_dir=DRIVER_DIR,
-                binary_names=binary_names,
             )
         )
 
@@ -416,10 +450,22 @@ def main() -> None:
         default="",
         help="Override default log level (e.g. warn, error, info)",
     )
+    parser.add_argument(
+        "--skip-bazel-build",
+        action="store_true",
+        help="Skip bazel build, use existing artifacts",
+    )
+    parser.add_argument(
+        "--tests-only",
+        action="store_true",
+        help="Only package cc_test targets, excluding cc_binary",
+    )
     args = parser.parse_args()
 
     # Resolve patterns and query target info.
-    targets, target_info = resolve_and_query_targets(args.targets)
+    targets, target_info = resolve_and_query_targets(
+        args.targets, tests_only=args.tests_only
+    )
 
     _, first_name = parse_bazel_target(targets[0])
     target_name = args.name or first_name
@@ -436,16 +482,19 @@ def main() -> None:
         extra_bazel_args.append("--config=antithesis")
 
     # Build all targets.
-    build_targets(args.targets, extra_bazel_args)
-
-    # Ensure cquery uses the same config as the build so resolved
-    # output paths match (e.g. k8-opt vs k8-fastbuild).
-    _cquery_extra_args.extend(extra_bazel_args)
+    if not args.skip_bazel_build:
+        build_targets(args.targets, extra_bazel_args)
 
     # Collect per-binary info (args, env, data files).
     binaries = collect_binary_info(
-        targets, target_info, args.binary_args, args.log_level
+        targets,
+        target_info,
+        args.binary_args,
+        args.log_level,
+        tuple(extra_bazel_args),
     )
+    if not binaries:
+        sys.exit("Error: no binaries found. Run without --skip-bazel-build?")
 
     # Build workload image.
     build_workload_image(binaries, image_tag)

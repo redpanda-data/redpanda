@@ -208,7 +208,8 @@ ss::future<ss::stop_iteration> compaction_source::map_building_iteration() {
         const auto& start_offset = extent.base_offset;
         const auto& max_offset = extent.last_offset;
 
-        cloud_topic_log_reader_config config(start_offset, max_offset, _as);
+        cloud_topic_log_reader_config config(
+          start_offset, max_offset, std::nullopt, _as);
         auto rdr = model::record_batch_reader(
           std::make_unique<level_one_log_reader_impl>(
             config, _ntp, _tp, _metastore, _io, _l1_reader_probe));
@@ -276,7 +277,8 @@ ss::future<ss::stop_iteration> compaction_source::deduplication_iteration(
     if (should_compact_extent(extent, _min_compaction_lag_ms)) {
         kafka::offset start_offset{extent.base_offset};
         kafka::offset last_offset{extent.last_offset};
-        cloud_topic_log_reader_config config(start_offset, last_offset, _as);
+        cloud_topic_log_reader_config config(
+          start_offset, last_offset, std::nullopt, _as);
         auto rdr = model::record_batch_reader(
           std::make_unique<level_one_log_reader_impl>(
             config, _ntp, _tp, _metastore, _io, _l1_reader_probe));

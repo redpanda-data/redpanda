@@ -58,8 +58,8 @@ services:
     container_name: azurite
     restart: always
     command: "azurite-blob -l /data --blobHost 0.0.0.0"
-    ports:
-    - 10000:10000
+    expose:
+    - '10000'
     # image: mcr.microsoft.com/azure-storage/azurite:3.34.0
     image: public.ecr.aws/l9j0i2e0/azurite-no-leaks:latest
     environment:

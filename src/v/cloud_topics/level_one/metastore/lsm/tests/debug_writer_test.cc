@@ -96,6 +96,7 @@ TEST(DebugWriterTest, EncodeMetadataKey) {
     mv.set_next_offset(20);
     mv.set_compaction_epoch(1);
     mv.set_size(1000);
+    mv.set_num_extents(42);
     val.set_metadata(std::move(mv));
     w.set_value(std::move(val));
     req.get_writes().push_back(std::move(w));
@@ -113,6 +114,7 @@ TEST(DebugWriterTest, EncodeMetadataKey) {
     EXPECT_EQ(decoded.next_offset, kafka::offset{20});
     EXPECT_EQ(decoded.compaction_epoch, partition_state::compaction_epoch_t{1});
     EXPECT_EQ(decoded.size, 1000);
+    EXPECT_EQ(decoded.num_extents, 42);
 }
 
 TEST(DebugWriterTest, EncodeExtentKey) {

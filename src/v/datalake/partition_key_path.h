@@ -17,7 +17,7 @@ namespace datalake {
 /**
  * Error in partition key to path conversion
  */
-class partition_key_error : std::exception {
+class partition_key_error : public std::exception {
 public:
     explicit partition_key_error(std::string msg) noexcept
       : msg_(std::move(msg)) {}

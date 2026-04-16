@@ -653,16 +653,15 @@ consteval std::string_view property_type_name() {
         return "broker_endpoint";
     } else if constexpr (std::is_same_v<type, model::rack_id>) {
         return "rack_id";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::partition_autobalancing_mode>) {
+    } else if constexpr (
+      std::is_same_v<type, model::partition_autobalancing_mode>) {
         return "partition_autobalancing_mode";
     } else if constexpr (std::is_floating_point_v<type>) {
         return "number";
     } else if constexpr (std::is_integral_v<type>) {
         return "integer";
-    } else if constexpr (std::
-                           is_same_v<type, model::cloud_credentials_source>) {
+    } else if constexpr (
+      std::is_same_v<type, model::cloud_credentials_source>) {
         return "string";
     } else if constexpr (std::is_same_v<type, s3_url_style>) {
         return "string";
@@ -670,23 +669,22 @@ consteval std::string_view property_type_name() {
         return "string";
     } else if constexpr (std::is_same_v<type, std::filesystem::path>) {
         return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::cloud_storage_chunk_eviction_strategy>) {
+    } else if constexpr (
+      std::is_same_v<type, model::cloud_storage_chunk_eviction_strategy>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::leader_balancer_mode>) {
         return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           pandaproxy::schema_registry::
-                             schema_id_validation_mode>) {
+    } else if constexpr (
+      std::is_same_v<
+        type,
+        pandaproxy::schema_registry::schema_id_validation_mode>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::fetch_read_strategy>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::write_caching_mode>) {
         return "string";
-    } else if constexpr (std::
-                           is_same_v<type, model::recovery_validation_mode>) {
+    } else if constexpr (
+      std::is_same_v<type, model::recovery_validation_mode>) {
         return "recovery_validation_mode";
     } else if constexpr (std::is_same_v<type, config::fips_mode_flag>) {
         return "string";
@@ -700,25 +698,21 @@ consteval std::string_view property_type_name() {
         return "leaders_preference";
     } else if constexpr (std::is_same_v<type, config::datalake_catalog_type>) {
         return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::iceberg_invalid_record_action>) {
+    } else if constexpr (
+      std::is_same_v<type, model::iceberg_invalid_record_action>) {
         return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           config::datalake_catalog_auth_mode>) {
+    } else if constexpr (
+      std::is_same_v<type, config::datalake_catalog_auth_mode>) {
         return "string";
     } else if constexpr (std::is_same_v<type, config::tls_name_format>) {
         return "string";
     } else if constexpr (std::is_same_v<type, config::audit_failure_policy>) {
         return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           model::kafka_batch_validation_mode>) {
+    } else if constexpr (
+      std::is_same_v<type, model::kafka_batch_validation_mode>) {
         return "string";
-    } else if constexpr (std::is_same_v<
-                           type,
-                           security::oidc::nested_group_behavior>) {
+    } else if constexpr (
+      std::is_same_v<type, security::oidc::nested_group_behavior>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::redpanda_storage_mode>) {
         return "string";

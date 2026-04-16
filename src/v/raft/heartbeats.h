@@ -223,9 +223,8 @@ struct heartbeat_request_data
           last_visible_index);
     }
 
-    friend bool
-    operator==(const heartbeat_request_data&, const heartbeat_request_data&)
-      = default;
+    friend bool operator==(
+      const heartbeat_request_data&, const heartbeat_request_data&) = default;
 };
 
 struct heartbeat_reply_data
@@ -254,17 +253,16 @@ struct heartbeat_reply_data
           may_recover);
     }
 
-    friend bool
-    operator==(const heartbeat_reply_data&, const heartbeat_reply_data&)
-      = default;
+    friend bool operator==(
+      const heartbeat_reply_data&, const heartbeat_reply_data&) = default;
 };
 
 struct group_heartbeat {
     raft::group_id group;
     std::optional<heartbeat_request_data> data;
 
-    friend bool operator==(const group_heartbeat&, const group_heartbeat&)
-      = default;
+    friend bool
+    operator==(const group_heartbeat&, const group_heartbeat&) = default;
 };
 
 struct full_heartbeat_reply {
@@ -289,17 +287,16 @@ struct full_heartbeat_reply {
         write(out, req.data);
     }
 
-    friend bool
-    operator==(const full_heartbeat_reply&, const full_heartbeat_reply&)
-      = default;
+    friend bool operator==(
+      const full_heartbeat_reply&, const full_heartbeat_reply&) = default;
 };
 
 struct full_heartbeat {
     raft::group_id group;
     heartbeat_request_data data;
 
-    friend bool operator==(const full_heartbeat&, const full_heartbeat&)
-      = default;
+    friend bool
+    operator==(const full_heartbeat&, const full_heartbeat&) = default;
 
     friend inline void read_nested(
       iobuf_parser& in, full_heartbeat& fh, const size_t bytes_left_limit) {

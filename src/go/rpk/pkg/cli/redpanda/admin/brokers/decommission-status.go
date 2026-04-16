@@ -133,7 +133,7 @@ kafka/foo/7  Missing partition size information, all replicas may be offline
 				return strconv.Itoa(size)
 			}
 
-			f := func(p *rpadmin.DecommissionPartitions) interface{} {
+			f := func(p *rpadmin.DecommissionPartitions) any {
 				ntp := p.Ns + "/" + p.Topic + "/" + strconv.Itoa(p.Partition)
 				if p.PartitionSize > 0 {
 					completion = p.BytesMoved * 100 / p.PartitionSize

@@ -99,8 +99,9 @@ ss::future<std::vector<recovery_result>> gather_recovery_results(
     results.reserve(result.value().contents.size());
     for (const auto& item : result.value().contents) {
         std::cmatch matches;
-        if (std::regex_match(
-              item.key.begin(), item.key.end(), matches, result_expr)) {
+        if (
+          std::regex_match(
+            item.key.begin(), item.key.end(), matches, result_expr)) {
             results.emplace_back(
               model::topic_namespace{
                 model::ns{matches[1].str()}, model::topic{matches[2].str()}},

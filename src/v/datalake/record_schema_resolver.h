@@ -235,10 +235,9 @@ public:
       = delete;
     latest_subject_schema_resolver(latest_subject_schema_resolver&&) = delete;
     latest_subject_schema_resolver&
-    operator=(const latest_subject_schema_resolver&)
-      = delete;
-    latest_subject_schema_resolver& operator=(latest_subject_schema_resolver&&)
-      = delete;
+    operator=(const latest_subject_schema_resolver&) = delete;
+    latest_subject_schema_resolver&
+    operator=(latest_subject_schema_resolver&&) = delete;
     ~latest_subject_schema_resolver() override = default;
 
     ss::future<checked<type_and_buf, type_resolver::errc>>

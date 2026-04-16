@@ -21,6 +21,7 @@
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/types.h"
+#include "kafka/server/write_at_offset_stm.h"
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -173,6 +174,88 @@ raft::replicate_stages cloud_topic_partition::replicate(
     return _fe->replicate(batch_id, std::move(batch), opts);
 }
 
+namespace {
+
+/// Wraps a cloud_topics::frontend to implement exact_offset_replicator.
+/// For tiered_cloud mode, raw batches go directly through the STM.
+/// For cloud mode, delegates to frontend::replicate_at_offset which
+/// uploads data, generates placeholders, and replicates them via the STM.
+class ct_exact_offset_replicator final : public exact_offset_replicator {
+public:
+    ct_exact_offset_replicator(
+      std::unique_ptr<cloud_topics::frontend> fe,
+      ss::lw_shared_ptr<cluster::partition> partition,
+      ss::shared_ptr<write_at_offset_stm> stm)
+      : _fe(std::move(fe))
+      , _partition(std::move(partition))
+      , _stm(std::move(stm)) {}
+
+    raft::replicate_stages replicate(
+      chunked_vector<model::record_batch> batches,
+      chunked_vector<kafka::offset> expected_base_offsets,
+      std::optional<kafka::offset> prev_log_offset,
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as) final {
+        if (_partition->get_ntp_config().is_tiered_cloud()) {
+            return _stm->replicate(
+              std::move(batches),
+              std::move(expected_base_offsets),
+              prev_log_offset,
+              timeout,
+              as);
+        }
+        raft::replicate_stages out(raft::errc::success);
+        ss::promise<result<raft::replicate_result>> result_promise;
+        out.replicate_finished = result_promise.get_future();
+        out.request_enqueued = ss::now();
+        _fe
+          ->replicate_at_offset(
+            std::move(batches),
+            std::move(expected_base_offsets),
+            prev_log_offset,
+            timeout,
+            as,
+            _stm)
+          .forward_to(std::move(result_promise));
+        return out;
+    }
+
+    ss::future<result<kafka::offset>> get_last_offset(
+      model::timeout_clock::duration sync_timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>>) final {
+        return _stm->get_expected_last_offset(sync_timeout);
+    }
+
+    ss::future<std::error_code> ensure_truncatable(
+      kafka::offset new_start_offset,
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as) final {
+        auto err = co_await _stm->ensure_truncatable(
+          new_start_offset, timeout, as);
+        if (err != write_at_offset_stm::errc::success) {
+            co_return _stm->make_error_code(err);
+        }
+        co_return std::error_code{};
+    }
+
+private:
+    std::unique_ptr<cloud_topics::frontend> _fe;
+    ss::lw_shared_ptr<cluster::partition> _partition;
+    ss::shared_ptr<write_at_offset_stm> _stm;
+};
+
+} // namespace
+
+std::unique_ptr<exact_offset_replicator>
+cloud_topic_partition::make_exact_offset_replicator() && {
+    auto stm = _partition->raft()->stm_manager()->get<write_at_offset_stm>();
+    if (!stm) {
+        return nullptr;
+    }
+    return std::make_unique<ct_exact_offset_replicator>(
+      std::move(_fe), _partition, std::move(stm));
+}
+
 ss::future<std::optional<model::offset>>
 cloud_topic_partition::get_leader_epoch_last_offset(
   kafka::leader_epoch epoch) const {
@@ -246,7 +329,9 @@ cloud_topic_partition::get_cloud_storage_status() const {
     auto l0_size = _fe->get_l0_size_estimate();
     auto l1_size = (co_await _fe->l1_size())
                      .value_or(cloud_topics::l1::metastore::size_response{});
-    status.mode = cluster::cloud_storage_mode::cloud_topic;
+    status.mode = _partition->get_ntp_config().is_tiered_cloud()
+                    ? cluster::cloud_storage_mode::tiered_cloud_topic
+                    : cluster::cloud_storage_mode::cloud_topic;
     status.local_log_size_bytes = local_size;
     // Report the L1 size via "cloud" size bytes and the sum of L0 and L1 sizes
     // via "total" log size bytes. Users can derive the L0 size through total -

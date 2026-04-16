@@ -61,16 +61,14 @@ public:
       bool is_control_batch,
       const iobuf& key,
       model::offset,
-      int32_t)
-      = 0;
+      int32_t) = 0;
 
     virtual ss::future<> index(
       model::record_batch_type,
       bool is_control_batch,
       bytes&&,
       model::offset,
-      int32_t)
-      = 0;
+      int32_t) = 0;
 
     virtual ss::future<> append(compacted_index::entry) = 0;
 

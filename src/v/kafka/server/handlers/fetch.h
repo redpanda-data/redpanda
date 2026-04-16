@@ -36,7 +36,8 @@ using fetch_handler = single_stage_handler<
   4,
   13,
   default_estimate_adaptor,
-  fetch_scheduling_group_provider>;
+  fetch_scheduling_group_provider,
+  latency_hist::yes>;
 
 /*
  * Fetch operation context

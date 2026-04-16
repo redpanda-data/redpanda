@@ -17,7 +17,7 @@ import (
 	"io"
 	"os"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -29,7 +29,7 @@ func norm(header string) string { return strings.TrimSpace(strings.ToUpper(heade
 
 // Confirm prompts the user to confirm the formatted message and returns the
 // confirmation result or an error.
-func Confirm(msg string, args ...interface{}) (bool, error) {
+func Confirm(msg string, args ...any) (bool, error) {
 	var confirmation bool
 	return confirmation, survey.AskOne(&survey.Confirm{
 		Message: fmt.Sprintf(msg, args...),
@@ -96,7 +96,7 @@ func (s *Sections) Add(header string, fn func()) {
 
 // Pick prompts the user to pick one of many options, returning the selected
 // option or an error.
-func Pick(options []string, msg string, args ...interface{}) (string, error) {
+func Pick(options []string, msg string, args ...any) (string, error) {
 	idx, err := PickIndex(options, msg, args...)
 	if err != nil {
 		return "", err
@@ -105,7 +105,7 @@ func Pick(options []string, msg string, args ...interface{}) (string, error) {
 }
 
 // PickIndex is like Pick, but returns the index of the selected option.
-func PickIndex(options []string, msg string, args ...interface{}) (int, error) {
+func PickIndex(options []string, msg string, args ...any) (int, error) {
 	var selected int
 	err := survey.AskOne(&survey.Select{
 		Message: fmt.Sprintf(msg, args...),
@@ -118,12 +118,12 @@ func PickIndex(options []string, msg string, args ...interface{}) (int, error) {
 }
 
 // Prompt prompts the user for input, returning the input or an error.
-func Prompt(msg string, args ...interface{}) (string, error) {
+func Prompt(msg string, args ...any) (string, error) {
 	return PromptWithSuggestion("", msg, args...)
 }
 
 // PromptWithSuggestion prompts the user for input, giving a default choice, returning the input or an error.
-func PromptWithSuggestion(defaultInput string, msg string, args ...interface{}) (string, error) {
+func PromptWithSuggestion(defaultInput string, msg string, args ...any) (string, error) {
 	var input string
 	err := survey.AskOne(&survey.Input{
 		Message: fmt.Sprintf(msg, args...),
@@ -133,7 +133,7 @@ func PromptWithSuggestion(defaultInput string, msg string, args ...interface{}) 
 }
 
 // PromptPassword is like Prompt but the text shows up as *'s.
-func PromptPassword(msg string, args ...interface{}) (string, error) {
+func PromptPassword(msg string, args ...any) (string, error) {
 	var input string
 	err := survey.AskOne(&survey.Password{
 		Message: fmt.Sprintf(msg, args...),
@@ -143,7 +143,7 @@ func PromptPassword(msg string, args ...interface{}) (string, error) {
 
 // Die formats the message with a suffixed newline to stderr and exits the
 // process with 1.
-func Die(msg string, args ...interface{}) {
+func Die(msg string, args ...any) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
 	os.Exit(1)
 }
@@ -156,7 +156,7 @@ func DieString(msg string) {
 }
 
 // MaybeDie calls Die if err is non-nil.
-func MaybeDie(err error, msg string, args ...interface{}) {
+func MaybeDie(err error, msg string, args ...any) {
 	if err != nil {
 		Die(msg, args...)
 	}
@@ -171,7 +171,7 @@ func MaybeDieErr(err error) {
 
 // Exit formats the message with a suffixed newline to stdout and exist
 // successfully with 0.
-func Exit(msg string, args ...interface{}) {
+func Exit(msg string, args ...any) {
 	fmt.Printf(msg+"\n", args...)
 	os.Exit(0)
 }
@@ -194,7 +194,7 @@ func HandleShardError(name string, err error) {
 		for _, e := range se.Errs {
 			bs = append(bs, e.Broker.NodeID)
 		}
-		sort.Slice(bs, func(i, j int) bool { return bs[i] < bs[j] })
+		slices.Sort(bs)
 		fmt.Printf("%s request failed to broker IDs %v, first error: %s\n", se.Name, bs, se.Errs[0].Err)
 
 	case errors.As(err, &ae):
@@ -207,7 +207,7 @@ func HandleShardError(name string, err error) {
 	}
 }
 
-func args2strings(args []interface{}) []string {
+func args2strings(args []any) []string {
 	sargs := make([]string, len(args))
 	for i, arg := range args {
 		sargs[i] = fmt.Sprint(arg)
@@ -235,7 +235,7 @@ func NewTable(headers ...string) *TabWriter {
 
 // NewTableTo is NewTable writing to w.
 func NewTableTo(w io.Writer, headers ...string) *TabWriter {
-	var iheaders []interface{}
+	var iheaders []any
 	for _, header := range headers {
 		iheaders = append(iheaders, norm(header))
 	}
@@ -260,7 +260,7 @@ func NewTabWriterTo(w io.Writer) *TabWriter {
 
 // Print stringifies the arguments and prints them tab-delimited and
 // newline-suffixed to the tab writer.
-func (t *TabWriter) Print(args ...interface{}) {
+func (t *TabWriter) Print(args ...any) {
 	t.PrintStrings(args2strings(args)...)
 }
 
@@ -278,15 +278,15 @@ func (t *TabWriter) PrintStrings(args ...string) {
 //
 // The purpose of this function is for progressive building of output arguments
 // while still ensuring type checking.
-func StructFields(s interface{}) []interface{} {
+func StructFields(s any) []any {
 	v := reflect.ValueOf(s)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = reflect.Indirect(v)
 	}
 	if v.Kind() != reflect.Struct {
 		panic("PrintStructFields not called on a *reflect.Struct nor a reflect.Struct!")
 	}
-	var fields []interface{}
+	var fields []any
 	typ := v.Type()
 	for i := 0; i < v.NumField(); i++ {
 		if typ.Field(i).PkgPath != "" {
@@ -303,23 +303,23 @@ func StructFields(s interface{}) []interface{} {
 // defined field types. Rather than passing arguments blindly to Print, you can
 // put those arguments in your helper struct to *ensure* there are no breaking
 // output changes if any field changes types.
-func (t *TabWriter) PrintStructFields(s interface{}) {
+func (t *TabWriter) PrintStructFields(s any) {
 	t.Print(StructFields(s)...)
 }
 
 // PrintColumn is the same as Print, but prints header uppercased as the first
 // argument.
-func (t *TabWriter) PrintColumn(header string, args ...interface{}) {
+func (t *TabWriter) PrintColumn(header string, args ...any) {
 	header = norm(header)
-	t.Print(append([]interface{}{header}, args...)...)
+	t.Print(append([]any{header}, args...)...)
 }
 
 // Line prints a newline in our tab writer. This will reset tab spacing.
-func (t *TabWriter) Line(sprint ...interface{}) {
+func (t *TabWriter) Line(sprint ...any) {
 	fmt.Fprint(t.Writer, append(sprint, "\n")...)
 }
 
-func WithLogBanner(s string, additionalArgs ...interface{}) string {
+func WithLogBanner(s string, additionalArgs ...any) string {
 	if len(additionalArgs) == 0 {
 		return fmt.Sprintf("================ %s ===============", s)
 	} else {

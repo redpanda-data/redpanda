@@ -38,7 +38,7 @@ type (
 		SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
 		SchemaRegistryClient *KafkaClient       `yaml:"schema_registry_client,omitempty" json:"schema_registry_client,omitempty"`
 
-		Other map[string]interface{} `yaml:",inline"`
+		Other map[string]any `yaml:",inline"`
 	}
 
 	// RedpandaNodeConfig is the source of truth for Redpanda node configuration.
@@ -66,14 +66,14 @@ type (
 		DeveloperMode              bool                      `yaml:"developer_mode,omitempty" json:"developer_mode"`
 		RecoveryModeEnabled        bool                      `yaml:"recovery_mode_enabled,omitempty" json:"recovery_mode_enabled,omitempty"`
 		CrashLoopLimit             *int                      `yaml:"crash_loop_limit,omitempty" json:"crash_loop_limit"`
-		Other                      map[string]interface{}    `yaml:",inline"`
+		Other                      map[string]any            `yaml:",inline"`
 	}
 
 	Pandaproxy struct {
 		PandaproxyAPI           []NamedAuthNSocketAddress `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
 		PandaproxyAPITLS        []ServerTLS               `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
 		AdvertisedPandaproxyAPI []NamedSocketAddress      `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
-		Other                   map[string]interface{}    `yaml:",inline"`
+		Other                   map[string]any            `yaml:",inline"`
 	}
 
 	SchemaRegistry struct {
@@ -83,12 +83,12 @@ type (
 	}
 
 	KafkaClient struct {
-		Brokers       []SocketAddress        `yaml:"brokers,omitempty" json:"brokers,omitempty"`
-		BrokerTLS     ServerTLS              `yaml:"broker_tls,omitempty" json:"broker_tls,omitempty"`
-		SASLMechanism *string                `yaml:"sasl_mechanism,omitempty" json:"sasl_mechanism,omitempty"`
-		SCRAMUsername *string                `yaml:"scram_username,omitempty" json:"scram_username,omitempty"`
-		SCRAMPassword *string                `yaml:"scram_password,omitempty" json:"scram_password,omitempty"`
-		Other         map[string]interface{} `yaml:",inline"`
+		Brokers       []SocketAddress `yaml:"brokers,omitempty" json:"brokers,omitempty"`
+		BrokerTLS     ServerTLS       `yaml:"broker_tls,omitempty" json:"broker_tls"`
+		SASLMechanism *string         `yaml:"sasl_mechanism,omitempty" json:"sasl_mechanism,omitempty"`
+		SCRAMUsername *string         `yaml:"scram_username,omitempty" json:"scram_username,omitempty"`
+		SCRAMPassword *string         `yaml:"scram_password,omitempty" json:"scram_password,omitempty"`
+		Other         map[string]any  `yaml:",inline"`
 	}
 
 	SeedServer struct {
@@ -131,13 +131,13 @@ type (
 	}
 
 	ServerTLS struct {
-		Name              string                 `yaml:"name,omitempty" json:"name"`
-		KeyFile           string                 `yaml:"key_file,omitempty" json:"key_file"`
-		CertFile          string                 `yaml:"cert_file,omitempty" json:"cert_file"`
-		TruststoreFile    string                 `yaml:"truststore_file,omitempty" json:"truststore_file"`
-		Enabled           bool                   `yaml:"enabled,omitempty" json:"enabled"`
-		RequireClientAuth bool                   `yaml:"require_client_auth,omitempty" json:"require_client_auth"`
-		Other             map[string]interface{} `yaml:",inline" `
+		Name              string         `yaml:"name,omitempty" json:"name"`
+		KeyFile           string         `yaml:"key_file,omitempty" json:"key_file"`
+		CertFile          string         `yaml:"cert_file,omitempty" json:"cert_file"`
+		TruststoreFile    string         `yaml:"truststore_file,omitempty" json:"truststore_file"`
+		Enabled           bool           `yaml:"enabled,omitempty" json:"enabled"`
+		RequireClientAuth bool           `yaml:"require_client_auth,omitempty" json:"require_client_auth"`
+		Other             map[string]any `yaml:",inline" `
 	}
 
 	RpkNodeConfig struct {

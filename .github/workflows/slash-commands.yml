@@ -29,6 +29,7 @@ jobs:
             cdt
             ci-repeat
             dt
+            install-pack
             microbench
             rp-unit-test
             test-arm64

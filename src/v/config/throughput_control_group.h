@@ -93,10 +93,11 @@ validate_throughput_control_groups(const InputIt first, const InputIt last) {
         if (i->is_noname()) {
             continue;
         }
-        if (unlikely(
-              std::any_of(first, i, [i](const throughput_control_group& cg) {
-                  return cg.name == i->name;
-              }))) {
+        if (
+          unlikely(
+            std::any_of(first, i, [i](const throughput_control_group& cg) {
+                return cg.name == i->name;
+            }))) {
             return ss::format(
               "Duplicate throughput control group name: {}", i->name);
         }

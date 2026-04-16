@@ -316,9 +316,8 @@ struct topic_partition_view {
     model::topic_view topic;
     model::partition_id partition;
     friend std::ostream& operator<<(std::ostream&, const topic_partition_view&);
-    friend auto
-    operator<=>(const topic_partition_view&, const topic_partition_view&)
-      = default;
+    friend auto operator<=>(
+      const topic_partition_view&, const topic_partition_view&) = default;
     template<typename H>
     friend H AbslHashValue(H h, const topic_partition_view& tp) {
         return H::combine(std::move(h), tp.topic, tp.partition);
@@ -567,11 +566,9 @@ struct topic_id : named_type<uuid_t, struct topic_id_tag> {
     fmt::iterator format_to(fmt::iterator it) const;
 
     constexpr friend bool
-    operator==(const topic_id& lhs, const topic_id& rhs) noexcept
-      = default;
+    operator==(const topic_id& lhs, const topic_id& rhs) noexcept = default;
     constexpr friend auto
-    operator<=>(const topic_id& lhs, const topic_id& rhs) noexcept
-      = default;
+    operator<=>(const topic_id& lhs, const topic_id& rhs) noexcept = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const topic_id& u) {

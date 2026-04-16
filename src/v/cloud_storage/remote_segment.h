@@ -391,8 +391,8 @@ public:
     operator=(remote_segment_batch_reader&&) noexcept = delete;
     // clang-format on
     remote_segment_batch_reader(const remote_segment_batch_reader&) = delete;
-    remote_segment_batch_reader& operator=(const remote_segment_batch_reader&)
-      = delete;
+    remote_segment_batch_reader&
+    operator=(const remote_segment_batch_reader&) = delete;
     ~remote_segment_batch_reader() noexcept;
 
     ss::future<result<chunked_circular_buffer<model::record_batch>>> read_some(

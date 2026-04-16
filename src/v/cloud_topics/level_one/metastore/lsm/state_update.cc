@@ -531,6 +531,16 @@ add_objects_db_update::validate_inputs() const {
         }
         auto expected_next = extents.begin()->base_offset;
         for (const auto& extent : extents) {
+            if (extent.base_offset > extent.last_offset) {
+                return std::unexpected(db_update_error(
+                  invalid_input,
+                  fmt::format(
+                    "Input object has inverted extent for partition {}: "
+                    "base_offset {} > last_offset {}",
+                    tidp,
+                    extent.base_offset,
+                    extent.last_offset)));
+            }
             if (extent.base_offset != expected_next) {
                 return std::unexpected(db_update_error(
                   invalid_input,
@@ -893,6 +903,20 @@ replace_objects_db_update::validate_inputs() const {
     sorted_extents_by_tidp_t new_extents_by_tp;
     for (const auto& o : new_objects) {
         o.collect_extents_by_tidp(&new_extents_by_tp);
+    }
+    for (const auto& [tidp, extents] : new_extents_by_tp) {
+        for (const auto& extent : extents) {
+            if (extent.base_offset > extent.last_offset) {
+                return std::unexpected(db_update_error(
+                  invalid_input,
+                  fmt::format(
+                    "Input object has inverted extent for partition {}: "
+                    "base_offset {} > last_offset {}",
+                    tidp,
+                    extent.base_offset,
+                    extent.last_offset)));
+            }
+        }
     }
 
     auto contiguous_intervals = contiguous_intervals_for_extents(

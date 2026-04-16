@@ -142,8 +142,9 @@ struct replication_factor_must_be_greater_or_equal_to_minimum {
     static bool is_valid(const creatable_topic& c, features::feature_table*) {
         // All topics being validated as this level will be created in the kafka
         // namespace
-        if (model::is_user_topic(
-              model::topic_namespace{model::kafka_namespace, c.name})) {
+        if (
+          model::is_user_topic(
+            model::topic_namespace{model::kafka_namespace, c.name})) {
             if (!c.assignments.empty()) {
                 return true;
             } else {
@@ -452,11 +453,12 @@ struct iceberg_target_lag_ms_validator {
     static constexpr error_code ec = error_code::invalid_config;
 
     static bool is_valid(const creatable_topic& c, features::feature_table*) {
-        if (auto it = std::ranges::find(
-              c.configs,
-              topic_property_iceberg_target_lag_ms,
-              &createable_topic_config::name);
-            it != c.configs.end() && it->value.has_value()) {
+        if (
+          auto it = std::ranges::find(
+            c.configs,
+            topic_property_iceberg_target_lag_ms,
+            &createable_topic_config::name);
+          it != c.configs.end() && it->value.has_value()) {
             try {
                 using namespace std::chrono_literals;
                 auto val = boost::lexical_cast<std::chrono::milliseconds::rep>(
@@ -544,6 +546,8 @@ struct storage_mode_config_validator {
     static constexpr const char* error_message
       = "Invalid storage mode: 'cloud' requires cloud topics to be enabled and "
         "the cluster to be fully upgraded to at least v26.1.1, "
+        "'tiered_cloud' additionally requires the tiered_cloud_topics feature "
+        "to be explicitly enabled, "
         "'tiered' requires cloud storage to be enabled.";
     static constexpr error_code ec = error_code::invalid_config;
 
@@ -571,6 +575,13 @@ struct storage_mode_config_validator {
             if (
               ft == nullptr
               || !ft->is_active(features::feature::cloud_topics)) {
+                return false;
+            }
+            return config::shard_local_cfg().cloud_topics_enabled();
+        case model::redpanda_storage_mode::tiered_cloud:
+            if (
+              ft == nullptr || !ft->is_active(features::feature::cloud_topics)
+              || !ft->is_active(features::feature::tiered_cloud_topics)) {
                 return false;
             }
             return config::shard_local_cfg().cloud_topics_enabled();
