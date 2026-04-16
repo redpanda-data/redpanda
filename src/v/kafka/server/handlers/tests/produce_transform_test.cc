@@ -45,9 +45,11 @@ records_to_transformed(model::record_batch& batch) {
     return out;
 }
 
-/// Mirrors the batch reconstruction logic in produce.cc:
+/// Mirrors the batch reconstruction logic in produce_path_executor.cc:
 ///   1. make_batch from transformed_data
-///   2. transplant identity fields from the original header
+///   2. transplant idempotent identity fields from the original header
+///   3. preserve transactional bit (but not compression bits)
+///   4. recompute crc / header_crc after mutating the header
 model::record_batch reconstruct_batch(
   const model::record_batch_header& orig_header,
   ss::chunked_fifo<model::transformed_data> records) {
@@ -56,7 +58,12 @@ model::record_batch reconstruct_batch(
     new_batch.header().producer_id = orig_header.producer_id;
     new_batch.header().producer_epoch = orig_header.producer_epoch;
     new_batch.header().base_sequence = orig_header.base_sequence;
-    new_batch.header().attrs = orig_header.attrs;
+    if (orig_header.attrs.is_transactional()) {
+        new_batch.header().attrs.set_transactional_type();
+    }
+    new_batch.header().crc = model::crc_record_batch(new_batch);
+    new_batch.header().header_crc = model::internal_header_only_crc(
+      new_batch.header());
     return new_batch;
 }
 
@@ -74,14 +81,31 @@ TEST(ProduceTransformTest, BatchReconstructionPreservesIdentity) {
     EXPECT_EQ(result.header().first_timestamp, orig_header.first_timestamp);
 }
 
-TEST(ProduceTransformTest, BatchReconstructionPreservesAttributes) {
+TEST(ProduceTransformTest, BatchReconstructionPreservesTransactionalBit) {
     auto batch = make_idempotent_batch(2);
     auto orig_header = batch.header();
     auto transformed = records_to_transformed(batch);
 
     auto result = reconstruct_batch(orig_header, std::move(transformed));
 
-    EXPECT_EQ(result.header().attrs, orig_header.attrs);
+    EXPECT_EQ(
+      result.header().attrs.is_transactional(),
+      orig_header.attrs.is_transactional());
+}
+
+TEST(ProduceTransformTest, BatchReconstructionDropsCompressionBits) {
+    // wasmtime decompresses the input before the transform runs, so the
+    // reconstructed batch must not claim the original's compression.
+    auto batch = make_idempotent_batch(2);
+    auto orig_header = batch.header();
+    // Simulate a compressed input by setting compression bits on the
+    // original header's attrs.
+    orig_header.attrs |= model::compression::zstd;
+    auto transformed = records_to_transformed(batch);
+
+    auto result = reconstruct_batch(orig_header, std::move(transformed));
+
+    EXPECT_EQ(result.header().attrs.compression(), model::compression::none);
 }
 
 TEST(ProduceTransformTest, BatchReconstructionPreservesRecordContent) {

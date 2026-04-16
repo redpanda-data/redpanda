@@ -804,6 +804,7 @@ service::get_produce_path_engine(model::transform_id id) {
     }
     auto name = meta->name();
     auto output_topics = meta->output_topics;
+    auto compression_mode = meta->compression_mode;
     auto engine = co_await create_engine(std::move(*meta));
     if (!engine) {
         co_return std::nullopt;
@@ -812,6 +813,7 @@ service::get_produce_path_engine(model::transform_id id) {
       .engine = std::move(*engine),
       .name = std::move(name),
       .output_topics = std::move(output_topics),
+      .compression_mode = compression_mode,
     };
 }
 

@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "container/chunked_hash_map.h"
+#include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
@@ -107,6 +108,7 @@ private:
         ss::shared_ptr<wasm::engine> engine;
         std::unique_ptr<wasm::transform_probe> probe;
         std::vector<model::topic_namespace> output_topics;
+        model::compression compression_mode{model::compression::none};
     };
 
     ss::future<engine_entry*> get_or_create_engine(model::transform_id);

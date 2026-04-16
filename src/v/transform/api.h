@@ -123,6 +123,7 @@ public:
         ss::shared_ptr<wasm::engine> engine;
         ss::sstring name;
         std::vector<model::topic_namespace> output_topics;
+        model::compression compression_mode{model::compression::none};
     };
 
     /// Acquire a WASM engine for a produce-path transform.

@@ -12,6 +12,7 @@
 #include "transform/produce_path_executor.h"
 
 #include "cluster/errc.h"
+#include "model/batch_compression.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/transform.h"
@@ -108,14 +109,21 @@ ss::future<execute_result> produce_path_executor::execute(
     }
 
     // Write fan-out batches to output topics before returning the input
-    // batch. Failure here means the caller should not write the input
-    // batch -- giving us all-or-nothing semantics.
+    // batch. If a fan-out write fails, the produce is rejected entirely,
+    // so no input-topic record is written either. However, if fan-out
+    // succeeds but the subsequent input-batch replication fails, the
+    // fan-out records will have been written without the corresponding
+    // input record -- this is best-effort, not atomic.
     for (auto& [topic_ns, recs] : output_records) {
         if (recs.empty()) {
             continue;
         }
         auto fanout_batch = model::transformed_data::make_batch(
           model::timestamp::now(), std::move(recs));
+        if (entry->compression_mode != model::compression::none) {
+            fanout_batch = co_await model::compress_batch(
+              entry->compression_mode, std::move(fanout_batch));
+        }
 
         ss::chunked_fifo<model::record_batch> batches;
         batches.push_back(std::move(fanout_batch));
@@ -149,10 +157,26 @@ ss::future<execute_result> produce_path_executor::execute(
         new_batch.header().producer_id = orig_header.producer_id;
         new_batch.header().producer_epoch = orig_header.producer_epoch;
         new_batch.header().base_sequence = orig_header.base_sequence;
-        new_batch.header().attrs = orig_header.attrs;
-        new_batch.header().crc = model::crc_record_batch(new_batch);
-        new_batch.header().header_crc = model::internal_header_only_crc(
-          new_batch.header());
+        // Preserve the transactional bit from the original batch so
+        // downstream rm_stm treats this the same way. Never copy the
+        // original's compression bits: wasmtime decompressed the input
+        // before the transform ran, so the batch we're building here
+        // starts uncompressed. Output compression is set by the
+        // transform's configured compression_mode below.
+        if (orig_header.attrs.is_transactional()) {
+            new_batch.header().attrs.set_transactional_type();
+        }
+        if (entry->compression_mode != model::compression::none) {
+            // compress_batch resets size/crc/header_crc internally.
+            new_batch = co_await model::compress_batch(
+              entry->compression_mode, std::move(new_batch));
+        } else {
+            // Header fields were mutated after make_batch; recompute
+            // checksums to match.
+            new_batch.header().crc = model::crc_record_batch(new_batch);
+            new_batch.header().header_crc = model::internal_header_only_crc(
+              new_batch.header());
+        }
 
         co_return std::make_unique<model::record_batch>(std::move(new_batch));
     }
@@ -219,6 +243,7 @@ produce_path_executor::get_or_create_engine(model::transform_id id) {
         .engine = std::move(result->engine),
         .probe = std::move(probe),
         .output_topics = std::move(result->output_topics),
+        .compression_mode = result->compression_mode,
       });
     co_return &inserted->second;
 }
