@@ -623,6 +623,47 @@ ss::future<> versioned_report_serde::serde_async_read(
     }
 }
 
+node_health_report
+to_node_health_report(model::node_id id, const node_health& nh) {
+    node_health_report::topics_t topics;
+    for (const auto& [tp_ns, data_parts] : nh.snapshot->data) {
+        auto& statuses = topics[tp_ns];
+        statuses.reserve(data_parts.size());
+        auto meta_topic_it = nh.metadata->find(tp_ns);
+        for (const auto& [p_id, data] : data_parts) {
+            partition_status ps;
+            ps.id = p_id;
+            ps.size_bytes = data.size_bytes;
+            ps.high_watermark = data.high_watermark;
+            ps.log_start_offset = data.log_start_offset;
+            ps.reclaimable_size_bytes = data.reclaimable_size_bytes;
+            ps.cloud_topic_max_gc_eligible_epoch
+              = data.cloud_topic_max_gc_eligible_epoch;
+            if (meta_topic_it != nh.metadata->end()) {
+                auto meta_it = meta_topic_it->second.find(p_id);
+                if (meta_it != meta_topic_it->second.end()) {
+                    const auto& meta = meta_it->second;
+                    ps.term = meta.term;
+                    ps.leader_id = meta.leader_id;
+                    ps.revision_id = meta.revision_id;
+                    ps.under_replicated_replicas
+                      = meta.under_replicated_replicas;
+                    ps.followers_stats = meta.followers_stats;
+                    ps.shard = meta.shard;
+                }
+            }
+            statuses.emplace(p_id, std::move(ps));
+        }
+    }
+
+    return node_health_report{
+      id,
+      nh.snapshot->local_state,
+      std::move(topics),
+      nh.snapshot->drain_status,
+      nh.snapshot->liveness};
+}
+
 } // namespace cluster::health
 
 namespace cluster {

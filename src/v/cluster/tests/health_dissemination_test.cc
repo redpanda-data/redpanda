@@ -801,3 +801,56 @@ TEST(HealthPullReply, InternalToSerdeRoundTrip) {
     check_ts(
       *restored_report.health.snapshot, *original_report.health.snapshot);
 }
+
+// --- to_node_health_report conversion ---
+
+TEST(NodeHealthConversion, RoundTrip) {
+    // Build a node_health with known data
+    node_health nh;
+    nh.snapshot = ss::make_lw_shared<const health_snapshot>();
+    nh.metadata = ss::make_lw_shared<topic_partition_metadata_map>();
+
+    // Add partition data (data tier)
+    auto snap = ss::make_lw_shared<health_snapshot>();
+    snap->data[tp_ns].emplace(
+      model::partition_id{0},
+      partition_data{.size_bytes = 1000, .high_watermark = kafka::offset{42}});
+    snap->data[tp_ns].emplace(
+      model::partition_id{1},
+      partition_data{.size_bytes = 2000, .high_watermark = kafka::offset{99}});
+    nh.snapshot = std::move(snap);
+
+    // Add partition metadata (metadata tier)
+    (*nh.metadata)[tp_ns].emplace(
+      model::partition_id{0},
+      partition_metadata{
+        .term = model::term_id{5}, .leader_id = model::node_id{0}, .shard = 1});
+    (*nh.metadata)[tp_ns].emplace(
+      model::partition_id{1},
+      partition_metadata{
+        .term = model::term_id{3}, .leader_id = model::node_id{2}, .shard = 0});
+
+    // Convert to old-style report
+    auto report = to_node_health_report(model::node_id{7}, nh);
+
+    EXPECT_EQ(report.id, model::node_id{7});
+    ASSERT_TRUE(report.topics.contains(tp_ns));
+    auto& parts = report.topics.at(tp_ns);
+    ASSERT_EQ(parts.size(), 2);
+
+    // Check partition 0: data + metadata zipped correctly
+    auto& p0 = parts.at(model::partition_id{0});
+    EXPECT_EQ(p0.size_bytes, 1000);
+    EXPECT_EQ(p0.high_watermark, kafka::offset{42});
+    EXPECT_EQ(p0.term, model::term_id{5});
+    EXPECT_EQ(p0.leader_id, model::node_id{0});
+    EXPECT_EQ(p0.shard, 1);
+
+    // Check partition 1
+    auto& p1 = parts.at(model::partition_id{1});
+    EXPECT_EQ(p1.size_bytes, 2000);
+    EXPECT_EQ(p1.high_watermark, kafka::offset{99});
+    EXPECT_EQ(p1.term, model::term_id{3});
+    EXPECT_EQ(p1.leader_id, model::node_id{2});
+    EXPECT_EQ(p1.shard, 0);
+}

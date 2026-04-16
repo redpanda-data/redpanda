@@ -1008,6 +1008,11 @@ struct versioned_report_serde
 using health_update_serde
   = serde::variant<diff_entry_serde, versioned_report_serde>;
 
+/// Convert new-style node_health to old-style node_health_report for
+/// consumers. Zips the two-tier partition data back into flat partition_status.
+node_health_report
+to_node_health_report(model::node_id id, const node_health& nh);
+
 } // namespace cluster::health
 
 namespace cluster {
