@@ -20,6 +20,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/schema_registry/authorization.h"
+#include "pandaproxy/schema_registry/context_router.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
@@ -1514,7 +1515,7 @@ delete_context(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
 
     auto ctx_str = parse::request_param<ss::sstring>(*rq.req, "context");
-    auto ctx = context{ctx_str};
+    auto ctx = context{normalize_context(ctx_str)};
 
     if (ctx == default_context) {
         throw as_exception(

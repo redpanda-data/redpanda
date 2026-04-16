@@ -5666,6 +5666,34 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
         result = self.sr_client.delete_context(".nonexistent")
         self.assert_equal(result.status_code, 404)
 
+        # Test context alias normalization for delete:
+        # All alias forms for the same context should resolve and delete it.
+        alias_ctx = ".alias-ctx"
+        alias_subject = f":{alias_ctx}:alias-sub"
+        for delete_alias in ["alias-ctx", ":.alias-ctx:", ".alias-ctx"]:
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=alias_subject,
+                data=json.dumps({"schema": schema1_def}),
+            )
+            self.assert_equal(result.status_code, requests.codes.ok)
+            result = self.sr_client.delete_subject(subject=alias_subject)
+            self.assert_equal(result.status_code, requests.codes.ok)
+            result = self.sr_client.delete_subject(
+                subject=alias_subject, permanent=True
+            )
+            self.assert_equal(result.status_code, requests.codes.ok)
+
+            result = self.sr_client.delete_context(delete_alias)
+            self.assert_equal(
+                result.status_code,
+                204,
+                f"delete_context({delete_alias!r}) should succeed",
+            )
+
+        # Verify default context rejection works with alias form ":.:"
+        result = self.sr_client.delete_context(":.:")
+        self.assert_equal(result.status_code, 422)
+
     @cluster(num_nodes=1)
     def test_get_schema_by_id_with_subject(self):
         """Test GET /schemas/ids/{id} with subject query parameter for context lookup."""
