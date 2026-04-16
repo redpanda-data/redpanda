@@ -1393,8 +1393,9 @@ class SchemaRegistryEndpoints(RedpandaTest):
         compression_type: Optional[TopicSpec.CompressionTypes] = None,
         context_name_strategy: Optional[str] = None,
         context_name: Optional[str] = None,
+        schema_registry_url: Optional[str] = None,
     ):
-        schema_reg = self.redpanda.schema_reg().split(",", 1)[0]
+        schema_reg = schema_registry_url or self.redpanda.schema_reg().split(",", 1)[0]
         sec_cfg = self.redpanda.kafka_client_security().to_dict()
 
         return SerdeClient(
@@ -7329,6 +7330,53 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
         )
         assert result.status_code == requests.codes.ok, (
             f"DELETE mode failed: {result.text}"
+        )
+
+    @cluster(num_nodes=4)
+    @parametrize(client_type=SerdeClientType.Python)
+    @parametrize(client_type=SerdeClientType.Golang)
+    @parametrize(client_type=SerdeClientType.Java)
+    def test_context_prefix_serde_client(self, client_type):
+        """
+        Verify a serde client can target a context by setting the schema
+        registry URL to /contexts/{context}. This is the acceptance test
+        for CORE-15191.
+        """
+        topic = f"serde-context-prefix-{client_type.name.lower()}"
+        ctx = ".serde"
+        self._create_topic(topic=topic)
+
+        # Build context-prefixed SR URL
+        schema_reg_base = self.redpanda.schema_reg().split(",", 1)[0]
+        context_sr_url = f"{schema_reg_base}/contexts/{ctx}"
+
+        client = self._get_serde_client(
+            SchemaType.AVRO,
+            client_type,
+            topic,
+            5,
+            schema_registry_url=context_sr_url,
+        )
+        client.start()
+        client.wait()
+
+        # Verify schemas landed in the context
+        result = self.sr_client.request(
+            "GET",
+            "subjects",
+            params={"subjectPrefix": f":{ctx}:"},
+        )
+        assert result.status_code == 200, result.text
+        subjects = result.json()
+        expected_subject = f":{ctx}:{topic}-value"
+        assert expected_subject in subjects, (
+            f"Expected {expected_subject} in {subjects}"
+        )
+
+        # Verify default context does NOT have this subject
+        result = self.sr_client.request("GET", f"subjects/{topic}-value/versions")
+        assert result.status_code == 404, (
+            f"Expected 404 for default context, got {result.status_code}"
         )
 
 
