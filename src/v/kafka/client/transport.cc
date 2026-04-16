@@ -107,7 +107,8 @@ ss::future<> transport::read_loop() {
         _pending_requests.erase(it);
         std::optional<tagged_fields> reply_tags;
         if (entry->is_flexible) {
-            auto [tags, bytes_read] = co_await parse_tags(in());
+            auto [tags, bytes_read] = co_await parse_tags(
+              in(), bytes_remaining);
             reply_tags = std::move(tags);
             bytes_remaining -= bytes_read;
         }

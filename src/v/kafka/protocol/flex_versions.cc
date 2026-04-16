@@ -9,6 +9,7 @@
 
 #include "kafka/protocol/flex_versions.h"
 
+#include "base/units.h"
 #include "kafka/protocol/messages.h"
 #include "kafka/protocol/types.h"
 #include "kafka/protocol/wire.h"
@@ -16,8 +17,6 @@
 #include "utils/vint_iostream.h"
 
 #include <seastar/core/iostream.hh>
-
-#include <stdexcept>
 
 namespace kafka {
 
@@ -49,6 +48,11 @@ get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
 constexpr auto g_flex_mapping = get_flexible_request_min_versions_list(
   request_types());
 
+struct protocol_parse_exception : public net::parsing_exception {
+    explicit protocol_parse_exception(const std::string& m)
+      : net::parsing_exception(m) {}
+};
+
 } // namespace
 
 bool flex_versions::is_flexible_request(api_key key, api_version version) {
@@ -67,9 +71,20 @@ bool flex_versions::is_api_in_schema(api_key key) noexcept {
     return first_flex_version != invalid_api;
 }
 
+namespace {
+// TODO(C++26): replace with std::sub_sat
+size_t sub_sat(size_t a, size_t b) {
+    size_t c = 0;
+    if (!__builtin_sub_overflow(a, b, &c)) {
+        return c;
+    }
+    return 0;
+}
+} // namespace
+
 ss::future<std::pair<std::optional<tagged_fields>, size_t>>
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
-parse_tags(ss::input_stream<char>& src) {
+parse_tags(ss::input_stream<char>& src, size_t max_bytes) {
     size_t total_bytes_read = 0;
     auto read_unsigned_vint =
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
@@ -94,18 +109,37 @@ parse_tags(ss::input_stream<char>& src) {
     while (num_tags-- > 0) {
         auto id = co_await read_unsigned_vint(total_bytes_read, src);
         auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
+        if (next_len > sub_sat(max_bytes, total_bytes_read)) {
+            throw protocol_parse_exception(
+              fmt::format(
+                "tagged field {} length {} exceeds remaining message budget {}",
+                id,
+                next_len,
+                max_bytes - total_bytes_read));
+        }
         if (next_len > 128_KiB) {
-            throw std::invalid_argument(
-              fmt::format("Too large of a tagged field: {}", next_len));
+            throw protocol_parse_exception(
+              fmt::format(
+                "tagged field {} length {} exceeds 128 KiB limit",
+                id,
+                next_len));
         }
         auto buf = co_await src.read_exactly(next_len);
+        if (buf.size() != next_len) {
+            throw protocol_parse_exception(
+              fmt::format(
+                "short read for tagged field {} length {} but got {}",
+                id,
+                next_len,
+                buf.size()));
+        }
         bytes data(bytes::initialized_later{}, buf.size());
         std::copy_n(buf.begin(), buf.size(), data.begin());
         total_bytes_read += next_len;
         auto [_, succeded] = tags.emplace(tag_id(id), std::move(data));
         if (!succeded) {
-            throw std::logic_error(
-              fmt::format("Protocol error, duplicate tag id detected, {}", id));
+            throw protocol_parse_exception(
+              fmt::format("duplicate tag id detected: {}", id));
         }
     }
     co_return std::make_pair(std::move(tags), total_bytes_read);
@@ -113,7 +147,6 @@ parse_tags(ss::input_stream<char>& src) {
 
 namespace {
 struct invalid_buffer_size_exception : public net::parsing_exception {
-public:
     explicit invalid_buffer_size_exception(const std::string& m)
       : net::parsing_exception(m) {}
 };

@@ -480,7 +480,7 @@ ss::future<> connection_context::process_one_request() {
         }
     }
 
-    auto h = co_await parse_header(conn->input());
+    auto h = co_await parse_header(conn->input(), sz.value());
     _server.probe().add_bytes_received(sz.value());
     if (!h) {
         vlog(klog.debug, "could not parse header from client: {}", conn->addr);

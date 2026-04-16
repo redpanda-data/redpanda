@@ -73,6 +73,7 @@ redpanda_cc_library(
     deps = [
         ":messages",
         ":protocol",
+        "//src/v/base",
         "//src/v/net:types",
         "//src/v/utils:vint",
         "@seastar",

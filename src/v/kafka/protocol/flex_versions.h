@@ -42,6 +42,6 @@ public:
 };
 
 ss::future<std::pair<std::optional<tagged_fields>, size_t>>
-parse_tags(ss::input_stream<char>&);
+parse_tags(ss::input_stream<char>&, size_t max_bytes);
 
 } // namespace kafka
