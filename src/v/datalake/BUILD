@@ -238,11 +238,16 @@ redpanda_cc_library(
         "table_definition.cc",
     ],
     hdrs = [
+        "schema_descriptor.h",
         "table_definition.h",
     ],
     visibility = [":__subpackages__"],
     deps = [
+        "//src/v/iceberg:datatypes",
         "//src/v/iceberg:schema",
+        "//src/v/iceberg:values",
+        "//src/v/model",
+        "@seastar",
     ],
 )
 

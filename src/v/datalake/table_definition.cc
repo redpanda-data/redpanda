@@ -10,52 +10,61 @@
 #include "datalake/table_definition.h"
 
 namespace datalake {
-using namespace iceberg;
-struct_type schemaless_struct_type() {
-    using namespace iceberg;
-    struct_type system_fields;
-    system_fields.fields.emplace_back(
-      nested_field::create(2, "partition", field_required::no, int_type{}));
-    system_fields.fields.emplace_back(
-      nested_field::create(3, "offset", field_required::no, long_type{}));
-    system_fields.fields.emplace_back(
-      nested_field::create(
-        4, "timestamp", field_required::no, timestamptz_type{}));
 
-    struct_type headers_kv;
-    headers_kv.fields.emplace_back(
-      nested_field::create(7, "key", field_required::no, string_type{}));
-    headers_kv.fields.emplace_back(
-      nested_field::create(8, "value", field_required::no, binary_type{}));
-    system_fields.fields.emplace_back(
-      nested_field::create(
-        5,
-        "headers",
-        field_required::no,
-        list_type::create(6, field_required::no, std::move(headers_kv))));
-
-    system_fields.fields.emplace_back(
-      nested_field::create(9, "key", field_required::no, binary_type{}));
-    system_fields.fields.emplace_back(
-      nested_field::create(
-        10, "timestamp_type", field_required::no, int_type{}));
-    struct_type res;
-    res.fields.emplace_back(
-      nested_field::create(
-        1,
-        ss::sstring{rp_struct_name},
-        field_required::no,
-        std::move(system_fields)));
-
-    return res;
+iceberg::struct_type schemaless_struct_type() {
+    return schemaless_desc::build();
 }
 
-schema default_schema() {
-    return {
+iceberg::schema default_schema() {
+    return iceberg::schema{
       .schema_struct = schemaless_struct_type(),
-      .schema_id = iceberg::schema::id_t{0},
+      .schema_id = iceberg::schema::default_id,
       .identifier_field_ids = {},
     };
+}
+
+namespace {
+
+std::optional<iceberg::value>
+build_headers_value(const chunked_vector<model::record_header>& headers) {
+    if (headers.empty()) {
+        return std::nullopt;
+    }
+    auto hdr_list = std::make_unique<iceberg::list_value>();
+    for (const auto& hdr : headers) {
+        auto kv = header_kv_desc::build_value(
+          val<"key">(
+            hdr.key_size() >= 0 ? std::make_optional<iceberg::value>(
+                                    iceberg::string_value(hdr.key().copy()))
+                                : std::nullopt),
+          val<"value">(
+            hdr.value_size() >= 0 ? std::make_optional<iceberg::value>(
+                                      iceberg::binary_value(hdr.value().copy()))
+                                  : std::nullopt));
+        hdr_list->elements.emplace_back(std::move(kv));
+    }
+    return hdr_list;
+}
+
+} // namespace
+
+std::unique_ptr<iceberg::struct_value> build_rp_struct(
+  model::partition_id pid,
+  kafka::offset o,
+  std::optional<iobuf> key,
+  model::timestamp ts,
+  model::timestamp_type ts_t,
+  const chunked_vector<model::record_header>& headers) {
+    return rp_desc::build_value(
+      val<"partition">(iceberg::int_value(pid)),
+      val<"offset">(iceberg::long_value(o)),
+      val<"timestamp">(iceberg::timestamptz_value(ts.value() * 1000)),
+      val<"headers">(build_headers_value(headers)),
+      val<"key">(
+        key ? std::make_optional<iceberg::value>(
+                iceberg::binary_value(std::move(*key)))
+            : std::nullopt),
+      val<"timestamp_type">(iceberg::int_value{static_cast<int32_t>(ts_t)}));
 }
 
 } // namespace datalake
