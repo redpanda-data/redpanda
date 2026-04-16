@@ -13,6 +13,7 @@
 #include "base/units.h"
 #include "base/vlog.h"
 #include "datalake/logger.h"
+#include "serde/parquet/metadata.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
@@ -123,8 +124,14 @@ local_parquet_file_writer::finish() {
     }
     _initialized = false;
     auto writer_ec = writer_error::ok;
+    std::optional<serde::parquet::file_metadata> parquet_metadata;
     try {
-        writer_ec = co_await _writer->finish();
+        auto finish_result = co_await _writer->finish();
+        if (finish_result.has_error()) {
+            writer_ec = finish_result.error();
+        } else {
+            parquet_metadata = std::move(finish_result.value());
+        }
     } catch (...) {
         vlog(
           datalake_log.warn,
@@ -150,6 +157,7 @@ local_parquet_file_writer::finish() {
           .path = _output_file_path,
           .row_count = _row_count,
           .size_bytes = f_size,
+          .parquet_metadata = std::move(parquet_metadata),
         };
     } catch (...) {
         vlog(

@@ -109,10 +109,11 @@ ss::future<> serde_parquet_writer::flush() {
       _buffered_bytes);
 }
 
-ss::future<writer_error> serde_parquet_writer::finish() {
-    co_await _writer.close();
+ss::future<result<serde::parquet::file_metadata, writer_error>>
+serde_parquet_writer::finish() {
+    auto metadata = co_await _writer.close();
     _buffered_bytes = _flushed_bytes = 0;
-    co_return writer_error::ok;
+    co_return std::move(metadata);
 }
 
 ss::future<std::unique_ptr<parquet_ostream>>

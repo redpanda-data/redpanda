@@ -44,13 +44,14 @@ struct test_writer : datalake::parquet_ostream {
     size_t flushed_bytes() const final { return 0; }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
 
-    ss::future<datalake::writer_error> finish() final {
+    ss::future<result<serde::parquet::file_metadata, datalake::writer_error>>
+    finish() final {
         co_await os_.close();
         stream_closed_ = true;
         if (error_on_finish_) {
             co_return datalake::writer_error::file_io_error;
         }
-        co_return datalake::writer_error::ok;
+        co_return serde::parquet::file_metadata{};
     }
 
     size_t error_after_rows_;

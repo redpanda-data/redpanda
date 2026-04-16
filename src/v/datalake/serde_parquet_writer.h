@@ -20,7 +20,8 @@ public:
 
     ss::future<> flush() final;
 
-    ss::future<writer_error> finish() final;
+    ss::future<result<serde::parquet::file_metadata, writer_error>>
+    finish() final;
 
 private:
     serde::parquet::writer _writer;

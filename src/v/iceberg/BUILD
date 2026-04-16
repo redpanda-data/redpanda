@@ -616,6 +616,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/bytes:iostream",
+        "//src/v/iceberg/conversion:stats_parquet",
         "//src/v/serde/parquet:writer",
     ],
     visibility = ["//visibility:public"],
