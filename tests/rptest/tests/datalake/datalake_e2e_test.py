@@ -916,6 +916,100 @@ message_type {
             spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
             assert spark_describe_out == spark_expected_out, str(spark_describe_out)
 
+    # Note: nothing unique about this test so run it with single catalog/query engine.
+    @cluster(num_nodes=3)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK],
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_json_references(self, cloud_storage_type, query_engine, catalog_type):
+        """
+        Test that JSON Schema external $ref references are resolved correctly
+        through the datalake pipeline. Registers an address schema, then a
+        person schema that references it via $ref, produces data matching
+        the composed schema, and verifies the Iceberg table has the expected
+        flattened structure.
+        """
+        json_address = """{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "street": {"type": "string"},
+                "city": {"type": "string"},
+                "zip": {"type": "string"}
+            },
+            "required": ["street", "city", "zip"]
+        }"""
+
+        json_person = """{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"},
+                "address": {"$ref": "address.json"}
+            },
+            "required": ["name", "age", "address"]
+        }"""
+
+        count = 100
+
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
+            rpk = RpkTool(self.redpanda)
+
+            subj_addr = "subject_for_addr"
+            subj_person = "subject_for_person"
+            rpk.create_schema_from_str(subj_addr, json_address, "json")
+            rpk.create_schema_from_str(
+                subj_person,
+                json_person,
+                "json",
+                references=f"address.json:{subj_addr}:1",
+            )
+
+            dl.create_iceberg_enabled_topic(
+                self.topic_name,
+                iceberg_mode=f"value_schema_latest:subject={subj_person}",
+            )
+
+            producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
+            for i in range(count):
+                record = json.dumps(
+                    {
+                        "name": f"Person{i}",
+                        "age": 20 + (i % 50),
+                        "address": {
+                            "street": f"{i} Main St.",
+                            "city": "Redpanda City" if i % 2 == 0 else "Vectortown",
+                            "zip": "12345" if i % 3 == 0 else "67890",
+                        },
+                    }
+                )
+                producer.produce(topic=self.topic_name, value=record)
+            producer.flush()
+
+            dl.wait_for_translation(self.topic_name, msg_count=count)
+
+            table_name = f"redpanda.{self.topic_name}"
+            spark = dl.spark()
+            spark_expected_out = [
+                SPARK_RP_FIELD_TYPE,
+                ('address', 'struct<city:string,street:string,zip:string>', None),
+                ('age', 'bigint', None),
+                ('name', 'string', None),
+                ('', '', ''),
+                ('# Partitioning', '', ''),
+                ('Part 0', 'hours(redpanda.timestamp)', '')
+            ]  # yapf: disable
+            spark_describe_out = spark.run_query_fetch_all(f"describe {table_name}")
+            assert spark_describe_out == spark_expected_out, str(spark_describe_out)
+
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=supported_storage_types(),
