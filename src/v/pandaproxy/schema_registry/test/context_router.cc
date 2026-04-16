@@ -145,4 +145,16 @@ TEST(ContextRouterTest, ScopeSubjectPrefixQueryNoDot) {
     EXPECT_EQ(req.get_query_param("subjectPrefix"), ":.staging:");
 }
 
+TEST(ContextRouterTest, InjectContextAsSubject) {
+    ss::http::request req;
+    inject_context_as_subject(req, ".staging");
+    EXPECT_EQ(req.get_path_param("subject"), ":.staging:");
+}
+
+TEST(ContextRouterTest, InjectContextAsSubjectNoDot) {
+    ss::http::request req;
+    inject_context_as_subject(req, "staging");
+    EXPECT_EQ(req.get_path_param("subject"), ":.staging:");
+}
+
 } // namespace pandaproxy::schema_registry

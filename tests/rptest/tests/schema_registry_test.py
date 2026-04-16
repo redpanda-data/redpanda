@@ -7145,6 +7145,164 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             qualified = f":.{ctx_name}:{subj}"
             assert qualified in listed, f"Expected {qualified} in {listed}"
 
+    @cluster(num_nodes=3)
+    def test_context_prefix_config_and_mode(self):
+        """
+        Verify GET/PUT /contexts/{context}/config and /contexts/{context}/mode.
+        The wrapper injects the context as a context-only qualified subject
+        (e.g., ':.cfgmode:') and delegates to the existing config/mode
+        subject handlers.
+        """
+        ctx = ".cfgmode"
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # Materialize the context by registering a schema
+        result = self.sr_client.request(
+            "POST",
+            f"contexts/{ctx}/subjects/cfg-subject/versions",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST schema failed: {result.text}"
+        )
+
+        # PUT /contexts/{ctx}/config
+        result = self.sr_client.request(
+            "PUT",
+            f"contexts/{ctx}/config",
+            headers=HTTP_POST_HEADERS,
+            data=json.dumps({"compatibility": "FULL"}),
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"PUT config failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/config
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/config",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"GET config failed: {result.text}"
+        )
+        assert result.json()["compatibilityLevel"] == "FULL", (
+            f"Unexpected config response: {result.json()}"
+        )
+
+        # PUT /contexts/{ctx}/mode
+        result = self.sr_client.request(
+            "PUT",
+            f"contexts/{ctx}/mode",
+            headers=HTTP_POST_HEADERS,
+            data=json.dumps({"mode": "READONLY"}),
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"PUT mode failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/mode
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/mode",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"GET mode failed: {result.text}"
+        )
+        assert result.json()["mode"] == "READONLY", (
+            f"Unexpected mode response: {result.json()}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_schema_types(self):
+        """
+        Verify GET /contexts/{context}/schemas/types passes through to the
+        global schema-types handler. The context is accepted for Confluent
+        compatibility but ignored.
+        """
+        result = self.sr_client.request(
+            "GET",
+            "contexts/.staging/schemas/types",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/types failed: {result.text}"
+        )
+        types = result.json()
+        assert "AVRO" in types, f"Expected AVRO in schema types: {types}"
+
+        # Invalid context name (embedded colon) returns 400
+        result = self.sr_client.request(
+            "GET",
+            "contexts/a:b/schemas/types",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.bad_request, (
+            f"Expected 400 for invalid context name, got {result.status_code}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_delete_config_and_mode(self):
+        """
+        Verify DELETE /contexts/{context}/config and /contexts/{context}/mode.
+        The wrapper injects the context as a context-only qualified subject
+        and delegates to the existing delete_config_subject and
+        delete_mode_subject handlers.
+        """
+        ctx = ".delcfg"
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # Materialize the context
+        result = self.sr_client.request(
+            "POST",
+            f"contexts/{ctx}/subjects/del-subject/versions",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST schema failed: {result.text}"
+        )
+
+        # Set config, then DELETE it
+        result = self.sr_client.request(
+            "PUT",
+            f"contexts/{ctx}/config",
+            headers=HTTP_POST_HEADERS,
+            data=json.dumps({"compatibility": "FULL"}),
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"PUT config failed: {result.text}"
+        )
+        result = self.sr_client.request(
+            "DELETE",
+            f"contexts/{ctx}/config",
+            headers=HTTP_DELETE_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"DELETE config failed: {result.text}"
+        )
+
+        # Set mode, then DELETE it
+        result = self.sr_client.request(
+            "PUT",
+            f"contexts/{ctx}/mode",
+            headers=HTTP_POST_HEADERS,
+            data=json.dumps({"mode": "READONLY"}),
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"PUT mode failed: {result.text}"
+        )
+        result = self.sr_client.request(
+            "DELETE",
+            f"contexts/{ctx}/mode",
+            headers=HTTP_DELETE_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"DELETE mode failed: {result.text}"
+        )
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
