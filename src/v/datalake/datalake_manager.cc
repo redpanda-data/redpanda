@@ -17,6 +17,7 @@
 #include "config/node_config.h"
 #include "datalake/backlog_controller.h"
 #include "datalake/catalog_schema_manager.h"
+#include "datalake/cdc_key_value_translator.h"
 #include "datalake/cloud_data_io.h"
 #include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/frontend.h"
@@ -51,6 +52,7 @@ static std::unique_ptr<type_resolver> make_type_resolver(
           false,
           "Cannot make record translator when iceberg is disabled, logic bug.");
     case model::iceberg_mode::variant::key_value:
+    case model::iceberg_mode::variant::cdc_key_value:
         return std::make_unique<binary_type_resolver>();
     case model::iceberg_mode::variant::value_schema_id_prefix:
     case model::iceberg_mode::variant::debezium:
@@ -80,6 +82,8 @@ static std::unique_ptr<record_translator> make_record_translator(
           "Cannot make record translator when iceberg is disabled, logic bug.");
     case model::iceberg_mode::variant::key_value:
         return std::make_unique<key_value_translator>();
+    case model::iceberg_mode::variant::cdc_key_value:
+        return std::make_unique<cdc_key_value_translator>();
     case model::iceberg_mode::variant::value_schema_id_prefix:
     case model::iceberg_mode::variant::value_schema_latest:
         return std::make_unique<structured_data_translator>();

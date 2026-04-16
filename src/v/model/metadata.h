@@ -676,6 +676,10 @@ public:
         // user.
         value_schema_latest = 3,
         debezium = 4,
+        // Like key_value but with CDC semantics: every record produces
+        // an equality delete for its key, and tombstones (null value)
+        // are treated as pure deletes.
+        cdc_key_value = 5,
     };
     static iceberg_mode disabled;
 
@@ -684,6 +688,8 @@ public:
     static iceberg_mode value_schema_id_prefix;
 
     static iceberg_mode debezium;
+
+    static iceberg_mode cdc_key_value;
 
     // Creates a new iceberg mode with the latest protobuf value kind and the
     // protobuf full name.
@@ -764,13 +770,17 @@ private:
     struct debezium_impl {
         bool operator==(const debezium_impl&) const = default;
     };
+    struct cdc_key_value_impl {
+        bool operator==(const cdc_key_value_impl&) const = default;
+    };
 
     std::variant<
       disabled_impl,
       key_value_impl,
       value_schema_id_prefix_impl,
       value_schema_latest_impl,
-      debezium_impl>
+      debezium_impl,
+      cdc_key_value_impl>
       _impl;
 };
 
