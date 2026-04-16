@@ -232,16 +232,19 @@ TEST(ProduceTransformTest, FilterAllRecordsNonIdempotent) {
     EXPECT_EQ(batch.header().producer_id, -1);
 }
 
-/// Documents the guard: filtering all records from an idempotent batch
-/// would break sequence tracking. The executor must reject this case.
-/// Here we verify the precondition that idempotent batches have
-/// producer_id >= 0.
-TEST(ProduceTransformTest, FilterAllRecordsIdempotentIsError) {
+/// Documents the guard: any record-count change on the input topic
+/// for an idempotent batch breaks sequence tracking (client next-seq
+/// and broker next-seq would diverge). The executor must reject when
+/// input_records.size() != orig_header.record_count for idempotent
+/// producers. Here we verify the precondition that idempotent batches
+/// have producer_id >= 0.
+TEST(ProduceTransformTest, IdempotentRecordCountMustMatch) {
     auto batch = make_idempotent_batch(3);
 
     EXPECT_GE(batch.header().producer_id, 0);
     EXPECT_GE(batch.header().producer_epoch, 0);
     EXPECT_GE(batch.header().base_sequence, 0);
+    EXPECT_EQ(batch.header().record_count, 3);
 }
 
 } // namespace

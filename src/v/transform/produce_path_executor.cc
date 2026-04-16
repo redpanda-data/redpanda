@@ -99,12 +99,18 @@ ss::future<execute_result> produce_path_executor::execute(
             .message = "produce-path transform produced no records",
           });
     }
-    if (input_records.empty() && orig_header.producer_id >= 0) {
+    if (
+      orig_header.producer_id >= 0
+      && static_cast<int32_t>(input_records.size())
+           != orig_header.record_count) {
         co_return std::unexpected(
           execute_error{
-            .code = execute_errc::empty_batch_idempotent,
-            .message = "produce-path transform dropped all records from "
-                       "input topic for an idempotent producer",
+            .code = execute_errc::idempotent_record_count_mismatch,
+            .message = ss::format(
+              "produce-path transform changed record count on input topic "
+              "from {} to {} for an idempotent producer",
+              orig_header.record_count,
+              input_records.size()),
           });
     }
 

@@ -366,9 +366,8 @@ ss::future<produce_response::partition> do_produce_topic_partition(
                       case transform_failed:
                           return error_code::invalid_record;
                       case no_output_records:
-                      case empty_batch_idempotent:
+                      case idempotent_record_count_mismatch:
                       case engine_unavailable:
-                      case fanout_write_failed:
                           return error_code::unknown_server_error;
                       }
                   }();

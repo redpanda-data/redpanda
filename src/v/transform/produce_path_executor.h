@@ -43,9 +43,12 @@ enum class execute_errc {
     transform_failed,
     /// The transform produced zero output records.
     no_output_records,
-    /// The transform dropped all records from the input topic for
-    /// an idempotent producer (would break sequence tracking).
-    empty_batch_idempotent,
+    /// The transform changed the record count on the input topic for
+    /// an idempotent producer. Filtering (dropping records) or adding
+    /// records would break rm_stm sequence tracking: the client's next
+    /// expected sequence wouldn't match the broker's. Fan-out to other
+    /// topics is fine since those don't affect the input topic's seq.
+    idempotent_record_count_mismatch,
     /// Writing to a fan-out output topic failed.
     fanout_write_failed,
 };
