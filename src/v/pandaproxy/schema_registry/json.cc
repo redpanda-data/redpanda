@@ -172,6 +172,11 @@ struct document_context {
     json::Document doc;
     json_schema_dialect dialect;
     id_to_schema_pointer bundled_schemas;
+    // External schemas keyed by absolute URI (e.g., "/person.json").
+    // Each entry is a fully independent document with its own bundled_schemas.
+    // For transitive references (A→B→C), the structure is recursive:
+    // A's external_schemas contains B, B's contains C.
+    chunked_hash_map<json_id_uri, document_context> external_schemas;
 };
 
 // Passed into is_superset_* methods where the path and the generated verbose
@@ -281,21 +286,6 @@ std::string_view as_string_view(const json::Value& v) {
     return {v.GetString(), v.GetStringLength()};
 }
 
-ss::future<> check_references(sharded_store& store, subject_schema schema) {
-    for (const auto& ref : schema.def().refs()) {
-        auto resolved_sub = ref.sub.resolve(schema.sub().ctx);
-        co_await store.get_id(resolved_sub, ref.version)
-          .discard_result()
-          .handle_exception_type([&](const exception& e) {
-              if (failed_subject_schema_lookup(e.code())) {
-                  throw as_exception(
-                    no_reference_found_for(schema, resolved_sub, ref.version));
-              }
-              throw;
-          });
-    }
-}
-
 // OutputStream adapter for rapidjson Writer to write directly to fmt::iterator
 struct fmt_iterator_output_stream {
     using Ch = char;
@@ -331,27 +321,54 @@ struct pjp {
 class schema_context {
 public:
     explicit schema_context(const json_schema_definition::impl& schema)
-      : _schema{schema} {}
+      : _doc_ctx{schema.ctx} {}
 
-    json_schema_dialect dialect() const { return _schema.ctx.dialect; }
-    const json::Value& doc() const { return _schema.ctx.doc; }
+    json_schema_dialect dialect() const { return _doc_ctx.get().dialect; }
+    const json::Value& doc() const { return _doc_ctx.get().doc; }
 
     const id_to_schema_pointer::mapped_type*
-    find_bundled(const json_id_uri id) const {
-        auto it = _schema.ctx.bundled_schemas.find(id);
-        if (it == _schema.ctx.bundled_schemas.end()) {
+    find_bundled(const json_id_uri& id) const {
+        auto it = _doc_ctx.get().bundled_schemas.find(id);
+        if (it == _doc_ctx.get().bundled_schemas.end()) {
             return nullptr;
         }
         return &(it->second);
+    }
+
+    const document_context* find_external(const json_id_uri& id) const {
+        auto it = _doc_ctx.get().external_schemas.find(id);
+        if (it == _doc_ctx.get().external_schemas.end()) {
+            return nullptr;
+        }
+        return &(it->second);
+    }
+
+    // Create a child context scoped to an external document.
+    // The child inherits the parent's remaining recursion budget.
+    schema_context make_child_context(const document_context& ext_ctx) const {
+        return schema_context{ext_ctx, _ref_units};
     }
 
     int remaining_ref_units() const { return _ref_units; }
     int consume_ref_units() { return --_ref_units; }
 
 private:
-    const json_schema_definition::impl& _schema;
+    schema_context(const document_context& ctx, int ref_units)
+      : _doc_ctx{ctx}
+      , _ref_units{ref_units} {}
+
+    std::reference_wrapper<const document_context> _doc_ctx;
     static constexpr int max_recursion_depth{63};
     int _ref_units{max_recursion_depth};
+};
+
+// Result of resolve_reference: the resolved JSON object, plus an optional
+// child schema_context when resolution crossed into an external document.
+// When child_ctx has a value, callers must use it for further $ref resolution
+// within the resolved sub-tree.
+struct resolved_ref {
+    json_const_object obj;
+    std::optional<schema_context> child_ctx;
 };
 
 struct compatibility_context {
@@ -829,12 +846,15 @@ resolve_pointer(const json::Pointer& p, const json::Value& root) {
 
 // iteratively resolve a reference, following the $ref field until the end or
 // the max_allowed_depth is reached. throws if the max depth is reached or if
-// the reference can't be resolved
-json_const_object
+// the reference can't be resolved.
+// When resolution crosses into an external document, returns a child
+// schema_context scoped to that document so callers can resolve further
+// $refs within the external sub-tree correctly.
+resolved_ref
 resolve_reference(schema_context& ctx, const json::Value& candidate) {
     auto ref_it = candidate.FindMember("$ref");
     if (ref_it == candidate.MemberEnd()) { // not a reference, no-op
-        return candidate.GetObject();
+        return {candidate.GetObject(), std::nullopt};
     }
 
     auto get_uri_fragment = [](std::string uri_s) {
@@ -849,51 +869,72 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
     auto references_objects = absl::InlinedVector<json::Value::ConstObject, 4>{
       candidate.GetObject()};
 
-    // resolve the reference:
-    while (ctx.consume_ref_units() > 0) {
-        // try to find the bundled schema, get a pointer to it
-        auto* lookup_p = ctx.find_bundled(id_uri);
-        if (lookup_p == nullptr) {
-            // TODO use a better error code
-            throw_invalid_schema(
-              "schema pointer not found for uri '{}'", id_uri);
-        }
-        const auto& [schema_pointer, dialect] = *lookup_p;
+    // Track whether we've crossed into an external document
+    std::optional<schema_context> external_ctx;
+    auto active_ctx = [&]() -> schema_context& {
+        return external_ctx.has_value() ? *external_ctx : ctx;
+    };
 
-        // step 1: get the schema object
-        const auto& schema = resolve_pointer(schema_pointer, ctx.doc());
-        // step 2: get the referenced object inside the schema
-        const auto& referenced_obj = resolve_pointer(fragment_p, schema);
-        // step 2.5: store referenced_obj for merging later
-        references_objects.push_back(referenced_obj.GetObject());
+    while (active_ctx().consume_ref_units() > 0) {
+        auto* lookup_p = active_ctx().find_bundled(id_uri);
+        if (lookup_p != nullptr) {
+            const auto& [schema_pointer, dialect] = *lookup_p;
 
-        // step 3: check if the referenced object has a $ref field, and if so
-        // resolve it
-        if (
-          auto next_ref_it = referenced_obj.FindMember("$ref");
-          next_ref_it != referenced_obj.MemberEnd()) {
-            std::tie(id_uri, fragment_p) = get_uri_fragment(
-              next_ref_it->value.GetString());
-        } else {
-            // if this is the final target, return it.
+            const auto& schema = resolve_pointer(
+              schema_pointer, active_ctx().doc());
+            const auto& referenced_obj = resolve_pointer(fragment_p, schema);
+            references_objects.push_back(referenced_obj.GetObject());
 
-            // require that we are using the same dialect as the root object.
-            // this requirement could be relaxed but it requires to keep track
-            // of the dialect for each json::Value
-            if (dialect != ctx.dialect()) {
-                throw_invalid_schema(
-                  "schema dialect mismatch for uri '{}'", id_uri);
+            if (
+              auto next_ref_it = referenced_obj.FindMember("$ref");
+              next_ref_it != referenced_obj.MemberEnd()) {
+                std::tie(id_uri, fragment_p) = get_uri_fragment(
+                  next_ref_it->value.GetString());
+            } else {
+                // Validate dialect consistency within the active document.
+                // Cross-document external refs are allowed to differ because
+                // active_ctx() already switches into the external's own
+                // context, so this check applies to the active document only.
+                if (dialect != active_ctx().dialect()) {
+                    throw_invalid_schema(
+                      "schema dialect mismatch for uri '{}'", id_uri);
+                }
+                return {
+                  merge_references(references_objects),
+                  std::move(external_ctx)};
             }
-
-            return merge_references(references_objects);
+            continue;
         }
+
+        const auto* ext_doc = active_ctx().find_external(id_uri);
+        if (ext_doc != nullptr) {
+            external_ctx.emplace(active_ctx().make_child_context(*ext_doc));
+
+            const auto& referenced_obj = resolve_pointer(
+              fragment_p, ext_doc->doc);
+            references_objects.push_back(referenced_obj.GetObject());
+
+            if (
+              auto next_ref_it = referenced_obj.FindMember("$ref");
+              next_ref_it != referenced_obj.MemberEnd()) {
+                std::tie(id_uri, fragment_p) = get_uri_fragment(
+                  next_ref_it->value.GetString());
+            } else {
+                return {
+                  merge_references(references_objects),
+                  std::move(external_ctx)};
+            }
+            continue;
+        }
+
+        throw_invalid_schema("schema pointer not found for uri '{}'", id_uri);
     }
     throw_invalid_schema(
       "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p});
 }
 
 // helper to convert a boolean to a schema, and to traverse $refs
-json_const_object get_schema(schema_context& ctx, const json::Value& v) {
+resolved_ref get_schema(schema_context& ctx, const json::Value& v) {
     if (v.IsObject()) {
         return resolve_reference(ctx, v.GetObject());
     }
@@ -901,7 +942,8 @@ json_const_object get_schema(schema_context& ctx, const json::Value& v) {
     if (v.IsBool()) {
         // in >= draft6 "true/false" is a valid schema and means
         // {}/{"not":{}}
-        return v.GetBool() ? get_true_schema() : get_false_schema();
+        return {
+          v.GetBool() ? get_true_schema() : get_false_schema(), std::nullopt};
     }
     throw_invalid_schema(
       "Invalid JSON Schema, should be object or boolean: '{}'", pj{v});
@@ -2178,8 +2220,24 @@ json_compatibility_result is_superset(
         return res;
     }
 
-    auto older = get_schema(ctx.older, older_schema);
-    auto newer = get_schema(ctx.newer, newer_schema);
+    auto older_resolved = get_schema(ctx.older, older_schema);
+    auto newer_resolved = get_schema(ctx.newer, newer_schema);
+
+    // If resolution crossed into an external document, build a new
+    // compatibility_context with the child context for that side.
+    // This ensures all recursive is_superset calls for the resolved
+    // sub-tree use the external document's bundled_schemas.
+    auto child_ctx = compatibility_context{
+      .older = older_resolved.child_ctx.has_value()
+                 ? std::move(*older_resolved.child_ctx)
+                 : ctx.older,
+      .newer = newer_resolved.child_ctx.has_value()
+                 ? std::move(*newer_resolved.child_ctx)
+                 : ctx.newer,
+      .visited = ctx.visited};
+
+    const auto& older = older_resolved.obj;
+    const auto& newer = newer_resolved.obj;
 
     // extract { "type" : ... }
     auto older_types = normalized_type(older);
@@ -2227,16 +2285,16 @@ json_compatibility_result is_superset(
         res.merge(is_numeric_superset(older, newer, p));
     }
     if (newer_types.test(json_type::object)) {
-        res.merge(is_object_superset(ctx, older, newer, p));
+        res.merge(is_object_superset(child_ctx, older, newer, p));
     }
     if (newer_types.test(json_type::array)) {
-        res.merge(is_array_superset(ctx, older, newer, p));
+        res.merge(is_array_superset(child_ctx, older, newer, p));
     }
     // no check needed for boolean and null types
 
     res.merge(is_enum_superset(older, newer, p));
-    res.merge(is_not_combinator_superset(ctx, older, newer, p));
-    res.merge(is_positive_combinator_superset(ctx, older, newer, p));
+    res.merge(is_not_combinator_superset(child_ctx, older, newer, p));
+    res.merge(is_positive_combinator_superset(child_ctx, older, newer, p));
 
     // no rule in newer is less strict than older, older is superset of newer
     return res;
@@ -2446,11 +2504,121 @@ result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
 
 } // namespace
 
+// Compute the base URI for a document_context — used for resolving relative
+// reference names to absolute URI keys.
+json_id_uri get_root_base_uri(const document_context& ctx) {
+    // The root $id is always registered in bundled_schemas. If the schema has
+    // an explicit $id, it's stored under that URI. If not, it's stored under
+    // the empty string "".
+    // We need the root $id URI to resolve relative ref names against.
+    // Look for the entry with json::Pointer{} (the root pointer).
+    for (const auto& [uri, entry] : ctx.bundled_schemas) {
+        if (entry.first == json::Pointer{}) {
+            return uri;
+        }
+    }
+    return json_id_uri{""};
+}
+
+// Recursively fetch and parse all external schemas referenced by a schema.
+// Each referenced schema is parsed into its own document_context and stored
+// in the parent's external_schemas map. Transitive references are resolved
+// recursively (depth-first).
+ss::future<> resolve_external_references(
+  schema_getter& store,
+  document_context& ctx,
+  const schema_definition::references& refs,
+  const context_subject& parent_sub,
+  int depth = 0) {
+    static constexpr int max_external_ref_depth = 32;
+    if (depth >= max_external_ref_depth) {
+        throw as_exception(
+          error_info{
+            error_code::schema_invalid,
+            fmt::format(
+              "External reference chain exceeds maximum depth of {}",
+              max_external_ref_depth)});
+    }
+
+    auto root_base = get_root_base_uri(ctx);
+    auto root_base_uri = jsoncons::uri{root_base()};
+
+    for (const auto& ref : refs) {
+        // Compute the absolute URI key that $ref was resolved to by
+        // collect_bundled_schema_and_fix_refs
+        auto key = to_json_id_uri(
+          jsoncons::uri{ref.name}.resolve(root_base_uri));
+
+        // Skip if already resolved in this schema's refs list
+        if (ctx.external_schemas.contains(key)) {
+            continue;
+        }
+
+        auto resolved_sub = ref.sub.resolve(parent_sub.ctx);
+        try {
+            auto ss = co_await store.get_subject_schema(
+              resolved_sub, ref.version, include_deleted::yes);
+
+            // Parse the external schema into its own document_context
+            auto ext_ctx = parse_json(ss.schema.def().shared_raw()())
+                             .value(); // throws on error
+
+            // The referrer's ref.name must agree with any $id the
+            // referenced schema declares. Without this, the $ref would
+            // silently fail to resolve downstream (e.g., during Iceberg
+            // translation).
+            auto declared_id = get_root_base_uri(ext_ctx);
+            if (!declared_id().empty()) {
+                auto declared_id_resolved = to_json_id_uri(
+                  jsoncons::uri{declared_id()}.resolve(root_base_uri));
+                if (declared_id_resolved != key) {
+                    throw as_exception(
+                      error_info{
+                        error_code::schema_invalid,
+                        fmt::format(
+                          "Schema reference name \"{}\" does not match "
+                          "$id \"{}\" declared by subject \"{}\" version {}",
+                          ref.name,
+                          declared_id(),
+                          resolved_sub,
+                          ref.version)});
+                }
+            }
+
+            co_await resolve_external_references(
+              store,
+              ext_ctx,
+              ss.schema.def().refs(),
+              ss.schema.sub(),
+              depth + 1);
+
+            ctx.external_schemas.emplace(key, std::move(ext_ctx));
+        } catch (const exception& e) {
+            if (failed_subject_schema_lookup(e.code())) {
+                throw as_exception(
+                  error_info{
+                    error_code::schema_missing_reference,
+                    fmt::format(
+                      "No schema reference found for subject \"{}\" "
+                      "and version {}",
+                      resolved_sub,
+                      ref.version)});
+            }
+            throw;
+        }
+    }
+}
+
 ss::future<json_schema_definition>
-make_json_schema_definition(schema_getter&, subject_schema schema) {
+make_json_schema_definition(schema_getter& store, subject_schema schema) {
     auto [sub, unparsed] = std::move(schema).destructure();
+    auto parent_sub = sub;
     auto [def, type, refs, meta] = std::move(unparsed).destructure();
     auto doc = parse_json(std::move(def)).value(); // throws on error
+
+    // Resolve external references — fetch and parse referenced schemas
+    co_await resolve_external_references(store, doc, refs, parent_sub);
+
     co_return json_schema_definition{
       ss::make_shared<json_schema_definition::impl>(
         std::move(doc), std::move(refs), std::move(meta))};
@@ -2459,9 +2627,16 @@ make_json_schema_definition(schema_getter&, subject_schema schema) {
 ss::future<subject_schema> make_canonical_json_schema(
   sharded_store& store, subject_schema unparsed_schema, normalize norm) {
     auto [sub, unparsed] = std::move(unparsed_schema).destructure();
+    auto parent_sub = sub;
     auto [def, type, refs, meta] = std::move(unparsed).destructure();
 
     auto ctx = parse_json(std::move(def)).value(); // throws on error
+
+    // Resolve external references to validate they exist and parse correctly.
+    // The resolved schemas are not retained in the canonical output — the
+    // canonical form keeps $ref values as-is (matching Confluent behavior).
+    co_await resolve_external_references(store, ctx, refs, parent_sub);
+
     if (norm) {
         sort(ctx.doc);
         std::sort(refs.begin(), refs.end());
@@ -2471,18 +2646,13 @@ ss::future<subject_schema> make_canonical_json_schema(
     json::Writer<json::chunked_buffer> w{out};
     ctx.doc.Accept(w);
 
-    subject_schema schema{
+    co_return subject_schema{
       std::move(sub),
       schema_definition{
         schema_definition::raw_string{std::move(out).as_iobuf()},
         type,
         std::move(refs),
         std::move(meta)}};
-
-    // Ensure all references exist
-    co_await check_references(store, schema.share());
-
-    co_return schema;
 }
 
 compatibility_result check_compatible(
