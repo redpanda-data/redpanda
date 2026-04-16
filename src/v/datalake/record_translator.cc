@@ -90,7 +90,7 @@ default_translator::build_type(std::optional<shared_resolved_type_t> val_type) {
     return kv_translator.build_type(std::move(val_type));
 }
 
-ss::future<checked<iceberg::struct_value, record_translator::errc>>
+ss::future<checked<translated_record, record_translator::errc>>
 default_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
@@ -137,10 +137,11 @@ key_value_translator::build_type(std::optional<shared_resolved_type_t>) {
           .val_identifier = std::nullopt,
       },
       .type = std::move(ret_type),
+      .key_field_names = std::nullopt,
     };
 }
 
-ss::future<checked<iceberg::struct_value, record_translator::errc>>
+ss::future<checked<translated_record, record_translator::errc>>
 key_value_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
@@ -165,7 +166,10 @@ key_value_translator::translate_data(
       parsable_val ? std::make_optional<iceberg::value>(
                        iceberg::binary_value(std::move(*parsable_val)))
                    : std::nullopt);
-    co_return ret_data;
+    co_return translated_record{
+      .data_row = std::move(ret_data),
+      .delete_key = std::nullopt,
+    };
 }
 
 record_type structured_data_translator::build_type(
@@ -205,6 +209,7 @@ record_type structured_data_translator::build_type(
                 // To avoid collisions, move user fields named "redpanda" into
                 // the nested "redpanda" system field.
                 auto& system_fields = rp_struct_type(ret_type);
+                // Use the next id of the system defaults.
                 system_fields.fields.emplace_back(
                   iceberg::nested_field::create(
                     schemaless_next_field_id,
@@ -223,10 +228,11 @@ record_type structured_data_translator::build_type(
           .val_identifier = std::move(val_id),
       },
       .type = std::move(ret_type),
+      .key_field_names = std::nullopt,
     };
 }
 
-ss::future<checked<iceberg::struct_value, record_translator::errc>>
+ss::future<checked<translated_record, record_translator::errc>>
 structured_data_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
@@ -279,7 +285,10 @@ structured_data_translator::translate_data(
         }
         ret_data.fields.emplace_back(std::move(field));
     }
-    co_return ret_data;
+    co_return translated_record{
+      .data_row = std::move(ret_data),
+      .delete_key = std::nullopt,
+    };
 }
 
 } // namespace datalake

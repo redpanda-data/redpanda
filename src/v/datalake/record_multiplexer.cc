@@ -31,6 +31,23 @@ namespace datalake {
 
 namespace {
 
+/// Build a struct_type for just the key columns by extracting fields whose
+/// IDs match key_field_ids from the full type.
+iceberg::struct_type extract_key_type(
+  const iceberg::struct_type& full_type,
+  const chunked_vector<iceberg::nested_field::id_t>& key_field_ids) {
+    iceberg::struct_type key_type;
+    for (const auto& key_id : key_field_ids) {
+        for (const auto& field : full_type.fields) {
+            if (field->id == key_id) {
+                key_type.fields.push_back(field->copy());
+                break;
+            }
+        }
+    }
+    return key_type;
+}
+
 // Get the data location for the table. Some catalogs require using the property
 // `write.data.path`. Otherwise, it defaults to <table location>/data.
 iceberg::uri get_data_location(const schema_manager::table_info& table_info) {
@@ -227,6 +244,11 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 continue;
             }
         }
+        auto& translated = record_data_res.value();
+
+        if (!translated.data_row && !translated.delete_key) {
+            continue;
+        }
         auto& val_type = val_type_res.value().type;
         record_schema_components comps{
           .key_identifier = std::nullopt,
@@ -326,33 +348,108 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 co_return ss::stop_iteration::yes;
             }
 
-            auto [iter, _] = _writers.emplace(
-              record_type.comps,
-              std::make_unique<partitioning_writer>(
-                *_writer_factory,
-                load_res.value().schema.schema_id,
-                std::move(record_type.type),
-                std::move(load_res.value().partition_spec),
-                std::move(data_remote_path.value())));
+            auto sw = schema_writer{};
+
+            auto data_writer = std::make_unique<partitioning_writer>(
+              *_writer_factory,
+              load_res.value().schema.schema_id,
+              std::move(record_type.type),
+              std::move(load_res.value().partition_spec),
+              std::move(data_remote_path.value()));
+
+            if (record_type.key_field_names) {
+                // Resolve key field names to IDs using the type that
+                // fill_registered_ids just populated with catalog IDs.
+                chunked_vector<iceberg::nested_field::id_t> key_ids;
+                for (const auto& name : *record_type.key_field_names) {
+                    for (const auto& f : data_writer->type().fields) {
+                        if (f->name == name) {
+                            key_ids.emplace_back(f->id);
+                            break;
+                        }
+                    }
+                }
+                data_writer->set_key_field_ids(key_ids.copy());
+                sw.key_field_ids = std::make_optional(std::move(key_ids));
+            }
+            sw.data_writer = std::move(data_writer);
+
+            auto [iter, _] = _writers.emplace(record_type.comps, std::move(sw));
             writer_iter = iter;
         }
 
-        auto& writer = writer_iter->second;
-        auto add_data_result = co_await writer->add_data(
-          std::move(record_data_res.value()), estimated_size, as);
+        auto& sw = writer_iter->second;
+        if (translated.data_row) {
+            auto add_data_result = co_await sw.data_writer->add_data(
+              std::move(*translated.data_row), estimated_size, as);
 
-        if (add_data_result != writer_error::ok) {
-            vlogl(
-              _log,
-              is_recoverable_error(add_data_result) ? ss::log_level::debug
-                                                    : ss::log_level::warn,
-              "Error adding data to writer for record {}: {}",
-              offset,
-              add_data_result);
-            _error = add_data_result;
-            // If a write fails, the writer is left in an indeterminate state,
-            // we cannot continue in this case.
-            co_return ss::stop_iteration::yes;
+            if (add_data_result != writer_error::ok) {
+                vlogl(
+                  _log,
+                  is_recoverable_error(add_data_result) ? ss::log_level::debug
+                                                        : ss::log_level::warn,
+                  "Error adding data to writer for record {}: {}",
+                  offset,
+                  add_data_result);
+                _error = add_data_result;
+                co_return ss::stop_iteration::yes;
+            }
+        }
+
+        if (translated.delete_key && sw.key_field_ids) {
+            if (!sw.delete_writer) {
+                auto key_type = extract_key_type(
+                  sw.data_writer->type(), *sw.key_field_ids);
+
+                // Validate that the delete key columns include all
+                // partition source columns. Without this, equality
+                // deletes would be scoped to the wrong partition and
+                // fail to match the data files they intend to delete.
+                const auto& pspec = sw.data_writer->partition_spec();
+                for (const auto& pf : pspec.fields) {
+                    bool found = false;
+                    for (const auto& kf : key_type.fields) {
+                        if (kf->id == pf.source_id) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        vlogl(
+                          _log,
+                          ss::log_level::warn,
+                          "Partition source field {} not found in "
+                          "delete key columns; equality deletes "
+                          "require key fields to be a superset of "
+                          "partition source columns",
+                          pf.source_id);
+                        _error = writer_error::unknown_error;
+                        co_return ss::stop_iteration::yes;
+                    }
+                }
+
+                auto delete_writer = std::make_unique<partitioning_writer>(
+                  *_writer_factory,
+                  sw.data_writer->schema_id(),
+                  std::move(key_type),
+                  pspec.copy(),
+                  sw.data_writer->remote_prefix());
+                delete_writer->set_key_field_ids(sw.key_field_ids->copy());
+                sw.delete_writer = std::move(delete_writer);
+            }
+            auto add_del_result = co_await sw.delete_writer->add_data(
+              std::move(*translated.delete_key), estimated_size, as);
+            if (add_del_result != writer_error::ok) {
+                vlogl(
+                  _log,
+                  is_recoverable_error(add_del_result) ? ss::log_level::debug
+                                                       : ss::log_level::warn,
+                  "Error adding delete key to writer for record {}: {}",
+                  offset,
+                  add_del_result);
+                _error = add_del_result;
+                co_return ss::stop_iteration::yes;
+            }
         }
 
         // TODO: we want to ensure we're using an offset translating reader so
@@ -379,8 +476,15 @@ ss::future<writer_error> record_multiplexer::flush_writers() {
         co_return *_error;
     }
     auto result = co_await ss::coroutine::as_future(
-      ss::max_concurrent_for_each(
-        _writers, 10, [](auto& entry) { return entry.second->flush(); }));
+      ss::max_concurrent_for_each(_writers, 10, [](auto& entry) {
+          auto& sw = entry.second;
+          return sw.data_writer->flush().then([&sw] {
+              if (sw.delete_writer) {
+                  return sw.delete_writer->flush();
+              }
+              return ss::make_ready_future<>();
+          });
+      }));
     if (result.failed()) {
         auto ex = result.get_exception();
         vlog(_log.warn, "Error flushing writers: {}", ex);
@@ -400,8 +504,8 @@ record_multiplexer::finish(
       _reader_bytes_processed);
 
     auto writers = std::move(_writers);
-    for (auto& [id, writer] : writers) {
-        auto res = co_await std::move(*writer).finish();
+    for (auto& [id, sw] : writers) {
+        auto res = co_await std::move(*sw.data_writer).finish();
         if (res.has_error()) {
             vlog(_log.trace, "writer finish error: {}", res.error());
             _error = res.error();
@@ -413,6 +517,27 @@ record_multiplexer::finish(
           files.begin(),
           files.end(),
           std::back_inserter(finished_files.data_files));
+
+        if (sw.delete_writer) {
+            auto del_res = co_await std::move(*sw.delete_writer).finish();
+            if (del_res.has_error()) {
+                vlog(
+                  _log.trace,
+                  "delete writer finish error: {}",
+                  del_res.error());
+                _error = del_res.error();
+                continue;
+            }
+            auto& del_files = del_res.value();
+            vlog(
+              _log.trace,
+              "delete writer finished: files_created={}",
+              del_files.size());
+            std::move(
+              del_files.begin(),
+              del_files.end(),
+              std::back_inserter(finished_files.delete_files));
+        }
     }
     if (_invalid_record_writer) {
         auto writer = std::move(_invalid_record_writer);
@@ -454,16 +579,22 @@ record_multiplexer::finish(
 
 size_t record_multiplexer::buffered_bytes() const {
     size_t result = 0;
-    for (const auto& [_, writer] : _writers) {
-        result += writer->buffered_bytes();
+    for (const auto& [_, sw] : _writers) {
+        result += sw.data_writer->buffered_bytes();
+        if (sw.delete_writer) {
+            result += sw.delete_writer->buffered_bytes();
+        }
     }
     return result;
 }
 
 size_t record_multiplexer::flushed_bytes() const {
     size_t result = 0;
-    for (const auto& [_, writer] : _writers) {
-        result += writer->flushed_bytes();
+    for (const auto& [_, sw] : _writers) {
+        result += sw.data_writer->flushed_bytes();
+        if (sw.delete_writer) {
+            result += sw.delete_writer->flushed_bytes();
+        }
     }
     return result;
 }
@@ -617,7 +748,7 @@ record_multiplexer::handle_invalid_record(
         _result.value().last_offset = offset;
 
         auto add_data_err = co_await _invalid_record_writer->add_data(
-          std::move(record_data_res.value()), estimated_size, as);
+          std::move(*record_data_res.value().data_row), estimated_size, as);
 
         if (add_data_err != writer_error::ok) {
             vlog(

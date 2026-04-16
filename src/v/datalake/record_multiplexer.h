@@ -109,6 +109,8 @@ public:
         // vector containing a list of files that were written during
         // translation.
         chunked_vector<partitioning_writer::partitioned_file> data_files;
+        // equality delete files for upsert/delete operations
+        chunked_vector<partitioning_writer::partitioned_file> delete_files;
         // files with invalid records
         chunked_vector<partitioning_writer::partitioned_file> dlq_files;
     };
@@ -150,10 +152,16 @@ private:
     location_provider _location_provider;
     translation_probe& _translation_probe;
     [[maybe_unused]] features::feature_table* _features;
-    chunked_hash_map<
-      record_schema_components,
-      std::unique_ptr<partitioning_writer>>
-      _writers;
+    struct schema_writer {
+        std::unique_ptr<partitioning_writer> data_writer;
+        /// Delete key writer, created lazily when the first delete_key is seen.
+        std::unique_ptr<partitioning_writer> delete_writer;
+        /// Key field IDs from record_type, used to set delete_key_field_ids
+        /// on coordinator data_file entries.
+        std::optional<chunked_vector<iceberg::nested_field::id_t>>
+          key_field_ids;
+    };
+    chunked_hash_map<record_schema_components, schema_writer> _writers;
     std::unique_ptr<partitioning_writer> _invalid_record_writer;
 
     std::optional<writer_error> _error;
