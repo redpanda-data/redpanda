@@ -25,6 +25,7 @@
 #include "iceberg/transaction.h"
 #include "iceberg/values.h"
 #include "iceberg/values_bytes.h"
+#include "ssx/future-util.h"
 #include "storage/api.h"
 
 #include <exception>
@@ -275,19 +276,30 @@ public:
               table_commit_offset_);
         } else {
             for (const auto& f : files) {
+                bool is_equality_delete = f.is_delete;
                 auto pk = build_partition_key(topic, table_, f);
                 if (pk.has_error()) {
                     return pk.error();
                 }
 
                 iceberg::data_file file{
-                  .content_type = iceberg::data_file_content_type::data,
+                  .content_type
+                  = is_equality_delete
+                      ? iceberg::data_file_content_type::equality_deletes
+                      : iceberg::data_file_content_type::data,
                   .file_path = io.to_uri(std::filesystem::path(f.remote_path)),
                   .file_format = iceberg::data_file_format::parquet,
                   .partition = std::move(pk.value()),
                   .record_count = f.row_count,
                   .file_size_bytes = f.file_size_bytes,
                 };
+                if (is_equality_delete && f.delete_key_field_ids) {
+                    chunked_vector<iceberg::nested_field::id_t> eq_ids;
+                    for (auto id : *f.delete_key_field_ids) {
+                        eq_ids.push_back(iceberg::nested_field::id_t{id});
+                    }
+                    file.equality_ids = std::move(eq_ids);
+                }
                 // For files created by a legacy Redpanda version that only
                 // supported hourly partitioning, choose current schema and
                 // spec ids.
@@ -298,12 +310,23 @@ public:
                   = f.partition_spec_id >= 0
                       ? iceberg::partition_spec::id_t{f.partition_spec_id}
                       : table_.default_spec_id;
-                icb_files_.push_back(
-                  iceberg::file_to_append{
-                    .file = std::move(file),
-                    .schema_id = schema_id,
-                    .partition_spec_id = pspec_id,
-                  });
+                auto fta = iceberg::file_to_append{
+                  .file = std::move(file),
+                  .schema_id = schema_id,
+                  .partition_spec_id = pspec_id,
+                };
+                if (f.delete_key_field_ids) {
+                    if (!key_field_ids_) {
+                        key_field_ids_.emplace();
+                        for (auto id : *f.delete_key_field_ids) {
+                            key_field_ids_->push_back(
+                              iceberg::nested_field::id_t{id});
+                        }
+                    }
+                    upsert_files_.push_back(std::move(fta));
+                } else {
+                    icb_files_.push_back(std::move(fta));
+                }
             }
         }
 
@@ -319,8 +342,7 @@ public:
       model::revision_id topic_revision,
       iceberg::catalog& catalog,
       iceberg::manifest_io& io) && {
-        if (icb_files_.empty()) {
-            // No new files to commit.
+        if (icb_files_.empty() && upsert_files_.empty()) {
             vlog(
               datalake_log.debug,
               "All committed files were deduplicated for topic {} revision {}, "
@@ -340,8 +362,9 @@ public:
 
         vlog(
           datalake_log.debug,
-          "Adding {} files to Iceberg table {}",
+          "Adding {} data files and {} upsert files to Iceberg table {}",
           icb_files_.size(),
+          upsert_files_.size(),
           table_id_);
         // NOTE: a non-expiring tag is added to the new snapshot to ensure that
         // snapshot expiration doesn't clear this snapshot and its commit
@@ -355,18 +378,37 @@ public:
                                    std::numeric_limits<int64_t>::max())
                                : std::nullopt;
         iceberg::transaction txn(std::move(table_));
-        auto icb_append_res = co_await txn.merge_append(
-          io,
-          std::move(icb_files_),
-          {{commit_meta_prop, to_json_str(commit_meta)}},
-          std::move(tag_name),
-          tag_expiry_ms);
-        if (icb_append_res.has_error()) {
-            co_return log_and_convert_action_errc(
-              icb_append_res.error(),
-              fmt::format(
-                "Iceberg merge append failed for table {}", table_id_));
+
+        if (!key_field_ids_) {
+            auto icb_append_res = co_await txn.merge_append(
+              io,
+              std::move(icb_files_),
+              {{commit_meta_prop, to_json_str(commit_meta)}},
+              std::move(tag_name),
+              tag_expiry_ms);
+            if (icb_append_res.has_error()) {
+                co_return log_and_convert_action_errc(
+                  icb_append_res.error(),
+                  fmt::format(
+                    "Iceberg merge append failed for table {}", table_id_));
+            }
+        } else {
+            auto merge_delta_res = commit_merge_delta();
+            auto row_delta_res = co_await txn.row_delta(
+              io,
+              std::move(merge_delta_res.data_files),
+              std::move(merge_delta_res.delete_files),
+              {{commit_meta_prop, to_json_str(commit_meta)}},
+              std::move(tag_name),
+              tag_expiry_ms);
+            if (row_delta_res.has_error()) {
+                co_return log_and_convert_action_errc(
+                  row_delta_res.error(),
+                  fmt::format(
+                    "Iceberg row delta failed for table {}", table_id_));
+            }
         }
+
         auto icb_commit_res = co_await catalog.commit_txn(
           table_id_, std::move(txn));
         if (icb_commit_res.has_error()) {
@@ -379,9 +421,42 @@ public:
         co_return std::move(icb_commit_res.value());
     }
 
-    size_t num_files() const noexcept { return icb_files_.size(); }
+    size_t num_files() const noexcept {
+        return icb_files_.size() + upsert_files_.size();
+    }
 
 private:
+    struct merge_delta_result {
+        chunked_vector<iceberg::file_to_append> data_files;
+        chunked_vector<iceberg::file_to_delete> delete_files;
+    };
+
+    merge_delta_result commit_merge_delta() {
+        chunked_vector<iceberg::file_to_append> all_data;
+        chunked_vector<iceberg::file_to_delete> deletes;
+        for (auto& f : icb_files_) {
+            all_data.push_back(std::move(f));
+        }
+        for (auto& f : upsert_files_) {
+            if (
+              f.file.content_type
+              == iceberg::data_file_content_type::equality_deletes) {
+                deletes.push_back(
+                  iceberg::file_to_delete{
+                    .file = std::move(f.file),
+                    .schema_id = f.schema_id,
+                    .partition_spec_id = f.partition_spec_id,
+                  });
+            } else {
+                all_data.push_back(std::move(f));
+            }
+        }
+        return merge_delta_result{
+          .data_files = std::move(all_data),
+          .delete_files = std::move(deletes),
+        };
+    }
+
     table_commit_builder(
       const model::cluster_uuid& cluster,
       iceberg::table_identifier table_id,
@@ -409,6 +484,8 @@ private:
 
     // State accumulated.
     chunked_vector<iceberg::file_to_append> icb_files_;
+    chunked_vector<iceberg::file_to_append> upsert_files_;
+    std::optional<chunked_vector<iceberg::nested_field::id_t>> key_field_ids_;
     std::optional<model::offset> new_committed_offset_;
 };
 

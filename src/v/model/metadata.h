@@ -614,7 +614,6 @@ enum class redpanda_storage_mode : uint8_t {
     local = 0,
     tiered = 1,
     cloud = 2,
-    tiered_cloud = 3,
     unset = 255
 };
 
@@ -626,8 +625,6 @@ constexpr const char* redpanda_storage_mode_to_string(redpanda_storage_mode m) {
         return "tiered";
     case redpanda_storage_mode::cloud:
         return "cloud";
-    case redpanda_storage_mode::tiered_cloud:
-        return "tiered_cloud";
     case redpanda_storage_mode::unset:
         return "unset";
     }
@@ -678,12 +675,15 @@ public:
         // in the file descriptor. However these can both be overridden by the
         // user.
         value_schema_latest = 3,
+        debezium = 4,
     };
     static iceberg_mode disabled;
 
     static iceberg_mode key_value;
 
     static iceberg_mode value_schema_id_prefix;
+
+    static iceberg_mode debezium;
 
     // Creates a new iceberg mode with the latest protobuf value kind and the
     // protobuf full name.
@@ -761,12 +761,16 @@ private:
         ss::sstring subject_name;
         bool operator==(const value_schema_latest_impl&) const = default;
     };
+    struct debezium_impl {
+        bool operator==(const debezium_impl&) const = default;
+    };
 
     std::variant<
       disabled_impl,
       key_value_impl,
       value_schema_id_prefix_impl,
-      value_schema_latest_impl>
+      value_schema_latest_impl,
+      debezium_impl>
       _impl;
 };
 

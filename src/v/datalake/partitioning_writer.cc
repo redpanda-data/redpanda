@@ -140,6 +140,10 @@ partitioning_writer::finish() && {
           file_res.value().size_bytes,
           file_res.value().path());
 
+        std::optional<chunked_vector<iceberg::nested_field::id_t>> file_key_ids;
+        if (key_field_ids_) {
+            file_key_ids = key_field_ids_->copy();
+        }
         files.push_back(
           partitioned_file{
             .local_file = std::move(file_res.value()),
@@ -147,7 +151,8 @@ partitioning_writer::finish() && {
             .schema_id = schema_id_,
             .partition_spec_id = spec_.spec_id,
             .partition_key = std::move(pk),
-            .partition_key_path = std::move(partition_key_path_res.value())});
+            .partition_key_path = std::move(partition_key_path_res.value()),
+            .key_field_ids = std::move(file_key_ids)});
     }
 
     vlog(

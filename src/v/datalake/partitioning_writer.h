@@ -63,9 +63,21 @@ public:
         iceberg::partition_spec::id_t partition_spec_id;
         iceberg::partition_key partition_key;
         remote_path partition_key_path;
+        /// When set, this file participates in upsert/delete operations.
+        std::optional<chunked_vector<iceberg::nested_field::id_t>>
+          key_field_ids;
 
         friend std::ostream& operator<<(std::ostream&, const partitioned_file&);
     };
+
+    void set_key_field_ids(chunked_vector<iceberg::nested_field::id_t> ids) {
+        key_field_ids_.emplace(std::move(ids));
+    }
+
+    const iceberg::struct_type& type() const { return type_; }
+    iceberg::schema::id_t schema_id() const { return schema_id_; }
+    const iceberg::partition_spec& partition_spec() const { return spec_; }
+    const remote_path& remote_prefix() const { return remote_prefix_; }
 
     // Finishes and returns the list of local files written by the underlying
     // writers, with the appropriate partitioning metadata filled in.
@@ -83,6 +95,8 @@ private:
     iceberg::struct_accessor::ids_accessor_map_t accessors_;
     iceberg::partition_spec spec_;
     remote_path remote_prefix_;
+
+    std::optional<chunked_vector<iceberg::nested_field::id_t>> key_field_ids_;
 
     // Map of partition keys to their corresponding data file writers.
     chunked_hash_map<

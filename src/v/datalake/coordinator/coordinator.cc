@@ -15,6 +15,7 @@
 #include "container/chunked_vector.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/coordinator/state_update.h"
+#include "datalake/debezium_translator.h"
 #include "datalake/logger.h"
 #include "datalake/partition_spec_parser.h"
 #include "datalake/record_translator.h"
@@ -441,6 +442,14 @@ struct coordinator::main_table_schema_provider
             val_type = std::move(type_res.value());
         }
 
+        if (comps.is_debezium) {
+            if (!val_type.has_value()) {
+                co_return errc::failed;
+            }
+            auto& envelope = std::get<iceberg::struct_type>(
+              val_type.value()->type);
+            co_return debezium_envelope_to_table_type(envelope);
+        }
         auto record_type = default_translator{}.build_type(std::move(val_type));
         co_return std::move(record_type.type);
     }

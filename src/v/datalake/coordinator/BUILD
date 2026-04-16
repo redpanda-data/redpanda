@@ -163,6 +163,8 @@ redpanda_cc_library(
         "//src/v/container:chunked_vector",
         "//src/v/serde",
         "//src/v/serde:bytes",
+        "//src/v/serde:iobuf",
+        "//src/v/serde:optional",
         "@fmt",
         "@seastar",
     ],

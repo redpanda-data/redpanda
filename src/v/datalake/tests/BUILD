@@ -214,6 +214,27 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "debezium_translator_test",
+    timeout = "short",
+    srcs = [
+        "debezium_translator_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/datalake:debezium_translator",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+        "//src/v/model",
+        "//src/v/schema/tests:fake_registry",
+        "//src/v/test_utils:gtest",
+        "@avro",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "schema_registry_test",
     timeout = "short",
     srcs = [
