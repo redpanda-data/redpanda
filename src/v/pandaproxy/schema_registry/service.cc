@@ -128,7 +128,7 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
                   const ss::httpd::path_description& path,
                   auth::level lvl,
                   std::optional<auth::op> op,
-                  auth::resource res,
+                  auth::route_resource res,
                   auth::function_handler h) {
         return server::route_t{
           path,

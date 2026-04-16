@@ -13,6 +13,7 @@
 #include "container/chunked_hash_map.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/parsing/httpd.h"
+#include "pandaproxy/schema_registry/context_router.h"
 #include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -54,15 +55,22 @@ namespace {
 
 auth::resource
 extract_resource_from_request(const server::request_t& rq, const auth& auth) {
-    auto resource = auth.get_resource();
-    ss::visit(
-      resource,
-      [&rq](context_subject& ctx_sub) {
-          ctx_sub = context_subject::from_string(
+    return ss::visit(
+      auth.get_resource(),
+      [&rq](const context_subject&) -> auth::resource {
+          return context_subject::from_string(
             parse::request_param<ss::sstring>(*rq.req, "subject"));
       },
-      [](const auto&) {});
-    return resource;
+      [&rq](const auth::context_prefix_subject&) -> auth::resource {
+          auto ctx = normalize_context(
+            parse::request_param<ss::sstring>(*rq.req, "context"));
+          auto sub = parse::request_param<ss::sstring>(*rq.req, "subject");
+          if (!starts_with_context(sub)) {
+              sub = fmt::format(":{}:{}", ctx, sub);
+          }
+          return context_subject::from_string(sub);
+      },
+      [](const auto& res) -> auth::resource { return res; });
 }
 
 void throw_unauthorized() {
