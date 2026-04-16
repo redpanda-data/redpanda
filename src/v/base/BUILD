@@ -4,6 +4,7 @@ redpanda_cc_library(
     name = "base",
     srcs = [
         "vassert.cc",
+        "vlog_callsite.cc",
     ],
     hdrs = [
         "compiler_utils.h",
@@ -21,6 +22,8 @@ redpanda_cc_library(
         "vassert.h",
         "vassert-register.h",
         "vlog.h",
+        "vlog_callsite.h",
+        "vlog_filter.h",
     ],
     visibility = ["//visibility:public"],
     deps = [

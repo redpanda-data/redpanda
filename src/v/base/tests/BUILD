@@ -51,3 +51,17 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "vlog_filter_test",
+    timeout = "short",
+    srcs = [
+        "vlog_filter_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
