@@ -137,6 +137,26 @@ public:
         }
     }
 
+    void
+    get_current_iceberg_data_files(chunked_vector<iceberg::data_file>* out) {
+        auto load_res = catalog.load_table(table_ident).get();
+        ASSERT_FALSE(load_res.has_error());
+        const auto& table = load_res.value();
+        ASSERT_TRUE(table.current_snapshot_id.has_value());
+        auto cur_snap = table.get_snapshots_by_id().at(
+          *table.current_snapshot_id);
+        const auto& mlist_uri = cur_snap.manifest_list_path;
+        auto mlist_res = manifest_io.download_manifest_list(mlist_uri).get();
+        ASSERT_TRUE(mlist_res.has_value());
+        for (const auto& m : mlist_res.value().files) {
+            auto m_res = manifest_io.download_manifest(m.manifest_path).get();
+            ASSERT_TRUE(m_res.has_value());
+            for (auto& e : m_res.value().entries) {
+                out->emplace_back(std::move(e.data_file));
+            }
+        }
+    }
+
     // Populates `uris` with the data files referenced by the current snapshot.
     void get_current_data_files(chunked_vector<ss::sstring>* uris) {
         auto load_res = catalog.load_table(table_ident).get();
@@ -722,4 +742,115 @@ TEST_F(FileCommitterTest, TestDontLoadMainTable) {
     };
     auto main_reqs = get_requests(is_main_request);
     ASSERT_EQ(0, main_reqs.size());
+}
+
+TEST_F(FileCommitterTest, TestColumnStatsPropagateToManifest) {
+    create_table();
+
+    topics_state state;
+    auto t_state = make_topic_state({{{0, 99}}}, model::offset{1000});
+
+    // Construct a data_file with column_stats populated.
+    for (auto& e :
+         t_state.pid_to_pending_files[model::partition_id{0}].pending_entries) {
+        datalake::coordinator::data_file file{
+          .row_count = 500,
+          .file_size_bytes = 4096,
+          .table_schema_id = 0,
+          .partition_spec_id = 0,
+        };
+        chunked_vector<std::optional<bytes>> pk;
+        pk.push_back(iceberg::value_to_bytes(iceberg::int_value{42}));
+        file.partition_key = std::move(pk);
+
+        chunked_vector<column_stat_entry> stats;
+        // Field 1: has both bounds.
+        {
+            iobuf lb;
+            lb.append("lower1", 6);
+            iobuf ub;
+            ub.append("upper1", 6);
+            stats.push_back(
+              column_stat_entry{
+                .field_id = 1,
+                .column_size = 1024,
+                .value_count = 500,
+                .null_value_count = 10,
+                .lower_bound = std::move(lb),
+                .upper_bound = std::move(ub),
+              });
+        }
+        // Field 2: no bounds (empty iobufs).
+        stats.push_back(
+          column_stat_entry{
+            .field_id = 2,
+            .column_size = 2048,
+            .value_count = 400,
+            .null_value_count = 100,
+          });
+        file.column_stats = std::move(stats);
+
+        chunked_vector<int64_t> offsets;
+        offsets.push_back(100);
+        offsets.push_back(5000);
+        file.split_offsets = std::move(offsets);
+
+        e.data.files.emplace_back(std::move(file));
+    }
+    state.topic_to_state[topic] = std::move(t_state);
+
+    auto res = committer.commit_topic_files_to_catalog(topic, state).get();
+    ASSERT_FALSE(res.has_error());
+
+    chunked_vector<iceberg::data_file> icb_files;
+    ASSERT_NO_FATAL_FAILURE(get_current_iceberg_data_files(&icb_files));
+    ASSERT_EQ(1, icb_files.size());
+
+    using field_id_t = iceberg::nested_field::id_t;
+    const auto& df = icb_files[0];
+
+    // column_sizes
+    ASSERT_TRUE(df.column_sizes.has_value());
+    EXPECT_EQ(df.column_sizes->at(field_id_t{1}), 1024);
+    EXPECT_EQ(df.column_sizes->at(field_id_t{2}), 2048);
+
+    // value_counts
+    ASSERT_TRUE(df.value_counts.has_value());
+    EXPECT_EQ(df.value_counts->at(field_id_t{1}), 500);
+    EXPECT_EQ(df.value_counts->at(field_id_t{2}), 400);
+
+    // null_value_counts
+    ASSERT_TRUE(df.null_value_counts.has_value());
+    EXPECT_EQ(df.null_value_counts->at(field_id_t{1}), 10);
+    EXPECT_EQ(df.null_value_counts->at(field_id_t{2}), 100);
+
+    // lower_bounds: only field 1 has a non-empty lower bound.
+    ASSERT_TRUE(df.lower_bounds.has_value());
+    EXPECT_EQ(df.lower_bounds->size(), 1);
+    {
+        auto it = df.lower_bounds->find(field_id_t{1});
+        ASSERT_NE(it, df.lower_bounds->end());
+        iobuf expected;
+        expected.append("lower1", 6);
+        EXPECT_EQ(it->second, expected);
+    }
+    EXPECT_EQ(df.lower_bounds->find(field_id_t{2}), df.lower_bounds->end());
+
+    // upper_bounds: only field 1 has a non-empty upper bound.
+    ASSERT_TRUE(df.upper_bounds.has_value());
+    EXPECT_EQ(df.upper_bounds->size(), 1);
+    {
+        auto it = df.upper_bounds->find(field_id_t{1});
+        ASSERT_NE(it, df.upper_bounds->end());
+        iobuf expected;
+        expected.append("upper1", 6);
+        EXPECT_EQ(it->second, expected);
+    }
+    EXPECT_EQ(df.upper_bounds->find(field_id_t{2}), df.upper_bounds->end());
+
+    // split_offsets
+    ASSERT_TRUE(df.split_offsets.has_value());
+    ASSERT_EQ(df.split_offsets->size(), 2);
+    EXPECT_EQ((*df.split_offsets)[0], 100);
+    EXPECT_EQ((*df.split_offsets)[1], 5000);
 }

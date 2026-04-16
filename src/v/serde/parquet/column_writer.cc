@@ -12,6 +12,7 @@
 #include "serde/parquet/column_writer.h"
 
 #include "absl/numeric/int128.h"
+#include "bytes/iobuf_parser.h"
 #include "compression/compression.h"
 #include "container/chunked_vector.h"
 #include "hashing/crc32.h"
@@ -48,6 +49,34 @@ public:
 };
 
 namespace {
+
+std::pair<iobuf, bool> truncate_min(iobuf value, int32_t max_len) {
+    if (max_len <= 0 || static_cast<int32_t>(value.size_bytes()) <= max_len) {
+        return {std::move(value), true};
+    }
+    iobuf_parser parser(std::move(value));
+    return {parser.copy(max_len), false};
+}
+
+std::pair<iobuf, bool> truncate_max(iobuf value, int32_t max_len) {
+    if (max_len <= 0 || static_cast<int32_t>(value.size_bytes()) <= max_len) {
+        return {std::move(value), true};
+    }
+    iobuf_parser parser(std::move(value));
+    auto prefix = parser.read_bytes(max_len);
+    for (int i = static_cast<int>(prefix.size()) - 1; i >= 0; --i) {
+        if (prefix[i] < 0xFF) {
+            prefix[i]++;
+            iobuf result;
+            result.append(prefix.data(), i + 1);
+            return {std::move(result), false};
+        }
+    }
+    // All bytes are 0xFF -- can't form a tight upper bound, keep full prefix
+    iobuf result;
+    result.append(prefix.data(), prefix.size());
+    return {std::move(result), true};
+}
 
 void extend_crc32(crc::crc32& crc, const iobuf& buf) {
     for (const auto& frag : buf) {
@@ -137,20 +166,16 @@ public:
         using bound_type = decltype(_flushed_stats)::bound_ref_type;
         std::optional<statistics::bound> max_bound;
         if (bound_type max = _current_page_stats.max()) {
-            // TODO: consider truncating large values instead of writing them
-            // (is_exact=false)
-            max_bound.emplace(
-              /*value=*/encode_for_stats(*max),
-              /*is_exact=*/true);
+            auto [val, is_exact] = truncate_max(
+              encode_for_stats(*max), _opts.max_stats_truncate_length);
+            max_bound.emplace(std::move(val), is_exact);
             _flushed_stats.record_value(*max);
         }
         std::optional<statistics::bound> min_bound;
         if (bound_type min = _current_page_stats.min()) {
-            // TODO: consider truncating large values instead of writing them
-            // (is_exact=false)
-            min_bound.emplace(
-              /*value=*/encode_for_stats(*min),
-              /*is_exact=*/true);
+            auto [val, is_exact] = truncate_min(
+              encode_for_stats(*min), _opts.max_stats_truncate_length);
+            min_bound.emplace(std::move(val), is_exact);
             _flushed_stats.record_value(*min);
         }
         _flushed_stats.record_null(_current_page_stats.null_count());
@@ -218,14 +243,14 @@ public:
         };
         using bound_type = decltype(_flushed_stats)::bound_ref_type;
         if (bound_type max = _flushed_stats.max()) {
-            full_stats.max.emplace(
-              /*value=*/encode_for_stats(*max),
-              /*is_exact=*/true);
+            auto [val, is_exact] = truncate_max(
+              encode_for_stats(*max), _opts.max_stats_truncate_length);
+            full_stats.max.emplace(std::move(val), is_exact);
         }
         if (bound_type min = _flushed_stats.min()) {
-            full_stats.min.emplace(
-              /*value=*/encode_for_stats(*min),
-              /*is_exact=*/true);
+            auto [val, is_exact] = truncate_min(
+              encode_for_stats(*min), _opts.max_stats_truncate_length);
+            full_stats.min.emplace(std::move(val), is_exact);
         }
         _flushed_stats.reset();
         _total_memory_usage = 0;

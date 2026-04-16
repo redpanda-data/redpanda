@@ -11,9 +11,12 @@
 
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
+#include "bytes/iobuf.h"
 #include "container/chunked_vector.h"
 #include "serde/envelope.h"
 #include "serde/rw/bytes.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/optional.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -21,9 +24,47 @@
 
 namespace datalake::coordinator {
 
+/// \brief Per-column statistics for a single Iceberg field, in a flat
+/// serde-friendly format. Each entry corresponds to one leaf column in the
+/// parquet file and carries the Iceberg field id so the committer can
+/// rebuild the per-field maps expected by iceberg::data_file.
+struct column_stat_entry
+  : serde::
+      envelope<column_stat_entry, serde::version<0>, serde::compat_version<0>> {
+    auto serde_fields() {
+        return std::tie(
+          field_id,
+          column_size,
+          value_count,
+          null_value_count,
+          lower_bound,
+          upper_bound);
+    }
+    int32_t field_id{0};
+    int64_t column_size{0};
+    int64_t value_count{0};
+    int64_t null_value_count{0};
+    iobuf lower_bound;
+    iobuf upper_bound;
+
+    column_stat_entry copy() const {
+        return {
+          .field_id = field_id,
+          .column_size = column_size,
+          .value_count = value_count,
+          .null_value_count = null_value_count,
+          .lower_bound = lower_bound.copy(),
+          .upper_bound = upper_bound.copy(),
+        };
+    }
+
+    friend bool operator==(const column_stat_entry&, const column_stat_entry&)
+      = default;
+};
+
 // Represents a file that exists in object storage.
 struct data_file
-  : serde::envelope<data_file, serde::version<1>, serde::compat_version<0>> {
+  : serde::envelope<data_file, serde::version<2>, serde::compat_version<0>> {
     auto serde_fields() {
         return std::tie(
           remote_path,
@@ -32,7 +73,9 @@ struct data_file
           hour_deprecated,
           table_schema_id,
           partition_spec_id,
-          partition_key);
+          partition_key,
+          column_stats,
+          split_offsets);
     }
     ss::sstring remote_path = "";
     size_t row_count = 0;
@@ -47,10 +90,17 @@ struct data_file
     // single-value serialization" (see iceberg/values_bytes.h).
     // Nulls are represented by std::nullopt.
     chunked_vector<std::optional<bytes>> partition_key;
-    // TODO: add kafka schema id
+
+    // Per-column statistics extracted from parquet file metadata.
+    // Added in version 2.
+    std::optional<chunked_vector<column_stat_entry>> column_stats;
+
+    // Row group byte offsets within the parquet file, used by parallel
+    // readers to split work across row group boundaries.
+    std::optional<chunked_vector<int64_t>> split_offsets;
 
     data_file copy() const {
-        return {
+        data_file ret{
           .remote_path = remote_path,
           .row_count = row_count,
           .file_size_bytes = file_size_bytes,
@@ -59,6 +109,18 @@ struct data_file
           .partition_spec_id = partition_spec_id,
           .partition_key = partition_key.copy(),
         };
+        if (column_stats) {
+            chunked_vector<column_stat_entry> stats_copy;
+            stats_copy.reserve(column_stats->size());
+            for (const auto& e : *column_stats) {
+                stats_copy.push_back(e.copy());
+            }
+            ret.column_stats = std::move(stats_copy);
+        }
+        if (split_offsets) {
+            ret.split_offsets = split_offsets->copy();
+        }
+        return ret;
     }
 
     friend bool operator==(const data_file&, const data_file&) = default;

@@ -10,8 +10,10 @@
 
 #include "datalake/translation_task.h"
 
+#include "container/chunked_hash_map.h"
 #include "datalake/logger.h"
 #include "datalake/record_multiplexer.h"
+#include "iceberg/conversion/stats_parquet.h"
 #include "iceberg/values_bytes.h"
 #include "utils/retry_chain_node.h"
 
@@ -22,6 +24,67 @@ namespace datalake {
 using namespace std::chrono_literals;
 
 namespace {
+
+std::optional<chunked_vector<coordinator::column_stat_entry>>
+extract_column_stats(const local_file_metadata& meta) {
+    if (!meta.parquet_metadata) {
+        return std::nullopt;
+    }
+    auto stats = iceberg::conversion::extract_iceberg_stats(
+      *meta.parquet_metadata);
+
+    // Collect all field ids across all stat maps.
+    chunked_hash_map<int32_t, bool> field_ids;
+    auto collect_ids = [&field_ids](const auto& map_opt) {
+        if (!map_opt) {
+            return;
+        }
+        for (const auto& [id, _] : *map_opt) {
+            field_ids[id()] = true;
+        }
+    };
+    collect_ids(stats.column_sizes);
+    collect_ids(stats.value_counts);
+    collect_ids(stats.null_value_counts);
+    collect_ids(stats.lower_bounds);
+    collect_ids(stats.upper_bounds);
+
+    if (field_ids.empty()) {
+        return std::nullopt;
+    }
+
+    using field_id_t = iceberg::nested_field::id_t;
+    auto get_int = [](const auto& map_opt, field_id_t id) -> int64_t {
+        if (!map_opt) {
+            return 0;
+        }
+        auto it = map_opt->find(id);
+        return it != map_opt->end() ? it->second : 0;
+    };
+    auto get_iobuf = [](const auto& map_opt, field_id_t id) -> iobuf {
+        if (!map_opt) {
+            return {};
+        }
+        auto it = map_opt->find(id);
+        return it != map_opt->end() ? it->second.copy() : iobuf{};
+    };
+
+    chunked_vector<coordinator::column_stat_entry> entries;
+    entries.reserve(field_ids.size());
+    for (const auto& [raw_id, _] : field_ids) {
+        auto fid = field_id_t{raw_id};
+        entries.push_back(
+          coordinator::column_stat_entry{
+            .field_id = raw_id,
+            .column_size = get_int(stats.column_sizes, fid),
+            .value_count = get_int(stats.value_counts, fid),
+            .null_value_count = get_int(stats.null_value_counts, fid),
+            .lower_bound = get_iobuf(stats.lower_bounds, fid),
+            .upper_bound = get_iobuf(stats.upper_bounds, fid),
+          });
+    }
+    return entries;
+}
 
 translation_task::errc map_error_code(cloud_data_io::errc errc) {
     switch (errc) {
@@ -191,7 +254,19 @@ upload_files(
           .table_schema_id = file.schema_id,
           .partition_spec_id = file.partition_spec_id,
           .partition_key = std::move(pk_fields),
+          .column_stats = extract_column_stats(file.local_file),
         };
+
+        if (file.local_file.parquet_metadata) {
+            chunked_vector<int64_t> offsets;
+            for (const auto& rg :
+                 file.local_file.parquet_metadata->row_groups) {
+                offsets.push_back(rg.file_offset);
+            }
+            if (!offsets.empty()) {
+                uploaded.split_offsets = std::move(offsets);
+            }
+        }
 
         if (!is_custom_partitioning_enabled) {
             // Upgrade is still in progress, write out the hour value for old

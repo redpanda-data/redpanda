@@ -29,7 +29,7 @@ TEST(SerdeParquetWriterTest, CheckIfTheWriterWritesData) {
     ASSERT_EQ(result, datalake::writer_error::ok);
     auto finish_result = writer->finish().get();
 
-    ASSERT_EQ(finish_result, datalake::writer_error::ok);
+    ASSERT_FALSE(finish_result.has_error());
     ASSERT_GT(target.size_bytes(), 0);
 }
 
@@ -54,7 +54,7 @@ TEST(SerdeParquetWriterTest, ValidateWriterBehaviorOnOOM) {
     auto result = writer->add_data_struct(std::move(*s_v), 0, as).get();
 
     auto finish_result = writer->finish().get();
-    ASSERT_EQ(finish_result, datalake::writer_error::ok);
+    ASSERT_FALSE(finish_result.has_error());
 
     if (target.size_bytes() > 0) {
         // If the value was written despite the OOM then the writer is required

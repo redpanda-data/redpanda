@@ -48,6 +48,8 @@ public:
     struct options {
         // If true, use zstd compression for the column data.
         bool compress;
+        // Max byte length for byte array column statistics truncation.
+        int32_t max_stats_truncate_length = 16;
     };
 
     explicit column_writer(const schema_element&, options);

@@ -288,6 +288,38 @@ public:
                   .record_count = f.row_count,
                   .file_size_bytes = f.file_size_bytes,
                 };
+                if (f.column_stats) {
+                    using field_id_t = iceberg::nested_field::id_t;
+                    chunked_hash_map<field_id_t, int64_t> col_sizes;
+                    chunked_hash_map<field_id_t, int64_t> val_counts;
+                    chunked_hash_map<field_id_t, int64_t> null_counts;
+                    chunked_hash_map<field_id_t, iobuf> lower;
+                    chunked_hash_map<field_id_t, iobuf> upper;
+                    for (const auto& e : *f.column_stats) {
+                        auto fid = field_id_t{e.field_id};
+                        col_sizes[fid] = e.column_size;
+                        val_counts[fid] = e.value_count;
+                        null_counts[fid] = e.null_value_count;
+                        if (e.lower_bound.size_bytes() > 0) {
+                            lower[fid] = e.lower_bound.copy();
+                        }
+                        if (e.upper_bound.size_bytes() > 0) {
+                            upper[fid] = e.upper_bound.copy();
+                        }
+                    }
+                    file.column_sizes = std::move(col_sizes);
+                    file.value_counts = std::move(val_counts);
+                    file.null_value_counts = std::move(null_counts);
+                    if (!lower.empty()) {
+                        file.lower_bounds = std::move(lower);
+                    }
+                    if (!upper.empty()) {
+                        file.upper_bounds = std::move(upper);
+                    }
+                }
+                if (f.split_offsets) {
+                    file.split_offsets = f.split_offsets->copy();
+                }
                 // For files created by a legacy Redpanda version that only
                 // supported hourly partitioning, choose current schema and
                 // spec ids.

@@ -197,6 +197,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "stats_parquet_test",
+    timeout = "short",
+    srcs = ["stats_parquet_test.cc"],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        "//src/v/iceberg/conversion:stats_parquet",
+        "//src/v/serde/parquet:encoding",
+        "//src/v/serde/parquet:metadata",
+        "//src/v/serde/parquet:schema",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "time_rfc3339_tests",
     timeout = "short",
     srcs = [
