@@ -86,4 +86,13 @@ scope_subject_prefix_query(ss::http::request& req, const ss::sstring& ctx) {
     }
 }
 
+/// \brief Inject the context as a context-only qualified subject path
+/// parameter.
+inline void
+inject_context_as_subject(ss::http::request& req, const ss::sstring& ctx) {
+    auto nctx = normalize_context(ctx);
+    req.param.set(
+      ss::sstring("subject"), ss::sstring(fmt::format("/:{0}:", nctx)));
+}
+
 } // namespace pandaproxy::schema_registry

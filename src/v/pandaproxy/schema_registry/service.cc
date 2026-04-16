@@ -544,6 +544,61 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       auth::deferred{},
       ctx_deferred_route(scope_subject_prefix_query, get_subjects)));
 
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_config,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(inject_context_as_subject, get_config_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_put_config,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(inject_context_as_subject, put_config_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_mode,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(inject_context_as_subject, get_mode_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_put_mode,
+      auth::level::superuser,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(inject_context_as_subject, put_mode_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_schemas_types,
+      auth::level::publik,
+      acl_operation::read,
+      auth::none{},
+      // Schema types are global — the handler ignores the context. Validate
+      // it anyway for consistency with other /contexts/{context}/... routes.
+      ctx_route(
+        [](ss::http::request&, const ss::sstring& ctx) {
+            normalize_context(ctx);
+        },
+        get_schemas_types)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_delete_config,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(inject_context_as_subject, delete_config_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_delete_mode,
+      auth::level::superuser,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(inject_context_as_subject, delete_mode_subject)));
+
     return routes;
 }
 
