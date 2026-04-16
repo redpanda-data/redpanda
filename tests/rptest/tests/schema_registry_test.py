@@ -7018,6 +7018,83 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             f"Expected 400 for invalid context name, got {result.status_code}"
         )
 
+    @cluster(num_nodes=3)
+    def test_context_prefix_schema_by_id(self):
+        """
+        Verify the context-prefixed /contexts/{context}/schemas/ids/{id} and
+        sub-resource routes. The wrapper injects the context as a subject
+        query parameter, scoping schema lookups to the specified context.
+        """
+        subject = "ctx-schema-id-test"
+        ctx = ".staging"
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # Register a schema in the .staging context via the direct API so we
+        # have an ID to look up.
+        result = self.sr_client.request(
+            "POST",
+            f"contexts/{ctx}/subjects/{subject}/versions",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST versions failed: {result.text}"
+        )
+        schema_id = result.json()["id"]
+
+        # GET /contexts/{ctx}/schemas/ids/{id}
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/schemas/ids/{schema_id}",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id} failed: {result.text}"
+        )
+        assert "schema" in result.json()
+
+        # GET /contexts/{ctx}/schemas/ids/{id}/schema
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/schemas/ids/{schema_id}/schema",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id}/schema failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/schemas/ids/{id}/versions
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/schemas/ids/{schema_id}/versions",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id}/versions failed: {result.text}"
+        )
+        versions = result.json()
+        assert len(versions) >= 1
+        qualified_subject = f":.{ctx.lstrip('.')}:{subject}"
+        subjects_in_versions = [v["subject"] for v in versions]
+        assert qualified_subject in subjects_in_versions, (
+            f"Expected {qualified_subject} in versions {subjects_in_versions}"
+        )
+
+        # GET /contexts/{ctx}/schemas/ids/{id}/subjects
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/schemas/ids/{schema_id}/subjects",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id}/subjects failed: {result.text}"
+        )
+        subjects = result.json()
+        assert qualified_subject in subjects, (
+            f"Expected {qualified_subject} in subjects {subjects}"
+        )
+
+
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
     Test schema registry against a redpanda cluster with HTTP Basic Auth enabled.
@@ -10992,4 +11069,33 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
             result.status_code,
             403,
             f"Compatibility check should be 403, got {result.status_code}",
+        )
+
+        # Schema-by-ID routes use deferred auth with scope_subject_query.
+        # The context prefix injects subject=:.ctx1: which should not match
+        # the ACL on unqualified "sub1".
+        sid = self.schema_id_ctx1
+
+        # GET /contexts/.ctx1/schemas/ids/{id}
+        result = self.sr_client.request(
+            "GET",
+            f"{prefix}/schemas/ids/{sid}",
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET schemas/ids/{sid} should be 403, got {result.status_code}",
+        )
+
+        # GET /contexts/.ctx1/schemas/ids/{id}/schema
+        result = self.sr_client.request(
+            "GET",
+            f"{prefix}/schemas/ids/{sid}/schema",
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET schemas/ids/{sid}/schema should be 403, got {result.status_code}",
         )

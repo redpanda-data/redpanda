@@ -93,4 +93,30 @@ TEST(ContextRouterTest, ScopeSubjectParamNoDot) {
     EXPECT_EQ(req.get_path_param("subject"), ":.staging:my-topic");
 }
 
+TEST(ContextRouterTest, ScopeSubjectQueryAbsent) {
+    ss::http::request req;
+    scope_subject_query(req, ".staging");
+    EXPECT_EQ(req.get_query_param("subject"), ":.staging:");
+}
+
+TEST(ContextRouterTest, ScopeSubjectQueryPlain) {
+    ss::http::request req;
+    req.set_query_param("subject", "my-topic");
+    scope_subject_query(req, ".staging");
+    EXPECT_EQ(req.get_query_param("subject"), ":.staging:my-topic");
+}
+
+TEST(ContextRouterTest, ScopeSubjectQueryAlreadyQualified) {
+    ss::http::request req;
+    req.set_query_param("subject", ":.prod:my-topic");
+    scope_subject_query(req, ".staging");
+    EXPECT_EQ(req.get_query_param("subject"), ":.prod:my-topic");
+}
+
+TEST(ContextRouterTest, ScopeSubjectQueryNoDot) {
+    ss::http::request req;
+    scope_subject_query(req, "staging");
+    EXPECT_EQ(req.get_query_param("subject"), ":.staging:");
+}
+
 } // namespace pandaproxy::schema_registry

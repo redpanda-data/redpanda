@@ -500,6 +500,34 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       auth::deferred{},
       ctx_deferred_route(scope_subject_param, delete_mode_subject)));
 
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_schemas_ids_id,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_query, get_schemas_ids_id)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_schemas_ids_id_schema,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_query, get_schemas_ids_id_schema)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_schemas_ids_id_versions,
+      auth::level::user,
+      acl_operation::describe,
+      registry_resource{},
+      ctx_route(scope_subject_query, get_schemas_ids_id_versions)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_schemas_ids_id_subjects,
+      auth::level::user,
+      acl_operation::describe,
+      registry_resource{},
+      ctx_route(scope_subject_query, get_schemas_ids_id_subjects)));
+
     return routes;
 }
 
