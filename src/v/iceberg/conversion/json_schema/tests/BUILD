@@ -22,6 +22,7 @@ redpanda_cc_gtest(
         "frontend_test.cc",
     ],
     deps = [
+        "//src/v/iceberg/conversion:ir_json",
         "//src/v/iceberg/conversion/json_schema:frontend",
         "//src/v/iceberg/conversion/json_schema:ir",
         "//src/v/json",

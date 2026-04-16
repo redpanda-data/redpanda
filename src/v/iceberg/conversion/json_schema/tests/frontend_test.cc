@@ -9,6 +9,7 @@
  */
 
 #include "gmock/gmock.h"
+#include "iceberg/conversion/ir_json.h"
 #include "iceberg/conversion/json_schema/frontend.h"
 #include "iceberg/conversion/json_schema/ir.h"
 #include "json/document.h"
@@ -1234,3 +1235,201 @@ TEST(frontend_test, non_object_root) {
       ThrowsMessage<std::runtime_error>(
         StrEq("JSON Schema document must be an object")));
 }
+
+// ---- External schema reference tests ----
+
+TEST(frontend_test, external_ref_still_throws_without_externals) {
+    auto root = parse_json(R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "lead": { "$ref": "https://example.com/missing.json" }
+      }
+    })");
+
+    EXPECT_THAT(
+      [&] {
+          frontend{}.compile(
+            root, "https://example.com/root.json", std::nullopt);
+      },
+      ThrowsMessage<std::runtime_error>(HasSubstr("Unresolvable $ref")));
+}
+
+TEST(frontend_test, root_id_collides_with_external_uri) {
+    // A root $id matching a pre-registered external URI must throw a clean
+    // "Duplicate schema ID" from push(), not trip dassert(inserted).
+    auto root = parse_json(R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/shared.json",
+      "type": "object"
+    })");
+
+    auto external = parse_json(R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/shared.json",
+      "type": "object"
+    })");
+
+    frontend::external_schemas_t externals;
+    externals.emplace_back("https://example.com/shared.json", &external);
+
+    EXPECT_THAT(
+      [&] {
+          frontend{}.compile(
+            root, "https://example.com/root.json", std::nullopt, externals);
+      },
+      ThrowsMessage<std::runtime_error>(HasSubstr("Duplicate schema ID")));
+}
+
+namespace {
+
+struct external_case {
+    std::string_view name;
+    std::string_view root;
+    std::string_view external_uri;
+    std::string_view external;
+    std::string_view initial_base_uri = "https://example.com/root.json";
+};
+
+} // namespace
+
+class ExternalRefCompileTest
+  : public ::testing::TestWithParam<external_case> {};
+
+TEST_P(ExternalRefCompileTest, CompilesToValidIR) {
+    const auto& p = GetParam();
+    auto root = parse_json(p.root);
+    auto ext = parse_json(p.external);
+
+    frontend::external_schemas_t externals;
+    externals.emplace_back(std::string{p.external_uri}, &ext);
+
+    auto s = frontend{}.compile(
+      root, std::string{p.initial_base_uri}, std::nullopt, externals);
+
+    auto ir = iceberg::type_to_ir(s);
+    ASSERT_FALSE(ir.has_error()) << ir.error();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  All,
+  ExternalRefCompileTest,
+  ::testing::ValuesIn(
+    std::vector<external_case>{
+      {.name = "basic_with_id",
+       .root = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "lead": { "$ref": "https://example.com/person.json" }
+      }
+    })",
+       .external_uri = "https://example.com/person.json",
+       .external = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/person.json",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      }
+    })"},
+
+      {.name = "json_pointer_fragment",
+       .root = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "https://example.com/types.json#/definitions/FullName" }
+      }
+    })",
+       .external_uri = "https://example.com/types.json",
+       .external = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/types.json",
+      "type": "object",
+      "definitions": {
+        "FullName": {
+          "type": "object",
+          "properties": {
+            "first": { "type": "string" },
+            "last": { "type": "string" }
+          }
+        }
+      }
+    })"},
+
+      {.name = "internal_refs_with_id",
+       .root = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "person": { "$ref": "https://example.com/person.json" }
+      }
+    })",
+       .external_uri = "https://example.com/person.json",
+       .external = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/person.json",
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "#/definitions/FullName" }
+      },
+      "definitions": {
+        "FullName": {
+          "type": "object",
+          "properties": {
+            "first": { "type": "string" },
+            "last": { "type": "string" }
+          }
+        }
+      }
+    })"},
+
+      // SR behavior: schemas without $id use an empty base, and bare refs
+      // like "person.json" get absolutified to "/person.json".
+      {.name = "bare_ref_no_id",
+       .root = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "lead": { "$ref": "/person.json" }
+      }
+    })",
+       .external_uri = "/person.json",
+       .external = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      }
+    })",
+       .initial_base_uri = ""},
+
+      {.name = "bare_ref_internal_refs",
+       .root = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "person": { "$ref": "/person.json" }
+      }
+    })",
+       .external_uri = "/person.json",
+       .external = R"({
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "#/definitions/FullName" }
+      },
+      "definitions": {
+        "FullName": {
+          "type": "object",
+          "properties": {
+            "first": { "type": "string" },
+            "last": { "type": "string" }
+          }
+        }
+      }
+    })",
+       .initial_base_uri = ""},
+    }),
+  [](const auto& info) { return std::string{info.param.name}; });
