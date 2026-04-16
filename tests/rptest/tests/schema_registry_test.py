@@ -7032,6 +7032,48 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             f"Expected {qualified_subject} in subjects {subjects}"
         )
 
+    @cluster(num_nodes=3)
+    def test_context_prefix_subject_listing(self):
+        """
+        Verify the context-prefixed GET /contexts/{context}/subjects route.
+        The wrapper injects the context into the subjectPrefix query parameter,
+        scoping the subject listing to the specified context.
+        """
+        ctx = ".listing"
+        schema_data = json.dumps({"schema": schema1_def})
+        self.sr_client.base_path = f"contexts/{ctx}"
+
+        # Register two subjects in the .listing context
+        for subj in ("topic-a", "topic-b"):
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=subj, data=schema_data
+            )
+            assert result.status_code == requests.codes.ok, (
+                f"POST {subj} failed: {result.text}"
+            )
+
+        # Register a subject in the default context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="default-only-subject", data=schema_data, base_path=""
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST default subject failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/subjects — only context subjects should appear
+        result = self.sr_client.get_subjects()
+        assert result.status_code == requests.codes.ok, (
+            f"GET contexts/{ctx}/subjects failed: {result.text}"
+        )
+        listed = result.json()
+        assert "default-only-subject" not in listed, (
+            f"Default-context subject should not appear: {listed}"
+        )
+        ctx_name = ctx.lstrip(".")
+        for subj in ("topic-a", "topic-b"):
+            qualified = f":.{ctx_name}:{subj}"
+            assert qualified in listed, f"Expected {qualified} in {listed}"
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """

@@ -2449,6 +2449,49 @@
         }
       }
     },
+    "/contexts/{context}/subjects": {
+      "get": {
+        "summary": "Retrieve a list of subjects in a context (context-prefixed).",
+        "operationId": "ctx_get_subjects",
+        "parameters": [
+          {
+            "name": "context",
+            "description": "The context to scope the operation to (e.g., .staging).",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
     "/contexts/{context}/schemas/ids/{id}": {
       "get": {
         "summary": "Get a schema by ID (context-prefixed).",
