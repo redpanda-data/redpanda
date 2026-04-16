@@ -82,6 +82,7 @@ redpanda_cc_library(
         "avro.h",
         "compatibility.h",
         "configuration.h",
+        "context_router.h",
         "error.h",
         "errors.h",
         "exceptions.h",

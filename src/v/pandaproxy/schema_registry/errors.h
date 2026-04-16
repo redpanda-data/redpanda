@@ -261,6 +261,12 @@ inline error_info context_not_empty(const context& ctx) {
       fmt::format("The specified context '{}' is not empty.", ctx())};
 }
 
+inline error_info context_invalid(std::string_view ctx) {
+    return error_info{
+      error_code::context_invalid,
+      fmt::format("The specified context '{}' is not valid.", ctx)};
+}
+
 inline bool failed_subject_schema_lookup(std::error_code ec) {
     return ec == error_code::subject_not_found
            || ec == error_code::subject_version_not_found;
