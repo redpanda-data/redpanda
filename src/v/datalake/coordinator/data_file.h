@@ -94,20 +94,22 @@ struct data_file
     // Nulls are represented by std::nullopt.
     chunked_vector<std::optional<bytes>> partition_key;
 
-    // When set, this file participates in upsert/delete operations.
-    // These field IDs identify the key columns for deduplication.
-    std::optional<chunked_vector<int32_t>> delete_key_field_ids;
-
-    // True when this file is an equality delete file (contains only
-    // key values for deletion). False for data files.
-    bool is_delete{false};
-
     // Per-column statistics extracted from parquet file metadata.
+    // Added in version 2.
     std::optional<chunked_vector<column_stat_entry>> column_stats;
 
     // Row group byte offsets within the parquet file, used by parallel
     // readers to split work across row group boundaries.
     std::optional<chunked_vector<int64_t>> split_offsets;
+
+    // When set, this file participates in upsert/delete operations.
+    // These field IDs identify the key columns for deduplication.
+    // When nullopt: regular insert (append-only).
+    std::optional<chunked_vector<int32_t>> delete_key_field_ids;
+
+    // True when this file is an equality delete file (contains only
+    // key values for deletion). False for data files.
+    bool is_delete{false};
 
     data_file copy() const {
         data_file ret{
