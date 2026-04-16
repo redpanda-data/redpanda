@@ -900,7 +900,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
         ids.begin(), ids.end(), [this](model::node_id id) {
             if (id == _self) {
                 return _report_collection_mutex.with(
-                  [this] { return collect_current_node_health(); });
+                  [this] { return collect_current_node_health_legacy(); });
             }
             return collect_remote_node_health(id);
         });
@@ -982,8 +982,8 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
 }
 
 ss::future<result<node_health_report>>
-health_monitor_backend::collect_current_node_health() {
-    vlog(clusterlog.debug, "collecting health report");
+health_monitor_backend::collect_current_node_health_legacy() {
+    vlog(clusterlog.debug, "collecting health report (legacy format)");
     model::node_id id = _self;
 
     auto local_state = _local_monitor.local().get_state_cached();
@@ -1005,6 +1005,66 @@ health_monitor_backend::collect_current_node_health() {
       std::move(drain_status),
       std::move(node_liveness_report)};
 }
+
+ss::future<result<health::node_health>>
+health_monitor_backend::collect_current_node_health() {
+    vlog(clusterlog.debug, "collecting health report");
+
+    auto local_state = _local_monitor.local().get_state_cached();
+    local_state.logical_version
+      = features::feature_table::get_latest_logical_version();
+
+    auto drain_status = co_await _drain_manager.local().status();
+    auto topics = co_await collect_topic_status();
+    auto liveness = collect_node_liveness_report();
+
+    auto [it, _] = _status.try_emplace(_self);
+    it->second.is_alive = alive::yes;
+    it->second.last_reply_timestamp = ss::lowres_clock::now();
+
+    // Split partition_status into two tiers: metadata + data.
+    auto snapshot = ss::make_lw_shared<health::health_snapshot>();
+    snapshot->src_timestamp = health::approx_timestamp{
+      model::timeout_clock::now()};
+    snapshot->local_state = std::move(local_state);
+    snapshot->drain_status = std::move(drain_status);
+    snapshot->liveness = std::move(liveness);
+
+    auto metadata = ss::make_lw_shared<health::topic_partition_metadata_map>();
+    snapshot->data.reserve(topics.size());
+    metadata->reserve(topics.size());
+
+    for (auto& ts : topics) {
+        auto& data_parts = snapshot->data[ts.tp_ns];
+        auto& meta_parts = (*metadata)[ts.tp_ns];
+        data_parts.reserve(ts.partitions.size());
+        meta_parts.reserve(ts.partitions.size());
+        for (auto& ps : ts.partitions) {
+            data_parts.emplace(
+              ps.id,
+              health::partition_data{
+                .size_bytes = ps.size_bytes,
+                .high_watermark = ps.high_watermark,
+                .log_start_offset = ps.log_start_offset,
+                .reclaimable_size_bytes = ps.reclaimable_size_bytes,
+                .cloud_topic_max_gc_eligible_epoch
+                = ps.cloud_topic_max_gc_eligible_epoch});
+            meta_parts.emplace(
+              ps.id,
+              health::partition_metadata{
+                .term = ps.term,
+                .leader_id = ps.leader_id,
+                .revision_id = ps.revision_id,
+                .under_replicated_replicas = ps.under_replicated_replicas,
+                .followers_stats = std::move(ps.followers_stats),
+                .shard = ps.shard});
+        }
+    }
+
+    co_return health::node_health{
+      .snapshot = std::move(snapshot), .metadata = std::move(metadata)};
+}
+
 ss::future<result<node_health_report_ptr>>
 health_monitor_backend::get_current_node_health() {
     vlog(clusterlog.debug, "getting current node health");
@@ -1032,7 +1092,7 @@ health_monitor_backend::get_current_node_health() {
     /**
      * Current fiber will collect and cache the report
      */
-    auto r = co_await collect_current_node_health();
+    auto r = co_await collect_current_node_health_legacy();
     if (r.has_error()) {
         co_return r.error();
     }

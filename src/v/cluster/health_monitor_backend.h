@@ -86,7 +86,8 @@ public:
     ss::future<storage::disk_space_alert> get_cluster_data_disk_health(
       force_refresh refresh, model::timeout_clock::time_point deadline);
 
-    ss::future<result<node_health_report>> collect_current_node_health();
+    ss::future<result<node_health_report>> collect_current_node_health_legacy();
+    ss::future<result<health::node_health>> collect_current_node_health();
     /**
      * Return cached version of current node health of collects it if it is not
      * available in cache.
