@@ -528,6 +528,13 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       registry_resource{},
       ctx_route(scope_subject_query, get_schemas_ids_id_subjects)));
 
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_subjects,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_prefix_query, get_subjects)));
+
     return routes;
 }
 

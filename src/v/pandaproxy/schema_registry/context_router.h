@@ -73,4 +73,17 @@ scope_subject_query(ss::http::request& req, const ss::sstring& ctx) {
     }
 }
 
+/// \brief Inject or prepend context into the "subjectPrefix" query parameter.
+inline void
+scope_subject_prefix_query(ss::http::request& req, const ss::sstring& ctx) {
+    auto nctx = normalize_context(ctx);
+    auto existing = req.get_query_param("subjectPrefix");
+    if (existing.empty()) {
+        req.set_query_param("subjectPrefix", fmt::format(":{0}:", nctx));
+    } else if (!starts_with_context(existing)) {
+        req.set_query_param(
+          "subjectPrefix", fmt::format(":{0}:{1}", nctx, existing));
+    }
+}
+
 } // namespace pandaproxy::schema_registry
