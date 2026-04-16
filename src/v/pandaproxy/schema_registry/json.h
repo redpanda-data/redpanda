@@ -15,6 +15,12 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "pandaproxy/schema_registry/types.h"
 
+#include <seastar/core/sstring.hh>
+
+#include <string>
+#include <utility>
+#include <vector>
+
 namespace pandaproxy::schema_registry {
 
 ss::future<json_schema_definition>
@@ -29,5 +35,17 @@ compatibility_result check_compatible(
   verbose is_verbose = verbose::no);
 
 const json::Document& document(const json_schema_definition::impl& impl);
+
+// Return a flattened list of all external schemas (including transitive
+// dependencies) as (uri_key, document*) pairs. Used by the Iceberg
+// integration to pass external schemas to the JSON schema frontend.
+std::vector<std::pair<std::string, const json::Document*>>
+external_schema_documents(const json_schema_definition::impl& impl);
+
+// Return the root schema's base URI ($id value, or empty if absent).
+// Used by the Iceberg integration to pass the correct initial_base_uri
+// to the JSON schema frontend so that $ref resolution matches the
+// SR's URI normalization.
+ss::sstring root_base_uri(const json_schema_definition::impl& impl);
 
 } // namespace pandaproxy::schema_registry

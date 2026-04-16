@@ -241,6 +241,40 @@ const json::Document& document(const json_schema_definition::impl& impl) {
     return impl.ctx.doc;
 }
 
+namespace {
+void flatten_external_schemas(
+  const document_context& ctx,
+  std::vector<std::pair<std::string, const json::Document*>>& out) {
+    for (const auto& [uri, ext_ctx] : ctx.external_schemas) {
+        out.emplace_back(uri(), &ext_ctx.doc);
+        flatten_external_schemas(ext_ctx, out);
+    }
+}
+
+// Return the root $id URI for a document_context. The root entry in
+// bundled_schemas has an empty json::Pointer; its key is the $id URI
+// (or "" when no $id is declared).
+json_id_uri get_root_base_uri(const document_context& ctx) {
+    for (const auto& [uri, entry] : ctx.bundled_schemas) {
+        if (entry.first == json::Pointer{}) {
+            return uri;
+        }
+    }
+    return json_id_uri{""};
+}
+} // namespace
+
+std::vector<std::pair<std::string, const json::Document*>>
+external_schema_documents(const json_schema_definition::impl& impl) {
+    auto result = std::vector<std::pair<std::string, const json::Document*>>{};
+    flatten_external_schemas(impl.ctx, result);
+    return result;
+}
+
+ss::sstring root_base_uri(const json_schema_definition::impl& impl) {
+    return get_root_base_uri(impl.ctx)();
+}
+
 bool operator==(
   const json_schema_definition& lhs, const json_schema_definition& rhs) {
     return lhs.raw() == rhs.raw();
@@ -2503,22 +2537,6 @@ result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
 }
 
 } // namespace
-
-// Compute the base URI for a document_context — used for resolving relative
-// reference names to absolute URI keys.
-json_id_uri get_root_base_uri(const document_context& ctx) {
-    // The root $id is always registered in bundled_schemas. If the schema has
-    // an explicit $id, it's stored under that URI. If not, it's stored under
-    // the empty string "".
-    // We need the root $id URI to resolve relative ref names against.
-    // Look for the entry with json::Pointer{} (the root pointer).
-    for (const auto& [uri, entry] : ctx.bundled_schemas) {
-        if (entry.first == json::Pointer{}) {
-            return uri;
-        }
-    }
-    return json_id_uri{""};
-}
 
 // Recursively fetch and parse all external schemas referenced by a schema.
 // Each referenced schema is parsed into its own document_context and stored

@@ -104,10 +104,10 @@ checked<resolved_type, type_resolver::errc> translate_json_schema(
   const ppsr::json_schema_definition& json_def, ppsr::schema_id id) {
     try {
         auto& doc = document(json_def());
+        auto externals = external_schema_documents(json_def());
+        auto base_uri = root_base_uri(json_def());
         auto fc = iceberg::conversion::json_schema::frontend{};
-        // todo figure out
-        auto json_schema = fc.compile(
-          doc, "https://example.com/schema.json", std::nullopt);
+        auto json_schema = fc.compile(doc, base_uri, std::nullopt, externals);
         auto iceberg_ir = iceberg::type_to_ir(json_schema);
         if (iceberg_ir.has_error()) {
             vlog(
