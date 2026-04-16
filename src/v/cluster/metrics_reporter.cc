@@ -358,6 +358,9 @@ metrics_reporter::build_metrics_snapshot() {
         case model::iceberg_mode::variant::debezium:
             ++snapshot.topics_with_iceberg_debezium;
             break;
+        case model::iceberg_mode::variant::cdc_key_value:
+            ++snapshot.topics_with_iceberg_kv;
+            break;
         }
     }
 
