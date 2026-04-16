@@ -14,6 +14,7 @@
 #include "container/chunked_vector.h"
 #include "serde/envelope.h"
 #include "serde/rw/bytes.h"
+#include "serde/rw/optional.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -23,7 +24,7 @@ namespace datalake::coordinator {
 
 // Represents a file that exists in object storage.
 struct data_file
-  : serde::envelope<data_file, serde::version<1>, serde::compat_version<0>> {
+  : serde::envelope<data_file, serde::version<2>, serde::compat_version<0>> {
     auto serde_fields() {
         return std::tie(
           remote_path,
@@ -32,7 +33,9 @@ struct data_file
           hour_deprecated,
           table_schema_id,
           partition_spec_id,
-          partition_key);
+          partition_key,
+          delete_key_field_ids,
+          is_delete);
     }
     ss::sstring remote_path = "";
     size_t row_count = 0;
@@ -47,7 +50,8 @@ struct data_file
     // single-value serialization" (see iceberg/values_bytes.h).
     // Nulls are represented by std::nullopt.
     chunked_vector<std::optional<bytes>> partition_key;
-    // TODO: add kafka schema id
+    std::optional<chunked_vector<int32_t>> delete_key_field_ids;
+    bool is_delete{false};
 
     data_file copy() const {
         return {
@@ -58,6 +62,11 @@ struct data_file
           .table_schema_id = table_schema_id,
           .partition_spec_id = partition_spec_id,
           .partition_key = partition_key.copy(),
+          .delete_key_field_ids = delete_key_field_ids.has_value()
+                                    ? std::make_optional(
+                                        delete_key_field_ids->copy())
+                                    : std::nullopt,
+          .is_delete = is_delete,
         };
     }
 

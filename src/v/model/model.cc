@@ -614,10 +614,6 @@ redpanda_storage_mode_from_string(std::string_view s) {
         model::redpanda_storage_mode::cloud)
       .match(
         model::redpanda_storage_mode_to_string(
-          model::redpanda_storage_mode::tiered_cloud),
-        model::redpanda_storage_mode::tiered_cloud)
-      .match(
-        model::redpanda_storage_mode_to_string(
           model::redpanda_storage_mode::unset),
         model::redpanda_storage_mode::unset)
       .default_match(std::nullopt);
@@ -658,6 +654,8 @@ iceberg_mode iceberg_mode::key_value
   = iceberg_mode::make<iceberg_mode::variant::key_value>();
 iceberg_mode iceberg_mode::value_schema_id_prefix
   = iceberg_mode::make<iceberg_mode::variant::value_schema_id_prefix>();
+iceberg_mode iceberg_mode::debezium
+  = iceberg_mode::make<iceberg_mode::variant::debezium>();
 
 void write_nested(iobuf& out, const iceberg_mode& m) {
     using serde::write;
@@ -683,12 +681,16 @@ void read_nested(
     case iceberg_mode::variant::value_schema_id_prefix:
         m = iceberg_mode::value_schema_id_prefix;
         return;
-    case iceberg_mode::variant::value_schema_latest:
+    case iceberg_mode::variant::value_schema_latest: {
         ss::sstring msg_name;
         read_nested(in, msg_name, bytes_left_limit);
         ss::sstring subject;
         read_nested(in, subject, bytes_left_limit);
         m = iceberg_mode::value_schema_latest(msg_name, subject);
+        return;
+    }
+    case iceberg_mode::variant::debezium:
+        m = iceberg_mode::debezium;
         return;
     }
     throw serde::serde_exception(
@@ -703,7 +705,7 @@ std::ostream& operator<<(std::ostream& os, const iceberg_mode& mode) {
         return os << "key_value";
     case iceberg_mode::variant::value_schema_id_prefix:
         return os << "value_schema_id_prefix";
-    case iceberg_mode::variant::value_schema_latest:
+    case iceberg_mode::variant::value_schema_latest: {
         os << "value_schema_latest";
         bool delimiter = false;
         auto emit_delimiter = [&delimiter, &os]() {
@@ -719,6 +721,9 @@ std::ostream& operator<<(std::ostream& os, const iceberg_mode& mode) {
             os << "subject=" << subject.value();
         }
         return os;
+    }
+    case iceberg_mode::variant::debezium:
+        return os << "debezium_schema_id_prefix";
     }
 }
 
@@ -762,6 +767,8 @@ std::istream& operator>>(std::istream& is, iceberg_mode& mode) {
         mode = iceberg_mode::key_value;
     } else if (s == "value_schema_id_prefix") {
         mode = iceberg_mode::value_schema_id_prefix;
+    } else if (s == "debezium_schema_id_prefix") {
+        mode = iceberg_mode::debezium;
     } else if (s.starts_with("value_schema_latest")) {
         s = s.substr(std::strlen("value_schema_latest"));
         auto options = parse_config_options(s);

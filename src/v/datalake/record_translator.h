@@ -24,6 +24,21 @@ namespace datalake {
 struct record_type {
     record_schema_components comps;
     iceberg::struct_type type;
+    /// When set, this translator produces upsert/delete operations.
+    /// These field names identify the key columns for deduplication.
+    /// The multiplexer resolves them to Iceberg field IDs after the
+    /// table schema is registered and IDs are assigned.
+    std::optional<chunked_vector<ss::sstring>> key_field_names;
+};
+
+/// Result of translating a Kafka record. For append-only translators,
+/// data_row is set and delete_key is nullopt. For CDC translators,
+/// either or both may be set depending on the operation.
+struct translated_record {
+    /// Row to insert as data. Nullopt for pure deletes.
+    std::optional<iceberg::struct_value> data_row;
+    /// Key value to delete. Nullopt for pure inserts.
+    std::optional<iceberg::struct_value> delete_key;
 };
 
 class record_translator {
@@ -36,7 +51,7 @@ public:
 
     virtual record_type
     build_type(std::optional<shared_resolved_type_t> val_type) = 0;
-    virtual ss::future<checked<iceberg::struct_value, errc>> translate_data(
+    virtual ss::future<checked<translated_record, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,
@@ -52,7 +67,7 @@ class key_value_translator : public record_translator {
 public:
     record_type
     build_type(std::optional<shared_resolved_type_t> val_type) override;
-    ss::future<checked<iceberg::struct_value, errc>> translate_data(
+    ss::future<checked<translated_record, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,
@@ -68,7 +83,7 @@ class structured_data_translator : public record_translator {
 public:
     record_type
     build_type(std::optional<shared_resolved_type_t> val_type) override;
-    ss::future<checked<iceberg::struct_value, errc>> translate_data(
+    ss::future<checked<translated_record, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,
@@ -88,7 +103,7 @@ class default_translator : public record_translator {
 public:
     record_type
     build_type(std::optional<shared_resolved_type_t> val_type) override;
-    ss::future<checked<iceberg::struct_value, errc>> translate_data(
+    ss::future<checked<translated_record, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       std::optional<iobuf> key,

@@ -325,6 +325,21 @@ COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/spark /
 RUN --mount=type=cache,id=dl-cache,target=/dl-cache /spark && rm /spark
 
 #################################
+
+FROM java-base AS debezium-server
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/debezium-server /
+RUN --mount=type=cache,id=dl-cache,target=/dl-cache \
+    /debezium-server && rm /debezium-server
+
+#################################
+
+FROM base AS postgres
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/postgres /
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /postgres && rm /postgres
+
+#################################
 # m2-collector creates the final .m2 cache from all images
 # that execute directly out of the cache, so we avoid duplicating
 # the full cache contents N times in the final image
@@ -453,6 +468,13 @@ COPY --from=flink /opt/flink/ /opt/flink/
 COPY --from=iceberg-rest /opt/iceberg-rest-catalog /opt/iceberg-rest-catalog
 COPY --from=trino /opt/trino /opt/trino
 COPY --from=spark /opt/spark /opt/spark
+COPY --from=debezium-server /opt/debezium-server/ /opt/debezium-server/
+COPY --from=postgres /usr/lib/postgresql/ /usr/lib/postgresql/
+COPY --from=postgres /usr/share/postgresql/ /usr/share/postgresql/
+COPY --from=postgres /etc/postgresql/ /etc/postgresql/
+COPY --from=postgres /usr/share/postgresql-common/ /usr/share/postgresql-common/
+COPY --from=postgres /usr/lib/x86_64-linux-gnu/libpq.so* /usr/lib/x86_64-linux-gnu/
+COPY --from=postgres /usr/share/zoneinfo/ /usr/share/zoneinfo/
 COPY --from=m2-collector /root/.m2 /root/.m2
 COPY --from=nodejs /opt/nodejs/ /opt/nodejs/
 COPY --from=nodejs-test-clients /opt/redpanda-tests/nodejs /opt/redpanda-tests/nodejs

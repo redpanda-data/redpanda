@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -e
+
+source "$(dirname "${BASH_SOURCE[0]}")/download-utils"
+
+mkdir -p /opt/debezium-server
+
+DEBEZIUM_VERSION=3.1.1.Final
+DEBEZIUM_URL=https://repo1.maven.org/maven2/io/debezium/debezium-server-dist/${DEBEZIUM_VERSION}/debezium-server-dist-${DEBEZIUM_VERSION}.tar.gz
+
+DL_STRIP=1 download_extract ${DEBEZIUM_URL} /opt/debezium-server
+
+mkdir -p /opt/debezium-server/data
+mkdir -p /opt/debezium-server/conf
+
+# Add Confluent Avro converter + serializer for Schema Registry wire
+# format compatibility with Redpanda's Schema Registry.
+CONFLUENT_VERSION=7.6.0
+CONFLUENT_REPO=https://packages.confluent.io/maven/io/confluent
+
+for jar in \
+  kafka-connect-avro-converter/${CONFLUENT_VERSION}/kafka-connect-avro-converter-${CONFLUENT_VERSION}.jar \
+  kafka-connect-avro-data/${CONFLUENT_VERSION}/kafka-connect-avro-data-${CONFLUENT_VERSION}.jar \
+  kafka-avro-serializer/${CONFLUENT_VERSION}/kafka-avro-serializer-${CONFLUENT_VERSION}.jar \
+  kafka-schema-serializer/${CONFLUENT_VERSION}/kafka-schema-serializer-${CONFLUENT_VERSION}.jar \
+  kafka-schema-registry-client/${CONFLUENT_VERSION}/kafka-schema-registry-client-${CONFLUENT_VERSION}.jar \
+  kafka-schema-converter/${CONFLUENT_VERSION}/kafka-schema-converter-${CONFLUENT_VERSION}.jar \
+  common-config/${CONFLUENT_VERSION}/common-config-${CONFLUENT_VERSION}.jar \
+  common-utils/${CONFLUENT_VERSION}/common-utils-${CONFLUENT_VERSION}.jar; do
+  download ${CONFLUENT_REPO}/${jar} /opt/debezium-server/lib/$(basename ${jar})
+done

@@ -355,6 +355,9 @@ metrics_reporter::build_metrics_snapshot() {
         case model::iceberg_mode::variant::value_schema_latest:
             ++snapshot.topics_with_iceberg_schema_latest;
             break;
+        case model::iceberg_mode::variant::debezium:
+            ++snapshot.topics_with_iceberg_debezium;
+            break;
         }
     }
 
@@ -717,6 +720,8 @@ void rjson_serialize(
     w.Uint64(snapshot.topics_with_iceberg_schema_id);
     w.Key("topics_with_iceberg_latest_protobuf_value");
     w.Uint64(snapshot.topics_with_iceberg_schema_latest);
+    w.Key("topics_with_iceberg_debezium");
+    w.Uint64(snapshot.topics_with_iceberg_debezium);
 
     w.Key("partition_count");
     w.Uint64(snapshot.partition_count);

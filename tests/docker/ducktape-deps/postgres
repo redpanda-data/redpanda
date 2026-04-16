@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -e
+
+apt-get update
+apt-get install -y postgresql postgresql-client
+
+# Pre-configure for logical replication (needed by Debezium CDC)
+PG_CONF=$(find /etc/postgresql -name postgresql.conf | head -1)
+if [ -n "$PG_CONF" ]; then
+  echo "wal_level = logical" >>"$PG_CONF"
+  echo "max_replication_slots = 10" >>"$PG_CONF"
+  echo "max_wal_senders = 10" >>"$PG_CONF"
+fi

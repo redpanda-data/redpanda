@@ -151,6 +151,7 @@ redpanda_cc_library(
         ":backlog_controller",
         ":catalog_schema_manager",
         ":cloud_data_io",
+        ":debezium_translator",
         ":location",
         ":logger",
         ":record_translator",
@@ -238,11 +239,16 @@ redpanda_cc_library(
         "table_definition.cc",
     ],
     hdrs = [
+        "schema_descriptor.h",
         "table_definition.h",
     ],
     visibility = [":__subpackages__"],
     deps = [
+        "//src/v/iceberg:datatypes",
         "//src/v/iceberg:schema",
+        "//src/v/iceberg:values",
+        "//src/v/model",
+        "@seastar",
     ],
 )
 
@@ -405,6 +411,40 @@ redpanda_cc_library(
         ":schema_identifier",
         "//src/v/base",
         "//src/v/iceberg:datatypes",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
+    name = "debezium_translator",
+    srcs = [
+        "debezium_translator.cc",
+    ],
+    hdrs = [
+        "debezium_translator.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":table_definition",
+        "//src/v/iceberg:avro_utils",
+        "//src/v/iceberg:compatibility_utils",
+        "//src/v/iceberg:values",
+        "//src/v/iceberg/conversion:conversion_outcome",
+        "//src/v/iceberg/conversion:values_avro",
+        "//src/v/iceberg/conversion:values_json",
+        "//src/v/iceberg/conversion:values_protobuf",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@avro",
+        "@protobuf",
+        "@seastar",
+    ],
+    visibility = [":__subpackages__"],
+    deps = [
+        ":record_schema_resolver",
+        ":record_translator",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
+        "//src/v/metrics",
         "//src/v/model",
     ],
 )

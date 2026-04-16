@@ -71,56 +71,6 @@ std::optional<size_t> get_redpanda_idx(const iceberg::struct_type& val_type) {
     return std::nullopt;
 }
 
-// Builds a struct value meant to be used as the base of the "redpanda" struct.
-// Additional fields specific to the mode (e.g. "value" for key-value mode) may
-// be appended to the end.
-std::unique_ptr<iceberg::struct_value> build_rp_struct(
-  model::partition_id pid,
-  kafka::offset o,
-  std::optional<iobuf> key,
-  model::timestamp ts,
-  model::timestamp_type ts_t,
-  const chunked_vector<model::record_header>& headers) {
-    auto system_data = std::make_unique<iceberg::struct_value>();
-    system_data->fields.reserve(6);
-
-    system_data->fields.emplace_back(iceberg::int_value(pid));
-    system_data->fields.emplace_back(iceberg::long_value(o));
-    // NOTE: Kafka uses milliseconds, Iceberg uses microseconds.
-    system_data->fields.emplace_back(
-      iceberg::timestamptz_value(ts.value() * 1000));
-
-    if (headers.empty()) {
-        system_data->fields.emplace_back(std::nullopt);
-    } else {
-        auto headers_list = std::make_unique<iceberg::list_value>();
-        for (const auto& hdr : headers) {
-            auto header_kv_struct = std::make_unique<iceberg::struct_value>();
-            header_kv_struct->fields.emplace_back(
-              hdr.key_size() >= 0 ? std::make_optional<iceberg::value>(
-                                      iceberg::string_value(hdr.key().copy()))
-                                  : std::nullopt);
-            header_kv_struct->fields.emplace_back(
-              hdr.value_size() >= 0
-                ? std::make_optional<iceberg::value>(
-                    iceberg::binary_value(hdr.value().copy()))
-                : std::nullopt);
-            headers_list->elements.emplace_back(std::move(header_kv_struct));
-        }
-        system_data->fields.emplace_back(std::move(headers_list));
-    }
-
-    system_data->fields.emplace_back(
-      key ? std::make_optional<iceberg::value>(
-              iceberg::binary_value(std::move(*key)))
-          : std::nullopt);
-
-    system_data->fields.emplace_back(
-      iceberg::int_value{static_cast<int32_t>(ts_t)});
-
-    return system_data;
-}
-
 } // namespace
 
 std::ostream& operator<<(std::ostream& o, const record_translator::errc& e) {
@@ -140,7 +90,7 @@ default_translator::build_type(std::optional<shared_resolved_type_t> val_type) {
     return kv_translator.build_type(std::move(val_type));
 }
 
-ss::future<checked<iceberg::struct_value, record_translator::errc>>
+ss::future<checked<translated_record, record_translator::errc>>
 default_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
@@ -177,17 +127,21 @@ key_value_translator::build_type(std::optional<shared_resolved_type_t>) {
     auto ret_type = schemaless_struct_type();
     ret_type.fields.emplace_back(
       iceberg::nested_field::create(
-        11, "value", iceberg::field_required::no, iceberg::binary_type{}));
+        schemaless_next_field_id,
+        "value",
+        iceberg::field_required::no,
+        iceberg::binary_type{}));
     return record_type{
       .comps = record_schema_components{
           .key_identifier = std::nullopt,
           .val_identifier = std::nullopt,
       },
       .type = std::move(ret_type),
+      .key_field_names = std::nullopt,
     };
 }
 
-ss::future<checked<iceberg::struct_value, record_translator::errc>>
+ss::future<checked<translated_record, record_translator::errc>>
 key_value_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
@@ -212,7 +166,10 @@ key_value_translator::translate_data(
       parsable_val ? std::make_optional<iceberg::value>(
                        iceberg::binary_value(std::move(*parsable_val)))
                    : std::nullopt);
-    co_return ret_data;
+    co_return translated_record{
+      .data_row = std::move(ret_data),
+      .delete_key = std::nullopt,
+    };
 }
 
 record_type structured_data_translator::build_type(
@@ -251,12 +208,14 @@ record_type structured_data_translator::build_type(
             if (field->name == rp_struct_name) {
                 // To avoid collisions, move user fields named "redpanda" into
                 // the nested "redpanda" system field.
-                auto& system_fields = std::get<iceberg::struct_type>(
-                  ret_type.fields[0]->type);
+                auto& system_fields = rp_struct_type(ret_type);
                 // Use the next id of the system defaults.
                 system_fields.fields.emplace_back(
                   iceberg::nested_field::create(
-                    10, "data", field->required, std::move(field->type)));
+                    schemaless_next_field_id,
+                    "data",
+                    field->required,
+                    std::move(field->type)));
                 continue;
             }
             // Add the extra user-defined fields.
@@ -269,10 +228,11 @@ record_type structured_data_translator::build_type(
           .val_identifier = std::move(val_id),
       },
       .type = std::move(ret_type),
+      .key_field_names = std::nullopt,
     };
 }
 
-ss::future<checked<iceberg::struct_value, record_translator::errc>>
+ss::future<checked<translated_record, record_translator::errc>>
 structured_data_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
@@ -320,15 +280,15 @@ structured_data_translator::translate_data(
         if (redpanda_field_idx == i) {
             // To avoid collisions, move user fields named "redpanda" into
             // the nested "redpanda" system field.
-            auto& system_vals
-              = std::get<std::unique_ptr<iceberg::struct_value>>(
-                ret_data.fields[0].value());
-            system_vals->fields.emplace_back(std::move(field));
+            rp_struct_value(ret_data).fields.emplace_back(std::move(field));
             continue;
         }
         ret_data.fields.emplace_back(std::move(field));
     }
-    co_return ret_data;
+    co_return translated_record{
+      .data_row = std::move(ret_data),
+      .delete_key = std::nullopt,
+    };
 }
 
 } // namespace datalake

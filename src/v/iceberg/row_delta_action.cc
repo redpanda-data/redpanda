@@ -269,10 +269,13 @@ ss::future<action::action_outcome> row_delta_action::build_updates() && {
     }
     auto added_data_files_count = new_data_files_.size();
 
-    // Validate delete files.
+    // Validate delete files. Equality delete files are unpartitioned per
+    // the Iceberg spec, so they skip partition field count validation.
     size_t deleted_records{0};
     for (const auto& f : new_delete_files_) {
-        if (f.file.partition.val == nullptr) {
+        bool is_equality_delete = f.file.content_type
+                                  == data_file_content_type::equality_deletes;
+        if (!is_equality_delete && f.file.partition.val == nullptr) {
             vlog(
               log.error,
               "Metadata for delete file {} is missing partition key",
@@ -292,7 +295,8 @@ ss::future<action::action_outcome> row_delta_action::build_updates() && {
         if (f_num_fields != pspec->fields.size()) {
             vlog(
               log.error,
-              "Partition key for delete file {} has {} fields, expected {}",
+              "Partition key for delete file {} has {} fields, expected "
+              "{}",
               f.file.file_path,
               f_num_fields,
               pspec->fields.size());
