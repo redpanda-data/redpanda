@@ -34,12 +34,18 @@ struct schema_identifier
 struct record_schema_components
   : serde::envelope<
       record_schema_components,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(key_identifier, val_identifier); }
+    auto serde_fields() {
+        return std::tie(key_identifier, val_identifier, is_debezium);
+    }
 
     std::optional<schema_identifier> key_identifier;
     std::optional<schema_identifier> val_identifier;
+    // Whether to interpret the value schema as a Debezium CDC envelope.
+    // When true, the coordinator extracts the inner "after" struct
+    // from the Debezium envelope rather than using the full envelope.
+    bool is_debezium{false};
     bool operator==(const record_schema_components&) const = default;
 };
 
@@ -72,6 +78,7 @@ struct hash<datalake::record_schema_components> {
             boost::hash_combine(
               h, hash<datalake::schema_identifier>()(*c.val_identifier));
         }
+        boost::hash_combine(h, hash<bool>()(c.is_debezium));
         return h;
     }
 };

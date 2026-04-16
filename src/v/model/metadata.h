@@ -683,12 +683,15 @@ public:
         // in the file descriptor. However these can both be overridden by the
         // user.
         value_schema_latest = 3,
+        debezium_schema_id_prefix = 4,
     };
     static iceberg_mode disabled;
 
     static iceberg_mode key_value;
 
     static iceberg_mode value_schema_id_prefix;
+
+    static iceberg_mode debezium_schema_id_prefix;
 
     // Creates a new iceberg mode with the latest protobuf value kind and the
     // protobuf full name.
@@ -767,12 +770,16 @@ private:
         ss::sstring subject_name;
         bool operator==(const value_schema_latest_impl&) const = default;
     };
+    struct debezium_schema_id_prefix_impl {
+        bool operator==(const debezium_schema_id_prefix_impl&) const = default;
+    };
 
     std::variant<
       disabled_impl,
       key_value_impl,
       value_schema_id_prefix_impl,
-      value_schema_latest_impl>
+      value_schema_latest_impl,
+      debezium_schema_id_prefix_impl>
       _impl;
 };
 

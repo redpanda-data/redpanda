@@ -119,11 +119,13 @@ delete_local_data_files(
 }
 
 ss::future<checked<std::nullopt_t, translation_task::errc>>
-delete_data_and_dlq_files(
+delete_all_local_files(
   prefix_logger& log, const record_multiplexer::finished_files& files) {
-    auto [data_result, dlq_result] = co_await ss::when_all_succeed(
-      delete_local_data_files(log, files.data_files),
-      delete_local_data_files(log, files.dlq_files));
+    auto [data_result, delete_result, dlq_result]
+      = co_await ss::when_all_succeed(
+        delete_local_data_files(log, files.data_files),
+        delete_local_data_files(log, files.delete_files),
+        delete_local_data_files(log, files.dlq_files));
 
     if (data_result.has_error()) {
         vlog(
@@ -132,9 +134,16 @@ delete_data_and_dlq_files(
           data_result.error());
         co_return data_result.error();
     }
+    if (delete_result.has_error()) {
+        vlog(
+          log.warn,
+          "error deleting local delete files - {}",
+          delete_result.error());
+        co_return delete_result.error();
+    }
     if (dlq_result.has_error()) {
         vlog(
-          log.warn, "error deleting local dlq files - {}", data_result.error());
+          log.warn, "error deleting local dlq files - {}", dlq_result.error());
         co_return dlq_result.error();
     }
     co_return std::nullopt;
@@ -197,6 +206,15 @@ upload_files(
             // Upgrade is still in progress, write out the hour value for old
             // versions.
             uploaded.hour_deprecated = get_hour(file.partition_key);
+        }
+
+        if (file.key_field_ids) {
+            chunked_vector<int32_t> ids;
+            ids.reserve(file.key_field_ids->size());
+            for (const auto& id : *file.key_field_ids) {
+                ids.push_back(id());
+            }
+            uploaded.delete_key_field_ids = std::move(ids);
         }
 
         ret.push_back(std::move(uploaded));
@@ -310,13 +328,13 @@ translation_task::finish(
         auto mux_err = mux_result.error();
         vlog(
           _log.warn,
-          "Error writing data files - {}, deleting {} data files and {} DLQ "
-          "files",
+          "Error writing data files - {}, deleting {} data files, {} delete "
+          "files and {} DLQ files",
           mux_result.error(),
           files.data_files.size(),
+          files.delete_files.size(),
           files.dlq_files.size());
-        [[maybe_unused]] auto _ = co_await delete_data_and_dlq_files(
-          _log, files);
+        [[maybe_unused]] auto _ = co_await delete_all_local_files(_log, files);
         co_return map_error_code(mux_err);
     }
     auto write_result = std::move(mux_result).value();
@@ -324,10 +342,11 @@ translation_task::finish(
         vlog(
           _log.trace,
           "translation result base offset: {}, last offset: {}, data files: "
-          "{}, dlq files: {}",
+          "{}, delete files: {}, dlq files: {}",
           write_result.start_offset,
           write_result.last_offset,
           files.data_files.size(),
+          files.delete_files.size(),
           files.dlq_files.size());
     }
 
@@ -367,6 +386,27 @@ translation_task::finish(
         ret.files = std::move(upload_res.value());
     }
 
+    // Equality delete files go alongside data files since the coordinator
+    // distinguishes them by delete_key_field_ids.
+    {
+        auto del_upload_res = co_await upload_files(
+          _log,
+          *_cloud_io,
+          files.delete_files,
+          is_custom_partitioning_enabled,
+          rcn,
+          lazy_as);
+        if (del_upload_res.has_error()) {
+            co_return del_upload_res.error();
+        }
+        auto& del_files = del_upload_res.value();
+        for (auto& df : del_files) {
+            df.is_delete = true;
+        }
+        std::move(
+          del_files.begin(), del_files.end(), std::back_inserter(ret.files));
+    }
+
     // DLQ files.
     {
         auto dlq_upload_res = co_await upload_files(
@@ -392,16 +432,16 @@ translation_task::discard() && {
     if (mux_result.has_error()) {
         vlog(
           _log.warn,
-          "Error writing data files - {}, deleting {} data files and {} DLQ "
-          "files",
+          "Error writing data files - {}, deleting {} data files, {} delete "
+          "files and {} DLQ files",
           mux_result.error(),
           files.data_files.size(),
+          files.delete_files.size(),
           files.dlq_files.size());
-        [[maybe_unused]] auto _ = co_await delete_data_and_dlq_files(
-          _log, files);
+        [[maybe_unused]] auto _ = co_await delete_all_local_files(_log, files);
         co_return errc::file_io_error;
     }
-    co_return co_await delete_data_and_dlq_files(_log, files);
+    co_return co_await delete_all_local_files(_log, files);
 }
 
 size_t translation_task::buffered_bytes() const {

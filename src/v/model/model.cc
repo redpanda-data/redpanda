@@ -622,6 +622,8 @@ iceberg_mode iceberg_mode::key_value
   = iceberg_mode::make<iceberg_mode::variant::key_value>();
 iceberg_mode iceberg_mode::value_schema_id_prefix
   = iceberg_mode::make<iceberg_mode::variant::value_schema_id_prefix>();
+iceberg_mode iceberg_mode::debezium_schema_id_prefix
+  = iceberg_mode::make<iceberg_mode::variant::debezium_schema_id_prefix>();
 
 void write_nested(iobuf& out, const iceberg_mode& m) {
     using serde::write;
@@ -654,11 +656,15 @@ void read_nested(
         read_nested(in, subject, bytes_left_limit);
         m = iceberg_mode::value_schema_latest(msg_name, subject);
         return;
+    case iceberg_mode::variant::debezium_schema_id_prefix:
+        m = iceberg_mode::debezium_schema_id_prefix;
+        return;
     }
     throw serde::serde_exception(
       fmt::format("unknown iceberg_mode variant: {}", std::to_underlying(v)));
 }
 
+<<<<<<< HEAD
 fmt::iterator iceberg_mode::format_to(fmt::iterator it) const {
     switch (kind()) {
     case variant::disabled:
@@ -667,6 +673,8 @@ fmt::iterator iceberg_mode::format_to(fmt::iterator it) const {
         return fmt::format_to(it, "key_value");
     case variant::value_schema_id_prefix:
         return fmt::format_to(it, "value_schema_id_prefix");
+    case variant::debezium_schema_id_prefix:
+        return fmt::format_to(it, "debezium_schema_id_prefix");
     case variant::value_schema_latest:
         it = fmt::format_to(it, "value_schema_latest");
         bool delimiter = false;
@@ -727,6 +735,8 @@ std::istream& operator>>(std::istream& is, iceberg_mode& mode) {
         mode = iceberg_mode::key_value;
     } else if (s == "value_schema_id_prefix") {
         mode = iceberg_mode::value_schema_id_prefix;
+    } else if (s == "debezium_schema_id_prefix" || s == "debezium") {
+        mode = iceberg_mode::debezium_schema_id_prefix;
     } else if (s.starts_with("value_schema_latest")) {
         s = s.substr(std::strlen("value_schema_latest"));
         auto options = parse_config_options(s);

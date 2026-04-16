@@ -19,6 +19,7 @@
 #include "datalake/cloud_data_io.h"
 #include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/frontend.h"
+#include "datalake/debezium_translator.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
@@ -64,11 +65,13 @@ static std::unique_ptr<type_resolver> make_type_resolver(
           config::shard_local_cfg().iceberg_latest_schema_cache_ttl_ms.bind(),
           cache,
           type_cache);
+    case model::iceberg_mode::variant::debezium_schema_id_prefix:
+        return std::make_unique<record_schema_resolver>(sr, cache, type_cache);
     }
 }
 
-static std::unique_ptr<record_translator>
-make_record_translator(const model::iceberg_mode& mode) {
+static std::unique_ptr<record_translator> make_record_translator(
+  const model::iceberg_mode& mode, type_resolver& resolver) {
     switch (mode.kind()) {
     case model::iceberg_mode::variant::disabled:
         vassert(
@@ -79,6 +82,8 @@ make_record_translator(const model::iceberg_mode& mode) {
     case model::iceberg_mode::variant::value_schema_id_prefix:
     case model::iceberg_mode::variant::value_schema_latest:
         return std::make_unique<structured_data_translator>();
+    case model::iceberg_mode::variant::debezium_schema_id_prefix:
+        return std::make_unique<debezium_translator>(resolver);
     }
 }
 } // namespace
@@ -636,7 +641,7 @@ ss::future<> datalake_manager::handle_translator_state_change(
       *_schema_registry,
       *_schema_cache,
       *_resolved_type_cache);
-    auto record_translator = make_record_translator(mode);
+    auto record_translator = make_record_translator(mode, *type_resolver);
     auto table_creator = translation::make_default_table_creator(
       _coordinator_frontend->local());
 
