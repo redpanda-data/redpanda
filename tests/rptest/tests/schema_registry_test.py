@@ -6853,6 +6853,170 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             f"Expected subject {expected_subject} not found in {subjects}"
         )
 
+    @cluster(num_nodes=3)
+    def test_context_prefix_subject_operations(self):
+        """
+        Verify all context-prefixed /contexts/{context}/... routes that
+        contain a {subject} path parameter. Each route should scope the
+        subject with the context and delegate to the existing handler.
+        """
+        subject = "ctx-prefix-test"
+        ctx = ".staging"
+        schema_data = json.dumps({"schema": schema1_def})
+        compat_schema_data = json.dumps({"schema": schema2_def})
+
+        # Register a schema via context-prefixed POST versions
+        result = self.sr_client.request(
+            "POST",
+            f"contexts/{ctx}/subjects/{subject}/versions",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST versions failed: {result.text}"
+        )
+        schema_id = result.json()["id"]
+        assert schema_id == 1
+
+        # GET versions via context prefix
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/subjects/{subject}/versions",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json() == [1]
+
+        # GET specific version via context prefix
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/subjects/{subject}/versions/1",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["version"] == 1
+
+        # GET version schema via context prefix
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/subjects/{subject}/versions/1/schema",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+
+        # GET referencedby via context prefix (empty, no references)
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/subjects/{subject}/versions/1/referencedby",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json() == []
+
+        # POST lookup (post_subject) via context prefix
+        result = self.sr_client.request(
+            "POST",
+            f"contexts/{ctx}/subjects/{subject}",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["id"] == schema_id
+
+        # Compatibility check via context prefix
+        result = self.sr_client.request(
+            "POST",
+            f"contexts/{ctx}/compatibility/subjects/{subject}/versions/1",
+            headers=HTTP_POST_HEADERS,
+            data=compat_schema_data,
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["is_compatible"] is True
+
+        # PUT config/{subject} via context prefix
+        result = self.sr_client.request(
+            "PUT",
+            f"contexts/{ctx}/config/{subject}",
+            headers=HTTP_POST_HEADERS,
+            data=json.dumps({"compatibility": "FULL"}),
+        )
+        assert result.status_code == requests.codes.ok
+
+        # GET config/{subject} via context prefix
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/config/{subject}",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["compatibilityLevel"] == "FULL"
+
+        # DELETE config/{subject} via context prefix
+        result = self.sr_client.request(
+            "DELETE",
+            f"contexts/{ctx}/config/{subject}",
+            headers=HTTP_DELETE_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+
+        # PUT mode/{subject} via context prefix
+        result = self.sr_client.request(
+            "PUT",
+            f"contexts/{ctx}/mode/{subject}",
+            headers=HTTP_POST_HEADERS,
+            data=json.dumps({"mode": "READONLY"}),
+        )
+        assert result.status_code == requests.codes.ok
+
+        # GET mode/{subject} via context prefix
+        result = self.sr_client.request(
+            "GET",
+            f"contexts/{ctx}/mode/{subject}",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["mode"] == "READONLY"
+
+        # DELETE mode/{subject} via context prefix
+        result = self.sr_client.request(
+            "DELETE",
+            f"contexts/{ctx}/mode/{subject}",
+            headers=HTTP_DELETE_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+
+        # Verify isolation: default context should NOT see the subject
+        result = self.sr_client.get_subjects()
+        assert result.status_code == requests.codes.ok
+        assert subject not in result.json(), (
+            f"Subject {subject} should not be visible in default context"
+        )
+
+        # DELETE version via context prefix
+        result = self.sr_client.request(
+            "DELETE",
+            f"contexts/{ctx}/subjects/{subject}/versions/1",
+            headers=HTTP_DELETE_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+
+        # DELETE subject via context prefix
+        result = self.sr_client.request(
+            "DELETE",
+            f"contexts/{ctx}/subjects/{subject}?permanent=true",
+            headers=HTTP_DELETE_HEADERS,
+        )
+        assert result.status_code == requests.codes.ok
+
+        # Invalid context name (embedded colon) returns 400
+        result = self.sr_client.request(
+            "GET",
+            "contexts/a:b/subjects",
+            headers=HTTP_GET_HEADERS,
+        )
+        assert result.status_code == requests.codes.bad_request, (
+            f"Expected 400 for invalid context name, got {result.status_code}"
+        )
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
@@ -10651,3 +10815,181 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
             99999, subject="sub1", auth=self.user_auth
         )
         self.assert_equal(result.status_code, 403)
+
+    @cluster(num_nodes=1)
+    def test_context_prefix_acl_isolation(self):
+        """
+        A user with ACLs on 'foo' (default context) must NOT be able to
+        access /contexts/.ctx1/subjects/foo/... — the ACL on the unqualified
+        subject should not grant access to the context-qualified subject.
+        """
+        # Grant READ on unqualified "sub1" (default context)
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "READ"))
+
+        # Access via context prefix should be denied — ACL is on "sub1",
+        # not ":.ctx1:sub1"
+        result = self.sr_client.request(
+            "GET",
+            "contexts/.ctx1/subjects/sub1/versions",
+            auth=self.user_auth,
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # Grant READ on the context-qualified subject
+        self._post_acl(self._create_acl(":.ctx1:sub1", "SUBJECT", "LITERAL", "READ"))
+
+        # Now access via context prefix should succeed
+        result = self.sr_client.request(
+            "GET",
+            "contexts/.ctx1/subjects/sub1/versions",
+            auth=self.user_auth,
+        )
+        self.assert_equal(result.status_code, 200)
+
+    @cluster(num_nodes=1)
+    def test_context_prefix_acl_with_prefix_pattern(self):
+        """
+        A prefix ACL on ':.ctx1:' grants access to all subjects in .ctx1
+        via context-prefixed URLs, but not to subjects in other contexts.
+        """
+        # Grant prefix ACL covering all subjects in .ctx1
+        self._post_acl(self._create_acl(":.ctx1:", "SUBJECT", "PREFIXED", "READ"))
+
+        # Access subjects in .ctx1 via prefix URL — should succeed
+        result = self.sr_client.request(
+            "GET",
+            "contexts/.ctx1/subjects/sub1/versions",
+            auth=self.user_auth,
+        )
+        self.assert_equal(result.status_code, 200)
+
+        result = self.sr_client.request(
+            "GET",
+            "contexts/.ctx1/subjects/sub2/versions",
+            auth=self.user_auth,
+        )
+        self.assert_equal(result.status_code, 200)
+
+        # Access a subject in a different context — should be denied
+        result = self.sr_client.request(
+            "GET",
+            "contexts/.ctx2/subjects/sub1/versions",
+            auth=self.user_auth,
+        )
+        self.assert_equal(result.status_code, 403)
+
+    @cluster(num_nodes=1)
+    def test_context_prefix_all_subject_operations_protected(self):
+        """
+        All context-prefixed subject endpoints must authorize against the
+        context-qualified subject, not the bare subject name.
+        """
+        # Grant ACL on unqualified "sub1" with ALL operations
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "ALL"))
+
+        # Each of these should be denied because the ACL is on "sub1",
+        # not ":.ctx1:sub1"
+        schema_data = json.dumps({"schema": schema1_def})
+        prefix = "contexts/.ctx1"
+
+        # POST subject (lookup)
+        result = self.sr_client.request(
+            "POST",
+            f"{prefix}/subjects/sub1",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"POST subjects/sub1 should be 403, got {result.status_code}",
+        )
+
+        # GET subject versions
+        result = self.sr_client.request(
+            "GET",
+            f"{prefix}/subjects/sub1/versions",
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET versions should be 403, got {result.status_code}",
+        )
+
+        # POST subject versions (register)
+        result = self.sr_client.request(
+            "POST",
+            f"{prefix}/subjects/sub1/versions",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"POST versions should be 403, got {result.status_code}",
+        )
+
+        # GET subject versions version
+        result = self.sr_client.request(
+            "GET",
+            f"{prefix}/subjects/sub1/versions/1",
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET version should be 403, got {result.status_code}",
+        )
+
+        # GET subject versions version schema
+        result = self.sr_client.request(
+            "GET",
+            f"{prefix}/subjects/sub1/versions/1/schema",
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET version/schema should be 403, got {result.status_code}",
+        )
+
+        # DELETE subject version
+        result = self.sr_client.request(
+            "DELETE",
+            f"{prefix}/subjects/sub1/versions/1",
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"DELETE version should be 403, got {result.status_code}",
+        )
+
+        # DELETE subject
+        result = self.sr_client.request(
+            "DELETE",
+            f"{prefix}/subjects/sub1",
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"DELETE subject should be 403, got {result.status_code}",
+        )
+
+        # Compatibility check
+        result = self.sr_client.request(
+            "POST",
+            f"{prefix}/compatibility/subjects/sub1/versions/1",
+            headers=HTTP_POST_HEADERS,
+            data=schema_data,
+            auth=self.user_auth,
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"Compatibility check should be 403, got {result.status_code}",
+        )

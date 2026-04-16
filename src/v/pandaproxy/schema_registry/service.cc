@@ -27,8 +27,10 @@
 #include "model/namespace.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/schema_registry/auth.h"
 #include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/context_router.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -365,6 +367,138 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       acl_operation::alter,
       security::default_cluster_name,
       delete_security_acls));
+
+    // Context-prefixed route helpers: extract the {context} path parameter,
+    // apply the given URL-rewriting function, then delegate to the handler.
+    auto ctx_route = [](auto scope_fn, auto handler) {
+        return [=](
+                 server::request_t rq,
+                 server::reply_t rp) -> ss::future<server::reply_t> {
+            auto ctx = parse::request_param<ss::sstring>(*rq.req, "context");
+            scope_fn(*rq.req, ctx);
+            return handler(std::move(rq), std::move(rp));
+        };
+    };
+
+    auto ctx_deferred_route = [](auto scope_fn, auto handler) {
+        return [=](
+                 server::request_t rq,
+                 server::reply_t rp,
+                 std::optional<request_auth_result> auth_result)
+                 -> ss::future<server::reply_t> {
+            auto ctx = parse::request_param<ss::sstring>(*rq.req, "context");
+            scope_fn(*rq.req, ctx);
+            return handler(
+              std::move(rq), std::move(rp), std::move(auth_result));
+        };
+    };
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_post_subject,
+      auth::level::user,
+      acl_operation::read,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, post_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_delete_subject,
+      auth::level::user,
+      acl_operation::remove,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, delete_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_subject_versions,
+      auth::level::user,
+      acl_operation::describe,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, get_subject_versions)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_post_subject_versions,
+      auth::level::user,
+      acl_operation::write,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, post_subject_versions)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_subject_versions_version,
+      auth::level::user,
+      acl_operation::read,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, get_subject_versions_version)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_subject_versions_version_schema,
+      auth::level::user,
+      acl_operation::read,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, get_subject_versions_version_schema)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::
+        ctx_get_subject_versions_version_referenced_by,
+      auth::level::user,
+      acl_operation::describe,
+      registry_resource{},
+      ctx_route(
+        scope_subject_param, get_subject_versions_version_referenced_by)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_delete_subject_version,
+      auth::level::user,
+      acl_operation::remove,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, delete_subject_version)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_compatibility_subject_version,
+      auth::level::user,
+      acl_operation::read,
+      auth::context_prefix_subject{},
+      ctx_route(scope_subject_param, compatibility_subject_version)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_config_subject,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_param, get_config_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_put_config_subject,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_param, put_config_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_delete_config_subject,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_param, delete_config_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_get_mode_subject,
+      auth::level::user,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_param, get_mode_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_put_mode_subject,
+      auth::level::superuser,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_param, put_mode_subject)));
+
+    routes.routes.emplace_back(wrap(
+      ss::httpd::schema_registry_json::ctx_delete_mode_subject,
+      auth::level::superuser,
+      std::nullopt,
+      auth::deferred{},
+      ctx_deferred_route(scope_subject_param, delete_mode_subject)));
 
     return routes;
 }

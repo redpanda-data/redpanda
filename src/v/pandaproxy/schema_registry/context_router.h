@@ -46,4 +46,19 @@ inline bool starts_with_context(std::string_view s) {
     return s.starts_with(":.") || s.starts_with(":*:");
 }
 
+/// \brief Scope the "subject" path parameter by prepending the context.
+///
+/// ctx is expected to be in the form ".name" (with leading dot). The
+/// resulting subject is ":.ctx:subject".
+inline void
+scope_subject_param(ss::http::request& req, const ss::sstring& ctx) {
+    auto sub = req.get_path_param("subject");
+    if (!starts_with_context(sub)) {
+        auto nctx = normalize_context(ctx);
+        req.param.set(
+          ss::sstring("subject"),
+          ss::sstring(fmt::format("/:{0}:{1}", nctx, sub)));
+    }
+}
+
 } // namespace pandaproxy::schema_registry
