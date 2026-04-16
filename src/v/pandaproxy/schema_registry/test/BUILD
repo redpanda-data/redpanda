@@ -336,6 +336,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "json_schema_references_test",
+    timeout = "short",
+    srcs = [
+        "json_schema_references.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":store_fixture",
+        "//src/v/pandaproxy/schema_registry:core",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "context_subject_test",
     timeout = "short",
     srcs = [
