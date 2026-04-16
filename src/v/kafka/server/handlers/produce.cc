@@ -309,11 +309,16 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     auto& transform_svc = octx.rctx.server().local().transform_service();
 
     // Build request metadata on the connection shard where the context
-    // is safe to access. Only bother when the transform service is
-    // initialized (avoids allocations on the hot path when transforms
-    // are disabled).
+    // is safe to access. Skip when no produce-path transform can
+    // receive it: either transforms are disabled entirely, or no
+    // produce-path transform is registered on this shard. This keeps
+    // the produce hot path free of per-request string allocations for
+    // clusters that only use sidecar transforms (or none at all).
     auto request_info = [&]() -> std::optional<wasm::request_metadata> {
         if (!transform_svc.local_is_initialized()) {
+            return std::nullopt;
+        }
+        if (!transform_svc.local().has_produce_path_transforms()) {
             return std::nullopt;
         }
         auto conn = octx.rctx.connection();

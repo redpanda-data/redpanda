@@ -148,6 +148,14 @@ public:
     std::optional<model::transform_id>
       get_produce_path_transform(model::topic_namespace_view) const;
 
+    /// True when any produce-path transform is registered on this
+    /// shard. Called on the produce hot path to short-circuit
+    /// request-metadata construction when there are no produce-path
+    /// transforms to receive it.
+    bool has_produce_path_transforms() const {
+        return !_produce_path_transforms.empty();
+    }
+
     // Exposed for testing, but drains all the pending operations.
     //
     // Any future here should resolve before calling `stop`.

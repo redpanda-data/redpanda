@@ -136,6 +136,12 @@ public:
     std::optional<model::transform_id>
       get_produce_path_transform(model::topic_namespace_view) const;
 
+    /// True when any produce-path transform is registered on this
+    /// shard. Callers use this to skip per-request setup (like
+    /// building request metadata) on the produce hot path when no
+    /// produce-path transforms are deployed.
+    bool has_produce_path_transforms() const;
+
     /// Get the produce-path executor for this shard.
     produce_path_executor& executor() { return _executor; }
 
