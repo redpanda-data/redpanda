@@ -25,6 +25,7 @@ class partition;
 } // namespace cluster
 
 namespace cloud_io {
+class cache;
 class remote;
 } // namespace cloud_io
 
@@ -41,7 +42,7 @@ public:
     explicit domain_supervisor(
       cluster::controller*,
       io*,
-      std::filesystem::path staging_dir,
+      cloud_io::cache*,
       cloud_io::remote*,
       cloud_storage_clients::bucket_name bucket,
       ss::scheduling_group sg);

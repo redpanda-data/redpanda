@@ -84,7 +84,7 @@ ss::future<> app::construct(
       domain_supervisor,
       controller,
       ss::sharded_parameter([this] { return &l1_io.local(); }),
-      config::node().l1_staging_path(),
+      ss::sharded_parameter([&cloud_cache] { return &cloud_cache->local(); }),
       ss::sharded_parameter([&remote] { return &remote->local(); }),
       bucket,
       scheduling_groups::instance().cloud_topics_metastore_sg());
@@ -342,25 +342,23 @@ ss::future<> app::cleanup_tmp_files() {
                     co_return;
                 }
                 if (entry.type == ss::directory_entry_type::regular) {
-                    if (std::string_view(entry.name).contains(".tmp")) {
-                        auto entry_path_str = entry_path.string();
-                        auto rm_fut = co_await ss::coroutine::as_future(
-                          ss::remove_file(entry_path_str));
-                        if (rm_fut.failed()) {
-                            auto ex = rm_fut.get_exception();
-                            auto lvl = ssx::is_shutdown_exception(ex)
-                                         ? ss::log_level::debug
-                                         : ss::log_level::warn;
-                            vlogl(
-                              cd_log,
-                              lvl,
-                              "Failed to delete tmp file {}: {}",
-                              entry_path_str,
-                              ex);
-                            co_return;
-                        }
-                        deleted_count++;
+                    auto entry_path_str = entry_path.string();
+                    auto rm_fut = co_await ss::coroutine::as_future(
+                      ss::remove_file(entry_path_str));
+                    if (rm_fut.failed()) {
+                        auto ex = rm_fut.get_exception();
+                        auto lvl = ssx::is_shutdown_exception(ex)
+                                     ? ss::log_level::debug
+                                     : ss::log_level::warn;
+                        vlogl(
+                          cd_log,
+                          lvl,
+                          "Failed to delete staging file {}: {}",
+                          entry_path_str,
+                          ex);
+                        co_return;
                     }
+                    deleted_count++;
                 }
             }));
 
@@ -376,11 +374,12 @@ ss::future<> app::cleanup_tmp_files() {
     if (deleted_count > 0) {
         vlog(
           cd_log.info,
-          "Cleanup deleted {} tmp file(s) from {}",
+          "Cleanup deleted {} staging file(s) from {}",
           deleted_count,
           staging_dir);
     } else {
-        vlog(cd_log.debug, "No tmp files found to cleanup in {}", staging_dir);
+        vlog(
+          cd_log.debug, "No staging files found to cleanup in {}", staging_dir);
     }
 }
 

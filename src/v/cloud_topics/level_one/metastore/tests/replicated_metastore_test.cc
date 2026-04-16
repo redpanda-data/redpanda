@@ -17,7 +17,7 @@
 #include "cloud_topics/tests/cluster_fixture.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/io/memory_persistence.h"
 #include "lsm/lsm.h"
 #include "model/fundamental.h"

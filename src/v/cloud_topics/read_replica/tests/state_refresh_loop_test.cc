@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_io/tests/scoped_remote.h"
@@ -21,6 +22,7 @@
 #include "cloud_topics/read_replica/tests/db_utils.h"
 #include "lsm/lsm.h"
 #include "raft/tests/raft_fixture.h"
+#include "storage/disk.h"
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
@@ -76,6 +78,7 @@ public:
         refresh_node(
           ss::shared_ptr<stm> stm,
           cloud_io::remote* r,
+          cloud_io::cache* c,
           const cloud_storage_clients::bucket_name& b,
           std::filesystem::path staging)
           : stm_ptr(std::move(stm))
@@ -83,7 +86,7 @@ public:
           , bucket(b)
           , staging_path(std::move(staging)) {
             snapshot_mgr = std::make_unique<snapshot_manager>(
-              staging_path, remote, nullptr);
+              staging_path, remote, c);
         }
 
         void start_refresh_loop(
@@ -125,13 +128,35 @@ public:
 
         sr_ = cloud_io::scoped_remote::create(10, conf);
 
+        auto cache_dir = cache_tmpdir_.get_path() / "cache";
+        cloud_io::cache::initialize(cache_dir).get();
+        test_cache_
+          .start(
+            cache_dir,
+            30_GiB,
+            config::mock_binding<double>(0.0),
+            config::mock_binding<uint64_t>(100_MiB),
+            config::mock_binding<std::optional<double>>(std::nullopt),
+            config::mock_binding<uint32_t>(100000),
+            config::mock_binding<uint16_t>(3))
+          .get();
+        test_cache_.invoke_on_all([](cloud_io::cache& c) { return c.start(); })
+          .get();
+        test_cache_
+          .invoke_on(
+            ss::shard_id{0},
+            [](cloud_io::cache& c) {
+                c.notify_disk_status(
+                  100ULL * 1024 * 1024 * 1024,
+                  50ULL * 1024 * 1024 * 1024,
+                  storage::disk_space_alert::ok);
+            })
+          .get();
+
         test_tidp_ = model::topic_id_partition{
           model::topic_id{uuid_t::create()}, model::partition_id{0}};
         test_remote_label_ = cloud_storage::remote_label{
           model::cluster_uuid{uuid_t::create()}};
-
-        writer_staging_dir_ = std::filesystem::path{"state_refresh_loop_test"}
-                              / "writer";
 
         // Call base class SetUpAsync to initialize raft fixture
         raft::raft_fixture::SetUpAsync().get();
@@ -154,7 +179,11 @@ public:
                                      / fmt::format("node_{}", node_idx++);
             std::filesystem::create_directories(node_staging_path);
             refresh_nodes_[id] = std::make_unique<refresh_node>(
-              stm_ptr, &sr_->remote.local(), bucket_name, node_staging_path);
+              stm_ptr,
+              &sr_->remote.local(),
+              &test_cache_.local(),
+              bucket_name,
+              node_staging_path);
         }
     }
 
@@ -176,6 +205,7 @@ public:
         writer_dbs_.clear();
         raft::stm_raft_fixture<stm>::TearDownAsync().get();
         refresh_nodes_.clear();
+        test_cache_.stop().get();
         sr_.reset();
     }
 
@@ -222,7 +252,7 @@ public:
       model::term_id term) {
         auto* db = co_await test_utils::get_or_create_writer_db(
           domain,
-          writer_staging_dir_,
+          &test_cache_.local(),
           &sr_->remote.local(),
           bucket_name,
           writer_dbs_);
@@ -245,13 +275,15 @@ public:
 
 protected:
     temporary_dir reader_staging_base_dir_;
+    temporary_dir cache_tmpdir_{"state_refresh_loop_cache"};
+    ss::sharded<cloud_io::cache> test_cache_;
     absl::node_hash_map<model::node_id, std::unique_ptr<refresh_node>>
       refresh_nodes_;
     scoped_config cfg_;
     std::unique_ptr<cloud_io::scoped_remote> sr_;
     chunked_hash_map<l1::domain_uuid, std::unique_ptr<lsm::database>>
       writer_dbs_;
-    std::filesystem::path writer_staging_dir_;
+
     model::topic_id_partition test_tidp_;
     cloud_storage::remote_label test_remote_label_;
 };

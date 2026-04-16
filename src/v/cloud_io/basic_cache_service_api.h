@@ -75,6 +75,10 @@ public:
 
     ~basic_space_reservation_guard();
 
+    /// Merges another guard's reservation into this one. The other guard is
+    /// left empty (zero bytes/objects).
+    void merge(basic_space_reservation_guard&& other) noexcept;
+
     /// After completing the write operation that this space reservation
     /// protected, indicate how many bytes were really written: this is used to
     /// atomically update cache usage stats to free the reservation and update

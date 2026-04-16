@@ -269,7 +269,8 @@ std::optional<std::chrono::milliseconds> cache::get_trim_delay() const {
 
 ss::future<> cache::trim_throttled_unlocked(
   std::optional<uint64_t> size_limit_override,
-  std::optional<size_t> object_limit_override) {
+  std::optional<size_t> object_limit_override,
+  std::optional<ss::lowres_clock::time_point> deadline) {
     // If we trimmed very recently then do not do it immediately:
     // this reduces load and improves chance of currently promoted
     // segments finishing their read work before we demote their
@@ -277,6 +278,9 @@ ss::future<> cache::trim_throttled_unlocked(
     auto trim_delay = get_trim_delay();
 
     if (trim_delay.has_value()) {
+        if (deadline && ss::lowres_clock::now() + *trim_delay > *deadline) {
+            throw ss::timed_out_error();
+        }
         vlog(
           log.info,
           "Cache trimming throttled, waiting {}ms",
@@ -828,9 +832,13 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
             continue;
         }
 
-        // Unlike the fast trim, we *do not* skip .tmp files.  This is to handle
-        // the case where we have some abandoned tmp files, and have hit the
-        // exhaustive trim because they are occupying too much space.
+        if (
+          std::string_view(file_stat.path)
+            .ends_with(cache_tmp_file_extension)) {
+            result.trim_missed_tmp_files = true;
+            continue;
+        }
+
         try {
             co_await delete_file_and_empty_parents(file_stat.path);
             _access_time_tracker.remove(file_stat.path);
@@ -851,23 +859,6 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
         } catch (const ss::gate_closed_exception&) {
             // We are shutting down, stop iterating and propagate
             throw;
-        } catch (const std::filesystem::filesystem_error& e) {
-            if (likely(file_stat.path.ends_with(cache_tmp_file_extension))) {
-                // In exhaustive scan we might hit a .part file and get ENOENT,
-                // this is expected behavior occasionally.
-                result.trim_missed_tmp_files = true;
-                vlog(
-                  log.info,
-                  "trim: couldn't delete temp file {}: {}.",
-                  file_stat.path,
-                  e.what());
-            } else {
-                vlog(
-                  log.error,
-                  "trim: couldn't delete {}: {}.",
-                  file_stat.path,
-                  e.what());
-            }
         } catch (const std::exception& e) {
             vlog(
               log.error,
@@ -1419,15 +1410,26 @@ ss::future<> cache::_invalidate(const std::filesystem::path& key) {
 
 ss::future<space_reservation_guard>
 cache::reserve_space(uint64_t bytes, size_t objects) {
+    return reserve_space(bytes, objects, std::nullopt);
+}
+
+ss::future<space_reservation_guard> cache::reserve_space(
+  uint64_t bytes,
+  size_t objects,
+  std::optional<ss::lowres_clock::time_point> deadline) {
     while (_block_puts) {
         vlog(
           log.warn,
           "Blocking tiered storage cache write, disk space critically low.");
-        co_await _block_puts_cond.wait();
+        if (deadline) {
+            co_await _block_puts_cond.wait(*deadline);
+        } else {
+            co_await _block_puts_cond.wait();
+        }
     }
 
-    co_await container().invoke_on(0, [bytes, objects](cache& c) {
-        return c.do_reserve_space(bytes, objects);
+    co_await container().invoke_on(0, [bytes, objects, deadline](cache& c) {
+        return c.do_reserve_space(bytes, objects, deadline);
     });
 
     vlog(
@@ -1684,8 +1686,17 @@ void cache::maybe_background_trim() {
     }
 }
 
-ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
+ss::future<> cache::do_reserve_space(
+  uint64_t bytes,
+  size_t objects,
+  std::optional<ss::lowres_clock::time_point> deadline) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
+
+    auto check_deadline = [&] {
+        if (deadline && ss::lowres_clock::now() >= *deadline) {
+            throw ss::timed_out_error();
+        }
+    };
 
     maybe_background_trim();
 
@@ -1708,7 +1719,19 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
       _reservations_pending,
       _reservations_pending_objects);
 
-    auto units = co_await ss::get_units(_cleanup_sm, 1);
+    check_deadline();
+
+    auto get_cleanup_units = [&]() {
+        if (deadline) {
+            auto now = ss::lowres_clock::now();
+            auto remaining = *deadline > now
+                               ? *deadline - now
+                               : ss::lowres_clock::duration::zero();
+            return ss::get_units(_cleanup_sm, 1, remaining);
+        }
+        return ss::get_units(_cleanup_sm, 1);
+    };
+    auto units = co_await get_cleanup_units();
 
     // Situation may change after a scheduling point. Another fiber could
     // trigger carryover trim which released some resources. Exit early in this
@@ -1780,6 +1803,8 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
         _reservations_pending_objects += objects;
 
         while (!may_reserve_space(bytes, objects)) {
+            check_deadline();
+
             bool may_exceed = may_exceed_limits(bytes, objects)
                               && _last_trim_failed;
             bool may_trim_now = !get_trim_delay().has_value();
@@ -1799,7 +1824,8 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                 // After taking lock, there still isn't space: means someone
                 // else didn't take it and free space for us already, so we will
                 // do the trim.
-                co_await trim_throttled_unlocked();
+                co_await trim_throttled_unlocked(
+                  std::nullopt, std::nullopt, deadline);
                 did_trim = true;
             } else {
                 vlog(
@@ -2008,6 +2034,117 @@ cache::validate_cache_config(const config::configuration& conf) {
     }
 
     return std::nullopt;
+}
+
+ss::future<std::filesystem::path>
+cache::create_staging_path(std::filesystem::path key) {
+    auto guard = _gate.hold();
+
+    auto key_path = _cache_dir / key;
+    auto filename = key_path.filename();
+    auto dir_path = key_path;
+    dir_path.remove_filename();
+
+    // TODO: share code with put().
+    auto tmp_filename = std::filesystem::path(
+      ss::format(
+        "{}_{}_{}{}",
+        filename.native(),
+        ss::this_shard_id(),
+        (++_cnt),
+        cache_tmp_file_extension));
+    auto tmp_filepath = dir_path / tmp_filename;
+    if (!co_await ss::file_exists(dir_path.string())) {
+        co_await ss::recursive_touch_directory(dir_path.string());
+    }
+
+    co_return tmp_filepath;
+}
+
+ss::future<staging_file> cache::create_staging_file(
+  std::filesystem::path key,
+  staging_file_options opts,
+  std::optional<ss::lowres_clock::time_point> deadline) {
+    auto gate_holder = _gate.hold();
+    auto reservation = co_await reserve_space(
+      opts.initial_reservation_bytes, /*objects=*/1, deadline);
+    auto staging_path = co_await create_staging_path(key);
+    std::exception_ptr ex;
+    std::optional<ss::output_stream<char>> stream_opt;
+    try {
+        auto file = co_await ss::open_file_dma(
+          staging_path.native(),
+          ss::open_flags::create | ss::open_flags::rw
+            | ss::open_flags::exclusive);
+        stream_opt = co_await ss::make_file_output_stream(std::move(file));
+    } catch (...) {
+        ex = std::current_exception();
+    }
+    if (ex) {
+        co_await ss::remove_file(staging_path.native())
+          .then_wrapped([](ss::future<> f) { f.ignore_ready_future(); });
+        std::rethrow_exception(ex);
+    }
+    co_return staging_file{
+      *this,
+      std::move(gate_holder),
+      std::move(key),
+      std::move(staging_path),
+      std::move(stream_opt.value()),
+      std::move(reservation),
+      opts};
+}
+
+ss::future<> cache::commit_staging_file(
+  std::filesystem::path key,
+  std::filesystem::path staging_path,
+  space_reservation_guard reservation) {
+    auto guard = _gate.hold();
+
+    auto dest_path = _cache_dir / key;
+    vlog(
+      log.debug, "Committing staging file {} to {}", staging_path, dest_path);
+
+    // We use link() rather than O_EXCL create + rename because a crash between
+    // the O_EXCL create and the rename would leave an empty file at the
+    // destination: on restart the cache would see a zero-byte entry for this
+    // key. With link(), a crash between link and unlink leaves the real data
+    // at the destination.
+    auto link_fut = co_await ss::coroutine::as_future(
+      ss::link_file(staging_path.native(), dest_path.native()));
+    if (link_fut.failed()) {
+        auto ex = link_fut.get_exception();
+        try {
+            std::rethrow_exception(ex);
+        } catch (const std::system_error& e) {
+            if (e.code() != std::errc::file_exists) {
+                throw;
+            }
+        }
+        // Someone else already wrote to the destination. Treat this as a
+        // success, but presume that the one who won the race already did the
+        // reservation accounting and just release the reservation rather than
+        // accounting for successfully written data.
+        co_await ss::remove_file(staging_path.native());
+        co_return;
+    }
+    co_await ss::remove_file(staging_path.native());
+
+    auto file_size = co_await ss::file_size(dest_path.native());
+    reservation.wrote_data(file_size, 1);
+
+    auto source = dest_path.native();
+    if (ss::this_shard_id() == 0) {
+        _access_time_tracker.add(
+          source, std::chrono::system_clock::now(), file_size);
+    } else {
+        ssx::spawn_with_gate(_gate, [this, source, file_size] {
+            return container().invoke_on(0, [source, file_size](cache& c) {
+                c._access_time_tracker.add(
+                  source, std::chrono::system_clock::now(), file_size);
+            });
+        });
+    }
 }
 
 } // namespace cloud_io

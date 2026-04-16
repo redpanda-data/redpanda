@@ -16,7 +16,7 @@
 #include "cloud_topics/logger.h"
 #include "cloud_topics/read_replica/snapshot_metastore.h"
 #include "config/configuration.h"
-#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
 
@@ -69,10 +69,9 @@ private:
     ss::gate gate_;
     ss::abort_source as_;
 
-    // TODO: integrate with the cloud cache?
-    const std::filesystem::path staging_directory_;
     const cloud_storage_clients::bucket_name bucket_;
     cloud_io::remote* remote_;
+    cloud_io::cache* cache_;
     l1::domain_uuid domain_uuid_;
     prefix_logger logger_;
 
@@ -98,15 +97,15 @@ database_refresher::database_refresher(
   cloud_io::remote* remote,
   cloud_io::cache* cache,
   l1::domain_uuid domain_uuid)
-  : staging_directory_(std::move(staging_directory))
-  , bucket_(std::move(bucket))
+  : bucket_(std::move(bucket))
   , remote_(remote)
+  , cache_(cache)
   , domain_uuid_(domain_uuid)
   , logger_(
       cd_log, fmt::format("database_refresher {}, {}", domain_uuid_, bucket_))
   , io_(
       std::make_unique<l1::file_io>(
-        staging_directory_, remote_, bucket_, cache)) {}
+        std::move(staging_directory), remote_, bucket_, cache_)) {}
 
 void database_refresher::start() {
     ssx::spawn_with_gate(gate_, [this] { return run_loop(); });
@@ -135,12 +134,8 @@ ss::future<> database_refresher::open_or_refresh() {
     }
     cloud_storage_clients::object_key domain_prefix{
       domain_cloud_prefix(domain_uuid_)};
-    auto data_persist = co_await lsm::io::open_cloud_data_persistence(
-      staging_directory_,
-      remote_,
-      bucket_,
-      domain_prefix,
-      ss::sstring(domain_uuid_()));
+    auto data_persist = co_await lsm::io::open_cloud_cache_data_persistence(
+      cache_, remote_, bucket_, domain_prefix);
     auto meta_persist = co_await lsm::io::open_cloud_metadata_persistence(
       remote_, bucket_, domain_prefix);
     lsm::io::persistence io{

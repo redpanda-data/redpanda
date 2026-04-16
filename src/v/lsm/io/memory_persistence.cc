@@ -148,10 +148,12 @@ public:
         if (_controller && _controller->should_fail) {
             throw io_error_exception("injected error");
         }
-        auto it = _data.try_emplace(
+        auto [it, inserted] = _data.try_emplace(
           h, ss::make_lw_shared<memory_file_state>(h));
-        co_return std::make_unique<memory_sequential_file_writer>(
-          it.first->second);
+        if (!inserted) {
+            throw io_error_exception("file already exists: {}", h);
+        }
+        co_return std::make_unique<memory_sequential_file_writer>(it->second);
     }
 
     ss::future<> remove_file(internal::file_handle h) override {

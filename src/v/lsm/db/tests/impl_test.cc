@@ -786,7 +786,9 @@ TEST_F(ImplTest, RefreshFailsForLowerSeqno) {
 
     // Nefarious case: open another database so it gets a low seqno and we can
     // flush a seqno lower than the refreshed database below.
-    auto* another_db = open(make_options());
+    auto other_opts = make_options();
+    other_opts->database_epoch = lsm::internal::database_epoch{1};
+    auto* another_db = open(other_opts);
 
     // Flush a couple more times to bump the seqno.
     write_at_least(512_KiB);

@@ -26,6 +26,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":db_domain_manager",
         ":simple_domain_manager",
+        "//src/v/cloud_io:cache",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cloud_topics/level_one/metastore/lsm:stm",
@@ -91,7 +92,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/metastore/lsm:state_reader",
         "//src/v/cloud_topics/level_one/metastore/lsm:state_update",
         "//src/v/config",
-        "//src/v/lsm/io:cloud_persistence",
+        "//src/v/lsm/io:cloud_cache_persistence",
         "//src/v/lsm/proto:manifest_redpanda_proto",
         "//src/v/model:batch_builder",
         "//src/v/ssx:future_util",
@@ -101,6 +102,7 @@ redpanda_cc_library(
     deps = [
         ":domain_manager",
         "//src/v/base",
+        "//src/v/cloud_io:cache",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cloud_topics/level_one/common:object_id",
         "//src/v/cloud_topics/level_one/metastore:rpc_types",

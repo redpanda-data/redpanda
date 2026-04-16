@@ -48,27 +48,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "cloud_persistence",
-    srcs = ["cloud_persistence.cc"],
-    hdrs = ["cloud_persistence.h"],
+    name = "cloud_cache_persistence",
+    srcs = ["cloud_cache_persistence.cc"],
+    hdrs = ["cloud_cache_persistence.h"],
     implementation_deps = [
         ":file_io",
-        "//src/v/base",
-        "//src/v/bytes:ioarray",
-        "//src/v/bytes:iobuf",
         "//src/v/cloud_io:io_result",
         "//src/v/config",
         "//src/v/lsm/core:exceptions",
         "//src/v/lsm/core/internal:files",
         "//src/v/ssx:future_util",
         "//src/v/utils:retry_chain_node",
-        "//src/v/utils:uuid",
+        "//src/v/utils:stream_provider",
     ],
     deps = [
         ":persistence",
+        "//src/v/cloud_io:cache",
         "//src/v/cloud_io:remote",
         "//src/v/cloud_storage_clients",
-        "//src/v/model",
         "@seastar",
     ],
 )

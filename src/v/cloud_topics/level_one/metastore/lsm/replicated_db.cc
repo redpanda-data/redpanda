@@ -16,7 +16,7 @@
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/logger.h"
 #include "config/configuration.h"
-#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/io/persistence.h"
 #include "lsm/proto/manifest.proto.h"
 #include "model/batch_builder.h"
@@ -58,7 +58,7 @@ ss::future<std::expected<
 replicated_database::open(
   model::term_id expected_term,
   stm* s,
-  const std::filesystem::path& staging_directory,
+  cloud_io::cache* cache,
   cloud_io::remote* remote,
   const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as,
@@ -115,12 +115,8 @@ replicated_database::open(
       domain_cloud_prefix(domain_uuid)};
 
     auto data_persist_fut = co_await ss::coroutine::as_future(
-      lsm::io::open_cloud_data_persistence(
-        staging_directory,
-        remote,
-        bucket,
-        domain_prefix,
-        ss::sstring(domain_uuid())));
+      lsm::io::open_cloud_cache_data_persistence(
+        cache, remote, bucket, domain_prefix));
     if (data_persist_fut.failed()) {
         co_return std::unexpected(wrap_failed_future(
           data_persist_fut.get_exception(), "Failed to open data persistence"));

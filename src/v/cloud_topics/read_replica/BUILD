@@ -88,7 +88,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/common:file_io",
         "//src/v/cloud_topics/level_one/metastore:manifest_io",
         "//src/v/config",
-        "//src/v/lsm/io:cloud_persistence",
+        "//src/v/lsm/io:cloud_cache_persistence",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sleep_abortable",
     ],

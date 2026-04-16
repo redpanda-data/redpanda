@@ -9,18 +9,22 @@
  * by the Apache License, Version 2.0
  */
 
+#include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage_clients/types.h"
 #include "lsm/core/internal/files.h"
-#include "lsm/io/cloud_persistence.h"
+#include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/io/disk_persistence.h"
 #include "lsm/io/memory_persistence.h"
 #include "lsm/io/persistence.h"
+#include "storage/disk.h"
+#include "test_utils/tmp_dir.h"
 #include "utils/uuid.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/util/defer.hh>
 
 #include <gmock/gmock-matchers.h>
@@ -95,18 +99,28 @@ TEST_P(PersistenceTest, ListFiles) {
     EXPECT_THAT(list_files().get(), testing::UnorderedElementsAreArray(files));
 }
 
-TEST_P(PersistenceTest, OverwriteFile) {
-    for (int i = 0; i < 3; ++i) {
+// Writing to the same file handle twice must not corrupt the original data.
+TEST_P(PersistenceTest, DuplicateWritePreservesOriginal) {
+    {
         auto w = persistence->open_sequential_writer({}).get();
         auto _ = ss::defer([&w] { w->close().get(); });
-        w->append(iobuf::from(fmt::format("hello, world: {}", i))).get();
+        w->append(iobuf::from("original data")).get();
+    }
+    // A second write to the same handle may throw or silently no-op
+    // depending on the backend. Either way, the original must survive.
+    try {
+        auto w = persistence->open_sequential_writer({}).get();
+        auto _ = ss::defer([&w] { w->close().get(); });
+        w->append(iobuf::from("replacement")).get();
+    } catch (...) {
+        // Expected for backends that use O_EXCL.
     }
     auto maybe_r = persistence->open_random_access_reader({}).get();
     ASSERT_TRUE(bool(maybe_r));
     auto r = std::move(*maybe_r);
     auto _ = ss::defer([&r] { r->close().get(); });
-    auto buf = r->read(0, 15).get();
-    EXPECT_EQ(buf.as_iobuf(), iobuf::from("hello, world: 2"))
+    auto buf = r->read(0, 13).get();
+    EXPECT_EQ(buf.as_iobuf(), iobuf::from("original data"))
       << buf.as_iobuf().hexdump(32);
 }
 
@@ -250,17 +264,20 @@ TEST_P(PersistenceTest, RandomAccessReaderComprehensive) {
     persistence->remove_file({}).get();
 }
 
-// Mock cloud data persistence that owns s3_imposter and proxies to the real
-// cloud_data_persistence implementation. This allows cloud persistence to be
-// tested within the parameterized test framework.
-class mock_cloud_data_persistence : public data_persistence {
+// Wrapper for cloud_cache persistence that owns the cache and s3 imposter
+// lifecycle alongside the real implementation.
+class mock_cloud_cache_data_persistence : public data_persistence {
 public:
-    mock_cloud_data_persistence(
+    mock_cloud_cache_data_persistence(
       std::unique_ptr<s3_imposter_fixture> fixture,
       std::unique_ptr<cloud_io::scoped_remote> sr,
+      std::unique_ptr<temporary_dir> cache_tmpdir,
+      std::unique_ptr<ss::sharded<cloud_io::cache>> cache,
       std::unique_ptr<data_persistence> impl)
       : fixture_(std::move(fixture))
       , sr_(std::move(sr))
+      , cache_tmpdir_(std::move(cache_tmpdir))
+      , cache_(std::move(cache))
       , impl_(std::move(impl)) {}
 
     ss::future<std::unique_ptr<sequential_file_writer>>
@@ -275,7 +292,6 @@ public:
 
     ss::future<> remove_file(lsm_internal::file_handle handle) override {
         co_await impl_->remove_file(handle);
-        // We also need to remove the expectation from the s3 imposter as well
         fixture_->remove_expectations(
           chunked_vector<ss::sstring>::single(
             fmt::format(
@@ -287,11 +303,16 @@ public:
         return impl_->list_files();
     }
 
-    ss::future<> close() override { return impl_->close(); }
+    ss::future<> close() override {
+        co_await impl_->close();
+        co_await cache_->stop();
+    }
 
 private:
     std::unique_ptr<s3_imposter_fixture> fixture_;
     std::unique_ptr<cloud_io::scoped_remote> sr_;
+    std::unique_ptr<temporary_dir> cache_tmpdir_;
+    std::unique_ptr<ss::sharded<cloud_io::cache>> cache_;
     std::unique_ptr<data_persistence> impl_;
 };
 
@@ -307,23 +328,45 @@ INSTANTIATE_TEST_SUITE_P(
         return open_disk_data_persistence(tmpdir / std::string_view(subdir));
     },
     []() -> ss::future<std::unique_ptr<data_persistence>> {
-        std::filesystem::path tmpdir = std::getenv("TEST_TMPDIR");
-        auto staging_subdir = ss::sstring(uuid_t::create());
-        auto staging = tmpdir / std::string_view(staging_subdir);
-
         auto fixture = std::make_unique<s3_imposter_fixture>();
         fixture->set_expectations_and_listen({});
         auto sr = cloud_io::scoped_remote::create(10, fixture->conf);
 
-        auto impl = co_await open_cloud_data_persistence(
-          staging,
+        auto cache_tmpdir = std::make_unique<temporary_dir>(
+          "cloud_cache_persistence_test");
+        auto cache_dir = cache_tmpdir->get_path() / "cache";
+        co_await cloud_io::cache::initialize(cache_dir);
+
+        auto cache = std::make_unique<ss::sharded<cloud_io::cache>>();
+        co_await cache->start(
+          cache_dir,
+          30_GiB,
+          config::mock_binding<double>(0.0),
+          config::mock_binding<uint64_t>(100_MiB),
+          config::mock_binding<std::optional<double>>(std::nullopt),
+          config::mock_binding<uint32_t>(100000),
+          config::mock_binding<uint16_t>(3));
+        co_await cache->invoke_on_all(
+          [](cloud_io::cache& c) { return c.start(); });
+        co_await cache->invoke_on(ss::shard_id{0}, [](cloud_io::cache& c) {
+            c.notify_disk_status(
+              100ULL * 1024 * 1024 * 1024,
+              50ULL * 1024 * 1024 * 1024,
+              storage::disk_space_alert::ok);
+        });
+
+        auto impl = co_await open_cloud_cache_data_persistence(
+          &cache->local(),
           &sr->remote.local(),
           fixture->bucket_name,
-          cloud_storage_clients::object_key("test-prefix"),
-          "test-prefix");
+          cloud_storage_clients::object_key("test-prefix"));
 
-        co_return std::make_unique<mock_cloud_data_persistence>(
-          std::move(fixture), std::move(sr), std::move(impl));
+        co_return std::make_unique<mock_cloud_cache_data_persistence>(
+          std::move(fixture),
+          std::move(sr),
+          std::move(cache_tmpdir),
+          std::move(cache),
+          std::move(impl));
     }),
   [](const testing::TestParamInfo<data_persistence_factory>& info) {
       switch (info.index) {
@@ -332,7 +375,7 @@ INSTANTIATE_TEST_SUITE_P(
       case 1:
           return "disk";
       case 2:
-          return "cloud";
+          return "cloud_cache";
       default:
           return "unknown";
       }

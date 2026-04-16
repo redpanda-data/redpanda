@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 
+#include "cloud_io/cache_service.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
 #include "cloud_topics/level_one/domain/simple_domain_manager.h"
@@ -34,13 +35,13 @@ public:
     explicit impl(
       cluster::controller* controller,
       io* io,
-      std::filesystem::path staging_dir,
+      cloud_io::cache* cache,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
       ss::scheduling_group sg)
       : _controller(controller)
       , _object_io(io)
-      , _staging_dir(std::move(staging_dir))
+      , _cache(cache)
       , _remote(remote)
       , _bucket(std::move(bucket))
       , _sg(sg)
@@ -328,7 +329,7 @@ private:
             domain_mgr = ss::make_shared<db_domain_manager>(
               *expected_term,
               stm_manager->get<stm>(),
-              _staging_dir,
+              _cache,
               _remote,
               _bucket,
               _object_io,
@@ -343,7 +344,7 @@ private:
 
     cluster::controller* _controller;
     io* _object_io;
-    std::filesystem::path _staging_dir;
+    cloud_io::cache* _cache;
     cloud_io::remote* _remote;
     cloud_storage_clients::bucket_name _bucket;
     ss::scheduling_group _sg;
@@ -365,18 +366,13 @@ private:
 domain_supervisor::domain_supervisor(
   cluster::controller* controller,
   io* io,
-  std::filesystem::path staging_dir,
+  cloud_io::cache* cache,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
   ss::scheduling_group sg)
   : _impl(
       std::make_unique<impl>(
-        controller,
-        io,
-        std::move(staging_dir),
-        remote,
-        std::move(bucket),
-        sg)) {}
+        controller, io, cache, remote, std::move(bucket), sg)) {}
 
 domain_supervisor::~domain_supervisor() = default;
 

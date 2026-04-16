@@ -10,6 +10,7 @@
 #pragma once
 
 #include "absl/container/btree_set.h"
+#include "cloud_io/cache_service.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/domain/domain_manager.h"
 #include "cloud_topics/level_one/domain/entity_lock_map.h"
@@ -35,7 +36,7 @@ public:
     explicit db_domain_manager(
       model::term_id expected_term,
       ss::shared_ptr<stm> stm,
-      std::filesystem::path staging_dir,
+      cloud_io::cache* cache,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
       io* object_io,
@@ -225,7 +226,7 @@ private:
     ss::gate gate_;
     ss::abort_source as_;
     model::term_id expected_term_;
-    std::filesystem::path staging_dir_;
+    cloud_io::cache* cache_;
     cloud_io::remote* remote_;
     cloud_storage_clients::bucket_name bucket_;
     io* object_io_;

@@ -15,11 +15,13 @@
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/cache_probe.h"
 #include "cloud_io/recursive_directory_walker.h"
+#include "cloud_io/staging_file.h"
 #include "config/configuration.h"
 #include "config/property.h"
 #include "ssx/semaphore.h"
 #include "storage/disk.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -46,6 +48,7 @@ inline const ss::lowres_clock::duration cache_hydration_backoff = 250ms;
 inline const ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
 
 class cache_test_fixture;
+class staging_file;
 
 using cache_item = cloud_io::cache_item;
 
@@ -167,6 +170,18 @@ public:
         return _cache_dir / key;
     }
 
+    /// Create a staging_file handle for the given cache key.
+    ss::future<staging_file> create_staging_file(
+      std::filesystem::path key,
+      staging_file_options opts,
+      std::optional<ss::lowres_clock::time_point> deadline);
+
+    /// Reserve cache space with an optional deadline for blocking waits.
+    ss::future<space_reservation_guard> reserve_space(
+      uint64_t bytes,
+      size_t objects,
+      std::optional<ss::lowres_clock::time_point> deadline);
+
     // Checks if a cluster configuration is valid for the properties
     // `cloud_storage_cache_size` and `cloud_storage_cache_size_percent`.
     // Two cases are invalid: 1. the case in which both are 0, 2. the case in
@@ -178,6 +193,10 @@ public:
     validate_cache_config(const config::configuration& conf);
 
 private:
+    friend class staging_file;
+    ss::future<std::filesystem::path>
+    create_staging_path(std::filesystem::path key);
+
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
 
@@ -230,10 +249,13 @@ private:
     /// rate limit.
     std::optional<std::chrono::milliseconds> get_trim_delay() const;
 
-    /// Invoke trim, waiting if not enough time passed since the last trim
+    /// Invoke trim, waiting if not enough time passed since the last trim.
+    /// If a deadline is provided and the throttle delay would exceed it,
+    /// throws ss::timed_out_error rather than skipping the rate limit.
     ss::future<> trim_throttled_unlocked(
       std::optional<uint64_t> size_limit_override = std::nullopt,
-      std::optional<size_t> object_limit_override = std::nullopt);
+      std::optional<size_t> object_limit_override = std::nullopt,
+      std::optional<ss::lowres_clock::time_point> deadline = std::nullopt);
 
     // Take the cleanup semaphore before calling trim_throttled
     ss::future<> trim_throttled(
@@ -261,7 +283,8 @@ private:
 
     /// Block until enough space is available to commit to a reservation
     /// (only runs on shard 0)
-    ss::future<> do_reserve_space(uint64_t, size_t);
+    ss::future<> do_reserve_space(
+      uint64_t, size_t, std::optional<ss::lowres_clock::time_point> deadline);
 
     /// Trim cache using results from the previous recursive directory walk
     ss::future<trim_result>
@@ -291,6 +314,14 @@ private:
     /// index)
     ss::future<cache::trim_result>
     remove_segment_full(const file_list_item& file_stat);
+
+    /// Commit a staging file into the cache. Atomically claims the
+    /// destination via link(), then removes the staging .part file and
+    /// updates the reservation to record actual usage.
+    ss::future<> commit_staging_file(
+      std::filesystem::path key,
+      std::filesystem::path staging_path,
+      space_reservation_guard reservation);
 
     ss::future<> sync_access_time_tracker(
       access_time_tracker::add_entries_t add_entries

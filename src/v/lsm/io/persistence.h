@@ -119,8 +119,8 @@ public:
       open_random_access_reader(internal::file_handle) = 0;
 
     // Create a writer that writes to a new file with the specified name.
-    //
-    // Deletes any existing file with the same name and creates a new file.
+    // The file_handle must be unique — callers must not write to a handle
+    // that has already been committed.
     virtual ss::future<std::unique_ptr<sequential_file_writer>>
       open_sequential_writer(internal::file_handle) = 0;
 
