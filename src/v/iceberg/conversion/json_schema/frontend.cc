@@ -342,6 +342,33 @@ public:
         json_to_subschema_[node] = sub;
     }
 
+    void merge_from(const compile_context& other) {
+        for (const auto& [id, rctx] : other.ctx_by_id_) {
+            ctx_by_id_.emplace(id, rctx);
+            seen_ids_.insert(id);
+        }
+        for (const auto& [node, sub] : other.json_to_subschema_) {
+            json_to_subschema_.emplace(node, sub);
+        }
+    }
+
+    // Extract all schema_resource shared_ptrs in ctx_by_id_ other than
+    // `root`. This includes both externally-registered schemas and nested
+    // $id subresources of the root document. Callers transfer ownership
+    // of these into the root schema_resource so they outlive the
+    // compile_context.
+    std::vector<ss::shared_ptr<schema_resource>>
+    take_non_root_resources(const ss::shared_ptr<schema_resource>& root) {
+        auto deps = std::vector<ss::shared_ptr<schema_resource>>{};
+        for (auto& [id, rctx] : ctx_by_id_) {
+            auto s = rctx.schema();
+            if (s != root) {
+                deps.push_back(std::move(s));
+            }
+        }
+        return deps;
+    }
+
 private:
     absl::btree_map<std::string, resource_context> ctx_by_id_;
     chunked_hash_map<const json::Value*, const subschema*> json_to_subschema_;
@@ -495,8 +522,28 @@ public:
       const json::Document& doc,
       const std::string& initial_base_uri,
       std::optional<dialect> default_dialect) const {
+        return compile_document(doc, initial_base_uri, default_dialect, {});
+    }
+
+    ss::shared_ptr<schema_resource> compile_document(
+      const json::Document& doc,
+      const std::string& initial_base_uri,
+      std::optional<dialect> default_dialect,
+      const frontend::external_schemas_t& external_schemas) const {
         compile_context ctx{parse_base_uri(initial_base_uri), default_dialect};
 
+        // Phase 1: compile each external schema in its own context.
+        // This avoids interfering with the root document's compilation
+        // state (depth counter, seen_ids).
+        for (const auto& [uri_key, ext_doc] : external_schemas) {
+            compile_context ext_ctx{parse_base_uri(uri_key), default_dialect};
+            auto ext_sub = compile_subschema(ext_ctx, *ext_doc);
+            fix_subschemas_base(*ext_sub, nullptr);
+
+            ctx.merge_from(ext_ctx);
+        }
+
+        // Phase 2: compile the root document
         auto subschema = compile_subschema(ctx, doc);
         auto schema_rsc = ss::dynamic_pointer_cast<schema_resource>(subschema);
 
@@ -505,7 +552,16 @@ public:
           "The root of the schema must be a schema resource");
 
         fix_subschemas_base(*subschema, schema_rsc.get());
+
+        // Phase 3: resolve $refs in all compiled trees. External resources
+        // are registered in ctx_by_id_ so cross-document refs resolve
+        // naturally. We must resolve external trees too, since they may
+        // contain their own internal $refs.
         resolve_refs(ctx, *subschema);
+        for (auto& dep : ctx.take_non_root_resources(schema_rsc)) {
+            resolve_refs(ctx, *dep);
+            schema_rsc->add_external_dep(std::move(dep));
+        }
 
         return schema_rsc;
     }
@@ -792,6 +848,15 @@ schema frontend::compile(
   std::optional<dialect> default_dialect) const {
     return schema(
       impl_->compile_document(doc, initial_base_uri, default_dialect));
+};
+
+schema frontend::compile(
+  const json::Document& doc,
+  const std::string& initial_base_uri,
+  std::optional<dialect> default_dialect,
+  const external_schemas_t& external_schemas) const {
+    return schema(impl_->compile_document(
+      doc, initial_base_uri, default_dialect, external_schemas));
 };
 
 }; // namespace iceberg::conversion::json_schema

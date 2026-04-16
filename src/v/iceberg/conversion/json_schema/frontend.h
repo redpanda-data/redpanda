@@ -14,6 +14,7 @@
 #include "json/document.h"
 
 #include <memory>
+#include <vector>
 
 namespace iceberg::conversion::json_schema {
 
@@ -55,6 +56,20 @@ public:
       const json::Document& doc,
       const std::string& initial_base_uri,
       std::optional<dialect> default_dialect) const;
+
+    /// \brief Like compile(), but with external schemas pre-registered.
+    ///
+    /// Each external schema entry is (uri_key, document*). The documents
+    /// are compiled into resource contexts and registered before $ref
+    /// resolution, so external references resolve naturally.
+    using external_schemas_t
+      = std::vector<std::pair<std::string, const json::Document*>>;
+
+    schema compile(
+      const json::Document& doc,
+      const std::string& initial_base_uri,
+      std::optional<dialect> default_dialect,
+      const external_schemas_t& external_schemas) const;
 
 private:
     std::unique_ptr<frontend_impl> impl_;

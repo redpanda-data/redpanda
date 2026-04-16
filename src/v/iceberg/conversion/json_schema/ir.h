@@ -367,10 +367,21 @@ public:
     const std::string& id() const { return id_; }
     dialect dialect() const { return dialect_; }
 
+    /// Record an external schema resource that this resource's subtree
+    /// depends on via $ref. Prevents the external subschema tree from
+    /// being destroyed while raw ref_ pointers still reference it.
+    void add_external_dep(ss::shared_ptr<schema_resource> dep) {
+        external_deps_.push_back(std::move(dep));
+    }
+
 private:
     /// The canonical URI of the schema resource.
     std::string id_;
     enum dialect dialect_;
+
+    /// External schema resources referenced via $ref from this resource's
+    /// subtree.
+    std::vector<ss::shared_ptr<schema_resource>> external_deps_;
 };
 
 /// Root of the intermediate representation (IR) tree for JSON schema.
