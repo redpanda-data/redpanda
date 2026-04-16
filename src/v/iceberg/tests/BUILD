@@ -755,6 +755,23 @@ redpanda_cc_bench(
 )
 
 redpanda_cc_gtest(
+    name = "position_delete_file_test",
+    timeout = "short",
+    srcs = [
+        "position_delete_file_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:partition_key",
+        "//src/v/iceberg:position_delete_file",
+        "//src/v/iceberg:values",
+        "//src/v/serde/parquet:reader",
+        "//src/v/serde/parquet:value",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "equality_delete_file_test",
     timeout = "short",
     srcs = [
@@ -783,6 +800,36 @@ redpanda_cc_gtest(
         "//src/v/serde/parquet:assembler",
         "//src/v/serde/parquet:file_io",
         "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:value",
+        "//src/v/serde/parquet:writer",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "row_operations_test",
+    timeout = "short",
+    srcs = [
+        "row_operations_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/iceberg:manifest_io",
+        "//src/v/iceberg:merge_append_action",
+        "//src/v/iceberg:partition",
+        "//src/v/iceberg:row_operations",
+        "//src/v/iceberg:table_update",
+        "//src/v/iceberg:table_update_applier",
+        "//src/v/iceberg:values",
+        "//src/v/model",
+        "//src/v/serde/parquet:reader",
         "//src/v/serde/parquet:value",
         "//src/v/serde/parquet:writer",
         "//src/v/test_utils:gtest",

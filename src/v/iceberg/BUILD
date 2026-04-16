@@ -632,6 +632,31 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "position_delete_file",
+    srcs = [
+        "position_delete_file.cc",
+    ],
+    hdrs = [
+        "position_delete_file.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/iceberg/conversion:stats_parquet",
+        "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:value",
+        "//src/v/serde/parquet:writer",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":equality_delete_file",
+        ":partition_key",
+        ":uri",
+        "//src/v/container:chunked_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition_key_type",
     srcs = [
         "partition_key_type.cc",
@@ -1366,6 +1391,43 @@ redpanda_cc_library(
         "//src/v/model",
         "//src/v/ssx:sformat",
         "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "row_operations",
+    srcs = [
+        "row_operations.cc",
+    ],
+    hdrs = [
+        "row_operations.h",
+    ],
+    implementation_deps = [
+        ":equality_delete_file",
+        ":logger",
+        ":manifest",
+        ":manifest_list",
+        ":snapshot",
+        "//src/v/bytes:hash",
+        "//src/v/serde/parquet:encoding",
+        "//src/v/serde/parquet:reader",
+        "//src/v/serde/parquet:schema",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":datatypes",
+        ":manifest_entry",
+        ":manifest_io",
+        ":merge_append_action",
+        ":position_delete_file",
+        ":row_delta_action",
+        ":table_metadata",
+        ":uri",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/serde/parquet:value",
         "@seastar",
     ],
 )
