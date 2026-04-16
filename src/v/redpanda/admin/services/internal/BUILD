@@ -115,6 +115,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "log_filter",
+    srcs = ["log_filter.cc"],
+    hdrs = ["log_filter.h"],
+    deps = [
+        "//proto/redpanda/core/admin/internal/v1:log_filter_redpanda_proto",
+        "//src/v/base",
+        "//src/v/serde/protobuf:rpc",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "shadow_link_internal",
     srcs = ["shadow_link_internal.cc"],
     hdrs = ["shadow_link_internal.h"],

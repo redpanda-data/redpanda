@@ -32,3 +32,19 @@ redpanda_proto_library(
     protos = [":breakglass_proto"],
     visibility = ["//visibility:public"],
 )
+
+proto_library(
+    name = "log_filter_proto",
+    srcs = ["log_filter.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
+    ],
+)
+
+redpanda_proto_library(
+    name = "log_filter_redpanda_proto",
+    protos = [":log_filter_proto"],
+    visibility = ["//visibility:public"],
+)

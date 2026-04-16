@@ -1,0 +1,128 @@
+// Copyright 2026 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.admin.v2.internal;
+
+import "proto/redpanda/core/pbgen/options.proto";
+import "proto/redpanda/core/pbgen/rpc.proto";
+
+option (pbgen.cpp_namespace) = "proto::admin";
+
+// State value written onto every callsite a LogFilterRule matches, or
+// reported by ListLogCallsites as the resolved state for a callsite.
+enum LogFilterState {
+    // Proto3 default — rejected by SetLogFilter as INVALID_ARGUMENT,
+    // never returned by ListLogCallsites.
+    LOG_FILTER_STATE_UNSPECIFIED = 0;
+    // Callsite falls through to the logger's configured level gate.
+    LOG_FILTER_STATE_INHERITED = 1;
+    // Callsite emits regardless of the configured level.
+    LOG_FILTER_STATE_FORCE_ON = 2;
+    // Callsite is suppressed regardless of the configured level.
+    LOG_FILTER_STATE_FORCE_OFF = 3;
+}
+
+// A filter rule applied to every registered vlog callsite. Every populated
+// predicate must match for the rule to apply: file is an fnmatch(3) glob
+// against the callsite's __FILE__, line matches __LINE__ as described
+// below, and contains is a substring search against the format-string
+// literal. An empty rule (no predicates set) matches every callsite.
+// Rules in a list are applied in order; the last matching rule's state
+// value wins. A callsite matching no rule resolves to
+// LOG_FILTER_STATE_INHERITED.
+message LogFilterRule {
+    // fnmatch(3) glob pattern matched against the callsite's __FILE__.
+    optional string file = 1;
+    // Predicate on __LINE__. Accepts exactly one or two entries: a
+    // single value matches that line, two values [lo, hi] match the
+    // inclusive range lo <= __LINE__ <= hi. Any other size is rejected
+    // with INVALID_ARGUMENT.
+    repeated uint32 line = 2;
+    // Substring that must appear in the format-string literal.
+    optional string contains = 3;
+    // State written to every site the rule matches.
+    LogFilterState state = 4;
+}
+
+// A registered vlog callsite and its current enabled state.
+message LogCallsiteInfo {
+    // Source-file basename (path stripped at compile time).
+    string file = 1;
+    // Source line.
+    uint32 line = 2;
+    // Format-string literal at the call site.
+    string fmt = 3;
+    // Resolved state for this callsite.
+    LogFilterState state = 4;
+}
+
+message SetLogFilterRequest {
+    // Rule list that replaces the currently active rules. Every registered
+    // callsite is re-evaluated against the new set. To add a rule to the
+    // active set, fetch the current rules with GetLogFilter, append to
+    // that list client-side, and resubmit here.
+    repeated LogFilterRule rules = 1;
+}
+message SetLogFilterResponse {}
+
+message ResetLogFilterRequest {}
+message ResetLogFilterResponse {}
+
+message GetLogFilterRequest {}
+message GetLogFilterResponse {
+    // Current active rules, in application order (last match wins).
+    repeated LogFilterRule rules = 1;
+}
+
+message ListLogCallsitesRequest {
+    // If set, only return callsites whose file matches this fnmatch(3) glob.
+    optional string file_filter = 1;
+}
+message ListLogCallsitesResponse {
+    repeated LogCallsiteInfo callsites = 1;
+}
+
+// LogFilterService controls the per-callsite vlog filter on the node that
+// handles the RPC. Filter state is a per-node property — to apply the same
+// filter cluster-wide, call each broker directly.
+service LogFilterService {
+    // Replace the active rule set with the supplied rules and re-evaluate
+    // every registered callsite against them.
+    rpc SetLogFilter(SetLogFilterRequest) returns (SetLogFilterResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER,
+        };
+    }
+    // Clear every rule and re-enable every callsite.
+    rpc ResetLogFilter(ResetLogFilterRequest) returns (ResetLogFilterResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER,
+        };
+    }
+    // Return the currently active filter rules in application order.
+    rpc GetLogFilter(GetLogFilterRequest) returns (GetLogFilterResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER,
+        };
+    }
+    // Enumerate all registered callsites and their current enabled state.
+    rpc ListLogCallsites(ListLogCallsitesRequest)
+        returns (ListLogCallsitesResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER,
+        };
+    }
+}
