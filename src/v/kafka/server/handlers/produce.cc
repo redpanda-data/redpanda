@@ -370,9 +370,14 @@ ss::future<produce_response::partition> do_produce_topic_partition(
                       switch (result.error().code) {
                       case transform_failed:
                           return error_code::invalid_record;
+                      case engine_unavailable:
+                          // Retriable: the engine may still be warming
+                          // up or temporarily unavailable. Signal
+                          // "retry same broker" rather than the
+                          // non-retriable unknown_server_error.
+                          return error_code::request_timed_out;
                       case no_output_records:
                       case idempotent_record_count_mismatch:
-                      case engine_unavailable:
                           return error_code::unknown_server_error;
                       }
                   }();
