@@ -35,3 +35,19 @@ using variant_of_identities = decltype(util::detail::variant_of_tags_impl(
 template<typename Variant>
 using tuple_of_identities = decltype(util::detail::tuple_of_tags_impl(
   std::type_identity<Variant>{}));
+
+namespace util::detail {
+
+template<typename Variant, typename... Extra>
+struct extend_variant;
+
+template<typename... Ts, typename... Extra>
+struct extend_variant<std::variant<Ts...>, Extra...> {
+    using type = std::variant<Ts..., Extra...>;
+};
+
+} // namespace util::detail
+
+template<typename Variant, typename... Extra>
+using extend_variant_t =
+  typename util::detail::extend_variant<Variant, Extra...>::type;
