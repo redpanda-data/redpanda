@@ -628,3 +628,16 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "variant_test",
+    timeout = "short",
+    srcs = [
+        "variant_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:variant",
+        "@googletest//:gtest",
+    ],
+)
