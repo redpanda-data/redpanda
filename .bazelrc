@@ -127,6 +127,14 @@ build:san-all  --//bazel:sanitizer_mode=all
 build:san-all     --copt=-fsanitize=address,undefined,vptr,function,alignment
 build:san-all  --linkopt=-fsanitize=address,undefined,vptr,function,alignment
 
+# Use rules_rust's Rust-side allocator_library that defines the
+# mangled `__rustc::*` allocator shim symbols (rust_alloc,
+# rust_dealloc, etc.). The default cc_allocator_library predates the
+# allocator-symbol mangling in rustc 1.87+ and leaves those symbols
+# undefined when a Rust staticlib is linked into a cc_binary via
+# cc_common.link. See bazelbuild/rules_rust#3459.
+build --@rules_rust//rust/settings:experimental_use_allocator_libraries_with_mangled_symbols=True
+
 # LTO mixin: enable LTO for C++ and Rust. Usually mixed in with
 # PGO + release, but should work with any.
 build:lto --copt -flto=thin

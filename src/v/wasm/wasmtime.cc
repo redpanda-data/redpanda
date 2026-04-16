@@ -1313,12 +1313,6 @@ wasmtime_runtime::wasmtime_runtime(std::unique_ptr<schema::registry> sr)
     // off, otherwise we'd want to turn this off (it's on by default).
     // wasmtime_config_parallel_compilation_set(config, false);
 
-    // Let wasmtime do the stack switching so we can run async host
-    // functions and allow running out of fuel to pause the runtime.
-    //
-    // See the documentation for more information:
-    // https://docs.wasmtime.dev/api/wasmtime/struct.Config.html#asynchronous-wasm
-    wasmtime_config_async_support_set(config, true);
     // Set max stack size to generally be as big as a contiguous memory
     // region we're willing to allocate in Redpanda.
     wasmtime_config_async_stack_size_set(config, vm_stack_size);
