@@ -17,6 +17,7 @@
 #include "redpanda/admin/services/internal/breakglass.h"
 #include "redpanda/admin/services/internal/debug.h"
 #include "redpanda/admin/services/internal/level_zero.h"
+#include "redpanda/admin/services/internal/log_filter.h"
 #include "redpanda/admin/services/internal/metastore.h"
 #include "redpanda/admin/services/internal/shadow_link_internal.h"
 #include "redpanda/admin/services/security.h"
@@ -86,6 +87,7 @@ void application::configure_admin_server(model::node_id node_id) {
           s.add_service(
             std::make_unique<admin::debug_service_impl>(
               create_client(), stress_fiber_manager));
+          s.add_service(std::make_unique<admin::log_filter_service_impl>());
           s.add_service(
             std::make_unique<admin::datalake_service_impl>(
               create_client(), &_datalake_coordinator_fe));
