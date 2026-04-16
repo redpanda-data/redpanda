@@ -623,6 +623,7 @@ redpanda_cc_library(
     deps = [
         ":datatypes",
         ":manifest_entry",
+        ":position_delete_file",
         "//src/v/bytes:iobuf",
         "//src/v/container:chunked_vector",
         "//src/v/serde/parquet:schema",
