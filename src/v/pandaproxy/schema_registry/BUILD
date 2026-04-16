@@ -252,6 +252,7 @@ redpanda_cc_library(
         ":types",
         "//src/v/config:startup_config",
         "//src/v/kafka/client",
+        "//src/v/utils:variant",
     ],
 )
 
