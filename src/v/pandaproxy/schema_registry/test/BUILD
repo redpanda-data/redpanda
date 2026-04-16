@@ -348,6 +348,21 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "context_router_test",
+    timeout = "short",
+    srcs = [
+        "context_router.cc",
+    ],
+    deps = [
+        "//src/v/pandaproxy/schema_registry:core",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "test_json_schema",
     timeout = "short",
