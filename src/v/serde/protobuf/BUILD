@@ -22,6 +22,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "encoder",
+    srcs = [
+        "encoder.cc",
+    ],
+    hdrs = [
+        "encoder.h",
+    ],
+    implementation_deps = [":wire_format"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protobuf",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "@protobuf",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "wire_format",
     srcs = [
         "wire_format.cc",

@@ -113,6 +113,32 @@ redpanda_test_cc_library(
 )
 
 redpanda_cc_gtest(
+    name = "encoder_test",
+    timeout = "short",
+    srcs = [
+        "encoder_test.cc",
+    ],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        ":test_messages_edition2023_cc_proto",
+        ":three_cc_proto",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde/protobuf",
+        "//src/v/serde/protobuf:encoder",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@libprotobuf_mutator",
+        "@protobuf",
+        "@protobuf//:differencer",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "wire_format_test",
     timeout = "short",
     srcs = [
