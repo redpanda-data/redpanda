@@ -494,6 +494,9 @@ public:
             }
             keys_to_delete.push_back(key);
         }
+        if (keys_to_delete.empty()) {
+            co_return;
+        }
         result = co_await _remote->delete_objects(
           _bucket, std::move(keys_to_delete), rtc, [](size_t) {});
     }
