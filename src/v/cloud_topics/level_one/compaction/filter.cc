@@ -50,16 +50,16 @@ ss::future<bool> compaction_filter::should_keep(
 ss::future<> compaction_filter::maybe_index_offset_delta(
   const model::record_batch& b,
   const model::record& r,
-  std::vector<int32_t>& offset_deltas) const {
+  chunked_vector<int32_t>& offset_deltas) const {
     if (co_await should_keep(b, r)) {
         offset_deltas.push_back(r.offset_delta());
     }
 }
 
-ss::future<std::vector<int32_t>>
+ss::future<chunked_vector<int32_t>>
 compaction_filter::compute_offset_deltas_to_keep(
   const model::record_batch& b) const {
-    std::vector<int32_t> offset_deltas;
+    chunked_vector<int32_t> offset_deltas;
     offset_deltas.reserve(b.record_count());
 
     co_await b.for_each_record_async(
@@ -72,7 +72,7 @@ compaction_filter::compute_offset_deltas_to_keep(
 
 ss::future<std::optional<model::record_batch>>
 compaction_filter::filter_batch_with_offset_deltas(
-  model::record_batch b, std::vector<int32_t> offset_deltas) const {
+  model::record_batch b, chunked_vector<int32_t> offset_deltas) const {
     co_return co_await do_filter_batch(std::move(b), std::move(offset_deltas));
 }
 
