@@ -36,7 +36,7 @@ type WriteEvent interface {
 	// Metadata returns the value for the given metadata key, or ""
 	// if the key is not present. Available keys: "principal_name",
 	// "principal_type", "client_id", "client_host", "client_port",
-	// "tls_enabled".
+	// "tls_enabled", "listener_name".
 	Metadata(key string) string
 }
 
@@ -119,6 +119,7 @@ const (
 	metadataKeyClientHost    int32 = 4
 	metadataKeyClientPort    int32 = 5
 	metadataKeyTLSEnabled    int32 = 6
+	metadataKeyListenerName  int32 = 7
 )
 
 var metadataKeysByName = map[string]int32{
@@ -128,4 +129,5 @@ var metadataKeysByName = map[string]int32{
 	"client_host":    metadataKeyClientHost,
 	"client_port":    metadataKeyClientPort,
 	"tls_enabled":    metadataKeyTLSEnabled,
+	"listener_name":  metadataKeyListenerName,
 }
