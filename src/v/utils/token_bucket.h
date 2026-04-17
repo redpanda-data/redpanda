@@ -117,7 +117,7 @@ public:
 
         if (_rate > new_rate) {
             if (_sem.current() <= _rate) {
-                _sem.consume(_rate - new_rate);
+                _sem.consume(std::min(_rate - new_rate, _sem.current()));
             } else {
                 /*
                  * if current > rate it means that we have accumulated tokens
