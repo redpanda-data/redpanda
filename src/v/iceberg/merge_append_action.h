@@ -17,6 +17,7 @@
 #include "iceberg/manifest_utils.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_metadata.h"
+#include "model/fundamental.h"
 
 namespace iceberg {
 
@@ -26,6 +27,7 @@ struct file_to_append {
     data_file file;
     schema::id_t schema_id;
     partition_spec::id_t partition_spec_id;
+    std::optional<model::partition_id> source_partition;
 };
 
 // An action that builds and uploads metadata to append a given list of data

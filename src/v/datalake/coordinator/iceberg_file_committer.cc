@@ -10,6 +10,7 @@
 #include "datalake/coordinator/iceberg_file_committer.h"
 
 #include "base/vlog.h"
+#include "bytes/hash.h"
 #include "container/chunked_vector.h"
 #include "datalake/coordinator/commit_offset_metadata.h"
 #include "datalake/coordinator/state.h"
@@ -65,6 +66,69 @@ log_and_convert_action_errc(iceberg::action::errc e, std::string_view msg) {
         vlog(datalake_log.warn, "{}: {}", msg, e);
         return file_committer::errc::failed;
     }
+}
+
+/// Resolve key field IDs to column name paths suitable for parquet
+/// projection. Walks the schema tree to find each field by ID.
+chunked_vector<chunked_vector<ss::sstring>> resolve_key_field_paths(
+  const iceberg::schema& sch,
+  const chunked_vector<iceberg::nested_field::id_t>& key_field_ids) {
+    chunked_vector<chunked_vector<ss::sstring>> result;
+    for (auto id : key_field_ids) {
+        chunked_vector<ss::sstring> path;
+        std::function<bool(const iceberg::struct_type&)> find =
+          [&](const iceberg::struct_type& st) -> bool {
+            for (const auto& f : st.fields) {
+                if (!f) {
+                    continue;
+                }
+                path.push_back(f->name);
+                if (f->id == id) {
+                    return true;
+                }
+                if (auto* inner = std::get_if<iceberg::struct_type>(&f->type)) {
+                    if (find(*inner)) {
+                        return true;
+                    }
+                }
+                path.pop_back();
+            }
+            return false;
+        };
+        find(sch.schema_struct);
+        result.push_back(std::move(path));
+    }
+    return result;
+}
+
+size_t hash_parquet_value(const serde::parquet::value& v) {
+    return std::visit(
+      [](const auto& x) -> size_t {
+          using T = std::decay_t<decltype(x)>;
+          if constexpr (std::is_same_v<T, serde::parquet::null_value>) {
+              return 0;
+          } else if constexpr (
+            std::is_same_v<T, serde::parquet::boolean_value>) {
+              return std::hash<bool>{}(x.val);
+          } else if constexpr (std::is_same_v<T, serde::parquet::int32_value>) {
+              return std::hash<int32_t>{}(x.val);
+          } else if constexpr (std::is_same_v<T, serde::parquet::int64_value>) {
+              return std::hash<int64_t>{}(x.val);
+          } else if constexpr (
+            std::is_same_v<T, serde::parquet::float32_value>) {
+              return std::hash<float>{}(x.val);
+          } else if constexpr (
+            std::is_same_v<T, serde::parquet::float64_value>) {
+              return std::hash<double>{}(x.val);
+          } else if constexpr (
+            std::is_same_v<T, serde::parquet::byte_array_value>
+            || std::is_same_v<T, serde::parquet::fixed_byte_array_value>) {
+              return std::hash<iobuf>{}(x.val);
+          } else {
+              return 0;
+          }
+      },
+      v);
 }
 
 constexpr auto commit_meta_prop = "redpanda.commit-metadata";
@@ -260,7 +324,8 @@ public:
       model::revision_id topic_revision,
       const iceberg::manifest_io& io,
       const model::offset added_pending_at,
-      const chunked_vector<data_file>& files) {
+      const chunked_vector<data_file>& files,
+      model::partition_id pid) {
         if (should_skip_entry(added_pending_at)) {
             // This entry was committed to the Iceberg table already.
             // Intentionally collect the pending commit above so we can
@@ -349,6 +414,7 @@ public:
                   .file = std::move(file),
                   .schema_id = schema_id,
                   .partition_spec_id = pspec_id,
+                  .source_partition = pid,
                 };
                 if (f.delete_key_field_ids) {
                     if (!key_field_ids_) {
@@ -376,8 +442,7 @@ public:
       const model::topic& topic,
       model::revision_id topic_revision,
       iceberg::catalog& catalog,
-      iceberg::manifest_io& io,
-      iceberg::delete_commit_strategy delete_strategy) && {
+      iceberg::manifest_io& io) && {
         if (icb_files_.empty() && upsert_files_.empty()) {
             vlog(
               datalake_log.debug,
@@ -432,8 +497,7 @@ public:
             checked<merge_delta_result, file_committer::errc> merge_delta_res{
               file_committer::errc::failed};
             try {
-                merge_delta_res = co_await commit_merge_delta(
-                  txn, io, delete_strategy);
+                merge_delta_res = co_await commit_merge_delta(txn, io);
             } catch (...) {
                 auto ex = std::current_exception();
                 if (ssx::is_shutdown_exception(ex)) {
@@ -492,40 +556,45 @@ private:
     };
 
     ss::future<checked<merge_delta_result, file_committer::errc>>
-    commit_merge_delta(
-      iceberg::transaction& txn,
-      iceberg::manifest_io& io,
-      iceberg::delete_commit_strategy strategy) {
+    commit_merge_delta(iceberg::transaction& txn, iceberg::manifest_io& io) {
         // Separate upsert files into data and translator-produced
         // equality delete files.
         chunked_vector<iceberg::file_to_append> all_data;
-        chunked_vector<iceberg::file_to_delete> deletes;
+        chunked_vector<iceberg::file_to_delete> eq_deletes;
+        // Track source partition for each data/delete file.
+        chunked_vector<std::optional<model::partition_id>> data_partitions;
+        chunked_vector<std::optional<model::partition_id>> delete_partitions;
+
         for (auto& f : icb_files_) {
+            data_partitions.push_back(f.source_partition);
             all_data.push_back(std::move(f));
         }
         for (auto& f : upsert_files_) {
             if (
               f.file.content_type
               == iceberg::data_file_content_type::equality_deletes) {
-                deletes.push_back(
+                delete_partitions.push_back(f.source_partition);
+                eq_deletes.push_back(
                   iceberg::file_to_delete{
                     .file = std::move(f.file),
                     .schema_id = f.schema_id,
                     .partition_spec_id = f.partition_spec_id,
                   });
             } else {
+                data_partitions.push_back(f.source_partition);
                 all_data.push_back(std::move(f));
             }
         }
 
-        if (
-          !deletes.empty()
-          && strategy == iceberg::delete_commit_strategy::position_deletes) {
-            // Convert equality deletes to position deletes by reading
-            // the key values from the equality delete files, scanning
-            // existing data files for matching rows, and producing
-            // position delete files.
-            iceberg::read_file_fn read_file =
+        // Generate supplemental position deletes for same-commit
+        // conflicts. Equality deletes only apply to data with strictly
+        // lower sequence numbers, so same-commit data is unaffected.
+        // We use _redpanda_offset (written by the translator into
+        // delete files) and redpanda.offset (in data files) to
+        // determine ordering within each source partition.
+        chunked_vector<iceberg::file_to_delete> pos_deletes;
+        if (!eq_deletes.empty()) {
+            auto read_file =
               [&io](const iceberg::uri& path) -> ss::future<iobuf> {
                 auto res = co_await io.download_object_bytes(path);
                 if (res.has_error()) {
@@ -538,66 +607,275 @@ private:
                 co_return std::move(res.value());
             };
 
-            // Read key values from the equality delete files.
-            chunked_vector<serde::parquet::group_value> keys;
-            for (const auto& d : deletes) {
-                auto file_data = co_await read_file(d.file.file_path);
-                auto records = co_await serde::parquet::read_file_as_records(
-                  std::move(file_data));
-                for (auto& r : records) {
-                    keys.push_back(std::move(r));
+            // Resolve key field paths for projection on data files.
+            const auto& sch = *txn.table().get_schema(
+              txn.table().current_schema_id);
+            auto key_fields = resolve_key_field_paths(sch, *key_field_ids_);
+
+            size_t offset_col_idx = key_fields.size();
+
+            // Factory functions for projection options. reader_options
+            // contains non-copyable chunked_vectors, so we rebuild
+            // them each time.
+            auto make_del_proj = [&]() {
+                serde::parquet::reader_options opts;
+                for (const auto& kf : key_fields) {
+                    opts.column_projection.push_back(kf.copy());
+                }
+                opts.column_projection.push_back({"_redpanda_offset"});
+                return opts;
+            };
+            auto make_key_only_proj = [&]() {
+                serde::parquet::reader_options opts;
+                for (const auto& kf : key_fields) {
+                    opts.column_projection.push_back(kf.copy());
+                }
+                return opts;
+            };
+            // Flatten a projected record to leaf values. Projection
+            // may return nested groups (e.g. {redpanda: {key: bytes}})
+            // when projected columns live inside a struct. This extracts
+            // all leaf values into a flat group_value so that keys from
+            // delete files and data files hash/compare identically.
+            auto flatten_to_leaves = [](const serde::parquet::group_value& gv) {
+                serde::parquet::group_value flat;
+                std::function<void(const serde::parquet::group_value&)> walk =
+                  [&](const serde::parquet::group_value& g) {
+                      for (const auto& m : g) {
+                          auto* nested
+                            = std::get_if<serde::parquet::group_value>(
+                              &m.field);
+                          if (nested) {
+                              walk(*nested);
+                          } else {
+                              flat.push_back(
+                                serde::parquet::group_member{
+                                  serde::parquet::copy(m.field)});
+                          }
+                      }
+                  };
+                walk(gv);
+                return flat;
+            };
+
+            // Group files by source partition.
+            chunked_hash_map<model::partition_id, chunked_vector<size_t>>
+              data_by_partition;
+            for (size_t i = 0; i < all_data.size(); ++i) {
+                if (data_partitions[i].has_value()) {
+                    data_by_partition[*data_partitions[i]].push_back(i);
+                }
+            }
+            chunked_hash_map<model::partition_id, chunked_vector<size_t>>
+              del_by_partition;
+            for (size_t i = 0; i < eq_deletes.size(); ++i) {
+                if (delete_partitions[i].has_value()) {
+                    del_by_partition[*delete_partitions[i]].push_back(i);
                 }
             }
 
-            // Build exclude set: don't scan files we're about to
-            // commit.
-            chunked_hash_set<ss::sstring> exclude;
-            for (const auto& f : all_data) {
-                exclude.insert(f.file.file_path());
+            chunked_vector<iceberg::position_delete_entry> all_positions;
+
+            for (auto& [pid, del_indices] : del_by_partition) {
+                // Read delete files for this partition: extract key
+                // columns and _redpanda_offset. Build a map from key
+                // to max delete offset.
+                struct delete_key_hash {
+                    size_t
+                    operator()(const serde::parquet::group_value& k) const {
+                        size_t h = 0;
+                        for (const auto& m : k) {
+                            h ^= hash_parquet_value(m.field);
+                        }
+                        return h;
+                    }
+                };
+                chunked_hash_map<
+                  serde::parquet::group_value,
+                  int64_t,
+                  delete_key_hash>
+                  delete_map;
+                for (auto di : del_indices) {
+                    auto file_data = co_await read_file(
+                      eq_deletes[di].file.file_path);
+                    auto records
+                      = co_await serde::parquet::read_file_as_records(
+                        std::move(file_data), make_del_proj());
+                    for (auto& row : records) {
+                        if (row.size() <= offset_col_idx) {
+                            continue;
+                        }
+                        auto* offset_val
+                          = std::get_if<serde::parquet::int64_value>(
+                            &row[offset_col_idx].field);
+                        if (!offset_val) {
+                            continue;
+                        }
+                        int64_t del_offset = offset_val->val;
+                        // Extract key columns (everything except
+                        // the offset column at the end) and flatten
+                        // nested groups to leaves for consistent
+                        // hashing with data file keys.
+                        serde::parquet::group_value raw_key;
+                        for (size_t ki = 0; ki < offset_col_idx; ++ki) {
+                            raw_key.push_back(
+                              serde::parquet::group_member{
+                                serde::parquet::copy(row[ki].field)});
+                        }
+                        auto key = flatten_to_leaves(raw_key);
+                        auto it = delete_map.find(key);
+                        if (it == delete_map.end() || del_offset > it->second) {
+                            delete_map.insert_or_assign(
+                              std::move(key), del_offset);
+                        }
+                    }
+                }
+
+                if (delete_map.empty()) {
+                    continue;
+                }
+
+                auto data_it = data_by_partition.find(pid);
+                if (data_it == data_by_partition.end()) {
+                    continue;
+                }
+                for (auto fi : data_it->second) {
+                    auto offset_records
+                      = co_await serde::parquet::read_file_as_records(
+                        co_await read_file(all_data[fi].file.file_path), [&]() {
+                            serde::parquet::reader_options opts;
+                            opts.column_projection.push_back(
+                              {"redpanda", "offset"});
+                            return opts;
+                        }());
+                    auto key_records
+                      = co_await serde::parquet::read_file_as_records(
+                        co_await read_file(all_data[fi].file.file_path),
+                        make_key_only_proj());
+
+                    auto num_rows = std::min(
+                      offset_records.size(), key_records.size());
+                    for (int64_t row_idx = 0;
+                         row_idx < static_cast<int64_t>(num_rows);
+                         ++row_idx) {
+                        // Extract offset from the offset-only record.
+                        // It's a nested {redpanda: {offset: int64}}.
+                        int64_t data_offset = -1;
+                        bool offset_found = false;
+                        std::function<void(const serde::parquet::group_value&)>
+                          find_int64 = [&](
+                                         const serde::parquet::group_value&
+                                           gv) {
+                              for (const auto& m : gv) {
+                                  if (offset_found) {
+                                      return;
+                                  }
+                                  auto* nested
+                                    = std::get_if<serde::parquet::group_value>(
+                                      &m.field);
+                                  if (nested) {
+                                      find_int64(*nested);
+                                  } else if (
+                                    auto* iv
+                                    = std::get_if<serde::parquet::int64_value>(
+                                      &m.field)) {
+                                      data_offset = iv->val;
+                                      offset_found = true;
+                                  }
+                              }
+                          };
+                        find_int64(offset_records[row_idx]);
+                        if (!offset_found) {
+                            continue;
+                        }
+
+                        auto key = flatten_to_leaves(key_records[row_idx]);
+
+                        auto dm_it = delete_map.find(key);
+                        if (
+                          dm_it != delete_map.end()
+                          && dm_it->second > data_offset) {
+                            all_positions.push_back(
+                              iceberg::position_delete_entry{
+                                .file_path = all_data[fi].file.file_path,
+                                .pos = row_idx,
+                                .partition = all_data[fi].file.partition.copy(),
+                              });
+                        }
+                    }
+                }
             }
-            for (const auto& d : deletes) {
-                exclude.insert(d.file.file_path());
+
+            // Deduplicate position deletes by sorting and
+            // copying unique entries into a new vector.
+            std::sort(
+              all_positions.begin(),
+              all_positions.end(),
+              [](
+                const iceberg::position_delete_entry& a,
+                const iceberg::position_delete_entry& b) {
+                  if (a.file_path() != b.file_path()) {
+                      return a.file_path() < b.file_path();
+                  }
+                  return a.pos < b.pos;
+              });
+            chunked_vector<iceberg::position_delete_entry> deduped;
+            for (auto& entry : all_positions) {
+                if (
+                  deduped.empty()
+                  || deduped.back().file_path() != entry.file_path()
+                  || deduped.back().pos != entry.pos) {
+                    deduped.push_back(std::move(entry));
+                }
             }
+            all_positions = std::move(deduped);
 
-            auto positions = co_await iceberg::find_matching_positions(
-              txn.table(), io, keys, *key_field_ids_, exclude, read_file);
+            if (!all_positions.empty()) {
+                auto pending = co_await iceberg::make_position_deletes(
+                  txn.table(), std::move(all_positions));
 
-            auto pending = co_await iceberg::make_position_deletes(
-              txn.table(), std::move(positions));
-
-            // Upload position delete files and assign URIs.
-            auto table_path_res = io.from_uri(txn.table().location);
-            if (table_path_res.has_error()) {
-                vlog(
-                  datalake_log.warn,
-                  "Failed to parse table location URI: {}",
-                  txn.table().location);
-                co_return file_committer::errc::failed;
-            }
-
-            deletes.clear();
-            for (auto& pd : pending) {
-                auto path = table_path_res.value() / "data"
-                            / fmt::format(
-                              "{}-posdelete.parquet", uuid_t::create());
-                auto file_uri = io.to_uri(path);
-                pd.file.file.file_path = file_uri;
-                auto upload_res = co_await io.upload_object_bytes(
-                  file_uri, std::move(pd.data));
-                if (upload_res.has_error()) {
+                auto table_path_res = io.from_uri(txn.table().location);
+                if (table_path_res.has_error()) {
                     vlog(
                       datalake_log.warn,
-                      "Failed to upload position delete file: {}",
-                      file_uri);
+                      "Failed to parse table location URI: {}",
+                      txn.table().location);
                     co_return file_committer::errc::failed;
                 }
-                deletes.push_back(std::move(pd.file));
+
+                for (auto& pd : pending) {
+                    auto path = table_path_res.value() / "data"
+                                / fmt::format(
+                                  "{}-posdelete.parquet", uuid_t::create());
+                    auto file_uri = io.to_uri(path);
+                    pd.file.file.file_path = file_uri;
+                    auto upload_res = co_await io.upload_object_bytes(
+                      file_uri, std::move(pd.data));
+                    if (upload_res.has_error()) {
+                        vlog(
+                          datalake_log.warn,
+                          "Failed to upload position delete file: {}",
+                          file_uri);
+                        co_return file_committer::errc::failed;
+                    }
+                    pos_deletes.push_back(std::move(pd.file));
+                }
             }
+        }
+
+        // Combine equality deletes (for prior-commit data) and
+        // supplemental position deletes (for same-commit data).
+        chunked_vector<iceberg::file_to_delete> all_deletes;
+        for (auto& d : eq_deletes) {
+            all_deletes.push_back(std::move(d));
+        }
+        for (auto& d : pos_deletes) {
+            all_deletes.push_back(std::move(d));
         }
 
         co_return merge_delta_result{
           .data_files = std::move(all_data),
-          .delete_files = std::move(deletes),
+          .delete_files = std::move(all_deletes),
         };
     }
 
@@ -747,7 +1025,12 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                   main_table_commit_builder.has_value(),
                   "Should have main table builder");
                 auto res = main_table_commit_builder->process_pending_entry(
-                  topic, topic_revision, io_, e.added_pending_at, e.data.files);
+                  topic,
+                  topic_revision,
+                  io_,
+                  e.added_pending_at,
+                  e.data.files,
+                  pid);
                 if (res.has_error()) {
                     co_return res.error();
                 }
@@ -762,7 +1045,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                   topic_revision,
                   io_,
                   e.added_pending_at,
-                  e.data.dlq_files);
+                  e.data.dlq_files,
+                  pid);
                 if (dlq_res.has_error()) {
                     co_return dlq_res.error();
                 }
@@ -809,9 +1093,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                                       : 0;
 
     if (dlq_table_commit_builder) {
-        auto dlq_commit_res
-          = co_await std::move(*dlq_table_commit_builder)
-              .commit(topic, topic_revision, catalog_, io_, delete_strategy_);
+        auto dlq_commit_res = co_await std::move(*dlq_table_commit_builder)
+                                .commit(topic, topic_revision, catalog_, io_);
         if (dlq_commit_res.has_error()) {
             co_return dlq_commit_res.error();
         }
@@ -820,7 +1103,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     if (main_table_commit_builder) {
         auto main_table_commit_res
           = co_await std::move(*main_table_commit_builder)
-              .commit(topic, topic_revision, catalog_, io_, delete_strategy_);
+              .commit(topic, topic_revision, catalog_, io_);
         if (main_table_commit_res.has_error()) {
             co_return main_table_commit_res.error();
         }

@@ -16,7 +16,6 @@
 #include "datalake/coordinator/state_update.h"
 #include "iceberg/catalog.h"
 #include "iceberg/manifest_io.h"
-#include "iceberg/row_operations.h"
 
 #include <seastar/core/future.hh>
 
@@ -68,8 +67,6 @@ private:
     iceberg::catalog& catalog_;
     iceberg::manifest_io& io_;
     config::binding<bool> disable_snapshot_tags_;
-    iceberg::delete_commit_strategy delete_strategy_
-      = iceberg::delete_commit_strategy::position_deletes;
 };
 
 } // namespace datalake::coordinator

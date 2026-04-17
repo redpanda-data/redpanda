@@ -187,9 +187,8 @@ ss::future<file_reader_result> read_file(iobuf file_data, reader_options opts) {
                     fmt::join(cc.meta_data.path_in_schema, ".")));
             }
 
-            auto col_start
-              = cc.meta_data.dictionary_page_offset.value_or(
-                cc.meta_data.data_page_offset);
+            auto col_start = cc.meta_data.dictionary_page_offset.value_or(
+              cc.meta_data.data_page_offset);
             auto col_bytes = file_data.share(
               col_start, cc.meta_data.total_compressed_size);
 

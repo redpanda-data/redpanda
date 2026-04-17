@@ -25,11 +25,6 @@
 
 namespace iceberg {
 
-enum class delete_commit_strategy {
-    equality_deletes,
-    position_deletes,
-};
-
 using read_file_fn = std::function<ss::future<iobuf>(const uri&)>;
 
 /// Extract key column values from data files by reading only the

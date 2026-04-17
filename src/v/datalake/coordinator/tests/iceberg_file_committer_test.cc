@@ -744,9 +744,9 @@ TEST_F(FileCommitterTest, TestDontLoadMainTable) {
     ASSERT_EQ(0, main_reqs.size());
 }
 
-// Verify that files with delete_key_field_ids trigger the merge delta path.
-// The merge delta path downloads data files to extract keys, which will fail
-// against the mock S3 (no real Parquet data). The expected error confirms
+// Verify that equality delete files trigger the merge delta download path.
+// The merge delta path downloads delete files to build the key map, which
+// fails against mock S3 (no real Parquet data). The expected error confirms
 // the merge delta code path was entered.
 TEST_F(FileCommitterTest, TestMergeDeltaPathTriggered) {
     create_table();
@@ -756,26 +756,38 @@ TEST_F(FileCommitterTest, TestMergeDeltaPathTriggered) {
 
     for (auto& e :
          t_state.pid_to_pending_files[model::partition_id{0}].pending_entries) {
-        datalake::coordinator::data_file file{
+        chunked_vector<std::optional<bytes>> pk;
+        pk.push_back(iceberg::value_to_bytes(iceberg::int_value{42}));
+        chunked_vector<int32_t> key_ids;
+        key_ids.push_back(1);
+
+        // Data file with key tracking.
+        datalake::coordinator::data_file data{
           .row_count = 100,
           .file_size_bytes = 1024,
           .table_schema_id = 0,
           .partition_spec_id = 0,
         };
-        chunked_vector<std::optional<bytes>> pk;
-        pk.push_back(iceberg::value_to_bytes(iceberg::int_value{42}));
-        file.partition_key = std::move(pk);
+        data.partition_key = pk.copy();
+        data.delete_key_field_ids = key_ids.copy();
+        e.data.files.emplace_back(std::move(data));
 
-        chunked_vector<int32_t> key_ids;
-        key_ids.push_back(1);
-        file.delete_key_field_ids = std::move(key_ids);
-
-        e.data.files.emplace_back(std::move(file));
+        // Equality delete file — triggers the download path.
+        datalake::coordinator::data_file del{
+          .row_count = 1,
+          .file_size_bytes = 128,
+          .table_schema_id = 0,
+          .partition_spec_id = 0,
+          .is_delete = true,
+        };
+        del.partition_key = pk.copy();
+        del.delete_key_field_ids = std::move(key_ids);
+        e.data.files.emplace_back(std::move(del));
     }
     state.topic_to_state[topic] = std::move(t_state);
 
     auto res = committer.commit_topic_files_to_catalog(topic, state).get();
-    // The merge delta path tries to download the data file to extract keys,
+    // The merge delta path tries to download the equality delete file,
     // which fails because the mock S3 has no actual Parquet data.
     ASSERT_TRUE(res.has_error());
     ASSERT_EQ(res.error(), file_committer::errc::failed);
@@ -830,7 +842,7 @@ TEST_F(FileCommitterTest, TestMixedFilesClassification) {
                 file.partition_key = std::move(pk);
                 e.data.files.emplace_back(std::move(file));
             }
-            // Upsert file with key field IDs.
+            // Upsert data file with key field IDs.
             {
                 datalake::coordinator::data_file upsert_file{
                   .row_count = 50,
@@ -843,8 +855,23 @@ TEST_F(FileCommitterTest, TestMixedFilesClassification) {
                 upsert_file.partition_key = std::move(pk);
                 chunked_vector<int32_t> key_ids;
                 key_ids.push_back(1);
-                upsert_file.delete_key_field_ids = std::move(key_ids);
+                upsert_file.delete_key_field_ids = key_ids.copy();
                 e.data.files.emplace_back(std::move(upsert_file));
+
+                // Equality delete file — triggers the download path.
+                datalake::coordinator::data_file del_file{
+                  .row_count = 1,
+                  .file_size_bytes = 128,
+                  .table_schema_id = 0,
+                  .partition_spec_id = 0,
+                  .is_delete = true,
+                };
+                chunked_vector<std::optional<bytes>> del_pk;
+                del_pk.push_back(
+                  iceberg::value_to_bytes(iceberg::int_value{42}));
+                del_file.partition_key = std::move(del_pk);
+                del_file.delete_key_field_ids = std::move(key_ids);
+                e.data.files.emplace_back(std::move(del_file));
             }
         }
         state.topic_to_state[topic] = std::move(t_state);

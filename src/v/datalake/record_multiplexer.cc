@@ -509,6 +509,19 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                     }
                 }
 
+                // Add _redpanda_offset as a top-level field in the
+                // delete file. This is NOT added to key_field_ids so
+                // it won't be listed in equality_ids. The coordinator
+                // reads it to determine ordering between inserts and
+                // deletes within the same commit batch.
+                static constexpr int32_t redpanda_offset_field_id = 9999;
+                key_type.fields.push_back(
+                  iceberg::nested_field::create(
+                    redpanda_offset_field_id,
+                    "_redpanda_offset",
+                    iceberg::field_required::no,
+                    iceberg::long_type{}));
+
                 auto delete_writer = std::make_unique<partitioning_writer>(
                   *_writer_factory,
                   sw.data_writer->schema_id(),
@@ -520,9 +533,15 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
             }
             // Nest the translator's flat key values into the pruned
             // key type's structure so the delete file's Parquet
-            // schema matches the table schema's nesting.
+            // schema matches the table schema's nesting. The delete
+            // writer type includes _redpanda_offset as the last
+            // leaf field; nest_key_value fills it with nullopt
+            // because the translator's flat values don't include
+            // it. Replace that trailing nullopt with the actual
+            // Kafka offset.
             auto nested_key = nest_key_value(
               sw.delete_writer->type(), std::move(*translated.delete_key));
+            nested_key.fields.back() = iceberg::long_value{offset()};
             auto add_del_result = co_await sw.delete_writer->add_data(
               std::move(nested_key), estimated_size, as);
             if (add_del_result != writer_error::ok) {

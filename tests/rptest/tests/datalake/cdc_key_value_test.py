@@ -123,6 +123,9 @@ class CdcKeyValueTest(RedpandaTest):
         self.dl.create_iceberg_enabled_topic(
             toggle_topic,
             iceberg_mode="cdc_key_value",
+            config={
+                TopicSpec.PROPERTY_ICEBERG_PARTITION_SPEC: "(identity(redpanda.key))",
+            },
         )
 
         rpk = RpkTool(self.redpanda)
