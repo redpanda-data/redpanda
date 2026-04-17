@@ -154,6 +154,7 @@ redpanda_cc_library(
     visibility = [
         ":__subpackages__",
         "//src/v/datalake:__pkg__",
+        "//src/v/datalake/tests:__pkg__",
     ],
     deps = [
         "//src/v/base",
@@ -195,6 +196,7 @@ redpanda_cc_library(
         ":commit_offset_metadata",
         ":state",
         "//src/v/base",
+        "//src/v/bytes:hash",
         "//src/v/bytes:iobuf",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
@@ -202,7 +204,9 @@ redpanda_cc_library(
         "//src/v/datalake:table_id_provider",
         "//src/v/iceberg:manifest_entry",
         "//src/v/iceberg:partition_key",
+        "//src/v/iceberg:position_delete_file",
         "//src/v/iceberg:row_operations",
+        "//src/v/iceberg:schema",
         "//src/v/iceberg:table_metadata",
         "//src/v/iceberg:transaction",
         "//src/v/iceberg:values",
@@ -212,6 +216,10 @@ redpanda_cc_library(
         "//src/v/storage",
         "//src/v/utils:uuid",
     ],
+    visibility = [
+        ":__subpackages__",
+        "//src/v/datalake/tests:__pkg__",
+    ],
     deps = [
         ":file_committer",
         ":state_update",
@@ -219,7 +227,6 @@ redpanda_cc_library(
         "//src/v/container:chunked_vector",
         "//src/v/iceberg:catalog",
         "//src/v/iceberg:manifest_io",
-        "//src/v/iceberg:row_operations",
         "//src/v/iceberg:table_identifier",
         "@seastar",
     ],
@@ -377,6 +384,7 @@ redpanda_cc_library(
     visibility = [
         ":__subpackages__",
         "//src/v/datalake:__pkg__",
+        "//src/v/datalake/tests:__pkg__",
         "//src/v/datalake/translation:__pkg__",
     ],
     deps = [

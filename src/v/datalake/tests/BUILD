@@ -65,11 +65,120 @@ redpanda_test_cc_library(
         "test_data_writer.h",
     ],
     deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/container:chunked_hash_map",
         "//src/v/datalake:serde_parquet_writer",
         "//src/v/datalake:writer",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
         "//src/v/utils:null_output_stream",
+        "//src/v/utils:uuid",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "record_batch_factory",
+    hdrs = ["record_batch_factory.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "//src/v/pandaproxy/schema_registry:server",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/utils:vint",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "iceberg_table_reader",
+    srcs = ["iceberg_table_reader.cc"],
+    hdrs = ["iceberg_table_reader.h"],
+    implementation_deps = [
+        "//src/v/serde/parquet:assembler",
+        "//src/v/serde/parquet:file_io",
+        "//src/v/serde/parquet:reader",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/iceberg:manifest_entry",
+        "//src/v/iceberg:manifest_io",
+        "//src/v/iceberg:parquet_reader",
+        "//src/v/iceberg:table_metadata",
+        "//src/v/serde/parquet:value",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "e2e_test_utils",
+    srcs = ["e2e_test_utils.cc"],
+    hdrs = ["e2e_test_utils.h"],
+    implementation_deps = [
+        "//src/v/datalake/coordinator:data_file",
+        "//src/v/iceberg:values_bytes",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/datalake:partitioning_writer",
+        "//src/v/datalake:record_multiplexer",
+        "//src/v/datalake/coordinator:translated_offset_range",
+        "//src/v/iceberg:manifest_io",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "datalake_pipeline_test_fixture",
+    srcs = ["datalake_pipeline_test_fixture.cc"],
+    hdrs = ["datalake_pipeline_test_fixture.h"],
+    implementation_deps = [
+        ":e2e_test_utils",
+        ":iceberg_table_reader",
+        "//src/v/cloud_io:provider",
+        "//src/v/config",
+        "//src/v/datalake:local_parquet_file_writer",
+        "//src/v/datalake:location",
+        "//src/v/datalake:table_definition",
+        "//src/v/iceberg:table_identifier",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":catalog_and_registry_fixture",
+        ":test_data_writer",
+        ":test_utils",
+        "//src/v/datalake:catalog_schema_manager",
+        "//src/v/datalake:cdc_key_value_translator",
+        "//src/v/datalake:record_multiplexer",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake:record_translator",
+        "//src/v/datalake/coordinator:iceberg_file_committer",
+        "//src/v/datalake/coordinator:state",
+        "//src/v/datalake/translation:translation_probe",
+        "//src/v/features",
+        "//src/v/iceberg:manifest_io",
+        "//src/v/serde/parquet:value",
+        "//src/v/storage",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "e2e_pipeline_test",
+    timeout = "short",
+    srcs = ["e2e_pipeline_test.cc"],
+    cpu = 1,
+    deps = [
+        ":datalake_pipeline_test_fixture",
+        ":record_batch_factory",
+        "//src/v/model",
+        "//src/v/serde/parquet:value",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
         "@seastar",
     ],
 )

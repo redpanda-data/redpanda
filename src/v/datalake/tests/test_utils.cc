@@ -29,10 +29,30 @@ iceberg::unresolved_partition_spec hour_partition_spec() {
     };
 }
 
+iceberg::unresolved_partition_spec identity_key_partition_spec() {
+    chunked_vector<iceberg::unresolved_partition_spec::field> fields;
+    fields.push_back({
+      .source_name = {"redpanda", "key"},
+      .transform = iceberg::identity_transform{},
+      .name = "redpanda.key",
+    });
+    return {
+      .fields = std::move(fields),
+    };
+}
+
 direct_table_creator::direct_table_creator(
   type_resolver& tr, schema_manager& sm)
   : type_resolver_(tr)
   , schema_mgr_(sm) {}
+
+direct_table_creator::direct_table_creator(
+  type_resolver& tr,
+  schema_manager& sm,
+  iceberg::unresolved_partition_spec pspec)
+  : type_resolver_(tr)
+  , schema_mgr_(sm)
+  , pspec_(std::move(pspec)) {}
 
 ss::future<checked<std::nullopt_t, table_creator::errc>>
 direct_table_creator::ensure_table(
@@ -53,7 +73,9 @@ direct_table_creator::ensure_table(
 
     auto record_type = default_translator{}.build_type(std::move(val_type));
     auto ensure_res = co_await schema_mgr_.ensure_table_schema(
-      table_id, record_type.type, hour_partition_spec());
+      table_id,
+      record_type.type,
+      pspec_.has_value() ? pspec_->copy() : hour_partition_spec());
     if (ensure_res.has_error()) {
         switch (ensure_res.error()) {
         case schema_manager::errc::not_supported:
