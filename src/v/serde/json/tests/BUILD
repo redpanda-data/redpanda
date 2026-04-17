@@ -1,6 +1,23 @@
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
+    name = "encoder_roundtrip_test",
+    timeout = "short",
+    srcs = ["encoder_roundtrip_test.cc"],
+    cpu = 1,
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/serde/json:parser",
+        "//src/v/serde/json:writer",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/strings",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "parser_test",
     timeout = "short",
     srcs =
