@@ -170,7 +170,7 @@ private:
       const model::record_batch&,
       const model::record&,
       bool,
-      std::vector<int32_t>&);
+      chunked_vector<int32_t>&);
 
     ss::future<std::optional<model::record_batch>> filter(model::record_batch);
 

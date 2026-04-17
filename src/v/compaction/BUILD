@@ -115,6 +115,7 @@ redpanda_cc_library(
         ":reducer",
         ":types",
         "//src/v/bytes",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "@seastar",
     ],

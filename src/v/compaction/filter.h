@@ -44,7 +44,7 @@ protected:
     // Creates a new batch based on the provided batch and offset_deltas
     // indicated.
     ss::future<std::optional<model::record_batch>> do_filter_batch(
-      model::record_batch b, std::vector<int32_t> offset_deltas) const;
+      model::record_batch b, chunked_vector<int32_t> offset_deltas) const;
 
     mutable stats _stats;
 
@@ -52,7 +52,7 @@ private:
     // For a given batch, this function should return a vector containing offset
     // deltas from records in the batch which we intend on keeping when
     // performing record batch filtering.
-    virtual ss::future<std::vector<int32_t>>
+    virtual ss::future<chunked_vector<int32_t>>
     compute_offset_deltas_to_keep(const model::record_batch& b) const = 0;
 
     // For most implementations, this should serve as a pass through function to
@@ -62,7 +62,7 @@ private:
     // placeholder batch if `offset_deltas` is empty.
     virtual ss::future<std::optional<model::record_batch>>
     filter_batch_with_offset_deltas(
-      model::record_batch b, std::vector<int32_t> offset_deltas) const = 0;
+      model::record_batch b, chunked_vector<int32_t> offset_deltas) const = 0;
 
     // Computes offset deltas from the batch to keep, and then filters the
     // provided batch.

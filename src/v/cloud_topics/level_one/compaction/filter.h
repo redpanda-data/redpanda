@@ -31,14 +31,14 @@ private:
     ss::future<> maybe_index_offset_delta(
       const model::record_batch&,
       const model::record&,
-      std::vector<int32_t>&) const;
+      chunked_vector<int32_t>&) const;
 
-    ss::future<std::vector<int32_t>>
+    ss::future<chunked_vector<int32_t>>
     compute_offset_deltas_to_keep(const model::record_batch&) const final;
 
     ss::future<std::optional<model::record_batch>>
       filter_batch_with_offset_deltas(
-        model::record_batch, std::vector<int32_t>) const final;
+        model::record_batch, chunked_vector<int32_t>) const final;
 
 private:
     const compaction::key_offset_map& _map;
