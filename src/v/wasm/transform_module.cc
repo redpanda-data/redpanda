@@ -188,6 +188,14 @@ transform_module::read_batch_metadata(int32_t key, ffi::array<uint8_t> buf) {
         std::memcpy(buf.data(), tls_str.data(), tls_str.size());
         co_return static_cast<int32_t>(tls_str.size());
     }
+    case metadata_key::listener_name: {
+        if (buf.size() < info.listener_name.size()) {
+            co_return INVALID_BUFFER;
+        }
+        std::memcpy(
+          buf.data(), info.listener_name.data(), info.listener_name.size());
+        co_return static_cast<int32_t>(info.listener_name.size());
+    }
     }
     co_return 0;
 }

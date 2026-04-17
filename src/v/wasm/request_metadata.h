@@ -27,6 +27,7 @@ struct request_metadata {
     ss::sstring client_host;
     uint16_t client_port{0};
     bool tls_enabled{false};
+    ss::sstring listener_name;
 };
 
 /// Well-known keys for the read_batch_metadata ABI function.
@@ -37,6 +38,7 @@ enum class metadata_key : int32_t {
     client_host = 4,
     client_port = 5,
     tls_enabled = 6,
+    listener_name = 7,
 };
 
 } // namespace wasm

@@ -335,6 +335,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           .client_host = fmt::format("{}", conn->client_host()),
           .client_port = conn->client_port(),
           .tls_enabled = conn->tls_enabled(),
+          .listener_name = octx.rctx.listener(),
         };
     }();
 
