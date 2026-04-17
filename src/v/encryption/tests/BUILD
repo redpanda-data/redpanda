@@ -26,3 +26,28 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "field_transformer_test",
+    timeout = "short",
+    srcs = [
+        "field_transformer_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/encryption",
+        "//src/v/encryption:field_transformer",
+        "//src/v/serde/avro",
+        "//src/v/serde/json:parser",
+        "//src/v/serde/protobuf",
+        "//src/v/serde/protobuf:encoder",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:base64",
+        "@avro",
+        "@googletest//:gtest",
+        "@protobuf",
+        "@seastar",
+    ],
+)
