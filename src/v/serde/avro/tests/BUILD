@@ -43,6 +43,20 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "test_utils",
+    hdrs = [
+        "test_utils.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde/avro",
+        "@avro",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "parser_test",
     timeout = "short",
@@ -88,6 +102,7 @@ redpanda_cc_gtest(
         ":avro_comparator",
         ":avro_test_array",
         ":data_generator",
+        ":test_utils",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
@@ -116,5 +131,64 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@avro",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "encoder_test",
+    timeout = "short",
+    srcs = [
+        "encoder_test.cc",
+    ],
+    cpu = 1,
+    data = [
+        "testdata/array",
+        "testdata/big_union",
+        "testdata/bigrecord",
+        "testdata/bigrecord2",
+        "testdata/bigrecord_r",
+        "testdata/circulardep",
+        "testdata/cpp_reserved_words",
+        "testdata/cpp_reserved_words_union_typedef",
+        "testdata/crossref",
+        "testdata/empty_record",
+        "testdata/enum",
+        "testdata/fixed",
+        "testdata/int",
+        "testdata/large_schema.avsc",
+        "testdata/map",
+        "testdata/padded_record",
+        "testdata/primitivetypes",
+        "testdata/recinrec",
+        "testdata/record",
+        "testdata/record2",
+        "testdata/reuse",
+        "testdata/tree1",
+        "testdata/tree2",
+        "testdata/tweet",
+        "testdata/union",
+        "testdata/union_array_union",
+        "testdata/union_conflict",
+        "testdata/union_empty_record",
+        "testdata/union_map_union",
+        "testdata/union_redundant_types",
+        "testdata/unionwithmap",
+    ],
+    memory = "128MiB",
+    deps = [
+        ":avro_comparator",
+        ":data_generator",
+        ":test_utils",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde/avro",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:runfiles",
+        "//src/v/utils:file_io",
+        "@avro",
+        "@fmt",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@seastar",
     ],
 )

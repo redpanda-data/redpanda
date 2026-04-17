@@ -14,6 +14,7 @@
 #include "serde/avro/parser.h"
 #include "serde/avro/tests/avro_comparator.h"
 #include "serde/avro/tests/data_generator.h"
+#include "serde/avro/tests/test_utils.h"
 #include "test_utils/random_bytes.h"
 #include "test_utils/runfiles.h"
 #include "utils/file_io.h"
@@ -25,88 +26,7 @@
 
 using namespace testing;
 using serde::avro::testing::generic_datum_eq;
-
-void parsed_to_avro(
-  ::avro::GenericDatum& datum,
-  const std::unique_ptr<serde::avro::parsed::message>& msg);
-
-struct primitive_visitor {
-    void operator()(int32_t v) { datum->value<int32_t>() = v; }
-    void operator()(int64_t v) {
-        if (datum->type() == ::avro::Type::AVRO_ENUM) {
-            datum->value<avro::GenericEnum>().set(v);
-        } else {
-            datum->value<int64_t>() = v;
-        }
-    }
-    void operator()(bool v) { datum->value<bool>() = v; }
-    void operator()(serde::avro::parsed::avro_null) {}
-    void operator()(double v) { datum->value<double>() = v; }
-    void operator()(float v) { datum->value<float>() = v; }
-    void operator()(const iobuf& buffer) {
-        if (datum->type() == ::avro::Type::AVRO_FIXED) {
-            auto& avro_fixed = datum->value<::avro::GenericFixed>();
-
-            avro_fixed.value().reserve(buffer.size_bytes());
-            iobuf::iterator_consumer it(buffer.cbegin(), buffer.cend());
-            it.consume_to(buffer.size_bytes(), avro_fixed.value().data());
-
-        } else if (datum->type() == ::avro::Type::AVRO_STRING) {
-            auto& avro_str = datum->value<std::string>();
-
-            iobuf_parser p(buffer.copy());
-            avro_str = p.read_string(buffer.size_bytes());
-        } else {
-            std::vector<uint8_t> avro_bytes(buffer.size_bytes());
-            iobuf::iterator_consumer it(buffer.cbegin(), buffer.cend());
-            it.consume_to(buffer.size_bytes(), avro_bytes.data());
-            datum->value<std::vector<uint8_t>>() = avro_bytes;
-        }
-    }
-    ::avro::GenericDatum* datum;
-};
-
-struct parsed_msg_visitor {
-    void operator()(const serde::avro::parsed::record& record) {
-        auto& avro_record = datum->value<avro::GenericRecord>();
-        for (size_t i = 0; i < avro_record.fieldCount(); ++i) {
-            auto& field_datum = avro_record.fieldAt(i);
-            parsed_to_avro(field_datum, record.fields[i]);
-        }
-    }
-    void operator()(const serde::avro::parsed::map& parsed_map) {
-        auto& avro_map = datum->value<::avro::GenericMap>();
-        for (auto& [k, v] : parsed_map.entries) {
-            iobuf_const_parser p(k);
-            ::avro::GenericDatum value(avro_map.schema()->leafAt(1));
-            parsed_to_avro(value, v);
-            auto key_str = p.read_string(k.size_bytes());
-            avro_map.value().emplace_back(key_str, value);
-        }
-    }
-    void operator()(const serde::avro::parsed::list& v) {
-        auto& array = datum->value<::avro::GenericArray>();
-        for (auto& e : v.elements) {
-            ::avro::GenericDatum value(array.schema()->leafAt(0));
-            parsed_to_avro(value, e);
-            array.value().push_back(value);
-        }
-    }
-    void operator()(const serde::avro::parsed::avro_union& v) {
-        datum->selectBranch(v.branch);
-        parsed_to_avro(*datum, v.message);
-    }
-    void operator()(const serde::avro::parsed::primitive& v) {
-        std::visit(primitive_visitor{datum}, v);
-    }
-    ::avro::GenericDatum* datum;
-};
-
-void parsed_to_avro(
-  ::avro::GenericDatum& datum,
-  const std::unique_ptr<serde::avro::parsed::message>& msg) {
-    std::visit(parsed_msg_visitor{&datum}, *msg);
-}
+using serde::avro::testing::parsed_to_avro;
 
 struct AvroParserTest : ::testing::TestWithParam<std::tuple<std::string_view>> {
     ::avro::ValidSchema load_json_schema(std::string_view schema_file) {
