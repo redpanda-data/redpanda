@@ -3,9 +3,11 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 redpanda_cc_library(
     name = "encryption",
     srcs = [
+        "dek_manager.cc",
         "mock_kms_provider.cc",
     ],
     hdrs = [
+        "dek_manager.h",
         "fwd.h",
         "kms_provider.h",
         "mock_kms_provider.h",

@@ -12,3 +12,17 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "dek_manager_test",
+    timeout = "short",
+    srcs = [
+        "dek_manager_test.cc",
+    ],
+    deps = [
+        "//src/v/encryption",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
