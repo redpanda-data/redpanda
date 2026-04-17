@@ -12,6 +12,7 @@
 #include "serde/parquet/value.h"
 
 #include "absl/strings/escaping.h"
+#include "bytes/hash.h"
 
 #include <seastar/util/variant_utils.hh>
 
@@ -43,6 +44,43 @@ value copy(const value& val) {
           return value(std::move(clone));
       },
       [](const auto& v) { return value(v); });
+}
+
+size_t value_hash::operator()(const value& v) const {
+    return ss::visit(
+      v,
+      [](const null_value&) -> size_t { return 0; },
+      [](const boolean_value& x) -> size_t { return std::hash<bool>{}(x.val); },
+      [](const int32_value& x) -> size_t {
+          return std::hash<int32_t>{}(x.val);
+      },
+      [](const int64_value& x) -> size_t {
+          return std::hash<int64_t>{}(x.val);
+      },
+      [](const float32_value& x) -> size_t {
+          return std::hash<float>{}(x.val);
+      },
+      [](const float64_value& x) -> size_t {
+          return std::hash<double>{}(x.val);
+      },
+      [](const byte_array_value& x) -> size_t {
+          return std::hash<iobuf>{}(x.val);
+      },
+      [](const fixed_byte_array_value& x) -> size_t {
+          return std::hash<iobuf>{}(x.val);
+      },
+      [](const group_value& x) -> size_t { return group_value_hash{}(x); },
+      [](const repeated_value&) -> size_t { return 0; });
+}
+
+size_t group_value_hash::operator()(const group_value& gv) const {
+    size_t h = 0;
+    value_hash vh;
+    for (const auto& m : gv) {
+        // Boost-style hash combine for better distribution.
+        h ^= vh(m.field) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    }
+    return h;
 }
 
 } // namespace serde::parquet

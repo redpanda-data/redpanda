@@ -65,6 +65,7 @@ redpanda_cc_library(
         "value.h",
     ],
     implementation_deps = [
+        "//src/v/bytes:hash",
         "@abseil-cpp//absl/strings",
         "@seastar",
     ],

@@ -104,6 +104,19 @@ struct repeated_element {
 
 value copy(const value&);
 
+/// \brief Hash functor for parquet values.
+///
+/// Supports all physical value types including nested groups. Used for
+/// equality delete key lookup in hash sets.
+struct value_hash {
+    size_t operator()(const value& v) const;
+};
+
+/// \brief Hash functor for group_value (row key tuples).
+struct group_value_hash {
+    size_t operator()(const group_value& gv) const;
+};
+
 } // namespace serde::parquet
 
 template<>
