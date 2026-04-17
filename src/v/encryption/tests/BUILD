@@ -28,6 +28,24 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "encryption_metadata_ser_test",
+    timeout = "short",
+    srcs = [
+        "encryption_metadata_ser_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/encryption",
+        "//src/v/encryption:encryption_metadata_ser",
+        "//src/v/model",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "field_transformer_test",
     timeout = "short",
     srcs = [

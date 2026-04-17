@@ -29,6 +29,31 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "encryption_metadata_ser",
+    srcs = [
+        "encryption_metadata_ser.cc",
+    ],
+    hdrs = [
+        "encryption_metadata_ser.h",
+    ],
+    implementation_deps = [
+        "//proto/redpanda/core/encryption/v1:encryption_redpanda_proto",
+        "//src/v/storage:record_batch_builder",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":encryption",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "field_transformer",
     srcs = [
         "field_transformer_ref.cc",
