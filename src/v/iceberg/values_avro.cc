@@ -360,6 +360,9 @@ struct primitive_value_parsing_visitor {
         b.append(v.data(), v.size());
         return binary_value{std::move(b)};
     }
+    value operator()(const variant_type&) {
+        throw std::invalid_argument("variant type is not supported in Avro");
+    }
     value operator()(const decimal_type& dt) {
         maybe_throw_wrong_type(data_.type(), avro::AVRO_FIXED);
         auto lt = avro::LogicalType(avro::LogicalType::DECIMAL);

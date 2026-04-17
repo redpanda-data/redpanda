@@ -254,6 +254,10 @@ struct primitive_value_parsing_visitor {
         auto str = parse_string_view(data_, "binary_value");
         return binary_value{hex_str_to_iobuf(str)};
     }
+    value operator()(const variant_type&) {
+        auto str = parse_string_view(data_, "variant_value");
+        return binary_value{hex_str_to_iobuf(str)};
+    }
     value operator()(const decimal_type& t) {
         // TODO(oren): need to support negative scale? see datatypes.h
         auto str = parse_string_view(data_, "decimal_value");

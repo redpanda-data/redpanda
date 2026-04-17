@@ -10,6 +10,7 @@
 #include "datalake/record_multiplexer.h"
 
 #include "base/vlog.h"
+#include "container/chunked_hash_map.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/location.h"
@@ -20,6 +21,7 @@
 #include "datalake/table_id_provider.h"
 #include "datalake/translation/translation_probe.h"
 #include "features/feature_table.h"
+#include "iceberg/compatibility_utils.h"
 #include "model/batch_compression.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -31,21 +33,87 @@ namespace datalake {
 
 namespace {
 
-/// Build a struct_type for just the key columns by extracting fields whose
-/// IDs match key_field_ids from the full type.
+/// Prune a struct_type to only contain the fields matching the given
+/// IDs, preserving the full nesting path from root to each selected
+/// field. This mirrors Iceberg's TypeUtil.select() behavior: if a
+/// selected field is nested inside a struct, the parent struct is
+/// included in the output with only the selected children.
 iceberg::struct_type extract_key_type(
   const iceberg::struct_type& full_type,
   const chunked_vector<iceberg::nested_field::id_t>& key_field_ids) {
-    iceberg::struct_type key_type;
-    for (const auto& key_id : key_field_ids) {
-        for (const auto& field : full_type.fields) {
-            if (field->id == key_id) {
-                key_type.fields.push_back(field->copy());
-                break;
+    chunked_hash_set<iceberg::nested_field::id_t> ids(
+      key_field_ids.begin(), key_field_ids.end());
+
+    // Recursive helper: prune a struct to only fields (or ancestors of
+    // fields) in the ID set. Returns nullopt if nothing in this subtree
+    // matches.
+    std::function<std::optional<iceberg::struct_type>(
+      const iceberg::struct_type&)>
+      prune = [&](const iceberg::struct_type& st)
+      -> std::optional<iceberg::struct_type> {
+        iceberg::struct_type result;
+        for (const auto& f : st.fields) {
+            if (ids.contains(f->id)) {
+                // This field is selected — include it as-is.
+                result.fields.push_back(f->copy());
+            } else if (
+              auto* nested_st = std::get_if<iceberg::struct_type>(&f->type)) {
+                // Check if any descendant is selected.
+                auto pruned = prune(*nested_st);
+                if (pruned.has_value()) {
+                    result.fields.push_back(
+                      iceberg::nested_field::create(
+                        f->id(),
+                        f->name,
+                        f->required,
+                        std::move(pruned.value())));
+                }
             }
         }
-    }
-    return key_type;
+        if (result.fields.empty()) {
+            return std::nullopt;
+        }
+        return result;
+    };
+
+    auto pruned = prune(full_type);
+    return pruned.has_value() ? std::move(pruned.value())
+                              : iceberg::struct_type{};
+}
+
+/// Nest a flat struct_value of key column values into the shape of the
+/// pruned key type. The flat struct has one field per leaf in the pruned
+/// type, in depth-first leaf order.
+///
+/// For top-level key fields (like debezium's `id`), the pruned type has
+/// no nesting and the flat values are returned as-is.
+iceberg::struct_value nest_key_value(
+  const iceberg::struct_type& pruned_type, iceberg::struct_value flat_values) {
+    size_t flat_idx = 0;
+
+    std::function<iceberg::struct_value(const iceberg::struct_type&)> build =
+      [&](const iceberg::struct_type& st) -> iceberg::struct_value {
+        iceberg::struct_value result;
+        for (const auto& f : st.fields) {
+            if (auto* nested_st = std::get_if<iceberg::struct_type>(&f->type)) {
+                auto nested_val = build(*nested_st);
+                result.fields.emplace_back(
+                  std::make_unique<iceberg::struct_value>(
+                    std::move(nested_val)));
+            } else {
+                if (flat_idx < flat_values.fields.size()) {
+                    result.fields.emplace_back(
+                      std::move(flat_values.fields[flat_idx]));
+                    ++flat_idx;
+                } else {
+                    result.fields.emplace_back(std::nullopt);
+                }
+            }
+        }
+        return result;
+    };
+
+    return build(pruned_type);
 }
 
 // Get the data location for the table. Some catalogs require using the property
@@ -360,13 +428,23 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
             if (record_type.key_field_names) {
                 // Resolve key field names to IDs using the type that
                 // fill_registered_ids just populated with catalog IDs.
+                // Names may be nested paths (e.g. "redpanda.key").
                 chunked_vector<iceberg::nested_field::id_t> key_ids;
                 for (const auto& name : *record_type.key_field_names) {
-                    for (const auto& f : data_writer->type().fields) {
-                        if (f->name == name) {
-                            key_ids.emplace_back(f->id);
+                    std::vector<ss::sstring> path;
+                    size_t pos = 0;
+                    while (pos < name.size()) {
+                        auto dot = name.find('.', pos);
+                        if (dot == ss::sstring::npos) {
+                            path.emplace_back(name.substr(pos));
                             break;
                         }
+                        path.emplace_back(name.substr(pos, dot - pos));
+                        pos = dot + 1;
+                    }
+                    auto* f = data_writer->type().find_field_by_name(path);
+                    if (f) {
+                        key_ids.emplace_back(f->id);
                     }
                 }
                 data_writer->set_key_field_ids(key_ids.copy());
@@ -405,15 +483,18 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 // partition source columns. Without this, equality
                 // deletes would be scoped to the wrong partition and
                 // fail to match the data files they intend to delete.
+                // Collect all field IDs in the pruned key type
+                // (including nested) for partition validation.
+                chunked_hash_set<iceberg::nested_field::id_t> key_field_id_set;
+                std::ignore = iceberg::for_each_field(
+                  key_type,
+                  [&key_field_id_set](const iceberg::nested_field* f) {
+                      key_field_id_set.insert(f->id);
+                  });
+
                 const auto& pspec = sw.data_writer->partition_spec();
                 for (const auto& pf : pspec.fields) {
-                    bool found = false;
-                    for (const auto& kf : key_type.fields) {
-                        if (kf->id == pf.source_id) {
-                            found = true;
-                            break;
-                        }
-                    }
+                    bool found = key_field_id_set.contains(pf.source_id);
                     if (!found) {
                         vlogl(
                           _log,
@@ -437,8 +518,13 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 delete_writer->set_key_field_ids(sw.key_field_ids->copy());
                 sw.delete_writer = std::move(delete_writer);
             }
+            // Nest the translator's flat key values into the pruned
+            // key type's structure so the delete file's Parquet
+            // schema matches the table schema's nesting.
+            auto nested_key = nest_key_value(
+              sw.delete_writer->type(), std::move(*translated.delete_key));
             auto add_del_result = co_await sw.delete_writer->add_data(
-              std::move(*translated.delete_key), estimated_size, as);
+              std::move(nested_key), estimated_size, as);
             if (add_del_result != writer_error::ok) {
                 vlogl(
                   _log,

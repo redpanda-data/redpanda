@@ -115,6 +115,9 @@ struct avro_primitive_type_visitor {
         return ret;
     }
     avro::Schema operator()(const binary_type&) { return avro::BytesSchema(); }
+    avro::Schema operator()(const variant_type&) {
+        throw std::invalid_argument("variant type is not supported in Avro");
+    }
 };
 
 struct avro_field_visitor {

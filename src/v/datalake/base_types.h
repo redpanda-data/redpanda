@@ -9,9 +9,12 @@
  */
 #pragma once
 #include "base/format_to.h"
+#include "serde/parquet/metadata.h"
 #include "utils/named_type.h"
 
 #include <filesystem>
+#include <optional>
+
 namespace datalake {
 /**
  * Definitions of local and remote paths, as the name indicates the local path
@@ -29,6 +32,7 @@ struct local_file_metadata {
     local_path path;
     size_t row_count = 0;
     size_t size_bytes = 0;
+    std::optional<serde::parquet::file_metadata> parquet_metadata;
 
     fmt::iterator format_to(fmt::iterator it) const {
         return fmt::format_to(

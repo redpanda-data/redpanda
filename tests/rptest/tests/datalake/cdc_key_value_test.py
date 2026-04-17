@@ -107,3 +107,55 @@ class CdcKeyValueTest(RedpandaTest):
             backoff_sec=5,
             err_msg="CDC final state not reflected in Iceberg",
         )
+
+    @cluster(num_nodes=3)
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_cdc_key_value_rapid_toggle(self, cloud_storage_type):
+        """Insert then immediately tombstone the same key.
+
+        Exercises the case where an insert and its delete land in the
+        same Iceberg commit. Equality deletes at the same sequence
+        number do not apply to same-commit data files, so without
+        supplemental position deletes the insert would survive
+        incorrectly.
+        """
+        toggle_topic = "cdc-kv-toggle-test"
+        self.dl.create_iceberg_enabled_topic(
+            toggle_topic,
+            iceberg_mode="cdc_key_value",
+        )
+
+        rpk = RpkTool(self.redpanda)
+
+        # Produce a record that should survive.
+        rpk.produce(toggle_topic, key="survive", msg="keep-me")
+
+        # Produce insert then immediate tombstone for the same key.
+        # Both should land in the same translation batch.
+        rpk.produce(toggle_topic, key="doomed", msg="should-be-deleted")
+        rpk.produce(toggle_topic, key="doomed", msg="", tombstone=True)
+
+        spark = self.dl.query_engine(QueryEngineType.SPARK)
+        tbl = f"redpanda.{spark.escape_identifier(toggle_topic)}"
+
+        def _check():
+            try:
+                rows = spark.run_query_fetch_all(
+                    f"SELECT redpanda.key, value FROM {tbl} ORDER BY redpanda.key"
+                )
+                self.logger.info(f"Rows: {rows}")
+                # "doomed" should be deleted, "survive" should remain.
+                expected = [
+                    (bytearray(b"survive"), bytearray(b"keep-me")),
+                ]
+                return rows == expected
+            except Exception as e:
+                self.logger.info(f"Query failed: {e}")
+                return False
+
+        wait_until(
+            _check,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="Rapid toggle: tombstoned key still visible in Iceberg",
+        )

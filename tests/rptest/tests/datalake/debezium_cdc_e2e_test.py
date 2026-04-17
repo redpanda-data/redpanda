@@ -225,3 +225,100 @@ class DebeziumCdcIcebergTest(RedpandaTest):
         assert rows[1][1] == "charlie", f"Expected 'charlie', got {rows[1][1]}"
 
         self.logger.info(f"Debezium CDC -> Iceberg test passed: final state = {rows}")
+
+    @cluster(num_nodes=5)
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_debezium_rapid_insert_delete(self, cloud_storage_type):
+        """INSERT then immediately DELETE the same row.
+
+        Exercises the case where an insert and its delete land in the
+        same Iceberg commit. Equality deletes at the same sequence
+        number do not apply to same-commit data files, so without
+        supplemental position deletes the row would survive
+        incorrectly.
+        """
+        self.postgres.exec_sql(
+            sql="CREATE TABLE toggle_test (id SERIAL PRIMARY KEY, name TEXT NOT NULL)"
+        )
+        self.postgres.exec_sql(sql="ALTER TABLE toggle_test REPLICA IDENTITY FULL")
+
+        # Insert a row that should survive for reference.
+        self.postgres.exec_sql(sql="INSERT INTO toggle_test (name) VALUES ('keeper')")
+
+        topic_name = "dbserver1.public.toggle_test"
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(topic_name)
+
+        def _sr_ready():
+            try:
+                import requests as req
+
+                r = req.get(
+                    f"{self.redpanda.schema_reg().split(',')[0]}/subjects",
+                    timeout=5,
+                )
+                return r.status_code == 200
+            except Exception:
+                return False
+
+        wait_until(
+            _sr_ready,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Schema Registry not ready",
+        )
+
+        self.debezium = DebeziumServerService(
+            self.test_context,
+            self.redpanda,
+            self.postgres,
+            database_name=PostgresService.DB_NAME,
+            table_include_list="public.toggle_test",
+            server_name="dbserver1",
+        )
+        self.debezium.start()
+        self.dl.set_iceberg_mode_on_topic(topic_name, "debezium")
+
+        # Wait for the keeper row to appear.
+        spark = self.dl.query_engine(QueryEngineType.SPARK)
+
+        def _keeper_visible():
+            try:
+                count = spark.count_table("redpanda", topic_name)
+                self.logger.info(f"Row count: {count}")
+                return count >= 1
+            except Exception as e:
+                self.logger.info(f"Query failed: {e}")
+                return False
+
+        wait_until(
+            _keeper_visible,
+            timeout_sec=90,
+            backoff_sec=5,
+            err_msg="Keeper row not visible in Iceberg",
+        )
+
+        # Now INSERT and immediately DELETE a row. Both CDC events
+        # should propagate through Debezium close together, likely
+        # landing in the same Iceberg commit.
+        self.postgres.exec_sql(sql="INSERT INTO toggle_test (name) VALUES ('doomed')")
+        self.postgres.exec_sql(sql="DELETE FROM toggle_test WHERE name = 'doomed'")
+
+        def _final_state():
+            try:
+                rows = spark.run_query_fetch_all(
+                    f"SELECT name FROM redpanda.{spark.escape_identifier(topic_name)} ORDER BY name"
+                )
+                self.logger.info(f"Rows: {rows}")
+                # Only 'keeper' should remain; 'doomed' should be deleted.
+                return len(rows) == 1 and rows[0][0] == "keeper"
+            except Exception as e:
+                self.logger.info(f"Query failed: {e}")
+                return False
+
+        wait_until(
+            _final_state,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="Rapid toggle: deleted row still visible in Iceberg",
+        )

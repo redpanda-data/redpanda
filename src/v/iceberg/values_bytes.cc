@@ -133,6 +133,9 @@ struct value_from_bytes_visitor {
     value operator()(const binary_type&) {
         return make_iobuf_val<binary_type, binary_value>();
     }
+    value operator()(const variant_type&) {
+        return make_iobuf_val<variant_type, binary_value>();
+    }
 };
 
 } // namespace

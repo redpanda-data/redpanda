@@ -16,6 +16,7 @@
 #include "config/node_config.h"
 #include "datalake/backlog_controller.h"
 #include "datalake/catalog_schema_manager.h"
+#include "datalake/cdc_key_value_translator.h"
 #include "datalake/cloud_data_io.h"
 #include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/frontend.h"
@@ -52,7 +53,7 @@ static std::unique_ptr<type_resolver> make_type_resolver(
         return std::make_unique<binary_type_resolver>();
     case model::iceberg_mode::variant::value_schema_id_prefix:
         return std::make_unique<record_schema_resolver>(sr, cache, type_cache);
-    case model::iceberg_mode::variant::value_schema_latest:
+    case model::iceberg_mode::variant::value_schema_latest: {
         auto subject = pandaproxy::schema_registry::subject(
           fmt::format("{}-value", topic_name));
         if (auto explicit_subject = mode.subject_name()) {
@@ -65,6 +66,7 @@ static std::unique_ptr<type_resolver> make_type_resolver(
           config::shard_local_cfg().iceberg_latest_schema_cache_ttl_ms.bind(),
           cache,
           type_cache);
+    }
     case model::iceberg_mode::variant::debezium_schema_id_prefix:
         return std::make_unique<record_schema_resolver>(sr, cache, type_cache);
     case model::iceberg_mode::variant::cdc_key_value:

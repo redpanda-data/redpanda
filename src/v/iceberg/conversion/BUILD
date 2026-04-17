@@ -78,6 +78,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/iceberg:datatypes",
         "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:variant_schema",
     ],
 )
 
