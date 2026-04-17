@@ -1,0 +1,39 @@
+// Copyright 2026 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.encryption.v1;
+
+import "proto/redpanda/core/pbgen/options.proto";
+
+option (pbgen.cpp_namespace) = "proto::encryption";
+
+// Wire format for the `rp.encryption` record header attached by the broker
+// during field-level encryption. Consumers parse this to discover the
+// encrypted DEK(s) needed for decryption.
+message EncryptionMetadata {
+    repeated DekEntry deks = 1;
+}
+
+// A single Data Encryption Key entry, encrypted (wrapped) by the named KEK
+// via the specified KMS.
+message DekEntry {
+    string kek_name = 1;
+    string kms_type = 2;
+    string kms_key_id = 3;
+    bytes encrypted_dek = 4 [debug_redact = true];
+    string algorithm = 5;
+    uint32 dek_version = 6;
+}
