@@ -9,11 +9,13 @@
  */
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "iceberg/datatypes.h"
 #include "serde/parquet/column_array.h"
 #include "serde/parquet/file_io.h"
 #include "serde/parquet/schema.h"
+#include "serde/parquet/value.h"
 
 #include <seastar/core/future.hh>
 
@@ -27,7 +29,25 @@ struct position_delete_set {
     chunked_vector<int64_t> positions;
 };
 
-using delete_file_entry = std::variant<position_delete_set>;
+/// Equality delete key set for a specific data file.
+///
+/// Contains field IDs identifying the key columns and a hash set of
+/// delete key tuples. During merge-on-read, every data row whose key
+/// columns match an entry in this set is filtered out.
+///
+/// Sequence number filtering (equality deletes only apply to data with
+/// strictly lower sequence numbers) is the caller's responsibility —
+/// the reader applies the set unconditionally.
+struct equality_delete_set {
+    chunked_vector<int32_t> field_ids;
+    chunked_hash_set<
+      serde::parquet::group_value,
+      serde::parquet::group_value_hash>
+      keys;
+};
+
+using delete_file_entry
+  = std::variant<position_delete_set, equality_delete_set>;
 
 struct parquet_reader_result {
     /// Schema matching the columns in row_groups. Derived from the

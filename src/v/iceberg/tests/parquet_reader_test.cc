@@ -583,6 +583,278 @@ TEST(IcebergParquetReader, PositionDeleteNullable) {
     EXPECT_EQ(levels.def_levels[2], sp::def_level(1));
 }
 
+TEST(IcebergParquetReader, BasicEqualityDeleteFiltering) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "id", field_required::yes, primitive_type{int_type{}}));
+    schema.fields.push_back(
+      nested_field::create(
+        2, "val", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{1}, sp::int32_value{100}));
+    rows.push_back(record(sp::int32_value{2}, sp::int32_value{200}));
+    rows.push_back(record(sp::int32_value{3}, sp::int32_value{300}));
+    rows.push_back(record(sp::int32_value{4}, sp::int32_value{400}));
+    rows.push_back(record(sp::int32_value{5}, sp::int32_value{500}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Delete rows where id=2 or id=4.
+    equality_delete_set eds;
+    eds.field_ids.push_back(1);
+    eds.keys.insert(record(sp::int32_value{2}));
+    eds.keys.insert(record(sp::int32_value{4}));
+
+    chunked_vector<delete_file_entry> deletes;
+    deletes.push_back(std::move(eds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 3);
+
+    const auto& id_col = batch.columns[0];
+    ASSERT_TRUE(
+      std::holds_alternative<sp::column_array::i32_data>(id_col.data));
+    const auto& ids = std::get<sp::column_array::i32_data>(id_col.data);
+    ASSERT_EQ(ids.values.size(), 3);
+    EXPECT_EQ(ids.values[0], 1);
+    EXPECT_EQ(ids.values[1], 3);
+    EXPECT_EQ(ids.values[2], 5);
+
+    const auto& val_col = batch.columns[1];
+    const auto& vals = std::get<sp::column_array::i32_data>(val_col.data);
+    ASSERT_EQ(vals.values.size(), 3);
+    EXPECT_EQ(vals.values[0], 100);
+    EXPECT_EQ(vals.values[1], 300);
+    EXPECT_EQ(vals.values[2], 500);
+}
+
+TEST(IcebergParquetReader, EqualityDeleteWithNullableColumn) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "key", field_required::no, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{10}));
+    rows.push_back(record(sp::null_value{}));
+    rows.push_back(record(sp::int32_value{30}));
+    rows.push_back(record(sp::null_value{}));
+    rows.push_back(record(sp::int32_value{50}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Delete key=30 only. Nulls should survive.
+    equality_delete_set eds;
+    eds.field_ids.push_back(1);
+    eds.keys.insert(record(sp::int32_value{30}));
+
+    chunked_vector<delete_file_entry> deletes;
+    deletes.push_back(std::move(eds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 4);
+
+    // Assemble records to verify values including nulls.
+    auto records = sp::assemble_records(result.schema, batch);
+    ASSERT_EQ(records.size(), 4);
+    // Row 0: 10
+    EXPECT_EQ(
+      std::get<sp::int32_value>(records[0][0].field), sp::int32_value{10});
+    // Row 1: null
+    EXPECT_TRUE(std::holds_alternative<sp::null_value>(records[1][0].field));
+    // Row 2: null
+    EXPECT_TRUE(std::holds_alternative<sp::null_value>(records[2][0].field));
+    // Row 3: 50
+    EXPECT_EQ(
+      std::get<sp::int32_value>(records[3][0].field), sp::int32_value{50});
+}
+
+TEST(IcebergParquetReader, EqualityDeleteMultiColumn) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "a", field_required::yes, primitive_type{int_type{}}));
+    schema.fields.push_back(
+      nested_field::create(
+        2, "b", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{1}, sp::int32_value{10}));
+    rows.push_back(record(sp::int32_value{1}, sp::int32_value{20}));
+    rows.push_back(record(sp::int32_value{2}, sp::int32_value{10}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Compound key: delete (a=1, b=20) only.
+    equality_delete_set eds;
+    eds.field_ids.push_back(1);
+    eds.field_ids.push_back(2);
+    eds.keys.insert(record(sp::int32_value{1}, sp::int32_value{20}));
+
+    chunked_vector<delete_file_entry> deletes;
+    deletes.push_back(std::move(eds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 2);
+
+    const auto& a_vals = std::get<sp::column_array::i32_data>(
+      batch.columns[0].data);
+    const auto& b_vals = std::get<sp::column_array::i32_data>(
+      batch.columns[1].data);
+    // (1,10) and (2,10) survive; (1,20) is deleted.
+    EXPECT_EQ(a_vals.values[0], 1);
+    EXPECT_EQ(b_vals.values[0], 10);
+    EXPECT_EQ(a_vals.values[1], 2);
+    EXPECT_EQ(b_vals.values[1], 10);
+}
+
+TEST(IcebergParquetReader, EqualityDeleteNestedKey) {
+    // Schema: outer { inner { key(id=3) } }
+    struct_type inner_st;
+    inner_st.fields.push_back(
+      nested_field::create(
+        3, "key", field_required::yes, primitive_type{int_type{}}));
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        2, "inner", field_required::yes, field_type{std::move(inner_st)}));
+    schema.fields.push_back(
+      nested_field::create(
+        4, "val", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    // inner.key=1, val=100
+    rows.push_back(record(record(sp::int32_value{1}), sp::int32_value{100}));
+    // inner.key=2, val=200
+    rows.push_back(record(record(sp::int32_value{2}), sp::int32_value{200}));
+    // inner.key=3, val=300
+    rows.push_back(record(record(sp::int32_value{3}), sp::int32_value{300}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Delete where inner.key=2 (field_id=3).
+    equality_delete_set eds;
+    eds.field_ids.push_back(3);
+    eds.keys.insert(record(sp::int32_value{2}));
+
+    chunked_vector<delete_file_entry> deletes;
+    deletes.push_back(std::move(eds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 2);
+
+    const auto& val_col = batch.columns[1];
+    const auto& vals = std::get<sp::column_array::i32_data>(val_col.data);
+    EXPECT_EQ(vals.values[0], 100);
+    EXPECT_EQ(vals.values[1], 300);
+}
+
+TEST(IcebergParquetReader, CombinedPositionAndEqualityDeletes) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "val", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{10}));
+    rows.push_back(record(sp::int32_value{20}));
+    rows.push_back(record(sp::int32_value{30}));
+    rows.push_back(record(sp::int32_value{40}));
+    rows.push_back(record(sp::int32_value{50}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Position delete row 0 (val=10), equality delete val=40.
+    chunked_vector<delete_file_entry> deletes;
+
+    position_delete_set pds;
+    pds.positions.push_back(0);
+    deletes.push_back(std::move(pds));
+
+    equality_delete_set eds;
+    eds.field_ids.push_back(1);
+    eds.keys.insert(record(sp::int32_value{40}));
+    deletes.push_back(std::move(eds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 3);
+
+    const auto& vals = std::get<sp::column_array::i32_data>(
+      batch.columns[0].data);
+    EXPECT_EQ(vals.values[0], 20);
+    EXPECT_EQ(vals.values[1], 30);
+    EXPECT_EQ(vals.values[2], 50);
+}
+
+TEST(IcebergParquetReader, EqualityDeleteNoMatch) {
+    struct_type schema;
+    schema.fields.push_back(
+      nested_field::create(
+        1, "val", field_required::yes, primitive_type{int_type{}}));
+
+    auto pq_schema = iceberg_to_write_schema(schema);
+
+    chunked_vector<sp::group_value> rows;
+    rows.push_back(record(sp::int32_value{1}));
+    rows.push_back(record(sp::int32_value{2}));
+    rows.push_back(record(sp::int32_value{3}));
+
+    auto file = write_to_iobuf(std::move(pq_schema), std::move(rows));
+
+    // Delete val=999 which doesn't exist.
+    equality_delete_set eds;
+    eds.field_ids.push_back(1);
+    eds.keys.insert(record(sp::int32_value{999}));
+
+    chunked_vector<delete_file_entry> deletes;
+    deletes.push_back(std::move(eds));
+
+    sp::iobuf_file_io io(std::move(file));
+    auto result = read_parquet(schema, io, std::move(deletes)).get();
+
+    ASSERT_EQ(result.row_groups.size(), 1);
+    const auto& batch = result.row_groups[0];
+    EXPECT_EQ(batch.num_rows, 3);
+
+    const auto& vals = std::get<sp::column_array::i32_data>(
+      batch.columns[0].data);
+    EXPECT_EQ(vals.values[0], 1);
+    EXPECT_EQ(vals.values[1], 2);
+    EXPECT_EQ(vals.values[2], 3);
+}
+
 // NOLINTEND(*magic-number*)
 
 } // namespace

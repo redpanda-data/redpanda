@@ -12,6 +12,7 @@
 
 #include "container/chunked_hash_map.h"
 #include "iceberg/datatypes.h"
+#include "serde/parquet/assembler.h"
 #include "serde/parquet/column_chunk_reader.h"
 #include "serde/parquet/flattened_schema.h"
 #include "serde/parquet/metadata.h"
@@ -363,6 +364,88 @@ leaf_max_def_levels(const sp::schema_element& schema) {
     return result;
 }
 
+/// Extract leaf field values from an assembled record for the given field IDs.
+/// Walks the schema tree and record tree in parallel; when a leaf's field_id
+/// matches one of the targets, its value is appended to the result.
+void extract_fields_by_id(
+  const sp::group_value& record,
+  const sp::schema_element& schema,
+  const chunked_hash_set<int32_t>& target_ids,
+  sp::group_value& result) {
+    for (size_t i = 0; i < schema.children.size() && i < record.size(); ++i) {
+        const auto& child_schema = schema.children[i];
+        const auto& child_value = record[i].field;
+        if (child_schema.is_leaf()) {
+            if (
+              child_schema.field_id.has_value()
+              && target_ids.contains(*child_schema.field_id)) {
+                result.push_back(sp::group_member{sp::copy(child_value)});
+            }
+        } else {
+            // Non-leaf: recurse into the group if the value is a group,
+            // otherwise emit null_value for any target fields in the subtree.
+            if (auto* gv = std::get_if<sp::group_value>(&child_value)) {
+                extract_fields_by_id(*gv, child_schema, target_ids, result);
+            } else {
+                // Parent is null — any target leaves in this subtree are null.
+                child_schema.for_each([&](const sp::schema_element& desc) {
+                    if (
+                      desc.is_leaf() && desc.field_id.has_value()
+                      && target_ids.contains(*desc.field_id)) {
+                        result.push_back(sp::group_member{sp::null_value{}});
+                    }
+                });
+            }
+        }
+    }
+}
+
+/// Remove rows from a batch that match any key in the equality delete set.
+void apply_equality_deletes(
+  sp::columnar_batch& batch,
+  const equality_delete_set& deletes,
+  const sp::schema_element& result_schema,
+  const chunked_vector<sp::def_level>& max_def_levels) {
+    auto records = sp::assemble_records(result_schema, batch);
+
+    chunked_hash_set<int32_t> target_ids;
+    for (auto id : deletes.field_ids) {
+        target_ids.insert(id);
+    }
+
+    auto num_rows = batch.num_rows;
+    chunked_vector<bool> keep;
+    keep.reserve(num_rows);
+    int64_t kept_count = 0;
+    for (size_t i = 0; i < records.size(); ++i) {
+        sp::group_value key;
+        extract_fields_by_id(records[i], result_schema, target_ids, key);
+        bool should_keep = !deletes.keys.contains(key);
+        keep.push_back(should_keep);
+        if (should_keep) {
+            ++kept_count;
+        }
+    }
+
+    if (kept_count == num_rows) {
+        return;
+    }
+
+    for (size_t col = 0; col < batch.columns.size(); ++col) {
+        batch.columns[col] = filter_column(
+          batch.columns[col],
+          batch.levels[col].def_levels,
+          max_def_levels[col],
+          keep,
+          kept_count);
+        batch.levels[col].def_levels = filter_vec(
+          batch.levels[col].def_levels, keep);
+        batch.levels[col].rep_levels = filter_vec(
+          batch.levels[col].rep_levels, keep);
+    }
+    batch.num_rows = kept_count;
+}
+
 /// Remove rows from a batch at positions listed in deleted_positions.
 /// row_offset is the file-global index of the first row in this batch.
 void apply_position_deletes(
@@ -610,17 +693,22 @@ ss::future<parquet_reader_result> read_parquet(
     }
     sp::index_schema(result_schema);
 
-    // Collect position deletes into a lookup set.
+    // Collect position deletes into a lookup set and equality delete
+    // sets into a vector of pointers.
     chunked_hash_set<int64_t> deleted_positions;
+    chunked_vector<const equality_delete_set*> eq_delete_sets;
     for (auto& entry : delete_files) {
-        if (auto* pds = std::get_if<position_delete_set>(&entry)) {
-            for (auto pos : pds->positions) {
-                deleted_positions.insert(pos);
-            }
-        }
+        ss::visit(
+          entry,
+          [&](position_delete_set& pds) {
+              for (auto pos : pds.positions) {
+                  deleted_positions.insert(pos);
+              }
+          },
+          [&](equality_delete_set& eds) { eq_delete_sets.push_back(&eds); });
     }
 
-    // Precompute per-leaf max definition levels for position delete filtering.
+    // Precompute per-leaf max definition levels for delete filtering.
     auto max_def_levels = leaf_max_def_levels(result_schema);
 
     // Step 3: Read column chunks per row group.
@@ -664,6 +752,9 @@ ss::future<parquet_reader_result> read_parquet(
         if (!deleted_positions.empty()) {
             apply_position_deletes(
               batch, deleted_positions, row_offset, max_def_levels);
+        }
+        for (const auto* eds : eq_delete_sets) {
+            apply_equality_deletes(batch, *eds, result_schema, max_def_levels);
         }
         row_offset += rg.num_rows;
 

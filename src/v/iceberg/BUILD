@@ -494,6 +494,7 @@ redpanda_cc_library(
         ":schema",
         ":table_metadata",
         "//src/v/base",
+        "//src/v/model",
     ],
 )
 
@@ -1437,6 +1438,9 @@ redpanda_cc_library(
     name = "parquet_reader",
     srcs = ["parquet_reader.cc"],
     hdrs = ["parquet_reader.h"],
+    implementation_deps = [
+        "//src/v/serde/parquet:assembler",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
@@ -1449,6 +1453,7 @@ redpanda_cc_library(
         "//src/v/serde/parquet:file_io",
         "//src/v/serde/parquet:metadata",
         "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:value",
         "@seastar",
     ],
 )
