@@ -124,6 +124,7 @@ const METADATA_KEYS: &[(&str, i32)] = &[
     ("client_host", 4),
     ("client_port", 5),
     ("tls_enabled", 6),
+    ("listener_name", 7),
 ];
 
 fn read_batch_metadata_map() -> HashMap<String, String> {
