@@ -779,8 +779,13 @@ reconciler<Clock>::add_source_to_object(
         .max_bytes = ctx.size_budget,
         .as = &_as,
       });
+    encryption::seen_dek_set seen_deks;
     auto metadata = co_await build_from_reader(
-      src->topic_id_partition(), std::move(reader), ctx.builder.get(), &_probe);
+      src->topic_id_partition(),
+      std::move(reader),
+      ctx.builder.get(),
+      &_probe,
+      seen_deks);
 
     if (!metadata.has_value()) {
         vlog(

@@ -10,13 +10,18 @@
 
 #include "cloud_topics/reconciler/reconciliation_consumer.h"
 
+#include "encryption/dek_dedup.h"
+
+#include <seastar/core/coroutine.hh>
+
 namespace cloud_topics::reconciler {
 
 ss::future<std::optional<consumer_metadata>> build_from_reader(
   model::topic_id_partition tidp,
   model::record_batch_reader reader,
   l1::object_builder* builder,
-  reconciler_probe* probe) {
+  reconciler_probe* probe,
+  encryption::seen_dek_set& seen_deks) {
     auto gen = std::move(reader).slice_generator(model::no_timeout);
     auto build_duration = probe->measure_object_build_duration();
     co_await builder->start_partition(tidp);
@@ -39,7 +44,18 @@ ss::future<std::optional<consumer_metadata>> build_from_reader(
                     batch.term(), model::offset_cast(batch.base_offset())));
             }
             ++metadata.batch_count;
-            co_await builder->add_batch(std::move(batch));
+
+            // Strip duplicate DEK entries before writing to L1
+            auto stripped = co_await encryption::strip_duplicate_dek_headers(
+              std::move(batch), seen_deks);
+
+            auto result = co_await builder->add_batch(std::move(stripped));
+
+            // Reset the seen set when a new index entry is created so DEKs
+            // are re-emitted at each index segment boundary
+            if (result.index_entry_created) {
+                seen_deks.clear();
+            }
         }
         build_duration->stop();
         read_duration->start();

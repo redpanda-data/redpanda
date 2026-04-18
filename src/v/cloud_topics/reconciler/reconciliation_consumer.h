@@ -13,6 +13,7 @@
 #include "absl/container/btree_map.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/reconciler/reconciler_probe.h"
+#include "encryption/dek_dedup.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
@@ -33,11 +34,13 @@ struct consumer_metadata {
 
 /// Consumes record batches from a reader and writes them to an L1 object.
 /// Produces metadata about the consumed range including offsets, timestamps,
-/// and term transitions.
+/// and term transitions. Strips duplicate DEK headers across batches within
+/// the same L1 index segment to avoid redundant encryption metadata.
 ss::future<std::optional<consumer_metadata>> build_from_reader(
   model::topic_id_partition,
   model::record_batch_reader,
   l1::object_builder*,
-  reconciler_probe*);
+  reconciler_probe*,
+  encryption::seen_dek_set& seen_deks);
 
 } // namespace cloud_topics::reconciler

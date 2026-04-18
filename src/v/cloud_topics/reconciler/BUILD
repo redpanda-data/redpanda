@@ -29,6 +29,7 @@ redpanda_cc_library(
         ":reconciler_probe",
         "//src/v/base",
         "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/encryption:dek_dedup",
         "//src/v/model",
         "@abseil-cpp//absl/container:btree",
         "@seastar",
