@@ -14,6 +14,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
+#include "encryption/encryption_service.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
@@ -298,6 +299,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
         timeout = max_timeout;
     }
 
+    auto& enc_svc = octx.rctx.encryption_service();
     auto p = co_await octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
@@ -306,9 +308,10 @@ ss::future<produce_response::partition> do_produce_topic_partition(
        dispatch = std::move(dispatched),
        acks = octx.request.data.acks,
        timeout,
-       source_shard = ss::this_shard_id()](
-        cluster::partition_manager& mgr) mutable {
-          auto partition = kafka::make_partition_proxy(ntp, mgr);
+       source_shard = ss::this_shard_id(),
+       &enc_svc](cluster::partition_manager& mgr) mutable {
+          auto* enc = enc_svc.local().get_encryption_services();
+          auto partition = kafka::make_partition_proxy(ntp, mgr, enc);
           if (!partition || !partition->is_leader()) {
               return ss::as_ready_future(finalize_request_with_error_code(
                 error_code::not_leader_for_partition,
