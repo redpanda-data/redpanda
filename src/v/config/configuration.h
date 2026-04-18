@@ -840,6 +840,11 @@ public:
 
     development_feature_property<int> development_feature_property_testing_only;
 
+    property<std::optional<ss::sstring>> encryption_kms_type;
+    property<std::optional<ss::sstring>> encryption_kms_key_id;
+    property<std::optional<ss::sstring>> encryption_dek_algorithm;
+    property<int32_t> encryption_dek_expiry_seconds;
+
 private:
     // to query if experimental features are enabled in order to log a nag. it
     // does not use the query to control any experimental feature.
