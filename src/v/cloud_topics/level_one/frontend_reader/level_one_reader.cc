@@ -12,6 +12,7 @@
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/metastore/retry.h"
 #include "cloud_topics/logger.h"
+#include "encryption/dek_refill.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "utils/retry_chain_node.h"
@@ -413,7 +414,14 @@ level_one_log_reader_impl::read_batches(l1::object_reader& reader) {
         auto batch_size = batch.size_bytes();
         _bytes_consumed += batch_size;
         bytes_read += batch_size;
-        batches.push_back(std::move(batch));
+        auto refilled = co_await encryption::refill_dek_sentinels(
+          std::move(batch),
+          _last_dek_metadata ? std::make_optional(_last_dek_metadata->copy())
+                             : std::nullopt);
+        if (refilled.last_dek_metadata) {
+            _last_dek_metadata = std::move(refilled.last_dek_metadata);
+        }
+        batches.push_back(std::move(refilled.batch));
     }
 
     if (_probe != nullptr) {
@@ -428,6 +436,11 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
   const object_info& object,
   kafka::offset offset,
   model::timeout_clock::time_point /*deadline*/) {
+    // Starting a fresh read from a new L1 object/extent. Reset the cached
+    // DEK metadata so the first batch's full header is used as the new
+    // baseline.
+    _last_dek_metadata = std::nullopt;
+
     // When a timestamp hint is available, use the footer's timestamp index
     // to narrow the seek position. Both offset and timestamp constraints
     // must hold, so we start at whichever position is further into the

@@ -48,6 +48,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":l1_reader_cache",
+        "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
         "//src/v/cloud_topics:log_reader_config",
         "//src/v/cloud_topics:logger",
@@ -57,6 +58,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/frontend_reader:level_one_reader_probe",
         "//src/v/cloud_topics/level_one/metastore",
         "//src/v/cloud_topics/level_one/metastore:retry",
+        "//src/v/encryption:dek_refill",
         "//src/v/model",
         "//src/v/model:timeout_clock",
         "//src/v/utils:prefix_logger",

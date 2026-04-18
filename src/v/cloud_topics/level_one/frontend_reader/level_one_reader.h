@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
@@ -20,6 +21,7 @@
 
 #include <deque>
 #include <expected>
+#include <optional>
 
 namespace cloud_topics {
 
@@ -184,6 +186,11 @@ private:
     // Consumed front-to-back as the reader advances through objects.
     // Populated with 1 entry (no prefetch) or N entries (prefetch).
     std::deque<l1::metastore::object_response> _lookahead_buffer;
+
+    /// Cached DEK metadata from the most recently seen full
+    /// rp.encryption header. Used to refill sentinels in subsequent
+    /// batches within the same L1 index segment.
+    std::optional<iobuf> _last_dek_metadata;
 };
 
 } // namespace cloud_topics
