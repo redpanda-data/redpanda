@@ -19,6 +19,8 @@
 #include "config/node_config.h"
 #include "config/tls_config.h"
 #include "crypto/ossl_context_service.h"
+#include "encryption/encryption_service.h"
+#include "encryption/schema_resolver.h"
 #include "features/feature_table_snapshot.h"
 #include "migrations/migrators.h"
 #include "migrations/rbac_migrator.h"
@@ -28,6 +30,8 @@
 #include "net/tls_certificate_probe.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "raft/group_manager.h"
 #include "redpanda/admin/server.h"
 #include "redpanda/application.h"
@@ -564,6 +568,64 @@ void application::wire_up_and_start(
           _log.info,
           "Started Schema Registry listening at {}",
           _schema_reg_config->schema_registry_api());
+    }
+
+    // Start encryption service before kafka server.
+    _encryption_service.start().get();
+    if (config::shard_local_cfg().encryption_kms_type().has_value()) {
+        auto* sr_api = _schema_registry.get();
+        _encryption_service
+          .invoke_on_all([sr_api](encryption::encryption_service& svc) {
+              encryption::schema_fetcher fetcher;
+              if (sr_api) {
+                  fetcher = [sr_api](this auto, const ss::sstring& subject)
+                    -> ss::future<std::optional<encryption::fetched_schema>> {
+                      try {
+                          auto* store = sr_api->get_store();
+                          if (!store) {
+                              co_return std::nullopt;
+                          }
+                          auto schema = co_await store->get_subject_schema(
+                            pandaproxy::schema_registry::context_subject{
+                              pandaproxy::schema_registry::default_context,
+                              pandaproxy::schema_registry::subject{subject}},
+                            std::nullopt,
+                            pandaproxy::schema_registry::include_deleted::no);
+                          auto type = encryption::fetched_schema_type::avro;
+                          auto schema_type = schema.schema.type();
+                          if (
+                            schema_type
+                            == pandaproxy::schema_registry::schema_type::
+                              protobuf) {
+                              type = encryption::fetched_schema_type::protobuf;
+                          } else if (
+                            schema_type
+                            == pandaproxy::schema_registry::schema_type::json) {
+                              type = encryption::fetched_schema_type::json;
+                          }
+                          auto raw_buf = schema.schema.def().raw()().copy();
+                          auto str = iobuf_to_bytes(raw_buf);
+                          co_return encryption::fetched_schema{
+                            .schema_text = ss::sstring(
+                              reinterpret_cast<const char*>(str.data()),
+                              str.size()),
+                            .type = type,
+                          };
+                      } catch (...) {
+                          co_return std::nullopt;
+                      }
+                  };
+              }
+              return svc.start(
+                std::move(fetcher),
+                config::shard_local_cfg().encryption_kms_type().value_or(""),
+                config::shard_local_cfg().encryption_kms_key_id().value_or(""),
+                config::shard_local_cfg().encryption_dek_algorithm().value_or(
+                  "AES256_GCM"),
+                config::shard_local_cfg().encryption_dek_expiry_seconds());
+          })
+          .get();
+        vlog(_log.info, "Started encryption service");
     }
 
     audit_mgr.invoke_on_all(&security::audit::audit_log_manager::start).get();

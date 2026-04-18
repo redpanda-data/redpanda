@@ -30,6 +30,7 @@
 #include "datalake/credential_manager.h"
 #include "datalake/datalake_manager.h"
 #include "datalake/datalake_usage_aggregator.h"
+#include "encryption/encryption_service.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "metrics/prometheus_sanitize.h"
@@ -225,6 +226,10 @@ void application::shutdown() {
         shutdown_with_watchdog(_kafka_server, [](auto& kafka_server) {
             return kafka_server.stop();
         });
+    }
+    if (_encryption_service.local_is_initialized()) {
+        shutdown_with_watchdog(
+          _encryption_service, [](auto& enc) { return enc.stop(); });
     }
     if (_kafka_conn_quotas.local_is_initialized()) {
         shutdown_with_watchdog(_kafka_conn_quotas, [](auto& conn_quotas) {

@@ -33,6 +33,7 @@
 #include "datalake/credential_manager.h"
 #include "datalake/fwd.h"
 #include "debug_bundle/fwd.h"
+#include "encryption/encryption_service.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
@@ -195,6 +196,7 @@ public:
     ss::sharded<crypto::ossl_context_service> ossl_context_service;
     ss::sharded<kafka::datalake_throttle_manager> datalake_throttle_manager;
 
+    ss::sharded<encryption::encryption_service> _encryption_service;
     kafka::server_app _kafka_server;
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
