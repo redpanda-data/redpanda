@@ -54,6 +54,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "dek_dedup",
+    srcs = [
+        "dek_dedup.cc",
+    ],
+    hdrs = [
+        "dek_dedup.h",
+    ],
+    implementation_deps = [
+        ":encryption_metadata_ser",
+        "//src/v/storage:record_batch_builder",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":encryption",
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_resolver",
     srcs = [
         "schema_resolver.cc",
