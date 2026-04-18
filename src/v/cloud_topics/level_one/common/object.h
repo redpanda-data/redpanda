@@ -263,6 +263,14 @@ public:
         size_t indexing_interval = default_indexing_interval;
     };
 
+    // Result of adding a batch to the object builder.
+    struct add_batch_result {
+        // True when the call created a new index entry for the current
+        // partition. Consumers can use this to detect index-entry boundaries
+        // (e.g. for DEK deduplication in the reconciler).
+        bool index_entry_created{false};
+    };
+
     // Create a new object_builder that writes to the given output stream.
     //
     // The returned object_builder must be closed before destructing.
@@ -281,7 +289,7 @@ public:
     //  - A raft data batch, (meaning the header's type is set to raft_data).
     //  - The offsets in this batch are > than the previous batch in this
     //    partition.
-    virtual ss::future<> add_batch(model::record_batch) = 0;
+    virtual ss::future<add_batch_result> add_batch(model::record_batch) = 0;
 
     // Return the size of file in bytes that has been built so far.
     //

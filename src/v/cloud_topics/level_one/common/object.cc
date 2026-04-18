@@ -345,7 +345,7 @@ public:
         };
     }
 
-    ss::future<> add_batch(model::record_batch batch) final {
+    ss::future<add_batch_result> add_batch(model::record_batch batch) final {
         dassert(
           batch.header().type == model::record_batch_type::raft_data,
           "expected raft_data batches, got: {}",
@@ -368,6 +368,7 @@ public:
           + model::offset_delta(batch.header().last_offset_delta));
         _current_partition.max_timestamp = std::max(
           _current_partition.max_timestamp, batch.header().max_timestamp);
+        add_batch_result result;
         auto last_index_write_position
           = _current_partition.indexes.empty()
               ? _current_partition.file_position
@@ -378,8 +379,10 @@ public:
                 .file_position = _offset,
                 .kafka_offset = model::offset_cast(batch.header().base_offset),
                 .max_timestamp = _current_partition.max_timestamp});
+            result.index_entry_created = true;
         }
         co_await write_batch_to_stream(std::move(batch));
+        co_return result;
     }
 
     ss::future<object_info> finish() final {
