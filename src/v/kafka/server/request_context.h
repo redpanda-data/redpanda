@@ -16,6 +16,7 @@
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "cluster/cluster_link/frontend.h"
+#include "encryption/fwd.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/types.h"
@@ -183,6 +184,10 @@ public:
     const std::unique_ptr<pandaproxy::schema_registry::api>&
     schema_registry() const {
         return _conn->server().schema_registry();
+    }
+
+    ss::sharded<encryption::encryption_service>& encryption_service() const {
+        return _conn->server().encryption_service();
     }
 
     std::chrono::milliseconds throttle_delay_ms() const {

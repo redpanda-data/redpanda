@@ -10,6 +10,7 @@
  */
 #include "kafka/server/app.h"
 
+#include "encryption/fwd.h"
 #include "kafka/server/server.h"
 
 #include <memory>
@@ -46,7 +47,8 @@ seastar::future<> server_app::init(
   seastar::sharded<cluster::cluster_link::frontend>& clfe,
   std::optional<qdc_monitor_config> qdc,
   ssx::singleton_thread_worker& worker,
-  const std::unique_ptr<pandaproxy::schema_registry::api>& pp) {
+  const std::unique_ptr<pandaproxy::schema_registry::api>& pp,
+  seastar::sharded<encryption::encryption_service>& enc) {
     return _server.start(
       conf,
       smp,
@@ -77,7 +79,8 @@ seastar::future<> server_app::init(
       std::ref(clfe),
       qdc,
       std::ref(worker),
-      std::ref(pp));
+      std::ref(pp),
+      std::ref(enc));
 }
 
 server_app::~server_app() = default;

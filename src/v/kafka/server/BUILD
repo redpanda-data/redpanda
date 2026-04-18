@@ -266,6 +266,8 @@ redpanda_cc_library(
         "//src/v/container:chunked_vector",
         "//src/v/container:intrusive",
         "//src/v/datalake:partition_spec_parser",
+        "//src/v/encryption",
+        "//src/v/encryption:encryption_service",
         "//src/v/features",
         "//src/v/hashing:jump_consistent",
         "//src/v/hashing:xx",
@@ -483,11 +485,13 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":server",
+        "//src/v/encryption",
     ],
     visibility = ["//src/v/redpanda:__pkg__"],
     deps = [
         ":datalake_throttle_manager",
         ":qdc_monitor_config",
+        "//src/v/encryption:encryption_service",
         "@seastar",
     ],
 )

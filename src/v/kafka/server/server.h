@@ -15,6 +15,7 @@
 #include "cluster/fwd.h"
 #include "config/configuration.h"
 #include "container/chunked_vector.h"
+#include "encryption/fwd.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
@@ -85,7 +86,8 @@ public:
       ss::sharded<cluster::cluster_link::frontend>&,
       std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
-      const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
+      const std::unique_ptr<pandaproxy::schema_registry::api>&,
+      ss::sharded<encryption::encryption_service>&) noexcept;
 
     ~server() noexcept override = default;
     server(const server&) = delete;
@@ -205,6 +207,10 @@ public:
         return _schema_registry;
     }
 
+    ss::sharded<encryption::encryption_service>& encryption_service() {
+        return _encryption_service;
+    }
+
     static bool enable_mpx_extensions() {
         return config::shard_local_cfg().enable_mpx_extensions();
     }
@@ -316,6 +322,7 @@ private:
     ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
+    ss::sharded<encryption::encryption_service>& _encryption_service;
     boost::intrusive::list<connection_context> _connections;
     closed_connections_t _closed_connections{};
 };

@@ -22,6 +22,7 @@
 #include "config/node_config.h"
 #include "config/sasl_mechanisms.h"
 #include "container/chunked_hash_map.h"
+#include "encryption/fwd.h"
 #include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
@@ -155,7 +156,8 @@ server::server(
   ss::sharded<cluster::cluster_link::frontend>& clfe,
   std::optional<qdc_monitor_config> qdc_config,
   ssx::singleton_thread_worker& tw,
-  const std::unique_ptr<pandaproxy::schema_registry::api>& sr) noexcept
+  const std::unique_ptr<pandaproxy::schema_registry::api>& sr,
+  ss::sharded<encryption::encryption_service>& enc) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)
   , _fetch_scheduling_group(fetch_sg)
@@ -213,7 +215,8 @@ server::server(
   , _thread_worker(tw)
   , _replica_selector(
       std::make_unique<rack_aware_replica_selector>(_metadata_cache.local()))
-  , _schema_registry(sr) {
+  , _schema_registry(sr)
+  , _encryption_service(enc) {
     vlog(
       klog.debug,
       "Starting kafka server with {} byte limit on fetch requests",
