@@ -49,6 +49,7 @@ redpanda_cc_library(
     hdrs = [
         "cloud_topic_partition.h",
         "cloud_topic_read_replica.h",
+        "forwarding_partition_proxy.h",
         "partition_proxy.h",
         "replicated_partition.h",
     ],
