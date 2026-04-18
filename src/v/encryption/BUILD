@@ -1,6 +1,26 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "encryption_service",
+    srcs = [
+        "encryption_service.cc",
+    ],
+    hdrs = [
+        "encryption_service.h",
+    ],
+    implementation_deps = [
+        ":field_transformer",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":encryption",
+        ":schema_resolver",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "encryption",
     srcs = [
         "dek_manager.cc",
@@ -8,6 +28,7 @@ redpanda_cc_library(
     ],
     hdrs = [
         "dek_manager.h",
+        "encryption_services.h",
         "fwd.h",
         "kms_provider.h",
         "mock_kms_provider.h",
@@ -71,6 +92,47 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "dek_refill",
+    srcs = [
+        "dek_refill.cc",
+    ],
+    hdrs = [
+        "dek_refill.h",
+    ],
+    implementation_deps = [
+        ":encryption_metadata_ser",
+        "//src/v/storage:record_batch_builder",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":encryption",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "schema_annotation_parser",
+    srcs = [
+        "schema_annotation_parser.cc",
+    ],
+    hdrs = [
+        "schema_annotation_parser.h",
+    ],
+    implementation_deps = [
+        "//src/v/json",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
         "@seastar",
     ],
 )
