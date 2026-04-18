@@ -26,6 +26,10 @@
 #include <optional>
 #include <system_error>
 
+namespace encryption {
+struct encryption_services;
+}
+
 namespace kafka {
 
 /**
@@ -228,6 +232,9 @@ public:
         return _impl->get_cloud_storage_status();
     }
 
+    /// Extract the owned impl, leaving this proxy in a moved-from state.
+    std::unique_ptr<impl> release_impl() && { return std::move(_impl); }
+
 private:
     std::unique_ptr<impl> _impl;
 };
@@ -240,5 +247,14 @@ make_partition_proxy(const model::ktp&, cluster::partition_manager&);
 
 std::optional<partition_proxy>
 make_partition_proxy(const model::ntp&, cluster::partition_manager&);
+
+partition_proxy make_partition_proxy(
+  const ss::lw_shared_ptr<cluster::partition>&,
+  encryption::encryption_services* enc);
+
+std::optional<partition_proxy> make_partition_proxy(
+  const model::ntp&,
+  cluster::partition_manager&,
+  encryption::encryption_services* enc);
 
 } // namespace kafka
