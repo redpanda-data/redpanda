@@ -999,7 +999,7 @@
     },
     "@@rules_apple+//apple:apple.bzl%provisioning_profile_repository_extension": {
       "general": {
-        "bzlTransitiveDigest": "hDzbh+WIiAvCEUYZMndgeIO3vBcMhyqJKruJJ9nVQkc=",
+        "bzlTransitiveDigest": "l8RKpoHR7zGm/jAf9MjCgnfCV0G4HzOsM8aQwFTjH/w=",
         "usagesDigest": "vsJl8Rw5NL+5Ag2wdUDoTeRF/5klkXO8545Iy7U1Q08=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -1048,16 +1048,6 @@
           ],
           [
             "rules_cc+",
-            "cc_compatibility_proxy",
-            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
-          ],
-          [
-            "rules_cc+",
-            "rules_cc",
-            "rules_cc+"
-          ],
-          [
-            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
             "rules_cc",
             "rules_cc+"
           ],
@@ -2092,7 +2082,7 @@
     },
     "@@rules_rust+//crate_universe:extension.bzl%crate": {
       "general": {
-        "bzlTransitiveDigest": "6dweJIn2jue6jXLsKdJmGasm4r9KLHL1Z2VV19RNhD0=",
+        "bzlTransitiveDigest": "3OBoetJUyL+gKi8+zKLBxer1HfUHxhs38NyKkHpP8/w=",
         "usagesDigest": "ik68B3Un/74y+E605ZBhV6WSyOt4Sb/m8ZgtWkGvm6Q=",
         "recordedFileInputs": {
           "@@//bazel/thirdparty/Cargo.lock": "ccf410ef5c36e9543e1aacb4c1a6bee1d0e93c21a7b2e23adb16ef0e81140b23",
@@ -4111,16 +4101,6 @@
           ],
           [
             "rules_cc+",
-            "cc_compatibility_proxy",
-            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
-          ],
-          [
-            "rules_cc+",
-            "rules_cc",
-            "rules_cc+"
-          ],
-          [
-            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
             "rules_cc",
             "rules_cc+"
           ],
@@ -4159,7 +4139,7 @@
     },
     "@@rules_rust+//crate_universe/private:internal_extensions.bzl%cu_nr": {
       "general": {
-        "bzlTransitiveDigest": "kpf68imtNI7puIfWsTZkjSjvjnKLn7yaT8EPPoIBQeQ=",
+        "bzlTransitiveDigest": "EEGkTefVGEP/2phgEvJ89Zb0Y5ni/qLP4QxeqnLq0Ao=",
         "usagesDigest": "WcrwUq7tMYKrrQoXBAJOrk0OAZY0JyWHpnidg71TX10=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -4259,16 +4239,6 @@
           ],
           [
             "rules_cc+",
-            "cc_compatibility_proxy",
-            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
-          ],
-          [
-            "rules_cc+",
-            "rules_cc",
-            "rules_cc+"
-          ],
-          [
-            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
             "rules_cc",
             "rules_cc+"
           ],
