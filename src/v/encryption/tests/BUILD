@@ -46,6 +46,21 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "schema_resolver_test",
+    timeout = "short",
+    srcs = [
+        "schema_resolver_test.cc",
+    ],
+    deps = [
+        "//src/v/encryption:schema_resolver",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "field_transformer_test",
     timeout = "short",
     srcs = [
