@@ -58,6 +58,10 @@ public:
 
     bool has_ephemeral_credentials() const;
 
+    /// Returns the sharded store for querying schemas.
+    /// Returns nullptr if the store is not initialized.
+    sharded_store* get_store() const { return _store.get(); }
+
     /// Contributes Schema Registry metrics to the metrics snapshot.
     ss::future<>
     contribute_metrics(cluster::metrics_reporter::metrics_snapshot&) const;
