@@ -11,6 +11,7 @@
 
 #include "kafka/data/dek_refilling_reader.h"
 
+#include "base/format_to.h"
 #include "encryption/dek_refill.h"
 
 #include <seastar/core/coroutine.hh>
@@ -28,9 +29,8 @@ public:
 
     bool is_end_of_stream() const final { return _inner->is_end_of_stream(); }
 
-    void print(std::ostream& os) final {
-        fmt::print(os, "dek_refilling_reader wrapping: ");
-        _inner->print(os);
+    fmt::iterator format_to(fmt::iterator it) const final {
+        return fmt::format_to(it, "dek_refilling_reader");
     }
 
     ss::future<model::record_batch_reader::storage_t>
@@ -47,8 +47,6 @@ public:
 
         co_return model::record_batch_reader::storage_t{std::move(refilled)};
     }
-
-    ss::future<> finally() noexcept final { return _inner->finally(); }
 
 private:
     std::unique_ptr<model::record_batch_reader::impl> _inner;
