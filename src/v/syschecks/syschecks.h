@@ -51,7 +51,7 @@ inline void cpu() {
 
 ss::future<> disk(const ss::sstring& path);
 
-void memory(bool ignore);
+void memory(bool);
 
 ss::future<> systemd_raw_message(ss::sstring out);
 

@@ -73,18 +73,17 @@ ss::future<> disk(const ss::sstring& path) {
     });
 }
 
-void memory(bool ignore) {
+void memory(bool) {
     static const uint64_t kMinMemory = 1 << 30;
     const auto shard_mem = ss::memory::stats().total_memory();
     if (shard_mem >= kMinMemory) {
         return;
     }
-    auto line = fmt::format(
-      "Memory: '{}' below recommended: '{}'", shard_mem, kMinMemory);
-    checklog.error(line.c_str());
-    if (!ignore) {
-        throw std::runtime_error(line);
-    }
+    checklog.warn(
+      "Memory: '{}' below recommended: '{}'. Redpanda may not perform "
+      "optimally in memory-constrained environments.",
+      shard_mem,
+      kMinMemory);
 }
 
 ss::future<> systemd_notify_ready() {
