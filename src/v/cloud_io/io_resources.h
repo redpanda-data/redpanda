@@ -11,8 +11,7 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
-#include "ssx/semaphore.h"
-#include "utils/adjustable_semaphore.h"
+#include "ssx/mutex.h"
 #include "utils/token_bucket.h"
 
 #include <seastar/core/abort_source.hh>
@@ -66,6 +65,7 @@ private:
     bool _throttling_disabled{false};
     std::optional<size_t> _device_throughput;
     seastar::scheduling_group _scheduling_group;
+    ssx::mutex _update_lock{"cloud_io/io_resources/update"};
 };
 
 } // namespace cloud_io

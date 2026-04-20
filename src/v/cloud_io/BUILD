@@ -18,6 +18,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/config",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:mutex",
         "//src/v/ssx:semaphore",
         "//src/v/utils:adjustable_semaphore",
         "//src/v/utils:token_bucket",
