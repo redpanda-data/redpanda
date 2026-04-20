@@ -288,6 +288,7 @@ ss::input_stream<char> io_resources::throttle_download(
 }
 
 ss::future<> io_resources::update_throughput() {
+    auto units = co_await _update_lock.get_units();
     auto tp = get_throughput_limit(_device_throughput);
     if (ss::this_shard_id() == 0) {
         co_await set_disk_max_bandwidth(tp.disk_node_throughput_limit);
