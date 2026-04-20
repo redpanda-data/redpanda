@@ -466,11 +466,11 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
           "Failed to open stream for L1 object {} reading offset {}: {}",
           object.oid,
           offset,
-          std::to_underlying(reader_result.error()));
+          reader_result.error());
         throw std::runtime_error(_log.format(
           "Failed to open stream for L1 object {}: {}",
           object.oid,
-          std::to_underlying(reader_result.error())));
+          reader_result.error()));
     }
 
     auto reader = std::move(reader_result).value();
