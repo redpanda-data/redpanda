@@ -822,10 +822,6 @@ service::get_produce_path_transform(model::topic_namespace_view topic) const {
     return _manager->get_produce_path_transform(topic);
 }
 
-bool service::has_produce_path_transforms() const {
-    return _manager->has_produce_path_transforms();
-}
-
 ss::future<
   ss::optimized_optional<ss::foreign_ptr<ss::shared_ptr<wasm::factory>>>>
 service::get_factory(model::transform_metadata meta) {

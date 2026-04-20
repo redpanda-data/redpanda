@@ -148,14 +148,6 @@ public:
     std::optional<model::transform_id>
       get_produce_path_transform(model::topic_namespace_view) const;
 
-    /// True when any produce-path transform is registered on this
-    /// shard. Called on the produce hot path to short-circuit
-    /// request-metadata construction when there are no produce-path
-    /// transforms to receive it.
-    bool has_produce_path_transforms() const {
-        return !_produce_path_transforms.empty();
-    }
-
     // Exposed for testing, but drains all the pending operations.
     //
     // Any future here should resolve before calling `stop`.
@@ -189,7 +181,13 @@ private:
 
     // Fast lookup: topic -> transform_id for produce-path transforms.
     // Updated when transforms are deployed/deleted via handle_plugin_change.
-    chunked_hash_map<model::topic_namespace, model::transform_id>
+    // Uses transparent hasher/eq so lookups with topic_namespace_view
+    // don't allocate a full topic_namespace key.
+    chunked_hash_map<
+      model::topic_namespace,
+      model::transform_id,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>
       _produce_path_transforms;
 
     // Called to evict/warm cached produce-path engines on deploy/delete.

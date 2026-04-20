@@ -518,7 +518,7 @@ template<typename ClockType>
 std::optional<model::transform_id>
 manager<ClockType>::get_produce_path_transform(
   model::topic_namespace_view topic) const {
-    auto it = _produce_path_transforms.find(model::topic_namespace(topic));
+    auto it = _produce_path_transforms.find(topic);
     if (it == _produce_path_transforms.end()) {
         return std::nullopt;
     }

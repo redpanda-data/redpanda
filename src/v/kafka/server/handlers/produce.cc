@@ -309,16 +309,17 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     auto& transform_svc = octx.rctx.server().local().transform_service();
 
     // Build request metadata on the connection shard where the context
-    // is safe to access. Skip when no produce-path transform can
-    // receive it: either transforms are disabled entirely, or no
-    // produce-path transform is registered on this shard. This keeps
-    // the produce hot path free of per-request string allocations for
-    // clusters that only use sidecar transforms (or none at all).
+    // is safe to access. Skip unless a produce-path transform is
+    // registered specifically for this topic -- that way clusters
+    // with no produce-path transforms (or transforms on other topics)
+    // pay only one map lookup per partition-produce, not a chain of
+    // string allocations.
     auto request_info = [&]() -> std::optional<wasm::request_metadata> {
         if (!transform_svc.local_is_initialized()) {
             return std::nullopt;
         }
-        if (!transform_svc.local().has_produce_path_transforms()) {
+        if (!transform_svc.local().get_produce_path_transform(
+              model::topic_namespace_view(req.ntp))) {
             return std::nullopt;
         }
         auto conn = octx.rctx.connection();
@@ -361,35 +362,41 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           }
 
           if (transform_svc.local_is_initialized()) {
-              auto result = co_await transform_svc.local().executor().execute(
-                model::topic_namespace_view(ntp),
-                std::move(batch),
-                std::move(request_info));
-              if (!result) {
-                  auto ec = [&] {
-                      using enum transform::execute_errc;
-                      switch (result.error().code) {
-                      case transform_failed:
-                          return error_code::invalid_record;
-                      case engine_unavailable:
-                          // Retriable: the engine may still be warming
-                          // up or temporarily unavailable. Signal
-                          // "retry same broker" rather than the
-                          // non-retriable unknown_server_error.
-                          return error_code::request_timed_out;
-                      case no_output_records:
-                      case idempotent_record_count_mismatch:
-                          return error_code::unknown_server_error;
-                      }
-                  }();
-                  co_return finalize_request_with_error_code(
-                    ec,
-                    std::move(dispatch),
-                    ntp,
-                    source_shard,
-                    result.error().message);
+              // Synchronous per-topic lookup: the common case (no
+              // produce-path transform for this topic) is one map
+              // lookup, no coroutine frame, no batch moves.
+              auto& svc = transform_svc.local();
+              auto transform_id = svc.get_produce_path_transform(
+                model::topic_namespace_view(ntp));
+              if (transform_id) {
+                  auto result = co_await svc.executor().execute(
+                    *transform_id, std::move(batch), std::move(request_info));
+                  if (!result) {
+                      auto ec = [&] {
+                          using enum transform::execute_errc;
+                          switch (result.error().code) {
+                          case transform_failed:
+                              return error_code::invalid_record;
+                          case engine_unavailable:
+                              // Retriable: the engine may still be
+                              // warming up or temporarily unavailable.
+                              // Signal "retry same broker" rather than
+                              // the non-retriable unknown_server_error.
+                              return error_code::request_timed_out;
+                          case no_output_records:
+                          case idempotent_record_count_mismatch:
+                              return error_code::unknown_server_error;
+                          }
+                      }();
+                      co_return finalize_request_with_error_code(
+                        ec,
+                        std::move(dispatch),
+                        ntp,
+                        source_shard,
+                        result.error().message);
+                  }
+                  batch = std::move(*result);
               }
-              batch = std::move(*result);
           }
 
           // Transform filtered all records from the input topic

@@ -79,14 +79,17 @@ public:
     produce_path_executor& operator=(produce_path_executor&&) = delete;
     ~produce_path_executor() = default;
 
-    /// Execute a produce-path transform if one exists for this topic.
+    /// Execute the produce-path transform for the given id.
     ///
-    /// If no transform is deployed for this topic, returns the original
-    /// batch unchanged. If a transform exists, runs the WASM engine
-    /// inline and returns the transformed batch with the original
-    /// batch identity preserved.
+    /// Callers do the topic -> transform_id lookup synchronously
+    /// (via service::get_produce_path_transform) so the no-transform
+    /// hot path is a single map lookup and does not allocate a
+    /// coroutine frame here.
+    ///
+    /// Runs the WASM engine inline and returns the transformed batch
+    /// with the original batch identity preserved.
     ss::future<execute_result> execute(
-      model::topic_namespace_view,
+      model::transform_id,
       std::unique_ptr<model::record_batch>,
       std::optional<wasm::request_metadata> = std::nullopt);
 
