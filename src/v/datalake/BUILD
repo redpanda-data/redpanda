@@ -107,6 +107,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/serde/parquet:metadata",
         "@seastar",
     ],
 )
@@ -150,6 +151,7 @@ redpanda_cc_library(
     deps = [
         ":backlog_controller",
         ":catalog_schema_manager",
+        ":cdc_key_value_translator",
         ":cloud_data_io",
         ":debezium_translator",
         ":location",
@@ -222,9 +224,11 @@ redpanda_cc_library(
         ":types",
         ":writer",
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
         "//src/v/datalake/coordinator:translated_offset_range",
         "//src/v/datalake/translation:translation_probe",
         "//src/v/iceberg:values_bytes",
+        "//src/v/iceberg/conversion:stats_parquet",
         "//src/v/model",
         "//src/v/utils:lazy_abort_source",
         "//src/v/utils:retry_chain_node",
@@ -260,6 +264,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/base",
+        "//src/v/serde/parquet:metadata",
         "//src/v/utils:named_type",
         "@fmt",
     ],
@@ -325,6 +330,7 @@ redpanda_cc_library(
         ":table_id_provider",
         "//src/v/base",
         "//src/v/features",
+        "//src/v/iceberg:compatibility_utils",
         "//src/v/iceberg/conversion:conversion_outcome",
         "//src/v/model:batch_compression",
         "//src/v/utils:lazy_abort_source",
@@ -415,6 +421,29 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "cdc_key_value_translator",
+    srcs = [
+        "cdc_key_value_translator.cc",
+    ],
+    hdrs = [
+        "cdc_key_value_translator.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":table_definition",
+    ],
+    visibility = [":__subpackages__"],
+    deps = [
+        ":record_translator",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+        "//src/v/metrics",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "debezium_translator",
     srcs = [
         "debezium_translator.cc",
@@ -455,6 +484,9 @@ redpanda_cc_library(
     ],
     hdrs = [
         "local_parquet_file_writer.h",
+    ],
+    implementation_deps = [
+        "//src/v/serde/parquet:metadata",
     ],
     visibility = [":__subpackages__"],
     deps = [

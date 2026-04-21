@@ -684,6 +684,7 @@ public:
         // user.
         value_schema_latest = 3,
         debezium_schema_id_prefix = 4,
+        cdc_key_value = 5,
     };
     static iceberg_mode disabled;
 
@@ -692,6 +693,8 @@ public:
     static iceberg_mode value_schema_id_prefix;
 
     static iceberg_mode debezium_schema_id_prefix;
+
+    static iceberg_mode cdc_key_value;
 
     // Creates a new iceberg mode with the latest protobuf value kind and the
     // protobuf full name.
@@ -773,13 +776,17 @@ private:
     struct debezium_schema_id_prefix_impl {
         bool operator==(const debezium_schema_id_prefix_impl&) const = default;
     };
+    struct cdc_key_value_impl {
+        bool operator==(const cdc_key_value_impl&) const = default;
+    };
 
     std::variant<
       disabled_impl,
       key_value_impl,
       value_schema_id_prefix_impl,
       value_schema_latest_impl,
-      debezium_schema_id_prefix_impl>
+      debezium_schema_id_prefix_impl,
+      cdc_key_value_impl>
       _impl;
 };
 

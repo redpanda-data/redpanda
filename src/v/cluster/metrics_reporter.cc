@@ -346,6 +346,7 @@ metrics_reporter::build_metrics_snapshot() {
             ++snapshot.topics_with_iceberg_schema_latest;
             break;
         case model::iceberg_mode::variant::debezium_schema_id_prefix:
+        case model::iceberg_mode::variant::cdc_key_value:
             break;
         }
     }
