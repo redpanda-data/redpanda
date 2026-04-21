@@ -6,6 +6,7 @@ go_library(
         "color.go",
         "in.go",
         "out.go",
+        "render.go",
         "spinner.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/out",
@@ -28,6 +29,7 @@ go_test(
     srcs = [
         "in_test.go",
         "out_test.go",
+        "render_test.go",
         "spinner_test.go",
     ],
     embed = [":out"],

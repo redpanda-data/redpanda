@@ -17,7 +17,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -125,17 +124,14 @@ For example,
 				}
 				if partitions {
 					offsets := listStartEndOffsets(cmd.Context(), cl, *topic.Topic, len(topic.Partitions), stable)
-					u := getDescribeUsed(topic.Partitions, offsets)
-					t.Partitions = buildDescribeTopicPartitions(topic.Partitions, offsets, u)
-					t.u = u
+					t.Partitions = buildDescribeTopicPartitions(topic.Partitions, offsets)
 				}
 				topicDescriptions = append(topicDescriptions, t)
 			}
 
-			if printDescribedTopicsFormatter(f, topicDescriptions, os.Stdout) {
-				return
+			if err := printDescribedTopics(f, topicDescriptions, os.Stdout); err != nil {
+				out.MaybeDie(err, "unable to print topics: %v", err)
 			}
-			printDescribedTopics(summary, configs, partitions, topicDescriptions)
 		},
 	}
 
@@ -160,78 +156,28 @@ For example,
 	return cmd
 }
 
-func printDescribedTopicsFormatter(f config.OutFormatter, topics []describedTopic, w io.Writer) bool {
-	if isText, _, t, err := f.Format(topics); !isText {
-		out.MaybeDie(err, "unable to print in the requested format %v", err)
-		fmt.Fprintln(w, t)
-		return true
+func printDescribedTopics(f config.OutFormatter, topics []describedTopic, w io.Writer) error {
+	for _, t := range topics {
+		if t.cfgErr != nil {
+			out.MaybeDie(t.cfgErr, "config response contained error: %v", t.cfgErr)
+		}
 	}
-	return false
-}
-
-func printDescribedTopics(summary, configs, partitions bool, topics []describedTopic) {
-	const (
-		secSummary = "summary"
-		secConfigs = "configs"
-		secPart    = "partitions"
-	)
-
-	for _, topic := range topics {
-		sections := out.NewMaybeHeaderSections(
-			out.ConditionalSectionHeaders(map[string]bool{
-				secSummary: summary,
-				secConfigs: configs,
-				secPart:    partitions,
-			})...,
-		)
-
-		sections.Add(secSummary, func() {
-			tw := out.NewTabWriter()
-			defer tw.Flush()
-			tw.PrintColumn("NAME", topic.Summary.Name)
-			if topic.Summary.Internal {
-				tw.PrintColumn("INTERNAL", topic.Summary.Internal)
-			}
-			tw.PrintColumn("PARTITIONS", topic.Summary.Partitions)
-			if topic.Summary.Partitions > 0 {
-				tw.PrintColumn("REPLICAS", topic.Summary.Replicas)
-			}
-			if topic.Summary.Error != "" {
-				tw.PrintColumn("ERROR", topic.Summary.Error)
-			}
-		})
-		sections.Add(secConfigs, func() {
-			out.MaybeDie(topic.cfgErr, "config response contained error: %v", topic.cfgErr)
-			tw := out.NewTable("KEY", "VALUE", "SOURCE")
-			defer tw.Flush()
-			for _, c := range topic.Configs {
-				tw.Print(c.Key, c.Value, c.Source)
-			}
-		})
-		sections.Add(secPart, func() {
-			tw := out.NewTable(partitionHeader(topic.u)...)
-			defer tw.Flush()
-			for _, row := range topic.Partitions {
-				tw.PrintStrings(row.Row(topic.u)...)
-			}
-		})
-	}
+	return out.Render(&f, w, topics)
 }
 
 type describedTopic struct {
-	Summary    describeTopicSummary     `json:"summary" yaml:"summary"`
-	Configs    []describeTopicConfig    `json:"configs" yaml:"configs"`
-	Partitions []describeTopicPartition `json:"partitions" yaml:"partitions"`
-	u          uses
+	Summary    describeTopicSummary     `json:"summary"    yaml:"summary"    header:"SUMMARY,omitempty"`
+	Configs    []describeTopicConfig    `json:"configs"    yaml:"configs"    header:"CONFIGS,omitempty"`
+	Partitions []describeTopicPartition `json:"partitions" yaml:"partitions" header:"PARTITIONS,omitempty"`
 	cfgErr     error
 }
 
 type describeTopicSummary struct {
-	Name       string `json:"name" yaml:"name"`
-	Internal   bool   `json:"internal" yaml:"internal"`
-	Partitions int    `json:"partitions" yaml:"partitions"`
-	Replicas   int    `json:"replicas" yaml:"replicas"`
-	Error      string `json:"error" yaml:"error"`
+	Name       string `json:"name"       yaml:"name"       table:"NAME"`
+	Internal   bool   `json:"internal"   yaml:"internal"   table:"INTERNAL,omitempty"`
+	Partitions int    `json:"partitions" yaml:"partitions" table:"PARTITIONS"`
+	Replicas   int    `json:"replicas"   yaml:"replicas"   table:"REPLICAS,omitempty"`
+	Error      string `json:"error"      yaml:"error"      table:"ERROR,omitempty"`
 }
 
 func buildDescribeTopicSummary(topic kmsg.MetadataResponseTopic) describeTopicSummary {
@@ -250,9 +196,9 @@ func buildDescribeTopicSummary(topic kmsg.MetadataResponseTopic) describeTopicSu
 }
 
 type describeTopicConfig struct {
-	Key    string `json:"key" yaml:"key"`
-	Value  string `json:"value" yaml:"value"`
-	Source string `json:"source" yaml:"source"`
+	Key    string `json:"key"    yaml:"key"    table:"KEY"`
+	Value  string `json:"value"  yaml:"value"  table:"VALUE"`
+	Source string `json:"source" yaml:"source" table:"SOURCE"`
 }
 
 func prepDescribeTopicConfig(ctx context.Context, topic kmsg.MetadataResponseTopic, cl *kgo.Client) (*kmsg.DescribeConfigsResponseResource, error) {
@@ -291,160 +237,60 @@ func buildDescribeTopicConfig(configs []kmsg.DescribeConfigsResponseResourceConf
 }
 
 type describeTopicPartition struct {
-	Partition            int32   `json:"partition" yaml:"partition"`
-	Leader               int32   `json:"leader" yaml:"leader"`
-	Epoch                int32   `json:"epoch" yaml:"epoch"`
-	Replicas             []int32 `json:"replicas" yaml:"replicas"`
-	OfflineReplicas      []int32 `json:"offline_replicas,omitempty" yaml:"offline_replicas,omitempty"`
-	LoadError            string  `json:"load_error,omitempty" yaml:"load_error,omitempty"`
-	LogStartOffset       int64   `json:"log_start_offset" yaml:"log_start_offset"`
-	logStartOffsetText   any
-	LastStableOffset     int64 `json:"last_stable_offset,omitempty" yaml:"last_stable_offset,omitempty"`
-	lastStableOffsetText any
-	HighWatermark        int64 `json:"high_watermark" yaml:"high_watermark"`
-	highWatermarkText    any
-	Errors               []string `json:"error,omitempty" yaml:"error,omitempty"`
+	Partition        int32    `json:"partition"                    yaml:"partition"                    table:"PARTITION"`
+	Leader           int32    `json:"leader"                       yaml:"leader"                       table:"LEADER"`
+	Epoch            int32    `json:"epoch"                        yaml:"epoch"                        table:"EPOCH"`
+	Replicas         []int32  `json:"replicas"                     yaml:"replicas"                     table:"REPLICAS"`
+	OfflineReplicas  []int32  `json:"offline_replicas,omitempty"   yaml:"offline_replicas,omitempty"   table:"OFFLINE-REPLICAS,wide"`
+	LoadError        string   `json:"load_error,omitempty"         yaml:"load_error,omitempty"         table:"LOAD-ERROR,wide"`
+	LogStartOffset   int64    `json:"log_start_offset"             yaml:"log_start_offset"             table:"LOG-START-OFFSET"`
+	LastStableOffset int64    `json:"last_stable_offset,omitempty" yaml:"last_stable_offset,omitempty" table:"LAST-STABLE-OFFSET,wide"`
+	HighWatermark    int64    `json:"high_watermark"               yaml:"high_watermark"               table:"HIGH-WATERMARK"`
+	Errors           []string `json:"error,omitempty"              yaml:"error,omitempty"              table:"-"`
 }
 
-func partitionHeader(u uses) []string {
-	headers := []string{
-		"partition",
-		"leader",
-		"epoch",
-		"replicas",
-	}
-
-	if u.Offline {
-		headers = append(headers, "offline-replicas")
-	}
-	if u.LoadErr {
-		headers = append(headers, "load-error")
-	}
-	headers = append(headers, "log-start-offset")
-	if u.Stable {
-		headers = append(headers, "last-stable-offset")
-	}
-	headers = append(headers, "high-watermark")
-	return headers
-}
-
-type uses struct {
-	Offline bool
-	LoadErr bool
-	Stable  bool
-}
-
-func (dp describeTopicPartition) Row(u uses) []string {
-	row := []string{
-		strconv.FormatInt(int64(dp.Partition), 10),
-		strconv.FormatInt(int64(dp.Leader), 10),
-		strconv.FormatInt(int64(dp.Epoch), 10),
-		fmt.Sprintf("%v", dp.Replicas),
-	}
-
-	if u.Offline {
-		row = append(row, fmt.Sprintf("%v", dp.OfflineReplicas))
-	}
-
-	if u.LoadErr {
-		row = append(row, dp.LoadError)
-	}
-	row = append(row, fmt.Sprintf("%v", dp.logStartOffsetText))
-
-	if u.Stable {
-		row = append(row, fmt.Sprintf("%v", dp.lastStableOffsetText))
-	}
-	row = append(row, fmt.Sprintf("%v", dp.highWatermarkText))
-	return row
-}
-
-func buildDescribeTopicPartitions(partitions []kmsg.MetadataResponseTopicPartition, offsets []startStableEndOffset, u uses) (resp []describeTopicPartition) {
+func buildDescribeTopicPartitions(partitions []kmsg.MetadataResponseTopicPartition, offsets []startStableEndOffset) (resp []describeTopicPartition) {
 	sort.Slice(partitions, func(i, j int) bool {
 		return partitions[i].Partition < partitions[j].Partition
 	})
 	for _, p := range partitions {
 		row := describeTopicPartition{
-			Partition: p.Partition,
-			Leader:    p.Leader,
-			Epoch:     p.LeaderEpoch,
-			Replicas:  int32s(p.Replicas).sort(),
+			Partition:       p.Partition,
+			Leader:          p.Leader,
+			Epoch:           p.LeaderEpoch,
+			Replicas:        int32s(p.Replicas).sort(),
+			OfflineReplicas: int32s(p.OfflineReplicas).sort(),
 		}
-		if u.Offline {
-			row.OfflineReplicas = int32s(p.OfflineReplicas).sort()
-		}
-		if u.LoadErr {
-			if err := kerr.ErrorForCode(p.ErrorCode); err != nil {
-				row.LoadError = err.Error()
-			} else {
-				row.LoadError = "-"
-			}
+		if err := kerr.ErrorForCode(p.ErrorCode); err != nil {
+			row.LoadError = err.Error()
 		}
 		o := offsets[p.Partition]
 		if o.startErr == nil {
 			row.LogStartOffset = o.start
-			row.logStartOffsetText = o.start
-		} else if errors.Is(o.startErr, errUnlisted) {
-			row.LogStartOffset = -1
-			row.logStartOffsetText = "-"
-		} else {
+		} else if !errors.Is(o.startErr, errUnlisted) {
 			row.LogStartOffset = -1
 			err := o.startErr.(*kerr.Error).Message //nolint:errorlint // This error must be kerr.Error, and we want the message
-			row.logStartOffsetText = err
 			row.Errors = append(row.Errors, err)
+		} else {
+			row.LogStartOffset = -1
 		}
-		if u.Stable {
-			if o.stableErr == nil {
-				row.LastStableOffset = o.stable
-				row.lastStableOffsetText = o.stable
-			} else if errors.Is(o.stableErr, errUnlisted) {
-				row.LastStableOffset = -1
-				row.lastStableOffsetText = "-"
-			} else {
-				row.LastStableOffset = -1
-				err := o.stableErr.(*kerr.Error).Message //nolint:errorlint // This error must be kerr.Error, and we want the message
-				row.lastStableOffsetText = err
-				row.Errors = append(row.Errors, err)
-			}
+		if o.stableErr == nil {
+			row.LastStableOffset = o.stable
+		} else if !errors.Is(o.stableErr, errUnlisted) {
+			row.LastStableOffset = -1
+			err := o.stableErr.(*kerr.Error).Message //nolint:errorlint // This error must be kerr.Error, and we want the message
+			row.Errors = append(row.Errors, err)
 		}
 		if o.endErr == nil {
 			row.HighWatermark = o.end
-			row.highWatermarkText = o.end
-		} else if errors.Is(o.endErr, errUnlisted) {
-			row.HighWatermark = -1
-			row.highWatermarkText = "-"
-		} else {
+		} else if !errors.Is(o.endErr, errUnlisted) {
 			row.HighWatermark = -1
 			err := o.endErr.(*kerr.Error).Message //nolint:errorlint // This error must be kerr.Error, and we want the message
-			row.highWatermarkText = err
 			row.Errors = append(row.Errors, err)
 		}
 		resp = append(resp, row)
 	}
 	return resp
-}
-
-// We optionally include the following columns:
-//   - offline-replicas, if any are offline
-//   - load-error, if metadata indicates load errors any partitions
-//   - last-stable-offset, if it is ever not equal to the high watermark (transactions)
-func getDescribeUsed(partitions []kmsg.MetadataResponseTopicPartition, offsets []startStableEndOffset) (u uses) {
-	for _, p := range partitions {
-		if len(p.OfflineReplicas) > 0 {
-			u.Offline = true
-		}
-		if p.ErrorCode != 0 {
-			u.LoadErr = true
-		}
-	}
-	for _, o := range offsets {
-		// The default stableErr is errUnlisted. We avoid listing
-		// stable offsets unless the user asks, so by default, we do
-		// not print the stable column.
-		if o.stableErr == nil && o.endErr == nil && o.stable != o.end {
-			u.Stable = true
-		}
-	}
-	return
 }
 
 type startStableEndOffset struct {
