@@ -11,12 +11,23 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func NewValidatorStatus(compacted bool, expectFullyCompacted bool, topic string, nPartitions int32) ValidatorStatus {
+type partitionTracker struct {
+	lastOffsetConsumed int64
+	lastLeaderEpoch    int32
+	// only valid when used with consumer groups.
+	// Tracks if the partition is currently assigned to a consumer
+	// in the group.
+	groupAssigned bool
+}
+
+func NewValidatorStatus(compacted bool, expectFullyCompacted bool, expectExactlyOnceGroupConsumption bool, topic string, nPartitions int32) ValidatorStatus {
 	return ValidatorStatus{
-		MaxOffsetsConsumed:   make(map[int32]int64),
-		lastCheckpoint:       time.Now(),
-		compacted:            compacted,
-		expectFullyCompacted: expectFullyCompacted,
+		MaxOffsetsConsumed:          make(map[int32]int64),
+		lastCheckpoint:              time.Now(),
+		compacted:                   compacted,
+		expectFullyCompacted:        expectFullyCompacted,
+		exactlyOnceGroupConsumption: expectExactlyOnceGroupConsumption,
+		partitionState:              make(map[int32]*partitionTracker),
 	}
 }
 
@@ -58,17 +69,17 @@ type ValidatorStatus struct {
 	// User bytes read since last checkpoint (payload without protocol overhead)
 	userBytesSinceLastCheckpoint int64
 
-	// Last consumed offset per partition. Used to assert monotonicity and check for gaps.
-	lastOffsetConsumed map[int32]int64
-
-	// Last leader epoch per partition. Used to assert monotonicity.
-	lastLeaderEpoch map[int32]int32
+	// Partition tracking state
+	partitionState map[int32]*partitionTracker
 
 	// Whether the topic to be consumed is compacted. Gaps in offsets will be ignored if true.
 	compacted bool
 
 	// Whether the values consumed should be verified against the last produced value for a given key in the log.
 	expectFullyCompacted bool
+
+	// expect data to be be read exactly once, when using consumer groups
+	exactlyOnceGroupConsumption bool
 }
 
 func (cs *ValidatorStatus) ValidateRecord(r *kgo.Record, validRanges *TopicOffsetRanges, latestValuesProduced *LatestValueMap) {
@@ -84,13 +95,14 @@ func (cs *ValidatorStatus) ValidateRecord(r *kgo.Record, validRanges *TopicOffse
 	// Rough estimate of bytes read
 	cs.userBytesSinceLastCheckpoint += int64(recordUserSize(r))
 
-	if r.LeaderEpoch < cs.lastLeaderEpoch[r.Partition] {
-		log.Panicf("Out of order leader epoch on p=%d at o=%d leaderEpoch=%d. Previous leaderEpoch=%d",
-			r.Partition, r.Offset, r.LeaderEpoch, cs.lastLeaderEpoch[r.Partition])
-	}
+	state := cs.partitionState[r.Partition]
+	if state != nil {
+		if r.LeaderEpoch < state.lastLeaderEpoch {
+			log.Panicf("Out of order leader epoch on p=%d at o=%d leaderEpoch=%d. Previous leaderEpoch=%d",
+				r.Partition, r.Offset, r.LeaderEpoch, state.lastLeaderEpoch)
+		}
 
-	currentMax, present := cs.lastOffsetConsumed[r.Partition]
-	if present {
+		currentMax := state.lastOffsetConsumed
 		if currentMax < r.Offset {
 			expected := currentMax + 1
 			if r.Offset != expected && !cs.compacted {
@@ -142,19 +154,17 @@ func (cs *ValidatorStatus) recordOffset(r *kgo.Record, recordExpected bool) {
 	if cs.MaxOffsetsConsumed == nil {
 		cs.MaxOffsetsConsumed = make(map[int32]int64)
 	}
-	if cs.lastOffsetConsumed == nil {
-		cs.lastOffsetConsumed = make(map[int32]int64)
-	}
-	if cs.lastLeaderEpoch == nil {
-		cs.lastLeaderEpoch = make(map[int32]int32)
-	}
 	// We bump highest offset only for valid records.
 	if r.Offset > cs.MaxOffsetsConsumed[r.Partition] && recordExpected {
 		cs.MaxOffsetsConsumed[r.Partition] = r.Offset
 	}
 
-	cs.lastOffsetConsumed[r.Partition] = r.Offset
-	cs.lastLeaderEpoch[r.Partition] = r.LeaderEpoch
+	// Update partition state
+	if cs.partitionState[r.Partition] == nil {
+		cs.partitionState[r.Partition] = &partitionTracker{}
+	}
+	cs.partitionState[r.Partition].lastOffsetConsumed = r.Offset
+	cs.partitionState[r.Partition].lastLeaderEpoch = r.LeaderEpoch
 }
 
 func (cs *ValidatorStatus) RecordLostOffsets(p int32, count int64) {
@@ -172,19 +182,21 @@ func (cs *ValidatorStatus) ResetMonotonicityTestState() {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
-	cs.lastOffsetConsumed = make(map[int32]int64)
-	cs.lastLeaderEpoch = make(map[int32]int32)
+	cs.resetMonotonicityTestStateUnlocked()
+}
+
+func (cs *ValidatorStatus) resetMonotonicityTestStateUnlocked() {
+	cs.partitionState = make(map[int32]*partitionTracker)
 }
 
 func (cs *ValidatorStatus) SetMonotonicityTestStateForPartition(partition int32, offset int64) {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 
-	if cs.lastOffsetConsumed == nil {
-		cs.lastOffsetConsumed = make(map[int32]int64)
+	if cs.partitionState[partition] == nil {
+		cs.partitionState[partition] = &partitionTracker{}
 	}
-
-	cs.lastOffsetConsumed[partition] = offset
+	cs.partitionState[partition].lastOffsetConsumed = offset
 }
 
 func (cs *ValidatorStatus) Checkpoint() {

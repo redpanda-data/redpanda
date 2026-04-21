@@ -10,7 +10,7 @@ import (
 )
 
 func TestValidatorStatus_ValidateRecordHappyPath(t *testing.T) {
-	validator := verifier.NewValidatorStatus(false, false, "topic", 1)
+	validator := verifier.NewValidatorStatus(false, false, true, "topic", 1)
 	validRanges := verifier.NewTopicOffsetRanges("topic", 1)
 	validRanges.Insert(0, 41)
 	validRanges.Insert(0, 42)
@@ -42,7 +42,7 @@ func TestValidatorStatus_ValidateRecordHappyPath(t *testing.T) {
 }
 
 func TestValidatorStatus_ValidateRecordInvalidRead(t *testing.T) {
-	validator := verifier.NewValidatorStatus(false, false, "topic", 1)
+	validator := verifier.NewValidatorStatus(false, false, true, "topic", 1)
 	validRanges := verifier.NewTopicOffsetRanges("topic", 1)
 	validRanges.Insert(0, 41)
 
@@ -63,7 +63,7 @@ func TestValidatorStatus_ValidateRecordInvalidRead(t *testing.T) {
 }
 
 func TestValidatorStatus_ValidateRecordNonMonotonicOffset(t *testing.T) {
-	validator := verifier.NewValidatorStatus(false, false, "topic", 1)
+	validator := verifier.NewValidatorStatus(false, false, true, "topic", 1)
 	validRanges := verifier.NewTopicOffsetRanges("topic", 1)
 
 	validator.ValidateRecord(&kgo.Record{
@@ -101,7 +101,7 @@ func TestValidatorStatus_ValidateRecordNonMonotonicOffset(t *testing.T) {
 }
 
 func TestValidatorStatus_ValidateRecordNonMonotonicLeaderEpoch(t *testing.T) {
-	validator := verifier.NewValidatorStatus(false, false, "topic", 1)
+	validator := verifier.NewValidatorStatus(false, false, true, "topic", 1)
 	validRanges := verifier.NewTopicOffsetRanges("topic", 1)
 
 	validator.ValidateRecord(&kgo.Record{

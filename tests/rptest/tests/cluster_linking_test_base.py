@@ -934,6 +934,7 @@ class ShadowLinkPreAllocTestBase(ShadowLinkTestBase):
         use_transactions: bool = False,
         use_compaction: bool = False,
         producer_properties: dict[str, Any] | None = None,
+        consumer_properties: dict[str, Any] | None = None,
     ):
         self.verifier = ClusterLinkingProgressVerifier(
             self.test_context,
@@ -947,6 +948,7 @@ class ShadowLinkPreAllocTestBase(ShadowLinkTestBase):
             use_transactions=use_transactions,
             use_compaction=use_compaction,
             producer_properties=producer_properties or {},
+            consumer_properties=consumer_properties or {},
             timeout_sec=180,
         )
         self.verifier.start()
