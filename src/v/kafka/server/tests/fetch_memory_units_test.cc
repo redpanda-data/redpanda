@@ -9,6 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
+#include "config/configuration.h"
+#include "config/mock_property.h"
+#include "config/property.h"
 #include "kafka/server/fetch_memory_units.h"
 #include "ssx/semaphore.h"
 #include "test_utils/test.h"
@@ -41,6 +44,7 @@ public:
     ss::future<> SetUpAsync() override {
         co_await _kafka_sem.start(100_MiB, ss::sstring("kafka_sem"));
         co_await _fetch_sem.start(50_MiB, ss::sstring("fetch_sem"));
+        co_await _max_message_size.start(std::nullopt);
         co_await _manager.start(
           ss::sharded_parameter(
             [this] { return std::reference_wrapper(_kafka_sem.local()); }),
@@ -48,11 +52,14 @@ public:
             [this] { return std::reference_wrapper(_fetch_sem.local()); }),
           [this] -> kafka::fetch_memory_units_manager& {
               return _manager.local();
-          });
+          },
+          ss::sharded_parameter(
+            [this] { return _max_message_size.local().bind(); }));
     }
 
     ss::future<> TearDownAsync() override {
         co_await _manager.stop();
+        co_await _max_message_size.stop();
         co_await _kafka_sem.stop();
         co_await _fetch_sem.stop();
     }
@@ -83,11 +90,18 @@ public:
           [target_units](auto& fs) { set_units(fs, target_units); });
     }
 
+    ss::future<> set_max_message_size(std::optional<int32_t> s) {
+        return _max_message_size.invoke_on_all(
+          [s](auto& ms) { ms.update(std::optional{s}); });
+    }
+
 private:
     ss::sharded<ssx::semaphore> _kafka_sem;
     ss::sharded<ssx::semaphore> _fetch_sem;
     ss::sharded<kafka::fetch_memory_units_manager> _manager;
     ss::sharded<ssx::semaphore> _sem;
+    ss::sharded<config::mock_property<std::optional<int32_t>>>
+      _max_message_size;
 };
 
 TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
@@ -147,6 +161,23 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
     co_await ss::sleep(2 * max_release_period);
     EXPECT_EQ(co_await other_fetch_sem_avail(), max_release_size);
     EXPECT_EQ(co_await other_kafka_sem_avail(), max_release_size);
+}
+
+TEST_F_CORO(fetch_memory_units_test_fixture, test_max_units) {
+    kafka::fetch_memory_units_manager& mgr = local_manager();
+
+    co_await set_kafka_units(1000);
+    co_await set_fetch_units(1000);
+    co_await set_max_message_size(10);
+
+    auto units = mgr.allocate_memory_units(model::ktp{}, 1, 100, 1, false);
+    EXPECT_EQ(units.num_units(), 10);
+    units = mgr.allocate_memory_units(model::ktp{}, 1, 100, 1, true);
+    EXPECT_EQ(units.num_units(), 10);
+
+    // `max_bytes` should still be reserved if there are enough units.
+    units = mgr.allocate_memory_units(model::ktp{}, 100, 1, 1, false);
+    EXPECT_EQ(units.num_units(), 100);
 }
 
 TEST_F_CORO(fetch_memory_units_test_fixture, test_adjust_units) {

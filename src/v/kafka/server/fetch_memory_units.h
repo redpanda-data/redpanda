@@ -11,6 +11,7 @@
 #pragma once
 #include "base/seastarx.h"
 #include "base/units.h"
+#include "config/property.h"
 #include "container/chunked_hash_map.h"
 #include "model/ktp.h"
 #include "ssx/semaphore.h"
@@ -47,7 +48,8 @@ public:
     fetch_memory_units_manager(
       ssx::semaphore& kafka_units,
       ssx::semaphore& fetch_units,
-      local_instance_fn&& local_fn);
+      local_instance_fn&& local_fn,
+      config::binding<std::optional<int32_t>>&&);
 
     ss::future<> stop();
 
@@ -114,6 +116,7 @@ private:
     ssx::semaphore& _kafka_units;
     ssx::semaphore& _fetch_units;
     size_t _max_fetch_units;
+    config::binding<std::optional<int32_t>> _max_message_size;
 
     ss::timer<> _release_units_timer;
     // Collected units are aggregated together by shard in order to ensure there
