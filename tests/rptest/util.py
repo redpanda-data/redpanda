@@ -147,8 +147,9 @@ def wait_until_with_progress_check(
     timeout_sec: float,
     progress_sec: float,
     backoff_sec: float,
-    err_msg: str | None = None,
+    err_msg: str | Callable[[], str] | None = None,
     logger: Logger | None = None,
+    retry_on_exc: bool = False,
 ):
     """
     a wrapper around ducktape's wait_until that provides the ability to track
@@ -168,6 +169,8 @@ def wait_until_with_progress_check(
       - progress_sec (see above)
       - err_msg: Passed down to wait_until
       - logger: log progress after each progress_sec iteration
+      - retry_on_exc: Passed down to wait_until; swallow exceptions raised by
+        the condition and keep polling instead of bailing out.
     """
     val = check()
     elapsed_sec = 0
@@ -179,6 +182,7 @@ def wait_until_with_progress_check(
                 timeout_sec=progress_sec,
                 backoff_sec=backoff_sec,
                 err_msg=err_msg,
+                retry_on_exc=retry_on_exc,
             )
             break
         except TimeoutError as e:
@@ -202,9 +206,8 @@ def wait_until_with_progress_check(
         "If the condition doesn't hold an exception should have fired"
     )
 
-    raise TimeoutError(
-        f"{err_msg if err_msg is not None else ''} after {timeout_sec=}"
-    ) from last_exception
+    msg = err_msg() if callable(err_msg) else (err_msg or "")
+    raise TimeoutError(f"{msg} after {timeout_sec=}") from last_exception
 
 
 def segments_count(redpanda, topic, partition_idx):
