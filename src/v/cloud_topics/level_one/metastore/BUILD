@@ -103,6 +103,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/domain:domain_supervisor",
         "//src/v/config",
         "//src/v/hashing:murmur",
+        "//src/v/resource_mgmt:cpu_scheduling",
         "@fmt",
     ],
     visibility = ["//visibility:public"],

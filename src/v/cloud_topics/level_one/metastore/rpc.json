@@ -1,6 +1,7 @@
 {
     "namespace": "cloud_topics::l1::rpc::impl",
     "service_name": "l1_rpc",
+    "run_handlers_in_scheduling_group": true,
     "includes": [
         "cloud_topics/level_one/metastore/rpc_types.h"
     ],
