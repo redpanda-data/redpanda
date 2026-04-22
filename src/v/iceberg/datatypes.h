@@ -174,7 +174,7 @@ struct nested_field {
     field_required required;
     field_type type;
     std::optional<ss::sstring> doc;
-    // TODO: support initial-default and write-default optional literals.
+    // TODO: support non-null initial-default and write-default literals.
 
     /**
      * evolution_metadata - Variant holding annotation related to schema
