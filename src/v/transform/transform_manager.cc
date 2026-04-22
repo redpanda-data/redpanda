@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
+#include "ssx/future-util.h"
 #include "transform_processor.h"
 #include "utils/backoff_policy.h"
 #include "utils/human.h"
@@ -249,7 +250,10 @@ manager<ClockType>::manager(
   std::unique_ptr<registry> r,
   std::unique_ptr<processor_factory> f,
   ss::scheduling_group sg,
-  std::unique_ptr<memory_limits> memory_limits)
+  std::unique_ptr<memory_limits> memory_limits,
+  engine_lifecycle_cb evict_engine,
+  engine_lifecycle_cb warm_engine,
+  engine_status_cb is_engine_running)
   : _self(self)
   , _queue(
       sg,
@@ -259,7 +263,10 @@ manager<ClockType>::manager(
   , _memory_limits(std::move(memory_limits))
   , _registry(std::move(r))
   , _processors(std::make_unique<processor_table<ClockType>>())
-  , _processor_factory(std::move(f)) {}
+  , _processor_factory(std::move(f))
+  , _evict_engine(std::move(evict_engine))
+  , _warm_engine(std::move(warm_engine))
+  , _is_engine_running(std::move(is_engine_running)) {}
 
 template<typename ClockType>
 manager<ClockType>::~manager() = default;
@@ -327,6 +334,10 @@ ss::future<> manager<ClockType>::handle_leadership_change(
     auto transforms = _registry->lookup_by_input_topic(
       model::topic_namespace_view(ntp));
     for (model::transform_id id : transforms) {
+        auto meta = _registry->lookup_by_id(id);
+        if (meta && meta->mode == model::transform_mode::produce_path) {
+            continue;
+        }
         co_await start_processor(ntp, id);
     }
 }
@@ -338,6 +349,12 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     // applied.
     co_await _processors->erase_by_id(id);
 
+    // Clean up any existing produce-path entry and cached engine
+    std::erase_if(_produce_path_transforms, [id](const auto& entry) {
+        return entry.second == id;
+    });
+    co_await _evict_engine(id);
+
     auto transform = _registry->lookup_by_id(id);
     // If there is no transform OR the transform is paused, we're good to go,
     // everything is shutdown if needed.
@@ -346,6 +363,32 @@ ss::future<> manager<ClockType>::handle_plugin_change(model::transform_id id) {
     // cluster-wide transform report.
     // see `transform::service::compute_default_report` for detail.
     if (!transform || transform->paused) {
+        co_return;
+    }
+
+    // Produce-path transforms are executed inline during produce, so they
+    // don't need sidecar processors. Register the mapping and pre-start
+    // the engine so it's ready when the first produce arrives.
+    if (transform->mode == model::transform_mode::produce_path) {
+        _produce_path_transforms[transform->input_topic] = id;
+        // Warm the engine outside the work queue so it doesn't block
+        // other plugin change processing, and runs in the default
+        // scheduling context (same as produce handlers). Failures
+        // here leave is_running() == false until the next produce
+        // triggers lazy creation via get_or_create_engine, which
+        // surfaces the same error to the client. Log so operators
+        // aren't chasing "silent" warm failures.
+        ssx::background = _warm_engine(id).handle_exception(
+          [id](const std::exception_ptr& ex) {
+              if (ssx::is_shutdown_exception(ex)) {
+                  return;
+              }
+              vlog(
+                tlog.warn,
+                "failed to warm produce-path engine for transform {}: {}",
+                id,
+                ex);
+          });
         co_return;
     }
 
@@ -472,6 +515,17 @@ ss::future<> manager<ClockType>::drain_queue_for_test() {
 }
 
 template<typename ClockType>
+std::optional<model::transform_id>
+manager<ClockType>::get_produce_path_transform(
+  model::topic_namespace_view topic) const {
+    auto it = _produce_path_transforms.find(topic);
+    if (it == _produce_path_transforms.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+template<typename ClockType>
 model::cluster_transform_report manager<ClockType>::compute_report() const {
     model::cluster_transform_report report;
     for (auto [it, end] = _processors->range(); it != end; ++it) {
@@ -486,6 +540,26 @@ model::cluster_transform_report manager<ClockType>::compute_report() const {
             .status = entry.current_state(),
             .node = _self,
             .lag = p->current_lag(),
+          });
+    }
+    // Report produce-path transforms. These don't have per-partition
+    // processors; report a single entry per transform with the engine
+    // state.
+    for (const auto& [topic, transform_id] : _produce_path_transforms) {
+        auto meta = _registry->lookup_by_id(transform_id);
+        if (!meta) {
+            continue;
+        }
+        auto status = _is_engine_running(transform_id) ? state::running
+                                                       : state::inactive;
+        report.add(
+          transform_id,
+          *meta,
+          {
+            .id = model::partition_id(0),
+            .status = status,
+            .node = _self,
+            .lag = 0,
           });
     }
     return report;

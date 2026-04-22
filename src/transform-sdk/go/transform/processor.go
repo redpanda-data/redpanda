@@ -37,11 +37,19 @@ type batchHeader struct {
 }
 
 type writeEvent struct {
-	record Record
+	record   Record
+	metadata map[string]string
 }
 
 func (e *writeEvent) Record() Record {
 	return e.record
+}
+
+func (e *writeEvent) Metadata(key string) string {
+	if e.metadata == nil {
+		return ""
+	}
+	return e.metadata[key]
 }
 
 type recordWriter struct {
@@ -120,6 +128,17 @@ func processBatch(userTransformFunction OnRecordWrittenCallback) {
 	if bufSize < 0 {
 		panic("failed to read batch header errno: " + strconv.Itoa(bufSize))
 	}
+
+	// Read batch metadata (available in produce-path mode)
+	metadata := make(map[string]string, len(metadataKeysByName))
+	metaBuf := make([]byte, 256)
+	for name, key := range metadataKeysByName {
+		n := int(readBatchMetadata(key, unsafe.Pointer(&metaBuf[0]), int32(len(metaBuf))))
+		if n > 0 {
+			metadata[name] = string(metaBuf[:n])
+		}
+	}
+	e.metadata = metadata
 
 	for i := 0; i < int(currentHeader.recordCount); i++ {
 		inbuf.Reset()

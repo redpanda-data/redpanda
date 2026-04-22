@@ -176,7 +176,8 @@ redpanda_thread_fixture::redpanda_thread_fixture(
         std::ref(app.controller->get_cluster_link_frontend()),
         std::nullopt,
         std::ref(*app.thread_worker),
-        std::ref(app.schema_registry()))
+        std::ref(app.schema_registry()),
+        std::ref(app.transform_service()))
       .get();
 
     configs.stop().get();

@@ -77,7 +77,10 @@ public:
     }
 
     ss::future<> transform(
-      model::record_batch, transform_probe*, transform_callback) override {
+      model::record_batch,
+      transform_probe*,
+      transform_callback,
+      std::optional<request_metadata>) override {
         if (_state->engine_transform_should_throw) {
             throw std::runtime_error("test error");
         }

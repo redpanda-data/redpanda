@@ -210,6 +210,10 @@ public:
         return _transform_rpc_client;
     }
 
+    ss::sharded<transform::service>& transform_service() {
+        return _transform_service;
+    }
+
     ss::sharded<datalake::coordinator::frontend>&
     datalake_coordinator_frontend() {
         return _datalake_coordinator_fe;

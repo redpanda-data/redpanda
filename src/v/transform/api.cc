@@ -497,7 +497,8 @@ service::service(
   , _rpc_client(rpc_client)
   , _metadata_cache(metadata_cache)
   , _sg(sg)
-  , _total_memory_limit(memory_limit) {}
+  , _total_memory_limit(memory_limit)
+  , _executor(*this) {}
 
 service::~service() = default;
 
@@ -545,7 +546,10 @@ ss::future<> service::start() {
         &_rpc_client->local(),
         _batcher.get()),
       _sg,
-      std::move(mem_limits));
+      std::move(mem_limits),
+      [this](model::transform_id id) { return _executor.evict(id); },
+      [this](model::transform_id id) { return _executor.warm(id); },
+      [this](model::transform_id id) { return _executor.is_running(id); });
 
     co_await _log_manager->start();
     co_await _batcher->start();
@@ -591,6 +595,7 @@ void service::unregister_notifications() { _notification_cleanups.clear(); }
 
 ss::future<> service::stop() {
     unregister_notifications();
+    co_await _executor.stop();
     co_await _gate.close();
     // It's possible to call stop before start, so make sure we created the
     // manager.
@@ -654,6 +659,47 @@ ss::future<std::error_code> service::deploy_transform(
           meta.name);
         co_return wasm::make_error_code(ex.error_code());
     }
+
+    // The cluster config overrides the mode for all deploys. This allows
+    // testing produce-path transforms without rpk/admin API changes.
+    if (config::shard_local_cfg().data_transforms_produce_path_enabled()) {
+        meta.mode = model::transform_mode::produce_path;
+    }
+
+    if (meta.mode == model::transform_mode::produce_path) {
+        // Output topics are optional for produce-path transforms: if present
+        // they declare fan-out targets; if absent the transform writes only
+        // to the input topic. Strip self-references (input == output) which
+        // the CLI sends as a dummy because it always requires --output-topic.
+        std::erase(meta.output_topics, meta.input_topic);
+        if (!model::is_user_topic(meta.input_topic)) {
+            vlog(
+              tlog.warn,
+              "produce-path transform {} cannot target non-user topic {}",
+              meta.name,
+              meta.input_topic);
+            co_return cluster::make_error_code(
+              cluster::errc::transform_invalid_create);
+        }
+        for (const auto& [id, existing] :
+             _plugin_frontend->local().all_transforms()) {
+            if (
+              existing.mode == model::transform_mode::produce_path
+              && existing.input_topic == meta.input_topic
+              && existing.name != meta.name) {
+                vlog(
+                  tlog.warn,
+                  "produce-path transform {} conflicts with existing "
+                  "produce-path transform {} on topic {}",
+                  meta.name,
+                  existing.name,
+                  meta.input_topic);
+                co_return cluster::make_error_code(
+                  cluster::errc::transform_invalid_create);
+            }
+        }
+    }
+
     vlog(
       tlog.info,
       "deploying wasm binary (size={}) for transform {}",
@@ -748,6 +794,32 @@ service::create_engine(model::transform_metadata meta) {
         co_return ss::shared_ptr<wasm::engine>(nullptr);
     }
     co_return co_await (*factory)->make_engine(std::move(logger));
+}
+
+ss::future<std::optional<service::produce_path_engine_result>>
+service::get_produce_path_engine(model::transform_id id) {
+    auto meta = _plugin_frontend->local().lookup_transform(id);
+    if (!meta) {
+        co_return std::nullopt;
+    }
+    auto name = meta->name();
+    auto output_topics = meta->output_topics;
+    auto compression_mode = meta->compression_mode;
+    auto engine = co_await create_engine(std::move(*meta));
+    if (!engine) {
+        co_return std::nullopt;
+    }
+    co_return produce_path_engine_result{
+      .engine = std::move(*engine),
+      .name = std::move(name),
+      .output_topics = std::move(output_topics),
+      .compression_mode = compression_mode,
+    };
+}
+
+std::optional<model::transform_id>
+service::get_produce_path_transform(model::topic_namespace_view topic) const {
+    return _manager->get_produce_path_transform(topic);
 }
 
 ss::future<
@@ -921,5 +993,7 @@ ss::future<std::error_code> service::patch_transform_metadata(
 
     co_return cluster::make_error_code(ec);
 }
+
+rpc::client& service::rpc_client() { return _rpc_client->local(); }
 
 } // namespace transform

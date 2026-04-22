@@ -41,6 +41,14 @@ void transform_probe::setup_metrics(ss::sstring transform_name) {
           sm::description("Data transform invocation errors"),
           labels)
           .aggregate({ss::metrics::shard_label}),
+        sm::make_counter(
+          "fanout_errors",
+          [this] { return _fanout_errors; },
+          sm::description(
+            "Produce-path transform fan-out write errors (best-effort; "
+            "these do not fail the parent produce)"),
+          labels)
+          .aggregate({ss::metrics::shard_label}),
       });
 }
 

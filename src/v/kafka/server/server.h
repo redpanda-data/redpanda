@@ -38,6 +38,7 @@
 #include "security/gssapi_principal_mapper.h"
 #include "security/krb5_configurator.h"
 #include "security/mtls.h"
+#include "transform/fwd.h"
 #include "utils/ema.h"
 
 #include <seastar/core/future.hh>
@@ -85,7 +86,8 @@ public:
       ss::sharded<cluster::cluster_link::frontend>&,
       std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
-      const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
+      const std::unique_ptr<pandaproxy::schema_registry::api>&,
+      ss::sharded<transform::service>&) noexcept;
 
     ~server() noexcept override = default;
     server(const server&) = delete;
@@ -259,6 +261,10 @@ public:
         return _cluster_link_frontend.local();
     }
 
+    ss::sharded<transform::service>& transform_service() {
+        return _transform_service;
+    }
+
     bool is_cluster_link_active() const;
 
     chunked_vector<ss::lw_shared_ptr<const connection_context>>
@@ -316,6 +322,7 @@ private:
     ssx::singleton_thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
+    ss::sharded<transform::service>& _transform_service;
     boost::intrusive::list<connection_context> _connections;
     closed_connections_t _closed_connections{};
 };

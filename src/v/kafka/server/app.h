@@ -52,6 +52,10 @@ namespace pandaproxy::schema_registry {
 class api;
 }
 
+namespace transform {
+class service;
+}
+
 namespace ssx {
 class singleton_thread_worker;
 }
@@ -111,7 +115,8 @@ public:
       seastar::sharded<cluster::cluster_link::frontend>&,
       std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
-      const std::unique_ptr<pandaproxy::schema_registry::api>&);
+      const std::unique_ptr<pandaproxy::schema_registry::api>&,
+      seastar::sharded<transform::service>&);
 
     seastar::future<> start();
     seastar::future<> shutdown_input();

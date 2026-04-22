@@ -519,7 +519,8 @@ public:
     ss::future<> transform(
       model::record_batch batch,
       transform_probe* probe,
-      transform_callback cb) override {
+      transform_callback cb,
+      std::optional<request_metadata> metadata) override {
         vlog(wasm_log.trace, "Transforming batch: {}", batch.header());
         if (batch.record_count() == 0) {
             co_return;
@@ -527,8 +528,8 @@ public:
         if (batch.compressed()) {
             batch = co_await model::decompress_batch(batch);
         }
-        ss::future<> fut = co_await ss::coroutine::as_future(
-          invoke_transform(std::move(batch), probe, std::move(cb)));
+        ss::future<> fut = co_await ss::coroutine::as_future(invoke_transform(
+          std::move(batch), probe, std::move(cb), std::move(metadata)));
         report_memory_usage();
         if (fut.failed()) {
             probe->transform_error();
@@ -791,7 +792,10 @@ private:
     }
 
     ss::future<> invoke_transform(
-      model::record_batch batch, transform_probe* p, transform_callback cb) {
+      model::record_batch batch,
+      transform_probe* p,
+      transform_callback cb,
+      std::optional<request_metadata> metadata) {
         class callback_impl final : public record_callback {
         public:
             callback_impl(
@@ -833,7 +837,7 @@ private:
           p);
 
         co_await _transform_module.for_each_record_async(
-          std::move(batch), &callback);
+          std::move(batch), &callback, std::move(metadata));
     }
 
     wasmtime_runtime* _runtime;
@@ -1250,8 +1254,10 @@ void register_transform_module(
     host_function<&transform_module::name>::reg(linker, #name, ssc)
     REG_HOST_FN(check_abi_version_1);
     REG_HOST_FN(check_abi_version_2);
+    REG_HOST_FN(check_abi_version_3);
     REG_HOST_FN(read_batch_header);
     REG_HOST_FN(read_next_record);
+    REG_HOST_FN(read_batch_metadata);
     REG_HOST_FN(write_record);
     REG_HOST_FN(write_record_with_options);
 #undef REG_HOST_FN
@@ -1657,7 +1663,7 @@ bool is_exported_memory(const parser::module_export& mod_export) {
 }
 
 bool is_transform_abi_check_fn(const parser::module_import& mod_import) {
-    constexpr std::array version = {1, 2};
+    constexpr std::array version = {1, 2, 3};
     return std::ranges::any_of(version, [&mod_import](int version) {
         return mod_import
                == parser::module_import{

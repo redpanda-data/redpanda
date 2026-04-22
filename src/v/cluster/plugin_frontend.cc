@@ -493,7 +493,9 @@ errc plugin_frontend::validator::validate_mutation(const transform_cmd& cmd) {
                 loggable_string(cmd.value.input_topic.tp()));
               return errc::transform_invalid_create;
           }
-          if (cmd.value.output_topics.empty()) {
+          if (
+            cmd.value.output_topics.empty()
+            && cmd.value.mode != model::transform_mode::produce_path) {
               vlog(
                 clusterlog.info,
                 "attempted to deploy transform {} without any output topics",

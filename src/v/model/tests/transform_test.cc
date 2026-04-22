@@ -305,4 +305,47 @@ TEST(TransformMetadataTest, TestOffsetOptionsCompatFail) {
     ASSERT_FALSE(lm.has_value());
 }
 
+TEST(TransformMetadataTest, TransformModeRoundTrip) {
+    model::transform_metadata m{
+      .name = model::transform_name{"test-transform"},
+      .input_topic
+      = model::topic_namespace{model::ns{"kafka"}, model::topic{"input"}},
+      .uuid = uuid_t::create(),
+      .mode = model::transform_mode::produce_path,
+    };
+
+    auto buf = serde::to_iobuf(m);
+    auto deserialized = serde::from_iobuf<model::transform_metadata>(
+      std::move(buf));
+
+    EXPECT_EQ(deserialized.mode, model::transform_mode::produce_path);
+    EXPECT_EQ(deserialized.name, m.name);
+}
+
+TEST(TransformMetadataTest, TransformModeDefaultIsSidecar) {
+    model::transform_metadata m;
+    EXPECT_EQ(m.mode, model::transform_mode::sidecar);
+}
+
+TEST(TransformMetadataTest, TransformModeBackwardsCompat) {
+    // A version-1 payload (no mode field) should deserialize with
+    // mode == sidecar, since those transforms were created before
+    // produce_path existed. serde_read explicitly resets mode to
+    // sidecar before version-gated reads.
+    legacy_transform_metadata legacy{
+      .name = model::transform_name{"legacy-xform"},
+      .input_topic
+      = model::topic_namespace{model::ns{"kafka"}, model::topic{"t"}},
+      .uuid = uuid_t::create(),
+      .source_ptr = model::offset(0),
+    };
+
+    auto buf = serde::to_iobuf(legacy);
+    auto deserialized = serde::from_iobuf<model::transform_metadata>(
+      std::move(buf));
+
+    EXPECT_EQ(deserialized.mode, model::transform_mode::sidecar);
+    EXPECT_EQ(deserialized.name, legacy.name);
+}
+
 } // namespace model

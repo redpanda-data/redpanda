@@ -143,7 +143,8 @@ void fake_wasm_engine::set_use_default_output_topic() {
 ss::future<> fake_wasm_engine::transform(
   model::record_batch batch,
   wasm::transform_probe*,
-  wasm::transform_callback cb) {
+  wasm::transform_callback cb,
+  std::optional<wasm::request_metadata>) {
     auto it = model::record_batch_copy_iterator::create(batch);
     while (it.has_next()) {
         auto transformed = model::transformed_data::from_record(it.next());

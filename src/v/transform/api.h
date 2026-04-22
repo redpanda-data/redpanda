@@ -18,6 +18,7 @@
 #include "model/transform.h"
 #include "transform/fwd.h"
 #include "transform/logging/fwd.h"
+#include "transform/produce_path_executor.h"
 #include "wasm/fwd.h"
 
 #include <seastar/core/gate.hh>
@@ -118,6 +119,29 @@ public:
     ss::future<std::error_code> patch_transform_metadata(
       model::transform_name, model::transform_metadata_patch data);
 
+    struct produce_path_engine_result {
+        ss::shared_ptr<wasm::engine> engine;
+        ss::sstring name;
+        std::vector<model::topic_namespace> output_topics;
+        model::compression compression_mode{model::compression::none};
+    };
+
+    /// Acquire a WASM engine for a produce-path transform.
+    /// Called on the partition's shard during produce.
+    ss::future<std::optional<produce_path_engine_result>>
+      get_produce_path_engine(model::transform_id);
+
+    /// Look up a produce-path transform for the given topic.
+    /// Forwards to the manager's secondary index.
+    std::optional<model::transform_id>
+      get_produce_path_transform(model::topic_namespace_view) const;
+
+    /// Get the produce-path executor for this shard.
+    produce_path_executor& executor() { return _executor; }
+
+    /// Get the transform RPC client for this shard.
+    rpc::client& rpc_client();
+
     /**
      * Create a reporter of the transform subsystem.
      */
@@ -162,6 +186,8 @@ private:
 
     // The total amount of memory available to transforms
     size_t _total_memory_limit;
+
+    produce_path_executor _executor;
 };
 
 } // namespace transform

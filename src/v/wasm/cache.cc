@@ -78,10 +78,11 @@ public:
     ss::future<> transform(
       model::record_batch batch,
       transform_probe* probe,
-      transform_callback cb) override {
+      transform_callback cb,
+      std::optional<request_metadata> metadata) override {
         auto u = co_await _mu.get_units();
-        auto fut = co_await ss::coroutine::as_future(
-          _underlying->transform(std::move(batch), probe, std::move(cb)));
+        auto fut = co_await ss::coroutine::as_future(_underlying->transform(
+          std::move(batch), probe, std::move(cb), std::move(metadata)));
         if (!fut.failed()) {
             co_return;
         }

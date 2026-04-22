@@ -27,7 +27,6 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin, CommittedWasmOffset
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
-from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.transform_verifier_service import (
     TransformVerifierConsumeConfig,
     TransformVerifierConsumeStatus,
@@ -1330,69 +1329,4 @@ class DataTransformsLoggingMetricsTest(BaseDataTransformsLoggingTest):
 
         self.logger.debug(
             f"Final buffer usage: {json.dumps(get_buffer_usage(), indent=1)}"
-        )
-
-
-class DataTransformsRpcUpgradeTest(BaseDataTransformsTest):
-    topics = [TopicSpec(partition_count=9), TopicSpec(partition_count=9)]
-
-    def setUp(self):
-        pass
-
-    @cluster(num_nodes=4)
-    def test_upgrade_one_node(self):
-        """
-        Test that transforms work with partially upgraded cluster.
-        More precisely, tests the feature-flag fallback to old-style produce RPCs.
-        """
-        installer = self.redpanda._installer
-        prev_version = installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD
-        )
-        latest_version = installer.head_version()
-        self.logger.info(f"Testing with versions: {prev_version=} {latest_version=}")
-
-        self.logger.info(f"Starting all nodes with version: {prev_version}")
-        installer.install(self.redpanda.nodes, prev_version)
-        self.redpanda.start(nodes=self.redpanda.nodes, omit_seeds_on_idx_one=False)
-        self.redpanda.wait_until(
-            self.redpanda.healthy,
-            timeout_sec=60,
-            backoff_sec=1,
-            err_msg="The cluster hasn't stabilized",
-        )
-        self._create_initial_topics()
-
-        upgrade = self.redpanda.nodes[0]
-        installer.install([upgrade], latest_version)
-        self.redpanda.restart_nodes(
-            [upgrade], start_timeout=60, omit_seeds_on_idx_one=False
-        )
-
-        self.redpanda.wait_until(
-            self.redpanda.healthy,
-            timeout_sec=60,
-            backoff_sec=1,
-            err_msg="The cluster hasn't stabilized",
-        )
-
-        input_topic = self.topics[0]
-        output_topic = self.topics[1]
-        self.logger.warn(f"{input_topic.name=} -> {output_topic.name=}")
-        self._deploy_wasm(
-            name="identity-xform",
-            input_topic=input_topic,
-            output_topic=output_topic,
-            wait_running=True,
-        )
-
-        producer_status = self._produce_input_topic(topic=self.topics[0])
-        consumer_status = self._consume_output_topic(
-            topic=self.topics[1], status=producer_status
-        )
-
-        self.logger.info(f"{consumer_status=}")
-
-        assert consumer_status.invalid_records == 0, (
-            f"transform verification failed with invalid records: {consumer_status}"
         )

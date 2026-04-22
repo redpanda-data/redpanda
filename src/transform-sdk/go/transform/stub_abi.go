@@ -28,6 +28,10 @@ func checkAbiVersion() {
 	panic("stub")
 }
 
+func readBatchMetadata(key int32, buf unsafe.Pointer, bufLen int32) int32 {
+	panic("stub")
+}
+
 func readBatchHeader(
 	baseOffset unsafe.Pointer,
 	recordCount unsafe.Pointer,

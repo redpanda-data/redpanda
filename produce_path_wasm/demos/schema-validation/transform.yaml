@@ -1,0 +1,5 @@
+name: schema-validator
+input-topic: sensor-data
+output-topics:
+  - sensor-data
+language: tinygo-no-goroutines

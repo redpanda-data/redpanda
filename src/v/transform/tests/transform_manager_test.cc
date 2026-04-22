@@ -313,6 +313,12 @@ public:
         auto id = _registry->put_transform(meta);
         _manager->on_plugin_change(id);
     }
+    void deploy_produce_path_transform(std::string_view name) {
+        auto meta = parse_transform(name);
+        meta.mode = model::transform_mode::produce_path;
+        auto id = _registry->put_transform(meta);
+        _manager->on_plugin_change(id);
+    }
     void delete_transform(std::string_view name) {
         auto meta = parse_transform(name);
         auto id = _registry->delete_transform(meta.name);
@@ -335,6 +341,13 @@ public:
         }
         _manager->on_transform_state_change(
           entry->first, ntp, processor::state::errored);
+    }
+    std::optional<model::transform_id>
+    lookup_produce_path(std::string_view topic) {
+        model::topic_namespace tp_ns{
+          model::kafka_namespace, model::topic(topic)};
+        return _manager->get_produce_path_transform(
+          model::topic_namespace_view(tp_ns));
     }
     void drain_queue() {
         // Drain the seastar task queue to ensure manual clock tasks have
@@ -443,6 +456,7 @@ private:
           .uuid = uuid_t::create(),
           // As a hack to track the version, we use the source ptr
           .source_ptr = model::offset(version),
+          .mode = model::transform_mode::sidecar,
         };
     }
 
@@ -655,6 +669,55 @@ TEST_F(TransformManagerTest, DeleteDuringBackoff) {
     ss::manual_clock::advance(1s);
     drain_queue();
     EXPECT_THAT(status(), status_is("foo->bar/1", lifecycle_status::destroyed));
+}
+
+TEST_F(TransformManagerTest, ProducePathLookup) {
+    deploy_produce_path_transform("foo->bar");
+    drain_queue();
+    auto result = lookup_produce_path("foo");
+    ASSERT_TRUE(result.has_value());
+    // No sidecar processors should be created for produce-path transforms
+    EXPECT_THAT(status(), status_is());
+}
+
+TEST_F(TransformManagerTest, ProducePathDeleteReturnsNullopt) {
+    deploy_produce_path_transform("foo->bar");
+    drain_queue();
+    ASSERT_TRUE(lookup_produce_path("foo").has_value());
+    delete_transform("foo->bar");
+    drain_queue();
+    EXPECT_FALSE(lookup_produce_path("foo").has_value());
+}
+
+TEST_F(TransformManagerTest, SidecarTransformNotInProducePathLookup) {
+    deploy_transform("foo->bar");
+    drain_queue();
+    EXPECT_FALSE(lookup_produce_path("foo").has_value());
+}
+
+TEST_F(TransformManagerTest, ProducePathAndSidecarOnDifferentTopics) {
+    become_leader("baz/0");
+    deploy_produce_path_transform("foo->bar");
+    deploy_transform("baz->qux");
+    drain_queue();
+
+    // produce-path transform is in the index
+    ASSERT_TRUE(lookup_produce_path("foo").has_value());
+    // sidecar topic is not in the produce-path index
+    EXPECT_FALSE(lookup_produce_path("baz").has_value());
+    // sidecar processor was created
+    EXPECT_THAT(status(), status_is("baz->qux/0", lifecycle_status::active));
+}
+
+TEST_F(TransformManagerTest, ProducePathNoProcessorsOnLeadershipChange) {
+    deploy_produce_path_transform("foo->bar");
+    drain_queue();
+    become_leader("foo/0");
+    drain_queue();
+    // Leadership change should not create processors for produce-path
+    // transforms; only the index entry matters.
+    EXPECT_THAT(status(), status_is());
+    ASSERT_TRUE(lookup_produce_path("foo").has_value());
 }
 
 } // namespace transform

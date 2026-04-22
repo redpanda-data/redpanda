@@ -241,6 +241,8 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/features:enterprise_feature_messages",
+        "//src/v/transform",
+        "//src/v/wasm:api",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -391,6 +393,7 @@ redpanda_cc_library(
         "//src/v/storage:record_batch_builder",
         "//src/v/strings:string_switch",
         "//src/v/strings:utf8",
+        "//src/v/transform:fwd",
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:ema",
         "//src/v/utils:log_hist",
@@ -488,6 +491,7 @@ redpanda_cc_library(
     deps = [
         ":datalake_throttle_manager",
         ":qdc_monitor_config",
+        "//src/v/transform:fwd",
         "@seastar",
     ],
 )

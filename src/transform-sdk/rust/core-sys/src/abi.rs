@@ -14,8 +14,11 @@
 
 #[link(wasm_import_module = "redpanda_transform")]
 extern "C" {
-    #[link_name = "check_abi_version_2"]
+    #[link_name = "check_abi_version_3"]
     pub(crate) fn check_abi();
+
+    #[link_name = "read_batch_metadata"]
+    pub(crate) fn read_batch_metadata(key: i32, buf: *mut u8, len: i32) -> i32;
 
     #[link_name = "read_batch_header"]
     pub(crate) fn read_batch_header(

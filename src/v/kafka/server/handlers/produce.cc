@@ -25,11 +25,16 @@
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/validation.h"
 #include "raft/errc.h"
+#include "security/acl.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
+#include "transform/api.h"
+#include "wasm/request_metadata.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/log.hh>
 
 #include <chrono>
@@ -298,6 +303,43 @@ ss::future<produce_response::partition> do_produce_topic_partition(
         timeout = max_timeout;
     }
 
+    // Capture the sharded transform service by pointer. The pointer to
+    // the ss::sharded<> object itself is safe across shards -- we call
+    // .local() inside the lambda to get the per-shard instance.
+    auto& transform_svc = octx.rctx.server().local().transform_service();
+
+    // Build request metadata on the connection shard where the context
+    // is safe to access. Skip unless a produce-path transform is
+    // registered specifically for this topic -- that way clusters
+    // with no produce-path transforms (or transforms on other topics)
+    // pay only one map lookup per partition-produce, not a chain of
+    // string allocations.
+    auto request_info = [&]() -> std::optional<wasm::request_metadata> {
+        if (!transform_svc.local_is_initialized()) {
+            return std::nullopt;
+        }
+        if (!transform_svc.local().get_produce_path_transform(
+              model::topic_namespace_view(req.ntp))) {
+            return std::nullopt;
+        }
+        auto conn = octx.rctx.connection();
+        if (!conn) {
+            return std::nullopt;
+        }
+        auto principal = conn->get_principal();
+        return wasm::request_metadata{
+          .principal_name = ss::sstring(principal.name_view()),
+          .principal_type = ss::sstring(
+            security::to_string_view(principal.type())),
+          .client_id = ss::sstring(
+            octx.rctx.header().client_id.value_or(std::string_view{})),
+          .client_host = fmt::format("{}", conn->client_host()),
+          .client_port = conn->client_port(),
+          .tls_enabled = conn->tls_enabled(),
+          .listener_name = octx.rctx.listener(),
+        };
+    }();
+
     auto p = co_await octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
@@ -306,15 +348,70 @@ ss::future<produce_response::partition> do_produce_topic_partition(
        dispatch = std::move(dispatched),
        acks = octx.request.data.acks,
        timeout,
-       source_shard = ss::this_shard_id()](
-        cluster::partition_manager& mgr) mutable {
+       source_shard = ss::this_shard_id(),
+       request_info = std::move(request_info),
+       &transform_svc](this auto, cluster::partition_manager& mgr)
+        -> ss::future<produce_response::partition> {
           auto partition = kafka::make_partition_proxy(ntp, mgr);
           if (!partition || !partition->is_leader()) {
-              return ss::as_ready_future(finalize_request_with_error_code(
+              co_return finalize_request_with_error_code(
                 error_code::not_leader_for_partition,
                 std::move(dispatch),
                 ntp,
-                source_shard));
+                source_shard);
+          }
+
+          if (transform_svc.local_is_initialized()) {
+              // Synchronous per-topic lookup: the common case (no
+              // produce-path transform for this topic) is one map
+              // lookup, no coroutine frame, no batch moves.
+              auto& svc = transform_svc.local();
+              auto transform_id = svc.get_produce_path_transform(
+                model::topic_namespace_view(ntp));
+              if (transform_id) {
+                  auto result = co_await svc.executor().execute(
+                    *transform_id, std::move(batch), std::move(request_info));
+                  if (!result) {
+                      auto ec = [&] {
+                          using enum transform::execute_errc;
+                          switch (result.error().code) {
+                          case transform_failed:
+                              return error_code::invalid_record;
+                          case engine_unavailable:
+                              // Retriable: the engine may still be
+                              // warming up or temporarily unavailable.
+                              // Signal "retry same broker" rather than
+                              // the non-retriable unknown_server_error.
+                              return error_code::request_timed_out;
+                          case no_output_records:
+                          case idempotent_record_count_mismatch:
+                              return error_code::unknown_server_error;
+                          }
+                      }();
+                      co_return finalize_request_with_error_code(
+                        ec,
+                        std::move(dispatch),
+                        ntp,
+                        source_shard,
+                        result.error().message);
+                  }
+                  batch = std::move(*result);
+              }
+          }
+
+          // Transform filtered all records from the input topic
+          // (non-idempotent producer, everything routed to output
+          // topics). Nothing to write to this partition.
+          if (!batch) {
+              ssx::background = ss::smp::submit_to(
+                source_shard, [dispatch = std::move(dispatch)]() mutable {
+                    dispatch->set_value();
+                    dispatch.reset();
+                });
+              co_return produce_response::partition{
+                .partition_index = ntp.tp.partition,
+                .error_code = error_code::none,
+              };
           }
 
           auto bid = model::batch_identity::from(batch->header());
@@ -329,28 +426,29 @@ ss::future<produce_response::partition> do_produce_topic_partition(
             num_records,
             batch_size,
             timeout);
-          return stages.dispatched
-            .then_wrapped([source_shard, dispatch = std::move(dispatch)](
-                            ss::future<> f) mutable {
-                if (f.failed()) {
-                    ssx::background = ss::smp::submit_to(
-                      source_shard,
-                      [dispatch = std::move(dispatch),
-                       e = f.get_exception()]() mutable {
-                          dispatch->set_exception(e);
-                          dispatch.reset();
-                      });
-                    return;
-                }
-                ssx::background = ss::smp::submit_to(
-                  source_shard, [dispatch = std::move(dispatch)]() mutable {
-                      dispatch->set_value();
-                      dispatch.reset();
-                  });
-            })
-            .then([f = std::move(stages.produced)]() mutable {
-                return std::move(f);
-            });
+
+          auto dispatched_fut = std::move(stages.dispatched);
+          auto produced_fut = std::move(stages.produced);
+
+          auto dispatch_result = co_await ss::coroutine::as_future(
+            std::move(dispatched_fut));
+          if (dispatch_result.failed()) {
+              ssx::background = ss::smp::submit_to(
+                source_shard,
+                [dispatch = std::move(dispatch),
+                 e = dispatch_result.get_exception()]() mutable {
+                    dispatch->set_exception(e);
+                    dispatch.reset();
+                });
+          } else {
+              ssx::background = ss::smp::submit_to(
+                source_shard, [dispatch = std::move(dispatch)]() mutable {
+                    dispatch->set_value();
+                    dispatch.reset();
+                });
+          }
+
+          co_return co_await std::move(produced_fut);
       });
     if (p.error_code == error_code::none) {
         auto dur = std::chrono::steady_clock::now() - start;

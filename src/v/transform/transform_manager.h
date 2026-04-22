@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_set.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
@@ -102,13 +103,24 @@ class manager {
         || std::is_same_v<ClockType, ss::manual_clock>,
       "Only lowres or manual clocks are supported");
 
+    using engine_lifecycle_cb
+      = ss::noncopyable_function<ss::future<>(model::transform_id)>;
+    using engine_status_cb
+      = ss::noncopyable_function<bool(model::transform_id)>;
+
 public:
     manager(
       model::node_id self,
       std::unique_ptr<registry>,
       std::unique_ptr<processor_factory>,
       ss::scheduling_group,
-      std::unique_ptr<memory_limits>);
+      std::unique_ptr<memory_limits>,
+      engine_lifecycle_cb evict_engine =
+        [](model::transform_id) { return ss::now(); },
+      engine_lifecycle_cb warm_engine =
+        [](model::transform_id) { return ss::now(); },
+      engine_status_cb is_engine_running =
+        [](model::transform_id) { return false; });
     manager(const manager&) = delete;
     manager& operator=(const manager&) = delete;
     manager(manager&&) = delete;
@@ -129,6 +141,12 @@ public:
     // Get the current state of all the transforms this manager is responsible
     // for.
     model::cluster_transform_report compute_report() const;
+
+    /// Look up a produce-path transform for the given topic.
+    /// Returns nullopt if no produce-path transform is deployed.
+    /// This is called on the produce hot path and must not suspend.
+    std::optional<model::transform_id>
+      get_produce_path_transform(model::topic_namespace_view) const;
 
     // Exposed for testing, but drains all the pending operations.
     //
@@ -160,5 +178,21 @@ private:
     std::unique_ptr<registry> _registry;
     std::unique_ptr<processor_table<ClockType>> _processors;
     std::unique_ptr<processor_factory> _processor_factory;
+
+    // Fast lookup: topic -> transform_id for produce-path transforms.
+    // Updated when transforms are deployed/deleted via handle_plugin_change.
+    // Uses transparent hasher/eq so lookups with topic_namespace_view
+    // don't allocate a full topic_namespace key.
+    chunked_hash_map<
+      model::topic_namespace,
+      model::transform_id,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>
+      _produce_path_transforms;
+
+    // Called to evict/warm cached produce-path engines on deploy/delete.
+    engine_lifecycle_cb _evict_engine;
+    engine_lifecycle_cb _warm_engine;
+    engine_status_cb _is_engine_running;
 };
 } // namespace transform
