@@ -300,3 +300,53 @@ BOOST_AUTO_TEST_CASE(test_update_interval) {
         last_scrub_time = model::to_timestamp(ss::manual_clock::now());
     }
 }
+
+// `should_scrub` applies a small (~500ms) slack so the scheduler waking up a
+// few ms before `_next_scrub_at` still returns true. Verify by using a
+// sub-slack interval: with partial_interval well under the slack, the
+// scheduler should report due at t=0 — before the clock reaches
+// `_next_scrub_at`.
+BOOST_AUTO_TEST_CASE(test_should_scrub_slack) {
+    auto& partial_interval
+      = config::shard_local_cfg().cloud_storage_partial_scrub_interval_ms;
+    auto full_interval
+      = config::shard_local_cfg().cloud_storage_full_scrub_interval_ms.bind();
+    auto& jitter
+      = config::shard_local_cfg().cloud_storage_scrubbing_interval_jitter_ms;
+
+    using namespace std::chrono_literals;
+
+    partial_interval.set_value(100ms);
+    // `simple_time_jitter` UBs at jitter=0 (`get_int(-1)`); pick 1ms so
+    // `next_jitter_duration` deterministically returns 0.
+    jitter.set_value(1ms);
+
+    auto reset_configs = ss::defer([&partial_interval, &jitter] {
+        partial_interval.reset();
+        jitter.reset();
+    });
+
+    model::timestamp last_scrub_time;
+    scrub_status last_status{scrub_status::partial};
+    archival::scrubber_scheduler<ss::manual_clock> sched{
+      [&last_scrub_time, &last_status] {
+          return std::make_tuple(last_scrub_time, last_status);
+      },
+      partial_interval.bind(),
+      full_interval,
+      jitter.bind()};
+
+    // Nothing scheduled yet.
+    BOOST_REQUIRE(!sched.should_scrub());
+
+    // Schedule: _next_scrub_at ~= now + 100ms, which is within the slack.
+    last_scrub_time = model::to_timestamp(ss::manual_clock::now());
+    sched.pick_next_scrub_time();
+    BOOST_REQUIRE(sched.should_scrub());
+
+    // Schedule _next_scrub_at ~= now + 1s, which is not within the slack.
+    last_scrub_time = model::to_timestamp(ss::manual_clock::now() - 4s);
+    partial_interval.set_value(5s);
+    sched.pick_next_scrub_time();
+    BOOST_REQUIRE(!sched.should_scrub());
+}
