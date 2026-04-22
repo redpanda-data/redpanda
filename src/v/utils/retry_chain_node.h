@@ -652,24 +652,103 @@ public:
         }
     }
     template<typename... Args>
+    void log(
+      ss::log_level lvl,
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        auto msg = ssx::sformat(format, std::forward<Args>(args)...);
+        if (_has_tracing) {
+            _node.maybe_add_trace(msg);
+        }
+        auto lambda = [&](ss::logger& lgr, ss::log_level l) {
+            if (_ctx) {
+                lgr.log(
+                  l,
+                  ss::logger::force,
+                  "{} - {}",
+                  _node("{}", _ctx.value()),
+                  msg);
+            } else {
+                lgr.log(l, ss::logger::force, "{} - {}", _node(), msg);
+            }
+        };
+        do_log(lvl, std::move(lambda));
+    }
+    template<typename... Args>
     void error(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::error, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void error(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::error,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
     template<typename... Args>
     void warn(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::warn, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
+    void warn(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::warn,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
+    }
+    template<typename... Args>
     void info(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::info, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void info(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::info,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
     template<typename... Args>
     void debug(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::debug, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
+    void debug(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::debug,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
+    }
+    template<typename... Args>
     void trace(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void trace(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::trace,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
     /// Invoke the lambda function but disable tracing while the function is
     /// running.

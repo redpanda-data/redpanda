@@ -399,23 +399,63 @@ private:
             log(ss::log_level::error, format, std::forward<Args>(args)...);
         }
         template<typename... Args>
+        void error(ss::logger::force_tag, const char* format, Args&&... args) {
+            log(
+              ss::log_level::error,
+              ss::logger::force,
+              format,
+              std::forward<Args>(args)...);
+        }
+        template<typename... Args>
         void warn(const char* format, Args&&... args) {
             log(ss::log_level::warn, format, std::forward<Args>(args)...);
+        }
+        template<typename... Args>
+        void warn(ss::logger::force_tag, const char* format, Args&&... args) {
+            log(
+              ss::log_level::warn,
+              ss::logger::force,
+              format,
+              std::forward<Args>(args)...);
         }
 
         template<typename... Args>
         void info(const char* format, Args&&... args) {
             log(ss::log_level::info, format, std::forward<Args>(args)...);
         }
+        template<typename... Args>
+        void info(ss::logger::force_tag, const char* format, Args&&... args) {
+            log(
+              ss::log_level::info,
+              ss::logger::force,
+              format,
+              std::forward<Args>(args)...);
+        }
 
         template<typename... Args>
         void debug(const char* format, Args&&... args) {
             log(ss::log_level::debug, format, std::forward<Args>(args)...);
         }
+        template<typename... Args>
+        void debug(ss::logger::force_tag, const char* format, Args&&... args) {
+            log(
+              ss::log_level::debug,
+              ss::logger::force,
+              format,
+              std::forward<Args>(args)...);
+        }
 
         template<typename... Args>
         void trace(const char* format, Args&&... args) {
             log(ss::log_level::trace, format, std::forward<Args>(args)...);
+        }
+        template<typename... Args>
+        void trace(ss::logger::force_tag, const char* format, Args&&... args) {
+            log(
+              ss::log_level::trace,
+              ss::logger::force,
+              format,
+              std::forward<Args>(args)...);
         }
 
         template<typename... Args>
@@ -430,6 +470,22 @@ private:
                   _client_port,
                   std::forward<Args>(args)...);
             }
+        }
+        template<typename... Args>
+        void log(
+          ss::log_level lvl,
+          ss::logger::force_tag,
+          const char* format,
+          Args&&... args) {
+            auto line_fmt = ss::sstring("{}:{} failed authorization - ")
+                            + format;
+            kauthzlog.log(
+              lvl,
+              ss::logger::force,
+              line_fmt.c_str(),
+              _client_addr,
+              _client_port,
+              std::forward<Args>(args)...);
         }
 
     private:

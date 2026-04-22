@@ -34,28 +34,86 @@ public:
     }
 
     template<typename... Args>
+    void log(
+      ss::log_level lvl,
+      ss::logger::force_tag,
+      const char* format,
+      Args&&... args) const {
+        auto line_fmt = ss::sstring("{} - ") + format;
+        _logger->log(
+          lvl,
+          ss::logger::force,
+          line_fmt.c_str(),
+          _prefix,
+          std::forward<Args>(args)...);
+    }
+
+    template<typename... Args>
     void error(const char* format, Args&&... args) const {
         log(ss::log_level::error, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void
+    error(ss::logger::force_tag, const char* format, Args&&... args) const {
+        log(
+          ss::log_level::error,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void warn(const char* format, Args&&... args) const {
         log(ss::log_level::warn, format, std::forward<Args>(args)...);
     }
+    template<typename... Args>
+    void warn(ss::logger::force_tag, const char* format, Args&&... args) const {
+        log(
+          ss::log_level::warn,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
+    }
 
     template<typename... Args>
     void info(const char* format, Args&&... args) const {
         log(ss::log_level::info, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void info(ss::logger::force_tag, const char* format, Args&&... args) const {
+        log(
+          ss::log_level::info,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void debug(const char* format, Args&&... args) const {
         log(ss::log_level::debug, format, std::forward<Args>(args)...);
     }
+    template<typename... Args>
+    void
+    debug(ss::logger::force_tag, const char* format, Args&&... args) const {
+        log(
+          ss::log_level::debug,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
+    }
 
     template<typename... Args>
     void trace(const char* format, Args&&... args) const {
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void
+    trace(ss::logger::force_tag, const char* format, Args&&... args) const {
+        log(
+          ss::log_level::trace,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
 
     template<typename... Args>

@@ -65,28 +65,109 @@ public:
     }
 
     template<typename... Args>
+    void log(
+      ss::log_level lvl,
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        fmt::memory_buffer buf;
+        auto res = fmt::format_to_n(
+          std::back_inserter(buf),
+          _max_line_bytes,
+          format,
+          std::forward<Args>(args)...);
+        if (res.size > _max_line_bytes) {
+            fmt::format_to(
+              std::back_inserter(buf),
+              trunc_msg_fmt,
+              res.size - _max_line_bytes);
+        }
+        std::string_view sv{buf.data(), buf.size()};
+#ifdef SEASTAR_LOGGER_COMPILE_TIME_FMT
+        _logger.log(lvl, ss::logger::force, fmt::runtime(sv));
+#else
+        _logger.log(lvl, ss::logger::force, sv);
+#endif
+    }
+
+    template<typename... Args>
     void error(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::error, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void error(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::error,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void warn(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::warn, format, std::forward<Args>(args)...);
     }
+    template<typename... Args>
+    void warn(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::warn,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
+    }
 
     template<typename... Args>
     void info(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::info, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void info(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::info,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void debug(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::debug, format, std::forward<Args>(args)...);
     }
+    template<typename... Args>
+    void debug(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::debug,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
+    }
 
     template<typename... Args>
     void trace(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void trace(
+      ss::logger::force_tag,
+      fmt::format_string<Args...> format,
+      Args&&... args) const {
+        log(
+          ss::log_level::trace,
+          ss::logger::force,
+          format,
+          std::forward<Args>(args)...);
     }
 
     bool is_enabled(ss::log_level level) const noexcept {
