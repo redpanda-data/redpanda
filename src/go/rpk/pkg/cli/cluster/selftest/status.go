@@ -131,8 +131,8 @@ If Tiered Storage is not enabled, the cloud storage tests won't run and a warnin
 	return cmd
 }
 
-func rowDataAsInterface(row []string) []interface{} {
-	var iarr []interface{}
+func rowDataAsInterface(row []string) []any {
+	var iarr []any
 	for _, x := range row {
 		iarr = append(iarr, x)
 	}

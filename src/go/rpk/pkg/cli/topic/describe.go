@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -101,7 +102,7 @@ For example,
 			req := kmsg.NewPtrMetadataRequest()
 			for _, topic := range topicArg {
 				reqTopic := kmsg.NewMetadataRequestTopic()
-				reqTopic.Topic = kmsg.StringPtr(topic)
+				reqTopic.Topic = new(topic)
 				req.Topics = append(req.Topics, reqTopic)
 			}
 			resp, err := req.RequestWith(cmd.Context(), cl)
@@ -468,7 +469,7 @@ var errUnlisted = errors.New("list failed")
 func listStartEndOffsets(ctx context.Context, cl *kgo.Client, topic string, numPartitions int, stable bool) []startStableEndOffset {
 	offsets := make([]startStableEndOffset, 0, numPartitions)
 
-	for i := 0; i < numPartitions; i++ {
+	for range numPartitions {
 		offsets = append(offsets, startStableEndOffset{
 			start:     -1,
 			startErr:  errUnlisted,
@@ -484,7 +485,7 @@ func listStartEndOffsets(ctx context.Context, cl *kgo.Client, topic string, numP
 	req.ReplicaID = -1
 	reqTopic := kmsg.NewListOffsetsRequestTopic()
 	reqTopic.Topic = topic
-	for i := 0; i < numPartitions; i++ {
+	for i := range numPartitions {
 		part := kmsg.NewListOffsetsRequestTopicPartition()
 		part.Partition = int32(i)
 		part.Timestamp = -2 // earliest offset
@@ -556,7 +557,7 @@ func listStartEndOffsets(ctx context.Context, cl *kgo.Client, topic string, numP
 type int32s []int32
 
 func (is int32s) sort() []int32 {
-	sort.Slice(is, func(i, j int) bool { return is[i] < is[j] })
+	slices.Sort(is)
 	if is == nil {
 		return []int32{}
 	}

@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	mrand "math/rand"
 	"net/http"
@@ -204,9 +205,7 @@ func NewClient(opts ...Opt) *Client {
 func (cl *Client) With(opts ...Opt) *Client {
 	dup := *cl
 	dup.headers = make(map[string]string, len(cl.headers))
-	for k, v := range cl.headers {
-		dup.headers[k] = v
-	}
+	maps.Copy(dup.headers, cl.headers)
 	for _, opt := range opts {
 		opt(&dup)
 	}
@@ -215,8 +214,8 @@ func (cl *Client) With(opts ...Opt) *Client {
 
 // Pathfmt accepts a format string path and path-escapes all args into it with
 // fmt.Sprintf. This only supports %s path formatting.
-func Pathfmt(path string, args ...interface{}) string {
-	encoded := make([]interface{}, len(args))
+func Pathfmt(path string, args ...any) string {
+	encoded := make([]any, len(args))
 	for i, arg := range args {
 		encoded[i] = url.PathEscape(fmt.Sprint(arg))
 	}
@@ -239,7 +238,7 @@ func Values(kvs ...string) url.Values {
 // Get GETs the given path, attaching qps as query parameters if non-nil, and
 // optionally decodes the response body into 'into' if non-nil following the
 // rules of the package documentation.
-func (cl *Client) Get(ctx context.Context, path string, qps url.Values, into interface{}) error {
+func (cl *Client) Get(ctx context.Context, path string, qps url.Values, into any) error {
 	return cl.do(ctx, http.MethodGet, path, qps, nil, into)
 }
 
@@ -247,7 +246,7 @@ func (cl *Client) Get(ctx context.Context, path string, qps url.Values, into int
 // optionally decodes the response body into 'into' if non-nil following the
 // rules of the package documentation. If body is non-nil, it is json encoded
 // as a request body. The required ct parameter sets the Content-Type.
-func (cl *Client) Post(ctx context.Context, path string, qps url.Values, ct string, body, into interface{}) error {
+func (cl *Client) Post(ctx context.Context, path string, qps url.Values, ct string, body, into any) error {
 	cl = cl.With(Headers("Content-Type", ct))
 	return cl.do(ctx, http.MethodPost, path, qps, body, into)
 }
@@ -259,7 +258,7 @@ func (cl *Client) Post(ctx context.Context, path string, qps url.Values, ct stri
 //
 // This is the same as POST with form values, but the Content-Type is
 // automatically set to "application/x-www-form-urlencoded".
-func (cl *Client) PostForm(ctx context.Context, path string, qps, form url.Values, into interface{}) error {
+func (cl *Client) PostForm(ctx context.Context, path string, qps, form url.Values, into any) error {
 	return cl.do(ctx, http.MethodPost, path, qps, form, into)
 }
 
@@ -267,18 +266,18 @@ func (cl *Client) PostForm(ctx context.Context, path string, qps, form url.Value
 // optionally decodes the response body into 'into' if non-nil following the
 // rules of the package documentation. If body is non-nil, it is json encoded
 // as a request body.
-func (cl *Client) Put(ctx context.Context, path string, qps url.Values, body, into interface{}) error {
+func (cl *Client) Put(ctx context.Context, path string, qps url.Values, body, into any) error {
 	return cl.do(ctx, http.MethodPut, path, qps, body, into)
 }
 
 // Delete DELETEs the given path, attaching qps as query parameters if non-nil, and
 // optionally decodes the response body into 'into' if non-nil following the
 // rules of the package documentation.
-func (cl *Client) Delete(ctx context.Context, path string, qps url.Values, into interface{}) error {
+func (cl *Client) Delete(ctx context.Context, path string, qps url.Values, into any) error {
 	return cl.do(ctx, http.MethodDelete, path, qps, nil, into)
 }
 
-func (cl *Client) do(ctx context.Context, method, path string, qps url.Values, body, into interface{}) error {
+func (cl *Client) do(ctx context.Context, method, path string, qps url.Values, body, into any) error {
 	if cl.reqTimeout != 0 {
 		var cancel func()
 		ctx, cancel = context.WithTimeout(ctx, cl.reqTimeout)
@@ -340,7 +339,7 @@ func (cl *Client) do(ctx context.Context, method, path string, qps url.Values, b
 	return maybeUnmarshalRespBodyInto(resp.Body, into)
 }
 
-func maybeUnmarshalRespBodyInto(r io.Reader, into interface{}) error {
+func maybeUnmarshalRespBodyInto(r io.Reader, into any) error {
 	if into == nil {
 		return nil
 	}
@@ -394,7 +393,7 @@ func (cl *Client) prepareURL(path string, qps url.Values) (string, error) {
 	return u.String(), nil
 }
 
-func prepareBody(body interface{}) (bodyBytes []byte, isValues bool, err error) {
+func prepareBody(body any) (bodyBytes []byte, isValues bool, err error) {
 	if body == nil {
 		return nil, false, nil
 	}

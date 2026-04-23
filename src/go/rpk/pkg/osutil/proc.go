@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,10 +71,8 @@ func IsRunningPID(fs afero.Fs, pid int) (bool, error) {
 		return false, fmt.Errorf("corrupt info for process %d", pid)
 	}
 	state := parts[2]
-	for _, s := range deadStates {
-		if state == s {
-			return false, nil
-		}
+	if slices.Contains(deadStates, state) {
+		return false, nil
 	}
 	return true, nil
 }

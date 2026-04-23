@@ -353,8 +353,8 @@ func printDescribedGroup(
 		"LAG",
 		"MEMBER-ID",
 	}
-	args := func(r *describeRow) []interface{} {
-		return []interface{}{
+	args := func(r *describeRow) []any {
+		return []any{
 			r.topic,
 			r.partition,
 			r.currentOffset,
@@ -368,7 +368,7 @@ func printDescribedGroup(
 	if useInstanceID {
 		headers = append(headers, "INSTANCE-ID")
 		orig := args
-		args = func(r *describeRow) []interface{} {
+		args = func(r *describeRow) []any {
 			if r.instanceID != nil {
 				return append(orig(r), *r.instanceID)
 			}
@@ -379,7 +379,7 @@ func printDescribedGroup(
 	{
 		headers = append(headers, "CLIENT-ID", "HOST")
 		orig := args
-		args = func(r *describeRow) []interface{} {
+		args = func(r *describeRow) []any {
 			return append(orig(r), r.clientID, r.host)
 		}
 	}
@@ -387,7 +387,7 @@ func printDescribedGroup(
 	if useErr {
 		headers = append(headers, "ERROR")
 		orig := args
-		args = func(r *describeRow) []interface{} {
+		args = func(r *describeRow) []any {
 			return append(orig(r), r.err)
 		}
 	}

@@ -9,7 +9,7 @@ import (
 
 func TestPrintStructFields(t *testing.T) {
 	for _, test := range []struct {
-		in  interface{}
+		in  any
 		exp string
 	}{
 		{

@@ -63,10 +63,3 @@ func IsSwapEnabled(fs afero.Fs) (bool, error) {
 	}
 	return memInfo.SwapTotal != 0, nil
 }
-
-func min(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
-}

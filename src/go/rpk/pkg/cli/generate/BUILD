@@ -33,6 +33,7 @@ go_library(
         "@com_connectrpc_connect//:connect",
         "@com_github_prometheus_client_model//go",
         "@com_github_prometheus_common//expfmt",
+        "@com_github_prometheus_common//model",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_spf13_pflag//:pflag",

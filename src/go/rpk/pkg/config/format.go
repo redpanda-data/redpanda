@@ -120,8 +120,8 @@ func formatType(t any, includeTypeName bool) (string, error) {
 
 		nested++
 		defer func() { nested-- }()
-		for i := 0; i < typ.NumField(); i++ {
-			sf := typ.Field(i)
+		for sf := range typ.Fields() {
+			sf := sf
 			if !sf.IsExported() {
 				continue
 			}
@@ -152,10 +152,10 @@ func formatType(t any, includeTypeName bool) (string, error) {
 			fmt.Fprintf(sb, "%s%s: ", spaces(), name)
 			addr := sf.Type
 			typ := sf.Type
-			if addr.Kind() != reflect.Ptr {
+			if addr.Kind() != reflect.Pointer {
 				addr = reflect.PointerTo(addr)
 			}
-			for typ.Kind() == reflect.Ptr {
+			for typ.Kind() == reflect.Pointer {
 				typ = typ.Elem()
 			}
 

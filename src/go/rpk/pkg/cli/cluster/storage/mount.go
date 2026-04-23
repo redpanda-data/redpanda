@@ -93,14 +93,14 @@ with my-new-topic as the new topic name
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
 				topic := rpadmin.InboundTopic{
 					SourceTopicReference: rpadmin.NamespacedTopic{
-						Namespace: string2pointer(ns),
+						Namespace: new(ns),
 						Topic:     t,
 					},
 				}
 				if at != "" {
 					alias = at
 					topic.Alias = &rpadmin.NamespacedTopic{
-						Namespace: string2pointer(an),
+						Namespace: new(an),
 						Topic:     alias,
 					}
 				}
@@ -132,8 +132,4 @@ func nsTopic(nst string) (namespace string, topic string) {
 		topic = nsTopic[1]
 	}
 	return namespace, topic
-}
-
-func string2pointer(s string) *string {
-	return &s
 }

@@ -94,7 +94,7 @@ func ProfileToDocumentedYAML(p RpkProfile) ([]byte, error) {
 	buf.WriteString("# Available fields are shown below. Uncomment and edit as needed.\n")
 	buf.WriteString("# For more information, run: rpk profile set --help\n\n")
 
-	if err := writeDocumentedStruct(&buf, reflect.ValueOf(p), reflect.TypeOf(p), "", 0); err != nil {
+	if err := writeDocumentedStruct(&buf, reflect.ValueOf(p), reflect.TypeFor[RpkProfile](), "", 0); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -185,7 +185,7 @@ func isStructAllEmpty(v reflect.Value) bool {
 // as it may be semantically meaningful (e.g., tls: {} enables TLS).
 func isEmptyValue(v reflect.Value) bool {
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		// A non-nil pointer is not empty, even if it points to a zero struct.
 		// This preserves semantics like `tls: {}` which signals TLS is enabled.
 		return v.IsNil()
@@ -223,7 +223,7 @@ func writeCommentedField(buf *bytes.Buffer, name string, t reflect.Type, doc, fu
 	}
 
 	// Handle pointer types
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -246,8 +246,8 @@ func writeCommentedField(buf *bytes.Buffer, name string, t reflect.Type, doc, fu
 
 // writeCommentedStructTemplate writes a struct template as comments.
 func writeCommentedStructTemplate(buf *bytes.Buffer, t reflect.Type, pathPrefix, indent string) {
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
+		field := field
 		if !field.IsExported() {
 			continue
 		}
@@ -281,7 +281,7 @@ func writeCommentedStructTemplate(buf *bytes.Buffer, t reflect.Type, pathPrefix,
 		}
 
 		fieldType := field.Type
-		if fieldType.Kind() == reflect.Ptr {
+		if fieldType.Kind() == reflect.Pointer {
 			fieldType = fieldType.Elem()
 		}
 
@@ -303,7 +303,7 @@ func writeCommentedStructTemplate(buf *bytes.Buffer, t reflect.Type, pathPrefix,
 
 // writeValueField writes a field with its actual value.
 func writeValueField(buf *bytes.Buffer, name string, v reflect.Value, doc, fullPath, indent string) error {
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			writeCommentedField(buf, name, v.Type(), doc, fullPath, indent)
 			return nil
@@ -367,7 +367,7 @@ func writeValueField(buf *bytes.Buffer, name string, v reflect.Value, doc, fullP
 }
 
 func writeSliceElement(buf *bytes.Buffer, v reflect.Value, indent string) error {
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return nil
 		}
@@ -437,7 +437,7 @@ func writeSliceElement(buf *bytes.Buffer, v reflect.Value, indent string) error 
 }
 
 func writeInlineValue(buf *bytes.Buffer, v reflect.Value) error {
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			buf.WriteString("null")
 			return nil

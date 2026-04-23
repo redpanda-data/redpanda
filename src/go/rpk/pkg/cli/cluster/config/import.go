@@ -97,7 +97,7 @@ func importConfig(
 	var propertyDeltas []propertyDelta
 
 	// Calculate deltas
-	upsert := make(map[string]interface{})
+	upsert := make(map[string]any)
 	remove := make([]string, 0)
 	for k, v := range readbackConfig {
 		oldVal, haveOldVal := oldConfig[k]
@@ -132,17 +132,17 @@ func importConfig(
 				}
 			} else if meta.Type == "array" && meta.Items.Type == "string" {
 				switch vArray := v.(type) {
-				case []interface{}:
+				case []any:
 					// Normal case: user input is a yaml array
 					v = loadStringArray(vArray)
 				default:
 					// Pass, let the server attempt validation
 				}
 				if oldVal != nil {
-					oldVal = loadStringArray(oldVal.([]interface{}))
+					oldVal = loadStringArray(oldVal.([]any))
 				}
 				if oldValVirtual != nil {
-					oldValVirtual = loadStringArray(oldValVirtual.([]interface{}))
+					oldValVirtual = loadStringArray(oldValVirtual.([]any))
 				}
 			}
 
@@ -155,7 +155,7 @@ func importConfig(
 			continue
 		}
 
-		addProperty := func(old interface{}) {
+		addProperty := func(old any) {
 			upsert[k] = v
 
 			// If the value is not [secret], the user changed the redacted sentinel
@@ -336,7 +336,7 @@ from the YAML file, it is reset to its default value.  `,
 	return cmd
 }
 
-func loadStringArray(input []interface{}) []string {
+func loadStringArray(input []any) []string {
 	result := make([]string, len(input))
 	for i, v := range input {
 		result[i] = fmt.Sprintf("%v", v)

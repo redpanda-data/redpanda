@@ -8,7 +8,6 @@
 // by the Apache License, Version 2.0
 
 //go:build darwin
-// +build darwin
 
 package redpanda
 

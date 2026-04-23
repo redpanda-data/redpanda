@@ -82,7 +82,7 @@ Unmount topic 'my-topic' from the cluster in the 'my-namespace'
 				adm, err := adminapi.NewClient(cmd.Context(), fs, p)
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-				mg, err := adm.UnmountTopics(cmd.Context(), rpadmin.UnmountConfiguration{Topics: []rpadmin.NamespacedTopic{{Namespace: string2pointer(ns), Topic: t}}})
+				mg, err := adm.UnmountTopics(cmd.Context(), rpadmin.UnmountConfiguration{Topics: []rpadmin.NamespacedTopic{{Namespace: new(ns), Topic: t}}})
 				out.MaybeDie(err, "unable to unmount topic: %v", err)
 				id = mg.ID
 			}

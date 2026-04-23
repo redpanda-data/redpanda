@@ -39,10 +39,10 @@ func GetCPUInfo(fs afero.Fs) ([]*CPUInfo, error) {
 			continue
 		}
 		cpu := &CPUInfo{Cores: 1}
-		sectionLines := strings.Split(s, "\n")
-		for _, l := range sectionLines {
+		sectionLines := strings.SplitSeq(s, "\n")
+		for l := range sectionLines {
 			row := strings.Split(l, ":")
-			for i := 0; i < len(row); i++ {
+			for i := range row {
 				row[i] = strings.TrimSpace(row[i])
 			}
 			if len(row) < 2 {

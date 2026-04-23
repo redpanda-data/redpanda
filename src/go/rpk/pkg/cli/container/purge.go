@@ -80,10 +80,9 @@ func purgeCluster(ctx context.Context, c containerutil.Client) (purged bool, rer
 	}
 	grp, grpCtx := errgroup.WithContext(ctx)
 	for _, node := range nodes {
-		node := node
 		id := node.ID
 		var mu sync.Mutex
-		printf := func(msg string, args ...interface{}) {
+		printf := func(msg string, args ...any) {
 			mu.Lock()
 			defer mu.Unlock()
 			fmt.Printf(msg+"\n", args...)

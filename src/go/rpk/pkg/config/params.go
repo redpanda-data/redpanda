@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -101,8 +102,8 @@ type xflag struct {
 
 func splitCommaIntoStrings(in string, dst *[]string) error {
 	*dst = nil
-	split := strings.Split(in, ",")
-	for _, on := range split {
+	split := strings.SplitSeq(in, ",")
+	for on := range split {
 		on = strings.TrimSpace(on)
 		if len(on) == 0 {
 			return fmt.Errorf("invalid empty value in %q", in)
@@ -1270,12 +1271,7 @@ func (c *Config) promptDeleteOldRpkYaml(fs afero.Fs) error {
 	var deleteAuthNames []string
 	var deleteProfileNames []string
 	containsAuth := func(name string) bool {
-		for _, delName := range deleteAuthNames {
-			if delName == name {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(deleteAuthNames, name)
 	}
 	for _, a := range c.rpkYamlActual.CloudAuths {
 		if a.Organization == "" || a.OrgID == "" {
@@ -2171,7 +2167,7 @@ func getField(tags []string, parentRawTag string, v reflect.Value) (field reflec
 
 	// If is a nil pointer we assign the zero value, and we reassign v to the
 	// value that v points to
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
 		}
@@ -2228,11 +2224,8 @@ func getFieldByTag(tag string, v reflect.Value) (newV reflect.Value, otherV refl
 		if ft == tag {
 			return v.Field(i), reflect.Value{}, nil
 		}
-		for _, p := range pieces {
-			if p == "inline" {
-				inlines = append(inlines, i)
-				break
-			}
+		if slices.Contains(pieces, "inline") {
+			inlines = append(inlines, i)
 		}
 	}
 

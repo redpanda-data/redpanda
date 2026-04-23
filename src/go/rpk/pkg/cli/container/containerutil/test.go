@@ -252,7 +252,7 @@ func MockContainerInspect(
 			},
 		},
 		NetworkSettings: &container.NetworkSettings{
-			NetworkSettingsBase: container.NetworkSettingsBase{
+			NetworkSettingsBase: container.NetworkSettingsBase{ //nolint:staticcheck // NetworkSettingsBase is deprecated but still the only way to set Ports until v29.0
 				Ports: map[nat.Port][]nat.PortBinding{
 					kafkaNatPort: {{
 						HostIP: "192.168.78.9", HostPort: "89080",

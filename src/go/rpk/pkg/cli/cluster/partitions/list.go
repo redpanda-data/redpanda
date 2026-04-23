@@ -259,7 +259,6 @@ func topicPartitions(ctx context.Context, cl *rpadmin.AdminAPI, ns, topicName st
 		return nil, fmt.Errorf("unable to query partition metadata of topic %q: %v", topicName, err)
 	}
 	for _, tp := range tPartitions {
-		tp := tp
 		ret = append(ret, rpadmin.ClusterPartition{
 			Ns:          tp.Namespace,
 			Topic:       tp.Topic,

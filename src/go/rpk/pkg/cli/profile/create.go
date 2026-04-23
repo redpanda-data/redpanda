@@ -911,7 +911,6 @@ func combineClusterNames(rgs []*controlplanev1.ResourceGroup, scs []*controlplan
 	// Then we append the cluster names
 	var nameAndCs []nameAndCluster
 	for _, c := range cs {
-		c := c
 		if c.State != controlplanev1.Cluster_STATE_READY {
 			continue
 		}

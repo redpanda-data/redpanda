@@ -96,9 +96,7 @@ func newListCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Com
 				results []res
 			)
 			for _, subject := range subjects {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					ss, err := cl.Schemas(ctx, subject)
 					mu.Lock()
 					defer mu.Unlock()
@@ -107,7 +105,7 @@ func newListCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Com
 						ss:      ss,
 						err:     err,
 					})
-				}()
+				})
 			}
 			wg.Wait()
 

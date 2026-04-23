@@ -390,10 +390,7 @@ func pollOperationStatusWithConfig(ctx context.Context, cloudClient *publicapi.C
 			pollInterval = fastPollInterval
 		} else {
 			pollInterval = currentSlowInterval
-			nextInterval := currentSlowInterval * 2
-			if nextInterval > maxSlowInterval {
-				nextInterval = maxSlowInterval
-			}
+			nextInterval := min(currentSlowInterval*2, maxSlowInterval)
 			currentSlowInterval = nextInterval
 		}
 

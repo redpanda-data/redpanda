@@ -12,6 +12,7 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
@@ -154,9 +155,7 @@ func parseMetadataProperties(metadataProperties []string) (map[string]string, er
 		if err != nil {
 			return nil, err
 		}
-		for k, v := range m {
-			result[k] = v
-		}
+		maps.Copy(result, m)
 	}
 	return result, nil
 }

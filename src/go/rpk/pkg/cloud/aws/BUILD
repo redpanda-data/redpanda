@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/go/rpk/pkg/cloud/provider",
-        "@com_github_aws_aws_sdk_go//aws/ec2metadata",
-        "@com_github_aws_aws_sdk_go//aws/session",
+        "@com_github_aws_aws_sdk_go_v2_config//:config",
+        "@com_github_aws_aws_sdk_go_v2_feature_ec2_imds//:imds",
     ],
 )

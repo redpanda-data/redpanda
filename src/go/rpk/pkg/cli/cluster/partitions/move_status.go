@@ -11,6 +11,7 @@ package partitions
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -86,7 +87,7 @@ func newPartitionMovementsStatusCommand(fs afero.Fs, p *config.Params) *cobra.Co
 				return strconv.Itoa(size)
 			}
 
-			f := func(rr *rpadmin.ReconfigurationsResponse) interface{} {
+			f := func(rr *rpadmin.ReconfigurationsResponse) any {
 				var (
 					newReplica []int
 					oldReplica []int
@@ -150,7 +151,7 @@ func newPartitionMovementsStatusCommand(fs afero.Fs, p *config.Params) *cobra.Co
 					headers := []string{"Node-id", "Core", "Type", "Retry-number", "Revision", "Status"}
 					tw := out.NewTable(headers...)
 					for _, rs := range p.ReconciliationStatuses {
-						var row []interface{}
+						var row []any
 						row = append(row, rs.NodeID)
 						for _, s := range rs.Operations {
 							row = append(row, s.Core, s.Type, s.RetryNumber, s.Revision, s.Status)
@@ -177,12 +178,7 @@ func newPartitionMovementsStatusCommand(fs afero.Fs, p *config.Params) *cobra.Co
 // This function returns true when a partition that movement is
 // ongoing is a requested partition by the --partition option.
 func contains(pReq []string, pRes string) bool {
-	for _, p := range pReq {
-		if p == pRes {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(pReq, pRes)
 }
 
 const helpListMovement = `Show ongoing partition movements.

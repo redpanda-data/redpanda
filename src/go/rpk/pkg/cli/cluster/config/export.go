@@ -85,7 +85,7 @@ func exportConfig(
 			switch x := curValue.(type) {
 			case nil:
 				fmt.Fprintf(&sb, "%s:", name)
-			case []interface{}:
+			case []any:
 				if len(x) > 0 {
 					fmt.Fprintf(&sb, "%s:\n", name)
 					for _, v := range x {

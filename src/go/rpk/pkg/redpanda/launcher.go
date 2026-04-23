@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -79,12 +80,7 @@ func collectRedpandaArgs(args *RedpandaArgs) []string {
 	singleFlags := []string{"overprovisioned"}
 
 	isSingle := func(f string) bool {
-		for _, flag := range singleFlags {
-			if flag == f {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(singleFlags, f)
 	}
 
 	for flag, value := range args.SeastarFlags {

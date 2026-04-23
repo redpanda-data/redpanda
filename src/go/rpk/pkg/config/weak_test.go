@@ -1015,11 +1015,11 @@ rpk:
 					SeedServers: []SeedServer{
 						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
-					Other: map[string]interface{}{
+					Other: map[string]any{
 						"enable_admin_api": true,
 						// This one is a slice
-						"rpc_server_tls": []interface{}{
-							map[string]interface{}{
+						"rpc_server_tls": []any{
+							map[string]any{
 								"require_client_auth": false,
 								"truststore_file":     "certs/tls-ca.pem",
 							},
@@ -1039,7 +1039,7 @@ rpk:
 						{"0.0.0.0", 8082, "internal"},
 						{"redpanda-rest-0.my.domain.com.", 8083, "external"},
 					},
-					Other: map[string]interface{}{
+					Other: map[string]any{
 						"consumer_instance_timeout_ms": 60000,
 					},
 				},
@@ -1051,7 +1051,7 @@ rpk:
 						RequireClientAuth: false, CertFile: "certfile",
 					},
 					SASLMechanism: func() *string { s := "mechanism"; return &s }(),
-					Other: map[string]interface{}{
+					Other: map[string]any{
 						"retries":               5,
 						"retry_base_backoff_ms": 100,
 					},
@@ -1168,11 +1168,11 @@ redpanda:
 					SeedServers: []SeedServer{
 						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
-					Other: map[string]interface{}{
+					Other: map[string]any{
 						"enable_admin_api": true,
 						// This one is a slice
-						"rpc_server_tls": []interface{}{
-							map[string]interface{}{
+						"rpc_server_tls": []any{
+							map[string]any{
 								"require_client_auth": false,
 								"truststore_file":     "certs/tls-ca.pem",
 							},
@@ -1348,9 +1348,9 @@ rpk:
 						{Host: SocketAddress{"192.168.0.1", 33145}},
 						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
-					Other: map[string]interface{}{
+					Other: map[string]any{
 						"enable_admin_api": true,
-						"rpc_server_tls": map[string]interface{}{
+						"rpc_server_tls": map[string]any{
 							"require_client_auth": false,
 							"truststore_file":     "certs/tls-ca.pem",
 						},
@@ -1369,7 +1369,7 @@ rpk:
 						{"0.0.0.0", 8082, "internal"},
 						{"redpanda-rest-0.my.domain.com.", 8083, "external"},
 					},
-					Other: map[string]interface{}{
+					Other: map[string]any{
 						"consumer_instance_timeout_ms": 60000,
 					},
 				},
@@ -1381,7 +1381,7 @@ rpk:
 						RequireClientAuth: false, CertFile: "certfile",
 					},
 					SASLMechanism: func() *string { s := "mechanism"; return &s }(),
-					Other: map[string]interface{}{
+					Other: map[string]any{
 						"retries":               5,
 						"retry_base_backoff_ms": 100,
 					},
