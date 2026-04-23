@@ -1025,7 +1025,10 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         throughput, records, moves, partitions = self._get_scale_params()
         install_opts = InstallOptions(install_previous_version=test_mixed_versions)
         self.start_redpanda(
-            num_nodes=3, install_opts=install_opts, extra_rp_conf=extra_rp_conf
+            num_nodes=3,
+            install_opts=install_opts,
+            extra_rp_conf=extra_rp_conf,
+            environment={"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"},
         )
 
         self.topic = "topic"
@@ -1094,7 +1097,10 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         install_opts = InstallOptions(install_previous_version=test_mixed_versions)
         self.start_redpanda(
-            num_nodes=3, install_opts=install_opts, extra_rp_conf=extra_rp_conf
+            num_nodes=3,
+            install_opts=install_opts,
+            extra_rp_conf=extra_rp_conf,
+            environment={"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"},
         )
 
         self.topic = "topic"

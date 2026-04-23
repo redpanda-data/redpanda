@@ -94,9 +94,10 @@ public:
                     errors[name] = fmt::format(
                       "Validation error: {}",
                       validation_err.value().error_message());
+                } else {
+                    prop->set_value(node.second);
+                    ok = true;
                 }
-                prop->set_value(node.second);
-                ok = true;
             } catch (const YAML::InvalidNode& e) {
                 errors[name] = fmt::format("Invalid syntax: {}", e);
             } catch (const YAML::ParserException& e) {

@@ -25,6 +25,20 @@ namespace {
 
 ss::logger lg("config_test"); // NOLINT
 
+std::optional<ss::sstring> validate_magic_prefix(const ss::sstring& value) {
+    if (!value.starts_with("magic_")) {
+        return fmt::format("value must start with 'magic_', got: {}", value);
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring> validate_throwing(const ss::sstring& value) {
+    if (value == "throw") {
+        throw std::runtime_error("validator threw an exception");
+    }
+    return std::nullopt;
+}
+
 struct test_config : public config::config_store {
     config::property<int> optional_int;
     config::property<ss::sstring> required_string;
@@ -41,6 +55,8 @@ struct test_config : public config::config_store {
     config::property<ss::sstring> default_secret_string;
     config::property<ss::sstring> secret_string;
     config::property<bool> aliased_bool;
+    config::property<ss::sstring> validated_string;
+    config::property<ss::sstring> throwing_validator_string;
 
     test_config()
       : optional_int(
@@ -110,10 +126,37 @@ struct test_config : public config::config_store {
           "aliased_bool",
           "Property with a compat alias",
           {.aliases = {"aliased_bool_legacy"}},
-          true) {}
+          true)
+      , validated_string(
+          *this,
+          "validated_string",
+          "String that must start with magic_",
+          {},
+          "magic_foo",
+          &validate_magic_prefix)
+      , throwing_validator_string(
+          *this,
+          "throwing_validator_string",
+          "String with a validator that throws",
+          {},
+          "safe",
+          &validate_throwing) {}
 };
 
 struct noop_config : public config::config_store {};
+
+struct required_validated_config : public config::config_store {
+    config::property<ss::sstring> required_validated_string;
+
+    required_validated_config()
+      : required_validated_string(
+          *this,
+          "required_validated_string",
+          "Required string that must start with magic_",
+          {.required = config::required::yes},
+          "magic_bar",
+          &validate_magic_prefix) {}
+};
 
 YAML::Node minimal_valid_configuration() {
     return YAML::Load(
@@ -248,10 +291,53 @@ SEASTAR_THREAD_TEST_CASE(validate_valid_configuration) {
     BOOST_TEST(errors.size() == 0);
 }
 
-SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
+SEASTAR_THREAD_TEST_CASE(validate_with_validator_error) {
     auto cfg = test_config();
-    auto errors = cfg.read_yaml(valid_configuration());
-    BOOST_TEST(errors.size() == 0);
+
+    auto invalid_yaml = YAML::Load("validated_string: invalid_value\n");
+
+    auto errors = cfg.read_yaml(invalid_yaml);
+
+    // Should have error from validator
+    BOOST_TEST(errors.size() > 0);
+
+    // Property should retain default value
+    BOOST_TEST(cfg.validated_string() == "magic_foo");
+}
+
+SEASTAR_THREAD_TEST_CASE(validate_with_type_mismatch) {
+    auto cfg = test_config();
+
+    // Provide string where int is expected
+    auto invalid_yaml = YAML::Load("optional_int: not_an_int\n");
+
+    auto errors = cfg.read_yaml(invalid_yaml);
+
+    BOOST_REQUIRE(!errors.empty());
+    auto& [key, msg] = *errors.begin();
+    BOOST_TEST(key == "optional_int");
+    BOOST_TEST_INFO(msg);
+    BOOST_TEST(msg.contains("bad conversion"));
+
+    BOOST_TEST(cfg.optional_int() == 100); // expect default retained
+}
+
+SEASTAR_THREAD_TEST_CASE(validate_with_throwing_validator) {
+    auto cfg = test_config();
+
+    auto yaml = YAML::Load("throwing_validator_string: throw\n");
+
+    BOOST_CHECK_THROW(cfg.read_yaml(yaml), std::runtime_error);
+}
+
+SEASTAR_THREAD_TEST_CASE(validate_required_with_validator_error) {
+    auto cfg = required_validated_config();
+
+    auto invalid_yaml = YAML::Load(
+      "required_validated_string: invalid_value\n");
+
+    // Required property with validation error throws std::invalid_argument
+    BOOST_CHECK_THROW(cfg.read_yaml(invalid_yaml), std::invalid_argument);
 }
 
 SEASTAR_THREAD_TEST_CASE(config_json_serialization) {

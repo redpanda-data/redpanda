@@ -150,6 +150,10 @@ class AdjacentSegmentMergingToggleCompactionTest(AdjacentSegmentMergingTestBase)
             test_context, extra_rp_conf=xtra_conf, num_brokers=1, *args, **kwargs
         )
 
+        self.redpanda.set_environment(
+            {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        )
+
     @cluster(num_nodes=2)
     @matrix(
         acks=[
