@@ -24,6 +24,16 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
+// groupListResponse represents a single group entry.
+type groupListResponse struct {
+	Broker int32  `json:"broker" yaml:"broker"`
+	Group  string `json:"group" yaml:"group"`
+	State  string `json:"state,omitempty" yaml:"state,omitempty"` // omitempty handles missing state gracefully
+}
+
+// groupListResponses  is a slice of groupListResponse.
+type groupListResponses []groupListResponse
+
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "group",
@@ -71,7 +81,6 @@ members and their lag), and manage offsets.
 `,
 		Args: cobra.ExactArgs(0),
 	}
-	p.InstallKafkaFlags(cmd)
 
 	cmd.AddCommand(
 		newDeleteCommand(fs, p),
@@ -80,7 +89,6 @@ members and their lag), and manage offsets.
 		newSeekCommand(fs, p),
 		NewOffsetDeleteCommand(fs, p),
 	)
-
 	return cmd
 }
 
@@ -107,6 +115,10 @@ The STATE columns shows which state the group is in:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, _ []string) {
+			f := p.Formatter
+			if h, ok := f.Help(groupListResponses{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -135,36 +147,51 @@ The STATE columns shows which state the group is in:
 			groups := listed.Sorted()
 			isV4Response := slices.ContainsFunc(groups, func(g kadm.ListedGroup) bool { return g.State != "" })
 
+			response := groupListResponses{}
+			for _, g := range groups {
+				group := groupListResponse{
+					Broker: g.Coordinator,
+					Group:  g.Group,
+					State:  g.State,
+				}
+				response = append(response, group)
+			}
+			if isText, _, s, err := f.Format(response); !isText {
+				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
+				out.Exit(s)
+			}
+
 			// Conditionally hide the STATE column for older brokers that
 			// do not return the state of the consumer group
 			if !isV4Response {
 				tw := out.NewTable("BROKER", "GROUP")
 				defer tw.Flush()
-				for _, g := range groups {
+				for _, g := range response {
 					tw.PrintStructFields(struct {
 						Broker int32
 						Group  string
-					}{g.Coordinator, g.Group})
+					}{g.Broker, g.Group})
 				}
 			} else {
 				tw := out.NewTable("BROKER", "GROUP", "STATE")
 				defer tw.Flush()
-				for _, g := range groups {
+				for _, g := range response {
 					tw.PrintStructFields(struct {
 						Broker int32
 						Group  string
 						State  string
-					}{g.Coordinator, g.Group, g.State})
+					}{g.Broker, g.Group, g.State})
 				}
 			}
 		},
 	}
-
+	p.InstallFormatFlag(cmd)
 	allValidStates := strings.Join(validStates, ", ")
 	cmd.Flags().StringSliceVarP(&filterStates, "states", "s", []string{}, fmt.Sprintf("Comma-separated list of group states to filter for. Possible states: [%s]", allValidStates))
 	cmd.RegisterFlagCompletionFunc("states", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return validStates, cobra.ShellCompDirectiveDefault
 	})
+
 	return cmd
 }
 
