@@ -18,10 +18,15 @@ namespace datalake {
 // Hourly partitioning on the redpanda.timestamp field.
 iceberg::unresolved_partition_spec hour_partition_spec();
 
+// Identity partitioning on the redpanda.key field.
+iceberg::unresolved_partition_spec identity_key_partition_spec();
+
 // Creates or alters the table by interfacing directly with a catalog.
 class direct_table_creator : public table_creator {
 public:
     direct_table_creator(type_resolver&, schema_manager&);
+    direct_table_creator(
+      type_resolver&, schema_manager&, iceberg::unresolved_partition_spec);
 
     ss::future<checked<std::nullopt_t, errc>> ensure_table(
       const model::topic&,
@@ -34,6 +39,7 @@ public:
 private:
     type_resolver& type_resolver_;
     schema_manager& schema_mgr_;
+    std::optional<iceberg::unresolved_partition_spec> pspec_;
 };
 
 } // namespace datalake

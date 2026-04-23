@@ -9,11 +9,14 @@
  */
 #pragma once
 
+#include "bytes/iostream.h"
+#include "container/chunked_hash_map.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/serde_parquet_writer.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 #include "utils/null_output_stream.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -86,8 +89,7 @@ public:
     }
 
     ss::future<result<local_file_metadata, writer_error>> finish() override {
-        return ss::make_ready_future<result<local_file_metadata, writer_error>>(
-          _result);
+        co_return std::move(_result);
     }
 
 private:
@@ -119,6 +121,8 @@ public:
       : _writer(std::move(writer))
       , _result{} {}
 
+    void set_path(local_path p) { _result.path = std::move(p); }
+
     ss::future<writer_error> add_data_struct(
       iceberg::struct_value data, int64_t sz, ss::abort_source& as) override {
         auto write_result = co_await _writer->add_data_struct(
@@ -136,11 +140,14 @@ public:
     }
 
     ss::future<result<local_file_metadata, writer_error>> finish() override {
+        _result.size_bytes = _writer->flushed_bytes()
+                             + _writer->buffered_bytes();
         auto result = co_await _writer->finish();
-        if (result != writer_error::ok) {
-            co_return result;
+        if (result.has_error()) {
+            co_return result.error();
         }
-        co_return _result;
+        _result.parquet_metadata = std::move(result.value());
+        co_return std::move(_result);
     }
 
 private:
@@ -159,6 +166,48 @@ public:
         co_return std::make_unique<test_serde_parquet_data_writer>(
           std::move(ostream_writer));
     }
+
+private:
+    serde_parquet_writer_factory _serde_parquet_factory;
+    noop_mem_tracker _mem_tracker;
+};
+
+/// \brief Writer factory that captures parquet file data as iobufs.
+///
+/// Like test_serde_parquet_writer_factory, but writes to in-memory iobufs
+/// instead of null streams. After the multiplexer finishes, each captured
+/// file can be uploaded to mock S3 for committer testing.
+///
+/// Usage:
+///   capturing_parquet_writer_factory factory;
+///   // ... use factory with record_multiplexer ...
+///   // After multiplex:
+///   for (auto& pf : finished_files.data_files) {
+///       auto& data = factory.files.at(pf.local_file.path());
+///       manifest_io.upload_object_bytes(uri, data.copy());
+///   }
+class capturing_parquet_writer_factory : public parquet_file_writer_factory {
+public:
+    ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
+    create_writer(
+      const iceberg::struct_type& schema, ss::abort_source&) override {
+        auto path_key = fmt::format("captured-{}.parquet", uuid_t::create());
+        // Insert iobuf into the map. The reference remains stable because
+        // chunked_hash_map doesn't invalidate references on insert.
+        auto [it, _] = files.emplace(path_key, iobuf{});
+
+        auto ostream_writer = co_await _serde_parquet_factory.create_writer(
+          schema, make_iobuf_ref_output_stream(it->second), _mem_tracker);
+
+        auto writer = std::make_unique<test_serde_parquet_data_writer>(
+          std::move(ostream_writer));
+        // Set the path so finish() returns it in local_file_metadata.
+        writer->set_path(local_path(path_key));
+        co_return std::move(writer);
+    }
+
+    /// Captured parquet file data, keyed by local_file_metadata path.
+    chunked_hash_map<ss::sstring, iobuf> files;
 
 private:
     serde_parquet_writer_factory _serde_parquet_factory;
