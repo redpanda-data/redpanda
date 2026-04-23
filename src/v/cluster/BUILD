@@ -236,6 +236,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/cloud_storage:remote_label",
+        "//src/v/config",
         "//src/v/model",
         "//src/v/pandaproxy/schema_registry:subject_name_strategy",
         "//src/v/reflection:adl",

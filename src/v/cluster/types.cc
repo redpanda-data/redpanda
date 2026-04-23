@@ -341,7 +341,7 @@ fmt::iterator incremental_topic_updates::format_to(fmt::iterator it) const {
       "iceberg_invalid_record_action: {}, "
       "iceberg_target_lag_ms: {}, "
       "remote_allow_gaps: {}, "
-      "topic_id: {}}}",
+      "topic_id: {}, replicas_preference: {}}}",
       compression,
       cleanup_policy_bitflags,
       compaction_strategy,
@@ -377,7 +377,8 @@ fmt::iterator incremental_topic_updates::format_to(fmt::iterator it) const {
       iceberg_invalid_record_action,
       iceberg_target_lag_ms,
       remote_allow_gaps,
-      topic_id);
+      topic_id,
+      replicas_preference);
 }
 
 std::istream& operator>>(std::istream& i, replication_factor& cs) {

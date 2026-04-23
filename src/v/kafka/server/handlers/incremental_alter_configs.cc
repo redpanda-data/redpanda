@@ -11,6 +11,9 @@
 #include "cluster/config_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
+#include "config/replicas_preference.h"
+#include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/incremental_alter_configs.h"
@@ -386,6 +389,27 @@ create_topic_properties_update(
                   op,
                   noop_validator<config::leaders_preference>{},
                   config::leaders_preference::parse);
+                continue;
+            }
+            if (cfg.name == topic_property_replicas_preference) {
+                auto enterprise_validator =
+                  [&feature_table = ctx.feature_table().local()](
+                    const ss::sstring&, const config::replicas_preference& rp)
+                  -> std::optional<ss::sstring> {
+                    if (
+                      rp.type == config::replicas_preference::type_t::racks
+                      && feature_table.should_sanction()) {
+                        return features::enterprise_error_message::
+                          default_replicas_preference();
+                    }
+                    return std::nullopt;
+                };
+                parse_and_set_optional(
+                  update.properties.replicas_preference,
+                  cfg.value,
+                  op,
+                  enterprise_validator,
+                  config::replicas_preference::parse);
                 continue;
             }
             if (cfg.name == topic_property_delete_retention_ms) {

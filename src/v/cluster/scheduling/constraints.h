@@ -15,6 +15,7 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/types.h"
+#include "config/replicas_preference.h"
 #include "model/metadata.h"
 
 namespace cluster {
@@ -136,6 +137,11 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
 }
 
 soft_constraint distinct_rack_preferred(const members_table&);
+
+/// Pure priority scoring by rack group index. Rackless and unpreferred nodes
+/// score 0. Group 0 = max_score, group k = max_score/(k+1).
+soft_constraint replica_pinning_preferred(
+  const config::replicas_preference&, const members_table&);
 
 /// Scores nodes based on replica count queried from the supplied map (as
 /// opposed to total node count). E.g. if the map represents topic partition

@@ -320,6 +320,41 @@ soft_constraint least_disk_filled(
         max_disk_usage_ratio, partition_size, node_disk_reports));
 }
 
+soft_constraint replica_pinning_preferred(
+  const config::replicas_preference& pref, const members_table& members) {
+    class impl : public soft_constraint::impl {
+    public:
+        impl(config::replicas_preference pref, const members_table& members)
+          : _pref(std::move(pref))
+          , _members(members) {}
+
+        soft_constraint_evaluator make_evaluator(
+          const allocated_partition&,
+          std::optional<model::node_id>) const final {
+            return [this](const allocation_node& node) -> uint64_t {
+                auto rack = _members.get_node_rack_id(node.id());
+                if (!rack) {
+                    return uint64_t{0};
+                }
+                auto group = _pref.group_index_for(*rack);
+                if (!group) {
+                    return uint64_t{0};
+                }
+                return soft_constraint::max_score / (*group + 1);
+            };
+        }
+
+        ss::sstring name() const final { return "replica pinning preferred"; }
+
+    private:
+        config::replicas_preference _pref;
+        const members_table& _members;
+    };
+
+    return soft_constraint(
+      std::make_unique<impl>(config::replicas_preference{pref}, members));
+}
+
 soft_constraint distinct_rack_preferred(const members_table& members) {
     return distinct_labels_preferred(
       rack_label.data(),

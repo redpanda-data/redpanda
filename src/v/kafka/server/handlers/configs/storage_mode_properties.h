@@ -73,6 +73,7 @@ inline constexpr auto storage_mode_properties
     {topic_property_message_timestamp_before_max_ms, storage_mode_mask::all},
     {topic_property_message_timestamp_after_max_ms, storage_mode_mask::all},
     {topic_property_leaders_preference, storage_mode_mask::all},
+    {topic_property_replicas_preference, storage_mode_mask::all},
     {topic_property_mpx_virtual_cluster_id, storage_mode_mask::all},
     {topic_property_recovery, storage_mode_mask::all},
     {topic_property_compaction_strategy, storage_mode_mask::all},

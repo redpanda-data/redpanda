@@ -750,6 +750,7 @@ FIXTURE_TEST(
       "flush.bytes",
       "redpanda.iceberg.mode",
       "redpanda.leaders.preference",
+      "redpanda.replicas.preference",
       "delete.retention.ms",
       "min.cleanable.dirty.ratio",
       "redpanda.remote.allowgaps",

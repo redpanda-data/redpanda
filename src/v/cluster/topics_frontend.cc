@@ -104,6 +104,15 @@ get_enterprise_features(const cluster::topic_configuration& cfg) {
         features.emplace_back("leadership pinning");
     }
 
+    // We are always enforcing replica preference restrictions
+    if (
+      const auto& replicas_pref = cfg.properties.replicas_preference;
+      replicas_pref.has_value()
+      && replicas_pref.value().type
+           == config::replicas_preference::type_t::racks) {
+        features.emplace_back("replica pinning");
+    }
+
     if (config::shard_local_cfg().iceberg_enabled.is_restricted()) {
         if (cfg.properties.iceberg_mode != model::iceberg_mode::disabled) {
             features.emplace_back("iceberg");
@@ -240,6 +249,7 @@ cluster::simple_allocation_request make_simple_allocation_request(
     if (topic_aware) {
         req.existing_replica_counts = cluster::node2count_t{};
     }
+    req.replicas_preference = ca_cfg.cfg.properties.replicas_preference;
     return req;
 }
 

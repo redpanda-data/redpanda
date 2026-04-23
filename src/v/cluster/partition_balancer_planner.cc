@@ -25,6 +25,7 @@
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "config/replicas_preference.h"
 #include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -104,6 +105,32 @@ reallocation_failure_details map_result_to_failure_details(
 }
 } // namespace
 
+void partition_balancer_planner::warn_if_pinning_capacity_insufficient(
+  const model::topic_namespace& tp_ns,
+  const config::replicas_preference& pref,
+  const std::vector<uint32_t>& capacity_by_rack_group,
+  int16_t replication_factor) {
+    uint32_t total_preference_capacity = 0;
+    for (auto rack_capacity : capacity_by_rack_group) {
+        total_preference_capacity += rack_capacity;
+    }
+
+    // Static mismatch between topology/preference/RF. Paired with the
+    // revert-path info log below, this tells live-site operators why
+    // a pinning constraint isn't converging: structural vs. transient.
+    if (total_preference_capacity < static_cast<uint32_t>(replication_factor)) {
+        vlog(
+          clusterlog.warn,
+          "topic {} has replicas_preference {} but preferred-group "
+          "capacity {} is less than replication factor {}; pinning "
+          "cannot be fully satisfied",
+          tp_ns,
+          pref,
+          total_preference_capacity,
+          replication_factor);
+    }
+}
+
 partition_balancer_planner::partition_balancer_planner(
   planner_config config,
   partition_balancer_state& state,
@@ -171,6 +198,7 @@ public:
         // full retention
         case change_reason::node_unavailable:
         case change_reason::rack_constraint_repair:
+        case change_reason::replica_pinning_repair:
         case change_reason::disk_full:
             return reconfiguration_policy::full_local_retention;
         }
@@ -1271,8 +1299,23 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
 
     // soft constraints
 
+    // replica_pinning_preferred biases the allocator toward nodes in
+    // higher-priority rack groups (group 0 outranks group 1, etc.), with
+    // rackless and unpreferred nodes scoring zero. This shapes the
+    // destination chosen by get_replica_pinning_repair_actions. Placed at
+    // L0 in the reassignment path (rack diversity lives elsewhere here);
+    // partition_allocator.cc::do_allocate() puts it at L1 after rack
+    // diversity.
+    auto cfg = _ctx.state().topics().get_topic_cfg(
+      model::topic_namespace_view(ntp()));
+    if (cfg && cfg->properties.replicas_preference) {
+        constraints.add(replica_pinning_preferred(
+          *cfg->properties.replicas_preference, _ctx.state().members()));
+    }
+
     if (_ctx.config().topic_aware) {
         // Add constraint for balanced topic-wise replica counts
+        constraints.ensure_new_level();
         constraints.add(min_count_in_map(
           "min topic-wise count",
           _ctx.get_topic_to_node_count(model::topic_namespace_view(ntp()))));
@@ -1727,6 +1770,347 @@ ss::future<> partition_balancer_planner::get_rack_constraint_repair_actions(
               [](force_reassignable_partition&) {});
         });
         ++it;
+    }
+}
+
+absl::flat_hash_map<model::rack_id, uint32_t>
+partition_balancer_planner::build_rack_node_counts(
+  const members_table& members, bool rack_awareness) {
+    absl::flat_hash_map<model::rack_id, uint32_t> counts;
+    for (auto node_id : members.node_ids()) {
+        auto maybe_rack = members.get_node_rack_id(node_id);
+        if (!maybe_rack) {
+            continue;
+        }
+        const auto& rack = *maybe_rack;
+        if (rack_awareness) {
+            // rack-awareness forces one replica per rack -> capacity is
+            // rack presence, not node count.
+            counts[rack] = 1;
+        } else {
+            ++counts[rack];
+        }
+    }
+    return counts;
+}
+
+std::vector<uint32_t> partition_balancer_planner::compute_pinning_capacity(
+  const config::replicas_preference& pref,
+  const absl::flat_hash_map<model::rack_id, uint32_t>& rack_node_counts) {
+    uint32_t num_groups = pref.num_groups();
+    std::vector<uint32_t> capacity(num_groups, 0);
+    for (const auto& [rack, count] : rack_node_counts) {
+        auto maybe_group = pref.group_index_for(rack);
+        if (!maybe_group) {
+            continue;
+        }
+        capacity[*maybe_group] += count;
+    }
+    return capacity;
+}
+
+std::vector<uint32_t>
+partition_balancer_planner::compute_ideal_pinning_assignment(
+  size_t replication_factor, const std::vector<uint32_t>& capacity_per_group) {
+    std::vector<uint32_t> ideal;
+    ideal.reserve(replication_factor);
+    for (uint32_t group_idx = 0; group_idx < capacity_per_group.size()
+                                 && ideal.size() < replication_factor;
+         ++group_idx) {
+        uint32_t slots = std::min(
+          capacity_per_group[group_idx],
+          static_cast<uint32_t>(replication_factor - ideal.size()));
+        ideal.insert(ideal.end(), slots, group_idx);
+    }
+    // If preferred groups lack total capacity, remaining replicas are
+    // unpreferred -- represent with sentinel max.
+    ideal.resize(replication_factor, std::numeric_limits<uint32_t>::max());
+    return ideal;
+}
+
+bool partition_balancer_planner::is_pinning_violated(
+  const std::vector<model::broker_shard>& replicas,
+  const config::replicas_preference& pref,
+  const std::vector<uint32_t>& ideal,
+  const members_table& members) {
+    if (pref.type == config::replicas_preference::type_t::none) {
+        return false;
+    }
+
+    constexpr uint32_t unpreferred = std::numeric_limits<uint32_t>::max();
+    std::vector<uint32_t> actual;
+    actual.reserve(replicas.size());
+    for (const auto& bs : replicas) {
+        auto maybe_rack = members.get_node_rack_id(bs.node_id);
+        if (!maybe_rack) {
+            actual.push_back(unpreferred);
+            continue;
+        }
+        auto maybe_group = pref.group_index_for(*maybe_rack);
+        actual.push_back(maybe_group.value_or(unpreferred));
+    }
+    std::ranges::sort(actual);
+
+    return actual != ideal;
+}
+
+std::pair<model::node_id, uint32_t>
+partition_balancer_planner::find_worst_replica_and_group(
+  const std::vector<model::broker_shard>& replicas,
+  const config::replicas_preference& pref,
+  const members_table& members) {
+    constexpr uint32_t unpreferred = std::numeric_limits<uint32_t>::max();
+
+    model::node_id worst_replica{-1};
+    uint32_t worst_rack_group = 0;
+    for (const auto& bs : replicas) {
+        auto maybe_rack = members.get_node_rack_id(bs.node_id);
+        uint32_t rack_group = unpreferred;
+        if (maybe_rack) {
+            auto maybe_g = pref.group_index_for(*maybe_rack);
+            if (maybe_g) {
+                rack_group = *maybe_g;
+            }
+        }
+        if (rack_group >= worst_rack_group || rack_group == unpreferred) {
+            worst_rack_group = rack_group;
+            worst_replica = bs.node_id;
+        }
+    }
+    return {worst_replica, worst_rack_group};
+}
+
+// given a reassignable partition with suboptimal pinning, try to move the worst
+// replica to a new node that improves the pinning score
+void partition_balancer_planner::try_repair_replica_pinning(
+  request_context& ctx,
+  reassignable_partition& rpart,
+  model::node_id worst_replica,
+  uint32_t previous_rack_group,
+  const config::replicas_preference& pref,
+  const members_table& members) {
+    constexpr uint32_t unpreferred = std::numeric_limits<uint32_t>::max();
+
+    // moved by someone else, not our issue at the moment
+    if (!rpart.is_original(worst_replica)) {
+        return;
+    }
+    auto r = rpart.move_replica(
+      worst_replica,
+      ctx.config().max_disk_usage_ratio,
+      change_reason::replica_pinning_repair);
+    if (r.has_error()) {
+        ctx.report_reallocation_failure(
+          rpart.ntp(),
+          map_result_to_failure_details(
+            change_reason::replica_pinning_repair, r.error(), worst_replica));
+        return;
+    }
+    // same node, no move occurred
+    auto new_node = r.value().current().node_id;
+    if (new_node == worst_replica) {
+        return;
+    }
+
+    // get the preference index of the new node
+    uint32_t new_rack_group = unpreferred;
+    auto maybe_new_rack = members.get_node_rack_id(new_node);
+    if (maybe_new_rack) {
+        auto maybe_group = pref.group_index_for(*maybe_new_rack);
+        if (maybe_group) {
+            new_rack_group = *maybe_group;
+        }
+    }
+
+    // new node didn't improve the score, don't bother with the move
+    if (new_rack_group >= previous_rack_group) {
+        vlog(
+          clusterlog.info,
+          "ntp {}: pinning repair could not find a strictly better "
+          "preferred group this tick (previous_rack_group={}, "
+          "new_rack_group={}, "
+          "preference={}); reverting move",
+          rpart.ntp(),
+          previous_rack_group,
+          new_rack_group,
+          pref);
+        rpart.revert(r.value());
+    }
+}
+
+partition_balancer_planner::pinning_violations
+partition_balancer_planner::detect_pinning_violations(request_context& ctx) {
+    using preference = config::replicas_preference::type_t;
+
+    pinning_violations result;
+
+    const auto& topics = ctx.state().topics();
+    const auto& members = ctx.state().members();
+    bool rack_awareness = ctx.state().is_rack_awareness_enabled();
+    auto rack_node_counts = build_rack_node_counts(members, rack_awareness);
+
+    ctx.state().ensure_pinning_cache_seeded();
+
+    // Synchronous — no co_await, so iteration is safe without a snapshot.
+    for (const auto& tp_ns : ctx.state().topics_with_replica_pinning()) {
+        auto md_ref = topics.get_topic_metadata_ref(tp_ns);
+        if (!md_ref) {
+            // Raced with a topic delete — delta handler will drop it
+            // next tick.
+            continue;
+        }
+        const auto& cfg = md_ref->get().get_configuration();
+        const auto& maybe_pref = cfg.properties.replicas_preference;
+        if (!maybe_pref || maybe_pref->type == preference::none) {
+            continue;
+        }
+
+        auto capacity = compute_pinning_capacity(*maybe_pref, rack_node_counts);
+        topic_pinning_plan plan{
+          .preference = *maybe_pref,
+          .ideal = compute_ideal_pinning_assignment(
+            cfg.replication_factor, capacity),
+          .violating_partitions = {},
+        };
+
+        warn_if_pinning_capacity_insufficient(
+          tp_ns, plan.preference, capacity, cfg.replication_factor);
+
+        const auto& assignments = md_ref->get().get_assignments();
+        for (const auto& [p_id, assignment] : assignments) {
+            if (
+              is_pinning_violated(
+                assignment.replicas, plan.preference, plan.ideal, members)) {
+                plan.violating_partitions.insert(model::partition_id{p_id});
+                ++result.count;
+            }
+        }
+
+        if (!plan.violating_partitions.empty()) {
+            result.per_topic.emplace(tp_ns, std::move(plan));
+        }
+    }
+
+    return result;
+}
+
+ss::future<> partition_balancer_planner::get_replica_pinning_repair_actions(
+  request_context& ctx,
+  plan_data& result,
+  const pinning_violations& violations) {
+    if (violations.per_topic.empty()) {
+        co_return;
+    }
+
+    const auto& topics = ctx.state().topics();
+    const auto& members = ctx.state().members();
+
+    // Snapshot topic_namespace keys from the detection map so we don't
+    // hold iterators into topic_table-adjacent state across co_await
+    // points.
+    chunked_vector<model::topic_namespace> pinned_topics_snapshot;
+    pinned_topics_snapshot.reserve(violations.per_topic.size());
+    for (const auto& [tp_ns, _] : violations.per_topic) {
+        pinned_topics_snapshot.push_back(tp_ns);
+    }
+
+    for (const auto& tp_ns : pinned_topics_snapshot) {
+        auto plan_it = violations.per_topic.find(tp_ns);
+        if (plan_it == violations.per_topic.end()) {
+            continue;
+        }
+        const auto& plan = plan_it->second;
+
+        // Snapshot the violating partition ids for the same reason.
+        chunked_vector<model::partition_id> violating_snapshot;
+        violating_snapshot.reserve(plan.violating_partitions.size());
+        for (auto p_id : plan.violating_partitions) {
+            violating_snapshot.push_back(p_id);
+        }
+
+        for (auto p_id : violating_snapshot) {
+            if (!ctx.can_add_reassignment()) {
+                co_return;
+            }
+
+            // Re-fetch and re-verify. Between detect_pinning_violations
+            // and now, other same-tick actions (drain, rack repair,
+            // full-disk) may have moved the replica off the bad node, or
+            // the topic may have been altered or deleted via
+            // AlterConfigs.
+            auto md_ref = topics.get_topic_metadata_ref(tp_ns);
+            if (!md_ref) {
+                continue;
+            }
+            const auto& cfg = md_ref->get().get_configuration();
+            const auto& maybe_pref = cfg.properties.replicas_preference;
+            if (
+              !maybe_pref
+              || maybe_pref->type
+                   == config::replicas_preference::type_t::none) {
+                continue;
+            }
+            const auto& assignments = md_ref->get().get_assignments();
+            auto a_it = assignments.find(p_id);
+            if (a_it == assignments.end()) {
+                continue;
+            }
+            // Copy replicas so the inner co_await below doesn't hold a
+            // reference across the suspension.
+            std::vector<model::broker_shard> replicas = a_it->second.replicas;
+
+            // Use the cached ideal. If the preference changed between
+            // detection and repair, the cached ideal is slightly stale
+            // for one tick; the next tick's detection uses the new
+            // preference.
+            if (!is_pinning_violated(
+                  replicas, plan.preference, plan.ideal, members)) {
+                co_await ss::maybe_yield();
+                continue;
+            }
+
+            model::ntp ntp(tp_ns.ns, tp_ns.tp, p_id);
+            co_await ctx.with_partition(ntp, [&](partition& part) {
+                auto [worst_replica, previous_rack_group]
+                  = find_worst_replica_and_group(
+                    part.replicas(), plan.preference, members);
+
+                part.match_variant(
+                  [&](reassignable_partition& rpart) {
+                      try_repair_replica_pinning(
+                        ctx,
+                        rpart,
+                        worst_replica,
+                        previous_rack_group,
+                        plan.preference,
+                        members);
+                  },
+                  [&](immutable_partition& ipart) {
+                      ipart.report_failure(
+                        change_reason::replica_pinning_repair);
+                      ipart.report_immutable_partition_as_reallocation_failure(
+                        ctx,
+                        {worst_replica},
+                        change_reason::replica_pinning_repair);
+                  },
+                  [&](moving_partition& mpart) {
+                      vlog(
+                        clusterlog.debug,
+                        "replica pinning will not attempt to move {} because "
+                        "partition is {}",
+                        mpart.ntp(),
+                        "moving");
+                  },
+                  [&](force_reassignable_partition& fpart) {
+                      vlog(
+                        clusterlog.debug,
+                        "replica pinning will not attempt to move {} because "
+                        "partition is {}",
+                        fpart.ntp(),
+                        "forced");
+                  });
+            });
+        }
     }
 }
 
@@ -2401,6 +2785,9 @@ partition_balancer_planner::plan_actions(
         get_auto_decommission_actions(ctx, health_report);
     }
 
+    auto pinning = detect_pinning_violations(ctx);
+    result.last_pinning_violations_count = pinning.count;
+
     // early exit if theres nothing to be done
     if (
       result.violations.is_empty() && ctx.decommissioning_nodes.empty()
@@ -2408,7 +2795,7 @@ partition_balancer_planner::plan_actions(
       && _state.nodes_to_rebalance().empty()
       && _state.topics().partitions_to_force_recover().empty()
       && !_config.ondemand_rebalance_requested
-      && !ctx._maybe_node_to_auto_decommission.has_value()) {
+      && !ctx._maybe_node_to_auto_decommission.has_value() && !pinning.any()) {
         result.status = status::empty;
         co_return result;
     }
@@ -2426,6 +2813,7 @@ partition_balancer_planner::plan_actions(
           change_reason::node_unavailable);
         co_await get_full_node_actions(ctx);
         co_await get_rack_constraint_repair_actions(ctx);
+        co_await get_replica_pinning_repair_actions(ctx, result, pinning);
     }
     co_await get_counts_rebalancing_actions(ctx);
     co_await get_force_repair_actions(ctx);

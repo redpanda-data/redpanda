@@ -17,6 +17,7 @@
 #include "base/oncore.h"
 #include "base/vassert.h"
 #include "cluster/types.h"
+#include "config/replicas_preference.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 
@@ -357,6 +358,9 @@ struct allocation_request {
     // objective.
     std::optional<node2count_t> existing_replica_counts;
 
+    // if present, the allocator inserts a replica pinning soft constraint
+    std::optional<config::replicas_preference> replicas_preference;
+
     fmt::iterator format_to(fmt::iterator it) const;
 };
 
@@ -391,6 +395,9 @@ struct simple_allocation_request {
     // if present, new partitions will be allocated using topic-aware counts
     // objective.
     std::optional<node2count_t> existing_replica_counts;
+
+    // if present, the allocator inserts a replica pinning soft constraint
+    std::optional<config::replicas_preference> replicas_preference;
 
     fmt::iterator format_to(fmt::iterator it) const;
 };

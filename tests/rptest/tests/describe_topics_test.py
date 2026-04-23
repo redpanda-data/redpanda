@@ -249,6 +249,13 @@ class DescribeTopicsTest(RedpandaTest):
                 value="none",
                 doc_string="Preferred location (e.g. rack) for partition leaders of this topic.",
             ),
+            "redpanda.replicas.preference": ConfigProperty(
+                config_type="STRING",
+                value="none",
+                doc_string="Preferred rack placement for replicas of this topic. "
+                "Priority-ordered with optional grouping, e.g. "
+                '"racks: A, {B, C}, D".',
+            ),
             "delete.retention.ms": ConfigProperty(
                 config_type="LONG",
                 value="-1",

@@ -13,6 +13,8 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/leaders_preference.h"
+#include "config/replicas_preference.h"
+#include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
@@ -98,7 +100,7 @@ create_topic_properties_update(
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 44,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 45,
       "If you add a property, decide on its default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -401,6 +403,27 @@ create_topic_properties_update(
                   kafka::config_resource_operation::set,
                   feature_enabled_validator,
                   config::leaders_preference::parse);
+                continue;
+            }
+            if (cfg.name == topic_property_replicas_preference) {
+                auto enterprise_validator =
+                  [&feature_table = ctx.feature_table().local()](
+                    const ss::sstring&, const config::replicas_preference& rp)
+                  -> std::optional<ss::sstring> {
+                    if (
+                      rp.type == config::replicas_preference::type_t::racks
+                      && feature_table.should_sanction()) {
+                        return features::enterprise_error_message::
+                          default_replicas_preference();
+                    }
+                    return std::nullopt;
+                };
+                parse_and_set_optional(
+                  update.properties.replicas_preference,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  enterprise_validator,
+                  config::replicas_preference::parse);
                 continue;
             }
             if (cfg.name == topic_property_delete_retention_ms) {

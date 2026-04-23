@@ -337,6 +337,7 @@ partition_allocator::allocate(simple_allocation_request simple_req) {
           model::partition_id(p), simple_req.replication_factor);
     }
     req.existing_replica_counts = std::move(simple_req.existing_replica_counts);
+    req.replicas_preference = std::move(simple_req.replicas_preference);
 
     co_return co_await do_allocate(std::move(req));
 }
@@ -393,6 +394,11 @@ partition_allocator::do_allocate(allocation_request request) {
         }
 
         auto effective_constraints = default_constraints();
+        if (request.replicas_preference) {
+            effective_constraints.ensure_new_level();
+            effective_constraints.add(replica_pinning_preferred(
+              *request.replicas_preference, _members.local()));
+        }
         if (node2count) {
             effective_constraints.ensure_new_level();
             effective_constraints.add(

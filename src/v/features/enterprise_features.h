@@ -32,6 +32,7 @@ enum class license_required_feature {
     fips,
     datalake_iceberg,
     leadership_pinning,
+    replica_pinning,
     shadow_linking,
     cloud_topics,
     topic_deletion_disabled,
@@ -61,6 +62,8 @@ inline fmt::iterator format_to(license_required_feature f, fmt::iterator out) {
         return fmt::format_to(out, "datalake_iceberg");
     case license_required_feature::leadership_pinning:
         return fmt::format_to(out, "leadership_pinning");
+    case license_required_feature::replica_pinning:
+        return fmt::format_to(out, "replica_pinning");
     case license_required_feature::shadow_linking:
         return fmt::format_to(out, "shadow_linking");
     case license_required_feature::cloud_topics:

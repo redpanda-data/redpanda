@@ -10,6 +10,7 @@
 
 #include "base/units.h"
 #include "cluster/types.h"
+#include "config/replicas_preference.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
@@ -78,6 +79,8 @@ inline cluster::topic_properties random_topic_properties() {
       {model::redpanda_storage_mode::local,
        model::redpanda_storage_mode::tiered,
        model::redpanda_storage_mode::cloud});
+    properties.replicas_preference = tests::random_optional(
+      [] { return config::replicas_preference::parse("racks: A, {B, C}, D"); });
 
     return properties;
 }

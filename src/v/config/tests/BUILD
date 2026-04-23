@@ -224,6 +224,28 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_gtest(
+    name = "replicas_preference_test",
+    timeout = "short",
+    srcs = [
+        "replicas_preference_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/config",
+        "//src/v/serde",
+        "//src/v/serde:enum",
+        "//src/v/serde:named_type",
+        "//src/v/serde:sstring",
+        "//src/v/serde:vector",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "enterprise_property_test",
     timeout = "short",
     srcs = [

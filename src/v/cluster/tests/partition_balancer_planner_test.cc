@@ -8,10 +8,12 @@
 // by the Apache License, Version 2.0
 
 #include "base/vlog.h"
+#include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
 #include "cluster/data_migrated_resources.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/tests/partition_balancer_planner_fixture.h"
+#include "config/replicas_preference.h"
 #include "test_utils/boost_fixture.h"
 
 #include <seastar/util/defer.hh>
@@ -1072,4 +1074,459 @@ FIXTURE_TEST(
     BOOST_REQUIRE(successes > 0);
     BOOST_REQUIRE(failures > 0);
     BOOST_REQUIRE(reassignments > 0);
+}
+
+/*
+ * 4 nodes in 4 racks; 1 topic with 1 partition, RF=3.
+ * Replicas placed on racks B, C, D. Preference is "racks: A, B, C".
+ * Planner should move the replica from rack D to rack A.
+ */
+FIXTURE_TEST(test_replica_pinning_repair, partition_balancer_planner_fixture) {
+    allocator_register_nodes(4, {"rack_A", "rack_B", "rack_C", "rack_D"});
+    create_topic("topic-1", {{n(1), n(2), n(3)}});
+
+    // Set replicas_preference on the topic.
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    check_violations(plan_data, {}, {});
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
+
+    // The reassignment should move the replica from node 3 (rack_D) to
+    // node 0 (rack_A).
+    const auto& new_replicas = plan_data.reassignments[0].allocated.replicas();
+    BOOST_REQUIRE_EQUAL(new_replicas.size(), 3);
+    absl::flat_hash_set<model::node_id> new_nodes;
+    for (const auto& bs : new_replicas) {
+        new_nodes.insert(bs.node_id);
+    }
+    BOOST_REQUIRE(new_nodes.contains(n(0)));
+    BOOST_REQUIRE(!new_nodes.contains(n(3)));
+    BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 0);
+}
+
+/*
+ * Test is_pinning_violated detection through topic property changes and
+ * partition lifecycle events, and that the planner detects and repairs
+ * violations.
+ */
+FIXTURE_TEST(
+  test_planner_reports_pinning_violations_count,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(4, {"rack_A", "rack_B", "rack_C", "rack_D"});
+
+    model::topic topic{"topic-1"};
+
+    // Create topic with replicas: p0 on {B, C, D}, p1 on {A, B, C}.
+    create_topic(topic(), {{n(1), n(2), n(3)}, {n(0), n(1), n(2)}});
+
+    // Set preference: racks: rack_A, rack_B, rack_C.
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns(topic()), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    // Run planner — p0 on {B, C, D} is violated (rack_D not in preference),
+    // p1 on {A, B, C} is satisfied. Should produce 1 reassignment.
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 1);
+}
+
+/*
+ * Test that removing replicas_preference clears all pinning violations
+ * for a topic.
+ */
+FIXTURE_TEST(
+  test_pinning_violations_cleared_when_preference_removed,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(4, {"rack_A", "rack_B", "rack_C", "rack_D"});
+
+    model::topic topic{"topic-1"};
+    model::ntp ntp0{test_ns, topic, 0};
+
+    // Create topic with replicas on B, C, D (nodes 1, 2, 3).
+    create_topic(topic(), {{n(1), n(2), n(3)}});
+
+    // Set preference: rack_A, rack_B, rack_C -> p0 violated (on rack_D).
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns(topic()), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    // Run planner to detect violations.
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 1);
+
+    // Remove preference by setting to none.
+    cluster::incremental_topic_updates remove_updates;
+    remove_updates.replicas_preference.op
+      = cluster::incremental_update_operation::remove;
+    cluster::update_topic_properties_cmd remove_cmd{
+      make_tp_ns(topic()), std::move(remove_updates)};
+    workers.dispatch_topic_command(std::move(remove_cmd));
+
+    // Re-run planner — no violations after preference removed.
+    auto planner2 = make_planner();
+    auto plan_data2 = planner2.plan_actions(hr, as).get();
+    BOOST_REQUIRE_EQUAL(plan_data2.last_pinning_violations_count, 0);
+}
+
+/*
+ * Test that when all replicas are already on preferred racks, no pinning
+ * violation is detected and the planner produces no moves.
+ */
+FIXTURE_TEST(
+  test_replica_pinning_no_op_when_optimal, partition_balancer_planner_fixture) {
+    allocator_register_nodes(3, {"rack_A", "rack_B", "rack_C"});
+    create_topic("topic-1", {{n(0), n(1), n(2)}});
+
+    // Set preference: rack_A, rack_B, rack_C — matches current placement.
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 0);
+}
+
+/*
+ * Test that multiple partitions with pinning violations are all tracked
+ * and the planner generates repair actions for each.
+ */
+FIXTURE_TEST(
+  test_replica_pinning_multiple_violations,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(4, {"rack_A", "rack_B", "rack_C", "rack_D"});
+
+    model::topic topic{"topic-1"};
+    model::ntp ntp0{test_ns, topic, 0};
+    model::ntp ntp1{test_ns, topic, 1};
+
+    // Both partitions have a replica on rack_D (node 3).
+    create_topic(topic(), {{n(1), n(2), n(3)}, {n(1), n(2), n(3)}});
+
+    // Set preference: rack_A, rack_B, rack_C.
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns(topic()), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    // Both partitions should get repair actions.
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 2);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 0);
+}
+
+/*
+ * Test that is_pinning_violated returns false when preference type is none
+ * (exercised through the state tracking path).
+ */
+FIXTURE_TEST(
+  test_state_no_violation_with_preference_none,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(4, {"rack_A", "rack_B", "rack_C", "rack_D"});
+
+    // Create topic on rack_B, rack_C, rack_D.
+    create_topic("topic-1", {{n(1), n(2), n(3)}});
+
+    // Set preference to type none explicitly.
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = config::replicas_preference{};
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 0);
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+}
+
+/*
+ * Test A: rack awareness OFF, preference "racks: rack_A".
+ * 3 nodes in rack_A (nodes 0,1,2), 1 in rack_B (node 3), 1 in rack_C (node 4).
+ * RF=3, replicas on nodes 0, 3, 4 (racks A, B, C).
+ * With rack awareness OFF, capacity of group 0 (rack_A) = 3 nodes, which can
+ * hold all 3 replicas. So ideal = {A, A, A}. Actual has replicas on B and C.
+ * Expected: violation detected, repair moves replicas off B and C to A nodes.
+ */
+FIXTURE_TEST(
+  test_pinning_rack_off_all_on_preferred,
+  partition_balancer_planner_no_rack_fixture) {
+    // 3 nodes in rack_A, 1 in rack_B, 1 in rack_C
+    allocator_register_nodes(
+      5, {"rack_A", "rack_A", "rack_A", "rack_B", "rack_C"});
+    // RF=3, replicas on nodes 0 (A), 3 (B), 4 (C)
+    create_topic("topic-1", {{n(0), n(3), n(4)}});
+
+    auto pref = config::replicas_preference::parse("racks: rack_A");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    // Planner should generate one reassignment moving the worst replica to A.
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
+
+    // The reassignment should have moved one non-A replica to a rack_A node.
+    // Original: {0(A), 3(B), 4(C)}. After one repair pass, one of B/C moves
+    // to an A node, producing e.g. {0(A), 3(B), 1(A)} or {0(A), 1(A), 4(C)}.
+    const auto& new_replicas = plan_data.reassignments[0].allocated.replicas();
+    BOOST_REQUIRE_EQUAL(new_replicas.size(), 3);
+    int rack_a_count = 0;
+    for (const auto& bs : new_replicas) {
+        auto rack = workers.members.local().get_node_rack_id(bs.node_id);
+        BOOST_REQUIRE(rack);
+        if (*rack == model::rack_id{"rack_A"}) {
+            rack_a_count++;
+        }
+    }
+    // Should have strictly more A replicas than the original (which had 1).
+    BOOST_REQUIRE_GE(rack_a_count, 2);
+}
+
+/*
+ * Test B: rack awareness OFF, preference "racks: rack_A, rack_B".
+ * 4 nodes in rack_A (nodes 0-3), 1 in rack_B (node 4).
+ * RF=3, replicas on nodes 0, 1, 4 (racks A, A, B).
+ * With rack awareness OFF, capacity of group 0 = 4 nodes. Ideal fills A first:
+ * {A, A, A}. Actual has one on B.
+ * Expected: violation detected.
+ */
+FIXTURE_TEST(
+  test_pinning_rack_off_overflow_not_needed,
+  partition_balancer_planner_no_rack_fixture) {
+    // 4 nodes in rack_A, 1 in rack_B
+    allocator_register_nodes(
+      5, {"rack_A", "rack_A", "rack_A", "rack_A", "rack_B"});
+    // RF=3, replicas on nodes 0 (A), 1 (A), 4 (B)
+    create_topic("topic-1", {{n(0), n(1), n(4)}});
+
+    auto pref = config::replicas_preference::parse("racks: rack_A, rack_B");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    // Violation: A has capacity 4 > RF 3, so all 3 should fit on A.
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 1);
+}
+
+/*
+ * Test C: rack awareness OFF, preference "racks: rack_A, rack_B, rack_C".
+ * 2 nodes in A (0,1), 2 in B (2,3), 1 in C (4).
+ * RF=3, replicas on nodes 0, 2, 4 (racks A, B, C).
+ * With rack awareness OFF: A capacity=2, B capacity=2, C capacity=1.
+ * Ideal: fill A first -> 2 on A, overflow 1 to B. Ideal = {A, A, B}.
+ * Actual = {A, B, C}. Violation: C replica should move to A.
+ */
+FIXTURE_TEST(
+  test_pinning_rack_off_fill_overflow,
+  partition_balancer_planner_no_rack_fixture) {
+    allocator_register_nodes(
+      5, {"rack_A", "rack_A", "rack_B", "rack_B", "rack_C"});
+    create_topic("topic-1", {{n(0), n(2), n(4)}});
+
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    // Violation: ideal is A=2, B=1 but actual is A=1, B=1, C=1.
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 1);
+}
+
+/*
+ * Test D: rack awareness OFF, preference "racks: rack_A, rack_B". No-op.
+ * 2 nodes in A (0,1), 2 in B (2,3), 1 in C (4).
+ * RF=3, replicas on nodes 0, 1, 2 (racks A, A, B).
+ * With rack awareness OFF: A capacity=2, B capacity=2. Fill A first -> 2, then
+ * overflow 1 to B. Ideal = {A, A, B} = actual.
+ * Expected: NO violation.
+ */
+FIXTURE_TEST(
+  test_pinning_rack_off_no_violation_matches_ideal,
+  partition_balancer_planner_no_rack_fixture) {
+    allocator_register_nodes(
+      5, {"rack_A", "rack_A", "rack_B", "rack_B", "rack_C"});
+    create_topic("topic-1", {{n(0), n(1), n(2)}});
+
+    auto pref = config::replicas_preference::parse("racks: rack_A, rack_B");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 0);
+}
+
+/*
+ * Test E: rack awareness ON, preference "racks: rack_A, rack_B, rack_C".
+ * 3 nodes in rack_A (0,1,2), 1 in B (3), 1 in C (4).
+ * RF=3, replicas on nodes 0, 3, 4 (racks A, B, C).
+ * With rack awareness ON, each rack can hold at most 1 replica (rack
+ * diversity). So capacity per group: A=1, B=1, C=1. Ideal = {A, B, C} = actual.
+ * Expected: NO violation.
+ */
+FIXTURE_TEST(
+  test_pinning_rack_on_diversity_caps_capacity,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(
+      5, {"rack_A", "rack_A", "rack_A", "rack_B", "rack_C"});
+    create_topic("topic-1", {{n(0), n(3), n(4)}});
+
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    // No violation: rack awareness ON caps each rack at 1 replica.
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 0);
+}
+
+/*
+ * Test that plan_actions returns empty when pinning is enabled and all
+ * replicas already satisfy the preference.
+ */
+FIXTURE_TEST(
+  test_plan_actions_early_exits_when_pinning_satisfied,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(3, {"rack_A", "rack_B", "rack_C"});
+    create_topic("topic-1", {{n(0), n(1), n(2)}});
+
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    // Pinning enabled, no violations -> empty early-exit.
+    BOOST_REQUIRE(
+      plan_data.status == cluster::partition_balancer_planner::status::empty);
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 0);
+}
+
+/*
+ * Test that plan_data.last_pinning_violations_count is populated even
+ * when violations cause the planner to proceed past the early-exit.
+ */
+FIXTURE_TEST(
+  test_plan_actions_exposes_pinning_count_pre_action,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(4, {"rack_A", "rack_B", "rack_C", "rack_D"});
+    create_topic("topic-1", {{n(1), n(2), n(3)}});
+
+    auto pref = config::replicas_preference::parse(
+      "racks: rack_A, rack_B, rack_C");
+    cluster::incremental_topic_updates updates;
+    updates.replicas_preference.op = cluster::incremental_update_operation::set;
+    updates.replicas_preference.value = pref;
+    cluster::update_topic_properties_cmd cmd{
+      make_tp_ns("topic-1"), std::move(updates)};
+    workers.dispatch_topic_command(std::move(cmd));
+
+    auto hr = create_health_report();
+    populate_node_status_table().get();
+    auto planner = make_planner();
+    auto plan_data = planner.plan_actions(hr, as).get();
+
+    BOOST_REQUIRE_EQUAL(plan_data.last_pinning_violations_count, 1);
+    BOOST_REQUIRE(
+      plan_data.status != cluster::partition_balancer_planner::status::empty);
 }

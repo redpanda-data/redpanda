@@ -77,6 +77,7 @@ inline auto disallowed_topic_properties = std::to_array<std::string_view>({
   kafka::topic_property_remote_allow_gaps,
   kafka::topic_property_mpx_virtual_cluster_id,
   kafka::topic_property_leaders_preference,
+  kafka::topic_property_replicas_preference,
 });
 
 /**

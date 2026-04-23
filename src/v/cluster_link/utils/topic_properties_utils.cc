@@ -242,6 +242,14 @@ bool maybe_append_update(
           topic_config.properties.leaders_preference,
           kafka::noop_validator<config::leaders_preference>{});
     }
+    if (config_name == kafka::topic_property_replicas_preference) {
+        return parse_and_set(
+          topic_config.tp_ns,
+          update.properties.replicas_preference,
+          config_value,
+          topic_config.properties.replicas_preference,
+          kafka::noop_validator<config::replicas_preference>{});
+    }
     if (config_name == kafka::topic_property_delete_retention_ms) {
         return parse_and_set(
           topic_config.tp_ns,

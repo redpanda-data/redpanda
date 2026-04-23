@@ -11,6 +11,8 @@
 
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/replicas_preference.h"
+#include "container/chunked_vector.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/configs/config_utils.h"
 #include "model/compression.h"
@@ -167,6 +169,16 @@ get_leaders_preference(const config_map_t& config) {
     return std::nullopt;
 }
 
+static std::optional<config::replicas_preference>
+get_replicas_preference(const config_map_t& config) {
+    if (
+      auto it = config.find(topic_property_replicas_preference);
+      it != config.end()) {
+        return config::replicas_preference::parse(it->second);
+    }
+    return std::nullopt;
+}
+
 static tristate<std::chrono::milliseconds>
 get_delete_retention_ms(const config_map_t& config) {
     auto delete_retention_ms = get_tristate_value<std::chrono::milliseconds>(
@@ -299,6 +311,9 @@ cluster::topic_configuration to_topic_config(
           .value_or(storage::ntp_config::default_iceberg_mode);
 
     cfg.properties.leaders_preference = get_leaders_preference(config_entries);
+
+    cfg.properties.replicas_preference = get_replicas_preference(
+      config_entries);
 
     cfg.properties.delete_retention_ms = get_delete_retention_ms(
       config_entries);

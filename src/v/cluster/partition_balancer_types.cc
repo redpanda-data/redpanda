@@ -160,6 +160,8 @@ fmt::iterator format_to(change_reason e, fmt::iterator out) {
         return fmt::format_to(out, "node_unavailable");
     case change_reason::disk_full:
         return fmt::format_to(out, "disk_full");
+    case change_reason::replica_pinning_repair:
+        return fmt::format_to(out, "replica_pinning_repair");
     }
 }
 fmt::iterator format_to(reallocation_error e, fmt::iterator out) {

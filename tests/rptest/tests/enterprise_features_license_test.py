@@ -5,7 +5,7 @@ import requests
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.admin import (
     Admin,
     EnterpriseLicenseStatus,
@@ -49,6 +49,7 @@ class Feature(IntEnum):
     shadow_linking = 13
     cloud_topics = 14
     topic_deletion_disabled = 15
+    replica_pinning = 16
 
 
 def to_enterprise_feature(feature):
@@ -82,6 +83,7 @@ FEATURE_DEPENDENT_CONFIG = {
     Feature.shadow_linking: "enable_shadow_linking",
     Feature.cloud_topics: CLOUD_TOPICS_CONFIG_STR,
     Feature.topic_deletion_disabled: "delete_topic_enable",
+    Feature.replica_pinning: "redpanda.replicas.preference",
 }
 
 SKIP_FEATURES = [
@@ -255,6 +257,13 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
                 replicas=1,
                 config={"redpanda.leaders.preference": "racks:rack1"},
             )
+        elif feature == Feature.replica_pinning:
+            RpkTool(self.redpanda).create_topic(
+                "foo",
+                partitions=1,
+                replicas=1,
+                config={"redpanda.replicas.preference": "racks:rack1"},
+            )
         elif feature == Feature.shadow_linking:
             self.redpanda.set_cluster_config({"enable_shadow_linking": "true"})
         elif feature == Feature.cloud_topics:
@@ -295,10 +304,21 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
         if has_license:
             self.try_enable_feature(feature)
         else:
+
+            def matches(e):
+                if isinstance(e, RpkException):
+                    # Kafka-side enterprise rejection references the license,
+                    # not the topic property name -- e.g.
+                    # "A Redpanda Enterprise Edition license is required to
+                    # enable (replica pinning). ..."
+                    return "Enterprise" in str(e) and "license" in str(e)
+                return (
+                    e.response.status_code == 403
+                    or FEATURE_DEPENDENT_CONFIG[feature] in e.response.json().keys()
+                )
+
             with expect_exception(
-                requests.exceptions.HTTPError,
-                lambda e: e.response.status_code == 403
-                or FEATURE_DEPENDENT_CONFIG[feature] in e.response.json().keys(),
+                (requests.exceptions.HTTPError, RpkException), matches
             ):
                 self.try_enable_feature(feature)
 

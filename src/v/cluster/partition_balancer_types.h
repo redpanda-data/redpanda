@@ -135,6 +135,7 @@ enum class change_reason {
     node_decommissioning,
     node_unavailable,
     disk_full,
+    replica_pinning_repair,
 };
 
 fmt::iterator format_to(change_reason rep, fmt::iterator);

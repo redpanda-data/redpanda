@@ -16,6 +16,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "config/replicas_preference.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/metadata.h"
 
@@ -183,7 +184,8 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> ||
         std::is_same_v<T, model::vcluster_id> ||
         std::is_same_v<T, model::write_caching_mode> ||
-        std::is_same_v<T, config::leaders_preference> || std::is_same_v<T, model::iceberg_mode> ||
+        std::is_same_v<T, config::leaders_preference> ||
+        std::is_same_v<T, config::replicas_preference> || std::is_same_v<T, model::iceberg_mode> ||
         std::is_same_v<T, model::iceberg_invalid_record_action> ||
         std::is_same_v<T, model::redpanda_storage_mode>;
 
@@ -1050,6 +1052,23 @@ config_response_container_t make_topic_configs(
         include_documentation,
         "Preferred location (e.g. rack) for partition leaders of this topic."),
       &describe_as_string<config::leaders_preference>);
+
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      topic_property_replicas_preference,
+      topic_properties.replicas_preference,
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        "Preferred rack placement for replicas of this topic. "
+        "Priority-ordered with optional grouping, e.g. "
+        "\"racks: A, {B, C}, D\"."),
+      [](const std::optional<config::replicas_preference>& property)
+        -> std::optional<ss::sstring> {
+          return describe_as_string(
+            property.value_or(config::replicas_preference{}));
+      });
 
     if (topic_properties.iceberg_mode != model::iceberg_mode::disabled) {
         add_topic_config_if_requested(

@@ -591,7 +591,7 @@ struct property_update<tristate<T>>
 struct incremental_topic_updates
   : serde::envelope<
       incremental_topic_updates,
-      serde::version<10>,
+      serde::version<11>,
       serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
@@ -662,6 +662,8 @@ struct incremental_topic_updates
       incremental_update_operation::none};
     property_update<std::optional<config::leaders_preference>>
       leaders_preference;
+    property_update<std::optional<config::replicas_preference>>
+      replicas_preference;
     property_update<tristate<std::chrono::milliseconds>> delete_retention_ms;
     property_update<std::optional<bool>> iceberg_delete;
     property_update<std::optional<ss::sstring>> iceberg_partition_spec;
@@ -745,7 +747,8 @@ struct incremental_topic_updates
           message_timestamp_before_max_ms,
           message_timestamp_after_max_ms,
           remote_label,
-          storage_mode);
+          storage_mode,
+          replicas_preference);
     }
 
     fmt::iterator format_to(fmt::iterator it) const;

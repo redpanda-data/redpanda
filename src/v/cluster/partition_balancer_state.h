@@ -13,6 +13,9 @@
 #include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_set.h"
 #include "cluster/fwd.h"
+#include "cluster/notification.h"
+#include "cluster/types.h"
+#include "container/chunked_vector.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -32,12 +35,22 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<node_status_table>&);
+    partition_balancer_state(const partition_balancer_state&) = delete;
+    partition_balancer_state(partition_balancer_state&&) = delete;
+    partition_balancer_state&
+    operator=(const partition_balancer_state&) = delete;
+    partition_balancer_state& operator=(partition_balancer_state&&) = delete;
+    ~partition_balancer_state() = default;
+
+    ss::future<> stop();
 
     topic_table& topics() const { return _topic_table; }
 
     members_table& members() const { return _members_table; }
 
     node_status_table& node_status() const { return _node_status; }
+
+    bool is_rack_awareness_enabled() const;
 
     const absl::btree_set<model::ntp>&
     ntps_with_broken_rack_constraint() const {
@@ -58,6 +71,29 @@ public:
           model::revision_id>(
           [&]() { return _ntps_with_broken_rack_constraint_revision; },
           _ntps_with_broken_rack_constraint.end());
+    }
+
+    /// Topics whose `replicas_preference` is currently set to a non-"none"
+    /// type. Seeded by ensure_pinning_cache_seeded() from a full topic_table
+    /// scan on first use, then maintained incrementally via topic_table
+    /// delta notifications. Only populated on shard 0 (the balancer shard).
+    const absl::btree_set<model::topic_namespace>&
+    topics_with_replica_pinning() const {
+        return _topics_with_replica_pinning;
+    }
+
+    /// Bootstrap the pinning cache from topic_table if not yet seeded.
+    /// Idempotent; cheap after the first call within a term.
+    void ensure_pinning_cache_seeded();
+
+    /// Invalidate the pinning cache so the next
+    /// ensure_pinning_cache_seeded() call re-scans topic_table. Also clears
+    /// the current contents so a caller reading between reset and re-seed
+    /// does not observe stale data. Call on raft0 term change or when
+    /// topic_table is rebuilt from a controller snapshot.
+    void reset_pinning_cache() {
+        _pinning_cache_seeded = false;
+        _topics_with_replica_pinning.clear();
     }
 
     /// Called when the replica set of an ntp changes. Note that this doesn't
@@ -108,6 +144,13 @@ private:
     model::revision_id _ntps_with_broken_rack_constraint_revision;
     absl::flat_hash_set<model::node_id> _nodes_to_rebalance;
     probe _probe;
+
+    absl::btree_set<model::topic_namespace> _topics_with_replica_pinning;
+    bool _pinning_cache_seeded{false};
+    cluster::notification_id_type _topic_deltas_handle{
+      cluster::notification_id_type_invalid};
+
+    void handle_topic_deltas(const chunked_vector<topic_table_topic_delta>&);
 };
 
 } // namespace cluster

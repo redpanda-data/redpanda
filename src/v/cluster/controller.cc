@@ -1016,6 +1016,7 @@ ss::future<> controller::stop() {
     co_await _data_migrated_resources.stop();
     co_await _roles.stop();
     co_await _credentials.stop();
+    co_await _partition_balancer_state.stop();
     co_await _tp_state.stop();
     co_await _members_manager.stop();
     co_await _epoch_service.stop();

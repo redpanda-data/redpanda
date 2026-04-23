@@ -69,7 +69,7 @@ create_allocation_node(model::node_id nid, uint32_t cores) {
 
 struct controller_workers {
 public:
-    controller_workers()
+    explicit controller_workers(bool rack_awareness_enabled = true)
       : dispatcher(allocator, table, state) {
         migrated_resources.start().get();
         table
@@ -96,7 +96,7 @@ public:
                 {model::kafka_audit_logging_topic,
                  "__consumer_offsets",
                  "_schemas"}}),
-            config::mock_binding<bool>(true))
+            config::mock_binding<bool>(rack_awareness_enabled))
           .get();
         config::shard_local_cfg().topic_memory_per_partition.set_value(
           std::nullopt);
@@ -185,6 +185,10 @@ public:
 };
 
 struct partition_balancer_planner_fixture {
+    explicit partition_balancer_planner_fixture(
+      bool rack_awareness_enabled = true)
+      : workers(rack_awareness_enabled) {}
+
     cluster::partition_balancer_planner make_planner(
       model::partition_autobalancing_mode mode
       = model::partition_autobalancing_mode::continuous,
@@ -427,4 +431,11 @@ struct partition_balancer_planner_fixture {
     controller_workers workers;
     int last_node_idx{};
     ss::abort_source as;
+};
+
+/// Fixture variant with rack awareness disabled in the allocator.
+struct partition_balancer_planner_no_rack_fixture
+  : partition_balancer_planner_fixture {
+    partition_balancer_planner_no_rack_fixture()
+      : partition_balancer_planner_fixture(false) {}
 };

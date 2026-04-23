@@ -89,6 +89,13 @@ inline ss::sstring default_leaders_preference() {
       request_or_trial);
 }
 
+inline ss::sstring default_replicas_preference() {
+    return ssx::sformat(
+      R"({} to use the enterprise feature "replica pinning".  This feature is disabled.  The values of the topic property "redpanda.replicas.preference" are being ignored. {})",
+      required,
+      request_or_trial);
+}
+
 inline ss::sstring topic_property(auto features) {
     return ssx::sformat(
       "{} to enable ({}). {}.",

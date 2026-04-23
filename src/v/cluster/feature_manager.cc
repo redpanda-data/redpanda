@@ -22,6 +22,7 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
+#include "config/replicas_preference.h"
 #include "config/sasl_mechanisms.h"
 #include "config/tls_config.h"
 #include "config/types.h"
@@ -273,6 +274,22 @@ feature_manager::report_enterprise_features() const {
     report.set(
       features::license_required_feature::leadership_pinning,
       leadership_pinning_enabled());
+    auto replica_pinning_enabled = [this] {
+        const config::replicas_preference no_replicas_preference{};
+        for (const auto& topic : _topic_table.local().topics_map()) {
+            const auto replicas_preference
+              = topic.second.get_configuration().properties.replicas_preference;
+            if (
+              replicas_preference.has_value()
+              && replicas_preference.value() != no_replicas_preference) {
+                return true;
+            }
+        }
+        return false;
+    };
+    report.set(
+      features::license_required_feature::replica_pinning,
+      replica_pinning_enabled());
     report.set(
       features::license_required_feature::shadow_linking,
       cfg.enable_shadow_linking());
