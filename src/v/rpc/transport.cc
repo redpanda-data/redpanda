@@ -459,7 +459,8 @@ void transport::setup_metrics(
       "rpc_client",
       labels,
       aggregate_labels,
-      _probe->defs(labels, aggregate_labels));
+      _probe->defs(
+        labels, aggregate_labels, [this] { return _correlations.size(); }));
 }
 
 timing_info* transport::get_timing(uint32_t correlation) {
@@ -489,7 +490,8 @@ std::ostream& operator<<(std::ostream& o, const transport& t) {
 
 std::vector<ss::metrics::metric_definition> client_probe::defs(
   const std::vector<ss::metrics::label_instance>& labels,
-  const std::vector<ss::metrics::label>& aggregate_labels) {
+  const std::vector<ss::metrics::label>& aggregate_labels,
+  std::function<size_t()> pending_count) {
     namespace sm = ss::metrics;
     std::vector<sm::metric_definition> ret;
 
@@ -504,7 +506,7 @@ std::vector<ss::metrics::metric_definition> client_probe::defs(
     ret.emplace_back(
       sm::make_gauge(
         "requests_pending",
-        [this] { return _requests_pending; },
+        [pending_count = std::move(pending_count)] { return pending_count(); },
         sm::description("Number of requests pending"),
         labels)
         .aggregate(aggregate_labels));
@@ -588,7 +590,6 @@ std::vector<ss::metrics::metric_definition> client_probe::defs(
 std::ostream& operator<<(std::ostream& o, const client_probe& p) {
     o << "{"
       << " requests_sent: " << p._requests
-      << ", requests_pending: " << p._requests_pending
       << ", requests_completed: " << p._requests_completed
       << ", request_errors: " << p._request_errors
       << ", request_timeouts: " << p._request_timeouts
