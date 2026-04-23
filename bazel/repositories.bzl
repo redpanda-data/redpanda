@@ -162,13 +162,15 @@ def data_dependency():
         url = "https://github.com/redpanda-data/CRoaring/archive/c433d1c70c10fb2e40f049e019e2abbcafa6e69d.tar.gz",
     )
 
-    # branch: v26.2.x-pre
+    # branch: rp_log_filter (adds force_tag overloads for the per-callsite
+    # log filter). Flip back to redpanda-data/seastar once the upstream PR
+    # merges.
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "9c572c5111ef6b4f0afc6ba358696c0e2a78e118bc3c3617cf6454a9d98970de",
-        strip_prefix = "seastar-617d3c421a949f449942d7ce0d275af0997efb48",
-        url = "https://github.com/redpanda-data/seastar/archive/617d3c421a949f449942d7ce0d275af0997efb48.tar.gz",
+        sha256 = "77feafdc928dc12b6a261ece933c19e070b901061fa56ff2114c1ded850afb1e",
+        strip_prefix = "seastar-8948822a046413306b8da155ab85674545ab7f04",
+        url = "https://github.com/WillemKauf/seastar/archive/8948822a046413306b8da155ab85674545ab7f04.tar.gz",
     )
 
     http_archive(
