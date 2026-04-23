@@ -1250,6 +1250,7 @@ redpanda_cc_bench(
     srcs = ["health_monitor_bench.cc"],
     deps = [
         "//src/v/cluster:health_monitor_types",
+        "//src/v/serde",
         "@seastar",
         "@seastar//:benchmark",
     ],
