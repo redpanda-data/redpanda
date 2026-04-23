@@ -42,7 +42,7 @@ def now():
 
 class DataMigrationTestMixin(RedpandaTest):
     def get_admin(self, redpanda: RedpandaService) -> Admin:
-        return Admin(redpanda, timeout_seconds=5)
+        return Admin(redpanda, timeout_seconds=5, retries_amount=7)
 
     def wait_partitions_appear(
         self, topics: list[TopicSpec], redpanda: RedpandaService | None = None
