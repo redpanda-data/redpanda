@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Install mitmproxy into an isolated venv so its typing-extensions
+# requirement (<=4.11.0) does not conflict with tests/setup.py's pinned
+# typing-extensions==4.15. We only use the mitmdump binary from
+# MitmproxyService, so no Python imports are required from the test code.
+
+set -euo pipefail
+
+VENV=/opt/mitmproxy-venv
+# Pin for reproducible CI: mitmproxy's CLI flags and log format
+# evolve across versions (MitmproxyService.assert_proxied_host parses
+# the access log), so floating the version would make test behavior
+# depend on when the docker image was rebuilt.
+MITMPROXY_VERSION=11.0.2
+
+python3 -m venv "$VENV"
+"$VENV/bin/pip" install --no-cache-dir "mitmproxy==${MITMPROXY_VERSION}"
+
+# Expose the mitmdump binary on the system PATH via a symlink so
+# MitmproxyService.start_node's `mitmdump` command resolves.
+ln -sf "$VENV/bin/mitmdump" /usr/local/bin/mitmdump
+ln -sf "$VENV/bin/mitmproxy" /usr/local/bin/mitmproxy
