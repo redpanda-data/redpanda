@@ -40,7 +40,7 @@ go_test(
     embed = [":ai"],
     deps = [
         "//src/go/rpk/pkg/config",
-        "@build_buf_gen_go_redpandadata_cloud_protocolbuffers_go//redpanda/api/controlplane/v1",
+        "@build_buf_gen_go_redpandadata_cloud_protocolbuffers_go//redpanda/api/controlplane/v1:controlplane",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_stretchr_testify//require",
