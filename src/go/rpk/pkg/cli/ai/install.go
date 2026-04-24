@@ -12,7 +12,6 @@ package ai
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
@@ -119,7 +118,7 @@ func downloadAndInstallRpai(ctx context.Context, fs afero.Fs, installPath, downl
 		if rpkos.IsRunningSudo() {
 			return "", fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the plugin as a root owned binary in %s", installPath)
 		}
-		if err := os.MkdirAll(installPath, 0o755); err != nil {
+		if err := fs.MkdirAll(installPath, 0o755); err != nil {
 			return "", fmt.Errorf("unable to create plugin directory %s: %v", installPath, err)
 		}
 	}
@@ -131,15 +130,18 @@ func downloadAndInstallRpai(ctx context.Context, fs afero.Fs, installPath, downl
 	return path, nil
 }
 
-// validateVersion validates that the provided version in the flag is either
-// 'latest' or it's a full semantic version.
+// validateVersion validates that the provided version flag is either
+// 'latest' or starts with a MAJOR.MINOR.PATCH prefix (optionally v-prefixed).
+// The regex is intentionally loose on the suffix so prereleases like
+// "0.1.2-rc1" are accepted and forwarded to the manifest for lookup; the
+// manifest is then the source of truth for what's actually published.
 func validateVersion(version string) error {
 	if version == "latest" {
 		return nil
 	}
 	vMatch := regexp.MustCompile(`^v?\d{1,2}\.\d{1,2}\.\d{1,2}`).MatchString(version)
 	if !vMatch {
-		return fmt.Errorf("provided version %q is not valid. Ensure is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 0.1.2)", version)
+		return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 0.1.2)", version)
 	}
 	return nil
 }

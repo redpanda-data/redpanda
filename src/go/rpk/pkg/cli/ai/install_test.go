@@ -104,6 +104,31 @@ func TestInstallRpai_Download(t *testing.T) {
 	require.True(t, info.Mode().Perm()&0o111 != 0, "installed binary should be executable")
 }
 
+// TestInstallRpai_CreatesMissingBinDir confirms the install path creates
+// ~/.local/bin through the afero.Fs when it doesn't exist yet, so tests
+// using a non-OS filesystem behave the same way as production.
+func TestInstallRpai_CreatesMissingBinDir(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+
+	innerBin := []byte("fake-rpai-binary")
+	tarGz, sha := fakeRpaiTarGz(t, innerBin)
+	ts := installServer(t, tarGz, sha)
+	defer ts.Close()
+	t.Setenv("RPK_PLUGIN_REPOSITORY", ts.URL)
+
+	// Fresh memfs — no ~/.local/bin precreated. installRpai must mkdir it
+	// through the passed afero.Fs, not via os.MkdirAll on the host.
+	fs := afero.NewMemMapFs()
+
+	path, _, err := installRpai(t.Context(), fs, "latest")
+	require.NoError(t, err)
+	require.Equal(t, "/home/testuser/.local/bin/.rpk.managed-rpai", path)
+
+	exists, err := afero.DirExists(fs, "/home/testuser/.local/bin")
+	require.NoError(t, err)
+	require.True(t, exists, "install path should have been created on the afero.Fs")
+}
+
 func TestInstallRpai_VersionLookup(t *testing.T) {
 	t.Setenv("HOME", "/home/testuser")
 

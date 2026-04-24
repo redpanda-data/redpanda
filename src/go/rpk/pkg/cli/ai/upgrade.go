@@ -31,7 +31,7 @@ func upgradeCommand(fs afero.Fs) *cobra.Command {
 		Run: func(cmd *cobra.Command, _ []string) {
 			maybeExitFIPS()
 			pluginDir, err := plugin.DefaultBinPath()
-			out.MaybeDie(err, "unable to determine managed plugin path: %w", err)
+			out.MaybeDie(err, "unable to determine managed plugin path: %v", err)
 			rpai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("rpai")
 			if !pluginExists {
 				out.Die("unable to find the Redpanda AI CLI plugin. You may install it running 'rpk ai install'")
