@@ -3907,6 +3907,25 @@ configuration::configuration()
           }
           return std::nullopt;
       })
+  , oidc_http_proxy_url(
+      *this,
+      "oidc_http_proxy_url",
+      "URL of the HTTP forward proxy used for OIDC discovery and JWKS "
+      "fetches. Accepts http://host:port or https://host:port. When "
+      "set, oidc_discovery_url must use https:// — plaintext OIDC "
+      "origins cannot be routed through a forward proxy.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      [](const auto& v) -> std::optional<ss::sstring> {
+          if (!v.has_value()) {
+              return std::nullopt;
+          }
+          auto res = security::oidc::parse_url(*v);
+          if (res.has_error()) {
+              return res.error().message();
+          }
+          return std::nullopt;
+      })
   , oidc_token_audience(
       *this,
       "oidc_token_audience",

@@ -685,6 +685,7 @@ struct configuration final : public config_store {
 
     // oidc authentication
     property<ss::sstring> oidc_discovery_url;
+    property<std::optional<ss::sstring>> oidc_http_proxy_url;
     property<ss::sstring> oidc_token_audience;
     property<std::chrono::seconds> oidc_clock_skew_tolerance;
     property<ss::sstring> oidc_principal_mapping;
