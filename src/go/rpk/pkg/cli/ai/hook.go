@@ -34,86 +34,77 @@ const (
 	flagRpaiEndpoint = "rpai-endpoint"
 )
 
-// applyHook prepares a `rpk ai ...` invocation. It:
-//   - strips rpk-global flags from args,
-//   - loads the cloud token (refreshing via OAuth if needed),
-//   - resolves the active cluster's AI Gateway v2 endpoint,
-//   - sets RPAI_TOKEN and RPAI_ENDPOINT for the child plugin process,
+// resolveAndInjectEnv loads the cloud config, refreshes the token, resolves
+// the active cluster's AI Gateway v2 endpoint, and exports both to the
+// caller's environment so the child rpai process picks them up on exec.
 //
-// and returns the remaining args to pass to the plugin.
+// Env var writes are skipped when the variable is already present (explicit
+// RPAI_TOKEN / RPAI_ENDPOINT from the user win). If the invocation carries
+// --rpai-endpoint on the plugin command line, endpoint resolution is skipped
+// — rpai itself will consume the flag.
 //
-// The hook skips env var writes when the variable is already set in the
-// caller's environment — an explicit RPAI_TOKEN / RPAI_ENDPOINT wins. If the
-// user passed --rpai-endpoint on the command line, endpoint resolution is
-// skipped as well (rpai itself will consume the flag).
-//
-// Token + endpoint work is skipped entirely when the invocation is a bare
-// --help / --version / no-subcommand call: those need neither auth nor a
-// live cluster.
-func applyHook(fs afero.Fs, p *config.Params, cmd *cobra.Command, args []string) ([]string, error) {
-	pluginArgs, err := parseFlags(p, cmd, args)
-	if err != nil {
-		return nil, err
-	}
-	if !needsCloudContext(pluginArgs) {
-		return pluginArgs, nil
-	}
-
+// The two short-circuit decisions (help/version, top-level-without-subcommand)
+// live in the call sites since they differ between top-level dispatch (where
+// args carries the subcommand path) and leaf dispatch (where args is the
+// leaf's positional-and-flag args only).
+func resolveAndInjectEnv(ctx context.Context, fs afero.Fs, p *config.Params, pluginArgs []string) error {
 	cfg, err := p.Load(fs)
 	if err != nil {
-		return nil, fmt.Errorf("unable to load rpk config: %w", err)
+		return fmt.Errorf("unable to load rpk config: %w", err)
 	}
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	// RPAI_TOKEN: inject unless the caller already provided one.
 	if os.Getenv(envRpaiToken) == "" {
 		token, err := getTokenOrLogin(ctx, fs, cfg)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := os.Setenv(envRpaiToken, token); err != nil {
-			return nil, fmt.Errorf("unable to set %s: %w", envRpaiToken, err)
+			return fmt.Errorf("unable to set %s: %w", envRpaiToken, err)
 		}
 	}
 
-	// RPAI_ENDPOINT: inject unless the caller already provided one via env or
-	// via --rpai-endpoint on the plugin command line.
 	if os.Getenv(envRpaiEndpoint) == "" && !hasRpaiEndpointFlag(pluginArgs) {
 		endpoint, err := resolveAigwEndpoint(ctx, cfg)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := os.Setenv(envRpaiEndpoint, endpoint); err != nil {
-			return nil, fmt.Errorf("unable to set %s: %w", envRpaiEndpoint, err)
+			return fmt.Errorf("unable to set %s: %w", envRpaiEndpoint, err)
 		}
 	}
 
-	return pluginArgs, nil
+	return nil
 }
 
-// needsCloudContext reports whether the plugin args imply that the user is
-// actually invoking a cluster-touching subcommand. Pure flag-only invocations
-// like `rpk ai --help` or `rpk ai --version` do not need a cloud token or an
-// aigw endpoint and must not trigger the OAuth browser flow. The same holds
-// for `rpk ai <subcommand> --help`: the plugin renders its own help without
-// reaching the network.
-func needsCloudContext(pluginArgs []string) bool {
-	var hasSubcommand bool
-	for _, a := range pluginArgs {
-		switch {
-		case a == "--help", a == "-h", a == "--version":
-			return false
-		case strings.HasPrefix(a, "-"):
-			continue
-		default:
-			hasSubcommand = true
+// skipCloudForHelp reports whether a --help / -h / --version flag is present,
+// in which case we must not reach out to the cloud API or trigger OAuth. The
+// rpai child process renders its own help/version output locally.
+func skipCloudForHelp(args []string) bool {
+	for _, a := range args {
+		if a == "--help" || a == "-h" || a == "--version" {
+			return true
 		}
 	}
-	return hasSubcommand
+	return false
+}
+
+// topLevelHasSubcommand reports whether the args passed to the top-level
+// `rpk ai` dispatcher contain a positional (non-flag) token. This
+// distinguishes `rpk ai llm list` (needs cloud context) from `rpk ai`
+// (bare, just renders help).
+//
+// This check is only meaningful for the top-level Run in NewCommand. When
+// cobra dispatches to a managed-plugin LEAF (e.g. `rpk ai llm list` routes
+// to the `list` leaf registered via plugin_cmds.go), args == nil — cobra
+// has already consumed the path tokens for routing, so "no positional" does
+// not imply "no subcommand" at that call site.
+func topLevelHasSubcommand(args []string) bool {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 // parseFlags splits args into plugin args + rpk-global-flags consumed by rpk,

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -55,26 +56,98 @@ func TestParseFlags_StripsRpkGlobals(t *testing.T) {
 	require.Equal(t, []string{"llm", "list", "--foo=bar"}, got)
 }
 
-func TestNeedsCloudContext(t *testing.T) {
+func TestSkipCloudForHelp(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
 		want bool
 	}{
 		{"empty", nil, false},
-		{"help long", []string{"--help"}, false},
-		{"help short", []string{"-h"}, false},
-		{"version", []string{"--version"}, false},
-		{"only unknown flags", []string{"--foo", "--bar=baz"}, false},
-		{"subcommand", []string{"llm", "list"}, true},
-		{"subcommand after flags", []string{"--format", "json", "llm", "list"}, true},
-		{"help with subcommand still skips", []string{"llm", "list", "--help"}, false},
+		{"help long", []string{"--help"}, true},
+		{"help short", []string{"-h"}, true},
+		{"version", []string{"--version"}, true},
+		{"subcommand no help", []string{"llm", "list"}, false},
+		{"subcommand then help", []string{"llm", "list", "--help"}, true},
+		{"format flag only", []string{"--format", "json"}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			require.Equal(t, c.want, needsCloudContext(c.args))
+			require.Equal(t, c.want, skipCloudForHelp(c.args))
 		})
 	}
+}
+
+func TestTopLevelHasSubcommand(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"empty (leaf dispatch style)", nil, false},
+		{"bare flag", []string{"--help"}, false},
+		{"unknown flag no value", []string{"--foo"}, false},
+		{"subcommand", []string{"llm"}, true},
+		{"nested subcommand", []string{"llm", "list"}, true},
+		{"flag then subcommand", []string{"--format", "json", "llm"}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, topLevelHasSubcommand(c.args))
+		})
+	}
+}
+
+// TestResolveAndInjectEnv_LeafDispatchHappy covers the regression this file
+// was refactored for: cobra dispatches `rpk ai llm list` straight to the
+// `list` leaf with args=nil. The leaf-side call site must still inject
+// RPAI_TOKEN and RPAI_ENDPOINT even though the args are empty.
+func TestResolveAndInjectEnv_LeafDispatchHappy(t *testing.T) {
+	t.Setenv(envRpaiToken, "")
+	t.Setenv(envRpaiEndpoint, "")
+
+	cluster := &controlplanev1.Cluster{
+		Id: "clu-1",
+		AiGateway: &controlplanev1.Cluster_AIGateway{
+			V2Url: "https://aigw.example.com",
+		},
+	}
+	ts := httptest.NewServer(clusterHandler(t, cluster))
+	defer ts.Close()
+
+	// loadCloudProfile sets RPK_CLOUD_TOKEN, which getTokenOrLogin picks up
+	// as the dev override — no OAuth flow in tests.
+	loadCloudProfile(t, ts.URL, "clu-1")
+
+	fs := afero.NewMemMapFs()
+	path, err := config.DefaultRpkYamlPath()
+	require.NoError(t, err)
+	yaml := `version: 6
+current_profile: dev
+profiles:
+  - name: dev
+    from_cloud: true
+    cloud_cluster:
+      cluster_id: "clu-1"
+`
+	require.NoError(t, afero.WriteFile(fs, path, []byte(yaml), 0o600))
+
+	// args=nil simulates leaf dispatch: cobra consumed the path tokens.
+	require.NoError(t, resolveAndInjectEnv(t.Context(), fs, new(config.Params), nil))
+	require.Equal(t, "test-token", os.Getenv(envRpaiToken), "RPAI_TOKEN must be set from dev override")
+	require.Equal(t, "https://aigw.example.com", os.Getenv(envRpaiEndpoint), "RPAI_ENDPOINT must be set from aigw v2 url")
+}
+
+// TestResolveAndInjectEnv_SkipsWhenEndpointFlagPresent confirms that passing
+// --rpai-endpoint on the command line suppresses the cluster lookup (and
+// therefore works even with no aigw-attached cluster).
+func TestResolveAndInjectEnv_SkipsWhenEndpointFlagPresent(t *testing.T) {
+	t.Setenv(envRpaiToken, "already-set")
+	t.Setenv(envRpaiEndpoint, "")
+
+	fs := afero.NewMemMapFs()
+	pluginArgs := []string{"--rpai-endpoint=https://custom.example.com", "llm", "list"}
+	require.NoError(t, resolveAndInjectEnv(t.Context(), fs, new(config.Params), pluginArgs))
+	require.Empty(t, os.Getenv(envRpaiEndpoint), "RPAI_ENDPOINT must stay unset when flag is present")
 }
 
 func TestHasRpaiEndpointFlag(t *testing.T) {

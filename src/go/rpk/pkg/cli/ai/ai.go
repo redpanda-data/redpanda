@@ -26,14 +26,22 @@ import (
 )
 
 func init() {
-	// Whenever a `rpk ai ...` managed-plugin invocation is dispatched, we
-	// run our hook to inject RPAI_TOKEN / RPAI_ENDPOINT and strip rpk
-	// global flags before the child process execs.
+	// Whenever a `rpk ai <subcommand>` managed-plugin leaf is dispatched,
+	// inject RPAI_TOKEN / RPAI_ENDPOINT and strip rpk global flags before
+	// the child rpai process is exec'd. Reaching this wrapper means cobra
+	// already routed to a real plugin leaf, so unless the user asked for
+	// --help / --version on the leaf itself (in which case rpai renders
+	// its own local help), we always need cloud context — regardless of
+	// whether the leaf takes positional args.
 	plugin.RegisterManaged("rpai", []string{"ai"}, func(cmd *cobra.Command, fs afero.Fs, p *config.Params) *cobra.Command {
 		run := cmd.Run
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			pluginArgs, err := applyHook(fs, p, cmd, args)
+			pluginArgs, err := parseFlags(p, cmd, args)
 			out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			if !skipCloudForHelp(pluginArgs) {
+				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
+				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			}
 			run(cmd, pluginArgs)
 		}
 		return cmd
@@ -50,8 +58,16 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 		DisableFlagParsing: true,                  // Required for managed plugins; we parse flags ourselves.
 		Args:               cobra.MinimumNArgs(0), // Allow `rpk ai` with no subcommand (renders help).
 		Run: func(cmd *cobra.Command, args []string) {
-			pluginArgs, err := applyHook(fs, p, cmd, args)
+			pluginArgs, err := parseFlags(p, cmd, args)
 			out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			// Top-level dispatch: args carries the full subcommand path
+			// (e.g. ["llm","list"]) when the plugin isn't installed yet.
+			// Only touch the cloud when the user actually named a
+			// subcommand and isn't asking for help/version.
+			if !skipCloudForHelp(pluginArgs) && topLevelHasSubcommand(pluginArgs) {
+				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
+				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			}
 			rpai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("rpai")
 			var pluginPath string
 			if !pluginExists {
