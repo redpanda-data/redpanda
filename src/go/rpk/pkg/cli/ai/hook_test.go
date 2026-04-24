@@ -250,6 +250,13 @@ func loadCloudProfile(t *testing.T, publicAPIURL, clusterID string) *config.Conf
 	t.Helper()
 	t.Setenv("RPK_PUBLIC_API_URL", publicAPIURL)
 	t.Setenv("RPK_CLOUD_TOKEN", "test-token")
+	// Bazel's test sandbox clears HOME, which breaks
+	// config.DefaultRpkYamlPath -> os.UserConfigDir. Pin HOME (and
+	// XDG_CONFIG_HOME for Linux) to a stable tmpdir so the path we write
+	// to is the same path the loader reads from.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home+"/.config")
 
 	fs := afero.NewMemMapFs()
 	// DefaultRpkYamlPath resolves via os.UserConfigDir, which is
