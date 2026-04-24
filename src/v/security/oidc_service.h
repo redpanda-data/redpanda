@@ -30,6 +30,7 @@ public:
         sasl_mechanisms_overrides,
       config::binding<std::vector<ss::sstring>> http_authentication,
       config::binding<ss::sstring> discovery_url,
+      config::binding<std::optional<ss::sstring>> http_proxy_url,
       config::binding<ss::sstring> token_audience,
       config::binding<std::chrono::seconds> clock_skew_tolerance,
       config::binding<ss::sstring> mapping,

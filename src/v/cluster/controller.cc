@@ -203,6 +203,9 @@ ss::future<> controller::wire_up() {
                 return config::shard_local_cfg().oidc_discovery_url.bind();
             }),
             ss::sharded_parameter([] {
+                return config::shard_local_cfg().oidc_http_proxy_url.bind();
+            }),
+            ss::sharded_parameter([] {
                 return config::shard_local_cfg().oidc_token_audience.bind();
             }),
             ss::sharded_parameter([] {
