@@ -45,9 +45,18 @@ const auto url_data = std::to_array<url_test_data>(
     security::oidc::parsed_url{"https", "example.com", 443, "/path"}},
    {"http://localhost/",
     security::oidc::parsed_url{"http", "localhost", 80, "/"}},
+   // `@` outside userinfo (in the query here) is NOT rejected — we
+   // only reject embedded credentials, not the `@` character itself.
+   {"http://example.com/?q=a@b",
+    security::oidc::parsed_url{"http", "example.com", 80, "/?q=a@b"}},
    // Invalid URLs
    {"invalid_url", std::make_error_code(std::errc::invalid_argument)},
    {"ftp://[::1]:missing_port",
+    std::make_error_code(std::errc::invalid_argument)},
+   // user:pass@host is rejected
+   {"https://user:pass@keycloak.example.com/.well-known/openid-configuration",
+    std::make_error_code(std::errc::invalid_argument)},
+   {"http://admin:secret@proxy.example.com:8080",
     std::make_error_code(std::errc::invalid_argument)}});
 BOOST_DATA_TEST_CASE(test_parse_url, bdata::make(url_data), d) {
     auto res = security::oidc::parse_url(d.test);
