@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "kafka",
@@ -19,5 +19,17 @@ go_library(
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",
         "@com_github_twmb_franz_go_plugin_kzap//:kzap",
+    ],
+)
+
+go_test(
+    name = "kafka_test",
+    size = "small",
+    srcs = ["client_franz_test.go"],
+    embed = [":kafka"],
+    deps = [
+        "//src/go/rpk/pkg/config",
+        "@com_github_spf13_afero//:afero",
+        "@com_github_stretchr_testify//require",
     ],
 )

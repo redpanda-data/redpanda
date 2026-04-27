@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "schemaregistry",
@@ -16,5 +16,17 @@ go_library(
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_sr//:sr",
         "@com_github_twmb_franz_go_plugin_kzap//:kzap",
+    ],
+)
+
+go_test(
+    name = "schemaregistry_test",
+    size = "small",
+    srcs = ["client_test.go"],
+    embed = [":schemaregistry"],
+    deps = [
+        "//src/go/rpk/pkg/config",
+        "@com_github_spf13_afero//:afero",
+        "@com_github_stretchr_testify//require",
     ],
 )
