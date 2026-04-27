@@ -993,13 +993,12 @@ ss::future<> remote_partition::run_eviction_loop() {
 
 kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
-      _manifest_view->stm_manifest().size() > 0,
-      "The manifest for {} is not expected to be empty",
+      is_data_available(),
+      "first_uploaded_offset called on {} without data available",
       _ntp);
-    auto so
-      = _manifest_view->stm_manifest().full_log_start_kafka_offset().value();
-    vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
-    return so;
+    auto so = _manifest_view->stm_manifest().full_log_start_kafka_offset();
+    vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", *so);
+    return *so;
 }
 
 kafka::offset remote_partition::next_kafka_offset() {
