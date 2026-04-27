@@ -11,6 +11,7 @@ package ai
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,7 +30,7 @@ import (
 // file, plus the sha256 (hex) of the inner binary.
 func fakeRpaiTarGz(t *testing.T, inner []byte) ([]byte, string) {
 	t.Helper()
-	var buf bytesBuffer
+	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
@@ -45,13 +46,6 @@ func fakeRpaiTarGz(t *testing.T, inner []byte) ([]byte, string) {
 	sum := sha256.Sum256(inner)
 	return buf.Bytes(), hex.EncodeToString(sum[:])
 }
-
-// bytesBuffer is a minimal alias so the test file doesn't need to import
-// bytes in a separate block while keeping the imports tidy.
-type bytesBuffer struct{ b []byte }
-
-func (b *bytesBuffer) Write(p []byte) (int, error) { b.b = append(b.b, p...); return len(p), nil }
-func (b *bytesBuffer) Bytes() []byte               { return b.b }
 
 // installServer serves /rpai/manifest.json and /rpai.tar.gz matching the
 // given binary + sha.

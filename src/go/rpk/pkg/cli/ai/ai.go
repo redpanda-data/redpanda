@@ -79,7 +79,6 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 					switch {
 					case arg == "--version":
 						fmt.Println("cannot get rpai version: the Redpanda AI CLI is not installed; run 'rpk ai install'")
-						cmd.Help()
 						return
 					case strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-"):
 						continue

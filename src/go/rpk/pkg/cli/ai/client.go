@@ -67,9 +67,7 @@ func (m *rpaiManifest) ArtifactVersion(version string) (rpaiArtifact, error) {
 // rpaiRepoClient is a client to query our repository hosting the Redpanda AI
 // CLI (rpai) plugin manifest.
 type rpaiRepoClient struct {
-	cl   *httpapi.Client
-	os   string
-	arch string
+	cl *httpapi.Client
 }
 
 func newRepoClient() (*rpaiRepoClient, error) {
@@ -83,8 +81,6 @@ func newRepoClient() (*rpaiRepoClient, error) {
 				Timeout: timeout,
 			}),
 		),
-		os:   runtime.GOOS,
-		arch: runtime.GOARCH,
 	}, nil
 }
 
