@@ -160,6 +160,8 @@ class MetricsReporterTest(RedpandaTest):
         # get the last report
         last = metadata.pop()
         assert last["topic_count"] == total_topics
+        assert last["local_topic_count"] == total_topics
+        assert last["cloud_topic_count"] == 0
         assert last["partition_count"] == total_partitions
         assert last["has_kafka_gssapi"] is False
         assert last["has_oidc"] is False
