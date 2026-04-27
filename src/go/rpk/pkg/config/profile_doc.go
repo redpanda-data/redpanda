@@ -35,7 +35,7 @@ var profileFieldDocs = map[string]string{
 	"kafka_api.sasl":                     "SASL authentication configuration",
 	"kafka_api.sasl.user":                "username for authentication",
 	"kafka_api.sasl.password":            "password for authentication",
-	"kafka_api.sasl.mechanism":           "SCRAM-SHA-256 or SCRAM-SHA-512",
+	"kafka_api.sasl.mechanism":           "SCRAM-SHA-256, SCRAM-SHA-512, PLAIN, or OAUTHBEARER",
 
 	"admin_api":                          "Admin API connection configuration",
 	"admin_api.addresses":                "Comma-separated list of Admin API addresses (host:port)",
