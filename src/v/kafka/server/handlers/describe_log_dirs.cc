@@ -25,8 +25,15 @@ namespace kafka {
 
 namespace describe_log_dirs::detail {
 
-using partition_dir_set
-  = chunked_hash_map<model::topic, chunked_vector<log_partition_data>>;
+partition_dir_set merge_partition_dir_sets(
+  partition_dir_set acc, const partition_dir_set& update) {
+    for (auto& topic : update) {
+        for (auto partition : topic.second) {
+            acc[topic.first].push_back(std::move(partition));
+        }
+    }
+    return acc;
+}
 
 ss::future<log_partition_data>
 describe_partition(kafka::partition_proxy& p, bool include_remote) {
@@ -106,14 +113,7 @@ static ss::future<partition_dir_set> collect(
           return collect_mapper(pm, filter, include_remote);
       },
       partition_dir_set{},
-      [](partition_dir_set acc, const partition_dir_set& update) {
-          for (auto& topic : update) {
-              for (auto partition : topic.second) {
-                  acc[topic.first].push_back(std::move(partition));
-              }
-          }
-          return acc;
-      });
+      merge_partition_dir_sets);
 }
 
 } // namespace describe_log_dirs::detail

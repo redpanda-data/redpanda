@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "container/chunked_hash_map.h"
+#include "container/chunked_vector.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/describe_log_dirs.h"
 #include "kafka/server/handlers/handler.h"
@@ -27,8 +29,18 @@ struct log_partition_data {
     std::optional<describe_log_dirs_partition> remote;
 };
 
+using partition_dir_set
+  = chunked_hash_map<model::topic, chunked_vector<log_partition_data>>;
+
 ss::future<log_partition_data>
 describe_partition(kafka::partition_proxy& p, bool include_remote);
+
+/// Merges per-shard partition_dir_sets produced by collect_mapper into a
+/// single accumulator. Topics present in update have their partitions
+/// appended to acc[topic]; new topics are inserted. Used as the reducer
+/// in the map_reduce0 fan-out across shards.
+partition_dir_set merge_partition_dir_sets(
+  partition_dir_set acc, const partition_dir_set& update);
 
 } // namespace describe_log_dirs::detail
 

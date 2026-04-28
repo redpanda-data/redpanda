@@ -12,6 +12,7 @@
 #include "kafka/server/handlers/describe_log_dirs.h"
 #include "test_utils/test.h"
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <stdexcept>
@@ -138,6 +139,27 @@ model::ntp make_ntp(int32_t partition) {
       model::partition_id(partition));
 }
 
+using kafka::describe_log_dirs::detail::log_partition_data;
+using kafka::describe_log_dirs::detail::partition_dir_set;
+
+// Tag a log_partition_data with a recognizable partition_index so merge
+// tests can identify which entry came from which input set.
+log_partition_data tagged(int32_t partition_index) {
+    return log_partition_data{
+      .local = kafka::describe_log_dirs_partition{
+        .partition_index = partition_index,
+      }};
+}
+
+std::vector<int32_t> indexes(const chunked_vector<log_partition_data>& v) {
+    std::vector<int32_t> out;
+    out.reserve(v.size());
+    for (const auto& e : v) {
+        out.push_back(e.local.partition_index);
+    }
+    return out;
+}
+
 } // namespace
 
 using kafka::describe_log_dirs::detail::describe_partition;
@@ -183,4 +205,62 @@ TEST_CORO(DescribePartition, NegativeOffsetLagClampsAtZero) {
     auto data = co_await describe_partition(proxy, /*include_remote=*/false);
 
     EXPECT_EQ(data.local.offset_lag, 0);
+}
+
+using kafka::describe_log_dirs::detail::merge_partition_dir_sets;
+
+TEST(MergePartitionDirSets, BothEmpty) {
+    auto out = merge_partition_dir_sets({}, {});
+    EXPECT_TRUE(out.empty());
+}
+
+TEST(MergePartitionDirSets, EmptyAccCarriesUpdateThrough) {
+    partition_dir_set update;
+    update[model::topic("t1")].push_back(tagged(0));
+    update[model::topic("t1")].push_back(tagged(1));
+
+    auto out = merge_partition_dir_sets({}, update);
+
+    ASSERT_EQ(out.size(), 1);
+    EXPECT_THAT(indexes(out[model::topic("t1")]), ::testing::ElementsAre(0, 1));
+}
+
+TEST(MergePartitionDirSets, EmptyUpdateLeavesAccUnchanged) {
+    partition_dir_set acc;
+    acc[model::topic("t1")].push_back(tagged(7));
+
+    auto out = merge_partition_dir_sets(std::move(acc), {});
+
+    ASSERT_EQ(out.size(), 1);
+    EXPECT_THAT(indexes(out[model::topic("t1")]), ::testing::ElementsAre(7));
+}
+
+TEST(MergePartitionDirSets, DisjointTopicsAreUnioned) {
+    partition_dir_set acc;
+    acc[model::topic("t1")].push_back(tagged(1));
+
+    partition_dir_set update;
+    update[model::topic("t2")].push_back(tagged(2));
+
+    auto out = merge_partition_dir_sets(std::move(acc), update);
+
+    ASSERT_EQ(out.size(), 2);
+    EXPECT_THAT(indexes(out[model::topic("t1")]), ::testing::ElementsAre(1));
+    EXPECT_THAT(indexes(out[model::topic("t2")]), ::testing::ElementsAre(2));
+}
+
+TEST(MergePartitionDirSets, OverlappingTopicAppendsUpdateAfterAcc) {
+    partition_dir_set acc;
+    acc[model::topic("t1")].push_back(tagged(10));
+    acc[model::topic("t1")].push_back(tagged(11));
+
+    partition_dir_set update;
+    update[model::topic("t1")].push_back(tagged(20));
+    update[model::topic("t1")].push_back(tagged(21));
+
+    auto out = merge_partition_dir_sets(std::move(acc), update);
+
+    ASSERT_EQ(out.size(), 1);
+    EXPECT_THAT(
+      indexes(out[model::topic("t1")]), ::testing::ElementsAre(10, 11, 20, 21));
 }
