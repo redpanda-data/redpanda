@@ -620,6 +620,7 @@ struct configuration final : public config_store {
     property<ss::sstring> metrics_reporter_url;
 
     property<bool> features_auto_enable;
+    enterprise<property<bool>> features_auto_finalization;
 
     // enables rack aware replica assignment
     property<bool> enable_rack_awareness;
