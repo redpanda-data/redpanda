@@ -1,4 +1,5 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_gtest")
 
 redpanda_cc_library(
     name = "qdc_monitor_config",
@@ -558,6 +559,21 @@ redpanda_cc_library(
         "//src/v/raft",
         "//src/v/raft:fundamental",
         "//src/v/ssx:future_util",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "describe_log_dirs_test",
+    timeout = "short",
+    srcs = [
+        "handlers/describe_log_dirs_test.cc",
+    ],
+    deps = [
+        ":server",
+        "//src/v/kafka/data:partition_proxy",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
         "@seastar",
     ],
 )

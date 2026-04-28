@@ -23,15 +23,12 @@
 
 namespace kafka {
 
-struct log_partition_data {
-    describe_log_dirs_partition local;
-    std::optional<describe_log_dirs_partition> remote;
-};
+namespace describe_log_dirs::detail {
 
 using partition_dir_set
   = chunked_hash_map<model::topic, chunked_vector<log_partition_data>>;
 
-static ss::future<log_partition_data>
+ss::future<log_partition_data>
 describe_partition(kafka::partition_proxy& p, bool include_remote) {
     auto result = log_partition_data{
       .local = describe_log_dirs_partition{
@@ -122,6 +119,8 @@ static ss::future<partition_dir_set> collect(
       });
 }
 
+} // namespace describe_log_dirs::detail
+
 template<>
 ss::future<response_ptr> describe_log_dirs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
@@ -166,7 +165,7 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
 
     auto include_remote = config::shard_local_cfg()
                             .kafka_enable_describe_log_dirs_remote_storage();
-    auto partitions = co_await collect(
+    auto partitions = co_await describe_log_dirs::detail::collect(
       ctx, std::move(request.data.topics), include_remote);
     while (!partitions.empty()) {
         auto node = partitions.extract(partitions.begin());
