@@ -36,9 +36,9 @@ func installCommand(fs afero.Fs) *cobra.Command {
 
 This command installs the latest version by default.
 
-Alternatively, you may specify an rpai version using the --rpai-version flag.
+Alternatively, you may specify an rpk ai version using the --ai-version flag.
 
-You may force the installation of rpai using the --force flag.
+You may force the installation using the --force flag.
 `,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -46,41 +46,41 @@ You may force the installation of rpai using the --force flag.
 			version = strings.ToLower(version)
 			err := validateVersion(version)
 			out.MaybeDieErr(err)
-			_, installed := plugin.ListPlugins(fs, plugin.UserPaths()).Find("rpai")
+			_, installed := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
 			if installed && !force {
 				if version != "latest" {
 					out.Exit("The Redpanda AI CLI is already installed. Use --force to force installation, or delete the current version with 'rpk ai uninstall' first")
 				}
 				out.Exit("The Redpanda AI CLI is already installed.\nIf you want to upgrade to the latest version, please run 'rpk ai upgrade'")
 			}
-			_, installedVersion, err := installRpai(cmd.Context(), fs, version)
-			out.MaybeDie(err, "unable to install the Redpanda AI CLI: %v; if running in an air-gapped environment you may install 'rpai' with your package manager", err)
+			_, installedVersion, err := installAIPlugin(cmd.Context(), fs, version)
+			out.MaybeDie(err, "unable to install the rpk ai plugin: %v; if running in an air-gapped environment you may install it manually with your package manager", err)
 
 			fmt.Printf("Redpanda AI CLI %v successfully installed.\n", installedVersion)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Force install of the Redpanda AI CLI")
-	cmd.Flags().StringVar(&version, "rpai-version", "latest", "Redpanda AI CLI version to install (e.g. 0.1.2)")
+	cmd.Flags().StringVar(&version, "ai-version", "latest", "Redpanda AI CLI version to install (e.g. 0.1.2)")
 	return cmd
 }
 
-// installRpai installs the Redpanda AI CLI plugin in the default location.
-// A "latest" or empty version string downloads the latest published version.
-func installRpai(ctx context.Context, fs afero.Fs, version string) (path, installedVersion string, err error) {
+// installAIPlugin installs the rpk ai plugin in the default location. A
+// "latest" or empty version string downloads the latest published version.
+func installAIPlugin(ctx context.Context, fs afero.Fs, version string) (path, installedVersion string, err error) {
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
 		return "", "", fmt.Errorf("unable to determine plugin default path: %v", err)
 	}
 
-	art, ver, err := getRpaiArtifact(ctx, version)
+	art, ver, err := getAIPluginArtifact(ctx, version)
 	if err != nil {
 		return "", "", err
 	}
-	path, err = downloadAndInstallRpai(ctx, fs, pluginDir, art.Path, art.Sha256)
+	path, err = downloadAndInstallAIPlugin(ctx, fs, pluginDir, art.Path, art.Sha256)
 	return path, ver, err
 }
 
-func getRpaiArtifact(ctx context.Context, version string) (plugin.RepoArtifact, string, error) {
+func getAIPluginArtifact(ctx context.Context, version string) (plugin.RepoArtifact, string, error) {
 	plCl, err := newRepoClient()
 	if err != nil {
 		return plugin.RepoArtifact{}, "", err
@@ -99,7 +99,7 @@ func getRpaiArtifact(ctx context.Context, version string) (plugin.RepoArtifact, 
 	return art, version, nil
 }
 
-func downloadAndInstallRpai(ctx context.Context, fs afero.Fs, installPath, downloadURL, expShaPrefix string) (string, error) {
+func downloadAndInstallAIPlugin(ctx context.Context, fs afero.Fs, installPath, downloadURL, expShaPrefix string) (string, error) {
 	bin, err := plugin.Download(ctx, downloadURL, true, expShaPrefix)
 	if err != nil {
 		return "", fmt.Errorf("unable to download the Redpanda AI CLI from %q: %v", downloadURL, err)
@@ -113,10 +113,10 @@ func downloadAndInstallRpai(ctx context.Context, fs afero.Fs, installPath, downl
 			return "", fmt.Errorf("unable to create plugin directory %s: %v", installPath, err)
 		}
 	}
-	zap.L().Sugar().Debugf("writing rpai plugin to %v", installPath)
-	path, err := plugin.WriteBinary(fs, "rpai", installPath, bin, false, true)
+	zap.L().Sugar().Debugf("writing rpk ai plugin to %v", installPath)
+	path, err := plugin.WriteBinary(fs, rpaiPluginSlug, installPath, bin, false, true)
 	if err != nil {
-		return "", fmt.Errorf("unable to write rpai plugin: %v", err)
+		return "", fmt.Errorf("unable to write rpk ai plugin: %v", err)
 	}
 	return path, nil
 }
@@ -137,8 +137,8 @@ func validateVersion(version string) error {
 	return nil
 }
 
-// maybeExitFIPS exits with a clear error if fips is enabled. rpai does not yet
-// ship a FIPS build.
+// maybeExitFIPS exits with a clear error if fips is enabled. The rpk ai
+// plugin does not yet ship a FIPS build.
 func maybeExitFIPS() {
 	if fips.IsEnabled() {
 		out.Die("the Redpanda AI CLI is not yet available in FIPS mode")

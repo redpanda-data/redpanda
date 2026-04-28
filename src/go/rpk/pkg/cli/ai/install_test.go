@@ -26,8 +26,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeRpaiTarGz returns a .tar.gz archive containing a single rpai-binary
-// file, plus the sha256 (hex) of the inner binary.
+// fakeRpaiTarGz returns a .tar.gz archive containing a single rpk ai plugin
+// binary file, plus the sha256 (hex) of the inner binary.
 func fakeRpaiTarGz(t *testing.T, inner []byte) ([]byte, string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -47,8 +47,8 @@ func fakeRpaiTarGz(t *testing.T, inner []byte) ([]byte, string) {
 	return buf.Bytes(), hex.EncodeToString(sum[:])
 }
 
-// installServer serves /rpai/manifest.json and /rpai.tar.gz matching the
-// given binary + sha.
+// installServer serves the rpk ai plugin manifest + tarball matching the
+// given binary + sha at the slug-derived paths the manifest client expects.
 func installServer(t *testing.T, tarGz []byte, sha string) *httptest.Server {
 	t.Helper()
 	osArch := runtime.GOOS + "-" + runtime.GOARCH
@@ -84,7 +84,7 @@ func TestInstallRpai_Download(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	require.NoError(t, fs.MkdirAll("/home/testuser/.local/bin", 0o755))
 
-	path, version, err := installRpai(t.Context(), fs, "latest")
+	path, version, err := installAIPlugin(t.Context(), fs, "latest")
 	require.NoError(t, err)
 	require.Equal(t, "0.2.0", version)
 	require.Equal(t, "/home/testuser/.local/bin/.rpk.managed-rpai", path)
@@ -110,11 +110,11 @@ func TestInstallRpai_CreatesMissingBinDir(t *testing.T) {
 	defer ts.Close()
 	t.Setenv("RPK_PLUGIN_REPOSITORY", ts.URL)
 
-	// Fresh memfs — no ~/.local/bin precreated. installRpai must mkdir it
+	// Fresh memfs — no ~/.local/bin precreated. installAIPlugin must mkdir it
 	// through the passed afero.Fs, not via os.MkdirAll on the host.
 	fs := afero.NewMemMapFs()
 
-	path, _, err := installRpai(t.Context(), fs, "latest")
+	path, _, err := installAIPlugin(t.Context(), fs, "latest")
 	require.NoError(t, err)
 	require.Equal(t, "/home/testuser/.local/bin/.rpk.managed-rpai", path)
 
@@ -153,7 +153,7 @@ func TestInstallRpai_VersionLookup(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	require.NoError(t, fs.MkdirAll("/home/testuser/.local/bin", 0o755))
 
-	_, version, err := installRpai(t.Context(), fs, "0.1.0")
+	_, version, err := installAIPlugin(t.Context(), fs, "0.1.0")
 	require.NoError(t, err)
 	require.Equal(t, "0.1.0", version)
 }
@@ -171,7 +171,7 @@ func TestInstallRpai_SHAMismatch(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	require.NoError(t, fs.MkdirAll("/home/testuser/.local/bin", 0o755))
 
-	_, _, err := installRpai(t.Context(), fs, "latest")
+	_, _, err := installAIPlugin(t.Context(), fs, "latest")
 	require.Error(t, err)
 	require.True(t,
 		strings.Contains(err.Error(), "checksum") || strings.Contains(err.Error(), "does not contain expected"),

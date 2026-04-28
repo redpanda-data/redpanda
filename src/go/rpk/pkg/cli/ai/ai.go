@@ -7,9 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Package ai wires the Redpanda AI CLI (rpai) into rpk as a managed plugin.
-// Users interact with it as `rpk ai ...`; on-disk the binary lives at
-// ~/.local/bin/.rpk.managed-rpai.
+// Package ai wires the Redpanda AI CLI into rpk as a managed plugin. Users
+// interact with it as `rpk ai ...`; on-disk the binary is the standard rpk
+// managed-plugin layout under ~/.local/bin.
 package ai
 
 import (
@@ -27,13 +27,13 @@ import (
 
 func init() {
 	// Whenever a `rpk ai <subcommand>` managed-plugin leaf is dispatched,
-	// inject RPAI_TOKEN / RPAI_ENDPOINT and strip rpk global flags before
-	// the child rpai process is exec'd. Reaching this wrapper means cobra
-	// already routed to a real plugin leaf, so unless the user asked for
-	// --help / --version on the leaf itself (in which case rpai renders
-	// its own local help), we always need cloud context — regardless of
-	// whether the leaf takes positional args.
-	plugin.RegisterManaged("rpai", []string{"ai"}, func(cmd *cobra.Command, fs afero.Fs, p *config.Params) *cobra.Command {
+	// inject the plugin's token/endpoint env vars and strip rpk global
+	// flags before the child process is exec'd. Reaching this wrapper
+	// means cobra already routed to a real plugin leaf, so unless the user
+	// asked for --help / --version on the leaf itself (in which case the
+	// plugin renders its own local help), we always need cloud context —
+	// regardless of whether the leaf takes positional args.
+	plugin.RegisterManaged(rpaiPluginSlug, []string{"ai"}, func(cmd *cobra.Command, fs afero.Fs, p *config.Params) *cobra.Command {
 		run := cmd.Run
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			pluginArgs, err := parseFlags(p, cmd, args)
@@ -48,13 +48,13 @@ func init() {
 	})
 }
 
-// NewCommand returns the top-level `rpk ai` cobra command. If the rpai plugin
-// is already installed, `rpk ai <sub>` hands off to it; otherwise we
+// NewCommand returns the top-level `rpk ai` cobra command. If the rpk ai
+// plugin is already installed, `rpk ai <sub>` hands off to it; otherwise we
 // auto-install on first subcommand use, matching the rpk connect pattern.
 func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                "ai",
-		Short:              "Manage the Redpanda AI Gateway via rpai",
+		Short:              "Manage the Redpanda AI Gateway",
 		DisableFlagParsing: true,                  // Required for managed plugins; we parse flags ourselves.
 		Args:               cobra.MinimumNArgs(0), // Allow `rpk ai` with no subcommand (renders help).
 		Run: func(cmd *cobra.Command, args []string) {
@@ -68,7 +68,7 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
 				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
 			}
-			rpai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("rpai")
+			ai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
 			var pluginPath string
 			if !pluginExists {
 				// Without the plugin present, only download when the user
@@ -78,7 +78,7 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 				for _, arg := range pluginArgs {
 					switch {
 					case arg == "--version":
-						fmt.Println("cannot get rpai version: the Redpanda AI CLI is not installed; run 'rpk ai install'")
+						fmt.Println("cannot get version: the rpk ai plugin is not installed; run 'rpk ai install'")
 						return
 					case strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-"):
 						continue
@@ -93,27 +93,27 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 				// FIPS is only blocked once we're committed to installing —
 				// `rpk ai`, `rpk ai --help`, and `rpk ai --version` (handled
 				// above) all return without touching the network, so they
-				// remain usable on FIPS builds even though rpai itself does
-				// not yet ship a FIPS variant.
+				// remain usable on FIPS builds even though the rpk ai plugin
+				// does not yet ship a FIPS variant.
 				maybeExitFIPS()
 				fmt.Fprintln(os.Stderr, "Downloading latest Redpanda AI CLI")
-				path, _, err := installRpai(cmd.Context(), fs, "latest")
-				out.MaybeDie(err, "unable to install the Redpanda AI CLI: %v; if running in an air-gapped environment you may install 'rpai' with your package manager", err)
+				path, _, err := installAIPlugin(cmd.Context(), fs, "latest")
+				out.MaybeDie(err, "unable to install the rpk ai plugin: %v; if running in an air-gapped environment you may install it manually with your package manager", err)
 				pluginPath = path
 			}
 			if pluginExists {
-				pluginPath = rpai.Path
-				if !rpai.Managed {
-					zap.L().Sugar().Warn("rpk is using a self-managed version of the Redpanda AI CLI. If you want rpk to manage rpai, run 'rpk ai uninstall && rpk ai install'. To continue managing rpai manually, keep using your existing rpai install.")
+				pluginPath = ai.Path
+				if !ai.Managed {
+					zap.L().Sugar().Warn("rpk is using a self-managed version of the rpk ai plugin. If you want rpk to manage it, run 'rpk ai uninstall && rpk ai install'. To continue managing it manually, keep using your existing install.")
 				}
 			}
 			if cmd.Flags().Changed("help") {
 				cmd.Help()
 				return
 			}
-			zap.L().Debug("executing rpai plugin", zap.String("path", pluginPath), zap.Strings("args", pluginArgs))
+			zap.L().Debug("executing rpk ai plugin", zap.String("path", pluginPath), zap.Strings("args", pluginArgs))
 			err = execFn(pluginPath, pluginArgs)
-			out.MaybeDie(err, "unable to execute the Redpanda AI CLI plugin: %v", err)
+			out.MaybeDie(err, "unable to execute the rpk ai plugin: %v", err)
 		},
 	}
 	cmd.AddCommand(

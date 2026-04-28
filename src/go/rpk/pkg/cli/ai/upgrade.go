@@ -32,27 +32,27 @@ func upgradeCommand(fs afero.Fs) *cobra.Command {
 			maybeExitFIPS()
 			pluginDir, err := plugin.DefaultBinPath()
 			out.MaybeDie(err, "unable to determine managed plugin path: %v", err)
-			rpai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("rpai")
+			ai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
 			if !pluginExists {
-				out.Die("unable to find the Redpanda AI CLI plugin. You may install it running 'rpk ai install'")
+				out.Die("unable to find the Redpanda AI CLI. You may install it running 'rpk ai install'")
 			}
-			// We only manage the .rpk.managed-rpai copy under
-			// ~/.local/bin. If the user supplied their own rpai (manually
-			// downloaded, installed via a package manager, etc.), it lives
-			// outside our managed prefix and we don't try to overwrite it.
-			if !rpai.Managed {
-				out.Die("found a self-managed Redpanda AI CLI plugin; unfortunately, we cannot upgrade it with this installation. Run rpk ai uninstall && rpk ai install, or to continue managing rpai manually, keep using the rpai package you installed")
+			// We only manage the rpk-installed copy under ~/.local/bin.
+			// If the user supplied their own copy (manually downloaded,
+			// installed via a package manager, etc.), it lives outside
+			// our managed prefix and we don't try to overwrite it.
+			if !ai.Managed {
+				out.Die("found a self-managed Redpanda AI CLI; unfortunately, we cannot upgrade it with this installation. Run 'rpk ai uninstall && rpk ai install', or to keep managing it manually, keep using the version you installed")
 			}
-			art, version, err := getRpaiArtifact(cmd.Context(), "latest")
+			art, version, err := getAIPluginArtifact(cmd.Context(), "latest")
 			out.MaybeDieErr(err)
 
-			currentSha, err := plugin.Sha256Path(fs, rpai.Path)
-			out.MaybeDie(err, "unable to determine the sha256sum of the current Redpanda AI CLI %q: %v", rpai.Path, err)
+			currentSha, err := plugin.Sha256Path(fs, ai.Path)
+			out.MaybeDie(err, "unable to determine the sha256sum of the current Redpanda AI CLI %q: %v", ai.Path, err)
 
 			if strings.HasPrefix(currentSha, art.Sha256) {
 				out.Exit("Redpanda AI CLI already up-to-date")
 			}
-			currentVersion, err := rpaiVersion(cmd.Context(), rpai.Path)
+			currentVersion, err := aiPluginVersion(cmd.Context(), ai.Path)
 			out.MaybeDie(err, "unable to determine current version of the Redpanda AI CLI: %v", err)
 
 			if !noConfirm {
@@ -67,7 +67,7 @@ func upgradeCommand(fs afero.Fs) *cobra.Command {
 				}
 			}
 
-			_, err = downloadAndInstallRpai(cmd.Context(), fs, pluginDir, art.Path, art.Sha256)
+			_, err = downloadAndInstallAIPlugin(cmd.Context(), fs, pluginDir, art.Path, art.Sha256)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Redpanda AI CLI successfully upgraded from %v to the latest version (%v).\n", currentVersion.String(), version)
@@ -77,16 +77,16 @@ func upgradeCommand(fs afero.Fs) *cobra.Command {
 	return cmd
 }
 
-// rpaiVersion executes the rpai plugin with `--version` and parses the current
-// version from the output.
-func rpaiVersion(ctx context.Context, rpaiPath string) (redpanda.Version, error) {
-	versionCmd := exec.CommandContext(ctx, rpaiPath, "--version")
+// aiPluginVersion executes the rpk ai plugin with `--version` and parses the
+// current version from the output.
+func aiPluginVersion(ctx context.Context, pluginPath string) (redpanda.Version, error) {
+	versionCmd := exec.CommandContext(ctx, pluginPath, "--version")
 	var sb strings.Builder
 	versionCmd.Stdout = &sb
 	if err := versionCmd.Run(); err != nil {
 		return redpanda.Version{}, err
 	}
-	// rpai --version output:
+	// Output forms we accept:
 	//   rpai version X.Y.Z (commit abc, built at ...)
 	// or (goreleaser default):
 	//   Version: X.Y.Z

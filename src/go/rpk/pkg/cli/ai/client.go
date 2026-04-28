@@ -11,9 +11,11 @@ package ai
 
 import "github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 
-// rpaiPluginSlug is the path component used in the manifest URL —
-// `<repo>/rpai/manifest.json`. Lives next to the connect plugin under the
-// same managed-plugin host.
+// rpaiPluginSlug is the on-disk + manifest-path identifier for the rpk ai
+// plugin: the binary lands at ~/.local/bin/.rpk.managed-rpai and the manifest
+// lives at <repo>/rpai/manifest.json. Lives next to the connect plugin under
+// the same managed-plugin host. Kept lowercase + private so we don't surface
+// the slug in user-facing strings.
 const (
 	rpaiPluginSlug  = "rpai"
 	rpaiDisplayName = "Redpanda AI CLI"

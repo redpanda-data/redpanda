@@ -21,14 +21,14 @@ import (
 func uninstallCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Uninstall the Redpanda AI CLI plugin",
+		Short: "Uninstall the Redpanda AI CLI",
 		Args:  cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) {
-			rpai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("rpai")
+			ai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
 			if !pluginExists {
-				out.Exit("The Redpanda AI CLI managed plugin is not installed!")
+				out.Exit("The Redpanda AI CLI is not installed!")
 			}
-			ops, anyFailed := rpai.Uninstall(true)
+			ops, anyFailed := ai.Uninstall(true)
 			tw := out.NewTable("PATH", "MESSAGE")
 			defer func() {
 				tw.Flush()
