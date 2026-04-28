@@ -53,14 +53,14 @@ describe_partition(kafka::partition_proxy& p, bool include_remote) {
 
 static ss::future<partition_dir_set> collect_mapper(
   cluster::partition_manager& pm,
-  const std::optional<std::vector<describable_log_dir_topic>>& topics,
+  const chunked_vector<describable_log_dir_topic>* topics,
   bool include_remote) {
     partition_dir_set ret;
 
     /*
      * return all partitions
      */
-    if (!topics) {
+    if (topics == nullptr) {
         for (const auto& partition : pm.partitions()) {
             auto ktp = model::ktp(
               partition.second->ntp().tp.topic,
@@ -92,20 +92,17 @@ static ss::future<partition_dir_set> collect_mapper(
 
 /*
  * collect log directory information for partitions
+ *
+ * filter is borrowed: it is owned by the awaiting handle() coroutine,
+ * which outlives this map_reduce0. Read-only sharing across shards is
+ * safe.
  */
 static ss::future<partition_dir_set> collect(
   request_context& ctx,
-  std::optional<chunked_vector<describable_log_dir_topic>> filter,
+  const chunked_vector<describable_log_dir_topic>* filter,
   bool include_remote) {
-    std::optional<std::vector<describable_log_dir_topic>> filter_v;
-    if (filter) {
-        filter_v.emplace(
-          std::make_move_iterator(filter->begin()),
-          std::make_move_iterator(filter->end()));
-    }
     return ctx.partition_manager().map_reduce0(
-      [filter{std::move(filter_v)},
-       include_remote](cluster::partition_manager& pm) {
+      [filter, include_remote](cluster::partition_manager& pm) {
           return collect_mapper(pm, filter, include_remote);
       },
       partition_dir_set{},
@@ -165,8 +162,10 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
 
     auto include_remote = config::shard_local_cfg()
                             .kafka_enable_describe_log_dirs_remote_storage();
+    const auto* topics_filter = request.data.topics ? &*request.data.topics
+                                                    : nullptr;
     auto partitions = co_await describe_log_dirs::detail::collect(
-      ctx, std::move(request.data.topics), include_remote);
+      ctx, topics_filter, include_remote);
     while (!partitions.empty()) {
         auto node = partitions.extract(partitions.begin());
 
