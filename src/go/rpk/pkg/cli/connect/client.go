@@ -10,104 +10,23 @@
 package connect
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"net/http"
-	"os"
-	"runtime"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/fips"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 )
 
-const pluginBaseURL = "https://rpk-plugins.redpanda.com"
+const (
+	connectPluginSlug     = "connect"
+	connectFipsPluginSlug = "connect-fips"
+	connectDisplayName    = "Redpanda Connect"
+)
 
-type connectArtifact struct {
-	Path   string `json:"path"`
-	Sha256 string `json:"sha256"`
-}
-
-type archive struct {
-	Version   string                     `json:"version"`
-	IsLatest  bool                       `json:"is_latest"`
-	Artifacts map[string]connectArtifact `json:"artifacts"`
-}
-
-type connectManifest struct {
-	Archives []archive `json:"archives"`
-}
-
-func (c *connectManifest) LatestArtifact() (connectArtifact, string, error) {
-	osArch := runtime.GOOS + "-" + runtime.GOARCH
-	for _, a := range c.Archives {
-		if a.IsLatest {
-			if artifact, ok := a.Artifacts[osArch]; ok {
-				return artifact, a.Version, nil
-			} else {
-				return connectArtifact{}, "", fmt.Errorf("no artifact found for os-arch: %s in our latest release. Please report this issue with Redpanda Support", osArch)
-			}
-		}
-	}
-	return connectArtifact{}, "", errors.New("no latest artifact found. Please report this issue with Redpanda Support")
-}
-
-func (c *connectManifest) ArtifactVersion(version string) (connectArtifact, error) {
-	osArch := runtime.GOOS + "-" + runtime.GOARCH
-	for _, a := range c.Archives {
-		if a.Version == version {
-			if artifact, ok := a.Artifacts[osArch]; ok {
-				return artifact, nil
-			} else {
-				return connectArtifact{}, fmt.Errorf("no artifact found for os-arch: %s in Redpanda Connect version %q. Please report this issue with Redpanda Support", osArch, version)
-			}
-		}
-	}
-	return connectArtifact{}, fmt.Errorf("unable to find version %q", version)
-}
-
-// connectRepoClient is a client to connect against our repository containing
-// the Redpanda Connect packages.
-type connectRepoClient struct {
-	cl   *httpapi.Client
-	os   string
-	arch string
-}
-
-func newRepoClient() (*connectRepoClient, error) {
-	timeout, err := plugin.GetPluginDownloadTimeout()
-	if err != nil {
-		return nil, err
-	}
-	return &connectRepoClient{
-		cl: httpapi.NewClient(
-			httpapi.HTTPClient(&http.Client{
-				Timeout: timeout,
-			}),
-		),
-		os:   runtime.GOOS,
-		arch: runtime.GOARCH,
-	}, nil
-}
-
-func (c *connectRepoClient) Manifest(ctx context.Context) (*connectManifest, error) {
-	var manifest connectManifest
-	path := fmt.Sprintf("%v/connect/manifest.json", getPluginURL())
+// newRepoClient returns a managed-plugin manifest client targeting the
+// connect repo. When FIPS mode is enabled the client points at the
+// connect-fips manifest, which lists the FIPS-validated builds.
+func newRepoClient() (*plugin.RepoClient, error) {
+	slug := connectPluginSlug
 	if fips.IsEnabled() {
-		path = fmt.Sprintf("%v/connect-fips/manifest.json", getPluginURL())
+		slug = connectFipsPluginSlug
 	}
-	err := c.cl.Get(ctx, path, nil, &manifest)
-	if err != nil {
-		return nil, fmt.Errorf("unable to retrieve Redpanda Connect manifest: %v", err)
-	}
-	return &manifest, nil
-}
-
-func getPluginURL() string {
-	url := pluginBaseURL
-	if repoURL := os.Getenv("RPK_PLUGIN_REPOSITORY"); repoURL != "" {
-		url = repoURL
-	}
-	return url
+	return plugin.NewRepoClient(slug, connectDisplayName)
 }
