@@ -580,6 +580,11 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1.ResourceGro
 	if c.DataplaneApi != nil {
 		p.CloudCluster.ClusterURL = c.DataplaneApi.Url
 	}
+	// Cache the AI Gateway URL so `rpk ai` can resolve its endpoint
+	// without hitting the publicapi on every invocation. GetAiGateway
+	// returns nil-safe zero values, so this is safe even when no
+	// gateway is attached.
+	p.CloudCluster.AIGatewayURL = c.GetAiGateway().GetV2Url()
 	var isMTLS bool
 	if c.KafkaApi != nil {
 		p.KafkaAPI.Brokers = c.KafkaApi.SeedBrokers

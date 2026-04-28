@@ -164,6 +164,13 @@ type (
 		AuthKind      string `json:"auth_kind" yaml:"auth_kind"`
 		ClusterType   string `json:"cluster_type" yaml:"cluster_type"`
 		ClusterURL    string `json:"cluster_url,omitempty" yaml:"cluster_url,omitempty"`
+
+		// AIGatewayURL is the base URL for the cluster's AI Gateway v2,
+		// captured at profile creation so `rpk ai` can dispatch without an
+		// extra publicapi call on every invocation. Empty when the cluster
+		// has no AI Gateway attached at the time the profile was made; the
+		// `rpk ai` hook falls back to a live publicapi lookup in that case.
+		AIGatewayURL string `json:"ai_gateway_url,omitempty" yaml:"ai_gateway_url,omitempty"`
 	}
 
 	// RpkCloudAuth is unique by name and org ID. We support multiple auths
