@@ -11,6 +11,7 @@ package role
 
 import (
 	"fmt"
+	"os"
 
 	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
 	"connectrpc.com/connect"
@@ -45,6 +46,15 @@ flag in the 'rpk security acl create' command.`,
 			config.CheckExitServerlessAdmin(prof)
 
 			roleName := args[0]
+			if msgs := validateRoleNameForK8s(roleName); len(msgs) > 0 {
+				fmt.Fprintf(os.Stderr, "Warning: role name %q is not a valid DNS-1123 subdomain (RFC 1123):\n", roleName)
+				for _, m := range msgs {
+					fmt.Fprintf(os.Stderr, "  - %s\n", m)
+				}
+				fmt.Fprintln(os.Stderr, "  This role cannot be adopted by a RedpandaRole CR in the Redpanda Kubernetes operator,")
+				fmt.Fprintln(os.Stderr, "  since the operator binds the role name to the CR's metadata.name. Consider using a")
+				fmt.Fprintln(os.Stderr, "  lowercase name (letters, digits, '-', '.') if you may migrate to operator-managed roles.")
+			}
 			if prof.CheckFromCloud() {
 				cl, err := publicapi.DataplaneClientFromRpkProfile(prof)
 				out.MaybeDie(err, "unable to initialize cloud API client: %v", err)

@@ -10,6 +10,7 @@ go_library(
         "list.go",
         "role.go",
         "unassign.go",
+        "validation.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/security/role",
     visibility = ["//visibility:public"],
@@ -26,12 +27,16 @@ go_library(
         "@com_github_spf13_cobra//:cobra",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_types//:types",
+        "@io_k8s_apimachinery//pkg/util/validation",
     ],
 )
 
 go_test(
     name = "role_test",
-    srcs = ["role_test.go"],
+    srcs = [
+        "role_test.go",
+        "validation_test.go",
+    ],
     embed = [":role"],
     deps = ["@com_github_stretchr_testify//require"],
 )
