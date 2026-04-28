@@ -32,7 +32,7 @@ using partition_dir_set
   = chunked_hash_map<model::topic, chunked_vector<log_partition_data>>;
 
 static ss::future<log_partition_data>
-describe_partition(kafka::partition_proxy& p) {
+describe_partition(kafka::partition_proxy& p, bool include_remote) {
     auto result = log_partition_data{
       .local = describe_log_dirs_partition{
         .partition_index = p.ntp().tp.partition(),
@@ -42,10 +42,7 @@ describe_partition(kafka::partition_proxy& p) {
       }};
 
     auto cloud_space = co_await p.cloud_size_bytes();
-    if (
-      cloud_space.has_value()
-      && config::shard_local_cfg()
-           .kafka_enable_describe_log_dirs_remote_storage()) {
+    if (cloud_space.has_value() && include_remote) {
         result.remote = describe_log_dirs_partition{
           .partition_index = p.ntp().tp.partition(),
           .partition_size = static_cast<int64_t>(cloud_space.value()),
@@ -59,7 +56,8 @@ describe_partition(kafka::partition_proxy& p) {
 
 static ss::future<partition_dir_set> collect_mapper(
   cluster::partition_manager& pm,
-  const std::optional<std::vector<describable_log_dir_topic>>& topics) {
+  const std::optional<std::vector<describable_log_dir_topic>>& topics,
+  bool include_remote) {
     partition_dir_set ret;
 
     /*
@@ -73,7 +71,7 @@ static ss::future<partition_dir_set> collect_mapper(
             auto proxy = make_partition_proxy(ktp, pm);
             if (proxy) {
                 ret[partition.first.tp.topic].push_back(
-                  co_await describe_partition(*proxy));
+                  co_await describe_partition(*proxy, include_remote));
             }
         }
         co_return ret;
@@ -87,7 +85,8 @@ static ss::future<partition_dir_set> collect_mapper(
             auto ktp = model::ktp(topic.topic, p_id);
             auto proxy = make_partition_proxy(ktp, pm);
             if (proxy) {
-                ret[topic.topic].push_back(co_await describe_partition(*proxy));
+                ret[topic.topic].push_back(
+                  co_await describe_partition(*proxy, include_remote));
             }
         }
     }
@@ -99,7 +98,8 @@ static ss::future<partition_dir_set> collect_mapper(
  */
 static ss::future<partition_dir_set> collect(
   request_context& ctx,
-  std::optional<chunked_vector<describable_log_dir_topic>> filter) {
+  std::optional<chunked_vector<describable_log_dir_topic>> filter,
+  bool include_remote) {
     std::optional<std::vector<describable_log_dir_topic>> filter_v;
     if (filter) {
         filter_v.emplace(
@@ -107,8 +107,9 @@ static ss::future<partition_dir_set> collect(
           std::make_move_iterator(filter->end()));
     }
     return ctx.partition_manager().map_reduce0(
-      [filter{std::move(filter_v)}](cluster::partition_manager& pm) {
-          return collect_mapper(pm, filter);
+      [filter{std::move(filter_v)},
+       include_remote](cluster::partition_manager& pm) {
+          return collect_mapper(pm, filter, include_remote);
       },
       partition_dir_set{},
       [](partition_dir_set acc, const partition_dir_set& update) {
@@ -163,7 +164,10 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
     auto& local_results = response.data.results.at(0);
     auto& remote_results = response.data.results.at(1);
 
-    auto partitions = co_await collect(ctx, std::move(request.data.topics));
+    auto include_remote = config::shard_local_cfg()
+                            .kafka_enable_describe_log_dirs_remote_storage();
+    auto partitions = co_await collect(
+      ctx, std::move(request.data.topics), include_remote);
     while (!partitions.empty()) {
         auto node = partitions.extract(partitions.begin());
 
