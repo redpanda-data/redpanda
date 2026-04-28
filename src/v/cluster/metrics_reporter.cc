@@ -356,6 +356,16 @@ metrics_reporter::build_metrics_snapshot() {
             ++snapshot.topics_with_iceberg_schema_latest;
             break;
         }
+
+        if (md.get_configuration_properties().is_local_topic()) {
+            ++snapshot.local_topic_count;
+        }
+
+        if (
+          md.get_configuration().properties.storage_mode
+          == model::redpanda_storage_mode::cloud) {
+            ++snapshot.cloud_topic_count;
+        }
     }
 
     snapshot.nodes.reserve(metrics_map.size());
@@ -717,6 +727,12 @@ void rjson_serialize(
     w.Uint64(snapshot.topics_with_iceberg_schema_id);
     w.Key("topics_with_iceberg_latest_protobuf_value");
     w.Uint64(snapshot.topics_with_iceberg_schema_latest);
+
+    w.Key("local_topic_count");
+    w.Uint(snapshot.local_topic_count);
+
+    w.Key("cloud_topic_count");
+    w.Uint(snapshot.cloud_topic_count);
 
     w.Key("partition_count");
     w.Uint64(snapshot.partition_count);
