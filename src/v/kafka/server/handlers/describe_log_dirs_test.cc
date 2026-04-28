@@ -9,118 +9,18 @@
  * by the Apache License, Version 2.0
  */
 #include "kafka/data/partition_proxy.h"
+#include "kafka/data/tests/fake_partition_proxy_impl.h"
+#include "kafka/data/tests/fake_partition_proxy_source.h"
 #include "kafka/server/handlers/describe_log_dirs.h"
 #include "test_utils/test.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <stdexcept>
-
 namespace {
 
-// Fake that returns canned values for the four methods describe_partition
-// reads. All other partition_proxy::impl methods throw if called, which both
-// documents what describe_partition depends on and surfaces accidental
-// coupling if the dependency set grows.
-class fake_partition_proxy_impl : public kafka::partition_proxy::impl {
-public:
-    fake_partition_proxy_impl(
-      model::ntp ntp,
-      size_t local_size,
-      model::offset offset_lag,
-      std::optional<size_t> cloud_size)
-      : _ntp(std::move(ntp))
-      , _local_size(local_size)
-      , _offset_lag(offset_lag)
-      , _cloud_size(cloud_size) {}
-
-    const model::ntp& ntp() const override { return _ntp; }
-    size_t local_size_bytes() const override { return _local_size; }
-    model::offset offset_lag() const override { return _offset_lag; }
-    ss::future<std::optional<size_t>> cloud_size_bytes() const override {
-        return ss::make_ready_future<std::optional<size_t>>(_cloud_size);
-    }
-
-    ss::future<result<model::offset, kafka::error_code>>
-    sync_effective_start(model::timeout_clock::duration) override {
-        unexpected();
-    }
-    model::offset local_start_offset() const override { unexpected(); }
-    model::offset start_offset() const override { unexpected(); }
-    model::offset high_watermark() const override { unexpected(); }
-    checked<model::offset, kafka::error_code>
-    last_stable_offset() const override {
-        unexpected();
-    }
-    kafka::leader_epoch leader_epoch() const override { unexpected(); }
-    ss::future<std::optional<model::offset>>
-    get_leader_epoch_last_offset(kafka::leader_epoch) const override {
-        unexpected();
-    }
-    bool is_leader() const override { unexpected(); }
-    ss::future<std::error_code> linearizable_barrier() override {
-        unexpected();
-    }
-    ss::future<kafka::error_code>
-    prefix_truncate(model::offset, ss::lowres_clock::time_point) override {
-        unexpected();
-    }
-    ss::future<storage::translating_reader>
-    make_reader(kafka::log_reader_config) override {
-        unexpected();
-    }
-    ss::future<std::optional<storage::timequery_result>>
-    timequery(storage::timequery_config) override {
-        unexpected();
-    }
-    ss::future<std::vector<model::tx_range>> aborted_transactions(
-      model::offset,
-      model::offset,
-      ss::lw_shared_ptr<const storage::offset_translator_state>) override {
-        unexpected();
-    }
-    ss::future<kafka::error_code> validate_fetch_offset(
-      model::offset, bool, model::timeout_clock::time_point) override {
-        unexpected();
-    }
-    ss::future<result<model::offset>> replicate(
-      chunked_vector<model::record_batch>, raft::replicate_options) override {
-        unexpected();
-    }
-    raft::replicate_stages replicate(
-      model::batch_identity,
-      model::record_batch,
-      raft::replicate_options) override {
-        unexpected();
-    }
-    std::unique_ptr<kafka::exact_offset_replicator>
-      make_exact_offset_replicator() && override {
-        unexpected();
-    }
-    result<kafka::partition_info> get_partition_info() const override {
-        unexpected();
-    }
-    size_t estimate_size_between(kafka::offset, kafka::offset) const override {
-        unexpected();
-    }
-    cluster::partition_probe& probe() override { unexpected(); }
-    ss::future<cluster::partition_cloud_storage_status>
-    get_cloud_storage_status() const override {
-        unexpected();
-    }
-
-private:
-    [[noreturn]] static void unexpected() {
-        throw std::runtime_error(
-          "describe_partition called an unexpected partition_proxy method");
-    }
-
-    model::ntp _ntp;
-    size_t _local_size;
-    model::offset _offset_lag;
-    std::optional<size_t> _cloud_size;
-};
+using tests::fake_partition_proxy_impl;
+using tests::fake_partition_proxy_source;
 
 kafka::partition_proxy make_proxy(
   model::ntp ntp,
@@ -137,6 +37,11 @@ model::ntp make_ntp(int32_t partition) {
       model::ns("kafka"),
       model::topic("test-topic"),
       model::partition_id(partition));
+}
+
+model::ktp make_ktp(std::string_view topic, int32_t partition) {
+    return model::ktp(
+      model::topic(ss::sstring(topic)), model::partition_id(partition));
 }
 
 using kafka::describe_log_dirs::detail::log_partition_data;
@@ -263,4 +168,114 @@ TEST(MergePartitionDirSets, OverlappingTopicAppendsUpdateAfterAcc) {
     ASSERT_EQ(out.size(), 1);
     EXPECT_THAT(
       indexes(out[model::topic("t1")]), ::testing::ElementsAre(10, 11, 20, 21));
+}
+
+using kafka::describable_log_dir_topic;
+using kafka::describe_log_dirs::detail::collect_mapper;
+
+TEST_CORO(CollectMapper, NullFilterEnumeratesAllSourcePartitions) {
+    fake_partition_proxy_source source;
+    source.add(make_ktp("t1", 0), {.local_size = 100})
+      .add(make_ktp("t1", 1), {.local_size = 200})
+      .add(make_ktp("t2", 0), {.local_size = 300});
+
+    auto result = co_await collect_mapper(
+      source, /*topics=*/nullptr, /*include_remote=*/false);
+
+    ASSERT_EQ_CORO(result.size(), 2);
+    EXPECT_THAT(
+      indexes(result[model::topic("t1")]), ::testing::ElementsAre(0, 1));
+    EXPECT_THAT(indexes(result[model::topic("t2")]), ::testing::ElementsAre(0));
+}
+
+TEST_CORO(CollectMapper, EmptyFilterReturnsNothing) {
+    fake_partition_proxy_source source;
+    source.add(make_ktp("t1", 0), {});
+
+    chunked_vector<describable_log_dir_topic> filter;
+    auto result = co_await collect_mapper(
+      source, &filter, /*include_remote=*/false);
+
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_CORO(CollectMapper, FilterMatchesSubsetOfPartitions) {
+    fake_partition_proxy_source source;
+    source.add(make_ktp("t1", 0), {.local_size = 100})
+      .add(make_ktp("t1", 1), {.local_size = 200})
+      .add(make_ktp("t1", 2), {.local_size = 300});
+
+    chunked_vector<describable_log_dir_topic> filter;
+    std::vector<int32_t> ids = {0, 2};
+    filter.push_back(
+      describable_log_dir_topic{
+        .topic = model::topic("t1"),
+        .partition_index = std::move(ids),
+      });
+
+    auto result = co_await collect_mapper(
+      source, &filter, /*include_remote=*/false);
+
+    ASSERT_EQ_CORO(result.size(), 1);
+    EXPECT_THAT(
+      indexes(result[model::topic("t1")]), ::testing::ElementsAre(0, 2));
+}
+
+TEST_CORO(CollectMapper, FilterTopicNotInSourceIsSkipped) {
+    fake_partition_proxy_source source;
+    source.add(make_ktp("t1", 0), {});
+
+    chunked_vector<describable_log_dir_topic> filter;
+    std::vector<int32_t> ids = {0};
+    filter.push_back(
+      describable_log_dir_topic{
+        .topic = model::topic("missing"),
+        .partition_index = std::move(ids),
+      });
+
+    auto result = co_await collect_mapper(
+      source, &filter, /*include_remote=*/false);
+
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_CORO(CollectMapper, FilterPartitionNotInSourceIsSkipped) {
+    fake_partition_proxy_source source;
+    source.add(make_ktp("t1", 0), {});
+
+    chunked_vector<describable_log_dir_topic> filter;
+    std::vector<int32_t> ids = {0, 5};
+    filter.push_back(
+      describable_log_dir_topic{
+        .topic = model::topic("t1"),
+        .partition_index = std::move(ids),
+      });
+
+    auto result = co_await collect_mapper(
+      source, &filter, /*include_remote=*/false);
+
+    ASSERT_EQ_CORO(result.size(), 1);
+    EXPECT_THAT(indexes(result[model::topic("t1")]), ::testing::ElementsAre(0));
+}
+
+TEST_CORO(CollectMapper, IncludeRemoteFlagPropagatesToDescribePartition) {
+    fake_partition_proxy_source source;
+    source.add(
+      make_ktp("t1", 0),
+      {.local_size = 100, .cloud_size = std::optional<size_t>(2048)});
+
+    auto with = co_await collect_mapper(
+      source, /*topics=*/nullptr, /*include_remote=*/true);
+    auto without = co_await collect_mapper(
+      source, /*topics=*/nullptr, /*include_remote=*/false);
+
+    ASSERT_EQ_CORO(with.size(), 1);
+    auto& w = with[model::topic("t1")];
+    ASSERT_EQ_CORO(w.size(), 1);
+    EXPECT_TRUE(w[0].remote.has_value());
+
+    ASSERT_EQ_CORO(without.size(), 1);
+    auto& wo = without[model::topic("t1")];
+    ASSERT_EQ_CORO(wo.size(), 1);
+    EXPECT_FALSE(wo[0].remote.has_value());
 }

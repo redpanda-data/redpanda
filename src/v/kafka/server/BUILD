@@ -574,6 +574,7 @@ redpanda_cc_gtest(
     deps = [
         ":server",
         "//src/v/kafka/data:partition_proxy",
+        "//src/v/kafka/data/tests:fake_partition_proxy",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",

@@ -61,7 +61,7 @@ describe_partition(kafka::partition_proxy& p, bool include_remote) {
     co_return result;
 }
 
-static ss::future<partition_dir_set> collect_mapper(
+ss::future<partition_dir_set> collect_mapper(
   partition_proxy_source& source,
   const chunked_vector<describable_log_dir_topic>* topics,
   bool include_remote) {

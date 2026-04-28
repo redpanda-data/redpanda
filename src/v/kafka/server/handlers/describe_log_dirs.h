@@ -12,6 +12,7 @@
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "kafka/data/partition_proxy.h"
+#include "kafka/data/partition_proxy_source.h"
 #include "kafka/protocol/describe_log_dirs.h"
 #include "kafka/server/handlers/handler.h"
 
@@ -34,6 +35,16 @@ using partition_dir_set
 
 ss::future<log_partition_data>
 describe_partition(kafka::partition_proxy& p, bool include_remote);
+
+/// Build a per-shard partition_dir_set by enumerating partitions through
+/// the supplied source and describing each. If topics is null, every
+/// partition known to source is described; otherwise only partitions
+/// matching the filter are described, and partitions that the source
+/// doesn't know about are silently skipped.
+ss::future<partition_dir_set> collect_mapper(
+  partition_proxy_source& source,
+  const chunked_vector<describable_log_dir_topic>* topics,
+  bool include_remote);
 
 /// Merges per-shard partition_dir_sets produced by collect_mapper into a
 /// single accumulator. Topics present in update have their partitions
