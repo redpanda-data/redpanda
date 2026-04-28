@@ -99,6 +99,38 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "partition_proxy_source",
+    hdrs = [
+        "partition_proxy_source.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":partition_proxy",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition_manager_proxy_source",
+    srcs = [
+        "partition_manager_proxy_source.cc",
+    ],
+    hdrs = [
+        "partition_manager_proxy_source.h",
+    ],
+    implementation_deps = [
+        "//src/v/cluster",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":partition_proxy",
+        ":partition_proxy_source",
+        "//src/v/cluster:fwd",
+    ],
+)
+
+redpanda_cc_library(
     name = "record_batcher",
     srcs = [
         "record_batcher.cc",

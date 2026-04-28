@@ -13,12 +13,15 @@
 #include "cluster/partition_manager.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
+#include "kafka/data/partition_manager_proxy_source.h"
+#include "kafka/data/partition_proxy_source.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 
 namespace kafka {
@@ -59,7 +62,7 @@ describe_partition(kafka::partition_proxy& p, bool include_remote) {
 }
 
 static ss::future<partition_dir_set> collect_mapper(
-  cluster::partition_manager& pm,
+  partition_proxy_source& source,
   const chunked_vector<describable_log_dir_topic>* topics,
   bool include_remote) {
     partition_dir_set ret;
@@ -68,13 +71,10 @@ static ss::future<partition_dir_set> collect_mapper(
      * return all partitions
      */
     if (topics == nullptr) {
-        for (const auto& partition : pm.partitions()) {
-            auto ktp = model::ktp(
-              partition.second->ntp().tp.topic,
-              partition.second->ntp().tp.partition);
-            auto proxy = make_partition_proxy(ktp, pm);
+        for (auto& ktp : source.all_ktps()) {
+            auto proxy = source.get(ktp);
             if (proxy) {
-                ret[partition.first.tp.topic].push_back(
+                ret[ktp.get_topic()].push_back(
                   co_await describe_partition(*proxy, include_remote));
             }
         }
@@ -87,7 +87,7 @@ static ss::future<partition_dir_set> collect_mapper(
     for (const auto& topic : *topics) {
         for (auto p_id : topic.partition_index) {
             auto ktp = model::ktp(topic.topic, p_id);
-            auto proxy = make_partition_proxy(ktp, pm);
+            auto proxy = source.get(ktp);
             if (proxy) {
                 ret[topic.topic].push_back(
                   co_await describe_partition(*proxy, include_remote));
@@ -105,12 +105,13 @@ static ss::future<partition_dir_set> collect_mapper(
  * safe.
  */
 static ss::future<partition_dir_set> collect(
-  request_context& ctx,
+  ss::sharded<cluster::partition_manager>& pm_sharded,
   const chunked_vector<describable_log_dir_topic>* filter,
   bool include_remote) {
-    return ctx.partition_manager().map_reduce0(
+    return pm_sharded.map_reduce0(
       [filter, include_remote](cluster::partition_manager& pm) {
-          return collect_mapper(pm, filter, include_remote);
+          partition_manager_proxy_source source(pm);
+          return collect_mapper(source, filter, include_remote);
       },
       partition_dir_set{},
       merge_partition_dir_sets);
@@ -165,7 +166,7 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
     const auto* topics_filter = request.data.topics ? &*request.data.topics
                                                     : nullptr;
     auto partitions = co_await describe_log_dirs::detail::collect(
-      ctx, topics_filter, include_remote);
+      ctx.partition_manager(), topics_filter, include_remote);
     while (!partitions.empty()) {
         auto node = partitions.extract(partitions.begin());
 
