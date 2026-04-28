@@ -163,6 +163,7 @@ redpanda_cc_library(
         "//src/v/kafka/client:configuration",
         "//src/v/kafka/client:exceptions",
         "//src/v/pandaproxy:json",
+        "//src/v/pandaproxy:parsing",
         "@seastar",
     ],
 )

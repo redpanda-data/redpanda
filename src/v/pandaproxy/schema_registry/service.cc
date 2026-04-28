@@ -368,13 +368,14 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       security::default_cluster_name,
       delete_security_acls));
 
-    // Context-prefixed route helpers: extract the {context} path parameter,
-    // apply the given URL-rewriting function, then delegate to the handler.
+    // Context-prefixed route helpers: extract and normalize the {context}
+    // path parameter, apply the given URL-rewriting function, then delegate
+    // to the handler.
     auto ctx_route = [](auto scope_fn, auto handler) {
         return [=](
                  server::request_t rq,
                  server::reply_t rp) -> ss::future<server::reply_t> {
-            auto ctx = parse::request_param<ss::sstring>(*rq.req, "context");
+            auto ctx = parse_normalized_context(*rq.req);
             scope_fn(*rq.req, ctx);
             return handler(std::move(rq), std::move(rp));
         };
@@ -386,7 +387,7 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
                  server::reply_t rp,
                  std::optional<request_auth_result> auth_result)
                  -> ss::future<server::reply_t> {
-            auto ctx = parse::request_param<ss::sstring>(*rq.req, "context");
+            auto ctx = parse_normalized_context(*rq.req);
             scope_fn(*rq.req, ctx);
             return handler(
               std::move(rq), std::move(rp), std::move(auth_result));
@@ -577,13 +578,11 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       auth::level::publik,
       acl_operation::read,
       auth::none{},
-      // Schema types are global — the handler ignores the context. Validate
-      // it anyway for consistency with other /contexts/{context}/... routes.
+      // Schema types are global — the handler ignores the context.
+      // ctx_route validates the {context} param for consistency with the
+      // other /contexts/{context}/... routes.
       ctx_route(
-        [](ss::http::request&, const ss::sstring& ctx) {
-            normalize_context(ctx);
-        },
-        get_schemas_types)));
+        [](ss::http::request&, std::string_view) {}, get_schemas_types)));
 
     routes.routes.emplace_back(wrap(
       ss::httpd::schema_registry_json::ctx_delete_config,

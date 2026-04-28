@@ -62,8 +62,7 @@ extract_resource_from_request(const server::request_t& rq, const auth& auth) {
             parse::request_param<ss::sstring>(*rq.req, "subject"));
       },
       [&rq](const auth::context_prefix_subject&) -> auth::resource {
-          auto ctx = normalize_context(
-            parse::request_param<ss::sstring>(*rq.req, "context"));
+          auto ctx = parse_normalized_context(*rq.req);
           auto sub = parse::request_param<ss::sstring>(*rq.req, "subject");
           if (!starts_with_context(sub)) {
               sub = fmt::format(":{}:{}", ctx, sub);

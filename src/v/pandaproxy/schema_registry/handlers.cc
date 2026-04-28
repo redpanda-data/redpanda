@@ -1514,8 +1514,7 @@ ss::future<server::reply_t>
 delete_context(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
 
-    auto ctx_str = parse::request_param<ss::sstring>(*rq.req, "context");
-    auto ctx = context{normalize_context(ctx_str)};
+    auto ctx = context{parse_normalized_context(*rq.req)};
 
     if (ctx == default_context) {
         throw as_exception(

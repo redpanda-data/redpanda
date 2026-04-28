@@ -86,13 +86,6 @@ TEST(ContextRouterTest, ScopeSubjectParamWildcard) {
     EXPECT_EQ(req.get_path_param("subject"), ":*:my-topic");
 }
 
-TEST(ContextRouterTest, ScopeSubjectParamNoDot) {
-    ss::http::request req;
-    req.param.set("subject", "/my-topic");
-    scope_subject_param(req, "staging");
-    EXPECT_EQ(req.get_path_param("subject"), ":.staging:my-topic");
-}
-
 TEST(ContextRouterTest, ScopeSubjectQueryAbsent) {
     ss::http::request req;
     scope_subject_query(req, ".staging");
@@ -111,12 +104,6 @@ TEST(ContextRouterTest, ScopeSubjectQueryAlreadyQualified) {
     req.set_query_param("subject", ":.prod:my-topic");
     scope_subject_query(req, ".staging");
     EXPECT_EQ(req.get_query_param("subject"), ":.prod:my-topic");
-}
-
-TEST(ContextRouterTest, ScopeSubjectQueryNoDot) {
-    ss::http::request req;
-    scope_subject_query(req, "staging");
-    EXPECT_EQ(req.get_query_param("subject"), ":.staging:");
 }
 
 TEST(ContextRouterTest, ScopeSubjectPrefixQueryAbsent) {
@@ -139,22 +126,22 @@ TEST(ContextRouterTest, ScopeSubjectPrefixQueryAlreadyQualified) {
     EXPECT_EQ(req.get_query_param("subjectPrefix"), ":.prod:");
 }
 
-TEST(ContextRouterTest, ScopeSubjectPrefixQueryNoDot) {
-    ss::http::request req;
-    scope_subject_prefix_query(req, "staging");
-    EXPECT_EQ(req.get_query_param("subjectPrefix"), ":.staging:");
-}
-
 TEST(ContextRouterTest, InjectContextAsSubject) {
     ss::http::request req;
     inject_context_as_subject(req, ".staging");
     EXPECT_EQ(req.get_path_param("subject"), ":.staging:");
 }
 
-TEST(ContextRouterTest, InjectContextAsSubjectNoDot) {
+TEST(ContextRouterTest, ParseNormalizedContext) {
     ss::http::request req;
-    inject_context_as_subject(req, "staging");
-    EXPECT_EQ(req.get_path_param("subject"), ":.staging:");
+    req.param.set("context", "/staging");
+    EXPECT_EQ(parse_normalized_context(req), ".staging");
+}
+
+TEST(ContextRouterTest, ParseNormalizedContextRejectsInvalid) {
+    ss::http::request req;
+    req.param.set("context", "/a:b");
+    EXPECT_THROW(parse_normalized_context(req), exception);
 }
 
 } // namespace pandaproxy::schema_registry
