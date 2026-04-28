@@ -54,7 +54,7 @@ func init() {
 func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                "ai",
-		Short:              "Manage the Redpanda AI Gateway via rpai - https://docs.redpanda.com/redpanda-ai-gateway",
+		Short:              "Manage the Redpanda AI Gateway via rpai",
 		DisableFlagParsing: true,                  // Required for managed plugins; we parse flags ourselves.
 		Args:               cobra.MinimumNArgs(0), // Allow `rpk ai` with no subcommand (renders help).
 		Run: func(cmd *cobra.Command, args []string) {
@@ -90,6 +90,11 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 					cmd.Help()
 					return
 				}
+				// FIPS is only blocked once we're committed to installing —
+				// `rpk ai`, `rpk ai --help`, and `rpk ai --version` (handled
+				// above) all return without touching the network, so they
+				// remain usable on FIPS builds even though rpai itself does
+				// not yet ship a FIPS variant.
 				maybeExitFIPS()
 				fmt.Fprintln(os.Stderr, "Downloading latest Redpanda AI CLI")
 				path, _, err := installRpai(cmd.Context(), fs, "latest")

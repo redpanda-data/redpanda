@@ -27,6 +27,21 @@ import (
 	"go.uber.org/zap"
 )
 
+// rpai consumes the following environment variables and flag, all owned by the
+// rpai plugin (not rpk). rpk's role here is to populate them on behalf of the
+// user from the active rpk cloud profile so a fresh `rpk ai <sub>` invocation
+// works without the user having to plumb auth or endpoint manually:
+//
+//   - RPAI_TOKEN: bearer token forwarded as Authorization to the AI Gateway.
+//     rpk fills it from the active cloud auth (refreshing via OAuth if needed).
+//   - RPAI_ENDPOINT: AI Gateway v2 base URL. rpk resolves it from the active
+//     rpk cloud profile's cluster (publicapi -> Cluster.AiGateway.V2Url).
+//   - --rpai-endpoint: same intent as RPAI_ENDPOINT, but on the command line.
+//     rpk only watches for it so we can skip the cluster lookup; the flag is
+//     parsed and consumed by rpai itself.
+//
+// Any explicit value the user supplies (env or flag) wins — rpk only fills in
+// missing pieces.
 const (
 	envRpaiToken    = "RPAI_TOKEN"
 	envRpaiEndpoint = "RPAI_ENDPOINT"
@@ -141,28 +156,27 @@ func hasRpaiEndpointFlag(args []string) bool {
 }
 
 // getTokenOrLogin returns a fresh cloud bearer token, refreshing or prompting
-// for login as needed. It mirrors the byoc plugin's behavior for consistency.
+// for login as needed.
 func getTokenOrLogin(ctx context.Context, fs afero.Fs, cfg *config.Config) (string, error) {
-	overrides := cfg.DevOverrides()
-	if overrides.CloudToken != "" {
-		return overrides.CloudToken, nil
-	}
-
-	priorProfile := cfg.ActualProfile()
-	_, authVir, clearedProfile, _, err := oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()), false, false)
+	tok, err := oauth.LoadCloudToken(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()))
 	if err != nil {
 		return "", fmt.Errorf("unable to refresh the cloud token: %w. Run 'rpk cloud login' and try again", err)
 	}
-	oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
-	return authVir.AuthToken, nil
+	return tok, nil
 }
 
-// resolveAigwEndpoint looks up the active rpk cloud profile's cluster, queries
-// the public API for its AI Gateway v2 URL, and returns it.
+// resolveAigwEndpoint returns the AI Gateway v2 URL for the active rpk cloud
+// profile's cluster. It prefers the value cached on the profile at creation
+// time and only falls back to a live publicapi lookup when the cache is empty
+// (older profiles created before AIGatewayURL existed, or profiles whose
+// cluster had no AI Gateway attached at creation but does now).
 func resolveAigwEndpoint(ctx context.Context, cfg *config.Config) (string, error) {
 	prof := cfg.VirtualProfile()
 	if prof == nil || !prof.FromCloud || prof.CloudCluster.ClusterID == "" {
 		return "", errors.New("no cluster selected for this rpk profile; run 'rpk cloud cluster use <id>' or pass --rpai-endpoint")
+	}
+	if prof.CloudCluster.AIGatewayURL != "" {
+		return prof.CloudCluster.AIGatewayURL, nil
 	}
 	clusterID := prof.CloudCluster.ClusterID
 

@@ -36,8 +36,10 @@ func upgradeCommand(fs afero.Fs) *cobra.Command {
 			if !pluginExists {
 				out.Die("unable to find the Redpanda AI CLI plugin. You may install it running 'rpk ai install'")
 			}
-			// If the user has a self-installed rpai (e.g. via Homebrew), we
-			// cannot cleanly swap it for a managed copy.
+			// We only manage the .rpk.managed-rpai copy under
+			// ~/.local/bin. If the user supplied their own rpai (manually
+			// downloaded, installed via a package manager, etc.), it lives
+			// outside our managed prefix and we don't try to overwrite it.
 			if !rpai.Managed {
 				out.Die("found a self-managed Redpanda AI CLI plugin; unfortunately, we cannot upgrade it with this installation. Run rpk ai uninstall && rpk ai install, or to continue managing rpai manually, keep using the rpai package you installed")
 			}

@@ -89,6 +89,11 @@ func TestTopLevelHasSubcommand(t *testing.T) {
 		{"subcommand", []string{"llm"}, true},
 		{"nested subcommand", []string{"llm", "list"}, true},
 		{"flag then subcommand", []string{"--format", "json", "llm"}, true},
+		// rpk has a few hyphen-containing subcommands (e.g. `rpk cluster
+		// self-test`). HasPrefix(arg, "-") is a leading-dash check, not a
+		// "contains a dash" check, so hyphenated commands route correctly.
+		{"hyphenated subcommand", []string{"self-test"}, true},
+		{"hyphenated nested subcommand", []string{"foo", "bar-baz"}, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -242,6 +247,27 @@ func TestResolveAigwEndpoint_Happy(t *testing.T) {
 	endpoint, err := resolveAigwEndpoint(t.Context(), cfg)
 	require.NoError(t, err)
 	require.Equal(t, "https://aigw.example.com", endpoint)
+}
+
+// TestResolveAigwEndpoint_UsesCachedURL verifies that when the profile already
+// carries an AIGatewayURL (populated at profile creation), we skip the
+// publicapi lookup entirely. The httptest server below has no handler — if
+// resolveAigwEndpoint touched the network, the test would fail.
+func TestResolveAigwEndpoint_UsesCachedURL(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatalf("unexpected publicapi call: cached AIGatewayURL should short-circuit")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	cfg := loadCloudProfile(t, ts.URL, "clu-1")
+	prof := cfg.VirtualProfile()
+	require.NotNil(t, prof)
+	prof.CloudCluster.AIGatewayURL = "https://cached-aigw.example.com"
+
+	endpoint, err := resolveAigwEndpoint(t.Context(), cfg)
+	require.NoError(t, err)
+	require.Equal(t, "https://cached-aigw.example.com", endpoint)
 }
 
 // loadCloudProfile builds a *config.Config with a cloud profile selecting the
