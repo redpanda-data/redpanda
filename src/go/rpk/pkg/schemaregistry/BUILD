@@ -24,7 +24,15 @@ go_library(
 
 go_test(
     name = "schemaregistry_test",
-    srcs = ["context_test.go"],
+    size = "small",
+    srcs = [
+        "client_test.go",
+        "context_test.go",
+    ],
     embed = [":schemaregistry"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "//src/go/rpk/pkg/config",
+        "@com_github_spf13_afero//:afero",
+        "@com_github_stretchr_testify//require",
+    ],
 )
