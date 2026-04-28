@@ -190,18 +190,11 @@ func downloadAndWritePlugin(ctx context.Context, fs afero.Fs, pluginDir string, 
 // to log in if it is not set. It returns the token or an error if the login
 // process fails.
 func getTokenOrLogin(ctx context.Context, fs afero.Fs, cfg *config.Config) (string, error) {
-	overrides := cfg.DevOverrides()
-	if overrides.CloudToken != "" {
-		return overrides.CloudToken, nil
-	}
-
-	priorProfile := cfg.ActualProfile()
-	_, authVir, clearedProfile, _, err := oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()), false, false)
+	tok, err := oauth.LoadCloudToken(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()))
 	if err != nil {
 		return "", fmt.Errorf("unable to load the cloud token: %w. You may need to logout with 'rpk cloud logout --clear-credentials' and try again", err)
 	}
-	oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
-	return authVir.AuthToken, nil
+	return tok, nil
 }
 
 // extractShaFromLocation extracts the sha256 from the plugin name in the
