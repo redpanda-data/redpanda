@@ -149,32 +149,37 @@ class NodeQdisc:
 
         self.next_flow += 1
 
-    def drop_incoming(self, src_address):
+    def drop_incoming(self, src_addresses: str | list[str]):
         self.has_ingress_shaping = True
         self._tc_execute(
             ["qdisc", "add", "dev", self.dev, "handle", "ffff:", "ingress"]
         )
-        match_rule = ["ip", "src", src_address]
-        if src_address[0] == ":":
-            match_rule = ["ip", "sport", src_address[1:], "0xffff"]
 
-        self._tc_execute(
-            [
-                "filter",
-                "add",
-                "dev",
-                self.dev,
-                "parent",
-                "ffff:",
-                "protocol",
-                "ip",
-                "u32",
-                "match",
-                *match_rule,
-                "action",
-                "drop",
-            ]
-        )
+        if isinstance(src_addresses, str):
+            src_addresses = [src_addresses]
+
+        for addr in src_addresses:
+            match_rule = ["ip", "src", addr]
+            if addr[0] == ":":
+                match_rule = ["ip", "sport", addr[1:], "0xffff"]
+
+            self._tc_execute(
+                [
+                    "filter",
+                    "add",
+                    "dev",
+                    self.dev,
+                    "parent",
+                    "ffff:",
+                    "protocol",
+                    "ip",
+                    "u32",
+                    "match",
+                    *match_rule,
+                    "action",
+                    "drop",
+                ]
+            )
 
     def _tc_qdisc_add(self, queue_spec):
         return self._tc_execute(["qdisc", "add", "dev", self.dev] + queue_spec)
