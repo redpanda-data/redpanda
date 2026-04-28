@@ -33,11 +33,13 @@ void handle_authz(
 
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   std::optional<request_auth_result>& auth_result,
   const chunked_vector<context_subject>& subjects);
 
 void handle_get_subjects_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   std::optional<request_auth_result>& auth_result,
   chunked_vector<context_subject>& subjects);
 
@@ -47,6 +49,7 @@ void handle_get_subjects_authz(
 /// - Empty contexts: user needs sr_registry describe access
 ss::future<> handle_get_contexts_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   sharded_store& store,
   std::optional<request_auth_result>& auth_result,
   chunked_vector<context>& contexts);

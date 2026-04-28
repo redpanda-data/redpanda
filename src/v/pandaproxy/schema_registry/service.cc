@@ -98,7 +98,10 @@ public:
               },
               [&](const auth::deferred_function_handler& h) {
                   return h(
-                    std::move(rq), std::move(rp), std::move(auth_result));
+                    std::move(rq),
+                    std::move(rp),
+                    std::move(auth_result),
+                    _operation_name);
               });
         } catch (const kafka::client::partition_error& ex) {
             if (
@@ -382,16 +385,20 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     };
 
     auto ctx_deferred_route = [](auto scope_fn, auto handler) {
-        return [=](
-                 server::request_t rq,
-                 server::reply_t rp,
-                 std::optional<request_auth_result> auth_result)
-                 -> ss::future<server::reply_t> {
-            auto ctx = parse_normalized_context(*rq.req);
-            scope_fn(*rq.req, ctx);
-            return handler(
-              std::move(rq), std::move(rp), std::move(auth_result));
-        };
+        return
+          [=](
+            server::request_t rq,
+            server::reply_t rp,
+            std::optional<request_auth_result> auth_result,
+            std::string_view operation_name) -> ss::future<server::reply_t> {
+              auto ctx = parse_normalized_context(*rq.req);
+              scope_fn(*rq.req, ctx);
+              return handler(
+                std::move(rq),
+                std::move(rp),
+                std::move(auth_result),
+                operation_name);
+          };
     };
 
     routes.routes.emplace_back(wrap(

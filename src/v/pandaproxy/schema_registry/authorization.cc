@@ -164,10 +164,9 @@ void handle_authz(
 
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   std::optional<request_auth_result>& auth_result,
   const chunked_vector<context_subject>& subjects) {
-    const auto& operation_name
-      = ss::httpd::schema_registry_json::get_schemas_ids_id.operations.nickname;
     constexpr auto op = security::acl_operation::read;
     if (!auth_result.has_value()) {
         // ACLs or authentication is disabled
@@ -229,10 +228,9 @@ void handle_get_schemas_ids_id_authz(
 
 void handle_get_subjects_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   std::optional<request_auth_result>& auth_result,
   chunked_vector<context_subject>& subjects) {
-    const auto& operation_name
-      = ss::httpd::schema_registry_json::get_subjects.operations.nickname;
     constexpr auto op = security::acl_operation::describe;
 
     if (!auth_result.has_value()) {
@@ -293,11 +291,10 @@ void handle_get_subjects_authz(
 
 ss::future<> handle_get_contexts_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   sharded_store& store,
   std::optional<request_auth_result>& auth_result,
   chunked_vector<context>& contexts) {
-    const auto& operation_name
-      = ss::httpd::schema_registry_json::get_contexts.operations.nickname;
     constexpr auto op = security::acl_operation::describe;
 
     if (!auth_result.has_value()) {

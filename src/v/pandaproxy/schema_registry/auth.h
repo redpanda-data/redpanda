@@ -59,9 +59,12 @@ public:
 
     using regular_function_handler = ss::noncopyable_function<
       ss::future<server::reply_t>(server::request_t, server::reply_t)>;
-    using deferred_function_handler = ss::noncopyable_function<ss::future<
-      server::reply_t>(
-      server::request_t, server::reply_t, std::optional<request_auth_result>)>;
+    using deferred_function_handler
+      = ss::noncopyable_function<ss::future<server::reply_t>(
+        server::request_t,
+        server::reply_t,
+        std::optional<request_auth_result>,
+        std::string_view operation_name)>;
     using function_handler
       = std::variant<regular_function_handler, deferred_function_handler>;
 
