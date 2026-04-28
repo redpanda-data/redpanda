@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "scoped_remote",
@@ -97,6 +97,21 @@ redpanda_cc_bench(
         "@abseil-cpp//absl/container:btree",
         "@seastar",
         "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "io_resources_test",
+    timeout = "short",
+    srcs = [
+        "io_resources_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_io:io_resources",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
 
