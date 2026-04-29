@@ -369,6 +369,7 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 	errored := false
 	produced := int64(0)
+	failsBefore := pw.Status.Fails
 
 	// Channel must be >= concurrency
 	bad_offsets := make(chan BadOffset, 16384)
@@ -391,8 +392,6 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 	for i := int64(0); i < n && !errored; i = i + 1 {
 		concurrent.Acquire(context.Background(), 1)
-		produced += 1
-		pw.Status.Sent += 1
 		var p = rand.Int31n(pw.config.nPartitions)
 
 		if pw.transactionsEnabled {
@@ -400,6 +399,7 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 			err := pw.transactionSTM.BeforeMessageSent()
 			if err != nil {
+				concurrent.Release(1)
 				log.Errorf("Transaction error %v", err)
 				errored = true
 				pw.Status.FailedTransactions += 1
@@ -426,6 +426,9 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 			txPartitions[p] = true
 		}
 
+		produced += 1
+		pw.Status.Sent += 1
+
 		if pw.churnProducers && pw.Status.Sent > 0 && pw.Status.Sent%int64(pw.config.messagesPerProducerId) == 0 {
 			break
 		}
@@ -449,11 +452,15 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 			if err != nil {
 				pw.Status.OnFail()
-				errHandler := util.Die
-				if pw.tolerateFailedProduce {
-					errHandler = log.Warnf
+				if pw.transactionsEnabled {
+					log.Warnf("Produce failed in transaction, will abort and retry: %v", err)
+				} else {
+					errHandler := util.Die
+					if pw.tolerateFailedProduce {
+						errHandler = log.Warnf
+					}
+					errHandler("Produce failed: %v", err)
 				}
-				errHandler("Produce failed: %v", err)
 				errored = true
 			} else if expectOffset != r.Offset {
 				log.Warnf("Produced at unexpected offset %d (expected %d) on partition %d", r.Offset, expectOffset, r.Partition)
@@ -481,10 +488,17 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	}
 
 	if pw.transactionsEnabled {
-		if err := pw.transactionSTM.TryEndTransaction(); err != nil {
-			log.Errorf("unable to end transaction: %v", err)
-			errored = true
+		if errored {
+			if err := pw.transactionSTM.AbortTransaction(); err != nil {
+				log.Errorf("unable to abort transaction: %v", err)
+			}
 			pw.Status.FailedTransactions += 1
+		} else {
+			if err := pw.transactionSTM.TryEndTransaction(); err != nil {
+				log.Errorf("unable to end transaction: %v", err)
+				errored = true
+				pw.Status.FailedTransactions += 1
+			}
 		}
 	}
 
@@ -510,7 +524,8 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 		if len(r) == 0 && pw.Status.Fails == 0 && pw.Status.FailedTransactions == 0 {
 			util.Die("No bad offsets or failed produces or transactions but errored?")
 		}
-		successful_produced := produced - int64(len(r))
+		failsThisRound := pw.Status.Fails - failsBefore
+		successful_produced := produced - int64(len(r)) - failsThisRound
 		return successful_produced, r, nil
 	} else {
 		wg.Wait()
