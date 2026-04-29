@@ -67,7 +67,15 @@ type ProducerWorker struct {
 	transactionsEnabled  bool
 	transactionSTMConfig worker.TransactionSTMConfig
 	transactionSTM       *worker.TransactionSTM
-	churnProducers       bool
+	// transactionalID is generated once per worker and reused across every
+	// kgo.Client created by produceInner restarts. Reusing it lets the
+	// next restart's InitProducerId fence the prior epoch and have the
+	// coordinator drive any in-flight tx from that epoch to a clean
+	// commit/abort, instead of leaving an orphan that lands a control
+	// marker at an unpredictable point in time inside the new producer's
+	// txn boundaries.
+	transactionalID string
+	churnProducers  bool
 
 	tolerateDataLoss      bool
 	tolerateFailedProduce bool
@@ -103,6 +111,9 @@ func NewProducerWorker(cfg ProducerConfig) ProducerWorker {
 func (v *ProducerWorker) EnableTransactions(config worker.TransactionSTMConfig) {
 	v.transactionSTMConfig = config
 	v.transactionsEnabled = true
+	// Generate the TransactionalID once. It is reused on every produceInner
+	// restart so InitProducerId can fence the prior epoch.
+	v.transactionalID = "kgo-verifier-" + v.config.workerCfg.Topic + "-" + uuid.New().String()
 }
 
 func (pw *ProducerWorker) newRecord(producerId int, sequence int64) *kgo.Record {
@@ -340,12 +351,10 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	}...)
 
 	if pw.transactionsEnabled {
-		randId := uuid.New()
-		tid := "p" + randId.String()
-		log.Debugf("Configuring transactions with TransactionalID %s", tid)
+		log.Debugf("Configuring transactions with TransactionalID %s", pw.transactionalID)
 
 		opts = append(opts, []kgo.Opt{
-			kgo.TransactionalID(tid),
+			kgo.TransactionalID(pw.transactionalID),
 		}...)
 	}
 
