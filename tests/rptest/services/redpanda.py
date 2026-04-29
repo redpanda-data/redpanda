@@ -5357,15 +5357,15 @@ class RedpandaService(Service, RedpandaServiceABC):
         under the Redpanda data directory. File paths are normalized to be relative
         to the data directory.
         """
-        cmd = (
-            f"find {RedpandaService.DATA_DIR} -type f -exec stat -c '%n %s' '{{}}' \\;"
-        )
+        # -ignore_readdir_race: a file may disappear between find's readdir and
+        # its internal stat for `%s` (e.g. segment GC during traversal). Without
+        # this flag, find emits a stderr warning and exits non-zero, which would
+        # cause ssh_output to raise before our filtering can drop the warning.
+        cmd = f"find {RedpandaService.DATA_DIR} -ignore_readdir_race -type f -printf '%p %s\\n'"
         lines = node.account.ssh_output(cmd, timeout_sec=120)
         lines = lines.decode().split("\n")
 
-        # 1. find and stat race. skip any files that were deleted.
-        # 2. skip empty lines: find may stick one on the end of the results
-        lines = filter(lambda l: "No such file or directory" not in l, lines)
+        # skip empty lines: find may stick one on the end of the results
         lines = filter(lambda l: len(l) > 0, lines)
 
         # split into pathlib.Path / file size pairs
