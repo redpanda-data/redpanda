@@ -2449,6 +2449,238 @@
         }
       }
     },
+    "/contexts/{context}/schemas/ids/{id}": {
+      "get": {
+        "summary": "Get a schema by ID (context-prefixed).",
+        "operationId": "ctx_get_schemas_ids_id",
+        "parameters": [
+          {
+            "name": "context",
+            "description": "The context to scope the operation to (e.g., .staging).",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "Redpanda version 25.2 or later. For Avro and Protobuf schemas only. Supported values: an empty string `''` returns the schema in its current format (default), and `serialized` (Protobuf only) returns the schema in its Base64-encoded wire binary format. Unsupported values return a 501 error."
+          },
+          {
+            "name": "referenceFormat",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "If set to 'qualified', schema references are returned in context-qualified form. Otherwise, unqualified references are returned."
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/schema_def_response"
+            }
+          },
+          "404": {
+            "description": "Not Found: Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "501": {
+            "description": "Not Implemented: The specified format parameter value is not supported",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/contexts/{context}/schemas/ids/{id}/schema": {
+      "get": {
+        "summary": "Get the raw schema by ID (context-prefixed).",
+        "operationId": "ctx_get_schemas_ids_id_schema",
+        "description": "Retrieves only the schema identified by the input ID, without additional metadata.",
+        "parameters": [
+          {
+            "name": "context",
+            "description": "The context to scope the operation to (e.g., .staging).",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "description": "Desired output format, dependent on schema type."
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw schema string",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "404": {
+            "description": "Not Found: Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/contexts/{context}/schemas/ids/{id}/versions": {
+      "get": {
+        "summary": "Get a list of subject-version for the schema ID (context-prefixed).",
+        "operationId": "ctx_get_schemas_ids_id_versions",
+        "parameters": [
+          {
+            "name": "context",
+            "description": "The context to scope the operation to (e.g., .staging).",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found: Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/contexts/{context}/schemas/ids/{id}/subjects": {
+      "get": {
+        "summary": "Retrieve a list of subjects associated with some schema ID (context-prefixed).",
+        "operationId": "ctx_get_schemas_ids_id_subjects",
+        "parameters": [
+          {
+            "name": "context",
+            "description": "The context to scope the operation to (e.g., .staging).",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found: Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
     "/security/acls": {
       "get": {
         "summary": "List ACLs",
