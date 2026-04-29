@@ -58,7 +58,7 @@ class RandomNodeOperationsTest(RandomNodeOperationsBase):
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
     @skip_debug_mode
-    @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
+    @cluster(num_nodes=10, log_allow_list=RNOT_ALLOW_LIST)
     @matrix(
         enable_failures=[True, False],
         mixed_versions=[True, False],
