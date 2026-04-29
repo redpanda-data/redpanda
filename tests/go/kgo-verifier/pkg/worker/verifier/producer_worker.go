@@ -365,6 +365,27 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	}
 
 	if pw.transactionsEnabled {
+		// Force InitProducerId synchronously via a no-op BeginTransaction
+		// before sampling offsets. franz-go's BeginTransaction calls
+		// maybeRecoverProducerID, which sends InitProducerId. With our
+		// stable TransactionalID, that causes the coordinator to drive
+		// any in-flight tx from the prior epoch to completed_commit/abort
+		// BEFORE returning, so the HWM read by GetOffsets already
+		// includes those markers and nextOffset[] cannot silently fall
+		// behind mid-run.
+		if err := client.BeginTransaction(); err != nil {
+			client.Close()
+			log.Warnf("Warmup BeginTransaction failed (will retry produceInner): %v", err)
+			time.Sleep(500 * time.Millisecond)
+			return 0, nil, nil
+		}
+		if err := client.EndTransaction(context.Background(), kgo.TryAbort); err != nil {
+			client.Close()
+			log.Warnf("Warmup EndTransaction failed (will retry produceInner): %v", err)
+			time.Sleep(500 * time.Millisecond)
+			return 0, nil, nil
+		}
+
 		pw.transactionSTM = worker.NewTransactionSTM(context.Background(), client, pw.transactionSTMConfig)
 	}
 
