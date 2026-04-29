@@ -9,6 +9,7 @@
 
 #include "cloud_topics/app.h"
 #include "cloud_topics/level_one/metastore/service.h"
+#include "cloud_topics/level_zero/gc/service.h"
 #include "cluster/cloud_metadata/offsets_recovery_service.h"
 #include "cluster/controller.h"
 #include "cluster/data_migration_service_handler.h"
@@ -183,6 +184,11 @@ void application::add_runtime_rpc_services(
             scheduling_groups::instance().cloud_topics_metastore_sg(),
             smp_service_groups.cloud_topics_metastore_smp_sg(),
             cloud_topics_app->get_sharded_l1_metastore_router()));
+        runtime_services.push_back(
+          std::make_unique<cloud_topics::l0::gc::rpc::service>(
+            scheduling_groups::instance().cloud_topics_metastore_sg(),
+            smp_service_groups.cloud_topics_metastore_smp_sg(),
+            cloud_topics_app->get_epoch_barrier()));
     }
     runtime_services.push_back(
       std::make_unique<admin::proxy::service_impl>(

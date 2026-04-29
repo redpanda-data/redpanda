@@ -132,6 +132,21 @@ void ctp_stm_state::advance_last_reconciled_offset(
     _last_reconciled_log_offset = std::max(
       _last_reconciled_log_offset.value_or(model::offset{}),
       new_last_reconciled_log_offset);
+
+    // Promote pending gc safe epoch once reconciliation catches up past
+    // the command's offset — all data before the command is now in L1.
+    if (
+      _pending_gc_safe_epoch_offset.has_value()
+      && _last_reconciled_log_offset.value_or(model::offset{})
+           >= *_pending_gc_safe_epoch_offset) {
+        if (
+          _pending_gc_safe_epoch.has_value()
+          && (!_gc_safe_epoch || *_gc_safe_epoch < *_pending_gc_safe_epoch)) {
+            _gc_safe_epoch = _pending_gc_safe_epoch;
+        }
+        _pending_gc_safe_epoch.reset();
+        _pending_gc_safe_epoch_offset.reset();
+    }
 }
 
 std::optional<cluster_epoch>

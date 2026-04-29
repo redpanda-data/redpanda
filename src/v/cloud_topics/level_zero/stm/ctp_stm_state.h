@@ -22,7 +22,7 @@ namespace cloud_topics {
 ///
 class ctp_stm_state
   : public serde::
-      envelope<ctp_stm_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<ctp_stm_state, serde::version<1>, serde::compat_version<0>> {
     friend class ctp_stm_state_accessor;
 
 public:
@@ -120,6 +120,22 @@ public:
     /// Access the size estimator directly (for testing and metrics).
     const size_estimator& get_size_estimator() const noexcept;
 
+    std::optional<cluster_epoch> get_gc_safe_epoch() const noexcept {
+        return _gc_safe_epoch;
+    }
+
+    /// Record a pending gc safe epoch from an advance_gc_epoch command.
+    /// The epoch is NOT promoted to _gc_safe_epoch until LRLO advances
+    /// past the command's offset, confirming all preceding data has been
+    /// reconciled to L1. Ratchets forward on epoch.
+    void set_pending_gc_safe_epoch(
+      cluster_epoch e, model::offset cmd_offset) noexcept {
+        if (!_pending_gc_safe_epoch || *_pending_gc_safe_epoch < e) {
+            _pending_gc_safe_epoch = e;
+            _pending_gc_safe_epoch_offset = cmd_offset;
+        }
+    }
+
     /// Advance LRO and it's translated log offset counterpart.
     void advance_last_reconciled_offset(
       kafka::offset new_last_reconciled_offset,
@@ -139,7 +155,8 @@ public:
           _min_epoch_lower_bound,
           _previous_applied_epoch,
           _start_offset,
-          _size_estimator);
+          _size_estimator,
+          _gc_safe_epoch);
     }
 
     /// Max collectible offset is defined by the LRO.
@@ -219,6 +236,14 @@ private:
 
     // Estimates total cloud data bytes addressable by the surviving log.
     size_estimator _size_estimator;
+
+    std::optional<cluster_epoch> _gc_safe_epoch;
+
+    // Pending gc safe epoch from an advance_gc_epoch command. Promoted to
+    // _gc_safe_epoch when LRLO advances past the command's offset. Not
+    // persisted — recovered by the next barrier round after restart.
+    std::optional<cluster_epoch> _pending_gc_safe_epoch;
+    std::optional<model::offset> _pending_gc_safe_epoch_offset;
 };
 
 }; // namespace cloud_topics

@@ -48,11 +48,35 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/base",
+        "//src/v/container:intrusive",
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
         "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "inflight_write_tracker",
+    srcs = [
+        "inflight_write_tracker.cc",
+    ],
+    hdrs = [
+        "inflight_write_tracker.h",
+    ],
+    visibility = [
+        "//src/v/cloud_topics/frontend:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc/tests:__pkg__",
+        "//src/v/cloud_topics/tests:__pkg__",
+        "//src/v/redpanda:__pkg__",
+    ],
+    deps = [
+        "//src/v/cloud_topics:types",
+        "//src/v/container:chunked_vector",
+        "//src/v/ssx:when_all",
         "@seastar",
     ],
 )
@@ -68,12 +92,15 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/frontend_reader:__pkg__",
         "//src/v/cloud_topics/level_one/frontend_reader/tests:__pkg__",
         "//src/v/cloud_topics/level_zero/frontend_reader:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc:__pkg__",
+        "//src/v/cloud_topics/level_zero/gc/tests:__pkg__",
         "//src/v/cloud_topics/reconciler:__pkg__",
         "//src/v/kafka/data:__pkg__",
         "//src/v/redpanda:__pkg__",
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/container:chunked_vector",
         "//src/v/model",
@@ -93,11 +120,13 @@ redpanda_cc_library(
     implementation_deps = [
         ":cluster_services_interface",
         ":data_plane_impl",
+        ":inflight_write_tracker",
         ":logger",
         ":topic_manifest_upload_manager",
         "//src/v/cloud_topics/housekeeper:manager",
         "//src/v/cloud_topics/level_one/metastore:flush_loop",
         "//src/v/cloud_topics/level_one/metastore:topic_purger",
+        "//src/v/cloud_topics/level_zero/gc:epoch_barrier",
         "//src/v/cloud_topics/level_zero/gc:level_zero_gc",
         "//src/v/cloud_topics/manager",
         "//src/v/cloud_topics/read_replica:metadata_manager",
@@ -170,6 +199,7 @@ redpanda_cc_library(
         "//src/v/cloud_io:remote",
         "//src/v/cloud_topics:cluster_services_interface",
         "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:inflight_write_tracker",
         "//src/v/cloud_topics/batch_cache",
         "//src/v/cloud_topics/level_zero/batcher",
         "//src/v/cloud_topics/level_zero/cluster_services_impl",

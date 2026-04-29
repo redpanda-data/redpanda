@@ -38,11 +38,16 @@ class api;
 
 namespace cloud_topics {
 class data_plane_api;
+class inflight_write_tracker;
 class cloud_topics_manager;
 template<class>
 class level_zero_gc_t;
 class housekeeper_manager;
 class topic_manifest_upload_manager;
+
+namespace l0::gc {
+class epoch_barrier;
+} // namespace l0::gc
 
 namespace l1 {
 class flush_loop_manager;
@@ -91,6 +96,7 @@ public:
     l1::compaction_scheduler* get_compaction_scheduler();
     ss::sharded<level_zero_gc_t<ss::lowres_clock>>* get_level_zero_gc();
     cluster_services& get_local_cluster_services();
+    ss::sharded<l0::gc::epoch_barrier>* get_epoch_barrier();
 
     // TODO: add 'get_control_plane_api' etc
 
@@ -102,6 +108,7 @@ private:
 
     ss::sstring _logger_name;
     ss::sharded<level_one_reader_probe> _l1_reader_probe;
+    std::unique_ptr<inflight_write_tracker> tracker;
     std::unique_ptr<data_plane_api> data_plane;
     ss::sharded<l1_reader_cache> l1_reader_cache_;
     ss::sharded<state_accessors> state;
@@ -114,6 +121,7 @@ private:
     ss::sharded<l1::flush_loop_manager> flush_loop_manager;
     ss::sharded<cloud_topics_manager> manager;
     ss::sharded<level_zero_gc_t<ss::lowres_clock>> l0_gc;
+    ss::sharded<l0::gc::epoch_barrier> epoch_barrier;
     ss::sharded<housekeeper_manager> housekeeper_manager;
     ss::sharded<topic_manifest_upload_manager> topic_manifest_upload_mgr;
     std::unique_ptr<l1::compaction_scheduler> compaction_scheduler;

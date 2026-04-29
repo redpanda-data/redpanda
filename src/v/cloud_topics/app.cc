@@ -14,9 +14,11 @@
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/data_plane_impl.h"
 #include "cloud_topics/housekeeper/manager.h"
+#include "cloud_topics/inflight_write_tracker.h"
 #include "cloud_topics/level_one/compaction/scheduler.h"
 #include "cloud_topics/level_one/metastore/flush_loop.h"
 #include "cloud_topics/level_one/metastore/topic_purger.h"
+#include "cloud_topics/level_zero/gc/epoch_barrier.h"
 #include "cloud_topics/level_zero/gc/level_zero_gc.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/manager/manager.h"
@@ -56,13 +58,17 @@ ss::future<> app::construct(
   ss::sharded<storage::api>* storage,
   bool skip_flush_loop,
   bool skip_level_zero_gc) {
+    tracker = inflight_write_tracker::make_default();
+    co_await tracker->start();
+
     data_plane = co_await make_data_plane(
       ssx::sformat("{}::data_plane", _logger_name),
       remote,
       cloud_cache,
       bucket,
       storage,
-      &controller->get_cluster_epoch_generator());
+      &controller->get_cluster_epoch_generator(),
+      tracker.get());
 
     // Touch the L1 staging directory before L1 i/o starts.
     co_await ss::recursive_touch_directory(
@@ -168,6 +174,20 @@ ss::future<> app::construct(
           &controller->get_members_table());
     }
 
+    co_await construct_service(
+      epoch_barrier,
+      std::ref(controller->get_cluster_epoch_generator()),
+      std::ref(*tracker),
+      ss::sharded_parameter([&controller] {
+          return l0::gc::epoch_barrier::make_default_partition_source(
+            controller->get_partition_manager().local());
+      }),
+      ss::sharded_parameter([&, self] {
+          return l0::gc::epoch_barrier::make_default_node_source(
+            self, controller->get_members_table().local());
+      }),
+      connection_cache);
+
     co_await construct_service(housekeeper_manager, ss::sharded_parameter([&] {
                                    return &replicated_metastore.local();
                                }));
@@ -215,6 +235,7 @@ ss::future<> app::start() {
     if (l0_gc.local_is_initialized()) {
         co_await l0_gc.invoke_on_all(&level_zero_gc::start);
     }
+
     if (flush_loop_manager.local_is_initialized()) {
         co_await flush_loop_manager.invoke_on_all(
           &l1::flush_loop_manager::start);
@@ -261,6 +282,17 @@ ss::future<> app::wire_up_notifications() {
               });
         });
     }
+    co_await epoch_barrier.invoke_on_all([this](auto& eb) {
+        manager.local().on_l1_domain_leader([&eb](
+                                              const model::ntp& ntp,
+                                              const auto&,
+                                              const auto& partition) noexcept {
+            if (ntp.tp.partition != model::partition_id{0}) {
+                return;
+            }
+            eb.notify_leadership_change(bool(partition));
+        });
+    });
     co_await housekeeper_manager.invoke_on_all([this](auto& hm) {
         manager.local().on_ctp_partition_leader(
           [&hm](
@@ -383,6 +415,7 @@ ss::future<> app::cleanup_tmp_files() {
 ss::future<> app::stop() {
     ssx::sharded_service_container::shutdown();
     co_await data_plane->stop();
+    co_await tracker->stop();
 }
 
 ss::sharded<l1::leader_router>* app::get_sharded_l1_metastore_router() {
@@ -411,6 +444,10 @@ ss::sharded<level_zero_gc>* app::get_level_zero_gc() { return &l0_gc; }
 
 cluster_services& app::get_local_cluster_services() {
     return std::ref(cluster_services.local());
+}
+
+ss::sharded<l0::gc::epoch_barrier>* app::get_epoch_barrier() {
+    return &epoch_barrier;
 }
 
 } // namespace cloud_topics
