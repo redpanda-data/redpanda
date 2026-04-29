@@ -126,8 +126,9 @@ func (pw *ProducerWorker) newRecord(producerId int, sequence int64) *kgo.Record 
 		// This message ensures that `ValidatorStatus.ValidateRecord`
 		// will report it as an invalid read if it's consumed. This is
 		// since messages in aborted transactions should never be read.
+		// AbortedTransactionMessages is incremented on the produce ack
+		// (in OnAcked) so failed produces don't inflate the counter.
 		fmt.Fprintf(&header_key, "ABORTED MSG: %06d.%018d", producerId, sequence)
-		pw.Status.AbortedTransactionMessages += 1
 	}
 
 	var payload []byte
@@ -232,11 +233,17 @@ func NewProducerWorkerStatus(topic string) ProducerWorkerStatus {
 	}
 }
 
-func (pw *ProducerWorker) OnAcked(r *kgo.Record) {
+func (pw *ProducerWorker) OnAcked(r *kgo.Record, abortedMsg bool) {
 	pw.Status.lock.Lock()
 	defer pw.Status.lock.Unlock()
 
 	pw.Status.OnAcked(r.Partition, r.Offset)
+	if abortedMsg {
+		// Only count records that successfully produced as part of an
+		// intentionally-aborted transaction. Records that failed to
+		// produce should not inflate this counter.
+		pw.Status.AbortedTransactionMessages += 1
+	}
 
 	pw.validOffsets.Insert(r.Partition, r.Offset)
 	if pw.validateLatestValues || pw.config.producesTombstones {
@@ -466,6 +473,11 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 		expectOffset := nextOffset[p]
 		nextOffset[p] += 1
 
+		// Capture abort intent at produce time — by the time the
+		// callback fires the transaction may have already ended and
+		// InAbortedTransaction() reflects the next tx's state.
+		abortedMsg := pw.transactionsEnabled && pw.transactionSTM.InAbortedTransaction()
+
 		r := pw.newRecord(0, expectOffset)
 		r.Partition = p
 		wg.Add(1)
@@ -500,7 +512,7 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				log.Debugf("errored = %t", errored)
 			} else {
 				ackLatency := time.Now().Sub(sentAt)
-				pw.OnAcked(r)
+				pw.OnAcked(r, abortedMsg)
 				pw.Status.latency.Update(ackLatency.Microseconds())
 				log.Debugf("Wrote partition %d at %d", r.Partition, r.Offset)
 			}
