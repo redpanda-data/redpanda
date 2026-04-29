@@ -213,19 +213,37 @@ func main() {
 
 	var t kmsg.MetadataResponseTopic
 	{
-		req := kmsg.NewPtrMetadataRequest()
-		reqTopic := kmsg.NewMetadataRequestTopic()
-		reqTopic.Topic = kmsg.StringPtr(*topic)
-		req.Topics = append(req.Topics, reqTopic)
+		const metadataDeadline = 60 * time.Second
+		const metadataBackoff = 1 * time.Second
+		deadline := time.Now().Add(metadataDeadline)
+		for {
+			req := kmsg.NewPtrMetadataRequest()
+			reqTopic := kmsg.NewMetadataRequestTopic()
+			reqTopic.Topic = kmsg.StringPtr(*topic)
+			req.Topics = append(req.Topics, reqTopic)
 
-		resp, err := req.RequestWith(context.Background(), client)
-		util.Chk(err, "unable to request topic metadata: %v", err)
-		if len(resp.Topics) != 1 {
-			util.Die("metadata response returned %d topics when we asked for 1", len(resp.Topics))
-		}
-		t = resp.Topics[0]
-		if t.ErrorCode != 0 {
-			util.Die("Error %s getting topic metadata", kerr.ErrorForCode(t.ErrorCode))
+			resp, err := req.RequestWith(context.Background(), client)
+			if err != nil {
+				if time.Now().After(deadline) {
+					util.Die("unable to request topic metadata: %v", err)
+				}
+				log.Warnf("Topic metadata request failed, will retry: %v", err)
+				time.Sleep(metadataBackoff)
+				continue
+			}
+			if len(resp.Topics) != 1 {
+				util.Die("metadata response returned %d topics when we asked for 1", len(resp.Topics))
+			}
+			t = resp.Topics[0]
+			if t.ErrorCode == 0 {
+				break
+			}
+			topicErr := kerr.ErrorForCode(t.ErrorCode)
+			if time.Now().After(deadline) {
+				util.Die("Error %s getting topic metadata", topicErr)
+			}
+			log.Warnf("Topic metadata error %s, will retry", topicErr)
+			time.Sleep(metadataBackoff)
 		}
 	}
 
