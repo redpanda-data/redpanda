@@ -555,13 +555,23 @@ cloudcheck::verify_multipart_upload(
 
         auto upload = std::move(upload_result.value());
 
-        // Upload the same 5 MiB chunk 3 times to exercise multipart path
-        auto chunk = make_random_payload(part_size);
-        for (int i = 0; i < 3; ++i) {
-            co_await upload->put(chunk.share());
+        std::exception_ptr eptr;
+        try {
+            // Upload the same 5 MiB chunk 3 times to exercise multipart path
+            auto chunk = make_random_payload(part_size);
+            for (int i = 0; i < 3; ++i) {
+                co_await upload->put(chunk.share());
+            }
+
+            co_await upload->complete();
+        } catch (...) {
+            eptr = std::current_exception();
         }
 
-        co_await upload->complete();
+        if (eptr) {
+            co_await upload->abort();
+            std::rethrow_exception(eptr);
+        }
 
     } catch (const std::exception& e) {
         result.error = e.what();
