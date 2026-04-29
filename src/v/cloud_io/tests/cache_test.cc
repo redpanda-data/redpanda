@@ -9,6 +9,7 @@
  */
 
 #include "base/units.h"
+#include "base/vassert.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cache_test_fixture.h"
@@ -25,16 +26,20 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/util/file.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <stdexcept>
+#include <system_error>
 
 using namespace cloud_io;
 
@@ -499,6 +504,44 @@ FIXTURE_TEST(test_clean_up_on_stream_exception, cache_test_fixture) {
     BOOST_CHECK_EQUAL(count_files(CACHE_DIR.native()).get(), 0);
 
     vlog(test_log.info, "Test passed");
+}
+
+/**
+ * Regression test for the ENOSPC handler in cache::put. The cache is sharded
+ * but trim() asserts shard 0 only; if put runs on a non-zero shard and the
+ * write fails with ENOSPC, the local trim_throttled() hop must route through
+ * shard 0 instead of executing on the calling shard.
+ */
+FIXTURE_TEST(test_put_enospc_on_non_zero_shard, cache_test_fixture) {
+    vassert(
+      ss::smp::count >= 2,
+      "Test requires at least 2 shards to exercise non-shard-0 put path");
+
+    BOOST_CHECK_EXCEPTION(
+      sharded_cache
+        .invoke_on(
+          ss::shard_id{1},
+          [](cloud_io::cache& c) -> ss::future<> {
+              auto reservation = co_await c.reserve_space(1, 1);
+              auto s = tests::make_throwing_stream(
+                std::filesystem::filesystem_error(
+                  "fake ENOSPC",
+                  std::error_code(ENOSPC, std::generic_category())));
+              std::filesystem::path key{
+                "shard1_topic/shard1_partition/shard1_segment.log"};
+              co_await c.put(key, s, reservation);
+          })
+        .get(),
+      std::filesystem::filesystem_error,
+      [](const std::filesystem::filesystem_error& e) {
+          return e.code() == std::errc::no_space_on_device;
+      });
+
+    // After ENOSPC, all shards must observe the block-puts flag, otherwise
+    // concurrent puts on other shards would keep racing into a full disk.
+    for (ss::shard_id s = 0; s < ss::smp::count; ++s) {
+        BOOST_CHECK(get_block_puts(s));
+    }
 }
 
 /**
