@@ -123,7 +123,7 @@ func TestRepoManifest_NoLatest(t *testing.T) {
 
 	_, _, err = manifest.LatestArtifact("Foo CLI")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no latest artifact found")
+	require.Contains(t, err.Error(), "no latest Foo CLI release found")
 }
 
 func TestRepoBaseURL_RespectsEnv(t *testing.T) {

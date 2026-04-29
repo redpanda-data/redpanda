@@ -11,7 +11,6 @@ package plugin
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -60,7 +59,7 @@ func (m *RepoManifest) LatestArtifact(displayName string) (RepoArtifact, string,
 			return RepoArtifact{}, "", fmt.Errorf("no artifact found for os-arch %s in the latest %s release. Please report this issue with Redpanda Support", osArch, displayName)
 		}
 	}
-	return RepoArtifact{}, "", errors.New("no latest artifact found. Please report this issue with Redpanda Support")
+	return RepoArtifact{}, "", fmt.Errorf("no latest %s release found. Please report this issue with Redpanda Support", displayName)
 }
 
 // ArtifactVersion returns the RepoArtifact for the running os/arch from the
@@ -111,7 +110,7 @@ func (c *RepoClient) Manifest(ctx context.Context) (*RepoManifest, error) {
 	var manifest RepoManifest
 	url := fmt.Sprintf("%s/%s/manifest.json", repoBaseURL(), c.slug)
 	if err := c.cl.Get(ctx, url, nil, &manifest); err != nil {
-		return nil, fmt.Errorf("unable to retrieve %s manifest: %v", c.displayName, err)
+		return nil, fmt.Errorf("unable to retrieve %s manifest: %w", c.displayName, err)
 	}
 	return &manifest, nil
 }
