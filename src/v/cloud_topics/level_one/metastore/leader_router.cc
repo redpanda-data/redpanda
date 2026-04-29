@@ -18,7 +18,10 @@
 #include "cluster/shard_table.h"
 #include "hashing/murmur.h"
 #include "model/namespace.h"
+#include "resource_mgmt/cpu_scheduling.h"
 #include "rpc/connection_cache.h"
+
+#include <seastar/coroutine/switch_to.hh>
 
 namespace cloud_topics::l1 {
 
@@ -259,6 +262,9 @@ requires requires(
 }
 ss::future<typename req_t::resp_t>
 leader_router::process(req_t req, bool local_only) {
+    co_await ss::coroutine::switch_to(
+      scheduling_groups::instance().cloud_topics_metastore_sg());
+
     static const auto req_name = ss::pretty_type_name(typeid(req_t));
     using resp_t = req_t::resp_t;
     auto exists = co_await ensure_topic_exists();
