@@ -1303,12 +1303,14 @@ ss::future<> cache::put(
 
             // Block further puts from being attempted until notify_disk_status
             // reports that there is space available.
-            set_block_puts(true);
+            co_await container().invoke_on_all(
+              [](cache& c) { c.set_block_puts(true); });
 
             // Trim proactively: if many fibers hit this concurrently,
             // they'll contend for cleanup_sm and the losers will skip
             // trim due to throttling.
-            co_await trim_throttled();
+            co_await container().invoke_on(
+              0, [](cache& c) { return c.trim_throttled(); });
         }
 
         std::rethrow_exception(eptr);
