@@ -891,24 +891,49 @@ class ReferenceFormat(str, Enum):
 class SchemaRegistryRedpandaClient:
     """
     A client for acessing the schema registry.
+
+    base_path is an optional URI prefix prepended to every request path,
+    e.g. "contexts/.staging" to scope all requests to a context-prefixed
+    base URL.
     """
 
     def __init__(
         self,
         redpanda: RedpandaService,
+        base_path: str = "",
     ):
         self.redpanda = redpanda
         self.logger = redpanda.logger
+        self.base_path = base_path
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
-    def request(self, verb, path, hostname=None, tls_enabled: bool = False, **kwargs):
+    @property
+    def base_path(self) -> str:
+        return self._base_path
+
+    @base_path.setter
+    def base_path(self, value: str) -> None:
+        self._base_path = value.strip("/")
+
+    def request(
+        self,
+        verb,
+        path,
+        hostname=None,
+        tls_enabled: bool = False,
+        base_path: str | None = None,
+        **kwargs,
+    ):
         """
 
         :param verb: String, as for first arg to requests.request
         :param path: URI path without leading slash
         :param timeout: Optional requests timeout in seconds
+        :param base_path: Per-call override for self.base_path. Pass "" to
+            issue the request without the configured prefix; pass None
+            (default) to use self.base_path.
         :return:
         """
 
@@ -920,8 +945,12 @@ class SchemaRegistryRedpandaClient:
             node = nodes[0]
             hostname = node.account.hostname
 
+        effective_base_path = (
+            self.base_path if base_path is None else base_path.strip("/")
+        )
         scheme = "https" if tls_enabled else "http"
-        uri = f"{scheme}://{hostname}:8081/{path}"
+        full_path = f"{effective_base_path}/{path}" if effective_base_path else path
+        uri = f"{scheme}://{hostname}:8081/{full_path}"
 
         if "timeout" not in kwargs:
             kwargs["timeout"] = 60
@@ -1277,16 +1306,22 @@ class SchemaRegistryRedpandaClient:
         self, headers=HTTP_GET_HEADERS, tls_enabled: bool = False, **kwargs
     ):
         return self.request(
-            "GET", "status/ready", headers=headers, tls_enabled=tls_enabled, **kwargs
+            "GET",
+            "status/ready",
+            base_path="",
+            headers=headers,
+            tls_enabled=tls_enabled,
+            **kwargs,
         )
 
     def get_security_acls(self, **kwargs):
-        return self.request("GET", "security/acls", **kwargs)
+        return self.request("GET", "security/acls", base_path="", **kwargs)
 
     def post_security_acls(self, data, **kwargs):
         return self.request(
             "POST",
             "security/acls",
+            base_path="",
             json=data,
             headers={"Content-Type": "application/json"},
             **kwargs,
@@ -1296,18 +1331,25 @@ class SchemaRegistryRedpandaClient:
         return self.request(
             "DELETE",
             "security/acls",
+            base_path="",
             json=data,
             headers={"Content-Type": "application/json"},
             **kwargs,
         )
 
     def get_contexts(self, headers: Headers = HTTP_GET_HEADERS, **kwargs: Any):
-        return self.request("GET", "contexts", headers=headers, **kwargs)
+        return self.request("GET", "contexts", base_path="", headers=headers, **kwargs)
 
     def delete_context(
         self, context: str, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any
     ):
-        return self.request("DELETE", f"contexts/{context}", headers=headers, **kwargs)
+        return self.request(
+            "DELETE",
+            f"contexts/{context}",
+            base_path="",
+            headers=headers,
+            **kwargs,
+        )
 
     def create_acl(
         self,
@@ -1345,6 +1387,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
         context: TestContext,
         schema_registry_config: SchemaRegistryConfig = SchemaRegistryConfig(),
         num_brokers: int = 3,
+        base_path: str = "",
         extra_rp_conf: Optional[dict[str, Any]] = None,
         **kwargs: Any,
     ):
@@ -1361,7 +1404,9 @@ class SchemaRegistryEndpoints(RedpandaTest):
             **kwargs,
         )
 
-        self.sr_client = SchemaRegistryRedpandaClient(redpanda=self.redpanda)
+        self.sr_client = SchemaRegistryRedpandaClient(
+            redpanda=self.redpanda, base_path=base_path
+        )
 
     def assert_equal(self, first, second, msg=None):
         assert first == second, msg or f"{first} != {second}"
