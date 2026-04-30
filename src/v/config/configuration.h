@@ -394,6 +394,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       cloud_storage_upload_loop_max_backoff_ms;
     property<int16_t> cloud_storage_max_connections;
+    bounded_property<int16_t> cloud_storage_max_capped_pool_pct;
     property<bool> cloud_storage_disable_tls;
     property<int16_t> cloud_storage_api_endpoint_port;
     property<std::optional<ss::sstring>> cloud_storage_trust_file;

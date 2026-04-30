@@ -2167,6 +2167,18 @@ configuration::configuration()
       "to upload and download activities.",
       {.visibility = visibility::user},
       20)
+  , cloud_storage_max_capped_pool_pct(
+      *this,
+      "cloud_storage_max_capped_pool_pct",
+      "Maximum fraction (0-100) of the per-shard cloud-storage client pool "
+      "that may be held by capped leases (cold L1 reads, cache "
+      "hydration) at any one time. The remaining 100-pct of the pool is "
+      "always available to priority callers (produce path). The "
+      "computed capacity has a floor of 1 so capped callers always make "
+      "some forward progress, even at pct=0. 100 disables segregation.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      50,
+      {.min = 0, .max = 100})
   , cloud_storage_disable_tls(
       *this,
       "cloud_storage_disable_tls",
