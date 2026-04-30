@@ -104,6 +104,14 @@ client_pool::client_pool(
   , _capped_capacity(compute_capped_capacity(_capacity, _capped_pct()))
   , _capped_budget(_capped_capacity, "cloud_storage/capped_budget") {
     _capped_pct.watch([this] { on_capped_pct_changed(); });
+    if (_probe) {
+        // [this] is safe: the provider lambda lives on the probe
+        // (owned by upstream_registry, which outlives the pool), but
+        // stop() / shutdown_connections() clear the provider before
+        // the pool dies.
+        _probe->set_capped_lease_waiters_provider(
+          [this] { return _capped_budget.waiters(); });
+    }
 }
 
 void client_pool::on_capped_pct_changed() {
@@ -212,6 +220,12 @@ ss::future<> client_pool::stop() {
     _cvar.broken();
     _pool_ready_barrier.broken();
     _capped_budget.broken();
+    // The probe outlives this pool (it is owned by upstream_registry).
+    // Drop the waiter-count callback before it can dereference our
+    // soon-to-be-dead _capped_budget on the next Prometheus scrape.
+    if (_probe) {
+        _probe->set_capped_lease_waiters_provider({});
+    }
     // Wait for all background operations to complete.
     co_await _bg_gate.close();
     // Wait until all leased objects are returned
@@ -241,6 +255,12 @@ void client_pool::shutdown_connections() {
     _cvar.broken();
     _pool_ready_barrier.broken();
     _capped_budget.broken();
+    // The probe outlives this pool (it is owned by upstream_registry).
+    // Drop the waiter-count callback before it can dereference our
+    // _capped_budget on the next Prometheus scrape.
+    if (_probe) {
+        _probe->set_capped_lease_waiters_provider({});
+    }
 
     for (auto& it : _leased) {
         it.client->shutdown();
@@ -303,6 +323,9 @@ ss::future<client_pool::client_lease> client_pool::acquire(
         auto timeout_as = ss::abort_on_expiry(budget_deadline);
         auto wait_as = ssx::composite_abort_source(
           as, timeout_as.abort_source());
+        auto wait_measurement = _probe
+                                  ? _probe->auto_measure_capped_lease_wait()
+                                  : nullptr;
         try {
             capped_units = co_await ss::get_units(
               _capped_budget, 1, wait_as.as());
@@ -511,9 +534,9 @@ ss::future<client_pool::client_lease> client_pool::acquire(
       normalized_num_clients_in_use(),
       source_sid.has_value());
 
-    std::unique_ptr<client_probe::hist_t::measurement> measurement;
+    std::unique_ptr<client_probe::lease_duration_measurement> measurement;
     if (_probe) {
-        measurement = _probe->register_lease_duration();
+        measurement = _probe->auto_measure_lease_duration(lc);
     }
 
     client_lease lease(

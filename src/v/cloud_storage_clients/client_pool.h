@@ -52,14 +52,15 @@ public:
         ss::deleter deleter;
         ss::abort_source::subscription as_sub;
         intrusive_list_hook _hook;
-        std::unique_ptr<client_probe::hist_t::measurement> _track_duration;
+        std::unique_ptr<client_probe::lease_duration_measurement>
+          _track_duration;
         std::unique_ptr<ssx::watchdog> _wd;
 
         client_lease(
           client_ptr p,
           ss::abort_source& as,
           ss::deleter deleter,
-          std::unique_ptr<client_probe::hist_t::measurement> m)
+          std::unique_ptr<client_probe::lease_duration_measurement> m)
           : client(std::move(p))
           , deleter(std::move(deleter))
           , _track_duration(std::move(m)) {

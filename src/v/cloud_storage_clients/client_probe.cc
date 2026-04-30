@@ -17,6 +17,8 @@
 #include <seastar/core/metrics_types.hh>
 #include <seastar/core/smp.hh>
 
+#include <utility>
+
 namespace {
 constexpr auto endpoint_label_key = "endpoint";
 constexpr auto region_label_key = "region";
@@ -92,9 +94,24 @@ void client_probe::register_retryable_failure(
 
 void client_probe::register_borrow() { _total_borrows += 1; }
 
+std::unique_ptr<client_probe::lease_duration_measurement>
+client_probe::auto_measure_lease_duration(lease_class lc) {
+    auto m = std::make_unique<lease_duration_measurement>();
+    m->all = _lease_duration.auto_measure();
+    if (lc == lease_class::capped) {
+        m->capped = _capped_lease_duration.auto_measure();
+    }
+    return m;
+}
+
 std::unique_ptr<client_probe::hist_t::measurement>
-client_probe::register_lease_duration() {
-    return _lease_duration.auto_measure();
+client_probe::auto_measure_capped_lease_wait() {
+    return _capped_lease_wait.auto_measure();
+}
+
+void client_probe::set_capped_lease_waiters_provider(
+  std::function<uint64_t()> f) {
+    _capped_lease_waiters_provider = std::move(f);
 }
 
 void client_probe::register_utilization(unsigned clients_in_use) {
@@ -214,7 +231,32 @@ void client_probe::setup_internal_metrics(
         sm::make_histogram(
           "lease_duration",
           [this] { return _lease_duration.public_histogram_logform(); },
-          sm::description("Lease duration histogram"),
+          sm::description("Lease duration histogram (all leases)"),
+          labels),
+        sm::make_histogram(
+          "capped_lease_duration",
+          [this] { return _capped_lease_duration.public_histogram_logform(); },
+          sm::description(
+            "Lease duration histogram for lease_class::capped only "
+            "(cold L1 reads, cache hydration). Subset of lease_duration."),
+          labels),
+        sm::make_histogram(
+          "capped_lease_wait",
+          [this] { return _capped_lease_wait.public_histogram_logform(); },
+          sm::description(
+            "Time capped acquires spent waiting at the per-shard "
+            "capped-budget semaphore before entering the pool flow."),
+          labels),
+        sm::make_gauge(
+          "capped_lease_waiters",
+          [this] {
+              return _capped_lease_waiters_provider
+                       ? _capped_lease_waiters_provider()
+                       : 0;
+          },
+          sm::description(
+            "Current number of capped acquires parked at the "
+            "per-shard capped-budget semaphore."),
           labels),
         sm::make_gauge(
           "client_pool_utilization",
@@ -324,7 +366,14 @@ void client_probe::setup_public_metrics(
         sm::make_histogram(
           "lease_duration",
           [this] { return _lease_duration.public_histogram_logform(); },
-          sm::description("Lease duration histogram"),
+          sm::description("Lease duration histogram (all leases)"),
+          labels),
+        sm::make_histogram(
+          "capped_lease_duration",
+          [this] { return _capped_lease_duration.public_histogram_logform(); },
+          sm::description(
+            "Lease duration histogram for lease_class::capped only "
+            "(cold L1 reads, cache hydration). Subset of lease_duration."),
           labels),
         sm::make_gauge(
           "client_pool_utilization",

@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <span>
 
 namespace cloud_storage_clients {
@@ -48,6 +49,15 @@ enum class op_type_tag { upload, download };
 class client_probe : public http::client_probe {
 public:
     using hist_t = log_hist_internal;
+
+    /// RAII bundle returned by auto_measure_lease_duration. Records into
+    /// the always-on lease_duration histogram (all leases) and, for
+    /// capped leases, additionally into the capped_lease_duration
+    /// histogram. Both measurements record on destruction.
+    struct lease_duration_measurement {
+        std::unique_ptr<hist_t::measurement> all;
+        std::unique_ptr<hist_t::measurement> capped;
+    };
 
     /// \brief Probe c-tor for S3 client
     ///
@@ -82,8 +92,17 @@ public:
 
     /// Call on a shard which needs to borrow a client
     void register_borrow();
-    /// Register total lease duration
-    std::unique_ptr<hist_t::measurement> register_lease_duration();
+    /// Auto-measure total lease duration. For capped leases, also
+    /// records into the capped_lease_duration histogram.
+    std::unique_ptr<lease_duration_measurement>
+    auto_measure_lease_duration(lease_class lc);
+    /// Auto-measure the time a capped acquire waits at the
+    /// capped-budget gate before entering the pool flow. High values
+    /// mean capped demand exceeds the configured capacity.
+    std::unique_ptr<hist_t::measurement> auto_measure_capped_lease_wait();
+    /// Provide a callback that returns the current number of capped
+    /// acquires waiting at the capped-budget gate.
+    void set_capped_lease_waiters_provider(std::function<uint64_t()> f);
     /// Utilization metric which is used to decide if borrowing is possible
     void register_utilization(unsigned clients_in_use);
     /// Register client timeout
@@ -121,8 +140,14 @@ private:
     uint64_t _total_download_slowdowns{0};
     /// Number of times this shard borrowed resources from other shards
     uint64_t _total_borrows{0};
-    /// Total time the lease is held by the ntp_archiver (or another user)
+    /// Total time the lease is held, all classes.
     hist_t _lease_duration;
+    /// Total time the lease is held by capped callers only.
+    hist_t _capped_lease_duration;
+    /// Time capped acquires spent waiting at the capped-budget gate.
+    hist_t _capped_lease_wait;
+    /// Source for the gauge of capped acquires waiting at the gate.
+    std::function<uint64_t()> _capped_lease_waiters_provider;
     /// Current utilization of the client pool
     uint64_t _pool_utilization;
     /// Total client timeouts;
