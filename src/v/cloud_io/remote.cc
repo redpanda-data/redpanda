@@ -254,7 +254,11 @@ ss::future<upload_result> remote::upload_stream(
         }
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts,
+            fib.root_abort_source(),
+            _lease_timeout(),
+            fib(),
+            transfer_details.lc));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -382,7 +386,11 @@ ss::future<download_result> remote::download_stream(
         auto fut = co_await [this, &fib, &transfer_details, &bucket_parts] {
             transfer_details.on_client_acquire();
             return ss::coroutine::as_future(_pool.local().acquire_with_timeout(
-              *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
+              *bucket_parts,
+              fib.root_abort_source(),
+              _lease_timeout(),
+              fib(),
+              transfer_details.lc));
         }();
         if (fut.failed()) {
             co_return throw_if_not_timeout(
@@ -520,7 +528,11 @@ remote::download_object(download_request download_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts,
+            fib.root_abort_source(),
+            _lease_timeout(),
+            fib(),
+            download_request.transfer_details.lc));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), download_result::timedout);
@@ -717,7 +729,11 @@ remote::delete_object(transfer_details transfer_details) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts,
+            fib.root_abort_source(),
+            _lease_timeout(),
+            fib(),
+            transfer_details.lc));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
@@ -1241,7 +1257,11 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts,
+            fib.root_abort_source(),
+            _lease_timeout(),
+            fib(),
+            upload_request.transfer_details.lc));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);
