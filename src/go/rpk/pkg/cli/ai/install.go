@@ -1,0 +1,146 @@
+// Copyright 2026 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+package ai
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"strings"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/fips"
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/osutil"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+)
+
+func installCommand(fs afero.Fs) *cobra.Command {
+	var (
+		version string
+		force   bool
+	)
+	cmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install the Redpanda AI CLI",
+		Long: `Install the Redpanda AI CLI.
+
+This command installs the latest version by default.
+
+Alternatively, you may specify an rpk ai version using the --ai-version flag.
+
+You may force the installation using the --force flag.
+`,
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
+			maybeExitFIPS()
+			version = strings.ToLower(version)
+			err := validateVersion(version)
+			out.MaybeDieErr(err)
+			_, installed := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
+			if installed && !force {
+				if version != "latest" {
+					out.Exit("The Redpanda AI CLI is already installed. Use --force to force installation, or delete the current version with 'rpk ai uninstall' first")
+				}
+				out.Exit("The Redpanda AI CLI is already installed.\nIf you want to upgrade to the latest version, please run 'rpk ai upgrade'")
+			}
+			_, installedVersion, err := installAIPlugin(cmd.Context(), fs, version)
+			out.MaybeDie(err, "unable to install the rpk ai plugin: %v; if running in an air-gapped environment you may install it manually with your package manager", err)
+
+			fmt.Printf("Redpanda AI CLI %v successfully installed.\n", installedVersion)
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "Force install of the Redpanda AI CLI")
+	cmd.Flags().StringVar(&version, "ai-version", "latest", "Redpanda AI CLI version to install (e.g. 0.1.2)")
+	return cmd
+}
+
+// installAIPlugin installs the rpk ai plugin in the default location. A
+// "latest" or empty version string downloads the latest published version.
+func installAIPlugin(ctx context.Context, fs afero.Fs, version string) (path, installedVersion string, err error) {
+	pluginDir, err := plugin.DefaultBinPath()
+	if err != nil {
+		return "", "", fmt.Errorf("unable to determine plugin default path: %v", err)
+	}
+
+	art, ver, err := getAIPluginArtifact(ctx, version)
+	if err != nil {
+		return "", "", err
+	}
+	path, err = downloadAndInstallAIPlugin(ctx, fs, pluginDir, art.Path, art.Sha256)
+	return path, ver, err
+}
+
+func getAIPluginArtifact(ctx context.Context, version string) (plugin.RepoArtifact, string, error) {
+	plCl, err := newRepoClient()
+	if err != nil {
+		return plugin.RepoArtifact{}, "", err
+	}
+	manifest, err := plCl.Manifest(ctx)
+	if err != nil {
+		return plugin.RepoArtifact{}, "", err
+	}
+	if version == "latest" || version == "" {
+		return manifest.LatestArtifact(rpaiDisplayName)
+	}
+	art, err := manifest.ArtifactVersion(rpaiDisplayName, version)
+	if err != nil {
+		return plugin.RepoArtifact{}, "", err
+	}
+	return art, version, nil
+}
+
+func downloadAndInstallAIPlugin(ctx context.Context, fs afero.Fs, installPath, downloadURL, expShaPrefix string) (string, error) {
+	bin, err := plugin.Download(ctx, downloadURL, true, expShaPrefix)
+	if err != nil {
+		return "", fmt.Errorf("unable to download the Redpanda AI CLI from %q: %v", downloadURL, err)
+	}
+
+	if exists, _ := afero.DirExists(fs, installPath); !exists {
+		if rpkos.IsRunningSudo() {
+			return "", fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the plugin as a root owned binary in %s", installPath)
+		}
+		if err := fs.MkdirAll(installPath, 0o755); err != nil {
+			return "", fmt.Errorf("unable to create plugin directory %s: %v", installPath, err)
+		}
+	}
+	zap.L().Sugar().Debugf("writing rpk ai plugin to %v", installPath)
+	path, err := plugin.WriteBinary(fs, rpaiPluginSlug, installPath, bin, false, true)
+	if err != nil {
+		return "", fmt.Errorf("unable to write rpk ai plugin: %v", err)
+	}
+	return path, nil
+}
+
+// validateVersion validates that the provided version flag is either
+// 'latest' or starts with a MAJOR.MINOR.PATCH prefix (optionally v-prefixed).
+// The regex is intentionally loose on the suffix so prereleases like
+// "0.1.2-rc1" are accepted and forwarded to the manifest for lookup; the
+// manifest is then the source of truth for what's actually published.
+func validateVersion(version string) error {
+	if version == "latest" {
+		return nil
+	}
+	vMatch := regexp.MustCompile(`^v?\d{1,2}\.\d{1,2}\.\d{1,2}`).MatchString(version)
+	if !vMatch {
+		return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 0.1.2)", version)
+	}
+	return nil
+}
+
+// maybeExitFIPS exits with a clear error if fips is enabled. The rpk ai
+// plugin does not yet ship a FIPS build.
+func maybeExitFIPS() {
+	if fips.IsEnabled() {
+		out.Die("the Redpanda AI CLI is not yet available in FIPS mode")
+	}
+}

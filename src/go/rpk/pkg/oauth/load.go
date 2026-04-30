@@ -315,6 +315,29 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client, n
 	return authAct, authVir, clearedProfile, isNewAuth, yAct.Write(fs)
 }
 
+// LoadCloudToken returns a fresh cloud bearer token for managed-plugin and
+// hook call sites that need to forward an Authorization header. It honors the
+// RPK_CLOUD_TOKEN dev override, otherwise it runs the standard LoadFlow (which
+// refreshes from the stored refresh token, falling back to interactive login
+// when needed) and prints a swap message if the login switched orgs/profiles.
+//
+// Callers should wrap the returned error with a context-specific message —
+// e.g. "unable to load the cloud token for the AI plugin: %w" — so users see
+// where the failure originated.
+func LoadCloudToken(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client) (string, error) {
+	if devTok := cfg.DevOverrides().CloudToken; devTok != "" {
+		return devTok, nil
+	}
+
+	priorProfile := cfg.ActualProfile()
+	_, authVir, clearedProfile, _, err := LoadFlow(ctx, fs, cfg, cl, false, false)
+	if err != nil {
+		return "", err
+	}
+	MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
+	return authVir.AuthToken, nil
+}
+
 // PrintSwapMessage prints a message to the user about swapping away from a
 // profile due to a new login.
 func PrintSwapMessage(priorProfile *config.RpkProfile, newAuth *config.RpkCloudAuth) {

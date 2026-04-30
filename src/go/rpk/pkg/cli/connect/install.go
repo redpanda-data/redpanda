@@ -85,32 +85,23 @@ func installConnect(ctx context.Context, fs afero.Fs, version string) (path, ins
 	return path, ver, err
 }
 
-func getConnectArtifact(ctx context.Context, version string) (connectArtifact, string, error) {
+func getConnectArtifact(ctx context.Context, version string) (plugin.RepoArtifact, string, error) {
 	plCl, err := newRepoClient()
 	if err != nil {
-		return connectArtifact{}, "", err
+		return plugin.RepoArtifact{}, "", err
 	}
 	manifest, err := plCl.Manifest(ctx)
 	if err != nil {
-		return connectArtifact{}, "", err
+		return plugin.RepoArtifact{}, "", err
 	}
-	var (
-		art        connectArtifact
-		retVersion string
-	)
 	if version == "latest" || version == "" {
-		art, retVersion, err = manifest.LatestArtifact()
-		if err != nil {
-			return connectArtifact{}, "", err
-		}
-	} else {
-		art, err = manifest.ArtifactVersion(version)
-		if err != nil {
-			return connectArtifact{}, "", err
-		}
-		retVersion = version
+		return manifest.LatestArtifact(connectDisplayName)
 	}
-	return art, retVersion, nil
+	art, err := manifest.ArtifactVersion(connectDisplayName, version)
+	if err != nil {
+		return plugin.RepoArtifact{}, "", err
+	}
+	return art, version, nil
 }
 
 func downloadAndInstallConnect(ctx context.Context, fs afero.Fs, installPath, downloadURL, expShaPrefix string) (string, error) {

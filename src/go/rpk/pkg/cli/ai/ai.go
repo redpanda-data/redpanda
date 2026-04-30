@@ -1,0 +1,125 @@
+// Copyright 2026 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+// Package ai wires the Redpanda AI CLI into rpk as a managed plugin. Users
+// interact with it as `rpk ai ...`; on-disk the binary is the standard rpk
+// managed-plugin layout under ~/.local/bin.
+package ai
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+)
+
+func init() {
+	// Whenever a `rpk ai <subcommand>` managed-plugin leaf is dispatched,
+	// inject the plugin's token/endpoint env vars and strip rpk global
+	// flags before the child process is exec'd. Reaching this wrapper
+	// means cobra already routed to a real plugin leaf, so unless the user
+	// asked for --help / --version on the leaf itself (in which case the
+	// plugin renders its own local help), we always need cloud context —
+	// regardless of whether the leaf takes positional args.
+	plugin.RegisterManaged(rpaiPluginSlug, []string{"ai"}, func(cmd *cobra.Command, fs afero.Fs, p *config.Params) *cobra.Command {
+		run := cmd.Run
+		cmd.Run = func(cmd *cobra.Command, args []string) {
+			pluginArgs, err := parseFlags(p, cmd, args)
+			out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			if !skipCloudForHelp(pluginArgs) {
+				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
+				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			}
+			run(cmd, pluginArgs)
+		}
+		return cmd
+	})
+}
+
+// NewCommand returns the top-level `rpk ai` cobra command. If the rpk ai
+// plugin is already installed, `rpk ai <sub>` hands off to it; otherwise we
+// auto-install on first subcommand use, matching the rpk connect pattern.
+func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) error) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "ai",
+		Short:              "Manage the Redpanda AI Gateway",
+		DisableFlagParsing: true,                  // Required for managed plugins; we parse flags ourselves.
+		Args:               cobra.MinimumNArgs(0), // Allow `rpk ai` with no subcommand (renders help).
+		Run: func(cmd *cobra.Command, args []string) {
+			pluginArgs, err := parseFlags(p, cmd, args)
+			out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			// Top-level dispatch: args carries the full subcommand path
+			// (e.g. ["llm","list"]) when the plugin isn't installed yet.
+			// Only touch the cloud when the user actually named a
+			// subcommand and isn't asking for help/version.
+			if !skipCloudForHelp(pluginArgs) && topLevelHasSubcommand(pluginArgs) {
+				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
+				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
+			}
+			ai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
+			var pluginPath string
+			if !pluginExists {
+				// Without the plugin present, only download when the user
+				// actually invoked a subcommand. Bare `rpk ai` or `rpk ai
+				// --help` should just show help.
+				var isSubcommand bool
+				for _, arg := range pluginArgs {
+					switch {
+					case arg == "--version":
+						fmt.Println("cannot get version: the rpk ai plugin is not installed; run 'rpk ai install'")
+						return
+					case strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-"):
+						continue
+					default:
+						isSubcommand = true
+					}
+				}
+				if !isSubcommand {
+					cmd.Help()
+					return
+				}
+				// FIPS is only blocked once we're committed to installing —
+				// `rpk ai`, `rpk ai --help`, and `rpk ai --version` (handled
+				// above) all return without touching the network, so they
+				// remain usable on FIPS builds even though the rpk ai plugin
+				// does not yet ship a FIPS variant.
+				maybeExitFIPS()
+				fmt.Fprintln(os.Stderr, "Downloading latest Redpanda AI CLI")
+				path, _, err := installAIPlugin(cmd.Context(), fs, "latest")
+				out.MaybeDie(err, "unable to install the rpk ai plugin: %v; if running in an air-gapped environment you may install it manually with your package manager", err)
+				pluginPath = path
+			}
+			if pluginExists {
+				pluginPath = ai.Path
+				if !ai.Managed {
+					zap.L().Sugar().Warn("rpk is using a self-managed version of the rpk ai plugin. If you want rpk to manage it, run 'rpk ai uninstall && rpk ai install'. To continue managing it manually, keep using your existing install.")
+				}
+			}
+			if cmd.Flags().Changed("help") {
+				cmd.Help()
+				return
+			}
+			zap.L().Debug("executing rpk ai plugin", zap.String("path", pluginPath), zap.Strings("args", pluginArgs))
+			err = execFn(pluginPath, pluginArgs)
+			out.MaybeDie(err, "unable to execute the rpk ai plugin: %v", err)
+		},
+	}
+	cmd.AddCommand(
+		installCommand(fs),
+		uninstallCommand(fs),
+		upgradeCommand(fs),
+	)
+	return cmd
+}

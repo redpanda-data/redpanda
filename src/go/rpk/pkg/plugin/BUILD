@@ -6,6 +6,7 @@ go_library(
         "managed.go",
         "manifest.go",
         "plugin.go",
+        "repo.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin",
     visibility = ["//visibility:public"],
@@ -26,6 +27,7 @@ go_test(
     srcs = [
         "manifest_test.go",
         "plugin_test.go",
+        "repo_test.go",
     ],
     embed = [":plugin"],
     deps = [
