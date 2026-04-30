@@ -56,18 +56,18 @@ public:
     }
 
     ss::future<> seek_to_first() override {
+        invalidate();
         _dir = forward;
         _saved_value.clear();
         _saved_key = {};
         co_await _iter->seek_to_first();
         if (_iter->valid()) {
             co_await find_next_user_entry(false);
-        } else {
-            _valid = false;
         }
     }
 
     ss::future<> seek_to_last() override {
+        invalidate();
         _dir = reverse;
         _saved_value.clear();
         _saved_key = {};
@@ -76,6 +76,7 @@ public:
     }
 
     ss::future<> seek(internal::key_view target) override {
+        invalidate();
         _dir = forward;
         _saved_value.clear();
         _saved_key = {};
@@ -83,13 +84,12 @@ public:
         if (_iter->valid()) {
             _saved_key = internal::key(target);
             co_await find_next_user_entry(false);
-        } else {
-            _valid = false;
         }
     }
 
     ss::future<> next() override {
         dassert(valid(), "iterator must be valid to call next()");
+        invalidate();
         if (_dir == reverse) {
             _dir = forward;
             // iter is pointing just before the entries for this->key(),
@@ -101,7 +101,6 @@ public:
                 co_await _iter->next();
             }
             if (!_iter->valid()) {
-                _valid = false;
                 _saved_key = {};
                 co_return;
             }
@@ -111,7 +110,6 @@ public:
             _saved_key = internal::key(_iter->key());
             co_await _iter->next();
             if (!_iter->valid()) {
-                _valid = false;
                 _saved_key = {};
                 co_return;
             }
@@ -121,12 +119,12 @@ public:
 
     ss::future<> prev() override {
         dassert(valid(), "iterator must be valid to call prev()");
+        invalidate();
         if (_dir == forward) {
             _saved_key = internal::key(_iter->key());
             while (true) {
                 co_await _iter->prev();
                 if (!_iter->valid()) {
-                    _valid = false;
                     _saved_key = {};
                     _saved_value.clear();
                     co_return;
@@ -141,6 +139,12 @@ public:
     }
 
 private:
+    // Called at the start of every mutating coroutine so that if an
+    // awaited future throws, valid() reports false instead of a stale
+    // true. find_next_user_entry / find_prev_user_entry re-establish
+    // _valid on the success path.
+    void invalidate() { _valid = false; }
+
     size_t random_compaction_period() {
         return random_generators::get_int(2 * _options->read_bytes_period);
     }
