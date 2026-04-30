@@ -224,6 +224,7 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
                 .bucket = _bucket,
                 .key = object_path_factory::level_one_path(extent.id),
                 .parent_rtc = root,
+                .lc = cloud_storage_clients::lease_class::capped,
               },
               consumer,
               "l1_file_download",
