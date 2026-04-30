@@ -100,6 +100,16 @@ from_config(std::optional<config::s3_url_style> us) {
 
 enum class response_content_type : int8_t { unknown, xml, json };
 
+/// Class of service for client_pool lease acquisition.
+///   priority - bypasses the capped-budget gate; always choose this for
+///              latency-sensitive callers (e.g. cloud topic write path).
+///   capped   - subject to a per-shard capped-budget; never borrows
+///              cross-shard. Ideal for cold reads, cache hydration, etc.
+enum class lease_class : uint8_t {
+    priority,
+    capped,
+};
+
 } // namespace cloud_storage_clients
 
 namespace std {

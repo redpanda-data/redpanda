@@ -46,6 +46,13 @@ struct basic_transfer_details {
 
     std::optional<latency_callback_t> measure_latency_cb{std::nullopt};
 
+    // TODO: audit request paths and classify them.
+    // Defaulting to priority is the least invasive choice but likely
+    // under-classifies cold-read / hydration ops (e.g. download_index,
+    // download_object, download_manifest_*).
+    cloud_storage_clients::lease_class lc{
+      cloud_storage_clients::lease_class::priority};
+
     void on_success();
     void on_success_size(size_t size_bytes);
     void on_failure();
