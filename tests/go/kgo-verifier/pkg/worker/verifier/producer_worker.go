@@ -211,6 +211,14 @@ type ProducerWorkerStatus struct {
 	//  inside those transactions)
 	AbortedTransactionMessages int64 `json:"aborted_transaction_msgs"`
 
+	// Records acked in the current in-flight transaction with commit
+	// intent. Reset to 0 when a transaction commits successfully;
+	// added to AbortedTransactionMessages when a transaction is aborted
+	// (intentionally or by the coordinator). Lets us correctly account
+	// for records that the producer thought would commit but ended up
+	// in a coordinator-aborted transaction.
+	currentTxCommitIntentAcked int64
+
 	// Ack latency: a private histogram for the data,
 	// and a public summary for JSON output
 	latency metrics.Histogram
@@ -243,6 +251,10 @@ func (pw *ProducerWorker) OnAcked(r *kgo.Record, abortedMsg bool) {
 		// intentionally-aborted transaction. Records that failed to
 		// produce should not inflate this counter.
 		pw.Status.AbortedTransactionMessages += 1
+	} else if pw.transactionsEnabled {
+		// Track commit-intent records in the current tx so we can
+		// account for them as aborted if the tx ends in abort/error.
+		pw.Status.currentTxCommitIntentAcked += 1
 	}
 
 	pw.validOffsets.Insert(r.Partition, r.Offset)
@@ -451,6 +463,13 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				}
 				txPartitions = make(map[int32]bool)
 				txPartitionSeen = make(map[int32]bool)
+				// Previous tx ended successfully. Reset the
+				// commit-intent counter — those records are now
+				// committed (intent-commit) or were already counted
+				// as aborted at ack time (intent-abort).
+				pw.Status.lock.Lock()
+				pw.Status.currentTxCommitIntentAcked = 0
+				pw.Status.lock.Unlock()
 			}
 
 			// First produce to this partition in this transaction
@@ -535,11 +554,30 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				log.Errorf("unable to abort transaction: %v", err)
 			}
 			pw.Status.FailedTransactions += 1
+			// Records that acked with commit intent but ended up in
+			// an aborted tx are not visible to read_committed and
+			// should be counted as aborted.
+			pw.Status.lock.Lock()
+			pw.Status.AbortedTransactionMessages += pw.Status.currentTxCommitIntentAcked
+			pw.Status.currentTxCommitIntentAcked = 0
+			pw.Status.lock.Unlock()
 		} else {
 			if err := pw.transactionSTM.TryEndTransaction(); err != nil {
 				log.Errorf("unable to end transaction: %v", err)
 				errored = true
 				pw.Status.FailedTransactions += 1
+				// Tx end failed; outcome unknown but conservative —
+				// treat as aborted so committed = acked - aborted
+				// reflects what is actually readable.
+				pw.Status.lock.Lock()
+				pw.Status.AbortedTransactionMessages += pw.Status.currentTxCommitIntentAcked
+				pw.Status.currentTxCommitIntentAcked = 0
+				pw.Status.lock.Unlock()
+			} else {
+				// Tx committed successfully. Reset the counter.
+				pw.Status.lock.Lock()
+				pw.Status.currentTxCommitIntentAcked = 0
+				pw.Status.lock.Unlock()
 			}
 		}
 	}
