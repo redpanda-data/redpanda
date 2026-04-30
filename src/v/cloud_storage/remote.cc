@@ -430,6 +430,7 @@ ss::future<download_result> remote::download_segment(
           .on_req_cb = make_notify_cb(
             api_activity_type::segment_download, parent),
           .measure_latency_cb = [this] { return _probe.segment_download(); },
+          .lc = cloud_storage_clients::lease_class::capped,
         },
         cons_str,
         "segment",
