@@ -49,6 +49,9 @@ RPC_TEMPLATE = """
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/scheduling.hh>
+{%- if run_handlers_in_scheduling_group %}
+#include <seastar/core/with_scheduling_group.hh>
+{%- endif %}
 
 #include <array>
 #include <functional>
@@ -127,7 +130,13 @@ private:
                               Codec>::exec(in, ctx, {{method.name}}_method,
       [this](
           {{method.input_type}} t, ::rpc::streaming_context& ctx) -> ss::future<{{method.output_type}}> {
+          {%- if run_handlers_in_scheduling_group %}
+          return ss::with_scheduling_group(_sc, [this, t = std::move(t), &ctx]() mutable {
+              return {{method.name}}(std::move(t), ctx);
+          });
+          {%- else %}
           return {{method.name}}(std::move(t), ctx);
+          {%- endif %}
       });
     }
     {%- endfor %}
@@ -221,7 +230,7 @@ private:
 """
 
 # default values applied to service definition
-SERVICE_DEFAULTS = {"final_protocol": True}
+SERVICE_DEFAULTS = {"final_protocol": True, "run_handlers_in_scheduling_group": False}
 
 
 def _read_file(name: str):

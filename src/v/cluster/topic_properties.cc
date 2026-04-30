@@ -106,6 +106,23 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
 
     return o;
 }
+
+bool topic_properties::is_local_topic() const {
+    switch (storage_mode) {
+    case model::redpanda_storage_mode::local:
+        return true;
+    case model::redpanda_storage_mode::tiered:
+        return false;
+    case model::redpanda_storage_mode::cloud:
+        return false;
+    case model::redpanda_storage_mode::unset:
+        // Unset storage mode, infer from archival and remote fetch settings.
+        return !is_archival_enabled() && !is_remote_fetch_enabled();
+    }
+    vunreachable(
+      "unknown redpanda_storage_mode: {}", std::to_underlying(storage_mode));
+}
+
 bool topic_properties::is_compacted() const {
     if (!cleanup_policy_bitflags) {
         return false;

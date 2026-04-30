@@ -26,11 +26,15 @@ go_library(
 go_test(
     name = "adminapi_test",
     size = "small",
-    srcs = ["admin_test.go"],
+    srcs = [
+        "admin_test.go",
+        "auth_test.go",
+    ],
     embed = [":adminapi"],
     env = {"HOME": "/"},
     deps = [
         "//src/go/rpk/pkg/config",
+        "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
         "@com_github_spf13_afero//:afero",
         "@com_github_stretchr_testify//require",
     ],

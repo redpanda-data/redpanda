@@ -689,10 +689,12 @@ tls.key=/path/to/key.pem
   API listeners with mTLS.
 
 sasl.mechanism=SCRAM-SHA-256
-  The SASL mechanism to use for authentication. This can be either SCRAM-SHA-256
-  or SCRAM-SHA-512. Note that with Redpanda, the Admin API can be configured to
-  require basic authentication with your Kafka API SASL credentials. This
-  defaults to SCRAM-SHA-256 if no mechanism is specified.
+  The SASL mechanism to use for authentication. This can be SCRAM-SHA-256,
+  SCRAM-SHA-512, PLAIN, or OAUTHBEARER. For OAUTHBEARER, pass the token via
+  the pass field (optionally prefixed with "token:"). Note that with Redpanda,
+  the Admin API can be configured to require basic authentication with your
+  Kafka API SASL credentials. This defaults to SCRAM-SHA-256 if no mechanism
+  is specified.
 
 user=username
   The SASL username to use for authentication. This is also used for the admin
@@ -815,7 +817,7 @@ tls.insecure_skip_verify=boolean
 tls.ca=/path/to/ca.pem
 tls.cert=/path/to/cert.pem
 tls.key=/path/to/key.pem
-sasl.mechanism=SCRAM-SHA-256 or SCRAM-SHA-512
+sasl.mechanism=SCRAM-SHA-256, SCRAM-SHA-512, PLAIN, or OAUTHBEARER
 user=username
 pass=password
 admin.hosts=comma,delimited,host:ports
@@ -871,7 +873,7 @@ func (p *Params) InstallSASLFlags(cmd *cobra.Command) {
 
 	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
 	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
-	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER)")
 
 	pf.MarkHidden(FlagSASLUser)
 	pf.MarkHidden("password")
