@@ -14,7 +14,9 @@
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "cloud_storage_clients/upstream_registry.h"
+#include "config/property.h"
 #include "container/intrusive_list_helpers.h"
+#include "ssx/semaphore.h"
 #include "ssx/watchdog.h"
 #include "utils/stop_signal.h"
 
@@ -136,33 +138,42 @@ public:
     /// \param as
     /// \param deadline - Optional timeout. If deadline is reached before a
     ///                   client becomes available, throw ss::timed_out_error
+    /// \param lc - Class of service for the lease. The number of capped lease
+    ///             in flight at a given time is limited by
+    ///             cloud_storage_max_capped_pool_pct as a percentage of the
+    ///             pool's capacity, applied per shard.
     /// \return client pointer (via future that can wait if all clients
     ///         are in use)
     ss::future<client_lease> acquire(
       const bucket_name_parts& bucket,
       ss::abort_source& as,
-      std::optional<ss::lowres_clock::time_point> deadline = std::nullopt);
+      std::optional<ss::lowres_clock::time_point> deadline = std::nullopt,
+      lease_class lc = lease_class::priority);
 
     /// \brief Acquire http client from the pool for a specified duration.
     ///
     /// Same invariants as ::acquire apply (see above).
-    /// The provided timeout is applied in two distinct ways:
-    ///   - Fed through to a watchdog timer governing the lifetime of the lease.
-    ///     If it fires before the lease is returned, immediately calls shutdown
-    ///     on the enclosed client.
-    ///   - Passed to client_pool::acquire, which throws if we reach the
-    ///     deadline before a client becomes available.
+    /// The provided timeout governs the lifetime of the lease via a
+    /// watchdog: if it fires before the lease is returned, the
+    /// enclosed client is shut down. The timeout is *not* propagated
+    /// to acquire() as an acquisition deadline. Both classes can
+    /// wait indefinitely on acquisition (priority on the cvar when
+    /// the pool is full, capped on the capped-budget semaphore when
+    /// its capacity is exhausted); only the caller's abort source
+    /// short-circuits that wait. See test_client_pool_acquire_timeout.
     ///
     /// \param as
     /// \param deadline - Lease expiration time, after which the client is
     ///                   forcibly shut down.
     /// \param ctx - Optional context for the log message. e.g. the string
     ///              representation of a retry_chain_node.
+    /// \param lc - Class of service for the lease (see ::acquire).
     ss::future<client_lease> acquire_with_timeout(
       const bucket_name_parts& bucket,
       ss::abort_source& as,
       ss::lowres_clock::duration deadline,
-      std::optional<ss::sstring> ctx = std::nullopt);
+      std::optional<ss::sstring> ctx = std::nullopt,
+      lease_class lc = lease_class::priority);
 
     /// \brief Idle clients waiting in the pool. If this number is less than
     /// capacity, some clients are currently leased out, borrowed, or shutdown.
@@ -178,7 +189,14 @@ public:
     }
 
     bool has_waiters() const noexcept {
-        return _cvar.has_waiters() || _pool_ready_barrier.waiters() > 0;
+        return _cvar.has_waiters() || _pool_ready_barrier.waiters() > 0
+               || _capped_budget.waiters() > 0;
+    }
+
+    /// Test-only accessor: number of capped acquires
+    /// currently parked at the capped-budget semaphore.
+    size_t capped_waiters_count() const noexcept {
+        return _capped_budget.waiters();
     }
 
 private:
@@ -228,6 +246,11 @@ private:
 
     void update_usage_stats();
 
+    /// Recompute capped_capacity = floor(_capacity * pct / 100) and
+    /// resize the capped-budget semaphore accordingly. Called when the
+    /// cloud_storage_max_capped_pool_pct binding fires.
+    void on_capped_pct_changed();
+
     upstream_registry& _upstreams;
     std::optional<upstream_registry::handle> _default_upstream;
 
@@ -238,6 +261,15 @@ private:
 
     ss::shared_ptr<client_probe> _probe;
     client_pool_overdraft_policy _policy;
+
+    /// Cap on the fraction of total pool capacity that may be held
+    /// by capped leases at any one time.
+    config::binding<int16_t> _capped_pct;
+    /// Cached current cap value computed from total capacity * pct.
+    /// This lets us compute semaphore capacity adjustment on a watcher update.
+    size_t _capped_capacity;
+    /// Budget for lease_class::capped
+    ssx::semaphore _capped_budget;
 
     // Authoritative ownership of all idle clients.
     std::unordered_map<const client*, idle_entry> _idle_clients;

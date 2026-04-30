@@ -11,6 +11,7 @@
 #include "cloud_storage_clients/client_pool.h"
 
 #include "cloud_storage_clients/logger.h"
+#include "config/configuration.h"
 #include "crash_tracker/recorder.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
@@ -76,6 +77,18 @@ constexpr auto pool_ready_timeout = 15s;
 
 namespace cloud_storage_clients {
 
+namespace {
+size_t compute_capped_capacity(size_t capacity, int16_t pct) {
+    // Clamp to the actual pool size so the budget can never exceed
+    // _capacity (which is reachable in tests that build a pool with
+    // 0 connections per shard). Floor at 1 when capacity > 0 so
+    // capped callers always make some forward progress, even at
+    // pct=0.
+    return std::min(
+      capacity, std::max(1ul, (capacity * static_cast<size_t>(pct)) / 100ul));
+}
+} // namespace
+
 client_pool::client_pool(
   upstream_registry& registry,
   size_t size,
@@ -85,7 +98,51 @@ client_pool::client_pool(
   , _capacity(size)
   , _config(std::move(conf))
   , _probe(registry.probe())
-  , _policy(policy) {}
+  , _policy(policy)
+  , _capped_pct(
+      config::shard_local_cfg().cloud_storage_max_capped_pool_pct.bind())
+  , _capped_capacity(compute_capped_capacity(_capacity, _capped_pct()))
+  , _capped_budget(_capped_capacity, "cloud_storage/capped_budget") {
+    _capped_pct.watch([this] { on_capped_pct_changed(); });
+}
+
+void client_pool::on_capped_pct_changed() {
+    const auto new_capacity = compute_capped_capacity(_capacity, _capped_pct());
+    if (new_capacity == _capped_capacity) {
+        return;
+    }
+    const auto old_capacity = _capped_capacity;
+    _capped_capacity = new_capacity;
+    if (new_capacity > old_capacity) {
+        // if capacity increased, just add units to the semaphore
+        _capped_budget.signal(new_capacity - old_capacity);
+    } else {
+        // otherwise consume might push the counter negative if the number of
+        // capped leases currently in flight exceeds the new capacity. all of
+        // those leases will eventually return to the pool and the count should
+        // stabilize at the new capacity.
+        _capped_budget.consume(old_capacity - new_capacity);
+    }
+    vlog(
+      pool_log.info,
+      "cloud_storage_max_capped_pool_pct changed: capped capacity "
+      "{} -> {} (pool size={}, pct={})",
+      old_capacity,
+      new_capacity,
+      _capacity,
+      _capped_pct());
+    // TODO: is the negative-counter shrink path a) safe and b) worth the
+    // hassle? Maybe pct decreases should require a restart instead of letting
+    // the semaphore sit in deficit while in-flight leases drain.
+    if (_capped_budget.available_units() < 0) {
+        vlog(
+          pool_log.warn,
+          "cloud_storage_max_capped_pool_pct shrink left capped-budget "
+          "in deficit ({} units below zero); new capped acquires will "
+          "wait until enough in-flight leases drain",
+          -_capped_budget.available_units());
+    }
+}
 
 ss::future<> client_pool::start(
   std::optional<std::reference_wrapper<stop_signal>> application_stop_signal) {
@@ -154,6 +211,7 @@ ss::future<> client_pool::stop() {
     }
     _cvar.broken();
     _pool_ready_barrier.broken();
+    _capped_budget.broken();
     // Wait for all background operations to complete.
     co_await _bg_gate.close();
     // Wait until all leased objects are returned
@@ -182,6 +240,7 @@ void client_pool::shutdown_connections() {
     _as.request_abort();
     _cvar.broken();
     _pool_ready_barrier.broken();
+    _capped_budget.broken();
 
     for (auto& it : _leased) {
         it.client->shutdown();
@@ -208,7 +267,8 @@ bool client_pool::shutdown_initiated() { return _as.abort_requested(); }
 ss::future<client_pool::client_lease> client_pool::acquire(
   const bucket_name_parts& bucket,
   ss::abort_source& as,
-  std::optional<ss::lowres_clock::time_point> deadline) {
+  std::optional<ss::lowres_clock::time_point> deadline,
+  lease_class lc) {
     auto guard = _gate.hold();
 
     auto up_key = make_upstream_key(_config, bucket);
@@ -220,6 +280,36 @@ ss::future<client_pool::client_lease> client_pool::acquire(
         return deadline.has_value()
                && ss::lowres_clock::now() >= deadline.value();
     };
+
+    // Class-of-service gate. capped leases must take a unit
+    // from _capped_budget before entering the pool flow; this caps their
+    // concurrency at capped_capacity = max(1, floor(_capacity * pct / 100)),
+    // guaranteeing (_capacity - capped_capacity) connections always
+    // reachable by priority callers without queuing behind slow capped
+    // operations.
+    //
+    // Timeout/abort semantics for the capped-budget wait:
+    //   * If `deadline` fires, abort_on_expiry's composite raises
+    //     ss::timed_out_error directly so the caller sees the same
+    //     exception type as the other deadline path.
+    //   * If `as` fires, its exception  propagates unchanged.
+    //   * Pool shutdown calls _capped_budget.broken(); we re-throw that
+    //     as gate_closed_exception so it matches the rest of the
+    //     acquire flow's shutdown semantics (caller catches one type).
+    std::optional<ssx::semaphore_units> capped_units;
+    if (lc == lease_class::capped) {
+        const auto budget_deadline = deadline.value_or(
+          ss::lowres_clock::time_point::max());
+        auto timeout_as = ss::abort_on_expiry(budget_deadline);
+        auto wait_as = ssx::composite_abort_source(
+          as, timeout_as.abort_source());
+        try {
+            capped_units = co_await ss::get_units(
+              _capped_budget, 1, wait_as.as());
+        } catch (const ss::broken_named_semaphore&) {
+            throw ss::gate_closed_exception();
+        }
+    }
 
     try {
         // If credentials have not yet been acquired, wait for them. It is
@@ -310,10 +400,24 @@ ss::future<client_pool::client_lease> client_pool::acquire(
             } else if (
               ss::smp::count == 1
               || _policy == client_pool_overdraft_policy::wait_if_empty
-              || _leased.size() >= _capacity * 2) {
-                // If borrowing is disabled or this shard borrowed '_capacity'
-                // client connections then wait util one of the clients is
-                // freed.
+              || _leased.size() >= _capacity * 2 || lc == lease_class::capped) {
+                // If borrowing is disabled, this shard already borrowed
+                // '_capacity' client connections, or this is a
+                // capped lease, wait until a local client is freed.
+                //
+                // capped leases never borrow from peers: their
+                // concurrency is already bounded per-shard by the
+                // capped-budget gate.
+                //
+                // NOTE: a capped lease that reaches this branch is
+                // still holding its budget unit while parked at the
+                // cvar. capped_capacity therefore caps the number of
+                // capped acquires *trying* to obtain a connection, not
+                // the number that actually have one. Under heavy
+                // priority pressure that means new capped acquires
+                // can stall at the budget gate even though no capped
+                // lease is currently using a connection. Acceptable
+                // for now: capped is the slow class by design.
                 co_await ssx::with_timeout_abortable(
                   _cvar.wait(), deadline.value_or(model::no_timeout), as);
 
@@ -419,7 +523,8 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                         client = client.value(),
                         g = std::move(guard),
                         source_sid,
-                        up_key]() mutable {
+                        up_key,
+                        capped_units = std::move(capped_units)]() mutable {
           if (pool) {
               if (up_key != default_upstream_key) {
                   // For now, we don't implement client re-use for non-default
@@ -495,8 +600,9 @@ auto client_pool::acquire_with_timeout(
   const bucket_name_parts& bucket,
   ss::abort_source& as,
   ss::lowres_clock::duration timeout,
-  std::optional<ss::sstring> ctx) -> ss::future<client_lease> {
-    auto lease = co_await acquire(bucket, as);
+  std::optional<ss::sstring> ctx,
+  lease_class lc) -> ss::future<client_lease> {
+    auto lease = co_await acquire(bucket, as, std::nullopt, lc);
     if (timeout < ss::lowres_clock::duration::max()) {
         // take a copy of the shared_ptr held by the lease to avoid racing with
         // client_pool teardown

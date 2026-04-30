@@ -67,6 +67,7 @@ redpanda_cc_library(
         "//src/v/random:generators",
         "//src/v/ssx:abort_source",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/ssx:watchdog",
         "//src/v/strings:string_switch",

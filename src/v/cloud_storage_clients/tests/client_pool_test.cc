@@ -12,6 +12,8 @@
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/tests/client_pool_builder.h"
+#include "config/configuration.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -50,6 +52,14 @@ static cloud_storage_clients::s3_configuration client_configuration() {
 }
 
 static const client_pool_builder test_pool_builder{client_configuration()};
+
+namespace {
+static void wait_for_capped_waiters(
+  cloud_storage_clients::client_pool& pool, size_t expected) {
+    RPTEST_REQUIRE_EVENTUALLY(
+      2s, [&] { return pool.capped_waiters_count() == expected; });
+}
+} // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_abortable) {
     constexpr size_t num_connections_per_shard = 0;
@@ -279,4 +289,198 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_max_upstreams_limit) {
           return std::string_view(e.what()).find("registry entry limit")
                  != std::string_view::npos;
       });
+}
+
+SEASTAR_THREAD_TEST_CASE(test_capped_class_caps_concurrent_leases) {
+    // pool size 10, pct=20 -> capped_capacity=2. Three capped acquires;
+    // only 2 progress at once. Priority callers bypass the
+    // gate and consume the remaining 8 pool slots without queuing.
+    constexpr size_t conn_per_shard = 10;
+    auto& pct = config::shard_local_cfg().cloud_storage_max_capped_pool_pct;
+    pct.set_value(20);
+    auto cfg_reset = ss::defer([&pct] { pct.reset(); });
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    auto stop_guard = test_pool_builder.connections_per_shard(conn_per_shard)
+                        .build(pool)
+                        .get();
+
+    ss::abort_source as;
+    std::deque<cloud_storage_clients::client_pool::client_lease> c_leases;
+    c_leases.push_back(pool.local()
+                         .acquire(
+                           test_bucket,
+                           as,
+                           std::nullopt,
+                           cloud_storage_clients::lease_class::capped)
+                         .get());
+    c_leases.push_back(pool.local()
+                         .acquire(
+                           test_bucket,
+                           as,
+                           std::nullopt,
+                           cloud_storage_clients::lease_class::capped)
+                         .get());
+
+    auto f3 = pool.local().acquire(
+      test_bucket,
+      as,
+      std::nullopt,
+      cloud_storage_clients::lease_class::capped);
+
+    // capacity exhausted, f3 should wait
+    wait_for_capped_waiters(pool.local(), 1);
+    BOOST_TEST_REQUIRE(
+      !f3.available(),
+      "third capped acquire must wait at capped-budget semaphore");
+
+    // Priority bypass works: pool still has 8 idle clients.
+    auto ls = pool.local()
+                .acquire(
+                  test_bucket,
+                  as,
+                  std::nullopt,
+                  cloud_storage_clients::lease_class::priority)
+                .get();
+
+    // Drop l1 -> f3 unblocks.
+    c_leases.pop_back();
+    auto c_ls = std::move(f3).get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_capped_waiter_wakes_on_shutdown) {
+    // pool size 4, pct=25 -> capped_capacity=1. Hold the only unit,
+    // try to acquire another, then call shutdown_connections().
+    // Waiter should wake with gate_closed_exception.
+    constexpr size_t conn_per_shard = 4;
+    auto& pct = config::shard_local_cfg().cloud_storage_max_capped_pool_pct;
+    pct.set_value(25);
+    auto cfg_reset = ss::defer([&pct] { pct.reset(); });
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    auto stop_guard = test_pool_builder.connections_per_shard(conn_per_shard)
+                        .build(pool)
+                        .get();
+
+    ss::abort_source as;
+    auto held = pool.local()
+                  .acquire(
+                    test_bucket,
+                    as,
+                    std::nullopt,
+                    cloud_storage_clients::lease_class::capped)
+                  .get();
+
+    auto waiter = pool.local().acquire(
+      test_bucket,
+      as,
+      std::nullopt,
+      cloud_storage_clients::lease_class::capped);
+
+    wait_for_capped_waiters(pool.local(), 1);
+    BOOST_TEST_REQUIRE(!waiter.available());
+
+    pool.local().shutdown_connections();
+    BOOST_REQUIRE_THROW(waiter.get(), ss::gate_closed_exception);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_capped_pct_grows_capacity_via_signal) {
+    // pool size 4, pct=25 -> capped_capacity=1.
+    // - Hold the only unit
+    // - Try to acquire another (blocks)
+    // - then bump pct to 50 -> capped_capacity=2.
+    // - Waiter should unblock.
+    constexpr size_t conn_per_shard = 4;
+    auto& pct = config::shard_local_cfg().cloud_storage_max_capped_pool_pct;
+    pct.set_value(25);
+    auto cfg_reset = ss::defer([&pct] { pct.reset(); });
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    auto stop_guard = test_pool_builder.connections_per_shard(conn_per_shard)
+                        .build(pool)
+                        .get();
+
+    ss::abort_source as;
+    auto held = pool.local()
+                  .acquire(
+                    test_bucket,
+                    as,
+                    std::nullopt,
+                    cloud_storage_clients::lease_class::capped)
+                  .get();
+    auto waiter = pool.local().acquire(
+      test_bucket,
+      as,
+      std::nullopt,
+      cloud_storage_clients::lease_class::capped);
+
+    wait_for_capped_waiters(pool.local(), 1);
+    BOOST_TEST_REQUIRE(!waiter.available());
+
+    // watch callback fires synchronously with set_value and immediately signals
+    // capped_budget semaphore.
+    pct.set_value(50);
+
+    auto woken
+      = ss::with_timeout(ss::lowres_clock::now() + 1s, std::move(waiter)).get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_capped_pct_shrinks_capacity_via_consume) {
+    // pool size 4, pct=100 -> capped_capacity=4.
+    // - Hold all 4
+    // - Decrease pct to 25
+    // - capped_capacity=1
+    // - the semaphore counter goes negative (0 - 3 = -3)
+    // - a fresh capped acquire blocks until enough leases
+    //   drop to bring it positive.
+    constexpr size_t conn_per_shard = 4;
+    auto& pct = config::shard_local_cfg().cloud_storage_max_capped_pool_pct;
+    pct.set_value(100);
+    auto cfg_reset = ss::defer([&pct] { pct.reset(); });
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    auto stop_guard = test_pool_builder.connections_per_shard(conn_per_shard)
+                        .build(pool)
+                        .get();
+
+    ss::abort_source as;
+    auto acquire_capped = [&] {
+        return pool.local()
+          .acquire(
+            test_bucket,
+            as,
+            std::nullopt,
+            cloud_storage_clients::lease_class::capped)
+          .get();
+    };
+    std::deque<cloud_storage_clients::client_pool::client_lease> c_leases;
+    c_leases.push_back(acquire_capped());
+    c_leases.push_back(acquire_capped());
+    c_leases.push_back(acquire_capped());
+    c_leases.push_back(acquire_capped());
+
+    // Counter goes to -3
+    pct.set_value(25);
+
+    auto pending = pool.local().acquire(
+      test_bucket,
+      as,
+      std::nullopt,
+      cloud_storage_clients::lease_class::capped);
+    wait_for_capped_waiters(pool.local(), 1);
+    BOOST_TEST_REQUIRE(!pending.available());
+
+    // Releasing 3 of the 4 leases brings the (negative) counter back
+    // to zero; the pending acquire should still be blocked.
+    c_leases.pop_back();
+    c_leases.pop_back();
+    c_leases.pop_back();
+
+    // budget sem gets signaled from deleter, but count is still 0 at this point
+    BOOST_TEST_REQUIRE(pool.local().capped_waiters_count() == 1);
+    BOOST_TEST_REQUIRE(!pending.available());
+
+    // Dropping the 4th lease bumps the counter to 1; waiter unblocks.
+    c_leases.pop_back();
+    auto unblocked = std::move(pending).get();
 }

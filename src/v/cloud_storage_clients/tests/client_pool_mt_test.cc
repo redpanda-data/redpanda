@@ -11,6 +11,7 @@
 #include "base/seastarx.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/tests/client_pool_builder.h"
+#include "config/configuration.h"
 #include "random/generators.h"
 #include "test_utils/async.h"
 
@@ -287,6 +288,121 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_after_leasing_all) {
           .get();
     } catch (const ss::timed_out_error&) {
         BOOST_FAIL("Timed out");
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_capped_does_not_borrow_from_peer) {
+    // capped leases must stay on their own shard. Saturate the
+    // local pool with priority leases (leaving the capped-budget
+    // untouched) and confirm a capped acquire parks at the cvar instead of
+    // borrowing across shards. A priority acquire in the same
+    // state still borrows, by way of comparison.
+    BOOST_REQUIRE(ss::smp::count == 2);
+
+    constexpr size_t num_connections_per_shard = 2;
+    auto& pct = config::shard_local_cfg().cloud_storage_max_capped_pool_pct;
+    pct.set_value(50); // capped_capacity = 1
+    auto cfg_reset = ss::defer([&pct] { pct.reset(); });
+
+    ss::sharded<client_pool> pool;
+    auto stop_guard = test_pool_builder
+                        .connections_per_shard(num_connections_per_shard)
+                        .overdraft_policy(
+                          cloud_storage_clients::client_pool_overdraft_policy::
+                            borrow_if_empty)
+                        .build(pool)
+                        .get();
+
+    // Wait for both shards' pools to populate.
+    pool
+      .invoke_on_all([N = num_connections_per_shard](client_pool& p) {
+          return ss::async([&p, N] {
+              while (p.idle_count() != N) {
+                  ss::yield().get();
+              }
+          });
+      })
+      .get();
+
+    ss::abort_source as;
+
+    // Saturate shard 0's local pool with priority leases.
+    // capped-budget remains untouched (capacity=1, in-flight=0).
+    std::deque<client_pool::client_lease> ls_leases;
+    for (size_t i = 0; i < num_connections_per_shard; i++) {
+        ls_leases.push_back(pool.local()
+                              .acquire(
+                                test_bucket,
+                                as,
+                                std::nullopt,
+                                cloud_storage_clients::lease_class::priority)
+                              .get());
+    }
+
+    // A capped acquire on shard 0 has cap budget but no idle local clients.
+    // Without the cross-shard restriction it would borrow from shard 1.
+    // With the restriction it must wait at the cvar.
+    auto capped_fut = pool.local().acquire(
+      test_bucket,
+      as,
+      std::nullopt,
+      cloud_storage_clients::lease_class::capped);
+
+    // Poll until the capped lease reaches the cvar. has_waiters()
+    // covers the capped-budget semaphore as well as the cvar /
+    // pool-ready-barrier, so we sanity-check the capped waiters count
+    // post facto.
+    pool
+      .invoke_on(
+        0,
+        [](client_pool& p) {
+            return ss::async([&p] {
+                while (!p.has_waiters()) {
+                    ss::yield().get();
+                }
+            });
+        })
+      .get();
+
+    BOOST_TEST_REQUIRE(
+      !capped_fut.available(),
+      "capped must wait locally rather than borrow from peer");
+    BOOST_TEST_REQUIRE(
+      pool.local().capped_waiters_count() == 0,
+      "capped must be parked at the cvar, not at the capped-budget gate");
+
+    // Shard 1's pool should be fully idle: the capped lease did not pull a
+    // connection across shards.
+    auto shard1_idle
+      = pool.invoke_on(1, [](client_pool& other) { return other.idle_count(); })
+          .get();
+    BOOST_REQUIRE_EQUAL(shard1_idle, num_connections_per_shard);
+
+    // Sanity: a priority acquire on shard 0 borrows from shard 1.
+    auto ls_borrow = pool.local()
+                       .acquire(
+                         test_bucket,
+                         as,
+                         std::nullopt,
+                         cloud_storage_clients::lease_class::priority)
+                       .get();
+
+    shard1_idle
+      = pool.invoke_on(1, [](client_pool& other) { return other.idle_count(); })
+          .get();
+    BOOST_REQUIRE_EQUAL(shard1_idle, num_connections_per_shard - 1);
+
+    // Drop one local lease, capped should now complete via the cvar wake.
+    ls_leases.pop_front();
+    try {
+        auto capped_lease = ss::with_timeout(
+                              ss::lowres_clock::now() + 1s,
+                              std::move(capped_fut))
+                              .get();
+    } catch (const ss::timed_out_error&) {
+        BOOST_FAIL(
+          "capped acquire timed out after local lease released; cvar wake "
+          "did not reach the capped waiter");
     }
 }
 
