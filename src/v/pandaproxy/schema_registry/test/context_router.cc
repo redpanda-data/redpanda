@@ -65,4 +65,32 @@ TEST(ContextRouterTest, NormalizeContextRejectsEmbeddedColons) {
     EXPECT_THROW(normalize_context(":.a:b:"), exception);
 }
 
+TEST(ContextRouterTest, ScopeSubjectParam) {
+    ss::http::request req;
+    req.param.set("subject", "/my-topic");
+    scope_subject_param(req, ".staging");
+    EXPECT_EQ(req.get_path_param("subject"), ":.staging:my-topic");
+}
+
+TEST(ContextRouterTest, ScopeSubjectParamAlreadyQualified) {
+    ss::http::request req;
+    req.param.set("subject", "/:.prod:my-topic");
+    scope_subject_param(req, ".staging");
+    EXPECT_EQ(req.get_path_param("subject"), ":.prod:my-topic");
+}
+
+TEST(ContextRouterTest, ScopeSubjectParamWildcard) {
+    ss::http::request req;
+    req.param.set("subject", "/:*:my-topic");
+    scope_subject_param(req, ".staging");
+    EXPECT_EQ(req.get_path_param("subject"), ":*:my-topic");
+}
+
+TEST(ContextRouterTest, ScopeSubjectParamNoDot) {
+    ss::http::request req;
+    req.param.set("subject", "/my-topic");
+    scope_subject_param(req, "staging");
+    EXPECT_EQ(req.get_path_param("subject"), ":.staging:my-topic");
+}
+
 } // namespace pandaproxy::schema_registry
