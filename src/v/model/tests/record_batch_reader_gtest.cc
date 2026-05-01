@@ -11,6 +11,8 @@
 #include "model/tests/random_batch.h"
 #include "test_utils/test.h"
 
+#include <stdexcept>
+
 template<typename... Offsets>
 chunked_circular_buffer<model::record_batch> make_batches(Offsets... o) {
     chunked_circular_buffer<model::record_batch> batches;
@@ -69,4 +71,46 @@ TEST_CORO(RecordBatchReaderReadahead, SingleBatch) {
 
     ASSERT_EQ_CORO(materialized.size(), 1);
     ASSERT_EQ_CORO(materialized[0].base_offset(), model::offset(100));
+}
+
+TEST_CORO(RecordBatchReaderReadahead, ConsumerThrowMidIteration) {
+    // Regression test: when a consumer throws partway through iteration
+    // the readahead_reader may have an in-flight prefetch buffered. The
+    // rvalue consume() overload's .finally chain must run finally() on
+    // the impl (which drains the prefetch) before destruction; otherwise
+    // the prefetch's continuation can fire on freed memory.
+    int slices_emitted = 0;
+    auto underlying = model::make_generating_record_batch_reader(
+      [&slices_emitted]()
+        -> ss::future<model::record_batch_reader::data_t> {
+          model::record_batch_reader::data_t batches;
+          if (slices_emitted < 5) {
+              batches.emplace_back(
+                model::test::make_random_batch(
+                  model::offset(slices_emitted), 1, true));
+              ++slices_emitted;
+          }
+          return ss::make_ready_future<model::record_batch_reader::data_t>(
+            std::move(batches));
+      });
+    auto reader = model::make_readahead_record_batch_reader(
+      std::move(underlying));
+
+    struct throwing_consumer {
+        int seen = 0;
+        ss::future<ss::stop_iteration> operator()(model::record_batch) {
+            if (++seen == 2) {
+                return ss::make_exception_future<ss::stop_iteration>(
+                  std::runtime_error("test throw"));
+            }
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        void end_of_stream() {}
+    };
+
+    EXPECT_THROW(
+      co_await std::move(reader).consume(
+        throwing_consumer{}, model::no_timeout),
+      std::runtime_error);
 }

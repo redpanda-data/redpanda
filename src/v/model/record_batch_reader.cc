@@ -34,7 +34,8 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
     class foreign_reader final : public record_batch_reader::impl {
     public:
         explicit foreign_reader(std::unique_ptr<record_batch_reader::impl> i)
-          : _ptr(std::move(i)) {}
+          : impl(needs_finally::yes)
+          , _ptr(std::move(i)) {}
         foreign_reader(const foreign_reader&) = delete;
         foreign_reader& operator=(const foreign_reader&) = delete;
         foreign_reader(foreign_reader&&) = delete;
@@ -66,6 +67,15 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
             });
         }
 
+        ss::future<> do_finally() noexcept final {
+            auto shard = _ptr.get_owner_shard();
+            if (shard == ss::this_shard_id()) {
+                return _ptr->finally();
+            }
+            return ss::smp::submit_to(
+              shard, [this] { return _ptr->finally(); });
+        }
+
     private:
         ss::foreign_ptr<std::unique_ptr<record_batch_reader::impl>> _ptr;
     };
@@ -77,7 +87,8 @@ record_batch_reader make_memory_record_batch_reader(storage_t batches) {
     class reader final : public record_batch_reader::impl {
     public:
         explicit reader(storage_t batches)
-          : _batches(std::move(batches)) {}
+          : impl(needs_finally::no)
+          , _batches(std::move(batches)) {}
 
         bool is_end_of_stream() const final {
             return ss::visit(
@@ -124,6 +135,9 @@ record_batch_reader make_foreign_memory_record_batch_reader(record_batch b) {
 record_batch_reader make_empty_record_batch_reader() {
     class reader final : public record_batch_reader::impl {
     public:
+        reader() noexcept
+          : impl(needs_finally::no) {}
+
         bool is_end_of_stream() const final { return true; }
 
         ss::future<storage_t> do_load_slice(timeout_clock::time_point) final {
@@ -144,7 +158,8 @@ record_batch_reader make_generating_record_batch_reader(
         explicit reader(
           ss::noncopyable_function<ss::future<record_batch_reader::data_t>()>
             gen)
-          : _gen(std::move(gen)) {}
+          : impl(needs_finally::no)
+          , _gen(std::move(gen)) {}
 
         bool is_end_of_stream() const final { return _end_of_stream; }
 
@@ -186,7 +201,8 @@ make_readahead_record_batch_reader(record_batch_reader&& reader) {
     class readahead_reader final : public record_batch_reader::impl {
     public:
         explicit readahead_reader(std::unique_ptr<impl> underlying)
-          : _underlying(std::move(underlying)) {}
+          : impl(needs_finally::yes)
+          , _underlying(std::move(underlying)) {}
 
         bool is_end_of_stream() const final {
             return _underlying->is_end_of_stream()
@@ -220,7 +236,7 @@ make_readahead_record_batch_reader(record_batch_reader&& reader) {
             co_return slice;
         }
 
-        ss::future<> finally() noexcept final {
+        ss::future<> do_finally() noexcept final {
             if (!_readahead_future.has_value()) {
                 return _underlying->finally();
             }
@@ -248,7 +264,8 @@ record_batch_reader make_chunked_memory_record_batch_reader(
     class reader final : public record_batch_reader::impl {
     public:
         explicit reader(std::vector<storage_t> data)
-          : _data(std::move(data)) {}
+          : impl(needs_finally::no)
+          , _data(std::move(data)) {}
 
         bool is_end_of_stream() const final { return _index >= _data.size(); }
 

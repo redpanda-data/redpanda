@@ -105,6 +105,7 @@ void do_test_consume(record_batch_reader reader) {
 
     batches = reader.consume(consumer(4), no_timeout).get();
     BOOST_CHECK_EQUAL(batches.size(), 0);
+    std::move(reader).release()->finally().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_consume) {
@@ -142,6 +143,7 @@ void do_test_interrupt_consume(record_batch_reader reader) {
 
     batches = reader.consume(consumer(4), no_timeout).get();
     BOOST_CHECK_EQUAL(batches.size(), 0);
+    std::move(reader).release()->finally().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_interrupt_consume) {

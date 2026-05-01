@@ -156,7 +156,8 @@ public:
         auto lstats = log->offsets();
         storage::local_log_reader_config cfg(lstats.start_offset, max_offset);
         auto reader = log->make_reader(std::move(cfg)).get();
-        return reader.consume(batch_validating_consumer{}, model::no_timeout)
+        return std::move(reader)
+          .consume(batch_validating_consumer{}, model::no_timeout)
           .get();
     }
 

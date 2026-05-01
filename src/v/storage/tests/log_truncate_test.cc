@@ -208,6 +208,7 @@ TEST_F(storage_test_fixture, truncate_before_read) {
     auto f = log->truncate(storage::truncate_config(model::offset(0)));
     // Memory log works fine
     reader_ptr->consume(batch_validating_consumer{}, model::no_timeout).get();
+    std::move(*reader_ptr).release()->finally().get();
     reader_ptr = nullptr;
     f.get();
     auto read_batches = read_and_validate_all_batches(log);

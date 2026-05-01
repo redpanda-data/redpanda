@@ -35,7 +35,8 @@ public:
     snapshot_level_one_reader(
       std::unique_ptr<snapshot_metastore> metastore,
       std::unique_ptr<level_one_log_reader_impl> reader)
-      : metastore_(std::move(metastore))
+      : impl(needs_finally::yes)
+      , metastore_(std::move(metastore))
       , reader_(std::move(reader)) {}
 
     bool is_end_of_stream() const override {
@@ -47,7 +48,7 @@ public:
         return reader_->do_load_slice(deadline);
     }
 
-    ss::future<> finally() noexcept override { return reader_->finally(); }
+    ss::future<> do_finally() noexcept override { return reader_->finally(); }
 
     fmt::iterator format_to(fmt::iterator it) const override {
         return reader_->format_to(it);

@@ -74,7 +74,8 @@ public:
     using storage_t = model::record_batch_reader::storage_t;
 
     term_assigning_reader(model::record_batch_reader r, model::term_id term)
-      : _source(std::move(r).release())
+      : impl(needs_finally::yes)
+      , _source(std::move(r).release())
       , _term(term) {}
 
     bool is_end_of_stream() const final { return _source->is_end_of_stream(); }
@@ -102,6 +103,8 @@ public:
     fmt::iterator format_to(fmt::iterator it) const final {
         return fmt::format_to(it, "{{term assigning reader}}");
     }
+
+    ss::future<> do_finally() noexcept final { return _source->finally(); }
 
 private:
     std::unique_ptr<model::record_batch_reader::impl> _source;

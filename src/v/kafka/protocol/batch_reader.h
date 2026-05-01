@@ -37,13 +37,15 @@ public:
     using tolerate_partial_last_batch
       = ss::bool_class<struct tolerate_partial_last_batch_tag>;
 
-    batch_reader() = default;
+    batch_reader() noexcept
+      : impl(needs_finally::no) {}
 
     explicit batch_reader(
       iobuf buf,
       tolerate_partial_last_batch tolerate_partial
       = tolerate_partial_last_batch::no)
-      : _buf(std::move(buf))
+      : impl(needs_finally::no)
+      , _buf(std::move(buf))
       , _tolerate_partial(tolerate_partial) {}
 
     bool empty() const { return _buf.empty(); }

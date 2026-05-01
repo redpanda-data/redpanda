@@ -253,7 +253,8 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
     class cached_reader_impl final : public model::record_batch_reader::impl {
     public:
         explicit cached_reader_impl(entry* e, readers_cache* c)
-          : _underlying(e->reader.get())
+          : impl(needs_finally::no)
+          , _underlying(e->reader.get())
           , _guard(e, c) {}
         cached_reader_impl(cached_reader_impl&&) noexcept = default;
         cached_reader_impl& operator=(cached_reader_impl&&) noexcept = default;
@@ -275,7 +276,7 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
             return _underlying->get_flags();
         }
 
-        ss::future<> finally() noexcept final { return ss::now(); }
+        ss::future<> do_finally() noexcept final { return ss::now(); }
 
         fmt::iterator format_to(fmt::iterator it) const final {
             return _underlying->format_to(it);

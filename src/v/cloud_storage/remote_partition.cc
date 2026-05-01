@@ -225,7 +225,8 @@ public:
       ss::gate::holder holder,
       ss::lw_shared_ptr<storage::offset_translator_state> ot_state,
       ssx::semaphore_units units) noexcept
-      : _rtc(part->_as)
+      : impl(needs_finally::no)
+      , _rtc(part->_as)
       , _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))

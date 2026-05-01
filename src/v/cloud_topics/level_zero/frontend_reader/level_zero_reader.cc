@@ -34,7 +34,8 @@ level_zero_log_reader_impl::level_zero_log_reader_impl(
   const cloud_topic_log_reader_config& cfg,
   ss::lw_shared_ptr<cluster::partition> ctp,
   data_plane_api* ct_api)
-  : _config(cfg)
+  : impl(needs_finally::no)
+  , _config(cfg)
   , _next_offset(_config.start_offset)
   , _ctp(std::move(ctp))
   , _ct_api(ct_api)

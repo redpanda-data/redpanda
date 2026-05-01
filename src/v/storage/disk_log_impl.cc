@@ -123,7 +123,8 @@ public:
       ss::rwlock::holder seg_read_lock,
       local_log_reader_config reader_cfg,
       probe& pb)
-      : _seg(seg)
+      : impl(needs_finally::yes)
+      , _seg(seg)
       , _seg_read_lock(std::move(seg_read_lock))
       , _config(reader_cfg)
       , _rdr(*_seg, _config, pb) {}
@@ -144,7 +145,7 @@ public:
         co_return std::move(batches);
     }
 
-    ss::future<> finally() noexcept final { return _rdr.close(); }
+    ss::future<> do_finally() noexcept final { return _rdr.close(); }
 
     fmt::iterator format_to(fmt::iterator it) const final {
         return fmt::format_to(

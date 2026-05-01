@@ -73,7 +73,7 @@ public:
 
     fmt::iterator format_to(fmt::iterator it) const override;
 
-    ss::future<> finally() noexcept final;
+    ss::future<> do_finally() noexcept final;
 
 private:
     std::unique_ptr<aborted_transaction_tracker> _tracker;
