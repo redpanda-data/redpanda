@@ -115,7 +115,7 @@ void authorizer::add_bindings(const chunked_vector<acl_binding>& bindings) {
     store().add_bindings(bindings);
 }
 
-std::vector<chunked_vector<acl_binding>> authorizer::remove_bindings(
+chunked_vector<chunked_vector<acl_binding>> authorizer::remove_bindings(
   const chunked_vector<acl_binding_filter>& filters, bool dry_run) {
     return store().remove_bindings(filters, dry_run);
 }

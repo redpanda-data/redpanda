@@ -42,7 +42,7 @@ public:
     // remove bindings according the input filters and return the bindings that
     // matched in the same order. the `dry_run` flag will identify all of the
     // bindings to be removed but not perform the destructive operation.
-    std::vector<chunked_vector<acl_binding>> remove_bindings(
+    chunked_vector<chunked_vector<acl_binding>> remove_bindings(
       const chunked_vector<acl_binding_filter>&, bool dry_run = false);
 
     chunked_vector<acl_binding> acls(const acl_binding_filter&) const;
