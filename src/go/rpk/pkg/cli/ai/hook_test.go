@@ -77,35 +77,12 @@ func TestSkipCloudForHelp(t *testing.T) {
 	}
 }
 
-func TestTopLevelHasSubcommand(t *testing.T) {
-	cases := []struct {
-		name string
-		args []string
-		want bool
-	}{
-		{"empty (leaf dispatch style)", nil, false},
-		{"bare flag", []string{"--help"}, false},
-		{"unknown flag no value", []string{"--foo"}, false},
-		{"subcommand", []string{"llm"}, true},
-		{"nested subcommand", []string{"llm", "list"}, true},
-		{"flag then subcommand", []string{"--format", "json", "llm"}, true},
-		// rpk has a few hyphen-containing subcommands (e.g. `rpk cluster
-		// self-test`). HasPrefix(arg, "-") is a leading-dash check, not a
-		// "contains a dash" check, so hyphenated commands route correctly.
-		{"hyphenated subcommand", []string{"self-test"}, true},
-		{"hyphenated nested subcommand", []string{"foo", "bar-baz"}, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			require.Equal(t, c.want, topLevelHasSubcommand(c.args))
-		})
-	}
-}
-
-// TestResolveAndInjectEnv_LeafDispatchHappy covers the regression this file
-// was refactored for: cobra dispatches `rpk ai llm list` straight to the
-// `list` leaf with args=nil. The leaf-side call site must still inject
-// RPAI_TOKEN and RPAI_ENDPOINT even though the args are empty.
+// TestResolveAndInjectEnv_LeafDispatchHappy covers leaf dispatch: cobra
+// hands `rpk ai llm list` straight to the `list` leaf with args=nil.
+// The hook still has to inject both env vars even though args is empty.
+// The token comes from the cached cloud_auth entry on rpk.yaml — no
+// OAuth refresh, just a passthrough — so an expired token just means
+// the gateway returns 401 and the plugin tells the user to re-login.
 func TestResolveAndInjectEnv_LeafDispatchHappy(t *testing.T) {
 	t.Setenv(envAuthToken, "")
 	t.Setenv(envEndpoint, "")
@@ -119,8 +96,6 @@ func TestResolveAndInjectEnv_LeafDispatchHappy(t *testing.T) {
 	ts := httptest.NewServer(clusterHandler(t, cluster))
 	defer ts.Close()
 
-	// loadCloudProfile sets RPK_CLOUD_TOKEN, which getTokenOrLogin picks up
-	// as the dev override — no OAuth flow in tests.
 	loadCloudProfile(t, ts.URL, "clu-1")
 
 	fs := afero.NewMemMapFs()
@@ -128,6 +103,14 @@ func TestResolveAndInjectEnv_LeafDispatchHappy(t *testing.T) {
 	require.NoError(t, err)
 	yaml := `version: 6
 current_profile: dev
+current_cloud_auth_org_id: org-1
+current_cloud_auth_kind: cloud-sso
+cloud_auth:
+  - name: cloud
+    organization: cloud
+    org_id: org-1
+    kind: cloud-sso
+    auth_token: cached-cloud-token
 profiles:
   - name: dev
     from_cloud: true
@@ -138,8 +121,46 @@ profiles:
 
 	// args=nil simulates leaf dispatch: cobra consumed the path tokens.
 	require.NoError(t, resolveAndInjectEnv(t.Context(), fs, new(config.Params), nil))
-	require.Equal(t, "test-token", os.Getenv(envAuthToken), "RPAI_TOKEN must be set from dev override")
+	require.Equal(t, "cached-cloud-token", os.Getenv(envAuthToken), "RPAI_TOKEN must be set from the cached cloud_auth entry")
 	require.Equal(t, "https://aigw.example.com", os.Getenv(envEndpoint), "RPAI_ENDPOINT must be set from aigw v2 url")
+}
+
+// TestResolveAndInjectEnv_NoCachedToken covers the "fresh install"
+// case: rpk.yaml has no cloud_auth entry. resolveAndInjectEnv must not
+// fail — it just leaves RPAI_TOKEN unset and lets the gateway return
+// 401 (or the plugin's own auth chain pick up an alternative source).
+func TestResolveAndInjectEnv_NoCachedToken(t *testing.T) {
+	t.Setenv(envAuthToken, "")
+	t.Setenv(envEndpoint, "")
+
+	cluster := &controlplanev1.Cluster{
+		Id: "clu-1",
+		AiGateway: &controlplanev1.Cluster_AIGateway{
+			V2Url: "https://aigw.example.com",
+		},
+	}
+	ts := httptest.NewServer(clusterHandler(t, cluster))
+	defer ts.Close()
+
+	loadCloudProfile(t, ts.URL, "clu-1")
+
+	fs := afero.NewMemMapFs()
+	path, err := config.DefaultRpkYamlPath()
+	require.NoError(t, err)
+	// No cloud_auth section.
+	yaml := `version: 6
+current_profile: dev
+profiles:
+  - name: dev
+    from_cloud: true
+    cloud_cluster:
+      cluster_id: "clu-1"
+`
+	require.NoError(t, afero.WriteFile(fs, path, []byte(yaml), 0o600))
+
+	require.NoError(t, resolveAndInjectEnv(t.Context(), fs, new(config.Params), nil))
+	require.Empty(t, os.Getenv(envAuthToken), "RPAI_TOKEN must remain unset when rpk.yaml has no cached auth")
+	require.Equal(t, "https://aigw.example.com", os.Getenv(envEndpoint))
 }
 
 // TestResolveAndInjectEnv_SkipsWhenEndpointFlagPresent confirms that passing
@@ -173,19 +194,6 @@ func TestHasEndpointFlag(t *testing.T) {
 			require.Equal(t, c.want, hasEndpointFlag(c.args))
 		})
 	}
-}
-
-func TestGetTokenOrLogin_UsesDevOverride(t *testing.T) {
-	t.Setenv("RPK_CLOUD_TOKEN", "dev-token-123")
-
-	fs := afero.NewMemMapFs()
-	p := new(config.Params)
-	cfg, err := p.Load(fs)
-	require.NoError(t, err)
-
-	tok, err := getTokenOrLogin(t.Context(), fs, cfg)
-	require.NoError(t, err)
-	require.Equal(t, "dev-token-123", tok)
 }
 
 // clusterHandler stubs the public-API GetCluster endpoint to return the given
