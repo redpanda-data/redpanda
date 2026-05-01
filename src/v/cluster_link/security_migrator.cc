@@ -218,7 +218,7 @@ to_acl_bindings(const kafka::describe_acls_resource& r) {
       r.name,
       kafka::details::to_pattern_type(r.pattern_type));
 
-    std::vector<security::acl_entry> entries;
+    chunked_vector<security::acl_entry> entries;
     entries.reserve(r.acls.size());
 
     std::ranges::transform(
