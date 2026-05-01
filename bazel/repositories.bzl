@@ -3,6 +3,7 @@ This module contains the sources for all third party dependencies.
 """
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("//bazel:sysroot.bzl", "sysroot_repository")
 
 def data_dependency():
     """
@@ -197,19 +198,13 @@ def data_dependency():
         url = "https://github.com/Cyan4973/xxHash/archive/bbb27a5efb85b92a0486cf361a8635715a53f6ba.tar.gz",
     )
 
-    sysroot_build_file = """
-filegroup(
-  name = "sysroot",
-  srcs = glob(["*/**"]),
-  visibility = ["//visibility:public"],
-)"""
-    http_archive(
+    sysroot_repository(
         name = "x86_64_sysroot",
         sha256 = "0d85fc9e155e664403c1c3c40831d865796d36a91b78a2e6d8922aa6ad3f0375",
         urls = ["https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-x86_64-2026-05-05.tar.zst"],
     )
 
-    http_archive(
+    sysroot_repository(
         name = "aarch64_sysroot",
         sha256 = "1afc00adf978c90ad8ffd3b729180923c27d57a7702ea23ba35c714e11d0def2",
         urls = ["https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-aarch64-2026-05-05.tar.zst"],

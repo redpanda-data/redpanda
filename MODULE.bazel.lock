@@ -350,7 +350,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "hWJ4F3DLMHQe1ZxGPd1fns2LARdH2EBhh1lJKn2CROo=",
+        "bzlTransitiveDigest": "MFhjYiW0f/0WXmg5ozP32Tem9e8VTXAD+ZcheZ7mv5A=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -561,22 +561,20 @@
             }
           },
           "x86_64_sysroot": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "repoRuleId": "@@//bazel:sysroot.bzl%sysroot_repository",
             "attributes": {
-              "build_file_content": "\nfilegroup(\n  name = \"sysroot\",\n  srcs = glob([\"*/**\"]),\n  visibility = [\"//visibility:public\"],\n)",
-              "sha256": "282b7eb89ca45d2309217d5d2099cc087c1e7bd55f7891b9d2ddca648b6663b7",
+              "sha256": "0d85fc9e155e664403c1c3c40831d865796d36a91b78a2e6d8922aa6ad3f0375",
               "urls": [
-                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-19.1.7/sysroot-ubuntu-22.04-x86_64-2025-02-24.tar.zst"
+                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-x86_64-2026-05-05.tar.zst"
               ]
             }
           },
           "aarch64_sysroot": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "repoRuleId": "@@//bazel:sysroot.bzl%sysroot_repository",
             "attributes": {
-              "build_file_content": "\nfilegroup(\n  name = \"sysroot\",\n  srcs = glob([\"*/**\"]),\n  visibility = [\"//visibility:public\"],\n)",
-              "sha256": "39e3d368d57a40d36f6735dcfe3ed699c6a5962cd47c5b1f652254f077632688",
+              "sha256": "1afc00adf978c90ad8ffd3b729180923c27d57a7702ea23ba35c714e11d0def2",
               "urls": [
-                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-19.1.7/sysroot-ubuntu-22.04-aarch64-2025-02-27.tar.zst"
+                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-aarch64-2026-05-05.tar.zst"
               ]
             }
           }

@@ -199,12 +199,12 @@ COMPILERS = {
         ),
         llvm.sysroot(
             name = "{version}_llvm_toolchain".format(version = major_version),
-            label = "@x86_64_sysroot//:sysroot",
+            label = "@x86_64_sysroot//sysroot:sysroot",
             targets = ["linux-x86_64"],
         ),
         llvm.sysroot(
             name = "{version}_llvm_toolchain".format(version = major_version),
-            label = "@aarch64_sysroot//:sysroot",
+            label = "@aarch64_sysroot//sysroot:sysroot",
             targets = ["linux-aarch64"],
         ),
         use_repo(llvm, "{version}_llvm_toolchain".format(version = major_version)),

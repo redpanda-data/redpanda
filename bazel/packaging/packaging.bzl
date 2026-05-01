@@ -3,27 +3,6 @@ A rule to create a redpanda tarball given inputs from the build system.
 """
 
 load("@bazel_skylib//lib:collections.bzl", "collections")
-load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain")
-
-def _is_versioned(file, starts_with):
-    """ Return true if this file has a name like libfoo.so.N """
-    parts = file.basename.rsplit(".", 3)
-    if len(parts) != 3:
-        return False
-    if not parts[0].startswith(starts_with):
-        return False
-    if parts[1] != "so":
-        return False
-    for c in parts[2].elems():
-        if not c.isdigit():
-            return False
-    return True
-
-def _is_versioned_so(file):
-    return _is_versioned(file, "lib")
-
-def _is_dynamic_loader(file):
-    return _is_versioned(file, "ld")
 
 def _patched_file(ctx, original, suffix):
     """Return a new File for patching.
@@ -72,15 +51,14 @@ def _prepare_package_binaries(ctx, binaries, dynamic_loader_path):
 
     shared_libraries = []
     dynamic_loader = None
-    cc_toolchain = find_cpp_toolchain(ctx)
-    if cc_toolchain.sysroot != None and ctx.attr.include_sysroot_libs:
-        for cc_file in cc_toolchain.all_files.to_list():
-            if cc_file.path.startswith(cc_toolchain.sysroot):
-                if _is_versioned_so(cc_file):
-                    shared_libraries.append(cc_file)
-                elif _is_dynamic_loader(cc_file):
-                    shared_libraries.append(cc_file)
-                    dynamic_loader = cc_file
+    if ctx.attr.include_sysroot_libs:
+        if not ctx.files.sysroot_runtime:
+            fail("include_sysroot_libs is True but sysroot_runtime is not set on", ctx.attr.name)
+        loaders = [f for f in ctx.files.sysroot_runtime if f.basename.startswith("ld-linux-")]
+        if len(loaders) != 1:
+            fail("expected exactly one ld-linux loader in sysroot_runtime, got", [f.basename for f in loaders])
+        dynamic_loader = loaders[0]
+        shared_libraries.extend(ctx.files.sysroot_runtime)
 
     ret_binaries = []
     for binary in binaries:
@@ -343,6 +321,10 @@ redpanda_package = rule(
             mandatory = True,
         ),
         "include_sysroot_libs": attr.bool(),
+        "sysroot_runtime": attr.label(
+            allow_files = True,
+            doc = "Sysroot shared libraries plus the glibc dynamic loader. Shipped to install_path/lib; the loader (basename ld-linux-*) is also set as the binaries' interpreter.",
+        ),
         "rpath_override": attr.string(mandatory = False),
         "install_path": attr.string(
             default = "/opt/redpanda",
@@ -354,9 +336,6 @@ redpanda_package = rule(
             cfg = "exec",
             default = Label("//bazel/packaging:tool"),
         ),
-        "_cc_toolchain": attr.label(
-            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
-        ),
         "_patchelf": attr.label(
             executable = True,
             allow_files = True,
@@ -364,7 +343,6 @@ redpanda_package = rule(
             default = Label("@patchelf"),
         ),
     },
-    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
 def _prepapare_package_conent(ctx):
@@ -448,6 +426,10 @@ native_package = rule(
         "include_sysroot_libs": attr.bool(
             default = True,
         ),
+        "sysroot_runtime": attr.label(
+            allow_files = True,
+            doc = "Sysroot shared libraries plus the glibc dynamic loader. Shipped to install_path/lib; the loader (basename ld-linux-*) is also set as the binaries' interpreter.",
+        ),
         "rpath_override": attr.string(
             default = "$ORIGIN/../lib",
         ),
@@ -462,9 +444,6 @@ native_package = rule(
             cfg = "exec",
             default = Label("//bazel/packaging:tool"),
         ),
-        "_cc_toolchain": attr.label(
-            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
-        ),
         "_patchelf": attr.label(
             executable = True,
             allow_files = True,
@@ -472,7 +451,6 @@ native_package = rule(
             default = Label("@patchelf"),
         ),
     },
-    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
 def _script_package_impl(ctx):
@@ -737,6 +715,10 @@ redpanda_deb_package = rule(
         "include_sysroot_libs": attr.bool(
             default = True,
         ),
+        "sysroot_runtime": attr.label(
+            allow_files = True,
+            doc = "Sysroot shared libraries plus the glibc dynamic loader. Shipped to install_path/lib; the loader (basename ld-linux-*) is also set as the binaries' interpreter.",
+        ),
         "rpath_override": attr.string(
             default = "$ORIGIN/../lib",
         ),
@@ -794,9 +776,6 @@ redpanda_deb_package = rule(
             cfg = "exec",
             default = Label("//bazel/packaging:tool"),
         ),
-        "_cc_toolchain": attr.label(
-            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
-        ),
         "_patchelf": attr.label(
             executable = True,
             allow_files = True,
@@ -804,5 +783,4 @@ redpanda_deb_package = rule(
             default = Label("@patchelf"),
         ),
     },
-    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
