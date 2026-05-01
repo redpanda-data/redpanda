@@ -211,12 +211,17 @@ type ProducerWorkerStatus struct {
 	//  inside those transactions)
 	AbortedTransactionMessages int64 `json:"aborted_transaction_msgs"`
 
+	// Records whose transaction outcome is unknown to the producer:
+	// EndTransaction(commit) returned an error (e.g. REQUEST_TIMED_OUT,
+	// OPERATION_NOT_ATTEMPTED) so the broker may or may not have
+	// committed them. The verifier should treat the consumer's
+	// read_committed view as ground truth for these.
+	AmbiguousTransactionMessages int64 `json:"ambiguous_transaction_msgs"`
+
 	// Records acked in the current in-flight transaction with commit
 	// intent. Reset to 0 when a transaction commits successfully;
-	// added to AbortedTransactionMessages when a transaction is aborted
-	// (intentionally or by the coordinator). Lets us correctly account
-	// for records that the producer thought would commit but ended up
-	// in a coordinator-aborted transaction.
+	// rolled into AbortedTransactionMessages or
+	// AmbiguousTransactionMessages on transaction failure.
 	currentTxCommitIntentAcked int64
 
 	// Ack latency: a private histogram for the data,
@@ -417,6 +422,7 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	var wg sync.WaitGroup
 
 	errored := false
+	commitErrored := false
 	produced := int64(0)
 	failsBefore := pw.Status.Fails
 
@@ -451,6 +457,13 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				concurrent.Release(1)
 				log.Errorf("Transaction error %v", err)
 				errored = true
+				// If the failure was on a tx-ending call (Flush+
+				// EndTransaction inside BeforeMessageSent), the records
+				// produced so far had commit intent and the broker may
+				// or may not have committed them.
+				if willEnd {
+					commitErrored = true
+				}
 				pw.Status.FailedTransactions += 1
 				break
 			}
@@ -554,11 +567,16 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				log.Errorf("unable to abort transaction: %v", err)
 			}
 			pw.Status.FailedTransactions += 1
-			// Records that acked with commit intent but ended up in
-			// an aborted tx are not visible to read_committed and
-			// should be counted as aborted.
 			pw.Status.lock.Lock()
-			pw.Status.AbortedTransactionMessages += pw.Status.currentTxCommitIntentAcked
+			if commitErrored {
+				// EndTransaction(commit) returned an ambiguous error;
+				// the broker may or may not have committed.
+				pw.Status.AmbiguousTransactionMessages += pw.Status.currentTxCommitIntentAcked
+			} else {
+				// Produce failed mid-tx; the subsequent abort is
+				// deterministic so these records are aborted.
+				pw.Status.AbortedTransactionMessages += pw.Status.currentTxCommitIntentAcked
+			}
 			pw.Status.currentTxCommitIntentAcked = 0
 			pw.Status.lock.Unlock()
 		} else {
@@ -566,11 +584,9 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				log.Errorf("unable to end transaction: %v", err)
 				errored = true
 				pw.Status.FailedTransactions += 1
-				// Tx end failed; outcome unknown but conservative —
-				// treat as aborted so committed = acked - aborted
-				// reflects what is actually readable.
+				// End-of-loop EndTransaction failed; outcome unknown.
 				pw.Status.lock.Lock()
-				pw.Status.AbortedTransactionMessages += pw.Status.currentTxCommitIntentAcked
+				pw.Status.AmbiguousTransactionMessages += pw.Status.currentTxCommitIntentAcked
 				pw.Status.currentTxCommitIntentAcked = 0
 				pw.Status.lock.Unlock()
 			} else {
