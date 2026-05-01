@@ -2064,6 +2064,101 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )
 
     @cluster(num_nodes=3)
+    def test_iceberg_schema_evolution_compat(self):
+        """
+        Verify that schemas with redpanda.iceberg.compatible metadata flag
+        are validated against iceberg schema evolution rules.
+        """
+        subject = f"{create_topic_names(1)[0]}-value"
+        iceberg_meta = {"properties": {"redpanda.iceberg.compatible": "true"}}
+
+        # Schema v1: record with int field
+        v1 = json.dumps(
+            {
+                "schema": '{"type":"record","name":"test","fields":[{"name":"a","type":"int"}]}',
+                "schemaType": "AVRO",
+                "metadata": iceberg_meta,
+            }
+        )
+
+        # Schema v2: add optional field (iceberg-compatible)
+        v2 = json.dumps(
+            {
+                "schema": '{"type":"record","name":"test","fields":'
+                '[{"name":"a","type":"int"},'
+                '{"name":"b","type":["null","string"],"default":null}]}',
+                "schemaType": "AVRO",
+                "metadata": iceberg_meta,
+            }
+        )
+
+        # Schema v3_bad: change field type int -> string (iceberg-incompatible)
+        v3_bad = json.dumps(
+            {
+                "schema": '{"type":"record","name":"test","fields":[{"name":"a","type":"string"}]}',
+                "schemaType": "AVRO",
+                "metadata": iceberg_meta,
+            }
+        )
+
+        # Same schema as v3_bad but with explicit empty metadata to
+        # override inheritance (omitting metadata entirely would inherit
+        # the iceberg flag from the latest version)
+        v3_bad_no_flag = json.dumps(
+            {
+                "schema": '{"type":"record","name":"test","fields":[{"name":"a","type":"string"}]}',
+                "schemaType": "AVRO",
+                "metadata": {"properties": {}},
+            }
+        )
+
+        # Register v1 under default compat (BACKWARD). This is fine since
+        # v1 is the first version and has nothing to be backward-compat with.
+        # Then set compat to NONE so subsequent versions are only gated by
+        # the iceberg check.
+        self.logger.debug("Register v1 and set subject compat to NONE")
+        result = self.sr_client.post_subjects_subject_versions(subject=subject, data=v1)
+        assert result.status_code == requests.codes.ok, (
+            f"v1 registration failed: {result.content}"
+        )
+
+        result = self.sr_client.set_config_subject(
+            subject=subject, data=json.dumps({"compatibility": "NONE"})
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"Failed to set compat NONE: {result.content}"
+        )
+
+        # v2 should succeed (compatible addition of optional field)
+        self.logger.debug("Register v2 with iceberg flag (compatible)")
+        result = self.sr_client.post_subjects_subject_versions(subject=subject, data=v2)
+        assert result.status_code == requests.codes.ok, (
+            f"v2 registration failed: {result.content}"
+        )
+
+        # v3_bad should fail (int -> string is not iceberg-compatible)
+        self.logger.debug("Register v3 with iceberg flag (incompatible)")
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=subject, data=v3_bad
+        )
+        assert result.status_code == requests.codes.conflict, (
+            f"Expected 409 for incompatible schema, got {result.status_code}: {result.content}"
+        )
+        assert "iceberg" in result.json().get("message", "").lower(), (
+            f"Error should mention iceberg: {result.content}"
+        )
+
+        # Same schema without iceberg flag should succeed since SR compat
+        # is NONE and the iceberg check is skipped without the flag
+        self.logger.debug("Register v3 without iceberg flag (should pass)")
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=subject, data=v3_bad_no_flag
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"v3 without flag should succeed: {result.content}"
+        )
+
+    @cluster(num_nodes=3)
     def test_post_subjects_subject(self):
         """
         Verify posting a schema

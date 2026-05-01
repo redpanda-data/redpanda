@@ -47,12 +47,13 @@ struct primitive_type_promotion_policy_visitor {
     }
 
     type_check_result
-    operator()(const iceberg::float_type&, const iceberg::double_type&) {
+    operator()(const iceberg::float_type&, const iceberg::double_type&) const {
         return type_promoted::yes;
     }
 
     type_check_result operator()(
-      const iceberg::decimal_type& src, const iceberg::decimal_type& dst) {
+      const iceberg::decimal_type& src,
+      const iceberg::decimal_type& dst) const {
         if (iceberg::primitive_type{src} == iceberg::primitive_type{dst}) {
             return type_promoted::no;
         }
@@ -62,8 +63,8 @@ struct primitive_type_promotion_policy_visitor {
         return compat_errc::mismatch;
     }
 
-    type_check_result
-    operator()(const iceberg::fixed_type& src, const iceberg::fixed_type& dst) {
+    type_check_result operator()(
+      const iceberg::fixed_type& src, const iceberg::fixed_type& dst) const {
         if (iceberg::primitive_type{src} == iceberg::primitive_type{dst}) {
             return type_promoted::no;
         }

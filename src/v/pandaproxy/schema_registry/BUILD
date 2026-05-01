@@ -170,6 +170,27 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "iceberg_compat",
+    srcs = ["iceberg_compat.cc"],
+    hdrs = ["iceberg_compat.h"],
+    implementation_deps = [
+        ":core",
+        "//src/v/container:chunked_vector",
+        "//src/v/iceberg:compatibility_types",
+        "//src/v/iceberg:simulate_evolution",
+        "//src/v/iceberg/conversion:schema_avro",
+        "@avro",
+        "@fmt",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":types",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "server",
     srcs = [
         "api.cc",
@@ -203,6 +224,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":core",
+        ":iceberg_compat",
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/cluster",

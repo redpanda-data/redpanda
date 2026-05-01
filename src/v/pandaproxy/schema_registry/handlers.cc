@@ -24,6 +24,7 @@
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/iceberg_compat.h"
 #include "pandaproxy/schema_registry/requests/acls.h"
 #include "pandaproxy/schema_registry/requests/compatibility.h"
 #include "pandaproxy/schema_registry/requests/config.h"
@@ -1048,6 +1049,23 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
                     "schema for subject \"{}\", details: [{}]",
                     ctx_sub,
                     fmt::join(compat.messages, ", ")));
+            }
+        }
+
+        // Check iceberg schema evolution compatibility (if enabled via
+        // metadata flag).
+        if (mode != mode::import) {
+            auto iceberg_err = co_await check_iceberg_compatibility(
+              st, ctx_sub, schema.schema.def());
+            if (iceberg_err.has_value()) {
+                throw exception(
+                  error_code::schema_incompatible,
+                  fmt::format(
+                    "Schema being registered is incompatible with "
+                    "iceberg schema evolution rules for subject "
+                    "\"{}\": {}",
+                    ctx_sub,
+                    *iceberg_err));
             }
         }
 

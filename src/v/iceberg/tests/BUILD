@@ -715,6 +715,23 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "simulate_evolution_test",
+    timeout = "short",
+    srcs = [
+        "simulate_evolution_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:compatibility_types",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:simulate_evolution",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
 redpanda_cc_bench(
     name = "iceberg_uri_rpbench",
     srcs = [

@@ -183,6 +183,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "simulate_evolution",
+    srcs = ["simulate_evolution.cc"],
+    hdrs = ["simulate_evolution.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":compatibility",
+        ":compatibility_types",
+        ":datatypes",
+        ":partition",
+        ":schema",
+        "//src/v/base",
+        "//src/v/container:chunked_vector",
+    ],
+)
+
+redpanda_cc_library(
     name = "datatypes_json",
     srcs = [
         "datatypes_json.cc",
