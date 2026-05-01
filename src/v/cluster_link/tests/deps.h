@@ -580,10 +580,10 @@ private:
 
 class fake_security_service : public security_service {
 public:
-    ss::future<std::vector<cluster::errc>> create_acls(
+    ss::future<chunked_vector<cluster::errc>> create_acls(
       chunked_vector<security::acl_binding> bindings,
       ::model::timeout_clock::duration) final {
-        std::vector<cluster::errc> results;
+        chunked_vector<cluster::errc> results;
         results.reserve(bindings.size());
         for (auto& binding : bindings) {
             auto& entries = _acls[binding.pattern()];

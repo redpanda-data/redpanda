@@ -192,7 +192,7 @@ public:
     static std::unique_ptr<security_service>
     make_default(ss::sharded<cluster::security_frontend>*);
 
-    virtual ss::future<std::vector<cluster::errc>> create_acls(
+    virtual ss::future<chunked_vector<cluster::errc>> create_acls(
       chunked_vector<security::acl_binding>,
       ::model::timeout_clock::duration) = 0;
 };

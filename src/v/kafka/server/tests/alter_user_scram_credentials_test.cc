@@ -160,7 +160,7 @@ FIXTURE_TEST(
                         .get();
 
     const auto errors_in_acl_results =
-      [](const std::vector<cluster::errc>& errs) {
+      [](const chunked_vector<cluster::errc>& errs) {
           return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });
@@ -675,7 +675,7 @@ FIXTURE_TEST(
                         .get();
 
     const auto errors_in_acl_results =
-      [](const std::vector<cluster::errc>& errs) {
+      [](const chunked_vector<cluster::errc>& errs) {
           return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });
@@ -794,7 +794,7 @@ FIXTURE_TEST(
                         .get();
 
     const auto errors_in_acl_results =
-      [](const std::vector<cluster::errc>& errs) {
+      [](const chunked_vector<cluster::errc>& errs) {
           return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });

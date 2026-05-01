@@ -1500,7 +1500,11 @@ struct create_acls_request
 struct create_acls_reply
   : serde::
       envelope<create_acls_reply, serde::version<0>, serde::compat_version<0>> {
-    std::vector<errc> results;
+    chunked_vector<errc> results;
+
+    create_acls_reply copy() const {
+        return create_acls_reply{.results = results.copy()};
+    }
 
     friend bool
     operator==(const create_acls_reply&, const create_acls_reply&) = default;

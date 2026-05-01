@@ -160,12 +160,13 @@ public:
      * Add ACL bindings to the authorizer
      *
      * Returns:
-     *   A vector of cluster::errc, one for each of the requested bindings.
+     *   A chunked_vector of cluster::errc, one for each of the requested
+     *   bindings.
      *
      * May be called from any node; handles routing the underlying controller
      * command to the leader node automatically.
      */
-    ss::future<std::vector<errc>> create_acls(
+    ss::future<chunked_vector<errc>> create_acls(
       chunked_vector<security::acl_binding>, model::timeout_clock::duration);
 
     /**
@@ -213,10 +214,10 @@ private:
     ss::future<result<model::offset>>
       get_leader_committed(model::timeout_clock::duration);
 
-    ss::future<std::vector<errc>> do_create_acls(
+    ss::future<chunked_vector<errc>> do_create_acls(
       chunked_vector<security::acl_binding>, model::timeout_clock::duration);
 
-    ss::future<std::vector<errc>> dispatch_create_acls_to_leader(
+    ss::future<chunked_vector<errc>> dispatch_create_acls_to_leader(
       model::node_id,
       chunked_vector<security::acl_binding>,
       model::timeout_clock::duration);
