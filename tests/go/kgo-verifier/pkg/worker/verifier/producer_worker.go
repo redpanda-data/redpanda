@@ -390,13 +390,8 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 	if pw.transactionsEnabled {
 		// Force InitProducerId synchronously via a no-op BeginTransaction
-		// before sampling offsets. franz-go's BeginTransaction calls
-		// maybeRecoverProducerID, which sends InitProducerId. With our
-		// stable TransactionalID, that causes the coordinator to drive
-		// any in-flight tx from the prior epoch to completed_commit/abort
-		// BEFORE returning, so the HWM read by GetOffsets already
-		// includes those markers and nextOffset[] cannot silently fall
-		// behind mid-run.
+		// so any prior-epoch tx that was Ongoing on the coordinator is
+		// driven to a terminal state before we sample offsets.
 		if err := client.BeginTransaction(); err != nil {
 			client.Close()
 			log.Warnf("Warmup BeginTransaction failed (will retry produceInner): %v", err)
@@ -413,7 +408,17 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 		pw.transactionSTM = worker.NewTransactionSTM(context.Background(), client, pw.transactionSTMConfig)
 	}
 
-	nextOffset := GetOffsets(client, pw.config.workerCfg.Topic, pw.config.nPartitions, -1)
+	var nextOffset []int64
+	if pw.transactionsEnabled {
+		// HWM alone is racy after a restart: a prior tx the coordinator
+		// already finalized may still have an abort/commit marker in
+		// flight to the data partition leader. LSO only advances past
+		// resolved markers, so once LSO == HWM we know the partition
+		// reflects all completed txs.
+		nextOffset = GetStableOffsets(client, pw.config.workerCfg.Topic, pw.config.nPartitions, 30*time.Second)
+	} else {
+		nextOffset = GetOffsets(client, pw.config.workerCfg.Topic, pw.config.nPartitions, -1)
+	}
 
 	for i, o := range nextOffset {
 		log.Infof("Produce start offset %s/%d %d...", pw.config.workerCfg.Topic, i, o)

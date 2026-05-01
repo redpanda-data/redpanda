@@ -51,10 +51,15 @@ func GetOffsets(client *kgo.Client, topic string, nPartitions int32, t int64) []
 }
 
 func formOffsetsReq(topic string, nPartitions int32, t int64) *kmsg.ListOffsetsRequest {
-	log.Infof("Loading offsets for topic %s t=%d...", topic, t)
+	return formOffsetsReqIsolated(topic, nPartitions, t, 0)
+}
+
+func formOffsetsReqIsolated(topic string, nPartitions int32, t int64, isolationLevel int8) *kmsg.ListOffsetsRequest {
+	log.Infof("Loading offsets for topic %s t=%d isolation=%d...", topic, t, isolationLevel)
 
 	req := kmsg.NewPtrListOffsetsRequest()
 	req.ReplicaID = -1
+	req.IsolationLevel = isolationLevel
 	reqTopic := kmsg.NewListOffsetsRequestTopic()
 	reqTopic.Topic = topic
 	for i := 0; i < int(nPartitions); i++ {
@@ -66,6 +71,47 @@ func formOffsetsReq(topic string, nPartitions int32, t int64) *kmsg.ListOffsetsR
 
 	req.Topics = append(req.Topics, reqTopic)
 	return req
+}
+
+// GetStableOffsets returns HWM per partition once LSO has caught up,
+// guaranteeing that any prior-epoch tx markers have landed. Without
+// this, a producer that restarts shortly after a tx aborts can read
+// HWM before the abort marker write completes and project nextOffset
+// one slot too low — the marker then takes the offset the producer
+// expected for its data record.
+func GetStableOffsets(client *kgo.Client, topic string, nPartitions int32, timeout time.Duration) []int64 {
+	hwmReq := formOffsetsReqIsolated(topic, nPartitions, -1, 0)
+	lsoReq := formOffsetsReqIsolated(topic, nPartitions, -1, 1)
+
+	deadline := time.Now().Add(timeout)
+	pollInterval := 500 * time.Millisecond
+	hwm := make([]int64, nPartitions)
+
+	for {
+		hwmRes := attemptGetOffsets(client, topic, nPartitions, hwmReq)
+		lsoRes := attemptGetOffsets(client, topic, nPartitions, lsoReq)
+
+		stable := true
+		for i := int32(0); i < nPartitions; i++ {
+			if hwmRes[i].err != nil || lsoRes[i].err != nil {
+				stable = false
+				continue
+			}
+			hwm[i] = hwmRes[i].offset
+			if hwmRes[i].offset != lsoRes[i].offset {
+				log.Warnf("Partition %d HWM=%d LSO=%d, waiting for markers", i, hwmRes[i].offset, lsoRes[i].offset)
+				stable = false
+			}
+		}
+		if stable {
+			return hwm
+		}
+		if time.Now().After(deadline) {
+			log.Warnf("Timed out waiting for LSO==HWM; using last HWM read")
+			return hwm
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 func attemptGetOffsets(client *kgo.Client, topic string, nPartitions int32, req *kmsg.ListOffsetsRequest) []OffsetResult {
