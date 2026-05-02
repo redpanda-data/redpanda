@@ -17,7 +17,9 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
+#include <map>
 #include <memory>
+#include <stdexcept>
 #include <string_view>
 
 namespace {
@@ -512,6 +514,166 @@ TEST_F(DBIteratorTest, TombstoneAfterValues) {
 
     it->next().get();
     EXPECT_FALSE(it->valid());
+}
+
+// An iterator over an in-memory map that can be primed to throw on the
+// next mutating operation. Used to model the cloud_io failure path where
+// a deeper iterator (e.g. a two-level iterator's data block) raises an
+// exception mid-operation, as observed in the AT reactor-1 SIGSEGV.
+class throwing_iterator : public lsm::internal::iterator {
+public:
+    explicit throwing_iterator(std::map<lsm::internal::key, iobuf> data)
+      : _data(std::move(data))
+      , _it(_data.end()) {}
+
+    // Arm the iterator to fail the next mutating call exactly once.
+    void fail_next() { _fail_pending = true; }
+
+    bool valid() const override { return _it != _data.end(); }
+
+    ss::future<> seek_to_first() override {
+        if (consume_failure()) {
+            return make_failure();
+        }
+        _it = _data.begin();
+        return ss::now();
+    }
+
+    ss::future<> seek_to_last() override {
+        if (consume_failure()) {
+            return make_failure();
+        }
+        _it = _data.empty() ? _data.end() : std::prev(_data.end());
+        return ss::now();
+    }
+
+    ss::future<> seek(lsm::internal::key_view target) override {
+        if (consume_failure()) {
+            return make_failure();
+        }
+        _it = _data.lower_bound(lsm::internal::key(target));
+        return ss::now();
+    }
+
+    ss::future<> next() override {
+        if (consume_failure()) {
+            return make_failure();
+        }
+        if (_it != _data.end()) {
+            ++_it;
+        }
+        return ss::now();
+    }
+
+    ss::future<> prev() override {
+        if (consume_failure()) {
+            return make_failure();
+        }
+        if (_it == _data.begin()) {
+            _it = _data.end();
+        } else if (_it != _data.end()) {
+            --_it;
+        } else if (!_data.empty()) {
+            _it = std::prev(_data.end());
+        }
+        return ss::now();
+    }
+
+    lsm::internal::key_view key() override { return _it->first; }
+    iobuf value() override { return _it->second.copy(); }
+
+private:
+    bool consume_failure() {
+        if (_fail_pending) {
+            _fail_pending = false;
+            return true;
+        }
+        return false;
+    }
+    static ss::future<> make_failure() {
+        return ss::make_exception_future<>(
+          std::runtime_error("simulated cloud_io download failure"));
+    }
+
+    std::map<lsm::internal::key, iobuf> _data;
+    std::map<lsm::internal::key, iobuf>::iterator _it;
+    bool _fail_pending = false;
+};
+
+class DBIteratorExceptionSafetyTest : public testing::Test {
+public:
+    void SetUp() override {
+        _options = ss::make_lw_shared<lsm::internal::options>();
+        std::map<lsm::internal::key, iobuf> data;
+        for (auto k : {"a", "b", "c"}) {
+            auto ikey = lsm::internal::key::encode(
+              {.key = lsm::user_key_view{k},
+               .seqno = 100_seqno,
+               .type = lsm::internal::value_type::value});
+            data.emplace(std::move(ikey), iobuf::from(k));
+        }
+        auto inner = std::make_unique<throwing_iterator>(std::move(data));
+        _inner = inner.get();
+        _it = lsm::db::create_db_iterator(
+          std::move(inner),
+          lsm::internal::sequence_number::max(),
+          _options,
+          [](lsm::internal::key_view) { return ss::now(); });
+    }
+
+protected:
+    ss::lw_shared_ptr<lsm::internal::options> _options;
+    throwing_iterator* _inner = nullptr;
+    std::unique_ptr<lsm::internal::iterator> _it;
+};
+
+// If seek throws partway through, valid() must report false. Previously
+// _valid retained whatever it had been before the call, allowing a stale
+// "true" to escape and a downstream key() to dereference a half-loaded
+// underlying iterator (the AT reactor-1 SIGSEGV).
+TEST_F(DBIteratorExceptionSafetyTest, SeekThrowLeavesIteratorInvalid) {
+    _it->seek("a"_seek_key).get();
+    ASSERT_TRUE(_it->valid());
+
+    _inner->fail_next();
+    EXPECT_THROW(_it->seek("b"_seek_key).get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(DBIteratorExceptionSafetyTest, SeekToFirstThrowLeavesIteratorInvalid) {
+    _it->seek_to_first().get();
+    ASSERT_TRUE(_it->valid());
+
+    _inner->fail_next();
+    EXPECT_THROW(_it->seek_to_first().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(DBIteratorExceptionSafetyTest, SeekToLastThrowLeavesIteratorInvalid) {
+    _it->seek_to_last().get();
+    ASSERT_TRUE(_it->valid());
+
+    _inner->fail_next();
+    EXPECT_THROW(_it->seek_to_last().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(DBIteratorExceptionSafetyTest, NextThrowLeavesIteratorInvalid) {
+    _it->seek_to_first().get();
+    ASSERT_TRUE(_it->valid());
+
+    _inner->fail_next();
+    EXPECT_THROW(_it->next().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(DBIteratorExceptionSafetyTest, PrevThrowLeavesIteratorInvalid) {
+    _it->seek_to_last().get();
+    ASSERT_TRUE(_it->valid());
+
+    _inner->fail_next();
+    EXPECT_THROW(_it->prev().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
 }
 
 TEST_F(DBIteratorTest, MultipleVersionsWithSnapshot) {

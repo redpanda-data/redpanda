@@ -76,8 +76,10 @@ public:
 
 private:
     ss::future<> init_data_block() {
+        // Clear previous iterator first in case `_data_iter_fn` throws.
+        _data_iter = nullptr;
+
         if (!_index_iter->valid()) {
-            _data_iter = nullptr;
             co_return;
         }
         auto handle = _index_iter->value();
