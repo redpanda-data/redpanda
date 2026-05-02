@@ -1243,9 +1243,14 @@ FIXTURE_TEST(
     BOOST_REQUIRE(producers().contains(pid1.get_id()));
     BOOST_REQUIRE(producers().contains(pid2.get_id()));
 
-    // Ensure the LSO is held back by the open transactions.
-    auto lso = stm->last_stable_offset();
-    BOOST_REQUIRE_NE(lso, model::invalid_lso);
+    // Ensure the LSO is held back by the open transactions. After restart
+    // the STM has applied through the snapshot offset; data batches replay
+    // asynchronously, so wait for last_stable_offset() to become valid.
+    model::offset lso;
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&]() {
+        lso = stm->last_stable_offset();
+        return lso != model::invalid_lso;
+    });
     BOOST_REQUIRE_LE(lso, model::offset(last_data_offset()));
 
     // Ensure pid1's transaction can be committed
