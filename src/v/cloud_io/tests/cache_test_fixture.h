@@ -168,6 +168,12 @@ public:
           .get();
     }
 
+    bool get_block_puts(ss::shard_id shard) {
+        return sharded_cache
+          .invoke_on(shard, [](cloud_io::cache& c) { return c._block_puts; })
+          .get();
+    }
+
     scoped_config cfg;
 
     void sync_tracker(

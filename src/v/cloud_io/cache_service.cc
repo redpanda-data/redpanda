@@ -76,6 +76,16 @@ cache::cache(
         _disk_reservation.watch([this]() { update_max_bytes(); });
         _max_bytes_cfg.watch([this]() { update_max_bytes(); });
         _max_percent.watch([this]() { update_max_bytes(); });
+    } else {
+        _cleanup_sm.broken(
+          std::runtime_error(
+            "cleanup_sm should not be used on non-zero shards"));
+        _access_tracker_writer_sm.broken(
+          std::runtime_error(
+            "access_tracker_writer_sm should not be used on non-zero shards"));
+        _tracker_sync_timer_sem.broken(
+          std::runtime_error(
+            "tracker_sync_timer_sem should not be used on non-zero shards"));
     }
 }
 
@@ -271,6 +281,7 @@ ss::future<> cache::trim_throttled_unlocked(
   std::optional<uint64_t> size_limit_override,
   std::optional<size_t> object_limit_override,
   std::optional<ss::lowres_clock::time_point> deadline) {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     // If we trimmed very recently then do not do it immediately:
     // this reduces load and improves chance of currently promoted
     // segments finishing their read work before we demote their
@@ -295,6 +306,7 @@ ss::future<> cache::trim_throttled_unlocked(
 ss::future<> cache::trim_throttled(
   std::optional<uint64_t> size_limit_override,
   std::optional<size_t> object_limit_override) {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     auto units = co_await ss::get_units(_cleanup_sm, 1);
     co_await trim_throttled_unlocked(
       size_limit_override, object_limit_override);
@@ -1319,12 +1331,14 @@ ss::future<> cache::put(
 
             // Block further puts from being attempted until notify_disk_status
             // reports that there is space available.
-            set_block_puts(true);
+            co_await container().invoke_on_all(
+              [](cache& c) { c.set_block_puts(true); });
 
             // Trim proactively: if many fibers hit this concurrently,
             // they'll contend for cleanup_sm and the losers will skip
             // trim due to throttling.
-            co_await trim_throttled();
+            co_await container().invoke_on(
+              0, [](cache& c) { return c.trim_throttled(); });
         }
 
         std::rethrow_exception(eptr);
@@ -1644,6 +1658,7 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
 }
 
 void cache::maybe_background_trim() {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     auto& trim_threshold_pct_objects
       = config::shard_local_cfg()
           .cloud_storage_cache_trim_threshold_percent_objects;
@@ -1969,6 +1984,8 @@ ss::future<> cache::initialize(std::filesystem::path cache_dir) {
 
 ss::future<> cache::sync_access_time_tracker(
   access_time_tracker::add_entries_t add_entries) {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+
     if (_cleanup_sm.available_units() <= 0) {
         vlog(
           log.debug, "syncing access time tracker postponed, trim is running");
