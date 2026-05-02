@@ -55,6 +55,18 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "throwing_iterator",
+    hdrs = ["throwing_iterator.h"],
+    visibility = ["//src/v/lsm:__subpackages__"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "merging_iterator_test",
     timeout = "short",
@@ -63,6 +75,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":iterator_test_harness",
+        ":throwing_iterator",
         "//src/v/base",
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
