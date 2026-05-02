@@ -57,11 +57,13 @@ public:
 
     bool valid() const final { return _current < _restarts_offset; }
     ss::future<> seek_to_first() final {
+        invalidate();
         seek_to_restart_point(0);
         parse_next_key();
         return ss::now();
     }
     ss::future<> seek_to_last() final {
+        invalidate();
         seek_to_restart_point(_num_restarts - 1);
         while (parse_next_key() && next_entry_offset() < _restarts_offset) {
             // Keep skipping
@@ -91,6 +93,8 @@ public:
             }
         }
 
+        invalidate();
+
         while (left < right) {
             uint32_t mid = (left + right + 1) / 2;
             uint32_t region_offset = get_restart_point(mid);
@@ -118,7 +122,6 @@ public:
         // We might be able to use our current position within the restart
         // block. This is true if we determined the key we desire is in the
         // current block and is after than the current key.
-        assert(current_key_compare == 0 || valid());
         bool skip_seek = left == _restart_index && current_key_compare < 0;
         if (!skip_seek) {
             seek_to_restart_point(left);
@@ -141,10 +144,10 @@ public:
     ss::future<> prev() final {
         // Scan backwards to a restart point before current_
         const uint32_t original = _current;
+        invalidate();
         while (get_restart_point(_restart_index) >= original) {
             if (_restart_index == 0) {
                 // No more entries
-                _current = _restarts_offset;
                 _restart_index = _num_restarts;
                 return ss::now();
             }
@@ -184,36 +187,39 @@ private:
         _value = {.offset = get_restart_point(index), .length = 0};
     }
 
+    // Reset to !valid() so a thrown corruption_exception doesn't leave
+    // stale _key / _value bytes from the previous entry.
+    void invalidate() { _current = _restarts_offset; }
+
     bool parse_next_key() {
-        _current = next_entry_offset();
+        const uint32_t next = next_entry_offset();
+        invalidate();
         // Restarts come right after data
-        if (_current >= _restarts_offset) {
-            // No more entries to return. Mark as invalid.
-            _current = _restarts_offset;
+        if (next >= _restarts_offset) {
             _restart_index = _num_restarts;
             return false;
         }
         // Decode next entry
         auto [shared, non_shared, value_length] = decode_entry(
-          *_data, _current, _restarts_offset);
-        uint32_t p = _current + (3 * sizeof(uint32_t));
+          *_data, next, _restarts_offset);
+        uint32_t p = next + (3 * sizeof(uint32_t));
         if (_key.size() < shared) {
             throw corruption_exception(
               "corruption: shared key too short: {} < {}", _key.size(), shared);
-        } else {
-            _key.resize(shared + non_shared);
-            auto it = _key.begin();
-            std::advance(it, shared);
-            for (std::string_view s : _data->read_string(p, non_shared)) {
-                it = std::ranges::copy(s, it).out;
-            }
-            _value = range{.offset = p + non_shared, .length = value_length};
-            while (_restart_index + 1 < _num_restarts
-                   && get_restart_point(_restart_index + 1) < _current) {
-                ++_restart_index;
-            }
-            return true;
         }
+        _key.resize(shared + non_shared);
+        auto it = _key.begin();
+        std::advance(it, shared);
+        for (std::string_view s : _data->read_string(p, non_shared)) {
+            it = std::ranges::copy(s, it).out;
+        }
+        _value = range{.offset = p + non_shared, .length = value_length};
+        while (_restart_index + 1 < _num_restarts
+               && get_restart_point(_restart_index + 1) < next) {
+            ++_restart_index;
+        }
+        _current = next;
+        return true;
     }
 
     ss::lw_shared_ptr<contents> _data;
