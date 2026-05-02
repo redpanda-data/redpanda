@@ -85,3 +85,22 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "two_level_iterator_test",
+    timeout = "short",
+    srcs = [
+        "two_level_iterator_test.cc",
+    ],
+    deps = [
+        ":throwing_iterator",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:iterator",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:two_level_iterator",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

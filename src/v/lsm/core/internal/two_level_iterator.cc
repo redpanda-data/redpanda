@@ -23,45 +23,55 @@ public:
 
     ~impl() override = default;
 
-    bool valid() const override { return _data_iter && _data_iter->valid(); }
+    bool valid() const override { return _valid; }
 
     ss::future<> seek_to_first() override {
+        invalidate();
         co_await _index_iter->seek_to_first();
         co_await init_data_block();
         if (_data_iter) {
             co_await _data_iter->seek_to_first();
         }
         co_await skip_empty_data_blocks_forward();
+        revalidate();
     }
 
     ss::future<> seek_to_last() override {
+        invalidate();
         co_await _index_iter->seek_to_last();
         co_await init_data_block();
         if (_data_iter) {
             co_await _data_iter->seek_to_last();
         }
         co_await skip_empty_data_blocks_backward();
+        revalidate();
     }
 
     ss::future<> seek(key_view target) override {
+        invalidate();
         co_await _index_iter->seek(target);
         co_await init_data_block();
         if (_data_iter) {
             co_await _data_iter->seek(target);
         }
         co_await skip_empty_data_blocks_forward();
+        revalidate();
     }
 
     ss::future<> next() override {
         assert(valid());
+        invalidate();
         co_await _data_iter->next();
         co_await skip_empty_data_blocks_forward();
+        revalidate();
     }
 
     ss::future<> prev() override {
         assert(valid());
+        invalidate();
         co_await _data_iter->prev();
         co_await skip_empty_data_blocks_backward();
+        revalidate();
     }
 
     key_view key() override {
@@ -75,6 +85,13 @@ public:
     }
 
 private:
+    // Reset to !valid() so a thrown await doesn't leave stale state.
+    void invalidate() { _valid = false; }
+    // skip_empty_data_blocks_* maintains the invariant that _data_iter is
+    // either nullptr or positioned at a valid entry, so a non-null
+    // _data_iter implies validity at this point.
+    void revalidate() { _valid = _data_iter != nullptr; }
+
     ss::future<> init_data_block() {
         // Clear previous iterator first in case `_data_iter_fn` throws.
         _data_iter = nullptr;
@@ -118,6 +135,7 @@ private:
     // ss::optimized_optional, as that makes the code slightly harder
     // to read.
     std::unique_ptr<iterator> _data_iter;
+    bool _valid = false;
 };
 
 } // namespace
