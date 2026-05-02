@@ -68,4 +68,46 @@
       "type": "string"
     }
   }
+},
+"probe_result": {
+  "type": "object",
+  "required": [
+    "category",
+    "resource",
+    "ok"
+  ],
+  "properties": {
+    "category": {
+      "description": "Probe category: one of file, command, k8s_rbac, admin_api, kafka, network",
+      "type": "string"
+    },
+    "resource": {
+      "description": "The probed target: file path, command name, RBAC descriptor, admin URL, Kafka broker list, or network hostname",
+      "type": "string"
+    },
+    "ok": {
+      "description": "True if the probe succeeded",
+      "type": "boolean"
+    },
+    "error": {
+      "description": "Error detail if the probe failed",
+      "type": "string"
+    },
+    "hint": {
+      "description": "Optional hint explaining how to remediate a failed probe",
+      "type": "string"
+    }
+  }
+},
+"check_permissions_response": {
+  "type": "object",
+  "properties": {
+    "probes": {
+      "description": "Results of each permission/access probe, as produced by `rpk debug bundle --dry-run --format json`",
+      "type": "array",
+      "items": {
+        "$ref": "probe_result"
+      }
+    }
+  }
 }

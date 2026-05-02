@@ -61,6 +61,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		outFile   string
 		uploadURL string
 		timeout   time.Duration
+		dryRun    bool
 		opts      debugbundle.DebugBundleSharedOptions
 	)
 	cmd := &cobra.Command{
@@ -69,6 +70,10 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Long:  bundleHelpText,
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
+			if !dryRun && cmd.Flags().Changed("format") {
+				fmt.Fprintln(os.Stderr, "warning: --format has no effect without --dry-run")
+			}
+
 			//  Redpanda queries for samples from Seastar every ~13 seconds by
 			//  default. Setting wait_ms to anything less than 13 seconds will
 			//  result in no samples being returned.
@@ -86,12 +91,34 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			// We do not config.CheckExitCloudAdmin here, because
 			// capturing a debug *can* have access sometimes (k8s).
 			var (
-				p           = cfg.VirtualProfile()
+				prof        = cfg.VirtualProfile()
 				y           = cfg.VirtualRedpandaYaml()
 				yActual, ok = cfg.ActualRedpandaYaml()
 			)
 			if !ok {
 				yActual = y
+			}
+
+			// --dry-run: probe every permission/access the bundle would need
+			// and print the results. No bundle file is created.
+			if dryRun {
+				// Resolve the output path the same way the real bundle
+				// would, so probeDirWrite exercises the actual target. If
+				// --output was explicitly set and is invalid, fail like the
+				// real run would.
+				path, perr := determineFilepath(fs, yActual, outFile, cmd.Flags().Changed(outputFlag))
+				if perr != nil && cmd.Flags().Changed(outputFlag) {
+					out.Die("unable to determine filepath %q: %v", outFile, perr)
+				}
+				result := runDryRun(cmd.Context(), fs, prof, yActual, opts.Namespace, path)
+
+				if isText, _, s, err := p.Formatter.Format(result); !isText {
+					out.MaybeDie(err, "unable to format dry-run result: %v", err)
+					fmt.Println(s)
+					return
+				}
+				printDryRunText(result)
+				return
 			}
 
 			path, err := determineFilepath(fs, yActual, outFile, cmd.Flags().Changed(outputFlag))
@@ -100,7 +127,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			partitions, err := parsePartitionFlag(opts.PartitionFlag)
 			out.MaybeDie(err, "unable to parse partition flag %v: %v", opts.PartitionFlag, err)
 
-			cl, err := kafka.NewFranzClient(fs, p)
+			cl, err := kafka.NewFranzClient(fs, prof)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
 
@@ -111,7 +138,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to parse --controller-logs-size-limit: %v", err)
 			bp := bundleParams{
 				fs:                      fs,
-				p:                       p,
+				p:                       prof,
 				y:                       y,
 				yActual:                 yActual,
 				cl:                      cl,
@@ -153,11 +180,13 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 	p.InstallKafkaFlags(cmd)
 	p.InstallAdminFlags(cmd)
+	p.InstallFormatFlag(cmd)
 
 	f := cmd.Flags()
 	f.StringVarP(&outFile, outputFlag, "o", "", "The file path where the debug file will be written (default ./<timestamp>-bundle.zip)")
 	f.DurationVar(&timeout, "timeout", 60*time.Second, "How long to wait for child commands to execute. For example: 30s, 1.5m")
 	f.StringVar(&uploadURL, "upload-url", "", "If provided, where to upload the bundle in addition to creating a copy on disk")
+	f.BoolVar(&dryRun, "dry-run", false, "Probe every access the bundle would need (files, commands, admin API, Kafka, NTP, DNS, Kubernetes RBAC) and exit without creating a bundle")
 	// Debug bundle options.
 	opts.InstallFlags(f)
 
@@ -275,6 +304,16 @@ Topic 'foo', partitions 1, 2 and 3:
 Namespace _redpanda-internal, topic 'bar', partition 2
   --partitions _redpanda-internal/bar/2
 
-If you have an upload URL from the Redpanda support team, provide it in the 
+If you have an upload URL from the Redpanda support team, provide it in the
 --upload-url flag to upload your diagnostics bundle to Redpanda.
+
+DRY RUN
+
+Pass --dry-run to probe every access the bundle would actually need — file
+reads, commands, Kubernetes RBAC, admin-API and Kafka auth, NTP, and DNS —
+without collecting or creating a bundle. Safe to run on production brokers;
+useful for catching permission/network issues before a real debug bundle is
+requested by support.
+
+The global --format flag (text|json|yaml|wide) controls the dry-run output.
 `

@@ -27,6 +27,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/config",
         "//src/v/ssx:mutex",
+        "//src/v/ssx:semaphore",
         "//src/v/storage",
         "@fmt",
         "@seastar",

@@ -683,6 +683,7 @@ struct configuration final : public config_store {
     property<std::optional<std::filesystem::path>> debug_bundle_storage_dir;
     property<std::optional<std::chrono::seconds>>
       debug_bundle_auto_removal_seconds;
+    bounded_property<std::chrono::seconds> debug_bundle_dry_run_timeout_seconds;
 
     // oidc authentication
     property<ss::sstring> oidc_discovery_url;

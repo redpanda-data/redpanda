@@ -16,9 +16,11 @@
 #include "debug_bundle/error.h"
 #include "debug_bundle/types.h"
 #include "ssx/mutex.h"
+#include "ssx/semaphore.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/util/process.hh>
@@ -124,6 +126,25 @@ public:
      */
     ss::future<result<void>> delete_rpk_debug_bundle(job_id_t job_id);
 
+    /**
+     * @brief Runs `rpk debug bundle --dry-run --format json` and returns the
+     * raw JSON stdout as a single string. This is a short-lived probe that
+     * reports which files, commands, and K8s permissions the real bundle
+     * would need — without actually producing a bundle.
+     *
+     * Does NOT touch _rpk_process or the process control mutex. Safe to call
+     * concurrently with a regular bundle collection.
+     *
+     * @param env Optional environment variables as KEY=VALUE (e.g. the
+     * KUBERNETES_SERVICE_* vars that let rpk know it's in K8s).
+     * @return Result with possible error codes:
+     * * error_code::rpk_binary_not_present
+     * * error_code::process_failed
+     * * error_code::internal_error
+     */
+    ss::future<result<ss::sstring>>
+    run_rpk_dry_run(std::vector<ss::sstring> env = {});
+
     /// Returns the current debug bundle directory
     const std::filesystem::path& get_debug_bundle_output_directory() const {
         return _debug_bundle_dir;
@@ -222,6 +243,10 @@ private:
     /// Binding called when the debug bundle cleanup configuration has changed
     config::binding<std::optional<std::chrono::seconds>>
       _debug_bundle_cleanup_binding;
+    /// Maximum time the `rpk debug bundle --dry-run` subprocess may run
+    /// before it is terminated. Live-reloadable via the
+    /// `debug_bundle_dry_run_timeout_seconds` cluster config property.
+    config::binding<std::chrono::seconds> _dry_run_timeout_binding;
     /// External process
     std::unique_ptr<debug_bundle_process> _rpk_process;
     /// Metrics probe
@@ -230,6 +255,10 @@ private:
     ss::timer<ss::lowres_clock> _cleanup_timer;
     /// Mutex to guard control over the rpk debug bundle process
     ssx::mutex _process_control_mutex;
+    /// Serializes dry-run subprocess spawns. Separate from
+    /// _process_control_mutex so a dry-run does not block (or get blocked
+    /// by) a regular bundle collection.
+    ssx::semaphore _dry_run_sem{1, "debug_bundle::dry_run"};
     ss::gate _gate;
 };
 } // namespace debug_bundle

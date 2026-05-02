@@ -12,7 +12,10 @@
 package bundle
 
 import (
+	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -293,6 +296,172 @@ func TestSortControllerLogDir(t *testing.T) {
 			require.Equal(t, test.exp, test.in)
 		})
 	}
+}
+
+func TestProbeFileRead(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fs, "/exists", []byte("data"), 0o644))
+
+	tests := []struct {
+		name   string
+		path   string
+		wantOK bool
+	}{
+		{"exists", "/exists", true},
+		{"missing", "/does-not-exist", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := probeFileRead(fs, categoryFile, tt.path, "")
+			require.Equal(t, categoryFile, r.Category)
+			require.Equal(t, tt.path, r.Resource)
+			require.Equal(t, tt.wantOK, r.OK)
+			if !tt.wantOK {
+				require.NotEmpty(t, r.Error)
+			}
+		})
+	}
+}
+
+func TestProbeDirRead(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	require.NoError(t, fs.Mkdir("/empty", 0o755))
+	require.NoError(t, fs.Mkdir("/nonempty", 0o755))
+	require.NoError(t, afero.WriteFile(fs, "/nonempty/file", []byte("x"), 0o644))
+	require.NoError(t, afero.WriteFile(fs, "/notadir", []byte("x"), 0o644))
+
+	tests := []struct {
+		name    string
+		path    string
+		wantOK  bool
+		wantErr string
+	}{
+		{"empty dir", "/empty", true, ""},
+		{"non-empty dir", "/nonempty", true, ""},
+		{"not a directory", "/notadir", false, "not a directory"},
+		{"missing", "/does-not-exist", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := probeDirRead(fs, categoryFile, tt.path, "")
+			require.Equal(t, tt.wantOK, r.OK)
+			if tt.wantErr != "" {
+				require.Equal(t, tt.wantErr, r.Error)
+			} else if !tt.wantOK {
+				require.NotEmpty(t, r.Error)
+			}
+		})
+	}
+}
+
+func TestProbeDirWrite(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	require.NoError(t, fs.Mkdir("/writable", 0o755))
+	require.NoError(t, afero.WriteFile(fs, "/notadir", []byte("x"), 0o644))
+
+	tests := []struct {
+		name    string
+		path    string
+		wantOK  bool
+		wantErr string
+	}{
+		{"writable", "/writable", true, ""},
+		{"missing", "/does-not-exist", false, ""},
+		{"not a directory", "/notadir", false, "not a directory"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := probeDirWrite(fs, categoryFile, tt.path, "")
+			require.Equal(t, tt.wantOK, r.OK)
+			if tt.wantErr != "" {
+				require.Equal(t, tt.wantErr, r.Error)
+			} else if !tt.wantOK {
+				require.NotEmpty(t, r.Error)
+			}
+		})
+	}
+}
+
+func TestProbeCommand(t *testing.T) {
+	tmp := t.TempDir()
+	fakeBin := filepath.Join(tmp, "rpktest-fake")
+	require.NoError(t, os.WriteFile(fakeBin, []byte("#!/bin/sh\n"), 0o755))
+	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	tests := []struct {
+		name         string
+		cmd          string
+		requiresRoot bool
+		isRoot       bool
+		wantOK       bool
+	}{
+		{"in PATH", "rpktest-fake", false, true, true},
+		{"not in PATH", "rpktest-nonexistent-xyz", false, true, false},
+		{"needs root as non-root", "rpktest-fake", true, false, false},
+		{"needs root as root", "rpktest-fake", true, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := probeCommand(tt.cmd, tt.requiresRoot, tt.isRoot, "")
+			require.Equal(t, categoryCommand, r.Category)
+			require.Equal(t, tt.cmd, r.Resource)
+			require.Equal(t, tt.wantOK, r.OK)
+		})
+	}
+}
+
+func TestProbeNTPContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := probeNTP(ctx, "pool.ntp.org")
+	require.Equal(t, categoryNetwork, r.Category)
+	require.False(t, r.OK)
+	require.NotEmpty(t, r.Error)
+}
+
+func TestProbeClusterDNSContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := probeClusterDNS(ctx)
+	require.Equal(t, categoryNetwork, r.Category)
+	require.False(t, r.OK)
+	require.NotEmpty(t, r.Error)
+}
+
+func loadTestProfile(t *testing.T) (afero.Fs, *config.RpkProfile) {
+	t.Helper()
+	fs := afero.NewMemMapFs()
+	params := &config.Params{IgnoreProfile: true}
+	cfg, err := params.Load(fs)
+	require.NoError(t, err)
+	return fs, cfg.VirtualProfile()
+}
+
+func TestProbeAdminAPIUnreachable(t *testing.T) {
+	// Port 1 is unassigned; connect attempts fail fast with a refused-connection
+	// error. The probe should surface the error and not mark OK.
+	fs, p := loadTestProfile(t)
+
+	r := probeAdminAPI(context.Background(), fs, p, "127.0.0.1:1")
+	require.Equal(t, categoryAdminAPI, r.Category)
+	require.Equal(t, "127.0.0.1:1", r.Resource)
+	require.False(t, r.OK)
+	require.NotEmpty(t, r.Error)
+}
+
+func TestProbeKafkaUnreachable(t *testing.T) {
+	// Same pattern: bootstrap at port 1 on localhost → Metadata request fails
+	// within the probe's 5s context deadline. The probe should surface the
+	// error, not OK.
+	fs, p := loadTestProfile(t)
+	p.KafkaAPI.Brokers = []string{"127.0.0.1:1"}
+
+	r := probeKafka(context.Background(), fs, p)
+	require.Equal(t, categoryKafka, r.Category)
+	require.False(t, r.OK)
+	require.NotEmpty(t, r.Error)
 }
 
 func TestSliceControllerDir(t *testing.T) {

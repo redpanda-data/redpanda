@@ -7,6 +7,7 @@ go_library(
         "bundle_all.go",
         "bundle_k8s_linux.go",
         "bundle_linux.go",
+        "dry_run.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/bundle",
     visibility = ["//visibility:public"],

@@ -40,7 +40,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/debugbundle"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	osutil "github.com/redpanda-data/redpanda/src/go/rpk/pkg/osutil"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/rpkutil"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/syslog"
@@ -95,7 +94,7 @@ func determineFilepath(fs afero.Fs, rp *config.RedpandaYaml, path string, isFlag
 		}
 		home, err := os.UserHomeDir()
 		if err != nil {
-			out.Die("unable to create bundle file in %q due to permission issues and cannot use home directory: %v", path, err)
+			return "", fmt.Errorf("unable to create bundle file in %q due to permission issues and cannot use home directory: %v", path, err)
 		}
 		// We are here only if the user did not specify a flag so finalpath
 		// here is the <timestamp>-bundle.zip string

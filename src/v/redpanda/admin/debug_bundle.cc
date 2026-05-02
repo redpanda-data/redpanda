@@ -18,6 +18,7 @@
 #include "ssx/sformat.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/http/file_handler.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/short_streams.hh>
@@ -176,6 +177,13 @@ void admin_server::register_debug_bundle_routes() {
         std::unique_ptr<ss::http::request> req,
         std::unique_ptr<ss::http::reply> rep) {
           return delete_debug_bundle_file(std::move(req), std::move(rep));
+      });
+    register_route_raw_async<superuser>(
+      ss::httpd::debug_bundle_json::post_debug_bundle_check_permissions,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return check_debug_bundle_permissions(std::move(req), std::move(rep));
       });
 }
 
@@ -339,5 +347,36 @@ admin_server::delete_debug_bundle_file(
     }
 
     rep->set_status(ss::http::reply::status_type::no_content);
+    co_return rep;
+}
+
+ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::check_debug_bundle_permissions(
+  std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply> rep) {
+    std::vector<ss::sstring> env = ::get_enviromental_vars();
+    auto res = co_await _debug_bundle_service.local().run_rpk_dry_run(
+      std::move(env));
+    if (res.has_error()) {
+        co_return make_error_body(res.assume_error(), std::move(rep));
+    }
+
+    auto& body = res.assume_value();
+    // Validate the rpk output is well-formed JSON before forwarding. A broken
+    // stdout shouldn't surface to callers as 200-OK-with-garbage.
+    json::Document doc;
+    doc.Parse(body);
+    if (doc.HasParseError()) {
+        co_return make_error_body(
+          debug_bundle::error_code::process_failed,
+          fmt::format(
+            "rpk debug bundle --dry-run produced malformed JSON: {} at offset "
+            "{}",
+            rapidjson::GetParseError_En(doc.GetParseError()),
+            doc.GetErrorOffset()),
+          std::move(rep));
+    }
+
+    rep->set_status(ss::http::reply::status_type::ok);
+    rep->write_body("json", std::move(body));
     co_return rep;
 }

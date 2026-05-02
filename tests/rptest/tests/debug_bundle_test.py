@@ -511,6 +511,38 @@ class DebugBundleTest(DebugBundleTestBase):
         )
 
     @cluster(num_nodes=1)
+    def test_check_permissions(self):
+        """
+        Verify POST /v1/debug/bundle/check_permissions returns 200 with a
+        well-formed probe list when invoked against a live broker. The endpoint
+        shells out to `rpk debug bundle --dry-run --format json` so this is an
+        end-to-end test of the admin handler, the debug_bundle service method,
+        and rpk's dry-run output contract.
+        """
+        node = random.choice(self.redpanda.started_nodes())
+
+        res = self.admin.check_debug_bundle_permissions(node=node)
+        assert res.status_code == requests.codes.ok, res.text
+
+        body = res.json()
+        assert "probes" in body, body
+        assert isinstance(body["probes"], list), body
+        assert len(body["probes"]) > 0, body
+
+        valid_categories = (
+            "file",
+            "command",
+            "k8s_rbac",
+            "admin_api",
+            "kafka",
+            "network",
+        )
+        for probe in body["probes"]:
+            assert set(["category", "resource", "ok"]).issubset(probe.keys()), probe
+            assert probe["category"] in valid_categories, probe
+            assert isinstance(probe["ok"], bool), probe
+
+    @cluster(num_nodes=1)
     def test_delete_cancelled_job(self):
         """
         This test verifies that after a bundle job has been cancelled,

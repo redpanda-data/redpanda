@@ -3900,6 +3900,16 @@ configuration::configuration()
       "indefinitely.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
+  , debug_bundle_dry_run_timeout_seconds(
+      *this,
+      "debug_bundle_dry_run_timeout_seconds",
+      "Maximum time the debug bundle dry-run subprocess may run before it is "
+      "terminated. Dry-run probes may include multiple admin API and Kafka "
+      "auth checks plus Kubernetes RBAC reviews; bump this if those targets "
+      "are slow in the deployment.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::chrono::seconds(30),
+      {.min = std::chrono::seconds(5), .max = std::chrono::seconds(600)})
   , oidc_discovery_url(
       *this,
       "oidc_discovery_url",

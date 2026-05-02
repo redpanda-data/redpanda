@@ -2154,6 +2154,10 @@ class Admin:
         path = f"debug/bundle/file/{filename}"
         return self._request("DELETE", path, node=node)
 
+    def check_debug_bundle_permissions(self, node: MaybeNode = None) -> Response:
+        path = "debug/bundle/check_permissions"
+        return self._request("POST", path, node=node)
+
     def unsafe_abort_group_transaction(
         self, group_id: str, *, pid: int, epoch: int, sequence: int
     ) -> Response:

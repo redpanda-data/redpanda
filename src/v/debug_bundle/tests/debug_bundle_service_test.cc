@@ -1117,3 +1117,77 @@ TEST_F_CORO(
           bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
         .has_value());
 }
+
+TEST_F_CORO(debug_bundle_service_started_fixture, dry_run_happy_path) {
+    // Tell the shim not to sleep so this test finishes quickly.
+    std::vector<ss::sstring> env{"RPK_SHIM_SLEEP_TIME=0"};
+
+    auto res = co_await _service.local().run_rpk_dry_run(std::move(env));
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+
+    // The shim emits a fixed JSON payload on stdout when --dry-run is set.
+    constexpr std::string_view expected
+      = R"({"probes":[{"category":"file","resource":"/proc/cpuinfo","ok":true}]})"
+        "\n";
+    EXPECT_EQ(res.assume_value(), expected);
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, dry_run_nonzero_exit) {
+    std::vector<ss::sstring> env{
+      "RPK_SHIM_SLEEP_TIME=0", "RPK_SHIM_EXIT_CODE=2"};
+
+    auto res = co_await _service.local().run_rpk_dry_run(std::move(env));
+    ASSERT_FALSE_CORO(res.has_value());
+    EXPECT_EQ(
+      res.assume_error().code(), debug_bundle::error_code::process_failed);
+}
+
+TEST_F_CORO(debug_bundle_service_started_fixture, dry_run_timeout) {
+    // Cap the timeout at the minimum the cluster config allows (5s). The
+    // shim is told to sleep for 10s — well past the timeout — so the
+    // subprocess must be terminated and the caller sees process_failed.
+    config::shard_local_cfg().debug_bundle_dry_run_timeout_seconds.set_value(
+      std::chrono::seconds(5));
+
+    std::vector<ss::sstring> env{"RPK_SHIM_SLEEP_TIME=10"};
+
+    auto res = co_await _service.local().run_rpk_dry_run(std::move(env));
+    ASSERT_FALSE_CORO(res.has_value());
+    EXPECT_EQ(
+      res.assume_error().code(), debug_bundle::error_code::process_failed);
+    EXPECT_NE(res.assume_error().message().find("timed out"), std::string::npos)
+      << "unexpected error message: " << res.assume_error().message();
+}
+
+TEST_F_CORO(
+  debug_bundle_service_started_fixture, dry_run_from_non_service_shard) {
+    // Exercises the invoke_on(service_shard, ...) branch at the top of
+    // run_rpk_dry_run: when called from any shard other than service_shard,
+    // the request hops over to service_shard and the result is returned to
+    // the caller transparently.
+    if (ss::smp::count < 2) {
+        co_return;
+    }
+    std::vector<ss::sstring> env{"RPK_SHIM_SLEEP_TIME=0"};
+    auto other_shard = (debug_bundle::service_shard + 1) % ss::smp::count;
+
+    auto res = co_await _service.invoke_on(
+      other_shard, [env = std::move(env)](debug_bundle::service& s) mutable {
+          return s.run_rpk_dry_run(std::move(env));
+      });
+    ASSERT_TRUE_CORO(res.has_value()) << res.assume_error().message();
+    EXPECT_FALSE(res.assume_value().empty());
+}
+
+TEST_F_CORO(debug_bundle_service_fixture, dry_run_missing_rpk) {
+    config::shard_local_cfg().rpk_path.set_value("/no/such/binary");
+    ASSERT_NO_THROW_CORO(
+      co_await _service.invoke_on_all(
+        [](debug_bundle::service& s) -> ss::future<> { co_await s.start(); }));
+
+    auto res = co_await _service.local().run_rpk_dry_run({});
+    ASSERT_FALSE_CORO(res.has_value());
+    EXPECT_EQ(
+      res.assume_error().code(),
+      debug_bundle::error_code::rpk_binary_not_present);
+}

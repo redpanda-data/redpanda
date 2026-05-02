@@ -11,6 +11,7 @@
 
 #include "debug_bundle_service.h"
 
+#include "bytes/iostream.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
@@ -24,10 +25,13 @@
 #include "utils/external_process.h"
 #include "utils/file_io.h"
 
+#include <seastar/core/fstream.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shard_id.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/with_timeout.hh>
 #include <seastar/coroutine/exception.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/process.hh>
@@ -123,6 +127,27 @@ validate_sha256_checksum(std::string_view path, bytes_view checksum) {
     auto sum = co_await calculate_sha256_sum(path);
     co_return sum == checksum;
 }
+
+constexpr std::string_view dry_run_flag = "--dry-run";
+constexpr std::string_view format_flag = "--format";
+constexpr std::string_view format_json = "json";
+
+// Buffer held via lw_shared_ptr so it outlives the handler if a consumer
+// future is still in flight after with_timeout -> terminate().
+struct single_buffer_handler {
+    using consumption_result_type =
+      typename ss::input_stream<char>::consumption_result_type;
+    using stop_consuming_type =
+      typename consumption_result_type::stop_consuming_type;
+    using tmp_buf = stop_consuming_type::tmp_buf;
+
+    ss::lw_shared_ptr<ss::sstring> buffer;
+
+    ss::future<consumption_result_type> operator()(tmp_buf buf) {
+        buffer->append(buf.begin(), buf.size());
+        co_return ss::continue_consuming{};
+    }
+};
 } // namespace
 
 struct service::output_handler {
@@ -269,6 +294,8 @@ service::service(storage::kvstore* kvstore)
   , _rpk_path_binding(config::shard_local_cfg().rpk_path.bind())
   , _debug_bundle_cleanup_binding(
       config::shard_local_cfg().debug_bundle_auto_removal_seconds.bind())
+  , _dry_run_timeout_binding(
+      config::shard_local_cfg().debug_bundle_dry_run_timeout_seconds.bind())
   , _process_control_mutex("debug_bundle_service::process_control") {
     _debug_bundle_storage_dir_binding.watch([this] {
         _debug_bundle_dir = form_debug_bundle_storage_directory();
@@ -991,6 +1018,88 @@ void service::maybe_rearm_timer() {
       (lowres_point - ss::lowres_clock::now()) / 1s);
 
     _cleanup_timer.rearm(lowres_point);
+}
+
+ss::future<result<ss::sstring>>
+service::run_rpk_dry_run(std::vector<ss::sstring> env) {
+    auto hold = _gate.hold();
+    if (ss::this_shard_id() != service_shard) {
+        co_return co_await container().invoke_on(
+          service_shard, [env = std::move(env)](service& s) mutable {
+              return s.run_rpk_dry_run(std::move(env));
+          });
+    }
+
+    auto sem_units = co_await ss::get_units(_dry_run_sem, 1);
+
+    if (!co_await ss::file_exists(_rpk_path_binding().native())) {
+        co_return error_info(
+          error_code::rpk_binary_not_present,
+          fmt::format("{} not present", _rpk_path_binding().native()));
+    }
+
+    std::vector<ss::sstring> args{
+      _rpk_path_binding().native(),
+      "debug",
+      "bundle",
+      ss::sstring{dry_run_flag},
+      ss::sstring{format_flag},
+      ss::sstring{format_json}};
+
+    if (lg.is_enabled(ss::log_level::debug)) {
+        print_arguments(args, env);
+    }
+
+    std::unique_ptr<external_process::external_process> proc;
+    try {
+        proc = co_await external_process::external_process::
+          create_external_process(std::move(args), std::move(env));
+    } catch (const std::exception& e) {
+        co_return error_info(
+          error_code::internal_error,
+          fmt::format(
+            "Starting rpk debug bundle --dry-run failed: {}", e.what()));
+    }
+
+    auto stdout_buf = ss::make_lw_shared<ss::sstring>();
+    auto stderr_buf = ss::make_lw_shared<ss::sstring>();
+    proc->set_stdout_consumer(single_buffer_handler{.buffer = stdout_buf});
+    proc->set_stderr_consumer(single_buffer_handler{.buffer = stderr_buf});
+
+    ss::experimental::process::wait_status wait_status;
+    bool timed_out = false;
+    std::optional<std::string> wait_error;
+    auto timeout = _dry_run_timeout_binding();
+    try {
+        wait_status = co_await ss::with_timeout(
+          ss::lowres_clock::now() + timeout, proc->wait());
+    } catch (const ss::timed_out_error&) {
+        timed_out = true;
+    } catch (const std::exception& e) {
+        wait_error = e.what();
+    }
+    if (timed_out) {
+        co_await proc->terminate(1s);
+        co_return error_info(
+          error_code::process_failed, "rpk debug bundle --dry-run timed out");
+    }
+    if (wait_error) {
+        co_return error_info(
+          error_code::process_failed,
+          fmt::format("rpk debug bundle --dry-run failed: {}", *wait_error));
+    }
+
+    auto* exited = std::get_if<ss::experimental::process::wait_exited>(
+      &wait_status);
+    if (exited == nullptr || exited->exit_code != 0) {
+        co_return error_info(
+          error_code::process_failed,
+          fmt::format(
+            "rpk debug bundle --dry-run exited abnormally; stderr: {}",
+            *stderr_buf));
+    }
+
+    co_return std::move(*stdout_buf);
 }
 
 } // namespace debug_bundle

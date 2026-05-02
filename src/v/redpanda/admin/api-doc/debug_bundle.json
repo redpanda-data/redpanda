@@ -247,6 +247,42 @@
     }
   }
 },
+"/v1/debug/bundle/check_permissions": {
+  "post": {
+    "description": "Probes every file, command, network dependency (admin API, Kafka, NTP, DNS), and Kubernetes RBAC permission the debug bundle would need. Runs 'rpk debug bundle --dry-run --format json' on the broker; does not produce a bundle file. Intended for production readiness checks that want to pre-flight permission issues. Note: admin API and Kafka auth probes use the broker's on-disk rpk configuration; credentials supplied only via the caller's environment or mTLS client certs are not available to the probes and may show as auth failures.",
+    "summary": "Probe debug bundle collection permissions without generating a bundle",
+    "operationId": "post_debug_bundle_check_permissions",
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/check_permissions_response"
+        }
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal server error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+},
 "/v1/debug/bundle/file/{filename}": {
   "get": {
     "description": "Returns the generated debug bundle ZIP file",
