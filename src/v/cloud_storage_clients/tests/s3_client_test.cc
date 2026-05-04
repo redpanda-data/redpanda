@@ -989,6 +989,8 @@ SEASTAR_THREAD_TEST_CASE(test_parse_delete_object_response_infra_error) {
       &result);
     BOOST_REQUIRE_NE(error, nullptr);
     BOOST_REQUIRE_EQUAL(error->code_string(), "SlowDown");
+    BOOST_REQUIRE_EQUAL(error->message(), "Please reduce your request rate.");
+    BOOST_REQUIRE_EQUAL(error->request_id(), "R123");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_parse_delete_object_response_key_error) {
