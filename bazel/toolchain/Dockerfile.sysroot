@@ -32,6 +32,13 @@ RUN mkdir -p /output/pkgs/{usr/,}lib/$(uname -m)-linux-gnu /output/pkgs/usr/incl
     && cp -r /usr/lib/gcc/*-linux-gnu/12/libgcc*.{a,so}* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/include/* /output/pkgs/usr/include/
 
+# Rewrite absolute symlinks (e.g. libmvec.so -> /lib/<triple>/libmvec.so.1) as
+# relative basename links. Bazel directory artifacts reject absolute symlinks,
+# and since the cp commands above co-locate each symlink with its target file
+# in the same directory, basename works.
+RUN find /output/pkgs -type l -lname '/*' -exec sh -c \
+    'ln -sf "$(basename "$(readlink "$1")")" "$1"' _ {} \;
+
 FROM scratch
 
 COPY --from=pkgs /output/pkgs /
