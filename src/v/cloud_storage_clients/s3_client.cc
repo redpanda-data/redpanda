@@ -33,6 +33,7 @@
 #include "json/istreamwrapper.h"
 #include "json/reader.h"
 #include "utils/base64.h"
+#include "utils/xml.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -549,12 +550,15 @@ status_to_error_code(boost::beast::http::status s) {
 
 rest_error_response parse_xml_rest_error_response(iobuf&& buf) {
     try {
-        auto resp = util::iobuf_to_ptree(std::move(buf), s3_log);
+        auto resp = xml::iobuf_to_ptree(std::move(buf), s3_log);
         constexpr const char* empty = "";
-        auto code = resp.get<ss::sstring>("Error.Code", empty);
-        auto msg = resp.get<ss::sstring>("Error.Message", empty);
-        auto rid = resp.get<ss::sstring>("Error.RequestId", empty);
-        auto res = resp.get<ss::sstring>("Error.Resource", empty);
+        auto code = xml::get_from_ptree<std::string>(resp, "Error.Code", empty);
+        auto msg = xml::get_from_ptree<std::string>(
+          resp, "Error.Message", empty);
+        auto rid = xml::get_from_ptree<std::string>(
+          resp, "Error.RequestId", empty);
+        auto res = xml::get_from_ptree<std::string>(
+          resp, "Error.Resource", empty);
         rest_error_response err(code, msg, rid, res);
         return err;
     } catch (...) {
@@ -1393,19 +1397,24 @@ ss::future<> s3_client::do_delete_object(
 
 std::variant<client::delete_objects_result, rest_error_response>
 iobuf_to_delete_objects_result(iobuf&& buf) {
-    auto root = util::iobuf_to_ptree(std::move(buf), s3_log);
+    auto root = xml::iobuf_to_ptree(std::move(buf), s3_log);
     auto result = client::delete_objects_result{};
     try {
         if (
-          auto error_code = root.get_optional<ss::sstring>("Error.Code");
+          auto error_code = xml::get_optional_from_ptree<std::string>(
+            root, "Error.Code");
           error_code) {
             // This is an error response. S3 can reply with 200 error code and
             // error response in the body.
             constexpr const char* empty = "";
-            auto code = root.get<ss::sstring>("Error.Code", empty);
-            auto msg = root.get<ss::sstring>("Error.Message", empty);
-            auto rid = root.get<ss::sstring>("Error.RequestId", empty);
-            auto res = root.get<ss::sstring>("Error.Resource", empty);
+            auto code = xml::get_from_ptree<std::string>(
+              root, "Error.Code", empty);
+            auto msg = xml::get_from_ptree<std::string>(
+              root, "Error.Message", empty);
+            auto rid = xml::get_from_ptree<std::string>(
+              root, "Error.RequestId", empty);
+            auto res = xml::get_from_ptree<std::string>(
+              root, "Error.Resource", empty);
             rest_error_response err(code, msg, rid, res);
             return err;
         }
@@ -1413,10 +1422,13 @@ iobuf_to_delete_objects_result(iobuf&& buf) {
             if (tag != "Error") {
                 continue;
             }
-            auto code = value.get_optional<ss::sstring>("Code");
-            auto key = value.get_optional<ss::sstring>("Key");
-            auto message = value.get_optional<ss::sstring>("Message");
-            auto version_id = value.get_optional<ss::sstring>("VersionId");
+            auto code = xml::get_optional_from_ptree<std::string>(
+              value, "Code");
+            auto key = xml::get_optional_from_ptree<std::string>(value, "Key");
+            auto message = xml::get_optional_from_ptree<std::string>(
+              value, "Message");
+            auto version_id = xml::get_optional_from_ptree<std::string>(
+              value, "VersionId");
             vlog(
               s3_log.trace,
               R"(delete_objects_result::undeleted_keys Key:"{}" Code: "{}" Message:"{}" VersionId:"{}")",
@@ -1836,10 +1848,10 @@ ss::future<> s3_multipart_state::initialize_multipart() {
     auto response_buf = co_await http::drain(std::move(response_stream));
 
     try {
-        auto response_tree = util::iobuf_to_ptree(
+        auto response_tree = xml::iobuf_to_ptree(
           std::move(response_buf), s3_log);
-        _upload_id = response_tree.get<ss::sstring>(
-          "InitiateMultipartUploadResult.UploadId");
+        _upload_id = xml::get_from_ptree<std::string>(
+          response_tree, "InitiateMultipartUploadResult.UploadId");
 
         _client->_probe->register_multipart_create();
 
@@ -1956,18 +1968,18 @@ ss::future<> s3_multipart_state::complete_multipart_upload() {
     // See:
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
     auto response_buf = co_await http::drain(std::move(response_stream));
-    auto response_tree = util::iobuf_to_ptree(std::move(response_buf), s3_log);
+    auto response_tree = xml::iobuf_to_ptree(std::move(response_buf), s3_log);
     if (
-      auto error_code = response_tree.get_optional<std::string>("Error.Code");
+      auto error_code = xml::get_optional_from_ptree<std::string>(
+        response_tree, "Error.Code");
       error_code) {
-        // Use std::string for ptree extraction since ss::sstring's stream
-        // extraction operator reads only until whitespace, which truncates
-        // multi-word error messages.
         throw rest_error_response(
           *error_code,
-          response_tree.get<std::string>("Error.Message", ""),
-          response_tree.get<std::string>("Error.RequestId", ""),
-          response_tree.get<std::string>("Error.Resource", ""));
+          xml::get_from_ptree<std::string>(response_tree, "Error.Message", ""),
+          xml::get_from_ptree<std::string>(
+            response_tree, "Error.RequestId", ""),
+          xml::get_from_ptree<std::string>(
+            response_tree, "Error.Resource", ""));
     }
 
     _client->_probe->register_multipart_complete();
