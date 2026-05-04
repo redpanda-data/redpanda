@@ -11,14 +11,11 @@
 #include "cloud_storage_clients/util.h"
 
 #include "base/vlog.h"
-#include "bytes/streambuf.h"
 #include "http/utils.h"
 #include "net/connection.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
-
-#include <boost/property_tree/xml_parser.hpp>
 
 #include <exception>
 #include <system_error>
@@ -150,43 +147,11 @@ handle_client_transport_error<ss::logger>(std::exception_ptr, ss::logger&);
 template error_outcome handle_client_transport_error<retry_chain_logger>(
   std::exception_ptr, retry_chain_logger&);
 
-boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf, ss::logger& logger) {
-    namespace pt = boost::property_tree;
-    try {
-        iobuf_istreambuf strbuf(buf);
-        std::istream stream(&strbuf);
-        pt::ptree res;
-        pt::read_xml(stream, res);
-        return res;
-    } catch (...) {
-        log_buffer_with_rate_limiting("unexpected reply", buf, logger);
-        vlog(logger.error, "!!parsing error {}", std::current_exception());
-        throw;
-    }
-}
-
 std::chrono::system_clock::time_point parse_timestamp(std::string_view sv) {
     std::tm tm = {};
     std::stringstream ss({sv.data(), sv.size()});
     ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S.Z%Z");
     return std::chrono::system_clock::from_time_t(timegm(&tm));
-}
-
-void log_buffer_with_rate_limiting(
-  const char* msg, iobuf& buf, ss::logger& logger) {
-    static constexpr int buffer_size = 0x100;
-    static constexpr auto rate_limit = std::chrono::seconds(1);
-    thread_local static ss::logger::rate_limit rate(rate_limit);
-    auto log_with_rate_limit = [&logger](
-                                 ss::logger::format_info fmt, auto... args) {
-        logger.log(ss::log_level::warn, rate, fmt, args...);
-    };
-    iobuf_istreambuf strbuf(buf);
-    std::istream stream(&strbuf);
-    std::array<char, buffer_size> str{};
-    auto sz = stream.readsome(str.data(), buffer_size);
-    auto sview = std::string_view(str.data(), sz);
-    vlog(log_with_rate_limit, "{}: {}", msg, sview);
 }
 
 std::vector<object_key> all_paths_to_file(const object_key& path) {
