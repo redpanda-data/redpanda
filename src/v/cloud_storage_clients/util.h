@@ -17,8 +17,6 @@
 
 #include <seastar/util/log.hh>
 
-#include <boost/property_tree/ptree.hpp>
-
 #include <expected>
 
 namespace cloud_storage_clients::util {
@@ -31,14 +29,8 @@ template<typename Logger>
 error_outcome handle_client_transport_error(
   std::exception_ptr current_exception, Logger& logger);
 
-/// \brief: Convert iobuf that contains xml data to boost::property_tree
-boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf, ss::logger& logger);
-
 /// \brief: Parse timestamp in format that S3 and ABS use
 std::chrono::system_clock::time_point parse_timestamp(std::string_view sv);
-
-void log_buffer_with_rate_limiting(
-  const char* msg, iobuf& buf, ss::logger& logger);
 
 bool has_abort_or_gate_close_exception(const ss::nested_exception& ex);
 
