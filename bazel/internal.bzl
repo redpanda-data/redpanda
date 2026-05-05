@@ -17,8 +17,17 @@ def redpanda_copts():
     copts.append("-Wextra")
     copts.append("-Wno-missing-field-initializers")
     copts.append("-Wimplicit-fallthrough")
+    copts.append("-include")
+    copts.append("base/ptree_ban.h")
 
     return copts
+
+def redpanda_implicit_deps():
+    """
+    Deps that must be present on every redpanda C++ target so that
+    the headers force-included via redpanda_copts() are visible.
+    """
+    return ["//src/v/base:ptree_ban"]
 
 def antithesis_deps():
     """Conditional deps for Antithesis coverage instrumentation."""

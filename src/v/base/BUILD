@@ -1,4 +1,12 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//bazel:build.bzl", "redpanda_cc_library")
+
+cc_library(
+    name = "ptree_ban",
+    hdrs = ["ptree_ban.h"],
+    include_prefix = "base",
+    visibility = ["//visibility:public"],
+)
 
 redpanda_cc_library(
     name = "base",

@@ -10,7 +10,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
-load(":internal.bzl", "antithesis_deps", "redpanda_copts")
+load(":internal.bzl", "antithesis_deps", "redpanda_copts", "redpanda_implicit_deps")
 
 def _reactor_args():
     """Returns additional reactor args for all reactor-using tests and benchmarks."""
@@ -164,7 +164,7 @@ def _redpanda_cc_test(
         timeout = timeout,
         srcs = srcs,
         defines = defines,
-        deps = deps + test_deps,
+        deps = deps + test_deps + redpanda_implicit_deps(),
         copts = redpanda_copts(),
         args = args,
         features = [
@@ -206,7 +206,7 @@ def _redpanda_cc_fuzz_test(
         timeout = timeout,
         srcs = srcs,
         defines = defines,
-        deps = deps + test_deps,
+        deps = deps + test_deps + redpanda_implicit_deps(),
         copts = redpanda_copts(),
         args = custom_args,
         features = [
@@ -354,7 +354,7 @@ def redpanda_cc_btest_no_seastar(
             "//src/v/test_utils:boost_result_redirect",
             "//src/v/test_utils:boost_test_hooks",
             "@boost//:test.so",
-        ] + deps + test_deps,
+        ] + deps + test_deps + redpanda_implicit_deps(),
         data = test_data,
         env = test_env,
     )
@@ -377,7 +377,7 @@ def redpanda_test_cc_library(
         local_defines = local_defines,
         visibility = visibility,
         include_prefix = native.package_name().removeprefix("src/v/"),
-        implementation_deps = implementation_deps,
+        implementation_deps = implementation_deps + redpanda_implicit_deps(),
         deps = deps,
         copts = redpanda_copts(),
         testonly = True,
@@ -472,7 +472,7 @@ def redpanda_cc_bench(
         name = binary_name,
         srcs = srcs,
         defines = defines,
-        deps = deps + test_deps,
+        deps = deps + test_deps + redpanda_implicit_deps(),
         testonly = True,
         copts = redpanda_copts(),
         features = [
