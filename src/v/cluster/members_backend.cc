@@ -684,8 +684,9 @@ ss::future<std::error_code> members_backend::update_raft0_configuration(
     if (cfg.revision_id() > model::revision_id(update.offset)) {
         co_return errc::success;
     }
+    const auto updated_vnode = raft::vnode(update.id, raft0_revision);
     if (update.type == node_update_type::added) {
-        if (cfg.contains(raft::vnode(update.id, raft0_revision))) {
+        if (cfg.contains(updated_vnode)) {
             vlog(
               clusterlog.debug,
               "node {} is already part of raft0 configuration",
@@ -694,12 +695,37 @@ ss::future<std::error_code> members_backend::update_raft0_configuration(
         }
         co_return co_await add_to_raft0(update.id, revision);
     } else if (update.type == node_update_type::removed) {
-        if (!cfg.contains(raft::vnode(update.id, raft0_revision))) {
+        if (!cfg.contains(updated_vnode)) {
             vlog(
               clusterlog.debug,
               "node {} is already removed from raft0 configuration",
               update.id);
             co_return errc::success;
+        }
+
+        // add node foo -> remove node foo should simply be cancel on node add
+        const auto& in_flight = cfg.get_configuration_update();
+        const bool should_cancel = in_flight.has_value()
+                                   && in_flight->is_to_add(updated_vnode);
+
+        if (should_cancel) {
+            // members backend currently only allows single node add, or single
+            // node removal, if this ever changes, refuse to cancel a
+            // configuration which may have unintended side effects
+            const bool cancellation_has_no_side_effects
+              = in_flight->replicas_to_add.size() == 1
+                && in_flight->replicas_to_remove.empty();
+            if (cancellation_has_no_side_effects) {
+                co_return co_await cancel_raft0_add(update.id, revision);
+            }
+            vlog(
+              clusterlog.warn,
+              "cannot cancel raft0 configuration which adds node {} because in "
+              "flight reconfiguration carries operations other than node {} "
+              "addition. configuration: {}",
+              updated_vnode,
+              updated_vnode,
+              cfg);
         }
 
         co_return co_await remove_from_raft0(update.id, revision);
@@ -729,6 +755,17 @@ ss::future<std::error_code> members_backend::remove_from_raft0(
       raft::vnode(id, raft0_revision), revision);
 }
 
+ss::future<std::error_code> members_backend::cancel_raft0_add(
+  model::node_id id, model::revision_id revision) {
+    if (!_raft0->is_leader()) {
+        co_return errc::not_leader;
+    }
+    vlog(
+      clusterlog.info,
+      "cancelling in-flight raft0 reconfiguration that is adding node {}",
+      id);
+    co_return co_await _raft0->cancel_configuration_change(revision);
+}
 std::ostream&
 operator<<(std::ostream& o, const members_backend::partition_reallocation& r) {
     fmt::print(
