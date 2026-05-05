@@ -81,6 +81,7 @@
 #include "model/timeout_clock.h"
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
+#include "raft/types.h"
 #include "security/acl.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
@@ -294,7 +295,10 @@ ss::future<> controller::start(
       _partition_manager,
       _shard_table,
       config::node().data_directory().as_sstring(),
-      seed_nodes);
+      seed_nodes,
+      config::shard_local_cfg().controller_log_learner_recovery_rate_enabled()
+        ? raft::with_learner_recovery_throttle::yes
+        : raft::with_learner_recovery_throttle::no);
 
     co_await _partition_leaders.start(std::ref(_tp_state), std::ref(_as));
     co_await _drain_manager.start(std::ref(_partition_manager));
