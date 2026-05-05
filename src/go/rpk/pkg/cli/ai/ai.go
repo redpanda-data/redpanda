@@ -60,56 +60,49 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 		Run: func(cmd *cobra.Command, args []string) {
 			pluginArgs, err := parseFlags(p, cmd, args)
 			out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
-			// Top-level dispatch: args carries the full subcommand path
-			// (e.g. ["llm","list"]) when the plugin isn't installed yet.
-			// Only touch the cloud when the user actually named a
-			// subcommand and isn't asking for help/version.
-			if !skipCloudForHelp(pluginArgs) && topLevelHasSubcommand(pluginArgs) {
+
+			ai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
+
+			var isSubcommand, isVersion bool
+			for _, arg := range pluginArgs {
+				switch {
+				case arg == "--version":
+					isVersion = true
+				case strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-"):
+					continue
+				default:
+					isSubcommand = true
+				}
+			}
+			if !pluginExists && isVersion {
+				fmt.Println("cannot get version: the rpk ai plugin is not installed; run 'rpk ai install'")
+				return
+			}
+			if !isSubcommand && !isVersion {
+				cmd.Help()
+				return
+			}
+
+			if !skipCloudForHelp(pluginArgs) {
 				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
 				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
 			}
-			ai, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find(rpaiPluginSlug)
+
 			var pluginPath string
 			if !pluginExists {
-				// Without the plugin present, only download when the user
-				// actually invoked a subcommand. Bare `rpk ai` or `rpk ai
-				// --help` should just show help.
-				var isSubcommand bool
-				for _, arg := range pluginArgs {
-					switch {
-					case arg == "--version":
-						fmt.Println("cannot get version: the rpk ai plugin is not installed; run 'rpk ai install'")
-						return
-					case strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-"):
-						continue
-					default:
-						isSubcommand = true
-					}
-				}
-				if !isSubcommand {
-					cmd.Help()
-					return
-				}
-				// FIPS is only blocked once we're committed to installing —
-				// `rpk ai`, `rpk ai --help`, and `rpk ai --version` (handled
-				// above) all return without touching the network, so they
-				// remain usable on FIPS builds even though the rpk ai plugin
-				// does not yet ship a FIPS variant.
+				// FIPS is gated here, after the help/version short-circuits,
+				// so `rpk ai --help` keeps working on FIPS builds even though
+				// the plugin has no FIPS variant yet.
 				maybeExitFIPS()
 				fmt.Fprintln(os.Stderr, "Downloading latest Redpanda AI CLI")
 				path, _, err := installAIPlugin(cmd.Context(), fs, "latest")
 				out.MaybeDie(err, "unable to install the rpk ai plugin: %v; if running in an air-gapped environment you may install it manually with your package manager", err)
 				pluginPath = path
-			}
-			if pluginExists {
+			} else {
 				pluginPath = ai.Path
 				if !ai.Managed {
 					zap.L().Sugar().Warn("rpk is using a self-managed version of the rpk ai plugin. If you want rpk to manage it, run 'rpk ai uninstall && rpk ai install'. To continue managing it manually, keep using your existing install.")
 				}
-			}
-			if cmd.Flags().Changed("help") {
-				cmd.Help()
-				return
 			}
 			zap.L().Debug("executing rpk ai plugin", zap.String("path", pluginPath), zap.Strings("args", pluginArgs))
 			err = execFn(pluginPath, pluginArgs)

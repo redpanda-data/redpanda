@@ -18,31 +18,27 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
-// The rpk ai plugin reads the following environment variables and flag.
-// They are part of the plugin's own contract; rpk fills them in on behalf of
-// the user from the active rpk cloud profile so a fresh `rpk ai <sub>`
-// invocation works without the user having to plumb auth or endpoint
-// manually:
+// The rpk ai plugin reads the following environment variables and flag:
 //
 //   - envAuthToken: bearer token forwarded as Authorization to the AI
-//     Gateway. rpk fills it from the active cloud auth (refreshing via OAuth
-//     if needed).
-//   - envEndpoint: AI Gateway v2 base URL. rpk resolves it from the active
-//     rpk cloud profile's cluster (publicapi -> Cluster.AiGateway.V2Url).
-//   - flagEndpoint: same intent as envEndpoint, but on the command line.
-//     rpk only watches for it so we can skip the cluster lookup; the flag is
-//     parsed and consumed by the plugin itself.
+//     Gateway. rpk reads the cached token off the active cloud profile
+//     and exports it; a missing or stale token is reported by the
+//     gateway as a 401, at which point the user runs `rpk cloud login`.
+//   - envEndpoint: AI Gateway v2 base URL. rpk resolves it from the
+//     active cloud profile's cached AIGatewayURL (or falls back to a
+//     publicapi lookup) and exports it before exec.
+//   - flagEndpoint: same intent as envEndpoint, but on the command
+//     line. rpk only watches for it so we can skip the cluster lookup;
+//     the flag is parsed and consumed by the plugin itself.
 //
-// Any explicit value the user supplies (env or flag) wins — rpk only fills
-// in missing pieces.
+// Any explicit value the user supplies (env or flag) wins — rpk only
+// fills in missing pieces.
 const (
 	envAuthToken = "RPAI_TOKEN"
 	envEndpoint  = "RPAI_ENDPOINT"
@@ -50,19 +46,10 @@ const (
 	flagEndpoint = "rpai-endpoint"
 )
 
-// resolveAndInjectEnv loads the cloud config, refreshes the token, resolves
-// the active cluster's AI Gateway v2 endpoint, and exports both to the
-// caller's environment so the child rpk ai plugin picks them up on exec.
-//
-// Env var writes are skipped when the variable is already present (an
-// explicit value from the user wins). If the invocation carries the plugin's
-// endpoint flag on the command line, endpoint resolution is skipped — the
-// plugin itself will consume the flag.
-//
-// The two short-circuit decisions (help/version, top-level-without-subcommand)
-// live in the call sites since they differ between top-level dispatch (where
-// args carries the subcommand path) and leaf dispatch (where args is the
-// leaf's positional-and-flag args only).
+// Exports RPAI_TOKEN and RPAI_ENDPOINT for the child plugin using cached
+// values from rpk.yaml and the profile's AIGatewayURL (no OAuth refresh).
+// Skips env var writes if the vars are already set or --rpai-endpoint is
+// present.
 func resolveAndInjectEnv(ctx context.Context, fs afero.Fs, p *config.Params, pluginArgs []string) error {
 	cfg, err := p.Load(fs)
 	if err != nil {
@@ -70,12 +57,16 @@ func resolveAndInjectEnv(ctx context.Context, fs afero.Fs, p *config.Params, plu
 	}
 
 	if os.Getenv(envAuthToken) == "" {
-		token, err := getTokenOrLogin(ctx, fs, cfg)
-		if err != nil {
-			return err
+		// Mirrors the lookup chain in oauth.LoadCloudToken (without the
+		// refresh) so --config, -X cloud_auth.*, and RPK_PROFILE all work.
+		auth := cfg.VirtualProfile().VirtualAuth()
+		if auth == nil {
+			auth = cfg.VirtualRpkYaml().CurrentAuth()
 		}
-		if err := os.Setenv(envAuthToken, token); err != nil {
-			return fmt.Errorf("unable to set %s: %w", envAuthToken, err)
+		if auth != nil && auth.AuthToken != "" {
+			if err := os.Setenv(envAuthToken, auth.AuthToken); err != nil {
+				return fmt.Errorf("unable to set %s: %w", envAuthToken, err)
+			}
 		}
 	}
 
@@ -98,25 +89,6 @@ func resolveAndInjectEnv(ctx context.Context, fs afero.Fs, p *config.Params, plu
 func skipCloudForHelp(args []string) bool {
 	for _, a := range args {
 		if a == "--help" || a == "-h" || a == "--version" {
-			return true
-		}
-	}
-	return false
-}
-
-// topLevelHasSubcommand reports whether the args passed to the top-level
-// `rpk ai` dispatcher contain a positional (non-flag) token. This
-// distinguishes `rpk ai llm list` (needs cloud context) from `rpk ai`
-// (bare, just renders help).
-//
-// This check is only meaningful for the top-level Run in NewCommand. When
-// cobra dispatches to a managed-plugin LEAF (e.g. `rpk ai llm list` routes
-// to the `list` leaf registered via plugin_cmds.go), args == nil — cobra
-// has already consumed the path tokens for routing, so "no positional" does
-// not imply "no subcommand" at that call site.
-func topLevelHasSubcommand(args []string) bool {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
 			return true
 		}
 	}
@@ -154,16 +126,6 @@ func hasEndpointFlag(args []string) bool {
 		}
 	}
 	return false
-}
-
-// getTokenOrLogin returns a fresh cloud bearer token, refreshing or prompting
-// for login as needed.
-func getTokenOrLogin(ctx context.Context, fs afero.Fs, cfg *config.Config) (string, error) {
-	tok, err := oauth.LoadCloudToken(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()))
-	if err != nil {
-		return "", fmt.Errorf("unable to refresh the cloud token: %w. Run 'rpk cloud login' and try again", err)
-	}
-	return tok, nil
 }
 
 // resolveAigwEndpoint returns the AI Gateway v2 URL for the active rpk cloud
