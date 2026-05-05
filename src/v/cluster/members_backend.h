@@ -101,6 +101,8 @@ private:
       add_to_raft0(model::node_id, model::revision_id);
     ss::future<std::error_code>
       remove_from_raft0(model::node_id, model::revision_id);
+    ss::future<std::error_code>
+      cancel_raft0_add(model::node_id, model::revision_id);
 
     ss::future<> reconcile_raft0_updates();
     ss::future<std::error_code> do_remove_node(model::node_id);
