@@ -11,7 +11,7 @@ LLVM_VERSION="$(gh release list --repo llvm/llvm-project --exclude-drafts --excl
 OUTPUT_FILE="llvm-$LLVM_VERSION-debian-11-x86_64-$(date --rfc-3339=date -u).tar.zst"
 echo "Building $OUTPUT_FILE"
 LLVM_VERSION=$(echo $LLVM_VERSION | cut -d. -f1)
-docker build --file Dockerfile.llvm --build-arg LLVM_VERSION=$LLVM_VERSION --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
+docker build --file Dockerfile.llvm --build-arg LLVM_VERSION=$LLVM_VERSION --output type=tar,dest=- . | zstd -19 -o "$OUTPUT_FILE"
 ```
 
 The compiler output will be in a tarball in the current directory, this can be uploaded to S3 or github, then bazel can pull it down as desired.
@@ -34,7 +34,7 @@ LLVM_VERSION=$(echo $LLVM_VERSION | cut -d. -f1)
 docker run --privileged --rm tonistiigi/binfmt --install arm64
 # verify emulator
 docker run --rm --platform linux/arm64 debian:bullseye uname -a
-docker buildx build --platform=linux/arm64 --build-arg LLVM_VERSION=$LLVM_VERSION --file Dockerfile.llvm --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
+docker buildx build --platform=linux/arm64 --build-arg LLVM_VERSION=$LLVM_VERSION --file Dockerfile.llvm --output type=tar,dest=- . | zstd -19 -o "$OUTPUT_FILE"
 ```
 
 ### Building from a specific tag
@@ -46,7 +46,7 @@ LLVM_VERSION=22
 LLVM_REF="llvmorg-22.1.0"
 OUTPUT_FILE="llvm-22.1.0-debian-11-x86_64-$(date --rfc-3339=date -u).tar.zst"
 echo "Building $OUTPUT_FILE"
-docker build --file Dockerfile.llvm --build-arg LLVM_VERSION=$LLVM_VERSION --build-arg LLVM_REF=$LLVM_REF --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
+docker build --file Dockerfile.llvm --build-arg LLVM_VERSION=$LLVM_VERSION --build-arg LLVM_REF=$LLVM_REF --output type=tar,dest=- . | zstd -19 -o "$OUTPUT_FILE"
 ```
 
 `LLVM_VERSION` is still required to install the bootstrap compiler from apt.llvm.org. `LLVM_REF` can be a tag (`llvmorg-22.1.0`) or branch (`main`).
@@ -66,12 +66,12 @@ To build an `x86_64` sysroot on an `x86_64` machine the following command can be
 
 ```
 OUTPUT_FILE="sysroot-ubuntu-22.04-x86_64-$(date --rfc-3339=date -u).tar.zst"
-docker build --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
+docker build --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -19 -o "$OUTPUT_FILE"
 ```
 
 Building for `arm64` can be done from an `x86_64` host with the following command
 
 ```
 OUTPUT_FILE="sysroot-ubuntu-22.04-aarch64-$(date --rfc-3339=date -u).tar.zst"
-docker buildx build --platform=linux/arm64 --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
+docker buildx build --platform=linux/arm64 --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -19 -o "$OUTPUT_FILE"
 ```
