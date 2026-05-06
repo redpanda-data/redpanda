@@ -118,6 +118,12 @@ public:
     bool does_raft0_have_leader();
 
     bool contains_node_health_report(model::node_id) const;
+
+    /// To use after node id override. Drops every node health entry on this
+    /// node and refuses to repopulate them for \p suppress_duration duration.
+    /// Operator calls this on every peer within the window so retransmitted
+    /// stale data has nowhere to settle.
+    void drop_health_cache(std::chrono::milliseconds suppress_duration);
     /**
      * Returns maximum high watermark for a given partition across the cluster.
      * It returns the high watermark for the partition replica with highest
@@ -305,6 +311,12 @@ private:
     // Per-node versioned health stores for the demand-driven pull protocol.
     absl::node_hash_map<model::node_id, health::versioned_health_store>
       _health_stores;
+
+    // Set by drop_health_cache(): until this point in time, refuse to
+    // populate any non-self store entry. A value in the past disables cache
+    // suppression.
+    ss::lowres_clock::time_point _suppress_remote_caching_until
+      = ss::lowres_clock::time_point::min();
 
     friend struct health_report_accessor;
 };

@@ -51,6 +51,12 @@ public:
     ss::future<> stop();
     ss::future<> refresh_info();
 
+    /// To use after node id override. Drops every node health entry on this
+    /// node and refuses to repopulate them for \p suppress_duration. Operator
+    /// calls this on every peer within the window so retransmitted stale data
+    /// has nowhere to settle.
+    ss::future<> drop_health_cache(std::chrono::milliseconds suppress_duration);
+
     // Reports cluster health. Cluster health is based on the cluster health
     // state that is cached on current node. If force_refresh flag is set. It
     // will always refresh cluster health metadata

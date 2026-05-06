@@ -860,6 +860,18 @@ std::optional<alive> health_monitor_backend::peer_liveness_state(
       });
 }
 
+void health_monitor_backend::drop_health_cache(
+  std::chrono::milliseconds suppress_duration) {
+    vlog(
+      clusterlog.warn,
+      "drop_health_cache: clearing remote health stores; suppressing remote "
+      "writes for {}ms",
+      suppress_duration.count());
+    _health_stores.clear();
+    _suppress_remote_caching_until = ss::lowres_clock::now()
+                                     + suppress_duration;
+}
+
 void health_monitor_backend::log_failed_rpc(
   model::node_id id, std::error_code err) const {
     const auto peer_alive
@@ -1152,6 +1164,15 @@ ss::future<> health_monitor_backend::report_puller::run() && {
 ss::future<std::error_code>
 health_monitor_backend::collect_cluster_health_disseminate(
   force_refresh force) {
+    if (ss::lowres_clock::now() < _suppress_remote_caching_until) {
+        vlog(
+          clusterlog.info,
+          "currently suppressing health cache population for {}, skipping "
+          "pull from peers",
+          _suppress_remote_caching_until - ss::lowres_clock::now());
+        co_return errc::error_collecting_health_report;
+    }
+
     vlog(clusterlog.debug, "collecting cluster health (new dissemination)");
 
     auto min_ts = force ? model::timeout_clock::now()

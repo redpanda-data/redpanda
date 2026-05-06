@@ -167,6 +167,13 @@ ss::future<bool> health_monitor_frontend::does_raft0_have_leader() {
       [](health_monitor_backend& be) { return be.does_raft0_have_leader(); });
 }
 
+ss::future<> health_monitor_frontend::drop_health_cache(
+  std::chrono::milliseconds suppress_duration) {
+    return dispatch_to_backend([suppress_duration](health_monitor_backend& be) {
+        be.drop_health_cache(suppress_duration);
+    });
+}
+
 ss::future<> health_monitor_frontend::refresh_info() {
     // start() checks that the refresh timer is run on the refresher_shard, so
     // invoke a refresh on that shard

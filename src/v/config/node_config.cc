@@ -273,7 +273,12 @@ node_config::node_config() noexcept
       "List of node ID and UUID overrides to be applied at broker startup. "
       "Each entry includes the current UUID and desired ID and UUID. Each "
       "entry applies to a given node if and only if 'current' matches that "
-      "node's current UUID.",
+      "node's current UUID. When an override is used to recover a node whose "
+      "disk was wiped, peers may retain stale cached health data for it that "
+      "the recovered node can no longer supersede (its boot id has reset "
+      "below what peers stored). To clear it, run POST "
+      "/v1/debug/drop_health_cache on every broker within its suppress "
+      "window.",
       {.visibility = visibility::user},
       {})
   , _advertised_rpc_api(

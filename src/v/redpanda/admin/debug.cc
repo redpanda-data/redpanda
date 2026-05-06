@@ -14,6 +14,7 @@
 #include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller.h"
 #include "cluster/controller_stm.h"
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/shard_table.h"
@@ -304,6 +305,33 @@ void admin_server::register_debug_routes() {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   ss::json::json_void());
             });
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::drop_health_cache,
+      [this](std::unique_ptr<ss::http::request> req) {
+          auto suppress_duration = [&req] {
+              if (auto e = req->get_query_param("suppress_ms"); !e.empty()) {
+                  try {
+                      return std::chrono::milliseconds{std::stoll(e)};
+                  } catch (const std::exception&) {
+                      throw ss::httpd::bad_param_exception(
+                        fmt::format("invalid suppress_ms: {}", e));
+                  }
+              }
+              constexpr std::chrono::milliseconds default_suppress{60'000};
+              return default_suppress;
+          }();
+
+          vlog(
+            adminlog.warn,
+            "Request to drop health cache (suppress_ms={})",
+            suppress_duration.count());
+          return _controller->get_health_monitor()
+            .local()
+            .drop_health_cache(suppress_duration)
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
       });
 
     register_route<user>(
