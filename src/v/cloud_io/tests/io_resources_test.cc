@@ -26,7 +26,7 @@ TEST_CORO(io_resources, effectively_unlimited_bw_does_not_throw) {
 
     co_await ss::destroy_scheduling_group(sg);
 
-    EXPECT_FALSE(fut.failed());
+    EXPECT_FALSE(fut.failed()) << fmt::format("e: {}", fut.get_exception());
     if (fut.failed()) {
         std::rethrow_exception(fut.get_exception());
     }
