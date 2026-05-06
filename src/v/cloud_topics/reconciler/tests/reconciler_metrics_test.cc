@@ -108,7 +108,61 @@ std::optional<uint64_t> get_offset_corrections() {
       "cloud_topics_reconciler_offset_corrections");
 }
 
+std::optional<double> get_pending_offset_lag(const model::ntp& ntp) {
+    return test_utils::find_metric_value<double>(
+      "cloud_topics_reconciler_pending_offset_lag",
+      ss::metrics::default_handle(),
+      {
+        {ss::sstring("namespace"), ss::sstring(ntp.ns())},
+        {ss::sstring("topic"), ss::sstring(ntp.tp.topic())},
+        {ss::sstring("partition"),
+         ss::sstring(fmt::format("{}", ntp.tp.partition()))},
+      });
+}
+
 } // namespace
+
+TEST_F(ReconcilerMetricsTest, PendingOffsetLag) {
+    const model::topic tp{"tapioca"};
+    const model::topic_id tid = model::topic_id::create();
+
+    auto src = add_source(tp, tid);
+    const auto& ntp = src->ntp();
+
+    // Before any data, lag should be 0.
+    EXPECT_THAT(get_pending_offset_lag(ntp), Optional(0.0));
+
+    // Add 10 records (offsets 0-9). Lag is visible immediately.
+    src->add_batch({.count = 10});
+    EXPECT_THAT(get_pending_offset_lag(ntp), Optional(10.0));
+
+    // Reconcile to advance LRO, lag should drop.
+    reconcile();
+    EXPECT_THAT(get_pending_offset_lag(ntp), Optional(0.0));
+
+    // Add more data and reconcile.
+    src->add_batch({.count = 5});
+    EXPECT_THAT(get_pending_offset_lag(ntp), Optional(5.0));
+    reconcile();
+    EXPECT_THAT(get_pending_offset_lag(ntp), Optional(0.0));
+}
+
+TEST_F(ReconcilerMetricsTest, PendingOffsetLagDetach) {
+    model::ntp ntp;
+    {
+        auto src = add_source();
+        ntp = src->ntp();
+
+        src->add_batch({.count = 10});
+        EXPECT_TRUE(get_pending_offset_lag(ntp).has_value());
+
+        // Detach drops the reconciler's reference. The test's local src
+        // is the last shared_ptr, so the source (and its probe) are
+        // destroyed when src goes out of scope.
+        reconciler().detach(ntp);
+    }
+    EXPECT_FALSE(get_pending_offset_lag(ntp).has_value());
+}
 
 TEST_F(ReconcilerMetricsTest, ThroughputCounters) {
     EXPECT_THAT(get_objects_uploaded(), Optional(0));

@@ -51,6 +51,18 @@ public:
 
     bool has_pending_data() override { return true; }
 
+    int64_t pending_offset_lag() override {
+        if (_source_log.empty()) {
+            return 0;
+        }
+        auto lso = kafka::offset(_source_log.back().last_offset()() + 1);
+        auto next = kafka::next_offset(_lro);
+        if (lso <= next) {
+            return 0;
+        }
+        return (lso - next)();
+    }
+
     kafka::offset last_reconciled_offset() override { return _lro; }
 
     ss::future<std::expected<void, errc>>
