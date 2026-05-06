@@ -29,6 +29,7 @@
 #include "json/istreamwrapper.h"
 #include "utils/base64.h"
 #include "utils/uuid.h"
+#include "utils/xml.h"
 
 #include <charconv>
 #include <utility>
@@ -118,10 +119,11 @@ parse_xml_rest_error_response(boost::beast::http::status result, iobuf buf) {
     using namespace cloud_storage_clients;
 
     try {
-        auto resp = util::iobuf_to_ptree(std::move(buf), abs_log);
-        auto code = resp.get<ss::sstring>("Error.Code", "Unknown");
-        auto msg = resp.get<ss::sstring>("Error.Message", "");
-        return {std::move(code), std::move(msg), result};
+        auto resp = xml::iobuf_to_ptree(std::move(buf), abs_log);
+        auto code = xml::get_from_ptree<std::string>(
+          resp, "Error.Code", "Unknown");
+        auto msg = xml::get_from_ptree<std::string>(resp, "Error.Message", "");
+        return {code, msg, result};
     } catch (...) {
         vlog(
           cloud_storage_clients::abs_log.error,

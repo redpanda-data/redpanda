@@ -77,6 +77,7 @@ redpanda_cc_library(
         "//src/v/utils:stop_signal",
         "//src/v/utils:unresolved_address",
         "//src/v/utils:uuid",
+        "//src/v/utils:xml",
         "@ada",
         "@boost//:beast",
         "@boost//:lexical_cast",

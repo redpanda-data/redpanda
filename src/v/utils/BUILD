@@ -715,3 +715,20 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "xml",
+    srcs = [
+        "xml.cc",
+    ],
+    hdrs = [
+        "xml.h",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:streambuf",
+        "@boost//:property_tree",
+        "@seastar",
+    ],
+)
