@@ -156,13 +156,13 @@ def data_dependency():
         url = "https://github.com/redpanda-data/CRoaring/archive/c433d1c70c10fb2e40f049e019e2abbcafa6e69d.tar.gz",
     )
 
-    # branch: v26.2.x-pre
+    # branch: pgellert/ossl/ssl-call-wrapper-refactor-pre (testing fork)
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "de9da2d60057985c55199459a063d02944a95f1c41ce7f9e09f62a3b9c941465",
-        strip_prefix = "seastar-a0b4f2a6b0fe5d86d3e03f0a85f7d7f7b86bdbe7",
-        url = "https://github.com/redpanda-data/seastar/archive/a0b4f2a6b0fe5d86d3e03f0a85f7d7f7b86bdbe7.tar.gz",
+        sha256 = "ce031619431c9a7425ba4d95a3952ab491a76ac987d86293dec684621d3064d5",
+        strip_prefix = "seastar-827aed4eb74f02f2248c43be2a9843371813a1f7",
+        url = "https://github.com/pgellert/seastar/archive/827aed4eb74f02f2248c43be2a9843371813a1f7.tar.gz",
     )
 
     http_archive(
