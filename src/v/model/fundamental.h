@@ -119,6 +119,10 @@ namespace model {
 using node_uuid = named_type<uuid_t, struct node_uuid_type>;
 using cluster_uuid = named_type<uuid_t, struct cluster_uuid_type>;
 
+/// Per-boot id, persisted in kvstore and bumped on every startup. Can be used
+/// to create an in-memory monotonic composite counter surviving restarts.
+using node_boot_id = named_type<uint64_t, struct node_boot_id_tag>;
+
 inline constexpr cluster_uuid default_cluster_uuid{};
 
 using node_id = named_type<int32_t, struct node_id_model_type>;
