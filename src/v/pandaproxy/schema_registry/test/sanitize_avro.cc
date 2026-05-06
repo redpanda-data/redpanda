@@ -350,3 +350,96 @@ BOOST_AUTO_TEST_CASE(test_sanitize_avro_debzium) {
       pps::sanitize_avro_schema_definition(debezium_schema.share()).value(),
       debezium_schema);
 }
+
+// Schemas with qualified and unqualified named type references should
+// normalize to the same form. Per the Avro spec (Names), an unqualified
+// name is resolved relative to the enclosing namespace.
+
+const pps::schema_definition qualified_items_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"items","type":{"type":"array","items":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}}},{"name":"more","type":{"type":"array","items":"com.example.Inner"}}]})",
+  pps::schema_type::avro};
+
+const pps::schema_definition unqualified_items_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"items","type":{"type":"array","items":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}}},{"name":"more","type":{"type":"array","items":"Inner"}}]})",
+  pps::schema_type::avro};
+
+BOOST_AUTO_TEST_CASE(test_sanitize_avro_normalize_items_type_reference) {
+    auto sanitized_a = pps::sanitize_avro_schema_definition(
+                         qualified_items_ref.share())
+                         .value();
+    auto sanitized_b = pps::sanitize_avro_schema_definition(
+                         unqualified_items_ref.share())
+                         .value();
+    BOOST_REQUIRE_EQUAL(sanitized_a, sanitized_b);
+}
+
+const pps::schema_definition qualified_union_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"ref","type":["null","com.example.Inner"]}]})",
+  pps::schema_type::avro};
+
+const pps::schema_definition unqualified_union_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"ref","type":["null","Inner"]}]})",
+  pps::schema_type::avro};
+
+BOOST_AUTO_TEST_CASE(test_sanitize_avro_normalize_union_type_reference) {
+    auto sanitized_a = pps::sanitize_avro_schema_definition(
+                         qualified_union_ref.share())
+                         .value();
+    auto sanitized_b = pps::sanitize_avro_schema_definition(
+                         unqualified_union_ref.share())
+                         .value();
+    BOOST_REQUIRE_EQUAL(sanitized_a, sanitized_b);
+}
+
+const pps::schema_definition qualified_field_type_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"ref","type":"com.example.Inner"}]})",
+  pps::schema_type::avro};
+
+const pps::schema_definition unqualified_field_type_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"ref","type":"Inner"}]})",
+  pps::schema_type::avro};
+
+BOOST_AUTO_TEST_CASE(test_sanitize_avro_normalize_field_type_reference) {
+    auto sanitized_a = pps::sanitize_avro_schema_definition(
+                         qualified_field_type_ref.share())
+                         .value();
+    auto sanitized_b = pps::sanitize_avro_schema_definition(
+                         unqualified_field_type_ref.share())
+                         .value();
+    BOOST_REQUIRE_EQUAL(sanitized_a, sanitized_b);
+}
+
+const pps::schema_definition qualified_map_values_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"lookup","type":{"type":"map","values":"com.example.Inner"}}]})",
+  pps::schema_type::avro};
+
+const pps::schema_definition unqualified_map_values_ref{
+  R"({"type":"record","name":"Outer","namespace":"com.example","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"lookup","type":{"type":"map","values":"Inner"}}]})",
+  pps::schema_type::avro};
+
+BOOST_AUTO_TEST_CASE(test_sanitize_avro_normalize_map_values_reference) {
+    auto sanitized_a = pps::sanitize_avro_schema_definition(
+                         qualified_map_values_ref.share())
+                         .value();
+    auto sanitized_b = pps::sanitize_avro_schema_definition(
+                         unqualified_map_values_ref.share())
+                         .value();
+    BOOST_REQUIRE_EQUAL(sanitized_a, sanitized_b);
+}
+
+// When there is no enclosing namespace, unqualified names stay unqualified
+// (nothing to strip) and fully-qualified names keep their dotted form since
+// their namespace does not match the (empty) enclosing namespace.
+const pps::schema_definition no_ns_unqualified_union_ref{
+  R"({"type":"record","name":"Outer","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"ref","type":["null","Inner"]}]})",
+  pps::schema_type::avro};
+
+BOOST_AUTO_TEST_CASE(test_sanitize_avro_no_normalize_without_namespace) {
+    auto sanitized = pps::sanitize_avro_schema_definition(
+                       no_ns_unqualified_union_ref.share())
+                       .value();
+    pps::schema_definition expected{
+      R"({"type":"record","name":"Outer","fields":[{"name":"inner","type":{"type":"record","name":"Inner","fields":[{"name":"val","type":"string"}]}},{"name":"ref","type":["null","Inner"]}]})",
+      pps::schema_type::avro};
+    BOOST_REQUIRE_EQUAL(sanitized, expected);
+}
