@@ -891,24 +891,49 @@ class ReferenceFormat(str, Enum):
 class SchemaRegistryRedpandaClient:
     """
     A client for acessing the schema registry.
+
+    base_path is an optional URI prefix prepended to every request path,
+    e.g. "contexts/.staging" to scope all requests to a context-prefixed
+    base URL.
     """
 
     def __init__(
         self,
         redpanda: RedpandaService,
+        base_path: str = "",
     ):
         self.redpanda = redpanda
         self.logger = redpanda.logger
+        self.base_path = base_path
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
-    def request(self, verb, path, hostname=None, tls_enabled: bool = False, **kwargs):
+    @property
+    def base_path(self) -> str:
+        return self._base_path
+
+    @base_path.setter
+    def base_path(self, value: str) -> None:
+        self._base_path = value.strip("/")
+
+    def request(
+        self,
+        verb,
+        path,
+        hostname=None,
+        tls_enabled: bool = False,
+        base_path: str | None = None,
+        **kwargs,
+    ):
         """
 
         :param verb: String, as for first arg to requests.request
         :param path: URI path without leading slash
         :param timeout: Optional requests timeout in seconds
+        :param base_path: Per-call override for self.base_path. Pass "" to
+            issue the request without the configured prefix; pass None
+            (default) to use self.base_path.
         :return:
         """
 
@@ -920,8 +945,12 @@ class SchemaRegistryRedpandaClient:
             node = nodes[0]
             hostname = node.account.hostname
 
+        effective_base_path = (
+            self.base_path if base_path is None else base_path.strip("/")
+        )
         scheme = "https" if tls_enabled else "http"
-        uri = f"{scheme}://{hostname}:8081/{path}"
+        full_path = f"{effective_base_path}/{path}" if effective_base_path else path
+        uri = f"{scheme}://{hostname}:8081/{full_path}"
 
         if "timeout" not in kwargs:
             kwargs["timeout"] = 60
@@ -968,6 +997,9 @@ class SchemaRegistryRedpandaClient:
     def set_config(self, data, headers=HTTP_POST_HEADERS, **kwargs):
         return self.request("PUT", "config", headers=headers, data=data, **kwargs)
 
+    def delete_config(self, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any):
+        return self.request("DELETE", "config", headers=headers, **kwargs)
+
     def get_config_subject(
         self, subject, fallback=False, headers=HTTP_GET_HEADERS, **kwargs
     ):
@@ -1005,6 +1037,9 @@ class SchemaRegistryRedpandaClient:
             data=data,
             **kwargs,
         )
+
+    def delete_mode(self, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any):
+        return self.request("DELETE", "mode", headers=headers, **kwargs)
 
     def get_mode_subject(
         self, subject, fallback=False, headers=HTTP_GET_HEADERS, **kwargs
@@ -1277,16 +1312,22 @@ class SchemaRegistryRedpandaClient:
         self, headers=HTTP_GET_HEADERS, tls_enabled: bool = False, **kwargs
     ):
         return self.request(
-            "GET", "status/ready", headers=headers, tls_enabled=tls_enabled, **kwargs
+            "GET",
+            "status/ready",
+            base_path="",
+            headers=headers,
+            tls_enabled=tls_enabled,
+            **kwargs,
         )
 
     def get_security_acls(self, **kwargs):
-        return self.request("GET", "security/acls", **kwargs)
+        return self.request("GET", "security/acls", base_path="", **kwargs)
 
     def post_security_acls(self, data, **kwargs):
         return self.request(
             "POST",
             "security/acls",
+            base_path="",
             json=data,
             headers={"Content-Type": "application/json"},
             **kwargs,
@@ -1296,18 +1337,25 @@ class SchemaRegistryRedpandaClient:
         return self.request(
             "DELETE",
             "security/acls",
+            base_path="",
             json=data,
             headers={"Content-Type": "application/json"},
             **kwargs,
         )
 
     def get_contexts(self, headers: Headers = HTTP_GET_HEADERS, **kwargs: Any):
-        return self.request("GET", "contexts", headers=headers, **kwargs)
+        return self.request("GET", "contexts", base_path="", headers=headers, **kwargs)
 
     def delete_context(
         self, context: str, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any
     ):
-        return self.request("DELETE", f"contexts/{context}", headers=headers, **kwargs)
+        return self.request(
+            "DELETE",
+            f"contexts/{context}",
+            base_path="",
+            headers=headers,
+            **kwargs,
+        )
 
     def create_acl(
         self,
@@ -1345,6 +1393,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
         context: TestContext,
         schema_registry_config: SchemaRegistryConfig = SchemaRegistryConfig(),
         num_brokers: int = 3,
+        base_path: str = "",
         extra_rp_conf: Optional[dict[str, Any]] = None,
         **kwargs: Any,
     ):
@@ -1361,7 +1410,9 @@ class SchemaRegistryEndpoints(RedpandaTest):
             **kwargs,
         )
 
-        self.sr_client = SchemaRegistryRedpandaClient(redpanda=self.redpanda)
+        self.sr_client = SchemaRegistryRedpandaClient(
+            redpanda=self.redpanda, base_path=base_path
+        )
 
     def assert_equal(self, first, second, msg=None):
         assert first == second, msg or f"{first} != {second}"
@@ -1391,8 +1442,9 @@ class SchemaRegistryEndpoints(RedpandaTest):
         subject_name_strategy: Optional[str] = None,
         payload_class: Optional[str] = None,
         compression_type: Optional[TopicSpec.CompressionTypes] = None,
+        schema_registry_url: Optional[str] = None,
     ):
-        schema_reg = self.redpanda.schema_reg().split(",", 1)[0]
+        schema_reg = schema_registry_url or self.redpanda.schema_reg().split(",", 1)[0]
         sec_cfg = self.redpanda.kafka_client_security().to_dict()
 
         return SerdeClient(
@@ -5662,6 +5714,34 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
         result = self.sr_client.delete_context(".nonexistent")
         self.assert_equal(result.status_code, 404)
 
+        # Test context alias normalization for delete:
+        # All alias forms for the same context should resolve and delete it.
+        alias_ctx = ".alias-ctx"
+        alias_subject = f":{alias_ctx}:alias-sub"
+        for delete_alias in ["alias-ctx", ":.alias-ctx:", ".alias-ctx"]:
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=alias_subject,
+                data=json.dumps({"schema": schema1_def}),
+            )
+            self.assert_equal(result.status_code, requests.codes.ok)
+            result = self.sr_client.delete_subject(subject=alias_subject)
+            self.assert_equal(result.status_code, requests.codes.ok)
+            result = self.sr_client.delete_subject(
+                subject=alias_subject, permanent=True
+            )
+            self.assert_equal(result.status_code, requests.codes.ok)
+
+            result = self.sr_client.delete_context(delete_alias)
+            self.assert_equal(
+                result.status_code,
+                204,
+                f"delete_context({delete_alias!r}) should succeed",
+            )
+
+        # Verify default context rejection works with alias form ":.:"
+        result = self.sr_client.delete_context(":.:")
+        self.assert_equal(result.status_code, 422)
+
     @cluster(num_nodes=1)
     def test_get_schema_by_id_with_subject(self):
         """Test GET /schemas/ids/{id} with subject query parameter for context lookup."""
@@ -6818,6 +6898,371 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
 
             result = self.sr_client.set_mode_subject(subject=subject, data=mode_data)
             self.assert_not_equal(result.status_code, 422)
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_subject_operations(self):
+        """
+        Verify all context-prefixed /contexts/{context}/... routes that
+        contain a {subject} path parameter. Each route should scope the
+        subject with the context and delegate to the existing handler.
+        """
+        subject = "ctx-prefix-test"
+        ctx = ".staging"
+        schema_data = json.dumps({"schema": schema1_def})
+        compat_schema_data = json.dumps({"schema": schema2_def})
+        self.sr_client.base_path = f"contexts/{ctx}"
+
+        # Register a schema via context-prefixed POST versions
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=subject, data=schema_data
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST versions failed: {result.text}"
+        )
+        schema_id = result.json()["id"]
+        assert schema_id == 1
+
+        # GET versions via context prefix
+        result = self.sr_client.get_subjects_subject_versions(subject=subject)
+        assert result.status_code == requests.codes.ok
+        assert result.json() == [1]
+
+        # GET specific version via context prefix
+        result = self.sr_client.get_subjects_subject_versions_version(
+            subject=subject, version=1
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["version"] == 1
+
+        # GET version schema via context prefix
+        result = self.sr_client.get_subjects_subject_versions_version_schema(
+            subject=subject, version=1
+        )
+        assert result.status_code == requests.codes.ok
+
+        # GET referencedby via context prefix (empty, no references)
+        result = self.sr_client.get_subjects_subject_versions_version_referenced_by(
+            subject=subject, version=1
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json() == []
+
+        # POST lookup (post_subject) via context prefix
+        result = self.sr_client.post_subjects_subject(subject=subject, data=schema_data)
+        assert result.status_code == requests.codes.ok
+        assert result.json()["id"] == schema_id
+
+        # Compatibility check via context prefix
+        result = self.sr_client.post_compatibility_subject_version(
+            subject=subject, version=1, data=compat_schema_data
+        )
+        assert result.status_code == requests.codes.ok
+        assert result.json()["is_compatible"] is True
+
+        # PUT config/{subject} via context prefix
+        result = self.sr_client.set_config_subject(
+            subject=subject, data=json.dumps({"compatibility": "FULL"})
+        )
+        assert result.status_code == requests.codes.ok
+
+        # GET config/{subject} via context prefix
+        result = self.sr_client.get_config_subject(subject=subject)
+        assert result.status_code == requests.codes.ok
+        assert result.json()["compatibilityLevel"] == "FULL"
+
+        # DELETE config/{subject} via context prefix
+        result = self.sr_client.delete_config_subject(subject=subject)
+        assert result.status_code == requests.codes.ok
+
+        # PUT mode/{subject} via context prefix
+        result = self.sr_client.set_mode_subject(
+            subject=subject, data=json.dumps({"mode": "READONLY"})
+        )
+        assert result.status_code == requests.codes.ok
+
+        # GET mode/{subject} via context prefix
+        result = self.sr_client.get_mode_subject(subject=subject)
+        assert result.status_code == requests.codes.ok
+        assert result.json()["mode"] == "READONLY"
+
+        # DELETE mode/{subject} via context prefix
+        result = self.sr_client.delete_mode_subject(subject=subject)
+        assert result.status_code == requests.codes.ok
+
+        # Verify isolation: default context should NOT see the subject
+        result = self.sr_client.get_subjects(base_path="")
+        assert result.status_code == requests.codes.ok
+        assert subject not in result.json(), (
+            f"Subject {subject} should not be visible in default context"
+        )
+
+        # DELETE version via context prefix
+        result = self.sr_client.delete_subject_version(subject=subject, version=1)
+        assert result.status_code == requests.codes.ok
+
+        # DELETE subject via context prefix
+        result = self.sr_client.delete_subject(subject=subject, permanent=True)
+        assert result.status_code == requests.codes.ok
+
+        # Invalid context name (embedded colon) returns 400
+        result = self.sr_client.get_subjects(base_path="contexts/a:b")
+        assert result.status_code == requests.codes.bad_request, (
+            f"Expected 400 for invalid context name, got {result.status_code}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_schema_by_id(self):
+        """
+        Verify the context-prefixed /contexts/{context}/schemas/ids/{id} and
+        sub-resource routes. The wrapper injects the context as a subject
+        query parameter, scoping schema lookups to the specified context.
+        """
+        subject = "ctx-schema-id-test"
+        ctx = ".staging"
+        schema_data = json.dumps({"schema": schema1_def})
+        self.sr_client.base_path = f"contexts/{ctx}"
+
+        # Register a schema in the .staging context so we have an ID to look up.
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=subject, data=schema_data
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST versions failed: {result.text}"
+        )
+        schema_id = result.json()["id"]
+
+        # GET /contexts/{ctx}/schemas/ids/{id}
+        result = self.sr_client.get_schemas_ids_id(id=schema_id)
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id} failed: {result.text}"
+        )
+        assert "schema" in result.json()
+
+        # GET /contexts/{ctx}/schemas/ids/{id}/schema
+        result = self.sr_client.get_schemas_ids_id_schema(id=schema_id)
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id}/schema failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/schemas/ids/{id}/versions
+        result = self.sr_client.get_schemas_ids_id_versions(id=schema_id)
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id}/versions failed: {result.text}"
+        )
+        versions = result.json()
+        assert len(versions) >= 1
+        qualified_subject = f":.{ctx.lstrip('.')}:{subject}"
+        subjects_in_versions = [v["subject"] for v in versions]
+        assert qualified_subject in subjects_in_versions, (
+            f"Expected {qualified_subject} in versions {subjects_in_versions}"
+        )
+
+        # GET /contexts/{ctx}/schemas/ids/{id}/subjects
+        result = self.sr_client.get_schemas_ids_id_subjects(id=schema_id)
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/ids/{schema_id}/subjects failed: {result.text}"
+        )
+        subjects = result.json()
+        assert qualified_subject in subjects, (
+            f"Expected {qualified_subject} in subjects {subjects}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_subject_listing(self):
+        """
+        Verify the context-prefixed GET /contexts/{context}/subjects route.
+        The wrapper injects the context into the subjectPrefix query parameter,
+        scoping the subject listing to the specified context.
+        """
+        ctx = ".listing"
+        schema_data = json.dumps({"schema": schema1_def})
+        self.sr_client.base_path = f"contexts/{ctx}"
+
+        # Register two subjects in the .listing context
+        for subj in ("topic-a", "topic-b"):
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=subj, data=schema_data
+            )
+            assert result.status_code == requests.codes.ok, (
+                f"POST {subj} failed: {result.text}"
+            )
+
+        # Register a subject in the default context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="default-only-subject", data=schema_data, base_path=""
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST default subject failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/subjects — only context subjects should appear
+        result = self.sr_client.get_subjects()
+        assert result.status_code == requests.codes.ok, (
+            f"GET contexts/{ctx}/subjects failed: {result.text}"
+        )
+        listed = result.json()
+        assert "default-only-subject" not in listed, (
+            f"Default-context subject should not appear: {listed}"
+        )
+        ctx_name = ctx.lstrip(".")
+        for subj in ("topic-a", "topic-b"):
+            qualified = f":.{ctx_name}:{subj}"
+            assert qualified in listed, f"Expected {qualified} in {listed}"
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_config_and_mode(self):
+        """
+        Verify GET/PUT /contexts/{context}/config and /contexts/{context}/mode.
+        The wrapper injects the context as a context-only qualified subject
+        (e.g., ':.cfgmode:') and delegates to the existing config/mode
+        subject handlers.
+        """
+        ctx = ".cfgmode"
+        schema_data = json.dumps({"schema": schema1_def})
+        self.sr_client.base_path = f"contexts/{ctx}"
+
+        # Materialize the context by registering a schema
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="cfg-subject", data=schema_data
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST schema failed: {result.text}"
+        )
+
+        # PUT /contexts/{ctx}/config
+        result = self.sr_client.set_config(data=json.dumps({"compatibility": "FULL"}))
+        assert result.status_code == requests.codes.ok, (
+            f"PUT config failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/config
+        result = self.sr_client.get_config()
+        assert result.status_code == requests.codes.ok, (
+            f"GET config failed: {result.text}"
+        )
+        assert result.json()["compatibilityLevel"] == "FULL", (
+            f"Unexpected config response: {result.json()}"
+        )
+
+        # PUT /contexts/{ctx}/mode
+        result = self.sr_client.set_mode(data=json.dumps({"mode": "READONLY"}))
+        assert result.status_code == requests.codes.ok, (
+            f"PUT mode failed: {result.text}"
+        )
+
+        # GET /contexts/{ctx}/mode
+        result = self.sr_client.get_mode()
+        assert result.status_code == requests.codes.ok, (
+            f"GET mode failed: {result.text}"
+        )
+        assert result.json()["mode"] == "READONLY", (
+            f"Unexpected mode response: {result.json()}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_schema_types(self):
+        """
+        Verify GET /contexts/{context}/schemas/types passes through to the
+        global schema-types handler. The context is accepted for Confluent
+        compatibility but ignored.
+        """
+        self.sr_client.base_path = "contexts/.staging"
+        result = self.sr_client.get_schemas_types()
+        assert result.status_code == requests.codes.ok, (
+            f"GET schemas/types failed: {result.text}"
+        )
+        types = result.json()
+        assert "AVRO" in types, f"Expected AVRO in schema types: {types}"
+
+        # Invalid context name (embedded colon) returns 400
+        self.sr_client.base_path = "contexts/a:b"
+        result = self.sr_client.get_schemas_types()
+        assert result.status_code == requests.codes.bad_request, (
+            f"Expected 400 for invalid context name, got {result.status_code}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_context_prefix_delete_config_and_mode(self):
+        """
+        Verify DELETE /contexts/{context}/config and /contexts/{context}/mode.
+        The wrapper injects the context as a context-only qualified subject
+        and delegates to the existing delete_config_subject and
+        delete_mode_subject handlers.
+        """
+        ctx = ".delcfg"
+        schema_data = json.dumps({"schema": schema1_def})
+        self.sr_client.base_path = f"contexts/{ctx}"
+
+        # Materialize the context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="del-subject", data=schema_data
+        )
+        assert result.status_code == requests.codes.ok, (
+            f"POST schema failed: {result.text}"
+        )
+
+        # Set config, then DELETE it
+        result = self.sr_client.set_config(data=json.dumps({"compatibility": "FULL"}))
+        assert result.status_code == requests.codes.ok, (
+            f"PUT config failed: {result.text}"
+        )
+        result = self.sr_client.delete_config()
+        assert result.status_code == requests.codes.ok, (
+            f"DELETE config failed: {result.text}"
+        )
+
+        # Set mode, then DELETE it
+        result = self.sr_client.set_mode(data=json.dumps({"mode": "READONLY"}))
+        assert result.status_code == requests.codes.ok, (
+            f"PUT mode failed: {result.text}"
+        )
+        result = self.sr_client.delete_mode()
+        assert result.status_code == requests.codes.ok, (
+            f"DELETE mode failed: {result.text}"
+        )
+
+    @cluster(num_nodes=4)
+    @parametrize(client_type=SerdeClientType.Python)
+    @parametrize(client_type=SerdeClientType.Golang)
+    @parametrize(client_type=SerdeClientType.Java)
+    def test_context_prefix_serde_client(self, client_type):
+        """
+        Verify a serde client can target a context by setting the schema
+        registry URL to /contexts/{context}. This is the acceptance test
+        for CORE-15191.
+        """
+        topic = f"serde-context-prefix-{client_type.name.lower()}"
+        ctx = ".serde"
+        self._create_topic(topic=topic)
+
+        # Build context-prefixed SR URL
+        schema_reg_base = self.redpanda.schema_reg().split(",", 1)[0]
+        context_sr_url = f"{schema_reg_base}/contexts/{ctx}"
+
+        client = self._get_serde_client(
+            SchemaType.AVRO,
+            client_type,
+            topic,
+            5,
+            schema_registry_url=context_sr_url,
+        )
+        client.start()
+        client.wait()
+
+        # Verify schemas landed in the context
+        result = self.sr_client.get_subjects(subject_prefix=f":{ctx}:")
+        assert result.status_code == 200, result.text
+        subjects = result.json()
+        expected_subject = f":{ctx}:{topic}-value"
+        assert expected_subject in subjects, (
+            f"Expected {expected_subject} in {subjects}"
+        )
+
+        # Verify default context does NOT have this subject
+        result = self.sr_client.get_subjects_subject_versions(subject=f"{topic}-value")
+        assert result.status_code == 404, (
+            f"Expected 404 for default context, got {result.status_code}"
+        )
 
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
@@ -10617,3 +11062,170 @@ class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
             99999, subject="sub1", auth=self.user_auth
         )
         self.assert_equal(result.status_code, 403)
+
+    @cluster(num_nodes=1)
+    def test_context_prefix_acl_isolation(self):
+        """
+        A user with ACLs on 'foo' (default context) must NOT be able to
+        access /contexts/.ctx1/subjects/foo/... — the ACL on the unqualified
+        subject should not grant access to the context-qualified subject.
+        """
+        # Grant READ on unqualified "sub1" (default context)
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "READ"))
+        self.sr_client.base_path = "contexts/.ctx1"
+
+        # Access via context prefix should be denied — ACL is on "sub1",
+        # not ":.ctx1:sub1"
+        result = self.sr_client.get_subjects_subject_versions(
+            subject="sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # Grant READ on the context-qualified subject
+        self._post_acl(self._create_acl(":.ctx1:sub1", "SUBJECT", "LITERAL", "READ"))
+
+        # Now access via context prefix should succeed
+        result = self.sr_client.get_subjects_subject_versions(
+            subject="sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+
+    @cluster(num_nodes=1)
+    def test_context_prefix_acl_with_prefix_pattern(self):
+        """
+        A prefix ACL on ':.ctx1:' grants access to all subjects in .ctx1
+        via context-prefixed URLs, but not to subjects in other contexts.
+        """
+        # Grant prefix ACL covering all subjects in .ctx1
+        self._post_acl(self._create_acl(":.ctx1:", "SUBJECT", "PREFIXED", "READ"))
+
+        # Access subjects in .ctx1 via prefix URL — should succeed
+        self.sr_client.base_path = "contexts/.ctx1"
+        result = self.sr_client.get_subjects_subject_versions(
+            subject="sub1", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+
+        result = self.sr_client.get_subjects_subject_versions(
+            subject="sub2", auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+
+        # Access a subject in a different context — should be denied
+        result = self.sr_client.get_subjects_subject_versions(
+            subject="sub1", auth=self.user_auth, base_path="contexts/.ctx2"
+        )
+        self.assert_equal(result.status_code, 403)
+
+    @cluster(num_nodes=1)
+    def test_context_prefix_all_subject_operations_protected(self):
+        """
+        All context-prefixed subject endpoints must authorize against the
+        context-qualified subject, not the bare subject name.
+        """
+        # Grant ACL on unqualified "sub1" with ALL operations
+        self._post_acl(self._create_acl("sub1", "SUBJECT", "LITERAL", "ALL"))
+
+        # Each of these should be denied because the ACL is on "sub1",
+        # not ":.ctx1:sub1"
+        schema_data = json.dumps({"schema": schema1_def})
+        self.sr_client.base_path = "contexts/.ctx1"
+
+        # POST subject (lookup)
+        result = self.sr_client.post_subjects_subject(
+            subject="sub1", data=schema_data, auth=self.user_auth
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"POST subjects/sub1 should be 403, got {result.status_code}",
+        )
+
+        # GET subject versions
+        result = self.sr_client.get_subjects_subject_versions(
+            subject="sub1", auth=self.user_auth
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET versions should be 403, got {result.status_code}",
+        )
+
+        # POST subject versions (register)
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="sub1", data=schema_data, auth=self.user_auth
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"POST versions should be 403, got {result.status_code}",
+        )
+
+        # GET subject versions version
+        result = self.sr_client.get_subjects_subject_versions_version(
+            subject="sub1", version=1, auth=self.user_auth
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET version should be 403, got {result.status_code}",
+        )
+
+        # GET subject versions version schema
+        result = self.sr_client.get_subjects_subject_versions_version_schema(
+            subject="sub1", version=1, auth=self.user_auth
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET version/schema should be 403, got {result.status_code}",
+        )
+
+        # DELETE subject version
+        result = self.sr_client.delete_subject_version(
+            subject="sub1", version=1, auth=self.user_auth
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"DELETE version should be 403, got {result.status_code}",
+        )
+
+        # DELETE subject
+        result = self.sr_client.delete_subject(subject="sub1", auth=self.user_auth)
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"DELETE subject should be 403, got {result.status_code}",
+        )
+
+        # Compatibility check
+        result = self.sr_client.post_compatibility_subject_version(
+            subject="sub1", version=1, data=schema_data, auth=self.user_auth
+        )
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"Compatibility check should be 403, got {result.status_code}",
+        )
+
+        # Schema-by-ID routes use deferred auth with scope_subject_query.
+        # The context prefix injects subject=:.ctx1: which should not match
+        # the ACL on unqualified "sub1".
+        sid = self.schema_id_ctx1
+
+        # GET /contexts/.ctx1/schemas/ids/{id}
+        result = self.sr_client.get_schemas_ids_id(sid, auth=self.user_auth)
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET schemas/ids/{sid} should be 403, got {result.status_code}",
+        )
+
+        # GET /contexts/.ctx1/schemas/ids/{id}/schema
+        result = self.sr_client.get_schemas_ids_id_schema(sid, auth=self.user_auth)
+        self.assert_equal(
+            result.status_code,
+            403,
+            f"GET schemas/ids/{sid}/schema should be 403, got {result.status_code}",
+        )

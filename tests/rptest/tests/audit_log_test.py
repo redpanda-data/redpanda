@@ -3749,6 +3749,97 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
 
         self.check_matching_api_record(endpoint, StatusID.SUCCESS)
 
+    @skip_fips_mode
+    @cluster(num_nodes=5)
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_sr_audit_context_prefix_authz(self, audit_transport_mode):
+        """
+        Verify ACLs and audit logging for context-prefixed routes
+        (/contexts/{context}/...). Each route should:
+          - Authorize against the context-qualified subject derived from the
+            URL prefix and {subject} path/query parameter.
+          - Record the context-prefixed nickname (ctx_*) in audit logs, even
+            for deferred-authz handlers where the nickname used to be hardcoded
+            to the non-prefixed variant.
+        """
+        self.setup_cluster()
+
+        ctx = ".staging"
+        subject = "topic-a"
+        qualified_subject = f":{ctx}:{subject}"
+        self.sr_client.base_path = f"contexts/{ctx}"
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # POST /contexts/{ctx}/subjects/{subject}/versions, regular handler.
+        # Without an ACL on the qualified subject, this is denied.
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=subject, data=schema_data, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+        self.check_matching_api_record_parts(
+            path=f"contexts/{ctx}/subjects/{subject}/versions",
+            resources={"name": qualified_subject, "type": "subject"},
+            operation="ctx_post_subject_versions",
+            status_id=StatusID.FAILURE,
+        )
+
+        # Grant prefix-WRITE on the .staging context, retry. Should succeed
+        # and audit the qualified subject under ctx_post_subject_versions.
+        self._post_acl(self._create_acl(f":{ctx}:", "SUBJECT", "PREFIXED", "WRITE"))
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=subject, data=schema_data, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        schema_id = result.json()["id"]
+        self.check_matching_api_record_parts(
+            path=f"contexts/{ctx}/subjects/{subject}/versions",
+            resources={"name": qualified_subject, "type": "subject"},
+            operation="ctx_post_subject_versions",
+            status_id=StatusID.SUCCESS,
+        )
+
+        # GET /contexts/{ctx}/subjects, deferred handler. Audit log must
+        # record ctx_get_subjects (not get_subjects).
+        self._post_acl(self._create_acl(f":{ctx}:", "SUBJECT", "PREFIXED", "DESCRIBE"))
+        result = self.sr_client.get_subjects(auth=self.user_auth)
+        self.assert_equal(result.status_code, 200)
+        self.check_matching_api_record_parts(
+            path=f"contexts/{ctx}/subjects",
+            resources={"name": qualified_subject, "type": "subject"},
+            operation="ctx_get_subjects",
+            status_id=StatusID.SUCCESS,
+        )
+
+        # GET /contexts/{ctx}/schemas/ids/{id}, deferred handler that authz's
+        # against the matched subjects. Audit log must record
+        # ctx_get_schemas_ids_id.
+        self._post_acl(self._create_acl(f":{ctx}:", "SUBJECT", "PREFIXED", "READ"))
+        result = self.sr_client.get_schemas_ids_id(id=schema_id, auth=self.user_auth)
+        self.assert_equal(result.status_code, 200)
+        self.check_matching_api_record_parts(
+            path=f"contexts/{ctx}/schemas/ids/{schema_id}",
+            resources={"name": qualified_subject, "type": "subject"},
+            operation="ctx_get_schemas_ids_id",
+            status_id=StatusID.SUCCESS,
+        )
+
+        # GET /contexts/{ctx}/config/{subject}, deferred handler routed
+        # through handle_config_mode_authz. Audit log must record
+        # ctx_get_config_subject.
+        self._post_acl(
+            self._create_acl(f":{ctx}:", "SUBJECT", "PREFIXED", "DESCRIBE_CONFIGS")
+        )
+        result = self.sr_client.get_config_subject(
+            subject=subject, fallback=True, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.check_matching_api_record_parts(
+            path=f"contexts/{ctx}/config/{subject}?defaultToGlobal=true",
+            resources={"name": qualified_subject, "type": "subject"},
+            operation="ctx_get_config_subject",
+            status_id=StatusID.SUCCESS,
+        )
+
 
 class AuditLogTestSanctionMode(AuditLogTestBase):
     """Validates the behaviour of audit logging under sanctioning mode"""

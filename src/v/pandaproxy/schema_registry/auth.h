@@ -15,6 +15,7 @@
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/server.h"
 #include "security/acl.h"
+#include "utils/variant.h"
 
 #include <variant>
 
@@ -42,27 +43,39 @@ public:
     // AuthZ is required to be performed in the handler as the resource is
     // unknown
     using deferred = named_type<std::monostate, class deferred_tag>;
+    // AuthZ will be performed against the context-qualified subject extracted
+    // from both the {context} and {subject} path parameters
+    using context_prefix_subject
+      = named_type<std::monostate, class context_prefix_subject_tag>;
 
     using op = security::acl_operation;
+    /// Authorization-time resource type.
     using resource
       = std::variant<none, deferred, global, context_subject, cluster>;
+    /// Route-registration-time resource type — includes
+    /// `context_prefix_subject`, which is resolved to `context_subject` before
+    /// authorization.
+    using route_resource = extend_variant_t<resource, context_prefix_subject>;
 
     using regular_function_handler = ss::noncopyable_function<
       ss::future<server::reply_t>(server::request_t, server::reply_t)>;
-    using deferred_function_handler = ss::noncopyable_function<ss::future<
-      server::reply_t>(
-      server::request_t, server::reply_t, std::optional<request_auth_result>)>;
+    using deferred_function_handler
+      = ss::noncopyable_function<ss::future<server::reply_t>(
+        server::request_t,
+        server::reply_t,
+        std::optional<request_auth_result>,
+        std::string_view operation_name)>;
     using function_handler
       = std::variant<regular_function_handler, deferred_function_handler>;
 
-    auth(level lvl, std::optional<op> op, resource res)
+    auth(level lvl, std::optional<op> op, route_resource res)
       : _lvl{lvl}
       , _op{op}
       , _res{std::move(res)} {}
 
     level get_level() const { return _lvl; }
     std::optional<op> get_op() const { return _op; }
-    const resource& get_resource() const { return _res; }
+    const route_resource& get_resource() const { return _res; }
     bool is_deferred() const {
         return std::holds_alternative<auth::deferred>(get_resource());
     }
@@ -77,7 +90,7 @@ public:
 private:
     level _lvl;
     std::optional<op> _op;
-    resource _res;
+    route_resource _res;
 };
 
 } // namespace pandaproxy::schema_registry

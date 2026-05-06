@@ -13,6 +13,7 @@
 #include "container/chunked_hash_map.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/parsing/httpd.h"
+#include "pandaproxy/schema_registry/context_router.h"
 #include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -54,15 +55,21 @@ namespace {
 
 auth::resource
 extract_resource_from_request(const server::request_t& rq, const auth& auth) {
-    auto resource = auth.get_resource();
-    ss::visit(
-      resource,
-      [&rq](context_subject& ctx_sub) {
-          ctx_sub = context_subject::from_string(
+    return ss::visit(
+      auth.get_resource(),
+      [&rq](const context_subject&) -> auth::resource {
+          return context_subject::from_string(
             parse::request_param<ss::sstring>(*rq.req, "subject"));
       },
-      [](const auto&) {});
-    return resource;
+      [&rq](const auth::context_prefix_subject&) -> auth::resource {
+          auto ctx = parse_normalized_context(*rq.req);
+          auto sub = parse::request_param<ss::sstring>(*rq.req, "subject");
+          if (!starts_with_context(sub)) {
+              sub = fmt::format(":{}:{}", ctx, sub);
+          }
+          return context_subject::from_string(sub);
+      },
+      [](const auto& res) -> auth::resource { return res; });
 }
 
 void throw_unauthorized() {
@@ -157,10 +164,9 @@ void handle_authz(
 
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   std::optional<request_auth_result>& auth_result,
   const chunked_vector<context_subject>& subjects) {
-    const auto& operation_name
-      = ss::httpd::schema_registry_json::get_schemas_ids_id.operations.nickname;
     constexpr auto op = security::acl_operation::read;
     if (!auth_result.has_value()) {
         // ACLs or authentication is disabled
@@ -222,10 +228,9 @@ void handle_get_schemas_ids_id_authz(
 
 void handle_get_subjects_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   std::optional<request_auth_result>& auth_result,
   chunked_vector<context_subject>& subjects) {
-    const auto& operation_name
-      = ss::httpd::schema_registry_json::get_subjects.operations.nickname;
     constexpr auto op = security::acl_operation::describe;
 
     if (!auth_result.has_value()) {
@@ -286,11 +291,10 @@ void handle_get_subjects_authz(
 
 ss::future<> handle_get_contexts_authz(
   const server::request_t& rq,
+  std::string_view operation_name,
   sharded_store& store,
   std::optional<request_auth_result>& auth_result,
   chunked_vector<context>& contexts) {
-    const auto& operation_name
-      = ss::httpd::schema_registry_json::get_contexts.operations.nickname;
     constexpr auto op = security::acl_operation::describe;
 
     if (!auth_result.has_value()) {

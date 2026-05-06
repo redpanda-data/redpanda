@@ -20,6 +20,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/schema_registry/authorization.h"
+#include "pandaproxy/schema_registry/context_router.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
@@ -349,7 +350,8 @@ put_config(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_config_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
@@ -359,7 +361,7 @@ ss::future<server::reply_t> get_config_subject(
 
     enterprise::handle_config_mode_authz(
       rq,
-      ss::httpd::schema_registry_json::get_config_subject.operations.nickname,
+      operation_name,
       auth_result,
       ctx_sub,
       security::acl_operation::describe_configs);
@@ -416,7 +418,8 @@ std::invoke_result_t<F> get_or_load(server::request_t& rq, F f) {
 ss::future<server::reply_t> put_config_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
@@ -425,7 +428,7 @@ ss::future<server::reply_t> put_config_subject(
 
     enterprise::handle_config_mode_authz(
       rq,
-      ss::httpd::schema_registry_json::put_config_subject.operations.nickname,
+      operation_name,
       auth_result,
       ctx_sub,
       security::acl_operation::alter_configs);
@@ -445,15 +448,15 @@ ss::future<server::reply_t> put_config_subject(
 ss::future<server::reply_t> delete_config_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
 
     enterprise::handle_config_mode_authz(
       rq,
-      ss::httpd::schema_registry_json::delete_config_subject.operations
-        .nickname,
+      operation_name,
       auth_result,
       ctx_sub,
       security::acl_operation::alter_configs);
@@ -531,7 +534,8 @@ ss::future<server::reply_t> put_mode(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_mode_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
@@ -541,7 +545,7 @@ ss::future<server::reply_t> get_mode_subject(
 
     enterprise::handle_config_mode_authz(
       rq,
-      ss::httpd::schema_registry_json::get_mode_subject.operations.nickname,
+      operation_name,
       auth_result,
       ctx_sub,
       security::acl_operation::describe_configs);
@@ -566,7 +570,8 @@ ss::future<server::reply_t> get_mode_subject(
 ss::future<server::reply_t> put_mode_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto frc = parse::query_param<std::optional<force>>(*rq.req, "force")
@@ -577,7 +582,7 @@ ss::future<server::reply_t> put_mode_subject(
 
     enterprise::handle_config_mode_authz(
       rq,
-      ss::httpd::schema_registry_json::put_mode_subject.operations.nickname,
+      operation_name,
       auth_result,
       ctx_sub,
       security::acl_operation::alter_configs);
@@ -597,14 +602,15 @@ ss::future<server::reply_t> put_mode_subject(
 ss::future<server::reply_t> delete_mode_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
       parse::request_param<ss::sstring>(*rq.req, "subject"));
 
     enterprise::handle_config_mode_authz(
       rq,
-      ss::httpd::schema_registry_json::delete_mode_subject.operations.nickname,
+      operation_name,
       auth_result,
       ctx_sub,
       security::acl_operation::alter_configs);
@@ -654,7 +660,8 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_schemas_ids_id(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     const auto format = parse_output_format(*rq.req);
@@ -673,7 +680,7 @@ ss::future<server::reply_t> get_schemas_ids_id(
 
     // Subject-based deferred authz (handles 403 vs 404)
     enterprise::handle_get_schemas_ids_id_authz(
-      rq, auth_result, result.matched_subjects);
+      rq, operation_name, auth_result, result.matched_subjects);
 
     if (!result.found()) {
         throw as_exception(not_found(id));
@@ -691,7 +698,8 @@ ss::future<server::reply_t> get_schemas_ids_id(
 ss::future<server::reply_t> get_schemas_ids_id_schema(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     const auto format = parse_output_format(*rq.req);
@@ -710,7 +718,7 @@ ss::future<server::reply_t> get_schemas_ids_id_schema(
 
     // Subject-based deferred authz (handles 403 vs 404)
     enterprise::handle_get_schemas_ids_id_authz(
-      rq, auth_result, result.matched_subjects);
+      rq, operation_name, auth_result, result.matched_subjects);
 
     if (!result.found()) {
         throw as_exception(not_found(id));
@@ -803,7 +811,8 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
 ss::future<server::reply_t> get_subjects(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
@@ -819,7 +828,7 @@ ss::future<server::reply_t> get_subjects(
 
     // Handle AuthZ - Filters res for the subjects the user is allowed to
     // see
-    enterprise::handle_get_subjects_authz(rq, auth_result, res);
+    enterprise::handle_get_subjects_authz(rq, operation_name, auth_result, res);
 
     // Convert context_subject to qualified string format for JSON response
     auto subjects_str = std::move(res) | std::views::as_rvalue
@@ -1486,7 +1495,8 @@ delete_security_acls(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_contexts(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  std::optional<request_auth_result> auth_result,
+  std::string_view operation_name) {
     parse_accept_header(rq, rp);
 
     co_await rq.service().writer().read_sync();
@@ -1495,7 +1505,7 @@ ss::future<server::reply_t> get_contexts(
       = co_await rq.service().schema_store().get_materialized_contexts();
 
     co_await enterprise::handle_get_contexts_authz(
-      rq, rq.service().schema_store(), auth_result, contexts);
+      rq, operation_name, rq.service().schema_store(), auth_result, contexts);
 
     auto contexts_str = std::move(contexts) | std::views::as_rvalue
                         | std::ranges::views::transform([](context&& ctx) {
@@ -1513,8 +1523,7 @@ ss::future<server::reply_t>
 delete_context(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
 
-    auto ctx_str = parse::request_param<ss::sstring>(*rq.req, "context");
-    auto ctx = context{ctx_str};
+    auto ctx = context{parse_normalized_context(*rq.req)};
 
     if (ctx == default_context) {
         throw as_exception(
