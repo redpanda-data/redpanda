@@ -67,7 +67,6 @@ class DucktapeRunner:
         # Paths for artifacts
         self.bazel_out = self.build_root / "bazel-out"
         self.rp_install_dir = self.bazel_out / "redpanda"
-        self.dcv_install_dir = self.bazel_out / "direct_consumer_verifier"
         self.rp_installs_dir = self.build_root / "redpanda_installs"
         self.ducktape_dir = self.build_root / "ducktape"
 
@@ -117,17 +116,6 @@ class DucktapeRunner:
             cwd=self.src_dir,
         )
 
-        # Build direct consumer verifier
-        self.run_cmd(
-            [
-                "bazel",
-                "build",
-                *self.bazel_config.split(),
-                "//bazel/packaging:direct_consumer_verifier_ducktape",
-            ],
-            cwd=self.src_dir,
-        )
-
     def link_bazel_artifacts(self):
         """Link bazel build artifacts to expected locations."""
         self.log("Linking bazel artifacts...")
@@ -163,11 +151,6 @@ class DucktapeRunner:
 
         # Link artifacts for each package
         self._link_package_artifacts("redpanda_ducktape", "redpanda", use_hardlink)
-        self._link_package_artifacts(
-            "direct_consumer_verifier_ducktape",
-            "direct_consumer_verifier",
-            use_hardlink,
-        )
 
         # CORE-13183: symlink libexec/redpanda to bin/redpanda for ducktape
         rp_bazel_out = self.bazel_out / "redpanda"
@@ -328,7 +311,6 @@ class DucktapeRunner:
         """Build the globals JSON for ducktape."""
         globals_dict = {
             "rp_install_path_root": str(self.rp_install_dir),
-            "direct_consumer_verifier_root": str(self.dcv_install_dir),
             "redpanda_log_level": self.args.log_level,
             "scale": "local",
             "enable_cov": "OFF",
