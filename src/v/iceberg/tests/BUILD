@@ -751,6 +751,20 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "unicode_test",
+    timeout = "short",
+    srcs = [
+        "unicode_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:field_name_comparison",
+        "//src/v/iceberg:unicode",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
 redpanda_cc_bench(
     name = "iceberg_uri_rpbench",
     srcs = [
