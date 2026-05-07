@@ -344,3 +344,74 @@ func TestSliceControllerDir(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminAddressesUnion(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		a, b []string
+		want []string
+	}{
+		{
+			name: "no overlap",
+			a:    []string{"a:9644", "b:9644"},
+			b:    []string{"c:9644"},
+			want: []string{"a:9644", "b:9644", "c:9644"},
+		},
+		{
+			name: "exact duplicate across sources",
+			a:    []string{"broker-0.svc.ns.svc.cluster.local:9644"},
+			b:    []string{"broker-0.svc.ns.svc.cluster.local:9644"},
+			want: []string{"broker-0.svc.ns.svc.cluster.local:9644"},
+		},
+		{
+			name: "short form vs FQDN — same broker, profile wins",
+			a:    []string{"cluster-third-0.default:9644"},
+			b:    []string{"cluster-third-0.cluster.default.svc.cluster.local.:9644"},
+			want: []string{"cluster-third-0.default:9644"},
+		},
+		{
+			name: "trailing dot is normalized",
+			a:    []string{"broker-0.ns.svc.cluster.local:9644"},
+			b:    []string{"broker-0.ns.svc.cluster.local.:9644"},
+			want: []string{"broker-0.ns.svc.cluster.local:9644"},
+		},
+		{
+			name: "different brokers in same headless service stay separate",
+			a:    []string{"broker-0.cluster.default.svc.cluster.local.:9644"},
+			b:    []string{"broker-1.cluster.default.svc.cluster.local.:9644"},
+			want: []string{
+				"broker-0.cluster.default.svc.cluster.local.:9644",
+				"broker-1.cluster.default.svc.cluster.local.:9644",
+			},
+		},
+		{
+			name: "IPv4 literals are not collapsed by leading octet",
+			a:    []string{"10.0.0.1:9644"},
+			b:    []string{"10.0.0.2:9644"},
+			want: []string{"10.0.0.1:9644", "10.0.0.2:9644"},
+		},
+		{
+			name: "different ports for same host stay separate",
+			a:    []string{"broker-0.default:9644"},
+			b:    []string{"broker-0.default:9645"},
+			want: []string{"broker-0.default:9644", "broker-0.default:9645"},
+		},
+		{
+			name: "duplicates within a single slice are also collapsed",
+			a:    []string{"broker-0.default:9644", "broker-0.cluster.default.svc.cluster.local.:9644"},
+			b:    nil,
+			want: []string{"broker-0.default:9644"},
+		},
+		{
+			name: "unparseable addresses fall back to exact-string compare",
+			a:    []string{"not-a-valid-addr"},
+			b:    []string{"not-a-valid-addr", "also-bogus"},
+			want: []string{"not-a-valid-addr", "also-bogus"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := adminAddressesUnion(tc.a, tc.b)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
