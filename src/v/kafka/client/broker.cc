@@ -159,6 +159,7 @@ ss::future<> remote_broker::maybe_authenticate() {
         co_await do_authenticate();
         _authentication_state = auth_state::authenticated;
     } catch (...) {
+        _authentication_state = auth_state::none;
         vlog(
           _logger.warn, "Authentication error - {}", std::current_exception());
         throw;
