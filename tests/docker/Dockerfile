@@ -383,6 +383,10 @@ COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/arroyo /
 RUN /arroyo && \
     rm /arroyo
 
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/mitmproxy /
+RUN /mitmproxy && \
+    rm /mitmproxy
+
 RUN mkdir -p /opt/scripts/consumer_offsets_recovery
 COPY --chown=0:0 --chmod=0755 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
 RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt

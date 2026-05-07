@@ -19,6 +19,7 @@
 #include "datalake/partition_spec_parser.h"
 #include "model/namespace.h"
 #include "model/validation.h"
+#include "security/oidc_url_parser.h"
 #include "serde/rw/chrono.h"
 #include "ssx/sformat.h"
 #include "utils/inet_address_wrapper.h"
@@ -549,6 +550,28 @@ validate_sane_partition_balancer_timeouts(const configuration& config) {
           "({})",
           node_availability,
           *maybe_auto_decom_timeout);
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
+validate_oidc_http_proxy_url(const config::configuration& config) {
+    // Only https oidc discovery URLs are supported when an HTTP proxy is
+    // configured
+    if (!config.oidc_http_proxy_url().has_value()) {
+        return std::nullopt;
+    }
+    auto discovery = security::oidc::parse_url(config.oidc_discovery_url());
+    if (discovery.has_error()) {
+        // The per-property oidc_discovery_url validator will flag
+        // unparseable URLs; avoid double-reporting.
+        return std::nullopt;
+    }
+    if (discovery.assume_value().scheme != "https") {
+        return fmt::format(
+          "oidc_http_proxy_url requires oidc_discovery_url to use https:// "
+          "(got {})",
+          discovery.assume_value().scheme);
     }
     return std::nullopt;
 }

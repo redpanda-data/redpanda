@@ -2065,6 +2065,12 @@ void config_multi_property_validation(
         errors[ss::sstring{updated_config.default_redpanda_storage_mode.name()}]
           = storage_mode_err.value();
     }
+
+    auto oidc_proxy_err = config::validate_oidc_http_proxy_url(updated_config);
+    if (oidc_proxy_err.has_value()) {
+        errors[ss::sstring{updated_config.oidc_http_proxy_url.name()}]
+          = oidc_proxy_err.value();
+    }
 }
 } // namespace
 

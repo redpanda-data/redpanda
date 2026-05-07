@@ -7,6 +7,28 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+
+// When oidc_http_proxy_url is set, discovery + JWKS fetches are
+// routed through an HTTP forward proxy via CONNECT tunneling.
+// Supported combinations:
+//
+//   proxy    | origin   | behaviour
+//   ---------|----------|---------------------------------------------
+//   http://  | https:// | TCP to proxy -> CONNECT -> TLS to origin
+//   https:// | https:// | TLS to proxy -> CONNECT in tunnel -> nested
+//            |          |   TLS to origin
+//   any      | http://  | rejected: CONNECT tunneling requires a TLS
+//            |          |   origin; plaintext origins would need
+//            |          |   absolute-form HTTP request rewriting
+//            |          |   (RFC 9112 section 3.2.2), not implemented
+//
+// Rejection happens at both config commit time and request time as
+// defense-in-depth for the bootstrap-config path.
+//
+// For general background on CONNECT / HTTPS-proxy mechanics, see
+// mitmproxy's architecture overview:
+// https://docs.mitmproxy.org/stable/concepts/how-mitmproxy-works/#putting-it-all-together
+
 #include "security/oidc_service.h"
 
 #include "absl/container/flat_hash_map.h"
@@ -50,6 +72,28 @@ template<typename... Args>
   Args&&... args) noexcept {
     return ss::coroutine::return_exception(
       exception(ec, fmt::format(fmt, std::forward<Args>(args)...)));
+}
+
+/// Parses an oidc_http_proxy_url into a base_transport proxy_config.
+/// For https:// proxies, attaches the caller-supplied TLS credentials
+/// (the OIDC service's system-trust creds, shared with the origin
+/// handshake) and sets SNI to the proxy hostname.
+result<net::base_transport::configuration::proxy_config> parse_proxy_url(
+  std::string_view url_str,
+  ss::shared_ptr<ss::tls::certificate_credentials> system_creds) {
+    auto parsed = parse_url(url_str);
+    if (parsed.has_error()) {
+        return errc::metadata_invalid;
+    }
+    auto url = std::move(parsed).assume_value();
+    net::base_transport::configuration::proxy_config cfg{
+      .address = net::unresolved_address{url.host, url.port}};
+    if (url.scheme == "https") {
+        cfg.credentials = std::move(system_creds);
+    } else if (url.scheme != "http") {
+        return errc::metadata_invalid;
+    }
+    return cfg;
 }
 
 using seastar::operator co_await;
@@ -148,6 +192,7 @@ struct service::impl {
         sasl_mechanisms_overrides,
       config::binding<std::vector<ss::sstring>> http_authentication,
       config::binding<ss::sstring> discovery_url,
+      config::binding<std::optional<ss::sstring>> http_proxy_url,
       config::binding<ss::sstring> token_audience,
       config::binding<std::chrono::seconds> clock_skew_tolerance,
       config::binding<ss::sstring> mapping,
@@ -159,6 +204,7 @@ struct service::impl {
       , _sasl_mechanisms_overrides{std::move(sasl_mechanisms_overrides)}
       , _http_authentication{std::move(http_authentication)}
       , _discovery_url{std::move(discovery_url)}
+      , _http_proxy_url{std::move(http_proxy_url)}
       , _token_audience{std::move(token_audience)}
       , _clock_skew_tolerance{std::move(clock_skew_tolerance)}
       , _mapping{std::move(mapping)}
@@ -179,6 +225,9 @@ struct service::impl {
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
         _discovery_url.watch([this]() {
+            ssx::spawn_with_gate(_gate, [this] { return update(); });
+        });
+        _http_proxy_url.watch([this]() {
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
         _mapping.watch([this]() { update_rule(); });
@@ -371,7 +420,25 @@ struct service::impl {
     }
 
     ss::future<ss::sstring> make_request(parsed_url url) {
+        // Copy the proxy URL up front: binding reads return a reference
+        // to the binding's internal storage, which can be mutated by the
+        // watcher across coroutine suspension points. A local copy keeps
+        // the scheme check and the error detail consistent.
+        auto proxy_url = _http_proxy_url();
         auto is_https = url.scheme == "https";
+
+        // Reject plaintext origins through the proxy; see the
+        // supported-combinations table at the top of this file.
+        if (proxy_url.has_value() && !is_https) {
+            co_await return_exception(
+              errc::metadata_invalid,
+              "oidc_http_proxy_url is set but the OIDC endpoint scheme is "
+              "not https. Plaintext OIDC origins through a forward proxy "
+              "are not supported; use an https:// discovery URL or clear "
+              "oidc_http_proxy_url. URL: {}",
+              url);
+        }
+
         std::optional<ss::sstring> tls_host;
         if (is_https) {
             tls_host.emplace(url.host);
@@ -401,11 +468,36 @@ struct service::impl {
                   });
             }
         }
+
+        std::optional<net::base_transport::configuration::proxy_config>
+          proxy_cfg;
+        if (proxy_url.has_value()) {
+            // _creds is always initialized here: we've already rejected
+            // proxy + plaintext origin above, and the is_https branch
+            // built _creds. parse_proxy_url only consumes the creds for
+            // https:// proxy URLs; http:// proxies leave credentials
+            // null on the resulting proxy_config.
+            auto parsed = parse_proxy_url(*proxy_url, _creds);
+            if (parsed.has_error()) {
+                co_await return_exception(
+                  parsed.assume_error(),
+                  "invalid oidc_http_proxy_url: {}",
+                  *proxy_url);
+            }
+            proxy_cfg.emplace(std::move(parsed).assume_value());
+            vlog(
+              seclog.debug,
+              "OIDC: routing request to {} via HTTP proxy {}",
+              url,
+              *proxy_url);
+        }
+
         http::client client{net::base_transport::configuration{
           .server_addr = {url.host, url.port},
           .credentials = is_https ? _creds : nullptr,
           .tls_sni_hostname = tls_host,
           .wait_for_tls_server_eof = false,
+          .proxy = std::move(proxy_cfg),
         }};
 
         http::client::request_header req_hdr;
@@ -440,6 +532,7 @@ struct service::impl {
       _sasl_mechanisms_overrides;
     config::binding<std::vector<ss::sstring>> _http_authentication;
     config::binding<ss::sstring> _discovery_url;
+    config::binding<std::optional<ss::sstring>> _http_proxy_url;
     config::binding<ss::sstring> _token_audience;
     config::binding<std::chrono::seconds> _clock_skew_tolerance;
     config::binding<ss::sstring> _mapping;
@@ -462,6 +555,7 @@ service::service(
     sasl_mechanisms_overrides,
   config::binding<std::vector<ss::sstring>> http_authentication,
   config::binding<ss::sstring> discovery_url,
+  config::binding<std::optional<ss::sstring>> http_proxy_url,
   config::binding<ss::sstring> token_audience,
   config::binding<std::chrono::seconds> clock_skew_tolerance,
   config::binding<ss::sstring> mapping,
@@ -473,6 +567,7 @@ service::service(
       std::move(sasl_mechanisms_overrides),
       std::move(http_authentication),
       std::move(discovery_url),
+      std::move(http_proxy_url),
       std::move(token_audience),
       std::move(clock_skew_tolerance),
       std::move(mapping),

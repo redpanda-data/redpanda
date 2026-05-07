@@ -24,10 +24,29 @@
 #include <seastar/net/tls.hh>
 #include <seastar/util/log.hh>
 
+#include <fmt/format.h>
+
 #include <memory>
 #include <optional>
+#include <stdexcept>
 
 namespace net {
+
+/// Thrown when the forward-proxy CONNECT handshake fails. Names the
+/// proxy and the origin so operator logs identify which hop failed.
+class proxy_connect_error : public std::runtime_error {
+public:
+    proxy_connect_error(
+      const unresolved_address& proxy,
+      const unresolved_address& origin,
+      std::string_view detail)
+      : std::runtime_error(
+          fmt::format(
+            "proxy {} failed to CONNECT to origin {}: {}",
+            proxy,
+            origin,
+            detail)) {}
+};
 
 /*
  * Wrapper around a network socket that encapsulates setting up an initial
@@ -47,6 +66,22 @@ namespace net {
 class base_transport {
 public:
     struct configuration {
+        /// Optional forward-proxy configuration. When set, do_connect
+        /// connects to the proxy (optionally via TLS for https://
+        /// proxies) and issues an HTTP CONNECT request for server_addr.
+        /// The origin TLS handshake (configuration::credentials) then
+        /// runs inside the tunnel; plaintext origins through a proxy
+        /// are not supported.
+        struct proxy_config {
+            unresolved_address address;
+            /// If non-null, the proxy socket is TLS-wrapped with these
+            /// credentials before CONNECT is sent (https:// proxy).
+            /// Distinct from configuration::credentials, which applies
+            /// to the origin TLS handshake inside the CONNECT tunnel.
+            /// SNI for the TLS handshake is derived from address.host().
+            ss::shared_ptr<ss::tls::certificate_credentials> credentials;
+        };
+
         unresolved_address server_addr;
         ss::shared_ptr<ss::tls::certificate_credentials> credentials;
         net::metrics_disabled disable_metrics = net::metrics_disabled::no;
@@ -56,6 +91,7 @@ public:
         std::optional<ss::sstring> tls_sni_hostname;
         /// Potentially skip wait for EOF after BYE message on TLS session end
         bool wait_for_tls_server_eof = true;
+        std::optional<proxy_config> proxy;
     };
 
     base_transport(configuration c, seastar::logger* log);
@@ -95,6 +131,7 @@ public:
     void set_probe(client_probe*);
 
     bool has_tls() const { return static_cast<bool>(_creds); }
+    bool has_proxy() const { return _proxy.has_value(); }
 
 protected:
     virtual void fail_outstanding_futures() {}
@@ -130,15 +167,49 @@ private:
     std::optional<ss::input_stream<char>> _in;
     std::optional<net::batched_output_stream> _out;
 
+    // CONNECT request stream. Closed in stop(); writing through it
+    // after do_connect would bypass origin TLS.
+    std::optional<ss::output_stream<char>> _proxy_out;
+
     unresolved_address _server_addr;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
     std::optional<ss::sstring> _tls_sni_hostname;
     bool _wait_for_tls_server_eof;
+    std::optional<configuration::proxy_config> _proxy;
     seastar::logger* _log;
 
     // Track if shutdown was called on the current `_fd`
     bool _shutdown{false};
     std::optional<client_probe*> _probe;
 };
+
+namespace detail {
+
+/// Formats a `host:port` authority for an HTTP CONNECT request line,
+/// bracketing IPv6 literals as required by RFC 9112 §3.2 / RFC 3986
+/// §3.2.2. Hosts already bracketed (e.g. `[::1]`) are left alone; a
+/// colon in an unbracketed host is treated as an IPv6 literal marker.
+std::string format_connect_authority(std::string_view host, uint16_t port);
+
+/// Consumes an HTTP CONNECT response in a single pass, capturing the
+/// status line and discarding header values. Bounds per-line length
+/// and total response-header bytes against a misbehaving proxy.
+struct connect_response_parser {
+    static constexpr size_t max_line_bytes = 8 * 1024;
+    static constexpr size_t max_total_bytes = 32 * 1024;
+
+    ss::sstring status_line;
+    ss::sstring current_line;
+    size_t total_bytes = 0;
+    bool saw_status = false;
+    bool saw_terminator = false;
+    bool limit_exceeded = false;
+
+    using result_t = ss::consumption_result<char>;
+
+    ss::future<result_t> operator()(ss::temporary_buffer<char> buf);
+};
+
+} // namespace detail
 
 } // namespace net
