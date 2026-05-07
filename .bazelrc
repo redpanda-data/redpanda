@@ -9,6 +9,10 @@ startup --experimental_remote_repo_contents_cache
 common --experimental_repository_downloader_retries=15
 common --http_connector_attempts=24
 
+# Try our s3 mirror as the primary fetch path for known-flaky upstream URLs.
+# See bazel/dependency-mirroring.md for how to add an entry.
+common --downloader_config=bazel_downloader.cfg
+
 # Bazel 9 removes native C++ rule symbols. Autoload them for external rulesets
 # that have not migrated all generated BUILD/Starlark files to explicit loads.
 common --incompatible_autoload_externally=+@rules_cc
