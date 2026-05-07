@@ -1832,6 +1832,71 @@ service FooService {
 )"));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_remove_map_field) {
+    constexpr std::string_view with_map = R"(syntax = "proto3";
+
+message Product {
+  string name = 1;
+  map<string, string> tags = 10;
+}
+)";
+    constexpr std::string_view without_map = R"(syntax = "proto3";
+
+message Product {
+  string name = 1;
+}
+)";
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward_transitive, without_map, with_map));
+    BOOST_REQUIRE(
+      check_compatible(pps::compatibility_level::full, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive, without_map, with_map));
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward, with_map, without_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward_transitive, with_map, without_map));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_map_in_nested_message) {
+    constexpr std::string_view with_map = R"(syntax = "proto3";
+
+message Outer {
+  message Inner {
+    string id = 1;
+    map<string, string> tags = 2;
+  }
+  Inner inner = 1;
+}
+)";
+    constexpr std::string_view without_map = R"(syntax = "proto3";
+
+message Outer {
+  message Inner {
+    string id = 1;
+  }
+  Inner inner = 1;
+}
+)";
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward_transitive, without_map, with_map));
+    BOOST_REQUIRE(
+      check_compatible(pps::compatibility_level::full, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive, without_map, with_map));
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward, with_map, without_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward_transitive, with_map, without_map));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_message_removed) {
     BOOST_REQUIRE(!check_compatible(
       pps::compatibility_level::backward,

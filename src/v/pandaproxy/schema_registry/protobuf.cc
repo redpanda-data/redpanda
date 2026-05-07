@@ -779,6 +779,9 @@ struct compatibility_checker {
 
         for (int i = 0; i < writer->nested_type_count(); ++i) {
             auto w = writer->nested_type(i);
+            if (w->options().has_map_entry()) {
+                continue;
+            }
             auto r = reader->FindNestedTypeByName(w->name());
             if (!r) {
                 compat_result.emplace<proto_incompatibility>(
