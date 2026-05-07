@@ -72,6 +72,7 @@ redpanda_cc_gtest(
         "//src/v/datalake/coordinator:iceberg_file_committer",
         "//src/v/datalake/tests:test_utils",
         "//src/v/features",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/iceberg:manifest_entry",
         "//src/v/iceberg:manifest_io",

@@ -246,6 +246,7 @@ translation_task::translation_task(
   record_translator& record_translator,
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
+  iceberg::field_name_comparison norm,
   location_provider location_provider,
   translation_probe& probe)
   : _log(datalake_log, fmt::format("{}", ntp))
@@ -266,6 +267,7 @@ translation_task::translation_task(
       *_record_translator,
       *_table_creator,
       _invalid_record_action,
+      norm,
       _location_provider,
       *_translation_probe,
       features) {}

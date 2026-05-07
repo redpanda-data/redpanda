@@ -109,6 +109,7 @@ redpanda_cc_library(
         "//src/v/datalake/coordinator:frontend",
         "//src/v/datalake/coordinator:model",
         "//src/v/features",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/model",

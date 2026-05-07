@@ -21,6 +21,7 @@
 #include "datalake/translation/state_machine.h"
 #include "datalake/translation/utils.h"
 #include "datalake/translation_task.h"
+#include "iceberg/field_name_comparison.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/utils/txn_reader.h"
 #include "utils/human.h"
@@ -498,6 +499,7 @@ public:
       , _features(features->local())
       , _probe(std::move(probe))
       , _invalid_record_action(compute_invalid_record_action())
+      , _norm(compute_field_name_comparison())
       , _cp_enabled(
           translation_task::custom_partitioning_enabled{
             _features.is_active(features::feature::datalake_iceberg_ga)})
@@ -520,6 +522,7 @@ public:
                 *_record_translator,
                 *_table_creator,
                 _invalid_record_action,
+                _norm,
                 _location_provider,
                 *_probe});
         }
@@ -656,6 +659,10 @@ private:
           default_action);
     }
 
+    iceberg::field_name_comparison compute_field_name_comparison() const {
+        return iceberg::field_name_comparison::verbatim;
+    }
+
     local_path _writer_scratch_space;
     const model::ntp& _ntp;
     model::revision_id _topic_revision;
@@ -670,6 +677,7 @@ private:
     features::feature_table& _features;
     ss::lw_shared_ptr<translation_probe> _probe;
     model::iceberg_invalid_record_action _invalid_record_action;
+    iceberg::field_name_comparison _norm;
     translation_task::custom_partitioning_enabled _cp_enabled;
     translator_mem_tracker _mem_tracker;
     std::optional<translation_task> _in_progress_translation;

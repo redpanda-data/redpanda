@@ -13,6 +13,7 @@
 #include "iceberg/compatibility_types.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/field_collecting_visitor.h"
+#include "iceberg/field_name_comparison.h"
 
 namespace iceberg {
 
@@ -165,7 +166,12 @@ schema_errc_result for_each_field(
  * schemas_equivalent - returns whether the two input structs are identical
  * in structure and type *with the exception of field IDs*. The purpose is
  * to check equivalence before assigning IDs to the fields in dest.
+ *
+ * @param norm - how to normalize field names before comparison
  */
-bool schemas_equivalent(const struct_type& source, const struct_type& dest);
+bool schemas_equivalent(
+  const struct_type& source,
+  const struct_type& dest,
+  field_name_comparison norm);
 
 } // namespace iceberg

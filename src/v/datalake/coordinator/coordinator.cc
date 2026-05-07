@@ -19,6 +19,7 @@
 #include "datalake/partition_spec_parser.h"
 #include "datalake/record_translator.h"
 #include "datalake/table_id_provider.h"
+#include "iceberg/field_name_comparison.h"
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
@@ -404,7 +405,10 @@ coordinator::do_ensure_table_exists(
     }
 
     auto ensure_res = co_await schema_mgr_.ensure_table_schema(
-      table_id, record_type.value(), partition_spec.value());
+      table_id,
+      record_type.value(),
+      partition_spec.value(),
+      iceberg::field_name_comparison::verbatim);
     if (ensure_res.has_error()) {
         switch (ensure_res.error()) {
         case schema_manager::errc::not_supported:

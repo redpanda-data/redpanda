@@ -11,12 +11,37 @@
 #include "iceberg/compatibility.h"
 #include "iceberg/compatibility_utils.h"
 #include "iceberg/datatypes.h"
+#include "iceberg/field_name_comparison.h"
 #include "iceberg/tests/test_schemas.h"
 
 #include <fmt/format.h>
 #include <gtest/gtest.h>
 
 using namespace iceberg;
+
+TEST(CompatUtilsTests, SchemasEquivalentNorm) {
+    auto make_schema = [](const char* field_name) {
+        struct_type s;
+        s.fields.push_back(
+          nested_field::create(0, field_name, field_required::no, int_type{}));
+        return s;
+    };
+
+    auto upper = make_schema("UserId");
+    auto lower = make_schema("userid");
+
+    // none: case-sensitive
+    EXPECT_TRUE(
+      schemas_equivalent(upper, upper, field_name_comparison::verbatim));
+    EXPECT_FALSE(
+      schemas_equivalent(upper, lower, field_name_comparison::verbatim));
+
+    // unicode_lower: case-insensitive
+    EXPECT_TRUE(
+      schemas_equivalent(upper, upper, field_name_comparison::lower_case));
+    EXPECT_TRUE(
+      schemas_equivalent(upper, lower, field_name_comparison::lower_case));
+}
 
 TEST(CompatUtilsTests, CanForEachField) {
     auto s = std::get<struct_type>(test_nested_schema_type());

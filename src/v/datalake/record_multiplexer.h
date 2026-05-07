@@ -16,6 +16,7 @@
 #include "datalake/partitioning_writer.h"
 #include "datalake/schema_identifier.h"
 #include "datalake/translation/translation_probe.h"
+#include "iceberg/field_name_comparison.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -73,6 +74,7 @@ public:
       record_translator& record_translator,
       table_creator&,
       model::iceberg_invalid_record_action,
+      iceberg::field_name_comparison norm,
       location_provider,
       translation_probe&,
       features::feature_table* features);
@@ -147,6 +149,7 @@ private:
     record_translator& _record_translator;
     table_creator& _table_creator;
     model::iceberg_invalid_record_action _invalid_record_action;
+    iceberg::field_name_comparison _norm;
     location_provider _location_provider;
     translation_probe& _translation_probe;
     [[maybe_unused]] features::feature_table* _features;
