@@ -99,7 +99,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	if err := checkK8sPermissions(ctx, bp.namespace); err != nil {
 		errs = multierror.Append(
 			errs,
-			fmt.Errorf("skipping log collection and Kubernetes resource collection (such as Pods and Services) in the namespace %q. To enable this, grant additional permissions to your Service Account. For more information, visit https://docs.redpanda.com/current/manage/kubernetes/troubleshooting/k-diagnostics-bundle/", err),
+			fmt.Errorf("skipping log collection and Kubernetes resource collection (such as Pods and Services) in the namespace %q: %v. To enable this, grant additional permissions to your Service Account. For more information, visit https://docs.redpanda.com/current/manage/kubernetes/troubleshooting/k-diagnostics-bundle/", bp.namespace, err),
 		)
 	} else {
 		steps = append(steps, []step{
@@ -149,18 +149,61 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	return nil
 }
 
-// adminAddressesUnion returns the union of two slices of adminAddresses.
+// adminAddressesUnion returns the union of two slices of admin addresses,
+// treating two entries as the same broker iff they share the same leftmost
+// DNS label of the host portion and the same port. This collapses pairs like
+//
+//	"cluster-third-0.default:9644"                                   (rpk profile, short form)
+//	"cluster-third-0.cluster.default.svc.cluster.local.:9644"        (K8s discovery, FQDN)
+//
+// which the previous implementation treated as distinct strings, causing the
+// local broker to be queried twice (once per host form) when the rpk profile
+// and the K8s discovery disagree on the DNS suffix — common in setups where
+// the operator renders short-form addresses but rpk reconstructs FQDNs from a
+// headless Service. IP literals are not collapsed: only the leftmost label of
+// non-IP hostnames is used as the dedup key.
+//
+// Order is preserved; the first occurrence of each broker wins.
 func adminAddressesUnion(a, b []string) []string {
-	m := make(map[string]struct{}) // track unique addresses.
-	for _, v := range a {
-		m[v] = struct{}{}
+	seen := make(map[string]struct{}, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, addr := range a {
+		appendUnique(addr, seen, &out)
 	}
-	for _, v := range b {
-		if _, ok := m[v]; !ok {
-			a = append(a, v)
-		}
+	for _, addr := range b {
+		appendUnique(addr, seen, &out)
 	}
-	return a
+	return out
+}
+
+func appendUnique(addr string, seen map[string]struct{}, out *[]string) {
+	key := adminAddressKey(addr)
+	if _, ok := seen[key]; ok {
+		return
+	}
+	seen[key] = struct{}{}
+	*out = append(*out, addr)
+}
+
+// adminAddressKey returns a canonical key used to detect that two admin
+// address strings refer to the same broker. The key is the leftmost label of
+// the host portion (stripped of any trailing dot) plus the port. For IP
+// literals the full address is used so different hosts in the same subnet
+// don't collapse. If the input isn't a valid host:port, the original string
+// is returned so behavior degrades to exact-string equality.
+func adminAddressKey(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	host = strings.TrimSuffix(host, ".")
+	if net.ParseIP(host) != nil {
+		return host + ":" + port
+	}
+	if i := strings.IndexByte(host, '.'); i >= 0 {
+		host = host[:i]
+	}
+	return host + ":" + port
 }
 
 func k8sClientset() (*kubernetes.Clientset, error) {
