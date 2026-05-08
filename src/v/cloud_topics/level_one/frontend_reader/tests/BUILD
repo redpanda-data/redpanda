@@ -44,6 +44,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "l1_footer_cache_test",
+    timeout = "short",
+    srcs = [
+        "l1_footer_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/frontend_reader:l1_footer_cache",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "reader_test",
     timeout = "short",
     srcs = [

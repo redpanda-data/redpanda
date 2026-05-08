@@ -4939,6 +4939,32 @@ configuration::configuration()
       "Map the binary into hugepages",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , cloud_topics_l1_footer_cache_max_entries(
+      *this,
+      "cloud_topics_l1_footer_cache_max_entries",
+      "Maximum number of parsed L1 object footers cached per shard. "
+      "The footer cache eliminates duplicate footer DMA and parse work "
+      "when multiple readers on the same shard touch the same L1 "
+      "object, which is the common shape under consumer fanout. "
+      "Setting to 0 disables the cache. Each entry holds one parsed "
+      "l1::footer (typically tens of KiB; size grows with "
+      "cloud_topics_l1_indexing_interval). Default 1024 covers a few "
+      "hundred MiB worst case.",
+      {.needs_restart = needs_restart::no,
+       .example = "1024",
+       .visibility = visibility::tunable},
+      1024,
+      {.min = 0, .max = 65536})
+  , cloud_topics_l1_footer_cache_eviction_timeout_ms(
+      *this,
+      "cloud_topics_l1_footer_cache_eviction_timeout_ms",
+      "Time after which idle entries in the L1 footer cache are "
+      "evicted. Mirrors cloud_topics_l1_reader_cache_eviction_timeout_ms. "
+      "Set to 0 to disable idle eviction (entries are then reclaimed only "
+      "by size-based eviction).",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60s,
+      {.min = 0ms, .max = 24h})
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
