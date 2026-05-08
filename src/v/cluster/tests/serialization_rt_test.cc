@@ -468,22 +468,10 @@ struct adl<partition_status_v1> {
 };
 } // namespace reflection
 
-/*
- * Specialize for types that cannot be copied.
- */
 template<typename T>
 std::pair<T, T> compat_copy(T t) {
-    return {t, t};
-}
-
-template<typename T>
-concept ExplicitCopyable = requires(T a) {
-    { a.copy() } -> std::same_as<T>;
-};
-
-template<ExplicitCopyable T>
-std::pair<T, T> compat_copy(T t) {
-    return {t.copy(), std::move(t)};
+    auto copy = cluster::copy_cmd(t);
+    return {std::move(copy), std::move(t)};
 }
 
 template<typename T>
@@ -936,7 +924,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         for (auto i = 0, mi = random_generators::get_int(5, 25); i < mi; ++i) {
             data.bindings.push_back(tests::random_acl_binding());
         }
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::delete_acls_cmd_data data;
@@ -945,7 +933,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               tests::random_acl_binding_filter(
                 tests::serialization_format::serde));
         }
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::config_status status;
@@ -1500,16 +1488,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             create_acls_data.bindings.push_back(tests::random_acl_binding());
         }
         cluster::create_acls_request data{
-          create_acls_data, random_timeout_clock_duration()};
-        roundtrip_test(data);
+          std::move(create_acls_data), random_timeout_clock_duration()};
+        roundtrip_test(std::move(data));
     }
     {
-        std::vector<cluster::errc> results;
-        for (int i = 0, mi = random_generators::get_int(20); i < mi; i++) {
-            results.push_back(cluster::errc::invalid_node_operation);
-        }
         cluster::create_acls_reply data;
-        roundtrip_test(data);
+        for (int i = 0, mi = random_generators::get_int(20); i < mi; i++) {
+            data.results.push_back(cluster::errc::invalid_node_operation);
+        }
+        roundtrip_test(std::move(data));
     }
     {
         cluster::delete_acls_cmd_data delete_acls_data{};
@@ -1519,37 +1506,37 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
                 tests::serialization_format::serde));
         }
         cluster::delete_acls_request data{
-          delete_acls_data, random_timeout_clock_duration()};
-        roundtrip_test(data);
+          std::move(delete_acls_data), random_timeout_clock_duration()};
+        roundtrip_test(std::move(data));
     }
     {
-        std::vector<security::acl_binding> bindings;
+        chunked_vector<security::acl_binding> bindings;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             bindings.push_back(tests::random_acl_binding());
         }
         cluster::delete_acls_result data{
           .error = cluster::errc::join_request_dispatch_error,
-          .bindings = bindings,
+          .bindings = std::move(bindings),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
-        std::vector<cluster::delete_acls_result> results;
+        chunked_vector<cluster::delete_acls_result> results;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            std::vector<security::acl_binding> bindings;
+            chunked_vector<security::acl_binding> bindings;
             for (auto j = 0, mj = random_generators::get_int(20); j < mj; ++j) {
                 bindings.push_back(tests::random_acl_binding());
             }
             results.push_back(
               cluster::delete_acls_result{
                 .error = cluster::errc::join_request_dispatch_error,
-                .bindings = bindings,
+                .bindings = std::move(bindings),
               });
         }
         cluster::delete_acls_reply data{
-          .results = results,
+          .results = std::move(results),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::decommission_node_request data{
@@ -2047,50 +2034,48 @@ ss::future<model::record_batch> serialize_cmd(Cmd cmd) {
       });
 }
 
-template<typename Cmd, typename Key, typename Value>
-void serde_roundtrip_cmd(Key key, Value value) {
-    auto cmd = Cmd(std::move(key), std::move(value));
-    auto batch = cluster::serde_serialize_cmd(cmd);
+template<typename Cmd>
+void serde_roundtrip_cmd(Cmd cmd) {
+    auto expected = cluster::copy_cmd(cmd);
+    auto batch = cluster::serde_serialize_cmd(std::move(cmd));
     auto deserialized = cluster::deserialize(
                           std::move(batch), cluster::make_commands_list<Cmd>())
                           .get();
-
-    auto deserialized_cmd = std::get<Cmd>(deserialized);
-
-    BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
-    if constexpr (std::equality_comparable<Value>) {
-        BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    auto deserialized_cmd = std::get<Cmd>(std::move(deserialized));
+    BOOST_REQUIRE(deserialized_cmd.key == expected.key);
+    if constexpr (std::equality_comparable<typename Cmd::value_t>) {
+        BOOST_REQUIRE(deserialized_cmd.value == expected.value);
     }
 }
 
-template<typename Cmd, typename Key, typename Value>
-void adl_roundtrip_cmd(Key key, Value value) {
-    auto cmd = Cmd(std::move(key), std::move(value));
-    auto batch = serialize_cmd(cmd).get();
+template<typename Cmd>
+void adl_roundtrip_cmd(Cmd cmd) {
+    auto expected = cluster::copy_cmd(cmd);
+    auto batch = serialize_cmd(std::move(cmd)).get();
     auto deserialized = cluster::deserialize(
                           std::move(batch), cluster::make_commands_list<Cmd>())
                           .get();
-    auto deserialized_cmd = std::get<Cmd>(deserialized);
-
-    BOOST_REQUIRE_EQUAL(deserialized_cmd.key, cmd.key);
-
-    if constexpr (std::equality_comparable<Value>) {
-        BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    auto deserialized_cmd = std::get<Cmd>(std::move(deserialized));
+    BOOST_REQUIRE(deserialized_cmd.key == expected.key);
+    if constexpr (std::equality_comparable<typename Cmd::value_t>) {
+        BOOST_REQUIRE(deserialized_cmd.value == expected.value);
     }
 }
 
 template<typename Cmd, typename Key, typename Value>
 void roundtrip_cmd(Key key, Value value) {
-    adl_roundtrip_cmd<Cmd>(key, value);
-    serde_roundtrip_cmd<Cmd>(key, value);
+    auto cmd = Cmd(std::move(key), std::move(value));
+    adl_roundtrip_cmd(cluster::copy_cmd(cmd));
+    serde_roundtrip_cmd(std::move(cmd));
 }
 
 SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
     for (int i = 0; i < 50; ++i) {
-        serde_roundtrip_cmd<cluster::create_topic_cmd>(
-          model::random_topic_namespace(),
-          cluster::topic_configuration_assignment(
-            random_topic_configuration(), random_partition_assignments()));
+        serde_roundtrip_cmd(
+          cluster::create_topic_cmd(
+            model::random_topic_namespace(),
+            cluster::topic_configuration_assignment(
+              random_topic_configuration(), random_partition_assignments())));
 
         roundtrip_cmd<cluster::delete_topic_cmd>(
           model::random_topic_namespace(), model::random_topic_namespace());

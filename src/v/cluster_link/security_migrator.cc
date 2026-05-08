@@ -206,7 +206,7 @@ filter_to_request_data(const model::acl_filter& filter) {
     return data;
 }
 
-std::vector<security::acl_binding>
+chunked_vector<security::acl_binding>
 to_acl_bindings(const kafka::describe_acls_resource& r) {
     if (r.name.empty()) {
         throw security::acl_conversion_error("Empty resource name");
@@ -218,7 +218,7 @@ to_acl_bindings(const kafka::describe_acls_resource& r) {
       r.name,
       kafka::details::to_pattern_type(r.pattern_type));
 
-    std::vector<security::acl_entry> entries;
+    chunked_vector<security::acl_entry> entries;
     entries.reserve(r.acls.size());
 
     std::ranges::transform(
@@ -232,7 +232,7 @@ to_acl_bindings(const kafka::describe_acls_resource& r) {
             kafka::details::to_acl_permission(acl.permission_type));
       });
 
-    std::vector<security::acl_binding> bindings;
+    chunked_vector<security::acl_binding> bindings;
     bindings.reserve(entries.size());
     std::ranges::transform(
       entries,
@@ -244,9 +244,9 @@ to_acl_bindings(const kafka::describe_acls_resource& r) {
     return bindings;
 }
 
-std::vector<security::acl_binding> to_acl_bindings(
+chunked_vector<security::acl_binding> to_acl_bindings(
   const chunked_vector<kafka::describe_acls_resource>& resources) {
-    std::vector<security::acl_binding> bindings;
+    chunked_vector<security::acl_binding> bindings;
     bindings.reserve(resources.size());
     for (const auto& r : resources) {
         auto resource_bindings = to_acl_bindings(r);
@@ -382,7 +382,7 @@ security_migrator::run_impl(ss::abort_source& as) {
           .reason = "Security migrator task run successfully"};
     }
 
-    std::vector<security::acl_binding> bindings;
+    chunked_vector<security::acl_binding> bindings;
     try {
         bindings = to_acl_bindings(acls);
     } catch (const std::exception& e) {

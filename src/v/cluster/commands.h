@@ -33,6 +33,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/when_all.hh>
 
+#include <concepts>
+
 namespace cluster {
 
 using command_type = named_type<int8_t, struct command_type_tag>;
@@ -45,6 +47,21 @@ enum class serde_opts {
     // when all nodes are on a Redpanda version that supports serde.
     serde_only = 1,
 };
+
+// Deep-copies cmd. Prefers an explicit copy() method, falls back to the copy
+// ctor. The copy() check must come first: is_copy_constructible_v is true even
+// for types whose copy ctor only fails at instantiation, e.g. std::vector of a
+// move-only element.
+template<typename T>
+T copy_cmd(const T& cmd) {
+    if constexpr (requires {
+                      { cmd.copy() } -> std::same_as<T>;
+                  }) {
+        return cmd.copy();
+    } else {
+        return T(cmd);
+    }
+}
 
 // Controller state updates are represented in terms of commands. Each
 // command represent different type of action that is going to be executed
@@ -82,6 +99,11 @@ struct controller_command {
     controller_command(K k, V v)
       : key(std::move(k))
       , value(std::move(v)) {}
+
+    // Deep copy. Required because some command data types are move-only.
+    controller_command copy() const {
+        return controller_command(copy_cmd(key), copy_cmd(value));
+    }
 
     key_t key; // we use key to leverage kafka key based compaction
     value_t value;
@@ -580,7 +602,9 @@ struct deserializer {
                 auto results = co_await ss::when_all_succeed(
                   reflection::async_adl<key_t>{}.from(k_parser),
                   reflection::async_adl<value_t>{}.from(v_parser));
-                co_return Cmd(std::get<0>(results), std::get<1>(results));
+                co_return Cmd(
+                  std::move(std::get<0>(results)),
+                  std::move(std::get<1>(results)));
             }
         }
         vassert(use_serde, "Requested to ADL serialize a serde-only type");

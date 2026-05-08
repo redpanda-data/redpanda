@@ -172,6 +172,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":logger",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/server:security",
         "//src/v/security",
     ],

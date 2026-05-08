@@ -11,6 +11,7 @@
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
 #include "cluster/topic_configuration.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
@@ -215,16 +216,17 @@ FIXTURE_TEST(metadata_v9_authz_acl, metadata_fixture) {
     auto disable_sasl_defer = ss::defer([this] { disable_sasl(); });
 
     // Start by creating just describe ACLs for the cluster for the user
-    std::vector<security::acl_binding> cluster_bindings{security::acl_binding(
-      security::resource_pattern(
-        security::resource_type::cluster,
-        security::default_cluster_name,
-        security::pattern_type::literal),
-      security::acl_entry(
-        kafka::details::to_acl_principal(test_acl_principal),
-        security::acl_host::wildcard_host(),
-        security::acl_operation::describe,
-        security::acl_permission::allow))};
+    chunked_vector<security::acl_binding> cluster_bindings{
+      security::acl_binding(
+        security::resource_pattern(
+          security::resource_type::cluster,
+          security::default_cluster_name,
+          security::pattern_type::literal),
+        security::acl_entry(
+          kafka::details::to_acl_principal(test_acl_principal),
+          security::acl_host::wildcard_host(),
+          security::acl_operation::describe,
+          security::acl_permission::allow))};
 
     auto acl_result = app.controller->get_security_frontend()
                         .local()
@@ -232,7 +234,7 @@ FIXTURE_TEST(metadata_v9_authz_acl, metadata_fixture) {
                         .get();
 
     const auto errors_in_acl_results =
-      [](const std::vector<cluster::errc>& errs) {
+      [](const chunked_vector<cluster::errc>& errs) {
           return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });
@@ -263,7 +265,7 @@ FIXTURE_TEST(metadata_v9_authz_acl, metadata_fixture) {
     BOOST_CHECK(resp.data.topics.empty());
 
     // Now allow the user to see the test topic
-    std::vector<security::acl_binding> topic_bindings{security::acl_binding(
+    chunked_vector<security::acl_binding> topic_bindings{security::acl_binding(
       security::resource_pattern(
         security::resource_type::topic,
         test_topic_name,

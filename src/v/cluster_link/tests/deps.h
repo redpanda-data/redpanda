@@ -17,6 +17,7 @@
 #include "cluster_link/replication/tests/deps_test_impl.h"
 #include "cluster_link/utils.h"
 #include "config/mock_property.h"
+#include "container/chunked_vector.h"
 #include "kafka/client/test/cluster_mock.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/test/deps.h"
@@ -579,10 +580,10 @@ private:
 
 class fake_security_service : public security_service {
 public:
-    ss::future<std::vector<cluster::errc>> create_acls(
-      std::vector<security::acl_binding> bindings,
+    ss::future<chunked_vector<cluster::errc>> create_acls(
+      chunked_vector<security::acl_binding> bindings,
       ::model::timeout_clock::duration) final {
-        std::vector<cluster::errc> results;
+        chunked_vector<cluster::errc> results;
         results.reserve(bindings.size());
         for (auto& binding : bindings) {
             auto& entries = _acls[binding.pattern()];

@@ -104,7 +104,7 @@ authorizer::authorizer(
     _superusers_conf.watch([this]() { update_superusers(); });
 }
 
-void authorizer::add_bindings(const std::vector<acl_binding>& bindings) {
+void authorizer::add_bindings(const chunked_vector<acl_binding>& bindings) {
     if (
       unlikely(
         seclog.is_shard_zero() && seclog.is_enabled(ss::log_level::debug))) {
@@ -115,12 +115,12 @@ void authorizer::add_bindings(const std::vector<acl_binding>& bindings) {
     store().add_bindings(bindings);
 }
 
-std::vector<std::vector<acl_binding>> authorizer::remove_bindings(
-  const std::vector<acl_binding_filter>& filters, bool dry_run) {
+chunked_vector<chunked_vector<acl_binding>> authorizer::remove_bindings(
+  const chunked_vector<acl_binding_filter>& filters, bool dry_run) {
     return store().remove_bindings(filters, dry_run);
 }
 
-std::vector<acl_binding>
+chunked_vector<acl_binding>
 authorizer::acls(const acl_binding_filter& filter) const {
     return store().acls(filter);
 }

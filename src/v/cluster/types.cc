@@ -1212,7 +1212,7 @@ adl<cluster::create_acls_cmd_data>::from(iobuf_parser& in) {
       "Unexpected create acls cmd version {} (expected {})",
       version,
       cluster::create_acls_cmd_data::current_version);
-    auto bindings = adl<std::vector<security::acl_binding>>().from(in);
+    auto bindings = adl<chunked_vector<security::acl_binding>>().from(in);
     return cluster::create_acls_cmd_data{
       .bindings = std::move(bindings),
     };
@@ -1232,7 +1232,7 @@ adl<cluster::delete_acls_cmd_data>::from(iobuf_parser& in) {
       "Unexpected delete acls cmd version {} (expected {})",
       version,
       cluster::delete_acls_cmd_data::current_version);
-    auto filters = adl<std::vector<security::acl_binding_filter>>().from(in);
+    auto filters = adl<chunked_vector<security::acl_binding_filter>>().from(in);
     return cluster::delete_acls_cmd_data{
       .filters = std::move(filters),
     };

@@ -1401,7 +1401,7 @@ post_security_acls(server::request_t rq, server::reply_t rp) {
     auto raw_acls = co_await rjson_parse(
       *rq.req, acl_handler<>{acl_handler<>::require_fields::yes});
 
-    std::vector<security::acl_binding> bindings;
+    chunked_vector<security::acl_binding> bindings;
     bindings.reserve(raw_acls.size());
 
     for (const auto& acl : raw_acls) {
@@ -1423,7 +1423,8 @@ post_security_acls(server::request_t rq, server::reply_t rp) {
 
     check_feature_ready(rq);
 
-    auto err_vec = co_await security_frontend.create_acls(bindings, 5s);
+    auto err_vec = co_await security_frontend.create_acls(
+      std::move(bindings), 5s);
 
     auto it = std::find_if(err_vec.begin(), err_vec.end(), [](const auto& err) {
         return err != cluster::errc::success;
@@ -1451,7 +1452,7 @@ delete_security_acls(server::request_t rq, server::reply_t rp) {
     auto raw_acls = co_await rjson_parse(
       *rq.req, acl_handler<>{acl_handler<>::require_fields::no});
 
-    std::vector<security::acl_binding_filter> filters;
+    chunked_vector<security::acl_binding_filter> filters;
     filters.reserve(raw_acls.size());
 
     for (const auto& acl : raw_acls) {
@@ -1472,7 +1473,7 @@ delete_security_acls(server::request_t rq, server::reply_t rp) {
       std::move(filters), 5s);
 
     auto res = chunked_vector<acl>{};
-    std::ranges::for_each(deleted, [&res](cluster::delete_acls_result r) {
+    std::ranges::for_each(deleted, [&res](cluster::delete_acls_result& r) {
         if (r.error != cluster::errc::success) {
             throw exception(
               error_code::internal_server_error,

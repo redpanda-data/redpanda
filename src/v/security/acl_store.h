@@ -31,7 +31,7 @@ public:
     acl_store& operator=(const acl_store&) = delete;
     ~acl_store() noexcept = default;
 
-    void add_bindings(const std::vector<acl_binding>& bindings) {
+    void add_bindings(const chunked_vector<acl_binding>& bindings) {
         for (auto& binding : bindings) {
             auto& entries = _acls[binding.pattern()];
             entries.insert(binding.entry());
@@ -42,10 +42,10 @@ public:
     // remove bindings according the input filters and return the bindings that
     // matched in the same order. the `dry_run` flag will identify all of the
     // bindings to be removed but not perform the destructive operation.
-    std::vector<std::vector<acl_binding>> remove_bindings(
-      const std::vector<acl_binding_filter>&, bool dry_run = false);
+    chunked_vector<chunked_vector<acl_binding>> remove_bindings(
+      const chunked_vector<acl_binding_filter>&, bool dry_run = false);
 
-    std::vector<acl_binding> acls(const acl_binding_filter&) const;
+    chunked_vector<acl_binding> acls(const acl_binding_filter&) const;
 
     /**
      * WARNING: The acl_matches returned from this function may contain

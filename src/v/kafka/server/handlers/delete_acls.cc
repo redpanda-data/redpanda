@@ -30,8 +30,8 @@ using namespace std::chrono_literals;
 
 namespace kafka {
 
-static std::vector<delete_acls_matching_acl>
-bindings_to_delete_result(const std::vector<security::acl_binding>& bindings) {
+static std::vector<delete_acls_matching_acl> bindings_to_delete_result(
+  const chunked_vector<security::acl_binding>& bindings) {
     std::vector<delete_acls_matching_acl> res;
 
     for (auto& binding : bindings) {
@@ -70,7 +70,7 @@ ss::future<response_ptr> delete_acls_handler::handle(
     result_index.reserve(request.data.filters.size());
 
     // binding filters to delete. optimized for common case
-    std::vector<security::acl_binding_filter> filters;
+    chunked_vector<security::acl_binding_filter> filters;
     filters.reserve(request.data.filters.size());
 
     for (const auto& request_filter : request.data.filters) {
@@ -87,7 +87,7 @@ ss::future<response_ptr> delete_acls_handler::handle(
         }
     }
 
-    auto return_filters = [&filters]() { return filters; };
+    auto return_filters = [&filters]() { return filters.copy(); };
 
     auto authz = ctx.authorized(
       security::acl_operation::alter,

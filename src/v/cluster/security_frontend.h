@@ -13,6 +13,7 @@
 
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
+#include "container/chunked_vector.h"
 #include "model/timeout_clock.h"
 #include "security/scram_credential.h"
 
@@ -159,26 +160,27 @@ public:
      * Add ACL bindings to the authorizer
      *
      * Returns:
-     *   A vector of cluster::errc, one for each of the requested bindings.
+     *   A chunked_vector of cluster::errc, one for each of the requested
+     *   bindings.
      *
      * May be called from any node; handles routing the underlying controller
      * command to the leader node automatically.
      */
-    ss::future<std::vector<errc>> create_acls(
-      std::vector<security::acl_binding>, model::timeout_clock::duration);
+    ss::future<chunked_vector<errc>> create_acls(
+      chunked_vector<security::acl_binding>, model::timeout_clock::duration);
 
     /**
      * Remove ACL bindings matching the provided filters from the authorizer
      *
      * Returns:
-     *   std::vector<delete_acls_result> (i.e. {cluster::errc, acl_binding})
+     *   chunked_vector<delete_acls_result> (i.e. {cluster::errc, acl_binding})
      *     one for each binding that matched one of the provided filters
      *
      * May be called from any node; handles routing the underlying controller
      * command to the leader node automatically.
      */
-    ss::future<std::vector<delete_acls_result>> delete_acls(
-      std::vector<security::acl_binding_filter>,
+    ss::future<chunked_vector<delete_acls_result>> delete_acls(
+      chunked_vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
     /**
@@ -212,22 +214,23 @@ private:
     ss::future<result<model::offset>>
       get_leader_committed(model::timeout_clock::duration);
 
-    ss::future<std::vector<errc>> do_create_acls(
-      std::vector<security::acl_binding>, model::timeout_clock::duration);
+    ss::future<chunked_vector<errc>> do_create_acls(
+      chunked_vector<security::acl_binding>, model::timeout_clock::duration);
 
-    ss::future<std::vector<errc>> dispatch_create_acls_to_leader(
+    ss::future<chunked_vector<errc>> dispatch_create_acls_to_leader(
       model::node_id,
-      std::vector<security::acl_binding>,
+      chunked_vector<security::acl_binding>,
       model::timeout_clock::duration);
 
-    ss::future<std::vector<delete_acls_result>> do_delete_acls(
-      std::vector<security::acl_binding_filter>,
+    ss::future<chunked_vector<delete_acls_result>> do_delete_acls(
+      chunked_vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
-    ss::future<std::vector<delete_acls_result>> dispatch_delete_acls_to_leader(
-      model::node_id,
-      std::vector<security::acl_binding_filter>,
-      model::timeout_clock::duration);
+    ss::future<chunked_vector<delete_acls_result>>
+      dispatch_delete_acls_to_leader(
+        model::node_id,
+        chunked_vector<security::acl_binding_filter>,
+        model::timeout_clock::duration);
 
     model::node_id _self;
     controller* _controller;

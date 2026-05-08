@@ -9,6 +9,7 @@
 
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/alter_user_scram_credentials.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/details/security.h"
@@ -139,18 +140,19 @@ FIXTURE_TEST(
 
     auto disable_sasl_defer = ss::defer([this] { disable_sasl(); });
 
-    std::vector<security::acl_binding> cluster_bindings{security::acl_binding(
-      security::resource_pattern(
-        security::resource_type::cluster,
-        security::default_cluster_name,
-        security::pattern_type::literal),
+    chunked_vector<security::acl_binding> cluster_bindings{
+      security::acl_binding(
+        security::resource_pattern(
+          security::resource_type::cluster,
+          security::default_cluster_name,
+          security::pattern_type::literal),
 
-      security::acl_entry(
-        kafka::details::to_acl_principal(
-          ssx::sformat("User:{}", user_name_256)),
-        security::acl_host::wildcard_host(),
-        security::acl_operation::alter,
-        security::acl_permission::allow))};
+        security::acl_entry(
+          kafka::details::to_acl_principal(
+            ssx::sformat("User:{}", user_name_256)),
+          security::acl_host::wildcard_host(),
+          security::acl_operation::alter,
+          security::acl_permission::allow))};
 
     auto acl_result = app.controller->get_security_frontend()
                         .local()
@@ -158,7 +160,7 @@ FIXTURE_TEST(
                         .get();
 
     const auto errors_in_acl_results =
-      [](const std::vector<cluster::errc>& errs) {
+      [](const chunked_vector<cluster::errc>& errs) {
           return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });
@@ -662,7 +664,7 @@ FIXTURE_TEST(
             security::acl_operation::alter,
             security::acl_permission::allow));
     };
-    std::vector<security::acl_binding> cluster_bindings{
+    chunked_vector<security::acl_binding> cluster_bindings{
       make_acl_binding(user_name_256),
       make_acl_binding(user_name_512),
     };
@@ -673,7 +675,7 @@ FIXTURE_TEST(
                         .get();
 
     const auto errors_in_acl_results =
-      [](const std::vector<cluster::errc>& errs) {
+      [](const chunked_vector<cluster::errc>& errs) {
           return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });
@@ -781,7 +783,7 @@ FIXTURE_TEST(
             security::acl_operation::alter,
             security::acl_permission::allow));
     };
-    std::vector<security::acl_binding> cluster_bindings{
+    chunked_vector<security::acl_binding> cluster_bindings{
       make_acl_binding(user_name_256),
       make_acl_binding(user_name_512),
     };
@@ -792,7 +794,7 @@ FIXTURE_TEST(
                         .get();
 
     const auto errors_in_acl_results =
-      [](const std::vector<cluster::errc>& errs) {
+      [](const chunked_vector<cluster::errc>& errs) {
           return std::ranges::any_of(errs, [](const cluster::errc& e) {
               return e != cluster::errc::success;
           });

@@ -318,6 +318,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/cluster",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/client",
         "//src/v/kafka/client/test:fixture",
         "//src/v/kafka/client/test:utils",
