@@ -942,6 +942,15 @@ raft::replicate_stages frontend::replicate(
     }
 
     auto ctp_stm_api = make_ctp_stm_api(_partition);
+    // Reserve the per-producer ordering ticket synchronously, before
+    // stage_write. The ticket order is what `rm_stm` ultimately sees as the
+    // batch order, so it must match the order of replicate() calls — not
+    // the order in which the asynchronous stage_write futures resolve.
+    // Reserving inside the then_wrapped continuation lets stage_write's
+    // resolution order drive the ticket order, which can replicate kafka
+    // idempotent-producer sequences out of order under cold-start memory
+    // contention.
+    auto ticket = ctp_stm_api->producer_queue().reserve(batch_id.pid.get_id());
     auto header = batch.header();
     chunked_vector<model::record_batch> batch_vec, to_cache;
     batch_vec.push_back(std::move(batch));
@@ -954,6 +963,8 @@ raft::replicate_stages frontend::replicate(
     out.request_enqueued = _data_plane->stage_write(std::move(batch_vec))
                              .then_wrapped([this,
                                             p = std::move(result),
+                                            ticket = std::move(ticket),
+                                            ctp_stm = std::move(ctp_stm_api),
                                             cloned = std::move(to_cache),
                                             batch_id,
                                             header,
@@ -967,14 +978,10 @@ raft::replicate_stages frontend::replicate(
                                      p.set_value(raft::errc::timeout);
                                      return;
                                  }
-                                 auto ctp_stm = make_ctp_stm_api(_partition);
-                                 auto ticket
-                                   = ctp_stm->producer_queue().reserve(
-                                     batch_id.pid.get_id());
                                  do_upload_and_replicate(
                                    _data_plane,
                                    _partition,
-                                   ctp_stm,
+                                   std::move(ctp_stm),
                                    std::move(ticket),
                                    batch_id,
                                    header,
