@@ -276,35 +276,41 @@ ss::future<chunked_circular_buffer<level_zero_log_reader_impl::local_log_batch>>
 level_zero_log_reader_impl::fetch_metadata(
   storage::local_log_reader_config cfg,
   model::timeout_clock::time_point deadline) const {
-    chunked_circular_buffer<local_log_batch> ret;
     auto reader = co_await _ctp->make_local_reader(cfg);
-    auto batches = std::move(reader).generator(deadline);
 
     // Convert L0 meta batches to extent_meta structures.
-    while (auto maybe_batch = co_await batches()) {
-        auto batch = std::move(maybe_batch->get());
-        auto& header = batch.header();
-        if (header.type == model::record_batch_type::raft_data) {
-            local_log_batch local_batch{.header = header};
-            local_batch.data = std::move(batch).release_data();
-            ret.push_back(std::move(local_batch));
-            continue;
-        }
-        if (header.type != model::record_batch_type::ctp_placeholder) {
-            continue;
-        }
-        cloud_topics::extent_meta e{
-          .base_offset = model::offset_cast(batch.base_offset()),
-          .last_offset = model::offset_cast(batch.last_offset()),
-        };
-        auto placeholder = parse_placeholder_batch(std::move(batch));
-        e.id = placeholder.id;
-        e.first_byte_offset = placeholder.offset;
-        e.byte_range_size = placeholder.size_bytes;
-        ret.push_back(local_log_batch{.header = header, .data = e});
-    }
+    struct metadata_consumer {
+        chunked_circular_buffer<local_log_batch> ret;
 
-    co_return ret;
+        ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
+            auto header = batch.header();
+            if (header.type == model::record_batch_type::raft_data) {
+                local_log_batch local_batch{.header = header};
+                local_batch.data = std::move(batch).release_data();
+                ret.push_back(std::move(local_batch));
+                co_return ss::stop_iteration::no;
+            }
+            if (header.type != model::record_batch_type::ctp_placeholder) {
+                co_return ss::stop_iteration::no;
+            }
+            cloud_topics::extent_meta e{
+              .base_offset = model::offset_cast(batch.base_offset()),
+              .last_offset = model::offset_cast(batch.last_offset()),
+            };
+            auto placeholder = parse_placeholder_batch(std::move(batch));
+            e.id = placeholder.id;
+            e.first_byte_offset = placeholder.offset;
+            e.byte_range_size = placeholder.size_bytes;
+            ret.push_back(local_log_batch{.header = header, .data = e});
+            co_return ss::stop_iteration::no;
+        }
+
+        chunked_circular_buffer<local_log_batch> end_of_stream() {
+            return std::move(ret);
+        }
+    };
+
+    co_return co_await std::move(reader).consume(metadata_consumer{}, deadline);
 }
 
 ss::future<std::expected<chunked_circular_buffer<model::record_batch>, errc>>
