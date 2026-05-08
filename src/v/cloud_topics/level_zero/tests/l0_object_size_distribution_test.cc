@@ -18,6 +18,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
+#include "test_utils/async.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/abort_source.hh>
@@ -224,8 +225,18 @@ TEST_F(L0ObjectSizeDistFixture, ThreeToOne) {
           .discard_result();
     });
 
-    // Allow requests to be propagated to the scheduler
-    ss::sleep(5ms).get();
+    // Wait until every shard has registered its write_request in the first
+    // pipeline stage.
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&](this auto) -> ss::future<bool> {
+        size_t bytes = co_await pipeline.map_reduce0(
+          [](auto& p) {
+              const auto* counter = p.stage_bytes_ref_by_index(0);
+              return counter ? counter->load() : size_t{0};
+          },
+          size_t{0},
+          std::plus<>{});
+        co_return bytes >= total_size;
+    });
 
     // Advance time to trigger the scheduler
     ss::manual_clock::advance(300ms);
