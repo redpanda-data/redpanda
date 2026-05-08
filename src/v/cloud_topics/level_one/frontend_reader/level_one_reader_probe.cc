@@ -40,6 +40,18 @@ void level_one_reader_probe::setup_metrics() {
           "skipped_bytes",
           [this] { return _bytes_skipped; },
           sm::description("Number of bytes skipped by L1 readers.")),
+        sm::make_counter(
+          "footer_cache_hits",
+          [this] { return _footer_cache_hits; },
+          sm::description("L1 footer cache hits across all readers.")),
+        sm::make_counter(
+          "footer_cache_misses",
+          [this] { return _footer_cache_misses; },
+          sm::description("L1 footer cache misses across all readers.")),
+        sm::make_gauge(
+          "footer_cache_size",
+          [this] { return _footer_cache_size_fn(); },
+          sm::description("Current L1 footer cache entry count.")),
       });
 }
 

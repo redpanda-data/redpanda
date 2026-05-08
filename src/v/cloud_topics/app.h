@@ -12,6 +12,7 @@
 
 #include "cloud_topics/level_one/common/file_io.h"
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
+#include "cloud_topics/level_one/frontend_reader/l1_footer_cache.h"
 #include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/maintenance/scheduler.h"
@@ -103,6 +104,7 @@ private:
     ss::sstring _logger_name;
     ss::sharded<level_one_reader_probe> _l1_reader_probe;
     ss::sharded<l1_reader_cache> _l1_reader_cache;
+    ss::sharded<l1::l1_footer_cache> _l1_footer_cache;
     std::unique_ptr<data_plane_api> data_plane;
     ss::sharded<state_accessors> state;
     ss::sharded<l1::file_io> l1_io;

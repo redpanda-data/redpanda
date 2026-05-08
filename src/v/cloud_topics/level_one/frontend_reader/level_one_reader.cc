@@ -9,6 +9,7 @@
  */
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 
+#include "cloud_topics/level_one/frontend_reader/l1_footer_cache.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/metastore/retry.h"
 #include "cloud_topics/logger.h"
@@ -41,7 +42,8 @@ level_one_log_reader_impl::level_one_log_reader_impl(
   model::topic_id_partition tidp,
   l1::metastore* metastore,
   l1::io* io_interface,
-  level_one_reader_probe* probe)
+  level_one_reader_probe* probe,
+  l1::l1_footer_cache* footer_cache)
   : _config(cfg)
   , _ntp(std::move(ntp))
   , _tidp(tidp)
@@ -49,6 +51,7 @@ level_one_log_reader_impl::level_one_log_reader_impl(
   , _metastore(metastore)
   , _io(io_interface)
   , _probe(probe)
+  , _footer_cache(footer_cache)
   , _log(cd_log, fmt::format("[{}/{}/{}]", fmt::ptr(this), _ntp, _tidp)) {
     vlog(_log.debug, "New reader created {}", _config);
 }
@@ -296,10 +299,32 @@ level_one_log_reader_impl::lookup_object_for_offset(
     };
 }
 
-ss::future<l1::footer> level_one_log_reader_impl::read_footer(
+ss::future<ss::lw_shared_ptr<const l1::footer>>
+level_one_log_reader_impl::read_footer(
   l1::object_id oid, size_t footer_pos, size_t object_size) {
+    ss::abort_source default_abort_source;
+    auto* abort_source = _config.abort_source
+                           ? &_config.abort_source.value().get()
+                           : &default_abort_source;
+    abort_source->check();
+
+    if (_footer_cache != nullptr) {
+        if (auto cached = _footer_cache->get(oid); cached.has_value()) {
+            if (_probe != nullptr) {
+                _probe->register_footer_cache_hit();
+            }
+            co_return std::move(*cached);
+        }
+        if (_probe != nullptr) {
+            _probe->register_footer_cache_miss();
+        }
+    }
+
     size_t footer_total_size = object_size - footer_pos;
     if (_probe != nullptr) {
+        // Counts bytes fetched from object storage, not bytes returned to
+        // readers: cache hits skip this and are accounted via
+        // footer_cache_hits.
         _probe->register_footer_read(footer_total_size);
     }
 
@@ -309,10 +334,6 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
       .size = footer_total_size,
     };
 
-    ss::abort_source default_abort_source;
-    auto* abort_source = _config.abort_source
-                           ? &_config.abort_source.value().get()
-                           : &default_abort_source;
     auto read_fut = co_await ss::coroutine::as_future(_io->read_object_as_iobuf(
       extent, abort_source, cloud_io::group_id::consumer_fetch));
     if (read_fut.failed()) {
@@ -364,7 +385,11 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
           object_size));
     }
 
-    co_return std::get<l1::footer>(std::move(footer_result));
+    auto parsed = std::get<l1::footer>(std::move(footer_result));
+    if (_footer_cache != nullptr) {
+        co_return _footer_cache->put(oid, std::move(parsed));
+    }
+    co_return ss::make_lw_shared<const l1::footer>(std::move(parsed));
 }
 
 ss::future<chunked_circular_buffer<model::record_batch>>
@@ -424,12 +449,12 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
     // must hold, so we start at whichever position is further into the
     // file.
     auto seek_res = [&] {
-        auto offset_seek = object.footer.file_position_before_kafka_offset(
+        auto offset_seek = object.footer->file_position_before_kafka_offset(
           _tidp, offset);
         if (!_config.first_timestamp) {
             return offset_seek;
         }
-        auto time_seek = object.footer.file_position_before_max_timestamp(
+        auto time_seek = object.footer->file_position_before_max_timestamp(
           _tidp, *_config.first_timestamp);
         if (time_seek == l1::footer::npos) {
             return offset_seek;

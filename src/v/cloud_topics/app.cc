@@ -83,6 +83,18 @@ ss::future<> app::construct(
       }));
 
     co_await construct_service(
+      _l1_footer_cache,
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .cloud_topics_l1_footer_cache_eviction_timeout_ms.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .cloud_topics_l1_footer_cache_max_entries.bind();
+      }),
+      ss::sharded_parameter([this] { return &_l1_reader_probe.local(); }));
+
+    co_await construct_service(
       l1_io,
       config::node().l1_staging_path(),
       ss::sharded_parameter([&remote] { return &remote->local(); }),
@@ -142,6 +154,7 @@ ss::future<> app::construct(
         [&metadata_cache] { return &metadata_cache->local(); }),
       ss::sharded_parameter([this] { return &_l1_reader_probe.local(); }),
       ss::sharded_parameter([this] { return &_l1_reader_cache.local(); }),
+      ss::sharded_parameter([this] { return &_l1_footer_cache.local(); }),
       ss::sharded_parameter([this] { return &rr_metadata_manager_.local(); }),
       ss::sharded_parameter([this] { return &rr_snapshot_manager_.local(); }));
 
