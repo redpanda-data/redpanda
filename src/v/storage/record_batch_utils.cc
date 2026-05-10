@@ -77,7 +77,6 @@ model::record_batch_header batch_header_from_disk_iobuf(iobuf b) {
       .producer_epoch = producer_epoch,
       .base_sequence = base_sequence,
       .record_count = record_count};
-    hdr.ctx.owner_shard = ss::this_shard_id();
     return hdr;
 }
 
