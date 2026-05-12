@@ -219,6 +219,7 @@ redpanda_cc_gtest(
     cpu = 2,
     deps = [
         "//src/v/base",
+        "//src/v/config",
         "//src/v/kafka/server",
         "//src/v/ssx:semaphore",
         "//src/v/test_utils:gtest",
