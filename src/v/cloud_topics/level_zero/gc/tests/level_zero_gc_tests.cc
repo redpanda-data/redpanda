@@ -527,15 +527,20 @@ public:
 };
 
 TEST_F(LevelZeroGCMaxEpochTest, EmptySnapshot) {
-    // no error
+    // An empty snapshot means no cloud topic partitions currently exist.
+    // The watermark falls through to `snap_revision`: this is the
+    // zero-iteration case of the min-reduce. Stranded L0 objects left over
+    // from previously deleted topics remain epoch-eligible.
+    snapshot().snap_revision = cloud_topics::cluster_epoch(42);
     ASSERT_TRUE(max_gc().has_value());
-    // no result
-    ASSERT_FALSE(max_gc().value().has_value());
+    ASSERT_TRUE(max_gc().value().has_value());
+    ASSERT_EQ(max_gc().value().value(), cloud_topics::cluster_epoch(42));
 }
 
 namespace {
 model::topic_namespace tpns0(model::ns("ns0"), model::topic("t0"));
-}
+model::topic_namespace tpns1(model::ns("ns1"), model::topic("t1"));
+} // namespace
 
 TEST_F(LevelZeroGCMaxEpochTest, EmptyGcEpochReport) {
     // here we have a non-empty snapshot, but no reported epochs from individual
@@ -572,10 +577,28 @@ TEST_F(LevelZeroGCMaxEpochTest, MinReduce) {
 }
 
 TEST_F(LevelZeroGCMaxEpochTest, EmptySnapshotNonEmptyReport) {
+    // With an empty snapshot, no partition can hold the watermark back:
+    // the topic table is the source of truth for liveness, so report
+    // entries without a matching snapshot entry are ignored regardless
+    // of value. This handles two races between the health report and
+    // snapshot collection points:
+    //   (1) topic created after the snapshot - reported epoch is
+    //       > snap_revision, so its L0 data is out of range for this
+    //       pass anyway.
+    //   (2) topic deleted before the snapshot - reported epoch is
+    //       <= snap_revision; ignoring it prevents regressing the
+    //       watermark below the snapshot and preserving the objects
+    //       this pass is meant to reap.
+    snapshot().snap_revision = cloud_topics::cluster_epoch(100);
+    // case (1): report entry from a topic created after the snapshot
     get_partitions_max_gc_epoch_value[tpns0][model::partition_id(0)]
       = cloud_topics::cluster_epoch(200);
+    // case (2): stale report entry from a topic deleted before the snapshot
+    get_partitions_max_gc_epoch_value[tpns1][model::partition_id(0)]
+      = cloud_topics::cluster_epoch(50);
     ASSERT_TRUE(max_gc().has_value());
-    ASSERT_FALSE(max_gc().value().has_value());
+    ASSERT_TRUE(max_gc().value().has_value());
+    ASSERT_EQ(max_gc().value().value(), cloud_topics::cluster_epoch(100));
 }
 
 class LevelZeroGCScaleOutTest : public LevelZeroGCTest {

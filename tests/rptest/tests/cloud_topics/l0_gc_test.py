@@ -1195,3 +1195,84 @@ class CloudTopicsL0GCSafetyBlockTest(CloudTopicsL0GCAdminBase):
             backoff_sec=2,
             retry_on_exc=True,
         )
+
+
+class CloudTopicsL0GCAllTopicsDeletedTest(CloudTopicsL0GCAdminBase):
+    """
+    Integration: when every cloud topic is deleted while L0 objects still
+    exist in the bucket, GC must still clean them up.
+
+    Regression test for: `l0::gc::epoch_source::max_gc_eligible_epoch`
+    returned `std::nullopt` when the partition snapshot was empty (no
+    cloud topic partitions existed). `try_to_collect` then listed L0
+    objects but refused to delete any of them, returning
+    `no_collectible_epoch`. The worker loop backed off and retried
+    forever without making progress, so objects remained in the bucket
+    indefinitely.
+    """
+
+    L0_PREFIX = "level_zero/data/"
+
+    def _count_l0_objects(self) -> int:
+        objects = self.redpanda.get_objects_from_si()
+        keys = [o.key for o in objects if o.key.startswith(self.L0_PREFIX)]
+        self.logger.debug(f"Found {len(keys)} L0 objects")
+        return len(keys)
+
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_gc_completes_after_all_topics_deleted(
+        self, cloud_storage_type: CloudStorageType
+    ):
+        topic = TopicSpec(partition_count=2, replication_factor=3)
+        self.topics = [topic]
+        self.create_topics(self.topics)
+
+        # Pause GC cluster-wide so L0 objects accumulate in the bucket
+        # while we produce.
+        self.gc_pause()
+        self.wait_for_status(status=GcStatus.L0_GC_STATUS_PAUSED)
+
+        # Produce long enough that reconciliation advances the epoch and
+        # L0 objects exist to be collected.
+        self.produce_some(topics=[topic.name])
+
+        wait_until(
+            lambda: self._count_l0_objects() > 0,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="Expected L0 objects to exist in the bucket after produce",
+        )
+        l0_before = self._count_l0_objects()
+        self.logger.info(f"Accumulated {l0_before} L0 objects with GC paused")
+
+        # Delete the only cloud topic and wait for the deletion to be
+        # applied cluster-wide.
+        rpk = RpkTool(self.redpanda)
+        self.logger.info(f"Deleting topic {topic.name}")
+        rpk.delete_topic(topic.name)
+        wait_until(
+            lambda: topic.name not in rpk.list_topics(),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} still visible after delete",
+        )
+
+        # Resume GC and allow plenty of time for multiple GC rounds to finish.
+        # NOTE: Grace period is 10s.
+        # (see cloud_topics_short_term_gc_minimum_object_age in the base class).
+        self.gc_start()
+        self.wait_all_running()
+
+        wait_until(
+            lambda: self._count_l0_objects() == 0,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg=lambda: (
+                f"L0 objects not cleaned up after deleting all cloud topics: "
+                f"{self._count_l0_objects()} remain (started with {l0_before})"
+            ),
+        )
+        self.logger.info("All L0 objects cleaned up after topic deletion")

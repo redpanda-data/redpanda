@@ -356,7 +356,20 @@ l0::gc::epoch_source::max_gc_eligible_epoch(seastar::abort_source* as) {
         co_return std::unexpected(partitions.error());
     }
     if (partitions.value().partitions.empty()) {
-        co_return std::nullopt;
+        // No cloud topic partitions currently exist, so no partition can
+        // hold back the collectible epoch. Use the snapshot revision as
+        // the watermark so that we can still collect stranded L0 objects
+        // from previously deleted topics.
+        auto result = partitions.value().snap_revision;
+        vlog(
+          cd_log.debug,
+          "Empty partition snapshot, max GC eligible epoch is snapshot "
+          "epoch {}",
+          result);
+        if (probe_) {
+            probe_->set_min_partition_gc_epoch(result);
+        }
+        co_return result;
     }
 
     /*
