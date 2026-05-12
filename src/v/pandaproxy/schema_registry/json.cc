@@ -21,7 +21,7 @@
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "re2/re2.h"
 #include "utils/to_string.h"
@@ -283,10 +283,11 @@ std::string_view as_string_view(const json::Value& v) {
     return {v.GetString(), v.GetStringLength()};
 }
 
-ss::future<> check_references(sharded_store& store, subject_schema schema) {
+ss::future<> check_references(schema_getter& store, subject_schema schema) {
     for (const auto& ref : schema.def().refs()) {
         auto resolved_sub = ref.sub.resolve(schema.sub().ctx);
-        co_await store.get_id(resolved_sub, ref.version)
+        co_await store
+          .get_subject_schema(resolved_sub, ref.version, include_deleted::yes)
           .discard_result()
           .handle_exception_type([&](const exception& e) {
               if (failed_subject_schema_lookup(e.code())) {
@@ -2592,7 +2593,7 @@ make_json_schema_definition(schema_getter&, subject_schema schema) {
 }
 
 ss::future<subject_schema> make_canonical_json_schema(
-  sharded_store& store, subject_schema unparsed_schema, normalize norm) {
+  schema_getter& store, subject_schema unparsed_schema, normalize norm) {
     auto [sub, unparsed] = std::move(unparsed_schema).destructure();
     auto [def, type, refs, meta] = std::move(unparsed).destructure();
 
