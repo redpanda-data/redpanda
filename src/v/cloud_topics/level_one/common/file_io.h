@@ -14,7 +14,13 @@
 #include "cloud_io/remote.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
+
+#include <seastar/core/gate.hh>
+#include <seastar/core/shared_future.hh>
+
+#include <optional>
 
 namespace cloud_topics::l1 {
 
@@ -32,6 +38,15 @@ public:
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
       cloud_io::cache* cache);
+
+    /// Drain in-flight reads. Must be co_awaited before destruction so
+    /// the read_object defer-cleanup never touches a destroyed map.
+    ss::future<> stop();
+
+    /// Cloud-cache disk key for an (oid, position, size) extent. Shared
+    /// between `read_object` and tests so the format stays in lockstep.
+    static std::filesystem::path cache_key(const object_extent& extent);
+
     ss::future<std::expected<std::unique_ptr<staging_file>, errc>>
     create_tmp_file() override;
 
@@ -59,6 +74,23 @@ private:
     cloud_storage_clients::bucket_name _bucket;
     std::filesystem::path _staging_dir;
     cloud_io::cache* _cache;
+
+    // Gates all read_object calls so destruction can wait for any
+    // suspended fibers whose defer-cleanup would otherwise touch a
+    // destroyed `_inflight_downloads`.
+    ss::gate _gate;
+
+    // If two reads on the same shard miss the cloud cache on the same
+    // extent, only one triggers a download. Subsequent reads merge
+    // into the in-flight download via the shared promise.
+    // Promise resolves to nullopt on success (merged reads can expect
+    // a warm cache); otherwise it carries the errc to propagate as if
+    // the download came from each merged read's own fiber.
+    // Loosely mirrors the L0 read_merge pattern.
+    chunked_hash_map<
+      std::filesystem::path,
+      ss::shared_promise<std::optional<errc>>>
+      _inflight_downloads;
 };
 
 } // namespace cloud_topics::l1

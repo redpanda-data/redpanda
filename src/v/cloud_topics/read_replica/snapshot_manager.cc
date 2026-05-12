@@ -120,6 +120,7 @@ ss::future<> database_refresher::stop_and_wait() {
     if (db_) {
         co_await db_->close();
     }
+    co_await io_->stop();
     vlog(logger_.debug, "Stopped");
 }
 
