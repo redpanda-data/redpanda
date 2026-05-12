@@ -188,6 +188,7 @@ refresh_credentials make_refresh_credentials(
   aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
+  std::optional<ss::sstring> host_override = std::nullopt,
   retry_params retry_params = default_retry_params,
   ss::sstring metrics_tag = "") {
     ss::sstring host = {
@@ -196,17 +197,13 @@ refresh_credentials make_refresh_credentials(
     if (endpoint) {
         host = endpoint->host();
     }
-    if (
-      auto cfg_host
-      = config::shard_local_cfg().cloud_storage_credentials_host();
-      cfg_host.has_value()) {
+    if (host_override.has_value()) {
         vlog(
           clrl_log.info,
-          "overriding default cloud roles credentials host {} with {} set "
-          "in configuration.",
+          "applying cloud roles credentials host override: {} -> {}.",
           host,
-          cfg_host.value());
-        host = cfg_host.value();
+          host_override.value());
+        host = host_override.value();
     }
     auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
     auto impl = std::make_unique<CredentialsProvider>(
@@ -232,6 +229,7 @@ refresh_credentials make_refresh_credentials(
   aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
+  std::optional<ss::sstring> host_override = std::nullopt,
   retry_params retry_params = default_retry_params,
   ss::sstring metrics_tag = "");
 

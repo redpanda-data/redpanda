@@ -21,7 +21,15 @@ credential_manager::credential_manager(
   model::cloud_credentials_source cloud_credentials_source)
   : _upstream(upstream)
   , _client_conf(std::move(conf))
-  , _auth_refresh_bg_op{pool_log, _gate, _as, cloud_credentials_source, cloud_storage_clients::build_refresh_credentials_source(_client_conf, cloud_credentials_source)}
+  , _auth_refresh_bg_op{
+      pool_log,
+      _gate,
+      _as,
+      cloud_credentials_source,
+      cloud_storage_clients::build_refresh_credentials_source(
+        _client_conf,
+        cloud_credentials_source,
+        config::shard_local_cfg().cloud_storage_credentials_host())}
   , _azure_shared_key_binding(
       config::shard_local_cfg().cloud_storage_azure_shared_key.bind()) {}
 

@@ -172,7 +172,8 @@ model::cloud_storage_backend infer_backend_from_configuration(
 cloud_roles::auth_refresh_bg_op::credentials_source_config
 build_refresh_credentials_source(
   const client_configuration& config,
-  model::cloud_credentials_source cloud_credentials_source);
+  model::cloud_credentials_source cloud_credentials_source,
+  std::optional<ss::sstring> host_override = std::nullopt);
 
 ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
 build_tls_credentials(const client_configuration& config);

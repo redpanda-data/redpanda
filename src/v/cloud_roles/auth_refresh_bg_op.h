@@ -29,6 +29,7 @@ public:
     struct s3_compat_config {
         cloud_roles::aws_service_name service;
         cloud_roles::aws_region_name region;
+        std::optional<ss::sstring> host;
     };
     struct abs_config {};
 

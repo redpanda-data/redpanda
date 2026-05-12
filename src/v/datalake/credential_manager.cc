@@ -237,7 +237,9 @@ void credential_manager::start_auth_refresh_if_needed() {
 
     auto config_source
       = cloud_storage_clients::build_refresh_credentials_source(
-        *client_config, cfg.cloud_storage_credentials_source);
+        *client_config,
+        get_credentials_source(cfg),
+        cfg.iceberg_rest_catalog_credentials_host());
 
     auth_refresh_bg_op_.emplace(
       datalake_log,

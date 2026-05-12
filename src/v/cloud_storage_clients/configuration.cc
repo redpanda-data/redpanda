@@ -365,7 +365,8 @@ std::ostream& operator<<(std::ostream& o, const client_configuration& c) {
 cloud_roles::auth_refresh_bg_op::credentials_source_config
 build_refresh_credentials_source(
   const client_configuration& config,
-  model::cloud_credentials_source cloud_credentials_source) {
+  model::cloud_credentials_source cloud_credentials_source,
+  std::optional<ss::sstring> host_override) {
     if (
       cloud_credentials_source
       == model::cloud_credentials_source::config_file) {
@@ -389,10 +390,12 @@ build_refresh_credentials_source(
     } else {
         return ss::visit(
           config,
-          [](const cloud_storage_clients::s3_configuration& s3_cfg)
+          [&](const cloud_storage_clients::s3_configuration& s3_cfg)
             -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
               return cloud_roles::auth_refresh_bg_op::s3_compat_config{
-                .service = s3_cfg.service, .region = s3_cfg.region};
+                .service = s3_cfg.service,
+                .region = s3_cfg.region,
+                .host = host_override};
           },
           [](const cloud_storage_clients::abs_configuration&)
             -> cloud_roles::auth_refresh_bg_op::credentials_source_config {

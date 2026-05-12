@@ -743,6 +743,7 @@ struct configuration final : public config_store {
     enum_property<std::optional<model::cloud_credentials_source>>
       iceberg_rest_catalog_aws_credentials_source;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_gcp_user_project;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_credentials_host;
     property<double> iceberg_backlog_controller_p_coeff;
     property<double> iceberg_backlog_controller_i_coeff;
     bounded_property<uint32_t> iceberg_target_backlog_size;

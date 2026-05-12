@@ -4328,6 +4328,18 @@ configuration::configuration()
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_credentials_host(
+      *this,
+      "iceberg_rest_catalog_credentials_host",
+      "The hostname to connect to for retrieving role based credentials for "
+      "the Iceberg REST catalog. Derived from "
+      "iceberg_rest_catalog_credentials_source if not set. Only required "
+      "when using IAM role based access on AWS; does not apply to "
+      "OAuth-based authentication schemes. Independent of "
+      "cloud_storage_credentials_host.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , iceberg_backlog_controller_p_coeff(
       *this,
       "iceberg_backlog_controller_p_coeff",

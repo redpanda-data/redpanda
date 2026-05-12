@@ -408,6 +408,7 @@ refresh_credentials make_refresh_credentials(
   aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint,
+  std::optional<ss::sstring> host_override,
   retry_params retry_params,
   ss::sstring metrics_tag) {
     switch (cloud_credentials_source) {
@@ -425,6 +426,7 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
+          std::move(host_override),
           retry_params,
           std::move(metrics_tag));
     case model::cloud_credentials_source::sts:
@@ -434,6 +436,7 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
+          std::move(host_override),
           retry_params,
           std::move(metrics_tag));
     case model::cloud_credentials_source::gcp_instance_metadata:
@@ -443,6 +446,7 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
+          std::move(host_override),
           retry_params,
           std::move(metrics_tag));
     case model::cloud_credentials_source::azure_aks_oidc_federation:
@@ -452,6 +456,7 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
+          std::move(host_override),
           retry_params,
           std::move(metrics_tag));
     case model::cloud_credentials_source::azure_vm_instance_metadata:
@@ -461,6 +466,7 @@ refresh_credentials make_refresh_credentials(
           std::move(service),
           std::move(region),
           std::move(endpoint),
+          std::move(host_override),
           retry_params,
           std::move(metrics_tag));
     }
