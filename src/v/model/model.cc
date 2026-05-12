@@ -808,6 +808,33 @@ std::istream& operator>>(std::istream& is, iceberg_invalid_record_action& a) {
     return is;
 }
 
+fmt::iterator format_to(iceberg_schema_case_insensitive n, fmt::iterator out) {
+    switch (n) {
+    case iceberg_schema_case_insensitive::auto_:
+        return fmt::format_to(out, "auto");
+    case iceberg_schema_case_insensitive::no:
+        return fmt::format_to(out, "no");
+    case iceberg_schema_case_insensitive::yes:
+        return fmt::format_to(out, "yes");
+    }
+    return fmt::format_to(out, "unknown");
+}
+
+std::istream& operator>>(std::istream& is, iceberg_schema_case_insensitive& n) {
+    using enum iceberg_schema_case_insensitive;
+    ss::sstring s;
+    is >> s;
+    try {
+        n = string_switch<iceberg_schema_case_insensitive>(s)
+              .match("auto", auto_)
+              .match("no", no)
+              .match("yes", yes);
+    } catch (const std::runtime_error&) {
+        is.setstate(std::ios::failbit);
+    }
+    return is;
+}
+
 std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f) {
     return os << to_string_view(f);
 }

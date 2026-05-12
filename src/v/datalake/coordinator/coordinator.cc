@@ -14,6 +14,7 @@
 #include "config/configuration.h"
 #include "container/chunked_vector.h"
 #include "datalake/catalog_schema_manager.h"
+#include "datalake/coordinator/catalog_config.h"
 #include "datalake/coordinator/state_update.h"
 #include "datalake/logger.h"
 #include "datalake/partition_spec_parser.h"
@@ -408,7 +409,7 @@ coordinator::do_ensure_table_exists(
       table_id,
       record_type.value(),
       partition_spec.value(),
-      iceberg::field_name_comparison::verbatim);
+      resolve_field_name_comparison());
     if (ensure_res.has_error()) {
         switch (ensure_res.error()) {
         case schema_manager::errc::not_supported:

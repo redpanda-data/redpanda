@@ -12,6 +12,7 @@
 
 #include "cluster/notification.h"
 #include "cluster/partition.h"
+#include "datalake/coordinator/catalog_config.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/logger.h"
@@ -660,7 +661,7 @@ private:
     }
 
     iceberg::field_name_comparison compute_field_name_comparison() const {
-        return iceberg::field_name_comparison::verbatim;
+        return coordinator::resolve_field_name_comparison();
     }
 
     local_path _writer_scratch_space;

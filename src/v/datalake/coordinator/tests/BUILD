@@ -116,6 +116,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "catalog_config_test",
+    timeout = "short",
+    srcs = [
+        "catalog_config_test.cc",
+    ],
+    deps = [
+        "//src/v/datalake/coordinator:catalog_config",
+        "//src/v/iceberg:field_name_comparison",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "state_update_test",
     timeout = "short",
     srcs = [

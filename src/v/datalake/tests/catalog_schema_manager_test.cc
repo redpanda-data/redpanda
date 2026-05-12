@@ -587,3 +587,44 @@ TEST_F(CatalogSchemaManagerTest, GetTableInfo) {
       }())
       << "Expect merged schema";
 }
+
+// Verify that case-insensitive field-name comparison threads through the
+// schema manager: a writer struct with differently-cased field names should
+// match the catalog schema when lower_case mode is active, but not when
+// verbatim mode is active.
+TEST_F(CatalogSchemaManagerTest, CaseInsensitiveFillRegisteredIds) {
+    // Create the catalog table with lowercase field names.
+    struct_type catalog_type;
+    catalog_type.fields.push_back(
+      nested_field::create(1, "userid", field_required::no, int_type{}));
+    catalog_type.fields.push_back(
+      nested_field::create(2, "eventts", field_required::no, string_type{}));
+    create_table(catalog_type);
+
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
+    ASSERT_FALSE(load_res.has_error());
+
+    // Writer struct uses uppercase field names (as a catalog might return).
+    struct_type writer_type;
+    writer_type.fields.push_back(
+      nested_field::create(0, "UserId", field_required::no, int_type{}));
+    writer_type.fields.push_back(
+      nested_field::create(0, "EventTs", field_required::no, string_type{}));
+
+    // verbatim: names don't match, IDs not filled.
+    auto verbatim_type = writer_type.copy();
+    EXPECT_FALSE(load_res.value().fill_registered_ids(
+      verbatim_type, field_name_comparison::verbatim));
+
+    // lower_case: names match after folding, IDs are filled.
+    auto lower_type = writer_type.copy();
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      lower_type, field_name_comparison::lower_case));
+    EXPECT_EQ(lower_type.fields[0]->id, nested_field::id_t{1});
+    EXPECT_EQ(lower_type.fields[1]->id, nested_field::id_t{2});
+}

@@ -106,6 +106,7 @@ redpanda_cc_library(
         "//src/v/datalake:translation_task",
         "//src/v/datalake:types",
         "//src/v/datalake:writer",
+        "//src/v/datalake/coordinator:catalog_config",
         "//src/v/datalake/coordinator:frontend",
         "//src/v/datalake/coordinator:model",
         "//src/v/features",
