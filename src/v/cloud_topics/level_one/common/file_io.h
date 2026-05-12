@@ -31,14 +31,17 @@ namespace cloud_topics::l1 {
 // For writing this persists the file to the local disk, then writes it
 // to object storage.
 //
-// Reads are cached locally on disk in the cloud cache before being returned.
+// Reads are cached locally on disk in the cloud cache before being
+// returned.
 class file_io : public io {
 public:
+    /// `probe` is nullable so tests can opt out.
     file_io(
       std::filesystem::path staging_dir,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
-      cloud_io::cache* cache);
+      cloud_io::cache* cache,
+      file_io_probe* probe = nullptr);
 
     ss::future<> stop();
 
@@ -89,6 +92,9 @@ private:
     // storage I/O when two readers miss the cloud cache on the same
     // extent.
     single_flight _single_flight;
+
+    // Non-owning.
+    file_io_probe* _probe;
 };
 
 } // namespace cloud_topics::l1

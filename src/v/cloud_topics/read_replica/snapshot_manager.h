@@ -29,13 +29,20 @@ class remote;
 class cache;
 } // namespace cloud_io
 
+namespace cloud_topics::l1 {
+class file_io_probe;
+} // namespace cloud_topics::l1
+
 namespace cloud_topics::read_replica {
 
 class database_refresher;
 class snapshot_manager : public snapshot_provider {
 public:
     explicit snapshot_manager(
-      std::filesystem::path, cloud_io::remote*, cloud_io::cache*);
+      std::filesystem::path,
+      cloud_io::remote*,
+      cloud_io::cache*,
+      l1::file_io_probe* probe = nullptr);
 
     ss::future<std::expected<snapshot_handle, error>> get_snapshot(
       l1::domain_uuid,
@@ -56,6 +63,7 @@ private:
     const std::filesystem::path staging_dir_;
     cloud_io::remote* remote_;
     cloud_io::cache* cache_;
+    l1::file_io_probe* probe_;
 
     struct database_entry {
         database_entry() = default;

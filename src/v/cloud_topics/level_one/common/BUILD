@@ -101,8 +101,17 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "file_io",
-    srcs = ["file_io.cc"],
-    hdrs = ["file_io.h"],
+    srcs = [
+        "file_io.cc",
+        "file_io_probe.cc",
+    ],
+    hdrs = [
+        "file_io.h",
+        "file_io_probe.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+    ],
     visibility = [
         "//src/v/cloud_topics:__pkg__",
         "//src/v/cloud_topics/level_one:__subpackages__",
@@ -120,6 +129,7 @@ redpanda_cc_library(
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:logger",
         "//src/v/config",
+        "//src/v/metrics",
         "//src/v/model",
         "//src/v/utils:retry_chain_node",
         "@seastar",

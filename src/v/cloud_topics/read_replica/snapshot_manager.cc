@@ -37,6 +37,7 @@ public:
       cloud_storage_clients::bucket_name bucket,
       cloud_io::remote* remote,
       cloud_io::cache* cache,
+      l1::file_io_probe* probe,
       l1::domain_uuid);
 
     void start();
@@ -96,6 +97,7 @@ database_refresher::database_refresher(
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote* remote,
   cloud_io::cache* cache,
+  l1::file_io_probe* probe,
   l1::domain_uuid domain_uuid)
   : bucket_(std::move(bucket))
   , remote_(remote)
@@ -105,7 +107,7 @@ database_refresher::database_refresher(
       cd_log, fmt::format("database_refresher {}, {}", domain_uuid_, bucket_))
   , io_(
       std::make_unique<l1::file_io>(
-        std::move(staging_directory), remote_, bucket_, cache_)) {}
+        std::move(staging_directory), remote_, bucket_, cache_, probe)) {}
 
 void database_refresher::start() {
     ssx::spawn_with_gate(gate_, [this] { return run_loop(); });
@@ -249,10 +251,12 @@ database_refresher::get_newer_snapshot(
 snapshot_manager::snapshot_manager(
   std::filesystem::path staging_dir,
   cloud_io::remote* remote,
-  cloud_io::cache* cache)
+  cloud_io::cache* cache,
+  l1::file_io_probe* probe)
   : staging_dir_(std::move(staging_dir))
   , remote_(remote)
-  , cache_(cache) {}
+  , cache_(cache)
+  , probe_(probe) {}
 
 ss::future<std::expected<snapshot_handle, snapshot_manager::error>>
 snapshot_manager::get_snapshot(
@@ -272,7 +276,7 @@ snapshot_manager::get_snapshot(
 
         auto& entry = it->second;
         entry.refresher = std::make_unique<database_refresher>(
-          staging_dir_, bucket, remote_, cache_, domain_uuid);
+          staging_dir_, bucket, remote_, cache_, probe_, domain_uuid);
 
         // Set up the timer so that when it fires (after enough of an idle
         // period) it cleans up the database.

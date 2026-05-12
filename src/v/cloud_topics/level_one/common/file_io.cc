@@ -95,11 +95,13 @@ file_io::file_io(
   std::filesystem::path staging_dir,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::cache* cache)
+  cloud_io::cache* cache,
+  file_io_probe* probe)
   : _remote(remote)
   , _bucket(std::move(bucket))
   , _staging_dir(std::move(staging_dir))
-  , _cache(cache) {}
+  , _cache(cache)
+  , _probe(probe) {}
 
 ss::future<> file_io::stop() { return _gate.close(); }
 
@@ -244,6 +246,9 @@ file_io::read_object(
         co_return std::unexpected(io::errc::file_io_error);
     }
     auto holder = _gate.hold();
+    if (_probe) {
+        _probe->register_read();
+    }
     static constexpr auto timeout = 10s;
     static constexpr auto backoff = 100ms;
     retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);
@@ -270,6 +275,10 @@ file_io::read_object(
             co_return std::move(stream->body);
         }
 
+        if (_probe) {
+            _probe->register_cache_miss();
+        }
+
         // single_flight dedups concurrent downloads for this extent.
         auto r = co_await _single_flight.run(
           cache_key, *as, [this, &extent, &cache_key, &root, as, gid]() {
@@ -284,6 +293,9 @@ file_io::read_object(
         }
         if (r.value()) {
             vlog(cd_log.debug, "Merged L1 read for {}", extent);
+            if (_probe) {
+                _probe->register_concurrent_read_merge();
+            }
         }
     }
 }
