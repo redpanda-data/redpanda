@@ -13,6 +13,7 @@
 #include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
+#include "cloud_topics/level_one/common/file_io_probe.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
@@ -33,11 +34,16 @@ namespace cloud_topics::l1 {
 // Reads are cached locally on disk in the cloud cache before being returned.
 class file_io : public io {
 public:
+    /// `probe` is an externally-owned per-shard probe. Nullable:
+    /// secondary per-shard file_io instances (read-replica refreshers,
+    /// etc.) pass nullptr and their IO activity is not counted on the
+    /// shared probe.
     file_io(
       std::filesystem::path staging_dir,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
-      cloud_io::cache* cache);
+      cloud_io::cache* cache,
+      file_io_probe* probe = nullptr);
 
     /// Drain in-flight reads. Must be co_awaited before destruction so
     /// the read_object defer-cleanup never touches a destroyed map.
@@ -91,6 +97,10 @@ private:
       std::filesystem::path,
       ss::shared_promise<std::optional<errc>>>
       _inflight_downloads;
+
+    // Non-owning. Null for secondary per-shard file_io instances whose
+    // IO activity is intentionally not counted on the shared probe.
+    file_io_probe* _probe;
 };
 
 } // namespace cloud_topics::l1

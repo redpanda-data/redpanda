@@ -70,6 +70,7 @@ ss::future<> app::construct(
       config::node().l1_staging_path().string());
 
     co_await construct_service(_l1_reader_probe);
+    co_await construct_service(_l1_file_io_probe);
 
     co_await construct_service(
       _l1_reader_cache,
@@ -87,7 +88,8 @@ ss::future<> app::construct(
       config::node().l1_staging_path(),
       ss::sharded_parameter([&remote] { return &remote->local(); }),
       bucket,
-      ss::sharded_parameter([&cloud_cache] { return &cloud_cache->local(); }));
+      ss::sharded_parameter([&cloud_cache] { return &cloud_cache->local(); }),
+      ss::sharded_parameter([this] { return &_l1_file_io_probe.local(); }));
 
     co_await construct_service(
       domain_supervisor,
@@ -141,6 +143,7 @@ ss::future<> app::construct(
       ss::sharded_parameter(
         [&metadata_cache] { return &metadata_cache->local(); }),
       ss::sharded_parameter([this] { return &_l1_reader_probe.local(); }),
+      ss::sharded_parameter([this] { return &_l1_file_io_probe.local(); }),
       ss::sharded_parameter([this] { return &_l1_reader_cache.local(); }),
       ss::sharded_parameter([this] { return &rr_metadata_manager_.local(); }),
       ss::sharded_parameter([this] { return &rr_snapshot_manager_.local(); }));

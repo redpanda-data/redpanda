@@ -96,11 +96,13 @@ file_io::file_io(
   std::filesystem::path staging_dir,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::cache* cache)
+  cloud_io::cache* cache,
+  file_io_probe* probe)
   : _remote(remote)
   , _bucket(std::move(bucket))
   , _staging_dir(std::move(staging_dir))
-  , _cache(cache) {}
+  , _cache(cache)
+  , _probe(probe) {}
 
 ss::future<> file_io::stop() { return _gate.close(); }
 
@@ -225,10 +227,16 @@ file_io::read_object(
               cd_log.debug,
               "Merging L1 read for {} into in-flight download",
               extent);
+            if (_probe) {
+                _probe->register_concurrent_read_merge();
+            }
             auto fut = co_await ss::coroutine::as_future(
               it->second.get_shared_future(*as));
             if (fut.failed()) {
                 fut.ignore_ready_future();
+                if (_probe) {
+                    _probe->register_merged_read_abort();
+                }
                 // Matches the cold-miss path's abort->timeout convention.
                 co_return std::unexpected(io::errc::cloud_op_timeout);
             }
