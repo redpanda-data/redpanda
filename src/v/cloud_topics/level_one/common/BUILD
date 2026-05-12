@@ -112,6 +112,8 @@ redpanda_cc_library(
         ":abstract_io",
         ":object_id",
         ":object_utils",
+        ":single_flight",
+        "//src/v/base",
         "//src/v/cloud_io:cache",
         "//src/v/cloud_io:io_result",
         "//src/v/cloud_io:remote",
@@ -119,6 +121,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:logger",
         "//src/v/config",
         "//src/v/model",
+        "//src/v/utils:retry_chain_node",
         "@seastar",
     ],
 )

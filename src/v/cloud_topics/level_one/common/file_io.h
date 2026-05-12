@@ -13,8 +13,15 @@
 #include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
+#include "cloud_topics/level_one/common/file_io_probe.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/common/single_flight.h"
 #include "model/fundamental.h"
+#include "utils/retry_chain_node.h"
+
+#include <seastar/core/gate.hh>
+
+#include <optional>
 
 namespace cloud_topics::l1 {
 
@@ -32,6 +39,12 @@ public:
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
       cloud_io::cache* cache);
+
+    ss::future<> stop();
+
+    /// Cloud-cache disk key for an (oid, position, size) extent.
+    static std::filesystem::path cache_key(const object_extent& extent);
+
     ss::future<std::expected<std::unique_ptr<staging_file>, errc>>
     create_tmp_file() override;
 
@@ -55,10 +68,27 @@ private:
       std::filesystem::path,
       uint64_t content_length);
 
+    /// Reserve cache space, run the S3 GET, and stream the bytes into
+    /// the cloud cache under `cache_key`. Returns nullopt on success,
+    /// or the mapped errc on reservation / download failure.
+    ss::future<single_flight::outcome> do_download_to_cache(
+      const object_extent& extent,
+      const std::filesystem::path& cache_key,
+      retry_chain_node& root,
+      ss::abort_source& as,
+      cloud_io::group_id gid);
+
     cloud_io::remote* _remote;
     cloud_storage_clients::bucket_name _bucket;
     std::filesystem::path _staging_dir;
     cloud_io::cache* _cache;
+
+    ss::gate _gate;
+
+    // Per-shard single-flight coordinator. Helps avoid redundant cloud
+    // storage I/O when two readers miss the cloud cache on the same
+    // extent.
+    single_flight _single_flight;
 };
 
 } // namespace cloud_topics::l1
