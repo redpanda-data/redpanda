@@ -152,3 +152,22 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             consumer.stop()
             producer.free()
             consumer.free()
+
+
+class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
+    """Phase 1 smoke test: drive long-term GC end to end via the model."""
+
+    MSG_SIZE = 1024
+    MSG_COUNT = 5000  # ~5 MiB, completes in ~30s at default produce rate
+
+    def __init__(self, test_context: TestContext):
+        super().__init__(test_context, target_effect_name="long_term_gc_observed")
+
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_long_term_gc_via_model(self, cloud_storage_type: CloudStorageType):
+        self.run_smoke(
+            topic_name="ct-swarm-long-term-gc",
+            msg_size=self.MSG_SIZE,
+            msg_count=self.MSG_COUNT,
+        )
