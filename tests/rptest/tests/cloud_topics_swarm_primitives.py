@@ -23,9 +23,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from ducktape.utils.util import wait_until
+
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import CLOUD_TOPICS_CONFIG_STR
-from rptest.tests.cloud_topics_swarm_model import Mechanism, SwarmModel
+from rptest.tests.cloud_topics_swarm_model import Effect, Mechanism, SwarmModel
 
 _HUGE_INTERVAL_MS = 24 * 60 * 60 * 1000
 _HUGE_BYTES = 1024 * 1024 * 1024 * 1024
@@ -140,3 +142,66 @@ def merged_producer_kwargs(chosen: list[Mechanism]) -> dict[str, Any]:
     for m in chosen:
         kw.update(m.producer_overrides)
     return kw
+
+
+def _sum_metric(redpanda, metric_name: str) -> int:
+    """Sum a Prometheus metric across all nodes/shards. Returns 0 if not
+    yet exposed (so snapshot() returns 0 cleanly before workload starts)."""
+    samples = redpanda.metrics_sample(metric_name)
+    if samples is None or not samples.samples:
+        return 0
+    return int(sum(s.value for s in samples.samples))
+
+
+class EffectValidator:
+    """Final-effect metric-delta validator. snapshot() captures the
+    baseline before the workload; assert_observed() polls until the
+    metric advances by ``threshold`` or the deadline expires."""
+
+    def __init__(self, effect: Effect):
+        if effect.terminal_metric is None:
+            raise NotImplementedError(
+                f"effect {effect.name!r} has no terminal_metric; an "
+                f"AdminApi-based validator is required (see spec section 4 TBC)"
+            )
+        self._effect = effect
+        self._baseline: int | None = None
+
+    @property
+    def name(self) -> str:
+        return self._effect.name
+
+    @property
+    def metric(self) -> str:
+        assert self._effect.terminal_metric is not None
+        return self._effect.terminal_metric
+
+    def snapshot(self, redpanda) -> None:
+        self._baseline = _sum_metric(redpanda, self.metric)
+
+    def assert_observed(self, redpanda, logger) -> None:
+        assert self._baseline is not None, "call snapshot() before assert_observed()"
+        threshold = self._effect.threshold
+        deadline = self._effect.deadline_sec
+        last = [self._baseline]
+
+        def _moved() -> bool:
+            curr = _sum_metric(redpanda, self.metric)
+            last[0] = curr
+            return (curr - self._baseline) >= threshold
+
+        wait_until(
+            _moved,
+            timeout_sec=deadline,
+            backoff_sec=2,
+            retry_on_exc=True,
+            err_msg=lambda: (
+                f"effect {self.name!r}: metric {self.metric!r} did not "
+                f"advance by >= {threshold} within {deadline}s "
+                f"(baseline={self._baseline}, last={last[0]})"
+            ),
+        )
+        logger.info(
+            f"effect {self.name!r}: {self.metric!r} advanced "
+            f"{self._baseline} -> {last[0]}"
+        )
