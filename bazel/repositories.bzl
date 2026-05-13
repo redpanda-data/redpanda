@@ -67,11 +67,9 @@ def data_dependency():
     http_archive(
         name = "jsoncons",
         build_file = "//bazel/thirdparty:jsoncons.BUILD",
-        sha256 = "078ba32cd1198cbeb1903fbf4881d4960b226bdf8083d9f5a927b96f0aa8d6dd",
-        strip_prefix = "jsoncons-ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8",
-        url = "https://github.com/danielaparker/jsoncons/archive/ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8.tar.gz",
-        patches = ["//bazel/thirdparty:jsoncons-pr-603.patch"],
-        patch_args = ["-p1"],
+        sha256 = "8c05be174a919598591bffd848b5cbeba8858f6ca9b0ebcac8d3414bc3ec3708",
+        strip_prefix = "jsoncons-1.3.1",
+        url = "https://github.com/danielaparker/jsoncons/archive/refs/tags/v1.3.1.tar.gz",
     )
 
     http_archive(
