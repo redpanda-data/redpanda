@@ -152,13 +152,13 @@ def default_model() -> SwarmModel:
 
     long_term_gc = Effect(
         m, "long_term_gc_observed",
-        terminal_metric="vectorized_cloud_topics_gc_objects_deleted_total",
+        terminal_metric="vectorized_cloud_topics_l1_domain_manager_gc_objects_deleted_total",
     )
     long_term_gc.requires(reconciliation, retention_low, long_term_gc_fast)
 
     compaction_eff = Effect(
         m, "compaction_observed",
-        terminal_metric="vectorized_cloud_topics_log_compactions_total",
+        terminal_metric="vectorized_cloud_topics_compaction_scheduler_log_compactions_total",
     )
     compaction_eff.requires(reconciliation, compaction)
 
