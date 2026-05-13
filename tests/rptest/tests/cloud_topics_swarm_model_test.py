@@ -67,3 +67,37 @@ def test_transactional_implies_idempotent():
     s.add(txn == True)
     s.add(idemp == False)
     assert s.check() == z3.unsat
+
+
+def test_merged_cluster_config_for_long_term_gc():
+    from rptest.tests.cloud_topics_swarm_model import default_model
+    from rptest.tests.cloud_topics_swarm_primitives import (
+        attach_overrides, merged_cluster_config,
+    )
+
+    model = default_model()
+    attach_overrides(model)
+    chosen = model.solve_for("long_term_gc_observed")
+    cfg = merged_cluster_config(chosen)
+
+    assert cfg["cloud_topics_disable_reconciliation_loop"] is False
+    assert cfg["cloud_topics_reconciliation_min_interval"] == 2000
+    assert cfg["cloud_topics_long_term_garbage_collection_interval"] == 5000
+    assert cfg["cloud_topics_disable_level_zero_gc_for_tests"] is True
+
+
+def test_merged_topic_config_for_long_term_gc():
+    from rptest.clients.types import TopicSpec
+    from rptest.tests.cloud_topics_swarm_model import default_model
+    from rptest.tests.cloud_topics_swarm_primitives import (
+        attach_overrides, merged_topic_config,
+    )
+
+    model = default_model()
+    attach_overrides(model)
+    chosen = model.solve_for("long_term_gc_observed")
+    tcfg = merged_topic_config(chosen)
+
+    assert tcfg[TopicSpec.PROPERTY_STORAGE_MODE] == TopicSpec.STORAGE_MODE_CLOUD
+    assert tcfg[TopicSpec.PROPERTY_RETENTION_TIME] == "30000"
+    assert tcfg[TopicSpec.PROPERTY_CLEANUP_POLICY] == "delete"
