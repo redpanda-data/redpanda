@@ -8,7 +8,8 @@
 # by the Apache License, Version 2.0
 
 import pytest
-from rptest.tests.cloud_topics_swarm_model import Effect, Mechanism, SwarmModel
+import z3
+from rptest.tests.cloud_topics_swarm_model import Effect, Mechanism, SwarmModel, default_model
 
 
 def test_solver_returns_minimum_dependency_set():
@@ -32,3 +33,37 @@ def test_solver_raises_on_unknown_effect():
     model = SwarmModel()
     with pytest.raises(KeyError):
         model.solve_for("does_not_exist")
+
+
+def test_default_model_long_term_gc_dependencies():
+    model = default_model()
+    chosen = {m.name for m in model.solve_for("long_term_gc_observed")}
+    assert chosen == {"reconciliation", "retention_low", "long_term_gc_fast"}
+
+
+def test_default_model_short_term_gc_dependencies():
+    model = default_model()
+    chosen = {m.name for m in model.solve_for("short_term_gc_observed")}
+    assert chosen == {
+        "reconciliation",
+        "short_term_gc_fast",
+        "epoch_increment_fast",
+    }
+
+
+def test_default_model_l1_upload_dependencies():
+    model = default_model()
+    chosen = {m.name for m in model.solve_for("l1_upload_observed")}
+    assert chosen == {"reconciliation"}
+
+
+def test_transactional_implies_idempotent():
+    """transactional_producer => idempotent_producer (Kafka semantics)."""
+    model = default_model()
+    s = z3.Solver()
+    txn = model._mechs["transactional_producer"].var
+    idemp = model._mechs["idempotent_producer"].var
+    s.add(z3.Implies(txn, idemp))
+    s.add(txn == True)
+    s.add(idemp == False)
+    assert s.check() == z3.unsat

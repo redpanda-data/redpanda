@@ -106,3 +106,81 @@ class SwarmModel:
             if model.eval(mech.var, model_completion=True) == True:
                 chosen.append(mech)
         return chosen
+
+
+def default_model() -> SwarmModel:
+    """Build the default mechanism + effect catalog for cloud-topics swarm
+    testing. Catalog ordering matches the spec
+    ``2026-05-13-cloud-topics-swarm-phase1-design.md``.
+
+    Cluster/topic/producer overrides live in the primitives module so
+    this module stays import-light. Other code may merge those in later
+    by looking up ``model._mechs[name]``.
+    """
+    m = SwarmModel()
+
+    # --- Mechanisms ---
+    reconciliation = Mechanism(m, "reconciliation", needs_restart=True)
+    retention_low = Mechanism(m, "retention_low")
+    long_term_gc_fast = Mechanism(m, "long_term_gc_fast", needs_restart=True)
+    short_term_gc_fast = Mechanism(m, "short_term_gc_fast", needs_restart=True)
+    compaction = Mechanism(m, "compaction", needs_restart=True)
+    epoch_increment_fast = Mechanism(m, "epoch_increment_fast", needs_restart=True)
+    transactional_producer = Mechanism(m, "transactional_producer")
+    idempotent_producer = Mechanism(m, "idempotent_producer")
+    multiple_producers = Mechanism(m, "multiple_producers")
+    l1_reader_cache_evict_fast = Mechanism(m, "l1_reader_cache_evict_fast", needs_restart=True)
+    produce_inflight_limit_low = Mechanism(m, "produce_inflight_limit_low", needs_restart=True)
+
+    # transactional_producer => idempotent_producer
+    m._implications.append(
+        z3.Implies(transactional_producer.var, idempotent_producer.var)
+    )
+
+    # --- Effects ---
+    l1_upload = Effect(
+        m, "l1_upload_observed",
+        terminal_metric="vectorized_cloud_topics_reconciler_objects_uploaded",
+    )
+    l1_upload.requires(reconciliation)
+
+    short_term_gc = Effect(
+        m, "short_term_gc_observed",
+        terminal_metric="vectorized_cloud_topics_l0_gc_objects_deleted_total",
+    )
+    short_term_gc.requires(reconciliation, short_term_gc_fast, epoch_increment_fast)
+
+    long_term_gc = Effect(
+        m, "long_term_gc_observed",
+        terminal_metric="vectorized_cloud_topics_gc_objects_deleted_total",
+    )
+    long_term_gc.requires(reconciliation, retention_low, long_term_gc_fast)
+
+    compaction_eff = Effect(
+        m, "compaction_observed",
+        terminal_metric="vectorized_cloud_topics_log_compactions_total",
+    )
+    compaction_eff.requires(reconciliation, compaction)
+
+    retention_eviction = Effect(
+        m, "retention_eviction_observed", terminal_metric=None,
+    )
+    retention_eviction.requires(reconciliation, retention_low, long_term_gc_fast)
+
+    epoch_increment = Effect(
+        m, "epoch_increment_observed",
+        terminal_metric="vectorized_cloud_topics_l0_gc_min_partition_gc_epoch",
+    )
+    epoch_increment.requires(reconciliation, epoch_increment_fast)
+
+    l1_reader_eviction = Effect(
+        m, "l1_reader_eviction_observed", terminal_metric=None,
+    )
+    l1_reader_eviction.requires(reconciliation, l1_reader_cache_evict_fast)
+
+    inflight_backpressure = Effect(
+        m, "inflight_backpressure_observed", terminal_metric=None,
+    )
+    inflight_backpressure.requires(produce_inflight_limit_low)
+
+    return m
