@@ -838,18 +838,8 @@ void config_manager::merge_apply_result(
     }
 }
 
-/**
- * Update persistent local cache of config.
- *
- * This cache is for early loading during startup.  It is NOT required
- * to be strictly up to date when we finish processing a delta.
- *
- * @param version
- * @param data
- * @return
- */
-ss::future<>
-config_manager::store_delta(const cluster_config_delta_cmd_data& data) {
+void config_manager::update_raw_values(
+  const cluster_config_delta_cmd_data& data) {
     auto& cfg = config::shard_local_cfg();
 
     for (const auto& u : data.upsert) {
@@ -878,8 +868,6 @@ config_manager::store_delta(const cluster_config_delta_cmd_data& data) {
     for (const auto& d : data.remove) {
         _raw_values.erase(d);
     }
-
-    return write_local_cache(_seen_version, _raw_values);
 }
 
 ss::future<> config_manager::write_local_cache(
@@ -988,7 +976,8 @@ config_manager::apply_delta(cluster_config_delta_cmd&& cmd_in) {
 
     // Store the raw values (irrespective of any issues applying them) for
     // early replay on next startup.
-    co_await store_delta(data);
+    update_raw_values(data);
+    co_await write_local_cache(_seen_version, _raw_values);
 
     // Signal status update loop to wake up
     _reconcile_wait.signal();

@@ -95,6 +95,13 @@ public:
         }
     }
 
+    /**
+     * Update persistent local cache of config.
+     *
+     * This cache is for early loading during startup.  It is NOT required
+     * to be strictly up to date when we finish processing a delta.
+     *
+     */
     static ss::future<> write_local_cache(
       config_version, const std::map<ss::sstring, ss::sstring>&);
 
@@ -107,7 +114,12 @@ private:
     bool should_send_status();
     ss::future<> reconcile_status();
     ss::future<std::error_code> apply_delta(cluster_config_delta_cmd&&);
-    ss::future<> store_delta(const cluster_config_delta_cmd_data& data);
+    /**
+     * Merge a delta into the in-memory _raw_values map. Mirrors how
+     * apply_local updates the live config: after this returns, _raw_values
+     * reflects the same state that has just been applied across shards.
+     */
+    void update_raw_values(const cluster_config_delta_cmd_data& data);
 
     bool _bootstrap_complete{false};
     void start_bootstrap();
