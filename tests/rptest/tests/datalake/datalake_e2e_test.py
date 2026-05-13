@@ -517,6 +517,64 @@ class DatalakeE2ETests(RedpandaTest):
                         spark_describe_out
                     )
 
+    @cluster(num_nodes=3)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_avro_map_values(self, cloud_storage_type, query_engine, catalog_type):
+        """Verify avro map<string, long> values round-trip end-to-end."""
+        count = 100
+        topic = "avro_map_test_case"
+        table = f"redpanda.{topic}"
+        schema_str = """
+        {
+            "type": "record",
+            "namespace": "com.redpanda.examples.avro",
+            "name": "MapTest",
+            "fields": [
+                {"name": "kv", "type": {"type": "map", "values": "long"}}
+            ]
+        }
+        """
+
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                topic, iceberg_mode="value_schema_id_prefix"
+            )
+            producer = AvroProducer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "schema.registry.url": self.redpanda.schema_reg().split(",")[0],
+                },
+                default_value_schema=avro.loads(schema_str),
+            )
+            for i in range(count):
+                producer.produce(topic=topic, value={"kv": {"k": i}})
+            producer.flush()
+            dl.wait_for_translation(topic, msg_count=count)
+
+            expected = sum(range(count))
+
+            engine = dl.trino() if query_engine == QueryEngineType.TRINO else dl.spark()
+            rows = engine.run_query_fetch_all(
+                f"select sum(element_at(kv, 'k')) from {table}"
+            )
+            assert rows[0][0] == expected, f"engine expected={expected}, got={rows}"
+
+            iceberg_tbl = dl.catalog_client().load_table(("redpanda", topic))
+            kv_col = iceberg_tbl.scan().to_arrow()["kv"].to_pylist()
+            pyiceberg_total = sum(dict(entry)["k"] for entry in kv_col)
+            assert pyiceberg_total == expected, (
+                f"pyiceberg expected={expected}, got={pyiceberg_total}"
+            )
+
     # Note: nothing unique about this test so run it with single catalog/query engine.
     @cluster(num_nodes=3)
     @matrix(
