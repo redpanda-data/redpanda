@@ -560,12 +560,20 @@ class DatalakeE2ETests(RedpandaTest):
             producer.flush()
             dl.wait_for_translation(topic, msg_count=count)
 
+            expected = sum(range(count))
+
             engine = dl.trino() if query_engine == QueryEngineType.TRINO else dl.spark()
             rows = engine.run_query_fetch_all(
                 f"select sum(element_at(kv, 'k')) from {table}"
             )
-            expected = sum(range(count))
-            assert rows[0][0] == expected, f"expected sum={expected}, got {rows}"
+            assert rows[0][0] == expected, f"engine expected={expected}, got={rows}"
+
+            iceberg_tbl = dl.catalog_client().load_table(("redpanda", topic))
+            kv_col = iceberg_tbl.scan().to_arrow()["kv"].to_pylist()
+            pyiceberg_total = sum(dict(entry)["k"] for entry in kv_col)
+            assert pyiceberg_total == expected, (
+                f"pyiceberg expected={expected}, got={pyiceberg_total}"
+            )
 
     # Note: nothing unique about this test so run it with single catalog/query engine.
     @cluster(num_nodes=3)
