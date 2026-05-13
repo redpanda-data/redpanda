@@ -171,6 +171,7 @@ struct type_converting_visitor {
          * }
          */
         serde::parquet::schema_element res;
+        res.logical_type = serde::parquet::map_type{};
         serde::parquet::schema_element map_wrapper;
         map_wrapper.repetition_type
           = serde::parquet::field_repetition_type::repeated;
