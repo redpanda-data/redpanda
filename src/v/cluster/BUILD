@@ -1961,6 +1961,8 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":types",
+        "//src/v/config",
+        "//src/v/model",
     ],
 )
 

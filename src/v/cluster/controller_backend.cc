@@ -26,6 +26,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
+#include "cluster/topic_validators.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -1441,6 +1442,22 @@ ss::future<std::error_code> controller_backend::create_partition(
 
     // no partition exists, create one
     if (likely(!partition)) {
+        // Refuse to host a replica whose topic uses features that are not
+        // enabled on this node (e.g. tiered storage when cloud_storage_enabled
+        // is false locally). The reconcile loop retries, so this heals
+        // automatically once the operator fixes the local config.
+        if (
+          auto failure = validate_topic_properties(
+            cfg.properties, node_can_host_partition_validators{});
+          failure.has_value()) {
+            vlog(
+              clusterlog.warn,
+              "Refusing to create partition {}: {}",
+              ntp,
+              failure->error_message);
+            co_return failure->ec;
+        }
+
         std::optional<cloud_storage_clients::bucket_name> read_replica_bucket;
         if (cfg.is_read_replica()) {
             read_replica_bucket = cloud_storage_clients::bucket_name(
