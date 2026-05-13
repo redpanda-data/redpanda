@@ -494,6 +494,9 @@ TEST(DatalakeParquetSchema, Maps) {
                 ? serde::parquet::field_repetition_type::required
                 : serde::parquet::field_repetition_type::optional,
               schema.fields[i]->id));
+            ASSERT_TRUE(
+              std::holds_alternative<serde::parquet::map_type>(
+                map.logical_type));
             // check map key_value wrapper
             ASSERT_EQ(map.children.size(), 1);
             ASSERT_EQ(map.children[0].name(), "key_value");
