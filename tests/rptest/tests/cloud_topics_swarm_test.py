@@ -96,17 +96,6 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
     def _producer_kwargs(self) -> dict[str, Any]:
         return merged_producer_kwargs(self._chosen)
 
-    # Number of concurrent KgoVerifierProducer instances spawned when the
-    # multiple_producers mechanism is selected. Each instance gets its own
-    # set of producer IDs, so combined with msgs_per_producer_id this
-    # multiplies the total PID cardinality reaching producer_state_manager.
-    MULTIPLE_PRODUCERS_COUNT = 4
-
-    def _producer_count(self) -> int:
-        if "multiple_producers" in self._chosen_names:
-            return self.MULTIPLE_PRODUCERS_COUNT
-        return 1
-
     # Disruptions fire after this many seconds of produce activity. That
     # leaves the cluster enough time to upload a few L0/L1 objects so the
     # disruption interrupts steady state rather than start-up.
@@ -127,11 +116,14 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 )
 
     def run_smoke(self, topic_name: str, msg_size: int, msg_count: int) -> None:
-        """Produce ``msg_count * producer_count`` records, then read them
-        all back with KgoVerifierSeqConsumer and assert no data loss or
-        corruption. The chosen mechanisms shape what the cluster does
-        during the run, but validation is content-only — no metric
-        sampling — so the test stays correct across restarts."""
+        """Produce ``msg_count`` records with a single KgoVerifierProducer,
+        then read them all back with KgoVerifierSeqConsumer and assert no
+        data loss or corruption. The chosen mechanisms shape what the
+        cluster does during the run; the ``multiple_producers`` mechanism
+        is realised via PID churn (``msgs_per_producer_id``) on a single
+        kgo-verifier instance rather than parallel processes -- the
+        verifier doesn't reliably support multiple instances sharing a
+        ducktape client node."""
         import threading
         spec = self._create_cloud_topic(topic_name)
         self._smoke_topic_name = topic_name
@@ -141,35 +133,21 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         )
 
         producer_kwargs = self._producer_kwargs()
-        producer_count = self._producer_count()
-        producers: list[KgoVerifierProducer] = []
-        shared_node: Any = None
-        for i in range(producer_count):
-            # The first instance allocates a ducktape client node; the
-            # rest reuse it via custom_node so the test still fits in the
-            # standard num_nodes=4 budget.
-            kwargs: dict[str, Any] = dict(producer_kwargs)
-            if shared_node is not None:
-                kwargs["custom_node"] = [shared_node]
-            p = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                spec.name,
-                msg_size=msg_size,
-                msg_count=msg_count,
-                tolerate_failed_produce=True,
-                client_name=f"swarm-producer-{i}",
-                **kwargs,
-            )
-            producers.append(p)
-            if shared_node is None:
-                shared_node = p.nodes[0]
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            spec.name,
+            msg_size=msg_size,
+            msg_count=msg_count,
+            tolerate_failed_produce=True,
+            client_name="swarm-producer",
+            **producer_kwargs,
+        )
 
         disruption_thread: threading.Thread | None = None
         consumer: KgoVerifierSeqConsumer | None = None
         try:
-            for p in producers:
-                p.start()
+            producer.start()
 
             # Launch any disruption mechanisms in a background thread so
             # they fire mid-produce (not before, not after).
@@ -182,35 +160,23 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 )
                 disruption_thread.start()
 
-            total_acked = 0
-            for i, p in enumerate(producers):
-                p.wait(timeout_sec=300)
-                pstatus = p.produce_status
-                total_acked += pstatus.acked
-                self.logger.info(
-                    f"swarm: producer[{i}] acked={pstatus.acked}/{msg_count} "
-                    f"bad_offsets={pstatus.bad_offsets}"
-                )
+            producer.wait(timeout_sec=300)
+            pstatus = producer.produce_status
+            acked = pstatus.acked
+            self.logger.info(
+                f"swarm: producer acked={acked}/{msg_count} "
+                f"bad_offsets={pstatus.bad_offsets}"
+            )
             if disruption_thread is not None:
                 disruption_thread.join(timeout=120)
                 if disruption_thread.is_alive():
                     self.logger.warn(
                         "swarm: disruption thread did not finish in time"
                     )
-            expected_total = msg_count * producer_count
-            assert total_acked >= expected_total * 3 // 4, (
+            assert acked >= msg_count * 3 // 4, (
                 f"too few acks for a meaningful run: "
-                f"{total_acked}/{expected_total}"
+                f"{acked}/{msg_count}"
             )
-
-            # Multiple producers write interleaved messages from a
-            # SeqConsumer's perspective, so per-key sequence validation
-            # doesn't apply. Skip the consumer in that case.
-            if producer_count > 1:
-                self.logger.info(
-                    "swarm: skipping content validation (multiple producers)"
-                )
-                return
 
             consumer = KgoVerifierSeqConsumer(
                 self.test_context,
@@ -218,8 +184,8 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 spec.name,
                 msg_size=msg_size,
                 loop=False,
-                nodes=[producers[0].nodes[0]],
-                producer=producers[0],
+                nodes=[producer.nodes[0]],
+                producer=producer,
             )
             consumer.start(clean=False)
             consumer.wait(timeout_sec=180)
@@ -235,14 +201,13 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             assert cstatus.validator.out_of_scope_invalid_reads == 0, (
                 f"out-of-scope reads: {cstatus.validator.out_of_scope_invalid_reads}"
             )
-            assert cstatus.validator.valid_reads >= total_acked, (
-                f"data loss: expected >= {total_acked} valid reads, "
+            assert cstatus.validator.valid_reads >= acked, (
+                f"data loss: expected >= {acked} valid reads, "
                 f"got {cstatus.validator.valid_reads}"
             )
         finally:
-            for p in producers:
-                p.stop()
-                p.free()
+            producer.stop()
+            producer.free()
             if consumer is not None:
                 consumer.stop()
                 consumer.free()
