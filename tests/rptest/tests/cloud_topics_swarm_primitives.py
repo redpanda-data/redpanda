@@ -115,8 +115,11 @@ def attach_overrides(model: SwarmModel) -> None:
         # KgoVerifierProducer cycles to a new producer ID every
         # msgs_per_producer_id messages. Pair with a small
         # max_concurrent_producer_ids via psm_low_producer_limit to drive
-        # rm_stm / producer_state_manager into LRU eviction.
-        producer={"msgs_per_producer_id": 100},
+        # rm_stm / producer_state_manager into LRU eviction. Keep this
+        # value large enough that the kgo-verifier process doesn't spend
+        # all its time restarting its Kafka client (each cycle teardown
+        # also takes the HTTP status endpoint down briefly).
+        producer={"msgs_per_producer_id": 10000},
     )
     set_overrides(
         "psm_low_producer_limit",
