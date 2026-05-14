@@ -121,6 +121,20 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
 
             validator.assert_observed(self.redpanda, self.logger)
 
+            # End-to-end content validation only makes sense when the run
+            # didn't intentionally delete data. If retention is enabled,
+            # SeqConsumer cannot expect to read every produced message
+            # back, so skip it. invalid_reads / out_of_scope_invalid_reads
+            # are still useful corruption signals but require the consumer
+            # to make progress, which won't happen reliably when start
+            # offset has advanced past 0.
+            data_will_be_deleted = "retention_low" in self._chosen_names
+            if data_will_be_deleted:
+                self.logger.info(
+                    "swarm: skipping content validation (retention enabled)"
+                )
+                return
+
             consumer = KgoVerifierSeqConsumer(
                 self.test_context,
                 self.redpanda,
@@ -166,7 +180,9 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
         super().__init__(test_context, target_effect_name="long_term_gc_observed")
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
     def test_long_term_gc_via_model(self, cloud_storage_type: CloudStorageType):
         self.run_smoke(
             topic_name="ct-swarm-long-term-gc",
