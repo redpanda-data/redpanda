@@ -115,17 +115,19 @@ def attach_overrides(model: SwarmModel) -> None:
         # KgoVerifierProducer cycles to a new producer ID every
         # msgs_per_producer_id messages. Pair with a small
         # max_concurrent_producer_ids via psm_low_producer_limit to drive
-        # rm_stm / producer_state_manager into LRU eviction. Keep this
-        # value large enough that the kgo-verifier process doesn't spend
-        # all its time restarting its Kafka client (each cycle teardown
-        # also takes the HTTP status endpoint down briefly).
-        producer={"msgs_per_producer_id": 10000},
+        # rm_stm / producer_state_manager into LRU eviction. 5000 keeps
+        # PID churn frequent enough to exercise eviction while letting
+        # each kgo-verifier client cycle run long enough for the HTTP
+        # status endpoint to be polled successfully between teardowns.
+        producer={"msgs_per_producer_id": 5000},
     )
     set_overrides(
         "psm_low_producer_limit",
-        # Default is 100000; shrink so producer_state_manager evicts
-        # producers within a single smoke run.
-        cluster={"max_concurrent_producer_ids": 4},
+        # Default is 100000. With msgs_per_producer_id=5000 and a 100MiB
+        # payload, the kgo-verifier cycles through ~20 PIDs per run.
+        # cap=8 lands ~12 evictions over the run -- enough to exercise
+        # the eviction path without stalling the idempotent producer.
+        cluster={"max_concurrent_producer_ids": 8},
     )
 
     # --- Disruption mechanisms (Phase 2) ---
