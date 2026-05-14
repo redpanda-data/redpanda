@@ -85,6 +85,17 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
     def _validator(self) -> EffectValidator:
         return EffectValidator(self._model.get_effect(self._target_effect_name))
 
+    # Number of concurrent KgoVerifierProducer instances spawned when the
+    # multiple_producers mechanism is selected. Each instance gets its own
+    # set of producer IDs, so combined with msgs_per_producer_id this
+    # multiplies the total PID cardinality reaching producer_state_manager.
+    MULTIPLE_PRODUCERS_COUNT = 4
+
+    def _producer_count(self) -> int:
+        if "multiple_producers" in self._chosen_names:
+            return self.MULTIPLE_PRODUCERS_COUNT
+        return 1
+
     def run_smoke(self, topic_name: str, msg_size: int, msg_count: int) -> None:
         spec = self._create_cloud_topic(topic_name)
         self.logger.info(
@@ -96,27 +107,37 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         validator.snapshot(self.redpanda)
 
         producer_kwargs = self._producer_kwargs()
-        producer = KgoVerifierProducer(
-            self.test_context,
-            self.redpanda,
-            spec.name,
-            msg_size=msg_size,
-            msg_count=msg_count,
-            tolerate_failed_produce=True,
-            **producer_kwargs,
-        )
+        producer_count = self._producer_count()
+        producers: list[KgoVerifierProducer] = []
+        for i in range(producer_count):
+            p = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                spec.name,
+                msg_size=msg_size,
+                msg_count=msg_count,
+                tolerate_failed_produce=True,
+                client_name=f"swarm-producer-{i}",
+                **producer_kwargs,
+            )
+            producers.append(p)
         consumer: KgoVerifierSeqConsumer | None = None
         try:
-            producer.start()
-            producer.wait(timeout_sec=180)
-            pstatus = producer.produce_status
-            acked = pstatus.acked
-            self.logger.info(
-                f"swarm: produced acked={acked}/{msg_count} "
-                f"bad_offsets={pstatus.bad_offsets}"
-            )
-            assert acked >= msg_count * 3 // 4, (
-                f"too few acks for a meaningful run: {acked}/{msg_count}"
+            for p in producers:
+                p.start()
+            total_acked = 0
+            for i, p in enumerate(producers):
+                p.wait(timeout_sec=180)
+                pstatus = p.produce_status
+                total_acked += pstatus.acked
+                self.logger.info(
+                    f"swarm: producer[{i}] acked={pstatus.acked}/{msg_count} "
+                    f"bad_offsets={pstatus.bad_offsets}"
+                )
+            expected_total = msg_count * producer_count
+            assert total_acked >= expected_total * 3 // 4, (
+                f"too few acks for a meaningful run: "
+                f"{total_acked}/{expected_total}"
             )
 
             validator.assert_observed(self.redpanda, self.logger)
@@ -134,6 +155,14 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                     "swarm: skipping content validation (retention enabled)"
                 )
                 return
+            # Multiple producers write interleaved messages from the
+            # SeqConsumer's perspective, so per-key sequence validation
+            # doesn't apply. Skip the consumer in that case too.
+            if producer_count > 1:
+                self.logger.info(
+                    "swarm: skipping content validation (multiple producers)"
+                )
+                return
 
             consumer = KgoVerifierSeqConsumer(
                 self.test_context,
@@ -141,8 +170,8 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 spec.name,
                 msg_size=msg_size,
                 loop=False,
-                nodes=[producer.nodes[0]],
-                producer=producer,
+                nodes=[producers[0].nodes[0]],
+                producer=producers[0],
             )
             consumer.start(clean=False)
             consumer.wait(timeout_sec=180)
@@ -158,13 +187,14 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             assert cstatus.validator.out_of_scope_invalid_reads == 0, (
                 f"out-of-scope reads: {cstatus.validator.out_of_scope_invalid_reads}"
             )
-            assert cstatus.validator.valid_reads >= acked, (
-                f"data loss: expected >= {acked} valid reads, "
+            assert cstatus.validator.valid_reads >= total_acked, (
+                f"data loss: expected >= {total_acked} valid reads, "
                 f"got {cstatus.validator.valid_reads}"
             )
         finally:
-            producer.stop()
-            producer.free()
+            for p in producers:
+                p.stop()
+                p.free()
             if consumer is not None:
                 consumer.stop()
                 consumer.free()

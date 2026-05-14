@@ -131,6 +131,7 @@ def default_model() -> SwarmModel:
     multiple_producers = Mechanism(m, "multiple_producers")
     l1_reader_cache_evict_fast = Mechanism(m, "l1_reader_cache_evict_fast", needs_restart=True)
     produce_inflight_limit_low = Mechanism(m, "produce_inflight_limit_low", needs_restart=True)
+    psm_low_producer_limit = Mechanism(m, "psm_low_producer_limit")
 
     # transactional_producer => idempotent_producer
     m._implications.append(
@@ -172,7 +173,15 @@ def default_model() -> SwarmModel:
         m, "epoch_increment_observed",
         terminal_metric="vectorized_cloud_topics_l0_gc_min_partition_gc_epoch",
     )
-    epoch_increment.requires(reconciliation, epoch_increment_fast)
+    epoch_increment.requires(epoch_increment_fast)
+
+    producer_eviction = Effect(
+        m, "producer_eviction_observed",
+        terminal_metric="vectorized_cluster_producer_state_manager_evicted_producers",
+    )
+    producer_eviction.requires(
+        multiple_producers, idempotent_producer, psm_low_producer_limit,
+    )
 
     l1_reader_eviction = Effect(
         m, "l1_reader_eviction_observed", terminal_metric=None,

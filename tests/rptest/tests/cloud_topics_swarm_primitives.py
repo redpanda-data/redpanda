@@ -126,9 +126,23 @@ def attach_overrides(model: SwarmModel) -> None:
         "idempotent_producer",
         producer={},
     )
-    # multiple_producers / l1_reader_cache_evict_fast / produce_inflight_limit_low:
-    # not exercised by the Phase 1 smoke test. Overrides intentionally left
-    # empty so the model stays a faithful catalog. Phase 2 will wire them.
+    set_overrides(
+        "multiple_producers",
+        # KgoVerifierProducer cycles to a new producer ID every
+        # msgs_per_producer_id messages. Pair with a small
+        # max_concurrent_producer_ids via psm_low_producer_limit to drive
+        # rm_stm / producer_state_manager into LRU eviction.
+        producer={"msgs_per_producer_id": 100},
+    )
+    set_overrides(
+        "psm_low_producer_limit",
+        # Default is 100000; shrink so producer_state_manager evicts
+        # producers within a single smoke run.
+        cluster={"max_concurrent_producer_ids": 4},
+    )
+    # l1_reader_cache_evict_fast / produce_inflight_limit_low:
+    # not exercised by Phase 1. Overrides intentionally left empty so the
+    # model stays a faithful catalog. Phase 2 will wire them.
 
 
 def merged_cluster_config(chosen: list[Mechanism]) -> dict[str, Any]:

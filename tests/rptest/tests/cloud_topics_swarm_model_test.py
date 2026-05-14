@@ -57,6 +57,23 @@ def test_default_model_l1_upload_dependencies():
     assert chosen == {"reconciliation"}
 
 
+def test_default_model_epoch_increment_does_not_require_reconciliation():
+    """The epoch service runs independently of the reconciler."""
+    model = default_model()
+    chosen = {m.name for m in model.solve_for("epoch_increment_observed")}
+    assert chosen == {"epoch_increment_fast"}
+
+
+def test_default_model_producer_eviction_dependencies():
+    model = default_model()
+    chosen = {m.name for m in model.solve_for("producer_eviction_observed")}
+    assert chosen == {
+        "multiple_producers",
+        "idempotent_producer",
+        "psm_low_producer_limit",
+    }
+
+
 def test_transactional_implies_idempotent():
     """transactional_producer => idempotent_producer (Kafka semantics)."""
     model = default_model()
