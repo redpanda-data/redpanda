@@ -204,10 +204,24 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
     """Phase 1 smoke test: drive long-term GC end to end via the model."""
 
     MSG_SIZE = 1024
-    MSG_COUNT = 5000  # ~5 MiB, completes in ~30s at default produce rate
+    # Total payload per producer instance, picked from Scale. The
+    # reconciler is happy to wait for ~64MB of data by default; even with
+    # max_object_size shrunk to 1MB, small payloads make L1-upload timing
+    # flaky. 100 MiB gives enough material for steady-state behavior, and
+    # release-scale runs get 1 GiB for stronger coverage.
+    PAYLOAD_BYTES_LOCAL = 100 * 1024 * 1024
+    PAYLOAD_BYTES_RELEASE = 1024 * 1024 * 1024
 
     def __init__(self, test_context: TestContext):
         super().__init__(test_context, target_effect_name="long_term_gc_observed")
+
+    def _msg_count(self) -> int:
+        payload = (
+            self.PAYLOAD_BYTES_RELEASE
+            if self.scale.release
+            else self.PAYLOAD_BYTES_LOCAL
+        )
+        return payload // self.MSG_SIZE
 
     @cluster(num_nodes=4)
     @matrix(
@@ -217,5 +231,5 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
         self.run_smoke(
             topic_name="ct-swarm-long-term-gc",
             msg_size=self.MSG_SIZE,
-            msg_count=self.MSG_COUNT,
+            msg_count=self._msg_count(),
         )
