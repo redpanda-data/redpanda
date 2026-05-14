@@ -33,7 +33,6 @@ from rptest.services.kgo_verifier_services import (
 from rptest.services.redpanda import SISettings, get_cloud_storage_type
 from rptest.tests.cloud_topics_swarm_model import default_model
 from rptest.tests.cloud_topics_swarm_primitives import (
-    EffectValidator,
     attach_overrides,
     merged_cluster_config,
     merged_producer_kwargs,
@@ -82,9 +81,6 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
     def _producer_kwargs(self) -> dict[str, Any]:
         return merged_producer_kwargs(self._chosen)
 
-    def _validator(self) -> EffectValidator:
-        return EffectValidator(self._model.get_effect(self._target_effect_name))
-
     # Number of concurrent KgoVerifierProducer instances spawned when the
     # multiple_producers mechanism is selected. Each instance gets its own
     # set of producer IDs, so combined with msgs_per_producer_id this
@@ -97,14 +93,16 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         return 1
 
     def run_smoke(self, topic_name: str, msg_size: int, msg_count: int) -> None:
+        """Produce ``msg_count * producer_count`` records, then read them
+        all back with KgoVerifierSeqConsumer and assert no data loss or
+        corruption. The chosen mechanisms shape what the cluster does
+        during the run, but validation is content-only — no metric
+        sampling — so the test stays correct across restarts."""
         spec = self._create_cloud_topic(topic_name)
         self.logger.info(
             f"swarm: target={self._target_effect_name!r} "
             f"mechanisms={self._chosen_names}"
         )
-
-        validator = self._validator()
-        validator.snapshot(self.redpanda)
 
         producer_kwargs = self._producer_kwargs()
         producer_count = self._producer_count()
@@ -140,24 +138,9 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 f"{total_acked}/{expected_total}"
             )
 
-            validator.assert_observed(self.redpanda, self.logger)
-
-            # End-to-end content validation only makes sense when the run
-            # didn't intentionally delete data. If retention is enabled,
-            # SeqConsumer cannot expect to read every produced message
-            # back, so skip it. invalid_reads / out_of_scope_invalid_reads
-            # are still useful corruption signals but require the consumer
-            # to make progress, which won't happen reliably when start
-            # offset has advanced past 0.
-            data_will_be_deleted = "retention_low" in self._chosen_names
-            if data_will_be_deleted:
-                self.logger.info(
-                    "swarm: skipping content validation (retention enabled)"
-                )
-                return
-            # Multiple producers write interleaved messages from the
+            # Multiple producers write interleaved messages from a
             # SeqConsumer's perspective, so per-key sequence validation
-            # doesn't apply. Skip the consumer in that case too.
+            # doesn't apply. Skip the consumer in that case.
             if producer_count > 1:
                 self.logger.info(
                     "swarm: skipping content validation (multiple producers)"
@@ -201,19 +184,18 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
 
 
 class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
-    """Phase 1 smoke test: drive long-term GC end to end via the model."""
+    """Phase 1 smoke test: exercise the L0 path end to end via the model.
+
+    Targets short_term_gc_observed, which the model resolves to
+    {reconciliation, short_term_gc_fast, epoch_increment_fast}. Validation
+    is content-only via KgoVerifierSeqConsumer."""
 
     MSG_SIZE = 1024
-    # Total payload per producer instance, picked from Scale. The
-    # reconciler is happy to wait for ~64MB of data by default; even with
-    # max_object_size shrunk to 1MB, small payloads make L1-upload timing
-    # flaky. 100 MiB gives enough material for steady-state behavior, and
-    # release-scale runs get 1 GiB for stronger coverage.
     PAYLOAD_BYTES_LOCAL = 100 * 1024 * 1024
     PAYLOAD_BYTES_RELEASE = 1024 * 1024 * 1024
 
     def __init__(self, test_context: TestContext):
-        super().__init__(test_context, target_effect_name="long_term_gc_observed")
+        super().__init__(test_context, target_effect_name="short_term_gc_observed")
 
     def _msg_count(self) -> int:
         payload = (
@@ -227,9 +209,9 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
     )
-    def test_long_term_gc_via_model(self, cloud_storage_type: CloudStorageType):
+    def test_short_term_gc_via_model(self, cloud_storage_type: CloudStorageType):
         self.run_smoke(
-            topic_name="ct-swarm-long-term-gc",
+            topic_name="ct-swarm-short-term-gc",
             msg_size=self.MSG_SIZE,
             msg_count=self._msg_count(),
         )

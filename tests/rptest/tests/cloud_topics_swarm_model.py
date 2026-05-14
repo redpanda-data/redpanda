@@ -119,17 +119,14 @@ def default_model() -> SwarmModel:
     """
     m = SwarmModel()
 
-    # --- Mechanisms ---
+    # --- Mechanisms (L0-focused scope) ---
     reconciliation = Mechanism(m, "reconciliation", needs_restart=True)
-    retention_low = Mechanism(m, "retention_low")
-    long_term_gc_fast = Mechanism(m, "long_term_gc_fast", needs_restart=True)
     short_term_gc_fast = Mechanism(m, "short_term_gc_fast", needs_restart=True)
     compaction = Mechanism(m, "compaction", needs_restart=True)
     epoch_increment_fast = Mechanism(m, "epoch_increment_fast", needs_restart=True)
     transactional_producer = Mechanism(m, "transactional_producer")
     idempotent_producer = Mechanism(m, "idempotent_producer")
     multiple_producers = Mechanism(m, "multiple_producers")
-    l1_reader_cache_evict_fast = Mechanism(m, "l1_reader_cache_evict_fast", needs_restart=True)
     produce_inflight_limit_low = Mechanism(m, "produce_inflight_limit_low", needs_restart=True)
     psm_low_producer_limit = Mechanism(m, "psm_low_producer_limit")
 
@@ -138,55 +135,26 @@ def default_model() -> SwarmModel:
         z3.Implies(transactional_producer.var, idempotent_producer.var)
     )
 
-    # --- Effects ---
-    l1_upload = Effect(
-        m, "l1_upload_observed",
-        terminal_metric="vectorized_cloud_topics_reconciler_objects_uploaded",
-    )
+    # --- Effects (L0-focused scope) ---
+    # Effects no longer carry terminal metrics: validation is done via
+    # KgoVerifier content checks so the harness can tolerate restarts
+    # (metric counters reset on restart, content does not).
+    l1_upload = Effect(m, "l1_upload_observed", terminal_metric=None)
     l1_upload.requires(reconciliation)
 
-    short_term_gc = Effect(
-        m, "short_term_gc_observed",
-        terminal_metric="vectorized_cloud_topics_l0_gc_objects_deleted_total",
-    )
+    short_term_gc = Effect(m, "short_term_gc_observed", terminal_metric=None)
     short_term_gc.requires(reconciliation, short_term_gc_fast, epoch_increment_fast)
 
-    long_term_gc = Effect(
-        m, "long_term_gc_observed",
-        terminal_metric="vectorized_cloud_topics_l1_domain_manager_gc_objects_deleted_total",
-        deadline_sec=240,
-    )
-    long_term_gc.requires(reconciliation, retention_low, long_term_gc_fast)
-
-    compaction_eff = Effect(
-        m, "compaction_observed",
-        terminal_metric="vectorized_cloud_topics_compaction_scheduler_log_compactions_total",
-    )
+    compaction_eff = Effect(m, "compaction_observed", terminal_metric=None)
     compaction_eff.requires(reconciliation, compaction)
 
-    retention_eviction = Effect(
-        m, "retention_eviction_observed", terminal_metric=None,
-    )
-    retention_eviction.requires(reconciliation, retention_low, long_term_gc_fast)
-
-    epoch_increment = Effect(
-        m, "epoch_increment_observed",
-        terminal_metric="vectorized_cloud_topics_l0_gc_min_partition_gc_epoch",
-    )
+    epoch_increment = Effect(m, "epoch_increment_observed", terminal_metric=None)
     epoch_increment.requires(epoch_increment_fast)
 
-    producer_eviction = Effect(
-        m, "producer_eviction_observed",
-        terminal_metric="vectorized_cluster_producer_state_manager_evicted_producers",
-    )
+    producer_eviction = Effect(m, "producer_eviction_observed", terminal_metric=None)
     producer_eviction.requires(
         multiple_producers, idempotent_producer, psm_low_producer_limit,
     )
-
-    l1_reader_eviction = Effect(
-        m, "l1_reader_eviction_observed", terminal_metric=None,
-    )
-    l1_reader_eviction.requires(reconciliation, l1_reader_cache_evict_fast)
 
     inflight_backpressure = Effect(
         m, "inflight_backpressure_observed", terminal_metric=None,

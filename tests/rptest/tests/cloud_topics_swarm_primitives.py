@@ -23,11 +23,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ducktape.utils.util import wait_until
-
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import CLOUD_TOPICS_CONFIG_STR
-from rptest.tests.cloud_topics_swarm_model import Effect, Mechanism, SwarmModel
+from rptest.tests.cloud_topics_swarm_model import Mechanism, SwarmModel
 
 _HUGE_INTERVAL_MS = 24 * 60 * 60 * 1000
 _HUGE_BYTES = 1024 * 1024 * 1024 * 1024
@@ -41,7 +39,6 @@ BASELINE_CLUSTER_CONFIG: dict[str, Any] = {
     CLOUD_TOPICS_CONFIG_STR: True,
     "cloud_topics_disable_reconciliation_loop": True,
     "cloud_topics_disable_level_zero_gc_for_tests": True,
-    "cloud_topics_long_term_garbage_collection_interval": _HUGE_INTERVAL_MS,
     "cloud_topics_compaction_interval_ms": _HUGE_INTERVAL_MS,
     "cloud_topics_epoch_service_epoch_increment_interval": _HUGE_INTERVAL_MS,
     "cloud_topics_epoch_service_local_epoch_cache_duration": _HUGE_INTERVAL_MS,
@@ -81,19 +78,6 @@ def attach_overrides(model: SwarmModel) -> None:
             # so make L1 objects small enough that the reconciler doesn't
             # wait to accumulate a default-sized batch.
             "cloud_topics_reconciliation_max_object_size": 1024 * 1024,
-        },
-    )
-    set_overrides(
-        "retention_low",
-        topic={TopicSpec.PROPERTY_RETENTION_TIME: "30000"},
-    )
-    set_overrides(
-        "long_term_gc_fast",
-        cluster={
-            "cloud_topics_long_term_garbage_collection_interval": 5000,
-            # Default is 1h; shrink so the GC loop can actually delete
-            # newly-unreferenced L1 objects within the test deadline.
-            "cloud_topics_long_term_file_deletion_delay": 1000,
         },
     )
     set_overrides(
@@ -167,64 +151,3 @@ def merged_producer_kwargs(chosen: list[Mechanism]) -> dict[str, Any]:
     return kw
 
 
-def _sum_metric(redpanda, metric_name: str) -> int:
-    """Sum a Prometheus metric across all nodes/shards. Returns 0 if not
-    yet exposed (so snapshot() returns 0 cleanly before workload starts)."""
-    samples = redpanda.metrics_sample(metric_name)
-    if samples is None or not samples.samples:
-        return 0
-    return int(sum(s.value for s in samples.samples))
-
-
-class EffectValidator:
-    """Final-effect metric-delta validator. snapshot() captures the
-    baseline before the workload; assert_observed() polls until the
-    metric advances by ``threshold`` or the deadline expires."""
-
-    def __init__(self, effect: Effect):
-        if effect.terminal_metric is None:
-            raise NotImplementedError(
-                f"effect {effect.name!r} has no terminal_metric; an "
-                f"AdminApi-based validator is required (see spec section 4 TBC)"
-            )
-        self._effect = effect
-        self._baseline: int | None = None
-
-    @property
-    def name(self) -> str:
-        return self._effect.name
-
-    @property
-    def metric(self) -> str:
-        assert self._effect.terminal_metric is not None
-        return self._effect.terminal_metric
-
-    def snapshot(self, redpanda) -> None:
-        self._baseline = _sum_metric(redpanda, self.metric)
-
-    def assert_observed(self, redpanda, logger) -> None:
-        assert self._baseline is not None, "call snapshot() before assert_observed()"
-        threshold = self._effect.threshold
-        deadline = self._effect.deadline_sec
-        last = [self._baseline]
-
-        def _moved() -> bool:
-            curr = _sum_metric(redpanda, self.metric)
-            last[0] = curr
-            return (curr - self._baseline) >= threshold
-
-        wait_until(
-            _moved,
-            timeout_sec=deadline,
-            backoff_sec=2,
-            retry_on_exc=True,
-            err_msg=lambda: (
-                f"effect {self.name!r}: metric {self.metric!r} did not "
-                f"advance by >= {threshold} within {deadline}s "
-                f"(baseline={self._baseline}, last={last[0]})"
-            ),
-        )
-        logger.info(
-            f"effect {self.name!r}: {self.metric!r} advanced "
-            f"{self._baseline} -> {last[0]}"
-        )

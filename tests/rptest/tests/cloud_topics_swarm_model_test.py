@@ -35,12 +35,6 @@ def test_solver_raises_on_unknown_effect():
         model.solve_for("does_not_exist")
 
 
-def test_default_model_long_term_gc_dependencies():
-    model = default_model()
-    chosen = {m.name for m in model.solve_for("long_term_gc_observed")}
-    assert chosen == {"reconciliation", "retention_low", "long_term_gc_fast"}
-
-
 def test_default_model_short_term_gc_dependencies():
     model = default_model()
     chosen = {m.name for m in model.solve_for("short_term_gc_observed")}
@@ -86,7 +80,7 @@ def test_transactional_implies_idempotent():
     assert s.check() == z3.unsat
 
 
-def test_merged_cluster_config_for_long_term_gc():
+def test_merged_cluster_config_for_short_term_gc():
     from rptest.tests.cloud_topics_swarm_model import default_model
     from rptest.tests.cloud_topics_swarm_primitives import (
         attach_overrides, merged_cluster_config,
@@ -94,16 +88,18 @@ def test_merged_cluster_config_for_long_term_gc():
 
     model = default_model()
     attach_overrides(model)
-    chosen = model.solve_for("long_term_gc_observed")
+    chosen = model.solve_for("short_term_gc_observed")
     cfg = merged_cluster_config(chosen)
 
+    # The three required mechanisms re-enable each loop they own.
     assert cfg["cloud_topics_disable_reconciliation_loop"] is False
     assert cfg["cloud_topics_reconciliation_min_interval"] == 2000
-    assert cfg["cloud_topics_long_term_garbage_collection_interval"] == 5000
-    assert cfg["cloud_topics_disable_level_zero_gc_for_tests"] is True
+    assert cfg["cloud_topics_disable_level_zero_gc_for_tests"] is False
+    assert cfg["cloud_topics_short_term_gc_interval"] == 2000
+    assert cfg["cloud_topics_epoch_service_epoch_increment_interval"] == 5000
 
 
-def test_merged_topic_config_for_long_term_gc():
+def test_merged_topic_config_for_short_term_gc():
     from rptest.clients.types import TopicSpec
     from rptest.tests.cloud_topics_swarm_model import default_model
     from rptest.tests.cloud_topics_swarm_primitives import (
@@ -112,9 +108,9 @@ def test_merged_topic_config_for_long_term_gc():
 
     model = default_model()
     attach_overrides(model)
-    chosen = model.solve_for("long_term_gc_observed")
+    chosen = model.solve_for("short_term_gc_observed")
     tcfg = merged_topic_config(chosen)
 
+    # Baseline only: short_term_gc doesn't change topic config.
     assert tcfg[TopicSpec.PROPERTY_STORAGE_MODE] == TopicSpec.STORAGE_MODE_CLOUD
-    assert tcfg[TopicSpec.PROPERTY_RETENTION_TIME] == "30000"
     assert tcfg[TopicSpec.PROPERTY_CLEANUP_POLICY] == "delete"
