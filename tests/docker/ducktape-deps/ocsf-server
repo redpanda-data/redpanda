@@ -32,11 +32,26 @@ rm ${OCSF_SERVER_VERSION}.tar.gz
 mv ocsf-server-${OCSF_SERVER_VERSION} /opt/ocsf-server
 
 retry_apt apt-get update
-retry_apt apt-get install -qq software-properties-common
+retry_apt apt-get install -qq software-properties-common unzip
 
 retry_apt add-apt-repository -y ppa:rabbitmq/rabbitmq-erlang
 retry_apt apt-get update
-retry_apt apt-get install -qq elixir erlang-dev erlang-xmerl
+retry_apt apt-get install -qq erlang erlang-dev erlang-xmerl
+
+# Ubuntu's `elixir` package is 1.12, but ocsf-server's mix.exs requires
+# `~> 1.14`. Install Elixir from the official precompiled release, matching
+# the OTP 26 the rabbitmq erlang PPA provides.
+ELIXIR_VERSION=1.15.7
+ELIXIR_OTP=26
+ELIXIR_SHA256=10370b04df55fcd93fd016125d5c9bbe1aab5a7ffa99691f6197e3829e32af34
+wget "https://github.com/elixir-lang/elixir/releases/download/v${ELIXIR_VERSION}/elixir-otp-${ELIXIR_OTP}.zip"
+echo "${ELIXIR_SHA256}  elixir-otp-${ELIXIR_OTP}.zip" | sha256sum -c -
+mkdir -p /opt/elixir
+unzip -q -d /opt/elixir "elixir-otp-${ELIXIR_OTP}.zip"
+rm "elixir-otp-${ELIXIR_OTP}.zip"
+for bin in elixir elixirc iex mix; do
+  ln -sf "/opt/elixir/bin/${bin}" "/usr/local/bin/${bin}"
+done
 
 mix local.hex --force && mix local.rebar --force
 
