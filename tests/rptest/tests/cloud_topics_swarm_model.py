@@ -153,6 +153,7 @@ def default_model() -> SwarmModel:
     long_term_gc = Effect(
         m, "long_term_gc_observed",
         terminal_metric="vectorized_cloud_topics_l1_domain_manager_gc_objects_deleted_total",
+        deadline_sec=240,
     )
     long_term_gc.requires(reconciliation, retention_low, long_term_gc_fast)
 
