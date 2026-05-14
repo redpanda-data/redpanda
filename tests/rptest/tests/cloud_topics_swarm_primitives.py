@@ -46,6 +46,10 @@ BASELINE_CLUSTER_CONFIG: dict[str, Any] = {
     "cloud_topics_epoch_service_epoch_increment_interval": _HUGE_INTERVAL_MS,
     "cloud_topics_epoch_service_local_epoch_cache_duration": _HUGE_INTERVAL_MS,
     "cloud_topics_produce_write_inflight_limit": _HUGE_COUNT,
+    # Mid-run leadership transfers on the L1 metastore partition or the
+    # target topic restart the housekeeper / reconciler state machines
+    # and add seconds of stall. Pin leadership for deterministic timing.
+    "enable_leader_balancer": False,
 }
 
 # Baseline topic config: storage.mode=cloud, retention effectively
@@ -75,12 +79,14 @@ def attach_overrides(model: SwarmModel) -> None:
         "reconciliation",
         cluster={
             "cloud_topics_disable_reconciliation_loop": False,
-            "cloud_topics_reconciliation_min_interval": 2000,
-            "cloud_topics_reconciliation_max_interval": 2000,
+            "cloud_topics_reconciliation_min_interval": 100,
+            "cloud_topics_reconciliation_max_interval": 1000,
             # Default target is ~64MB. Smoke tests produce only a few MB,
             # so make L1 objects small enough that the reconciler doesn't
             # wait to accumulate a default-sized batch.
-            "cloud_topics_reconciliation_max_object_size": 1024 * 1024,
+            # At the same time the L1 object should be large enough to 
+            # potentially be able to fit extents from multiple partitions. 
+            "cloud_topics_reconciliation_max_object_size": 10 * 1024 * 1024,
         },
     )
     set_overrides(
