@@ -334,7 +334,6 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
                 hwm, _ = self.get_hwm_lso()
                 return hwm > target_o
 
-            rpk = RpkTool(self.redpanda)
             with firewall_blocked(
                 self.redpanda.nodes, dl.catalog_service.iceberg_rest_port
             ):
@@ -351,12 +350,16 @@ class DatalakeBlockedCatalogTest(RedpandaTest):
                 assert lso == 0, f"Expected {lso} = 0"
 
                 # Now disable Iceberg and wait for data to be trimmed.
-                rpk.cluster_config_set("iceberg_enabled", "false")
+                # iceberg_enabled requires restart to take effect.
+                self.redpanda.set_cluster_config(
+                    {"iceberg_enabled": False}, expect_restart=True
+                )
                 wait_until(self.cloud_log_trimmed, timeout_sec=30, backoff_sec=1)
 
             # Now reenable Iceberg and check that we commit data.
-            rpk.cluster_config_set("iceberg_enabled", "true")
-            self.redpanda.restart_nodes(self.redpanda.nodes)
+            self.redpanda.set_cluster_config(
+                {"iceberg_enabled": True}, expect_restart=True
+            )
 
             hwm, _ = self.get_hwm_lso()
             dl.wait_for_translation_until_offset(self.topic_name, hwm - 1)

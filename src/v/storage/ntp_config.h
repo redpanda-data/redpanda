@@ -431,9 +431,6 @@ public:
     }
 
     model::iceberg_mode iceberg_mode() const {
-        if (!config::shard_local_cfg().iceberg_enabled) {
-            return model::iceberg_mode::disabled;
-        }
         return _overrides ? _overrides->iceberg_mode : default_iceberg_mode;
     }
 
@@ -442,9 +439,6 @@ public:
     }
 
     bool cloud_topic_enabled() const {
-        if (!config::shard_local_cfg().cloud_topics_enabled()) {
-            return false;
-        }
         return _overrides
                && _overrides->storage_mode
                     == model::redpanda_storage_mode::cloud;
