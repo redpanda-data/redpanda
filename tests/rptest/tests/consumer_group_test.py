@@ -764,13 +764,13 @@ class ConsumerGroupTest(RedpandaTest):
         # pending members**
         resp = self.kcl.raw_join_group(
             {
-                "Version": 5,
                 "Group": group,
                 "SessionTimeoutMillis": 60000,
                 "RebalanceTimeoutMillis": 60000,
                 "ProtocolType": "consumer",
                 "Protocols": [{"Name": "range"}],
-            }
+            },
+            version=5,
         )
         self.redpanda.logger.debug(f"JoinGroupResponse: {resp}")
         member_id_required = 79
@@ -970,10 +970,12 @@ class ConsumerGroupTest(RedpandaTest):
 
         self.logger.info("Waiting for group to become stable")
         wait_until(
-            lambda: self.admin_client.describe_consumer_groups(group_ids=[group])[group]
-            .result()
-            .state
-            == ConsumerGroupState.STABLE,
+            lambda: (
+                self.admin_client.describe_consumer_groups(group_ids=[group])[group]
+                .result()
+                .state
+                == ConsumerGroupState.STABLE
+            ),
             20,
             1,
             retry_on_exc=True,
@@ -1171,10 +1173,12 @@ class ConsumerGroupTest(RedpandaTest):
         moved = move_partition(topic="__consumer_offsets", partition=0)
         assert moved, "Failed to move coordinator"
         wait_until(
-            lambda: self.admin_client.describe_consumer_groups(group_ids=[group])[group]
-            .result()
-            .state
-            == ConsumerGroupState.STABLE,
+            lambda: (
+                self.admin_client.describe_consumer_groups(group_ids=[group])[group]
+                .result()
+                .state
+                == ConsumerGroupState.STABLE
+            ),
             20,
             1,
             retry_on_exc=True,
