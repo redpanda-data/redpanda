@@ -85,7 +85,12 @@ def attach_overrides(model: SwarmModel) -> None:
     )
     set_overrides(
         "long_term_gc_fast",
-        cluster={"cloud_topics_long_term_garbage_collection_interval": 5000},
+        cluster={
+            "cloud_topics_long_term_garbage_collection_interval": 5000,
+            # Default is 1h; shrink so the GC loop can actually delete
+            # newly-unreferenced L1 objects within the test deadline.
+            "cloud_topics_long_term_file_deletion_delay": 1000,
+        },
     )
     set_overrides(
         "short_term_gc_fast",

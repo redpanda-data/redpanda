@@ -105,15 +105,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             tolerate_failed_produce=True,
             **producer_kwargs,
         )
-        consumer = KgoVerifierSeqConsumer(
-            self.test_context,
-            self.redpanda,
-            spec.name,
-            msg_size=msg_size,
-            loop=False,
-            nodes=[producer.nodes[0]],
-            producer=producer,
-        )
+        consumer: KgoVerifierSeqConsumer | None = None
         try:
             producer.start()
             producer.wait(timeout_sec=180)
@@ -129,6 +121,15 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
 
             validator.assert_observed(self.redpanda, self.logger)
 
+            consumer = KgoVerifierSeqConsumer(
+                self.test_context,
+                self.redpanda,
+                spec.name,
+                msg_size=msg_size,
+                loop=False,
+                nodes=[producer.nodes[0]],
+                producer=producer,
+            )
             consumer.start(clean=False)
             consumer.wait(timeout_sec=180)
             cstatus = consumer.consumer_status
@@ -149,9 +150,10 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             )
         finally:
             producer.stop()
-            consumer.stop()
             producer.free()
-            consumer.free()
+            if consumer is not None:
+                consumer.stop()
+                consumer.free()
 
 
 class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
