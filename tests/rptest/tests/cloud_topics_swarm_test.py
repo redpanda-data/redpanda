@@ -143,7 +143,14 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         producer_kwargs = self._producer_kwargs()
         producer_count = self._producer_count()
         producers: list[KgoVerifierProducer] = []
+        shared_node: Any = None
         for i in range(producer_count):
+            # The first instance allocates a ducktape client node; the
+            # rest reuse it via custom_node so the test still fits in the
+            # standard num_nodes=4 budget.
+            kwargs: dict[str, Any] = dict(producer_kwargs)
+            if shared_node is not None:
+                kwargs["custom_node"] = [shared_node]
             p = KgoVerifierProducer(
                 self.test_context,
                 self.redpanda,
@@ -152,9 +159,11 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 msg_count=msg_count,
                 tolerate_failed_produce=True,
                 client_name=f"swarm-producer-{i}",
-                **producer_kwargs,
+                **kwargs,
             )
             producers.append(p)
+            if shared_node is None:
+                shared_node = p.nodes[0]
 
         disruption_thread: threading.Thread | None = None
         consumer: KgoVerifierSeqConsumer | None = None
