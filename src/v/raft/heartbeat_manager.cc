@@ -278,6 +278,12 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
         if (co_await _client_protocol.ensure_disconnect(node_id)) {
             vlog(
               hbeatlog.info, "Closed unresponsive connection to {}", node_id);
+            // Clear failures attributed to the replaced transport.
+            co_await ssx::async_for_each<loop_traits>(
+              _consensus_groups,
+              [node_id](ss::lw_shared_ptr<consensus>& raft_group) {
+                  raft_group->reset_heartbeat_failures(node_id);
+              });
         };
     }
 

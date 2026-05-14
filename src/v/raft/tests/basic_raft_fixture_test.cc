@@ -109,6 +109,52 @@ TEST_F_CORO(raft_fixture, test_stuck_append_entries) {
     ASSERT_EQ_CORO(term_before, raft->term());
 }
 
+// After ensure_disconnect replaces the cached transport for a peer,
+// reset_heartbeat_failures must zero heartbeats_failed for every follower of
+// this group whose node_id matches; failure history on the prior transport
+// must not carry over to the fresh one. See should_reconnect_follower.
+TEST_F_CORO(raft_fixture, test_reset_heartbeat_failures) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto leader = node(leader_id).raft();
+
+    auto& fstates = leader->get_follower_states();
+    ASSERT_GE_CORO(fstates.size(), 2u);
+    auto it = fstates.begin();
+    auto follower_a = it->first;
+    ++it;
+    auto follower_b = it->first;
+
+    constexpr size_t kFailuresA = 5;
+    constexpr size_t kFailuresB = 3;
+    for (size_t i = 0; i < kFailuresA; ++i) {
+        leader->update_heartbeat_status(follower_a, false);
+    }
+    for (size_t i = 0; i < kFailuresB; ++i) {
+        leader->update_heartbeat_status(follower_b, false);
+    }
+    ASSERT_EQ_CORO(
+      leader->get_follower_states().get(follower_a).heartbeats_failed,
+      kFailuresA);
+    ASSERT_EQ_CORO(
+      leader->get_follower_states().get(follower_b).heartbeats_failed,
+      kFailuresB);
+
+    // Reset only follower_a's node. follower_b must be untouched.
+    leader->reset_heartbeat_failures(follower_a.id());
+    ASSERT_EQ_CORO(
+      leader->get_follower_states().get(follower_a).heartbeats_failed, 0u);
+    ASSERT_EQ_CORO(
+      leader->get_follower_states().get(follower_b).heartbeats_failed,
+      kFailuresB);
+
+    // Reset_heartbeat_failures on an unknown node_id is a no-op.
+    leader->reset_heartbeat_failures(model::node_id{999});
+    ASSERT_EQ_CORO(
+      leader->get_follower_states().get(follower_b).heartbeats_failed,
+      kFailuresB);
+}
+
 struct test_parameters {
     consistency_level c_lvl;
     bool write_caching;
