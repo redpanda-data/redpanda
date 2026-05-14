@@ -124,9 +124,69 @@ def attach_overrides(model: SwarmModel) -> None:
         # producers within a single smoke run.
         cluster={"max_concurrent_producer_ids": 4},
     )
-    # l1_reader_cache_evict_fast / produce_inflight_limit_low:
-    # not exercised by Phase 1. Overrides intentionally left empty so the
-    # model stays a faithful catalog. Phase 2 will wire them.
+
+    # --- Disruption mechanisms (Phase 2) ---
+    model._mechs["inject_broker_restart"].disruption = _disrupt_broker_restart
+    model._mechs["inject_leadership_transfer"].disruption = (
+        _disrupt_leadership_transfer
+    )
+    model._mechs["inject_minio_block"].disruption = _disrupt_minio_block
+
+    # produce_inflight_limit_low: not exercised by Phase 1 / 2 smoke
+    # tests. Overrides intentionally left empty so the model stays a
+    # faithful catalog.
+
+
+# --- Disruption implementations ---
+
+# MinIO listens on port 9000 in the docker test environment. Blocking
+# OUTPUT to this port from a broker simulates a network partition between
+# that broker and the object store while leaving Kafka traffic intact.
+_MINIO_PORT = 9000
+_MINIO_BLOCK_SECONDS = 15
+
+
+def _disrupt_broker_restart(test) -> None:
+    """Restart one randomly-chosen broker and wait for it to come back."""
+    import random
+    node = random.choice(test.redpanda.nodes)
+    test.logger.info(f"swarm: disrupt: restarting broker {node.name}")
+    test.redpanda.restart_nodes([node], start_timeout=60, stop_timeout=60)
+    test.logger.info(f"swarm: disrupt: restart of {node.name} complete")
+
+
+def _disrupt_leadership_transfer(test) -> None:
+    """Force a leadership transfer on the target topic's partition 0."""
+    from rptest.services.admin import Admin
+    admin = Admin(test.redpanda)
+    topic = test._smoke_topic_name
+    test.logger.info(
+        f"swarm: disrupt: transferring leadership of {topic}/0"
+    )
+    admin.partition_transfer_leadership("kafka", topic, 0)
+    test.logger.info(f"swarm: disrupt: leadership transfer of {topic}/0 issued")
+
+
+def _disrupt_minio_block(test) -> None:
+    """Block outbound traffic to MinIO from one broker for a fixed window."""
+    import random
+    import time
+    node = random.choice(test.redpanda.nodes)
+    rule = f"iptables -A OUTPUT -p tcp --destination-port {_MINIO_PORT} -j DROP"
+    undo = f"iptables -D OUTPUT -p tcp --destination-port {_MINIO_PORT} -j DROP"
+    test.logger.info(
+        f"swarm: disrupt: blocking MinIO traffic on {node.name} for "
+        f"{_MINIO_BLOCK_SECONDS}s"
+    )
+    try:
+        node.account.ssh(rule)
+        time.sleep(_MINIO_BLOCK_SECONDS)
+    finally:
+        try:
+            node.account.ssh(undo)
+        except Exception as e:
+            test.logger.warn(f"swarm: disrupt: failed to undo block on {node.name}: {e}")
+    test.logger.info(f"swarm: disrupt: MinIO traffic restored on {node.name}")
 
 
 def merged_cluster_config(chosen: list[Mechanism]) -> dict[str, Any]:

@@ -23,14 +23,20 @@ of mechanisms that must be enabled to make the effect possible.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Optional
 
 import z3
 
 
 @dataclass
 class Mechanism:
-    """A test-controllable knob (Z3 boolean variable)."""
+    """A test-controllable knob (Z3 boolean variable).
+
+    ``disruption`` is an optional callable invoked once mid-produce when
+    the mechanism is selected. It receives the running test instance and
+    is responsible for any cleanup it needs to perform (e.g. healing a
+    network block). Mechanisms that only tune cluster/topic/producer
+    config leave it as None."""
 
     model: "SwarmModel"
     name: str
@@ -38,6 +44,7 @@ class Mechanism:
     topic_config_overrides: dict[str, str] = field(default_factory=dict)
     producer_overrides: dict[str, Any] = field(default_factory=dict)
     needs_restart: bool = False
+    disruption: Optional[Callable[..., None]] = None
 
     def __post_init__(self) -> None:
         self.var = z3.Bool(self.name)
@@ -129,6 +136,12 @@ def default_model() -> SwarmModel:
     multiple_producers = Mechanism(m, "multiple_producers")
     produce_inflight_limit_low = Mechanism(m, "produce_inflight_limit_low", needs_restart=True)
     psm_low_producer_limit = Mechanism(m, "psm_low_producer_limit")
+
+    # Disruption mechanisms: fire a single runtime action mid-produce.
+    # Not required by any effect; layered on as "spice" by the swarm test.
+    inject_broker_restart = Mechanism(m, "inject_broker_restart")
+    inject_leadership_transfer = Mechanism(m, "inject_leadership_transfer")
+    inject_minio_block = Mechanism(m, "inject_minio_block")
 
     # transactional_producer => idempotent_producer
     m._implications.append(
