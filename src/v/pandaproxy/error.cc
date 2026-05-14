@@ -277,6 +277,7 @@ std::error_condition make_error_condition(std::error_code ec) {
         case kec::group_subscribed_to_topic:
         case kec::unstable_offset_commit:
         case kec::no_reassignment_in_progress:
+        case kec::rebootstrap_required:
             return rec::kafka_error;
         case kec::network_exception:
         case kec::coordinator_load_in_progress:

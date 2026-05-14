@@ -240,6 +240,9 @@ enum class error_code : int16_t {
     unknown_topic_id = 100,
     // The transactional_id could not be found for describe tx request.
     transactional_id_not_found = 105,
+    // Client metadata is stale; the client should rebootstrap to obtain new
+    // metadata. Introduced by KIP-1102.
+    rebootstrap_required = 129,
 };
 
 std::string_view error_code_to_str(error_code error);

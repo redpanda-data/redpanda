@@ -27,7 +27,7 @@ memory_estimate_fn metadata_memory_estimator;
 using metadata_handler = single_stage_handler<
   metadata_api,
   0,
-  12,
+  13,
   metadata_memory_estimator,
   default_scheduling_group_provider,
   latency_hist::yes>;

@@ -51,7 +51,7 @@ struct metadata_request {
 
     metadata_request copy() const {
         static_assert(
-          api_type::max_valid == api_version(12),
+          api_type::max_valid == api_version(13),
           "Please update the metadata_request::copy method when updating the "
           "Metadata API");
         return {

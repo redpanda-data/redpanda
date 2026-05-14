@@ -201,6 +201,8 @@ std::string_view error_code_to_str(error_code error) {
         return "unknown_topic_id";
     case error_code::transactional_id_not_found:
         return "transactional_id_not_found";
+    case error_code::rebootstrap_required:
+        return "rebootstrap_required";
     default:
         return "unknown_error_code";
     }
@@ -319,6 +321,7 @@ bool is_retriable(error_code error) {
     case error_code::duplicate_resource:
     case error_code::unacceptable_credential:
     case error_code::transactional_id_not_found:
+    case error_code::rebootstrap_required:
         break;
     }
     return false;
