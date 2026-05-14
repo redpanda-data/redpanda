@@ -977,12 +977,38 @@ config_manager::apply_delta(cluster_config_delta_cmd&& cmd_in) {
     // Store the raw values (irrespective of any issues applying them) for
     // early replay on next startup.
     update_raw_values(data);
-    co_await write_local_cache(_seen_version, _raw_values);
+
+    // Mark the cache as out-of-date. The actual on-disk write is deferred
+    // to the controller STM's snapshot path:
+    //   - `controller_stm::maybe_make_snapshot` calls
+    //     `capture_pending_cache_data` under the apply mutex to snapshot
+    //     `_seen_version` / `_raw_values` consistent with the snapshot
+    //     being built.
+    //   - `controller_stm::snapshot_timer_callback` calls
+    //     `flush_pending_cache_write` after the snapshot is durable.
+    // This preserves the invariant that the on-disk cache offset never
+    // advances past the on-disk snapshot offset.
+    _pending_cache_write = true;
 
     // Signal status update loop to wake up
     _reconcile_wait.signal();
 
     co_return errc::success;
+}
+
+void config_manager::capture_pending_cache_data() {
+    if (!std::exchange(_pending_cache_write, false)) {
+        return;
+    }
+    _pending_cache_data = {_seen_version, _raw_values};
+}
+
+ss::future<> config_manager::flush_pending_cache_write() {
+    if (!_pending_cache_data) {
+        co_return;
+    }
+    auto data = std::exchange(_pending_cache_data, std::nullopt);
+    co_await write_local_cache(data->version, data->raw_values);
 }
 
 ss::future<std::error_code>
@@ -1083,6 +1109,12 @@ config_manager::apply_snapshot(model::offset, const controller_snapshot& snap) {
           "Failed to apply config_manager part of controller snapshot: {} ({})",
           ec.message(),
           ec));
+    }
+
+    // `apply_delta` set `_pending_cache_write`. Persist the cache here
+    // rather than waiting for the snapshot timer.
+    if (std::exchange(_pending_cache_write, false)) {
+        co_await write_local_cache(_seen_version, _raw_values);
     }
 
     // Snapshot application is a wholesale state replacement — promote

@@ -22,6 +22,9 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 
+#include <map>
+#include <optional>
+
 namespace YAML {
 class Node;
 }
@@ -73,6 +76,15 @@ public:
     ss::future<std::error_code> apply_update(model::record_batch);
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
+
+    /// Copy the current `_seen_version` and `_raw_values` into a pending
+    /// buffer for a deferred cache write, if `_pending_cache_write` is set.
+    // `flush_pending_cache_write()` can later persist it.
+    void capture_pending_cache_data();
+
+    /// Persist any data captured by `capture_pending_cache_data()` to the
+    /// on-disk cache.
+    ss::future<> flush_pending_cache_write();
 
     // Result of trying to apply a delta to a configuration
     struct apply_result {
@@ -153,6 +165,23 @@ private:
     ss::condition_variable _reconcile_wait;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cluster_recovery_table>& _recovery_table;
+
+    // Set by `apply_delta()` to signal that `_raw_values` has diverged from
+    // the on-disk cache. Cleared by `capture_pending_cache_data()`, which
+    // moves the current state into `_pending_cache_data` so the deferred cache
+    // write reflects state consistent with the snapshot being built.
+    bool _pending_cache_write{false};
+
+    // `_seen_version` and `_raw_values` captured atomically with the
+    // state in the controller snapshot, waiting to be written to disk.
+    // Populated by `capture_pending_cache_data()` and drained by
+    // `flush_pending_cache_write()` after the snapshot is durable.
+    struct pending_cache_data {
+        config_version version;
+        std::map<ss::sstring, ss::sstring> raw_values;
+    };
+    std::optional<pending_cache_data> _pending_cache_data;
+
     ss::gate _gate;
 };
 

@@ -50,10 +50,13 @@ ss::future<> controller_stm::stop() { co_return; }
 void controller_stm::snapshot_timer_callback() {
     ssx::background
       = ssx::spawn_with_gate_then(_gate, [this] {
-            return maybe_write_snapshot().then([](bool written) {
+            return maybe_write_snapshot().then([this](bool written) {
                 if (!written) {
                     vlog(clusterlog.info, "skipped writing snapshot");
+                    return ss::now();
                 }
+                return std::get<config_manager&>(_state)
+                  .flush_pending_cache_write();
             });
         }).handle_exception([](const std::exception_ptr& e) {
             vlog(clusterlog.warn, "failed to write snapshot: {}", e);
@@ -132,6 +135,11 @@ controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
     std::apply(
       [call_stm_fill](auto&&... stms) { (call_stm_fill(stms), ...); }, _state);
     co_await std::move(fill_fut);
+
+    // While still under _apply_mtx, snapshot config_manager's state into a
+    // pending-cache buffer if a delta has landed since the last capture. The
+    // cached state will be flushed after this snapshot is written.
+    std::get<config_manager&>(_state).capture_pending_cache_data();
 
     vlog(
       clusterlog.info,
