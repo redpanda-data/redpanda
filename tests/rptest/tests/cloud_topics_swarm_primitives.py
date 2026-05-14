@@ -77,10 +77,6 @@ def attach_overrides(model: SwarmModel) -> None:
             "cloud_topics_disable_reconciliation_loop": False,
             "cloud_topics_reconciliation_min_interval": 2000,
             "cloud_topics_reconciliation_max_interval": 2000,
-            # Default target is ~64MB. Smoke tests produce only a few MB,
-            # so make L1 objects small enough that the reconciler doesn't
-            # wait to accumulate a default-sized batch.
-            "cloud_topics_reconciliation_max_object_size": 1024 * 1024,
         },
     )
     set_overrides(
