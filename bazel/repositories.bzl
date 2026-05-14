@@ -28,6 +28,7 @@ def data_dependency():
         patches = [
             "//bazel/thirdparty:avro-snappy-includes.patch",
             "//bazel/thirdparty:avro-fmt-const.patch",
+            "//bazel/thirdparty:avrogen-stable-include-guard.patch",
         ],
         patch_args = ["-p1"],
     )

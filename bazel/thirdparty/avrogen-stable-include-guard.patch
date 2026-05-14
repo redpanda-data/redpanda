@@ -1,0 +1,28 @@
+From: Travis Downs <travis.downs@redpanda.com>
+Subject: [PATCH] avrogencpp: use deterministic include guard
+
+The generated header's include guard was suffixed with the output of a
+`boost::mt19937` seeded from `::time(nullptr)`, which produced a different
+guard on every avrogen invocation. That made every consumer of the generated
+header (e.g. `manifest_list_avro.cc`) see a different input digest on each
+build, breaking Bazel's remote cache for the entire dependency chain even
+on byte-identical schemas.
+
+`headerFile_` is already a unique-per-output path; `makeCanonical(h, true)`
+canonicalizes it into a valid identifier ending in `_H` (from the `.h`
+extension). Dropping the random number leaves a stable, still-unique guard.
+
+Tracks CORE-16317.
+
+diff --git a/lang/c++/impl/avrogencpp.cc b/lang/c++/impl/avrogencpp.cc
+--- a/lang/c++/impl/avrogencpp.cc
++++ b/lang/c++/impl/avrogencpp.cc
+@@ -793,7 +793,7 @@
+ string CodeGen::guard() {
+     string h = headerFile_;
+     makeCanonical(h, true);
+-    return h + "_" + lexical_cast<string>(random_()) + "_H";
++    return h + "_H";
+ }
+
+ void CodeGen::generate(const ValidSchema &schema) {
