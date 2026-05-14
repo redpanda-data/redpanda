@@ -3579,6 +3579,23 @@ configuration::configuration()
       "wait for manual activation via the Admin API (false).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , features_auto_finalization(
+      *this,
+      false, /* restricted value: license required to disable */
+      "features_auto_finalization",
+      "Whether the cluster active logical version is advanced automatically "
+      "once all nodes have been upgraded (true), or only in response to an "
+      "explicit request via the Admin API (false). When false, the cluster "
+      "remains able to downgrade to the previous version until finalization "
+      "is requested. Setting this to false is an Enterprise feature and "
+      "requires a valid license. Note: if upgrade was performed with this "
+      "set to false and the cluster is ready to finalize, flipping this to "
+      "true does not reliably trigger finalization. Leave this set to false "
+      "and use the Admin API to finalize; once the upgrade is complete this "
+      "can be set back to true to restore automatic finalization for future "
+      "upgrades.",
+      meta{.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , enable_rack_awareness(
       *this,
       "enable_rack_awareness",
