@@ -136,6 +136,15 @@ def attach_overrides(model: SwarmModel) -> None:
         _disrupt_leadership_transfer
     )
     model._mechs["inject_minio_block"].disruption = _disrupt_minio_block
+    model._mechs["inject_node_maintenance"].disruption = (
+        _disrupt_node_maintenance
+    )
+    model._mechs["inject_partition_movement"].disruption = (
+        _disrupt_partition_movement
+    )
+    model._mechs["inject_node_decommission"].disruption = (
+        _disrupt_node_decommission
+    )
 
     # produce_inflight_limit_low: not exercised by Phase 1 / 2 smoke
     # tests. Overrides intentionally left empty so the model stays a
@@ -247,6 +256,105 @@ def _disrupt_minio_block(test, abort_event=None) -> None:
         except Exception as e:
             test.logger.warn(f"swarm: disrupt: failed to undo block on {node.name}: {e}")
     test.logger.info(f"swarm: disrupt: MinIO traffic restored on {node.name}")
+
+
+# How long a node stays in maintenance mode before being released.
+_MAINTENANCE_SECONDS = 120
+
+
+def _disrupt_node_maintenance(test, abort_event=None) -> None:
+    """Put one randomly-chosen broker into maintenance mode for
+    ``_MAINTENANCE_SECONDS`` and then release it. One-shot."""
+    import random
+    import time
+    from rptest.services.admin import Admin
+    admin = Admin(test.redpanda)
+    node = random.choice(test.redpanda.nodes)
+    test.logger.info(
+        f"swarm: disrupt: maintenance start on {node.name} for "
+        f"{_MAINTENANCE_SECONDS}s"
+    )
+    try:
+        admin.maintenance_start(node)
+    except Exception as e:
+        test.logger.warn(f"swarm: disrupt: maintenance_start failed: {e}")
+        return
+    try:
+        end_at = time.monotonic() + _MAINTENANCE_SECONDS
+        while time.monotonic() < end_at:
+            if abort_event is not None and abort_event.is_set():
+                break
+            time.sleep(1)
+    finally:
+        try:
+            admin.maintenance_stop(node)
+        except Exception as e:
+            test.logger.warn(
+                f"swarm: disrupt: maintenance_stop failed on {node.name}: {e}"
+            )
+    test.logger.info(f"swarm: disrupt: maintenance complete on {node.name}")
+
+
+# Cap on how many partitions are bounced in a single movement burst.
+# Sized so that even on the 1000-partition variant the burst stays
+# bounded; on smaller topics the cap is just partition_count.
+_MAX_PARTITIONS_PER_MOVE_BURST = 50
+
+
+def _disrupt_partition_movement(test, abort_event=None) -> None:
+    """Fire a burst of partition-reassignment requests: pick a subset
+    of partitions and reassign each to a fresh random replica set.
+    Issues all requests in quick succession; doesn't wait for the
+    moves to complete."""
+    import random
+    from rptest.services.admin import Admin
+    admin = Admin(test.redpanda)
+    topic = test._smoke_topic_name
+    partition_count = test._smoke_partition_count
+    n_to_move = min(_MAX_PARTITIONS_PER_MOVE_BURST, partition_count)
+    targets = random.sample(range(partition_count), n_to_move)
+    all_node_ids = [test.redpanda.node_id(n) for n in test.redpanda.nodes]
+    rf = min(3, len(all_node_ids))
+    test.logger.info(
+        f"swarm: disrupt: partition-movement burst -- moving "
+        f"{n_to_move} of {partition_count} partitions"
+    )
+    for partition in targets:
+        if abort_event is not None and abort_event.is_set():
+            break
+        new_replicas = random.sample(all_node_ids, rf)
+        replica_spec = [{"node_id": nid, "core": 0} for nid in new_replicas]
+        try:
+            admin.set_partition_replicas(topic, partition, replica_spec)
+        except Exception as e:
+            test.logger.warn(
+                f"swarm: disrupt: partition move failed for {topic}/{partition}: {e}"
+            )
+    test.logger.info("swarm: disrupt: partition-movement burst complete")
+
+
+def _disrupt_node_decommission(test, abort_event=None) -> None:
+    """Decommission one randomly-chosen broker. Async: the call returns
+    immediately; the cluster keeps moving partitions off the broker in
+    the background for the rest of the produce phase."""
+    import random
+    from rptest.services.admin import Admin
+    admin = Admin(test.redpanda)
+    node = random.choice(test.redpanda.nodes)
+    node_id = test.redpanda.node_id(node)
+    test.logger.info(
+        f"swarm: disrupt: decommissioning broker {node.name}/{node_id}"
+    )
+    try:
+        admin.decommission_broker(node_id)
+    except Exception as e:
+        test.logger.warn(
+            f"swarm: disrupt: decommission of {node.name}/{node_id} failed: {e}"
+        )
+        return
+    test.logger.info(
+        f"swarm: disrupt: decommission of {node.name}/{node_id} issued"
+    )
 
 
 def merged_cluster_config(chosen: list[Mechanism]) -> dict[str, Any]:

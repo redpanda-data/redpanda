@@ -336,6 +336,9 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
         "inject_broker_restart",
         "inject_leadership_transfer",
         "inject_minio_block",
+        "inject_node_maintenance",
+        "inject_partition_movement",
+        "inject_node_decommission",
     ]
     MSG_SIZE = 8192
     PRODUCE_RATE_BPS = 20 * 1024 * 1024
@@ -369,7 +372,7 @@ class CloudTopicsSwarmMatrixShortTermGc(_SwarmMatrixBase):
 
     TARGET_EFFECT = "short_term_gc_observed"
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
     )
@@ -382,7 +385,7 @@ class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
 
     TARGET_EFFECT = "l1_upload_observed"
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
     )
@@ -395,7 +398,7 @@ class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
 
     TARGET_EFFECT = "epoch_increment_observed"
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
     )
@@ -414,7 +417,7 @@ class CloudTopicsSwarmMatrixShortTermGcHighPartitions(_SwarmMatrixBase):
     TARGET_EFFECT = "short_term_gc_observed"
     BASE_EXTRA_MECHANISMS = ["high_partition_count"]
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
     )
