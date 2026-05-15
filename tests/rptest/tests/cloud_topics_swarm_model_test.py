@@ -16,7 +16,7 @@ def test_solver_returns_minimum_dependency_set():
     model = SwarmModel()
     m_recon = Mechanism(model, "reconciliation")
     m_ret = Mechanism(model, "retention_low")
-    m_unrelated = Mechanism(model, "unrelated")
+    Mechanism(model, "unrelated")
     e_l1 = Effect(model, "l1_upload", terminal_metric="m_l1")
     e_l1.requires(m_recon)
     e_gc = Effect(model, "long_term_gc", terminal_metric="m_gc")

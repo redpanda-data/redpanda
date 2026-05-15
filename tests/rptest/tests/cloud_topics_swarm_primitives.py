@@ -229,7 +229,7 @@ def _disrupt_leadership_transfer(test, abort_event=None) -> None:
                 return
             time.sleep(1)
             slept += 1
-    test.logger.info(f"swarm: disrupt: leadership-transfer burst complete")
+    test.logger.info("swarm: disrupt: leadership-transfer burst complete")
 
 
 def _disrupt_minio_block(test, abort_event=None) -> None:

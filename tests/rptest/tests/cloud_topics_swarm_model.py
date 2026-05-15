@@ -144,19 +144,20 @@ def default_model() -> SwarmModel:
     # Disruption mechanisms: fire a runtime action when the mechanism is
     # selected. Not required by any effect; layered on as "spice" by the
     # swarm test. Each one's start time is picked independently by the
-    # harness from a seeded RNG.
-    inject_broker_restart = Mechanism(m, "inject_broker_restart")
-    inject_leadership_transfer = Mechanism(m, "inject_leadership_transfer")
-    inject_minio_block = Mechanism(m, "inject_minio_block")
-    inject_node_maintenance = Mechanism(m, "inject_node_maintenance")
-    inject_partition_movement = Mechanism(m, "inject_partition_movement")
-    inject_node_decommission = Mechanism(m, "inject_node_decommission")
+    # harness from a seeded RNG. Constructed for the side effect of
+    # registration in the model; the test addresses them by name.
+    Mechanism(m, "inject_broker_restart")
+    Mechanism(m, "inject_leadership_transfer")
+    Mechanism(m, "inject_minio_block")
+    Mechanism(m, "inject_node_maintenance")
+    Mechanism(m, "inject_partition_movement")
+    Mechanism(m, "inject_node_decommission")
 
     # Bumps the target topic's partition count from 1 to a very high
     # value (1000). Exercises multi-partition cloud-topic upload /
     # reconcile paths and gives the looping leadership-transfer
     # disruption a wide partition pool to randomise over.
-    high_partition_count = Mechanism(m, "high_partition_count", partition_count=1000)
+    Mechanism(m, "high_partition_count", partition_count=1000)
 
     # transactional_producer => idempotent_producer
     m._implications.append(
