@@ -28,7 +28,8 @@ public:
       aws_service_name service,
       aws_region_name region,
       ss::abort_source& as,
-      retry_params retry_params);
+      retry_params retry_params,
+      ss::sstring metrics_tag = "");
 
     /// Fetches credentials from api, the result can be iobuf or an error
     /// encountered during the fetch operation
