@@ -78,6 +78,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "reconciliation_source_test",
+    timeout = "short",
+    srcs = [
+        "reconciliation_source_test.cc",
+    ],
+    deps = [
+        ":test_utils",
+        "//src/v/cloud_topics/reconciler",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "reconciler_metrics_test",
     timeout = "short",
     srcs = [
