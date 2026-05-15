@@ -100,9 +100,10 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         """Max partition_count across chosen mechanisms (baseline = 1)."""
         return max((m.partition_count for m in self._chosen), default=1)
 
-    # Fixed seed so the random per-disruption start times are
-    # reproducible across runs (each test class gets the same schedule
-    # every time). Override per-subclass if needed.
+    # Default seed for the per-disruption random start-time RNG.
+    # The matrix test methods override this via the ``seed`` @matrix
+    # axis so each parametrised run gets a fresh schedule but the
+    # same schedule re-runs deterministically.
     DISRUPTION_SEED = 42
 
     # Random window each disruption's start time is sampled from,
@@ -114,15 +115,18 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
 
     def _run_disruptions(self, disruptions: list, abort_event) -> None:
         """Spawn one thread per disruption. Each thread sleeps for a
-        per-disruption random delay (seeded by DISRUPTION_SEED), then
-        invokes its disruption callable. Returns after all disruption
-        threads join (or after the produce-end abort signal). The
-        seeded RNG only controls START TIMES -- in-disruption choices
-        (which node to restart, which partition to transfer, etc.)
-        remain unseeded so we get variety across a single run."""
+        per-disruption random delay (seeded by ``_disruption_seed``),
+        then invokes its disruption callable. Returns after all
+        disruption threads join (or after the produce-end abort
+        signal). The seeded RNG only controls START TIMES --
+        in-disruption choices (which node to restart, which partition
+        to transfer, etc.) remain unseeded so we get variety across a
+        single run."""
         import random
         import threading
-        rng = random.Random(self.DISRUPTION_SEED)
+        seed = getattr(self, "_disruption_seed", self.DISRUPTION_SEED)
+        rng = random.Random(seed)
+        self.logger.info(f"swarm: disruption seed = {seed}")
         threads: list[threading.Thread] = []
         for mech in disruptions:
             delay = rng.uniform(
@@ -358,7 +362,14 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
         total_bytes = self.PRODUCE_RATE_BPS * self.PRODUCE_DURATION_SECONDS
         return total_bytes // self.MSG_SIZE
 
-    def _run(self) -> None:
+    # Per-test parametrised RNG seeds. Each matrix subclass picks one
+    # via the seed @matrix axis below; the harness uses the chosen
+    # seed to schedule disruption start times deterministically for
+    # that run.
+    DISRUPTION_SEEDS = [42, 1337, 9001, 31337, 65537]
+
+    def _run(self, seed: int) -> None:
+        self._disruption_seed = seed
         self.run_smoke(
             topic_name="ct-swarm-matrix",
             msg_size=self.MSG_SIZE,
@@ -375,9 +386,10 @@ class CloudTopicsSwarmMatrixShortTermGc(_SwarmMatrixBase):
     @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
-    def test_swarm(self, cloud_storage_type: CloudStorageType):
-        self._run()
+    def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
+        self._run(seed)
 
 
 class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
@@ -388,9 +400,10 @@ class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
     @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
-    def test_swarm(self, cloud_storage_type: CloudStorageType):
-        self._run()
+    def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
+        self._run(seed)
 
 
 class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
@@ -401,9 +414,10 @@ class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
     @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
-    def test_swarm(self, cloud_storage_type: CloudStorageType):
-        self._run()
+    def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
+        self._run(seed)
 
 
 class CloudTopicsSwarmMatrixShortTermGcHighPartitions(_SwarmMatrixBase):
@@ -420,9 +434,10 @@ class CloudTopicsSwarmMatrixShortTermGcHighPartitions(_SwarmMatrixBase):
     @cluster(num_nodes=6)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
-    def test_swarm(self, cloud_storage_type: CloudStorageType):
-        self._run()
+    def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
+        self._run(seed)
 
 
 # NOTE: a CloudTopicsSwarmMatrixProducerEviction class belongs here but is
