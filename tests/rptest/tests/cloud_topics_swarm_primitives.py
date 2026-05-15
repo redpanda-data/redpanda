@@ -21,6 +21,7 @@ mechanism overlays its overrides on top of the baseline."""
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from rptest.clients.types import TopicSpec
@@ -59,7 +60,13 @@ def attach_overrides(model: SwarmModel) -> None:
     """Fill in cluster/topic/producer overrides on the mechanisms in
     ``model``. Idempotent."""
 
-    def set_overrides(name: str, *, cluster=None, topic=None, producer=None) -> None:
+    def set_overrides(
+        name: str,
+        *,
+        cluster: dict[str, Any] | None = None,
+        topic: dict[str, str] | None = None,
+        producer: dict[str, Any] | None = None,
+    ) -> None:
         m = model._mechs[name]
         if cluster:
             m.cluster_config_overrides.update(cluster)
@@ -163,7 +170,9 @@ _LEADER_TRANSFER_INTERVAL_SECONDS = 5
 _LEADER_TRANSFER_BURST_SECONDS = 60
 
 
-def _disrupt_broker_restart(test, abort_event=None) -> None:
+def _disrupt_broker_restart(
+    test: Any, abort_event: threading.Event | None = None
+) -> None:
     """Stop one randomly-chosen broker, leave it down for ~1 minute, then
     start it again. One-shot."""
     import random
@@ -187,7 +196,9 @@ def _disrupt_broker_restart(test, abort_event=None) -> None:
     test.logger.info(f"swarm: disrupt: broker {node.name} restart complete")
 
 
-def _disrupt_leadership_transfer(test, abort_event=None) -> None:
+def _disrupt_leadership_transfer(
+    test: Any, abort_event: threading.Event | None = None
+) -> None:
     """Force a burst of leadership transfers: every
     ``_LEADER_TRANSFER_INTERVAL_SECONDS`` seconds for the next
     ``_LEADER_TRANSFER_BURST_SECONDS`` seconds, pick a random partition
@@ -225,7 +236,7 @@ def _disrupt_leadership_transfer(test, abort_event=None) -> None:
     test.logger.info("swarm: disrupt: leadership-transfer burst complete")
 
 
-def _disrupt_minio_block(test, abort_event=None) -> None:
+def _disrupt_minio_block(test: Any, abort_event: threading.Event | None = None) -> None:
     """Block outbound traffic to MinIO from one broker for a fixed window."""
     import random
     import time
@@ -258,7 +269,9 @@ def _disrupt_minio_block(test, abort_event=None) -> None:
 _MAINTENANCE_SECONDS = 120
 
 
-def _disrupt_node_maintenance(test, abort_event=None) -> None:
+def _disrupt_node_maintenance(
+    test: Any, abort_event: threading.Event | None = None
+) -> None:
     """Put one randomly-chosen broker into maintenance mode for
     ``_MAINTENANCE_SECONDS`` and then release it. One-shot."""
     import random
@@ -297,7 +310,9 @@ def _disrupt_node_maintenance(test, abort_event=None) -> None:
 _MAX_PARTITIONS_PER_MOVE_BURST = 50
 
 
-def _disrupt_partition_movement(test, abort_event=None) -> None:
+def _disrupt_partition_movement(
+    test: Any, abort_event: threading.Event | None = None
+) -> None:
     """Fire a burst of partition-reassignment requests: pick a subset
     of partitions and reassign each to a fresh random replica set.
     Issues all requests in quick succession; doesn't wait for the
@@ -330,7 +345,9 @@ def _disrupt_partition_movement(test, abort_event=None) -> None:
     test.logger.info("swarm: disrupt: partition-movement burst complete")
 
 
-def _disrupt_node_decommission(test, abort_event=None) -> None:
+def _disrupt_node_decommission(
+    test: Any, abort_event: threading.Event | None = None
+) -> None:
     """Decommission one randomly-chosen broker. Async: the call returns
     immediately; the cluster keeps moving partitions off the broker in
     the background for the rest of the produce phase."""

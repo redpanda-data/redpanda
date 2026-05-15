@@ -7,14 +7,20 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import Any
+
 import pytest
-import z3
+import z3 as _z3  # type: ignore[import-untyped]
+
 from rptest.tests.cloud_topics_swarm_model import (
     Effect,
     Mechanism,
     SwarmModel,
     default_model,
 )
+
+# z3 ships no PEP-561 stubs; alias to Any to keep strict pyright happy.
+z3: Any = _z3
 
 
 def test_solver_returns_minimum_dependency_set():

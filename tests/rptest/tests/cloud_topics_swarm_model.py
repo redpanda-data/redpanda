@@ -23,9 +23,14 @@ of mechanisms that must be enabled to make the effect possible.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
-import z3
+# z3 ships no PEP-561 stubs, so under pyright strict mode every z3
+# method call returns Unknown. Cast the module to Any so the rest of
+# the file stays readable; the runtime import is unchanged.
+import z3 as _z3  # type: ignore[import-untyped]
+
+z3: Any = _z3
 
 
 @dataclass
@@ -43,15 +48,21 @@ class Mechanism:
 
     model: "SwarmModel"
     name: str
-    cluster_config_overrides: dict[str, Any] = field(default_factory=dict)
-    topic_config_overrides: dict[str, str] = field(default_factory=dict)
-    producer_overrides: dict[str, Any] = field(default_factory=dict)
+    cluster_config_overrides: dict[str, Any] = field(
+        default_factory=lambda: cast(dict[str, Any], {})
+    )
+    topic_config_overrides: dict[str, str] = field(
+        default_factory=lambda: cast(dict[str, str], {})
+    )
+    producer_overrides: dict[str, Any] = field(
+        default_factory=lambda: cast(dict[str, Any], {})
+    )
     needs_restart: bool = False
     disruption: Optional[Callable[..., None]] = None
     partition_count: int = 1
 
     def __post_init__(self) -> None:
-        self.var = z3.Bool(self.name)
+        self.var: Any = z3.Bool(self.name)
         self.model._register_mechanism(self)
 
 
@@ -64,10 +75,12 @@ class Effect:
     terminal_metric: str | None
     threshold: int = 1
     deadline_sec: int = 120
-    _requires: list[Mechanism] = field(default_factory=list)
+    _requires: list[Mechanism] = field(
+        default_factory=lambda: cast(list[Mechanism], [])
+    )
 
     def __post_init__(self) -> None:
-        self.var = z3.Bool(self.name)
+        self.var: Any = z3.Bool(self.name)
         self.model._register_effect(self)
 
     def requires(self, *mechs: Mechanism) -> None:
@@ -79,7 +92,7 @@ class SwarmModel:
     def __init__(self) -> None:
         self._mechs: dict[str, Mechanism] = {}
         self._effects: dict[str, Effect] = {}
-        self._implications: list[z3.BoolRef] = []
+        self._implications: list[Any] = []
 
     def _register_mechanism(self, m: Mechanism) -> None:
         assert m.name not in self._mechs, f"duplicate mechanism {m.name}"
@@ -89,9 +102,7 @@ class SwarmModel:
         assert e.name not in self._effects, f"duplicate effect {e.name}"
         self._effects[e.name] = e
 
-    def _add_implication(
-        self, effect_var: z3.BoolRef, mech_vars: list[z3.BoolRef]
-    ) -> None:
+    def _add_implication(self, effect_var: Any, mech_vars: list[Any]) -> None:
         self._implications.append(z3.Implies(effect_var, z3.And(*mech_vars)))
 
     def get_effect(self, name: str) -> Effect:
@@ -112,9 +123,9 @@ class SwarmModel:
         if solver.check() != z3.sat:
             raise ValueError(f"unsatisfiable: cannot enable {effect_name}")
         model = solver.model()
-        chosen = []
-        for name, mech in self._mechs.items():
-            if model.eval(mech.var, model_completion=True) == True:
+        chosen: list[Mechanism] = []
+        for _, mech in self._mechs.items():
+            if z3.is_true(model.eval(mech.var, model_completion=True)):
                 chosen.append(mech)
         return chosen
 

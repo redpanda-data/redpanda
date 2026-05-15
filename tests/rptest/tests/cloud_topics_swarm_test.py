@@ -17,6 +17,7 @@ workload, and validates the effect's terminal metric. See
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from ducktape.mark import matrix
@@ -31,7 +32,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda import SISettings, get_cloud_storage_type
-from rptest.tests.cloud_topics_swarm_model import default_model
+from rptest.tests.cloud_topics_swarm_model import Mechanism, default_model
 from rptest.tests.cloud_topics_swarm_primitives import (
     attach_overrides,
     merged_cluster_config,
@@ -114,7 +115,9 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
     DISRUPTION_START_MIN_SEC = 30
     DISRUPTION_START_MAX_SEC = 510
 
-    def _run_disruptions(self, disruptions: list, abort_event) -> None:
+    def _run_disruptions(
+        self, disruptions: list[Mechanism], abort_event: threading.Event
+    ) -> None:
         """Spawn one thread per disruption. Each thread sleeps for a
         per-disruption random delay (seeded by ``_disruption_seed``),
         then invokes its disruption callable. Returns after all
@@ -124,7 +127,6 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         to transfer, etc.) remain unseeded so we get variety across a
         single run."""
         import random
-        import threading
 
         seed = getattr(self, "_disruption_seed", self.DISRUPTION_SEED)
         rng = random.Random(seed)
@@ -148,7 +150,9 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         for t in threads:
             t.join(timeout=self.DISRUPTION_START_MAX_SEC + 180)
 
-    def _delayed_disruption(self, mech, delay: float, abort_event) -> None:
+    def _delayed_disruption(
+        self, mech: Mechanism, delay: float, abort_event: threading.Event
+    ) -> None:
         import time
 
         end_at = time.monotonic() + delay
@@ -158,6 +162,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             time.sleep(1)
         self.logger.info(f"swarm: invoking disruption {mech.name!r}")
         try:
+            assert mech.disruption is not None
             mech.disruption(self, abort_event)
         except Exception as e:
             self.logger.error(f"swarm: disruption {mech.name!r} raised: {e}")
@@ -243,7 +248,9 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             if disruption_thread is not None:
                 disruption_thread.join(timeout=180)
                 if disruption_thread.is_alive():
-                    self.logger.warn("swarm: disruption thread did not finish in time")
+                    self.logger.warning(
+                        "swarm: disruption thread did not finish in time"
+                    )
             assert acked >= msg_count * 3 // 4, (
                 f"too few acks for a meaningful run: {acked}/{msg_count}"
             )
