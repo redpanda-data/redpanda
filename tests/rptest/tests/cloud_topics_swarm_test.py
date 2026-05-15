@@ -96,20 +96,32 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
     def _producer_kwargs(self) -> dict[str, Any]:
         return merged_producer_kwargs(self._chosen)
 
+    def _compute_partition_count(self) -> int:
+        """Max partition_count across chosen mechanisms (baseline = 1)."""
+        return max((m.partition_count for m in self._chosen), default=1)
+
     # Disruptions fire after this many seconds of produce activity. That
     # leaves the cluster enough time to upload a few L0/L1 objects so the
     # disruption interrupts steady state rather than start-up.
-    DISRUPTION_DELAY_SEC = 15
+    DISRUPTION_DELAY_SEC = 30
 
-    def _run_disruptions(self, disruptions: list) -> None:
+    def _run_disruptions(self, disruptions: list, abort_event) -> None:
         import time
-        time.sleep(self.DISRUPTION_DELAY_SEC)
+        # Initial delay: let produce make some progress first.
+        slept = 0
+        while slept < self.DISRUPTION_DELAY_SEC:
+            if abort_event.is_set():
+                return
+            time.sleep(1)
+            slept += 1
         for mech in disruptions:
+            if abort_event.is_set():
+                return
             try:
                 self.logger.info(
                     f"swarm: invoking disruption for {mech.name!r}"
                 )
-                mech.disruption(self)
+                mech.disruption(self, abort_event)
             except Exception as e:
                 self.logger.error(
                     f"swarm: disruption {mech.name!r} raised: {e}"
@@ -125,11 +137,14 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         verifier doesn't reliably support multiple instances sharing a
         ducktape client node."""
         import threading
-        spec = self._create_cloud_topic(topic_name)
+        partition_count = self._compute_partition_count()
+        spec = self._create_cloud_topic(topic_name, partitions=partition_count)
         self._smoke_topic_name = topic_name
+        self._smoke_partition_count = partition_count
         self.logger.info(
             f"swarm: target={self._target_effect_name!r} "
-            f"mechanisms={self._chosen_names}"
+            f"mechanisms={self._chosen_names} "
+            f"partitions={partition_count}"
         )
 
         producer_kwargs = self._producer_kwargs()
@@ -145,6 +160,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         )
 
         disruption_thread: threading.Thread | None = None
+        abort_event = threading.Event()
         consumer: KgoVerifierSeqConsumer | None = None
         try:
             producer.start()
@@ -155,20 +171,22 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             if disruptions:
                 disruption_thread = threading.Thread(
                     target=self._run_disruptions,
-                    args=(disruptions,),
+                    args=(disruptions, abort_event),
                     daemon=True,
                 )
                 disruption_thread.start()
 
-            producer.wait(timeout_sec=300)
+            producer.wait(timeout_sec=900)
             pstatus = producer.produce_status
             acked = pstatus.acked
             self.logger.info(
                 f"swarm: producer acked={acked}/{msg_count} "
                 f"bad_offsets={pstatus.bad_offsets}"
             )
+            # Tell looping disruptions to stop, then join.
+            abort_event.set()
             if disruption_thread is not None:
-                disruption_thread.join(timeout=120)
+                disruption_thread.join(timeout=180)
                 if disruption_thread.is_alive():
                     self.logger.warn(
                         "swarm: disruption thread did not finish in time"
@@ -188,7 +206,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 producer=producer,
             )
             consumer.start(clean=False)
-            consumer.wait(timeout_sec=180)
+            consumer.wait(timeout_sec=600)
             cstatus = consumer.consumer_status
             self.logger.info(
                 f"swarm: consumer valid_reads={cstatus.validator.valid_reads} "
@@ -206,6 +224,8 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 f"got {cstatus.validator.valid_reads}"
             )
         finally:
+            # Stop any looping disruptions before tearing down services.
+            abort_event.set()
             producer.stop()
             producer.free()
             if consumer is not None:
@@ -221,8 +241,12 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
     is content-only via KgoVerifierSeqConsumer."""
 
     MSG_SIZE = 1024
-    PAYLOAD_BYTES_LOCAL = 100 * 1024 * 1024
-    PAYLOAD_BYTES_RELEASE = 1024 * 1024 * 1024
+    # Per-partition payload. With the default 1 partition this is the
+    # whole workload. high_partition_count scales the total volume by
+    # _compute_partition_count() so each partition still sees a
+    # baseline-sized stream.
+    PAYLOAD_BYTES_LOCAL = 200 * 1024 * 1024
+    PAYLOAD_BYTES_RELEASE = 2 * 1024 * 1024 * 1024
 
     def __init__(self, test_context: TestContext):
         super().__init__(test_context, target_effect_name="short_term_gc_observed")
@@ -233,7 +257,7 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
             if self.scale.release
             else self.PAYLOAD_BYTES_LOCAL
         )
-        return payload // self.MSG_SIZE
+        return (payload * self._compute_partition_count()) // self.MSG_SIZE
 
     @cluster(num_nodes=4)
     @matrix(
@@ -257,8 +281,10 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
 
     TARGET_EFFECT: str = "short_term_gc_observed"
     MSG_SIZE = 1024
-    PAYLOAD_BYTES_LOCAL = 100 * 1024 * 1024
-    PAYLOAD_BYTES_RELEASE = 1024 * 1024 * 1024
+    # Per-partition payload. Total volume scales with the chosen
+    # partition count (high_partition_count -> 8x more data).
+    PAYLOAD_BYTES_LOCAL = 200 * 1024 * 1024
+    PAYLOAD_BYTES_RELEASE = 2 * 1024 * 1024 * 1024
 
     def __init__(self, test_context: TestContext):
         super().__init__(test_context, target_effect_name=self.TARGET_EFFECT)
@@ -269,13 +295,14 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
             if self.scale.release
             else self.PAYLOAD_BYTES_LOCAL
         )
-        return payload // self.MSG_SIZE
+        return (payload * self._compute_partition_count()) // self.MSG_SIZE
 
     def _run_with_disruptions(
         self,
         inject_broker_restart: bool,
         inject_leadership_transfer: bool,
         inject_minio_block: bool,
+        high_partition_count: bool = False,
     ) -> None:
         extras: list[str] = []
         if inject_broker_restart:
@@ -284,7 +311,9 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
             extras.append("inject_leadership_transfer")
         if inject_minio_block:
             extras.append("inject_minio_block")
-        # Disruption mechanisms have no cluster-config impact; we can
+        if high_partition_count:
+            extras.append("high_partition_count")
+        # Disruption + topology mechanisms have no cluster-config impact;
         # add them to the chosen set at runtime.
         existing = {m.name for m in self._chosen}
         for name in extras:
@@ -310,6 +339,7 @@ class CloudTopicsSwarmMatrixShortTermGc(_SwarmMatrixBase):
         inject_broker_restart=[False, True],
         inject_leadership_transfer=[False, True],
         inject_minio_block=[False, True],
+        high_partition_count=[False, True],
     )
     def test_swarm(
         self,
@@ -317,11 +347,13 @@ class CloudTopicsSwarmMatrixShortTermGc(_SwarmMatrixBase):
         inject_broker_restart: bool,
         inject_leadership_transfer: bool,
         inject_minio_block: bool,
+        high_partition_count: bool,
     ):
         self._run_with_disruptions(
             inject_broker_restart,
             inject_leadership_transfer,
             inject_minio_block,
+            high_partition_count=high_partition_count,
         )
 
 
@@ -336,6 +368,7 @@ class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
         inject_broker_restart=[False, True],
         inject_leadership_transfer=[False, True],
         inject_minio_block=[False, True],
+        high_partition_count=[False, True],
     )
     def test_swarm(
         self,
@@ -343,11 +376,13 @@ class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
         inject_broker_restart: bool,
         inject_leadership_transfer: bool,
         inject_minio_block: bool,
+        high_partition_count: bool,
     ):
         self._run_with_disruptions(
             inject_broker_restart,
             inject_leadership_transfer,
             inject_minio_block,
+            high_partition_count=high_partition_count,
         )
 
 
@@ -362,6 +397,7 @@ class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
         inject_broker_restart=[False, True],
         inject_leadership_transfer=[False, True],
         inject_minio_block=[False, True],
+        high_partition_count=[False, True],
     )
     def test_swarm(
         self,
@@ -369,11 +405,13 @@ class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
         inject_broker_restart: bool,
         inject_leadership_transfer: bool,
         inject_minio_block: bool,
+        high_partition_count: bool,
     ):
         self._run_with_disruptions(
             inject_broker_restart,
             inject_leadership_transfer,
             inject_minio_block,
+            high_partition_count=high_partition_count,
         )
 
 

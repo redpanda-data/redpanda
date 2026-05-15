@@ -150,29 +150,73 @@ def attach_overrides(model: SwarmModel) -> None:
 _MINIO_PORT = 9000
 _MINIO_BLOCK_SECONDS = 15
 
+# How long a restarted broker stays down before being restarted. Long
+# enough that other brokers definitely re-elect leaders and that the
+# cluster has to absorb a non-trivial unavailability window.
+_BROKER_DOWNTIME_SECONDS = 60
 
-def _disrupt_broker_restart(test) -> None:
-    """Restart one randomly-chosen broker and wait for it to come back."""
+# How often the looping leadership-transfer disruption fires, in seconds.
+_LEADER_TRANSFER_INTERVAL_SECONDS = 5
+
+
+def _disrupt_broker_restart(test, abort_event=None) -> None:
+    """Stop one randomly-chosen broker, leave it down for ~1 minute, then
+    start it again. One-shot."""
     import random
+    import time
     node = random.choice(test.redpanda.nodes)
-    test.logger.info(f"swarm: disrupt: restarting broker {node.name}")
-    test.redpanda.restart_nodes([node], start_timeout=60, stop_timeout=60)
-    test.logger.info(f"swarm: disrupt: restart of {node.name} complete")
+    test.logger.info(
+        f"swarm: disrupt: stopping broker {node.name} for "
+        f"{_BROKER_DOWNTIME_SECONDS}s"
+    )
+    test.redpanda.stop_node(node, timeout=60)
+    try:
+        # Sleep in small chunks so abort wakes us up if produce ended early.
+        end_at = time.monotonic() + _BROKER_DOWNTIME_SECONDS
+        while time.monotonic() < end_at:
+            if abort_event is not None and abort_event.is_set():
+                break
+            time.sleep(1)
+    finally:
+        test.logger.info(f"swarm: disrupt: starting broker {node.name}")
+        test.redpanda.start_node(node, timeout=60)
+    test.logger.info(f"swarm: disrupt: broker {node.name} restart complete")
 
 
-def _disrupt_leadership_transfer(test) -> None:
-    """Force a leadership transfer on the target topic's partition 0."""
+def _disrupt_leadership_transfer(test, abort_event=None) -> None:
+    """Force a leadership transfer on a random partition every
+    ``_LEADER_TRANSFER_INTERVAL_SECONDS`` seconds until ``abort_event``
+    is set or 30 minutes have elapsed (defensive cap)."""
+    import random
+    import time
     from rptest.services.admin import Admin
     admin = Admin(test.redpanda)
     topic = test._smoke_topic_name
-    test.logger.info(
-        f"swarm: disrupt: transferring leadership of {topic}/0"
-    )
-    admin.partition_transfer_leadership("kafka", topic, 0)
-    test.logger.info(f"swarm: disrupt: leadership transfer of {topic}/0 issued")
+    partition_count = test._smoke_partition_count
+    deadline = time.monotonic() + 30 * 60
+    while time.monotonic() < deadline:
+        if abort_event is not None and abort_event.is_set():
+            break
+        partition = random.randrange(partition_count)
+        try:
+            admin.partition_transfer_leadership("kafka", topic, partition)
+            test.logger.info(
+                f"swarm: disrupt: leadership transfer of {topic}/{partition} issued"
+            )
+        except Exception as e:
+            test.logger.warn(
+                f"swarm: disrupt: leadership transfer failed for {topic}/{partition}: {e}"
+            )
+        # Sleep in 1s chunks so abort exits the loop promptly.
+        slept = 0
+        while slept < _LEADER_TRANSFER_INTERVAL_SECONDS:
+            if abort_event is not None and abort_event.is_set():
+                return
+            time.sleep(1)
+            slept += 1
 
 
-def _disrupt_minio_block(test) -> None:
+def _disrupt_minio_block(test, abort_event=None) -> None:
     """Block outbound traffic to MinIO from one broker for a fixed window."""
     import random
     import time
@@ -185,7 +229,11 @@ def _disrupt_minio_block(test) -> None:
     )
     try:
         node.account.ssh(rule)
-        time.sleep(_MINIO_BLOCK_SECONDS)
+        end_at = time.monotonic() + _MINIO_BLOCK_SECONDS
+        while time.monotonic() < end_at:
+            if abort_event is not None and abort_event.is_set():
+                break
+            time.sleep(1)
     finally:
         try:
             node.account.ssh(undo)

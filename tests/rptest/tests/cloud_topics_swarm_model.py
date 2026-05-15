@@ -32,11 +32,14 @@ import z3
 class Mechanism:
     """A test-controllable knob (Z3 boolean variable).
 
-    ``disruption`` is an optional callable invoked once mid-produce when
-    the mechanism is selected. It receives the running test instance and
-    is responsible for any cleanup it needs to perform (e.g. healing a
-    network block). Mechanisms that only tune cluster/topic/producer
-    config leave it as None."""
+    ``disruption`` is an optional callable invoked when the mechanism is
+    selected. It receives the running test and a stop-event that is set
+    when the produce phase finishes. One-shot disruptions can ignore
+    the event; looping disruptions should poll it.
+
+    ``partition_count`` lets a mechanism request the target topic be
+    created with more partitions than the default (1). When several
+    mechanisms set it, the harness takes the max."""
 
     model: "SwarmModel"
     name: str
@@ -45,6 +48,7 @@ class Mechanism:
     producer_overrides: dict[str, Any] = field(default_factory=dict)
     needs_restart: bool = False
     disruption: Optional[Callable[..., None]] = None
+    partition_count: int = 1
 
     def __post_init__(self) -> None:
         self.var = z3.Bool(self.name)
@@ -137,11 +141,20 @@ def default_model() -> SwarmModel:
     produce_inflight_limit_low = Mechanism(m, "produce_inflight_limit_low", needs_restart=True)
     psm_low_producer_limit = Mechanism(m, "psm_low_producer_limit")
 
-    # Disruption mechanisms: fire a single runtime action mid-produce.
-    # Not required by any effect; layered on as "spice" by the swarm test.
+    # Disruption mechanisms: fire a runtime action when the mechanism is
+    # selected. Not required by any effect; layered on as "spice" by the
+    # swarm test. inject_broker_restart fires once mid-produce and keeps
+    # the broker down for a minute. inject_leadership_transfer loops
+    # every 5s on a random partition until produce completes.
     inject_broker_restart = Mechanism(m, "inject_broker_restart")
     inject_leadership_transfer = Mechanism(m, "inject_leadership_transfer")
     inject_minio_block = Mechanism(m, "inject_minio_block")
+
+    # Bumps the target topic's partition count from 1 to a higher value.
+    # Phase 2 sets it to 8 so the harness can drive leadership-transfer
+    # storms across multiple partitions and exercise multi-partition
+    # cloud-topic upload/reconcile paths.
+    high_partition_count = Mechanism(m, "high_partition_count", partition_count=8)
 
     # transactional_producer => idempotent_producer
     m._implications.append(

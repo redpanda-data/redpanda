@@ -58,6 +58,17 @@ def test_default_model_epoch_increment_does_not_require_reconciliation():
     assert chosen == {"epoch_increment_fast"}
 
 
+def test_high_partition_count_mechanism_present():
+    """high_partition_count is a Phase 2 topology mechanism: not
+    required by any effect, but layered on by the swarm matrix when
+    its flag is true."""
+    model = default_model()
+    m = model._mechs["high_partition_count"]
+    assert m.partition_count > 1
+    # Default partition_count for other mechanisms remains 1.
+    assert model._mechs["reconciliation"].partition_count == 1
+
+
 def test_default_model_producer_eviction_dependencies():
     model = default_model()
     chosen = {m.name for m in model.solve_for("producer_eviction_observed")}
