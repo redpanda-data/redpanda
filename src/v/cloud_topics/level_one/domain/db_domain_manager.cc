@@ -683,7 +683,7 @@ db_domain_manager::get_first_offset_for_bytes(
     if (!extents_res.has_value()) {
         co_return rpc::get_first_offset_for_bytes_reply{
           .ec = log_and_convert(
-            metadata_res.error(), "Error getting backwards iterator: "),
+            extents_res.error(), "Error getting backwards iterator: "),
         };
     }
     if (!extents_res.value().has_value()) {
@@ -699,7 +699,7 @@ db_domain_manager::get_first_offset_for_bytes(
         if (!row.has_value()) {
             co_return rpc::get_first_offset_for_bytes_reply{
               .ec = log_and_convert(
-                metadata_res.error(), "Error iterating through extents: "),
+                row.error(), "Error iterating through extents: "),
             };
         }
         const auto& extent = row.value();
@@ -811,7 +811,7 @@ db_domain_manager::do_get_compaction_info(
     if (!compaction_res.has_value()) {
         co_return rpc::get_compaction_info_reply{
           .ec = log_and_convert(
-            metadata_res.error(), "Error getting compaction metadata: "),
+            compaction_res.error(), "Error getting compaction metadata: "),
         };
     }
 
@@ -992,7 +992,7 @@ db_domain_manager::get_end_offset_for_term(
     auto end_res = co_await reader.get_term_end(req.tp, req.term);
     if (!end_res.has_value()) {
         co_return rpc::get_end_offset_for_term_reply{
-          .ec = log_and_convert(metadata_res.error(), "Error getting term: "),
+          .ec = log_and_convert(end_res.error(), "Error getting term: "),
         };
     }
     if (!end_res.value().has_value()) {
