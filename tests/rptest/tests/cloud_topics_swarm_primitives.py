@@ -132,19 +132,11 @@ def attach_overrides(model: SwarmModel) -> None:
 
     # --- Disruption mechanisms (Phase 2) ---
     model._mechs["inject_broker_restart"].disruption = _disrupt_broker_restart
-    model._mechs["inject_leadership_transfer"].disruption = (
-        _disrupt_leadership_transfer
-    )
+    model._mechs["inject_leadership_transfer"].disruption = _disrupt_leadership_transfer
     model._mechs["inject_minio_block"].disruption = _disrupt_minio_block
-    model._mechs["inject_node_maintenance"].disruption = (
-        _disrupt_node_maintenance
-    )
-    model._mechs["inject_partition_movement"].disruption = (
-        _disrupt_partition_movement
-    )
-    model._mechs["inject_node_decommission"].disruption = (
-        _disrupt_node_decommission
-    )
+    model._mechs["inject_node_maintenance"].disruption = _disrupt_node_maintenance
+    model._mechs["inject_partition_movement"].disruption = _disrupt_partition_movement
+    model._mechs["inject_node_decommission"].disruption = _disrupt_node_decommission
 
     # produce_inflight_limit_low: not exercised by Phase 1 / 2 smoke
     # tests. Overrides intentionally left empty so the model stays a
@@ -176,10 +168,10 @@ def _disrupt_broker_restart(test, abort_event=None) -> None:
     start it again. One-shot."""
     import random
     import time
+
     node = random.choice(test.redpanda.nodes)
     test.logger.info(
-        f"swarm: disrupt: stopping broker {node.name} for "
-        f"{_BROKER_DOWNTIME_SECONDS}s"
+        f"swarm: disrupt: stopping broker {node.name} for {_BROKER_DOWNTIME_SECONDS}s"
     )
     test.redpanda.stop_node(node, timeout=60)
     try:
@@ -204,6 +196,7 @@ def _disrupt_leadership_transfer(test, abort_event=None) -> None:
     import random
     import time
     from rptest.services.admin import Admin
+
     admin = Admin(test.redpanda)
     topic = test._smoke_topic_name
     partition_count = test._smoke_partition_count
@@ -236,6 +229,7 @@ def _disrupt_minio_block(test, abort_event=None) -> None:
     """Block outbound traffic to MinIO from one broker for a fixed window."""
     import random
     import time
+
     node = random.choice(test.redpanda.nodes)
     rule = f"iptables -A OUTPUT -p tcp --destination-port {_MINIO_PORT} -j DROP"
     undo = f"iptables -D OUTPUT -p tcp --destination-port {_MINIO_PORT} -j DROP"
@@ -254,7 +248,9 @@ def _disrupt_minio_block(test, abort_event=None) -> None:
         try:
             node.account.ssh(undo)
         except Exception as e:
-            test.logger.warn(f"swarm: disrupt: failed to undo block on {node.name}: {e}")
+            test.logger.warn(
+                f"swarm: disrupt: failed to undo block on {node.name}: {e}"
+            )
     test.logger.info(f"swarm: disrupt: MinIO traffic restored on {node.name}")
 
 
@@ -268,11 +264,11 @@ def _disrupt_node_maintenance(test, abort_event=None) -> None:
     import random
     import time
     from rptest.services.admin import Admin
+
     admin = Admin(test.redpanda)
     node = random.choice(test.redpanda.nodes)
     test.logger.info(
-        f"swarm: disrupt: maintenance start on {node.name} for "
-        f"{_MAINTENANCE_SECONDS}s"
+        f"swarm: disrupt: maintenance start on {node.name} for {_MAINTENANCE_SECONDS}s"
     )
     try:
         admin.maintenance_start(node)
@@ -308,6 +304,7 @@ def _disrupt_partition_movement(test, abort_event=None) -> None:
     moves to complete."""
     import random
     from rptest.services.admin import Admin
+
     admin = Admin(test.redpanda)
     topic = test._smoke_topic_name
     partition_count = test._smoke_partition_count
@@ -339,12 +336,11 @@ def _disrupt_node_decommission(test, abort_event=None) -> None:
     the background for the rest of the produce phase."""
     import random
     from rptest.services.admin import Admin
+
     admin = Admin(test.redpanda)
     node = random.choice(test.redpanda.nodes)
     node_id = test.redpanda.node_id(node)
-    test.logger.info(
-        f"swarm: disrupt: decommissioning broker {node.name}/{node_id}"
-    )
+    test.logger.info(f"swarm: disrupt: decommissioning broker {node.name}/{node_id}")
     try:
         admin.decommission_broker(node_id)
     except Exception as e:
@@ -352,9 +348,7 @@ def _disrupt_node_decommission(test, abort_event=None) -> None:
             f"swarm: disrupt: decommission of {node.name}/{node_id} failed: {e}"
         )
         return
-    test.logger.info(
-        f"swarm: disrupt: decommission of {node.name}/{node_id} issued"
-    )
+    test.logger.info(f"swarm: disrupt: decommission of {node.name}/{node_id} issued")
 
 
 def merged_cluster_config(chosen: list[Mechanism]) -> dict[str, Any]:
@@ -377,5 +371,3 @@ def merged_producer_kwargs(chosen: list[Mechanism]) -> dict[str, Any]:
     for m in chosen:
         kw.update(m.producer_overrides)
     return kw
-
-

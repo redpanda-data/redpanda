@@ -89,7 +89,9 @@ class SwarmModel:
         assert e.name not in self._effects, f"duplicate effect {e.name}"
         self._effects[e.name] = e
 
-    def _add_implication(self, effect_var: z3.BoolRef, mech_vars: list[z3.BoolRef]) -> None:
+    def _add_implication(
+        self, effect_var: z3.BoolRef, mech_vars: list[z3.BoolRef]
+    ) -> None:
         self._implications.append(z3.Implies(effect_var, z3.And(*mech_vars)))
 
     def get_effect(self, name: str) -> Effect:
@@ -106,9 +108,7 @@ class SwarmModel:
         for impl in self._implications:
             solver.add(impl)
         solver.add(effect.var == True)
-        solver.minimize(
-            z3.Sum([z3.If(m.var, 1, 0) for m in self._mechs.values()])
-        )
+        solver.minimize(z3.Sum([z3.If(m.var, 1, 0) for m in self._mechs.values()]))
         if solver.check() != z3.sat:
             raise ValueError(f"unsatisfiable: cannot enable {effect_name}")
         model = solver.model()
@@ -138,7 +138,9 @@ def default_model() -> SwarmModel:
     transactional_producer = Mechanism(m, "transactional_producer")
     idempotent_producer = Mechanism(m, "idempotent_producer")
     multiple_producers = Mechanism(m, "multiple_producers")
-    produce_inflight_limit_low = Mechanism(m, "produce_inflight_limit_low", needs_restart=True)
+    produce_inflight_limit_low = Mechanism(
+        m, "produce_inflight_limit_low", needs_restart=True
+    )
     psm_low_producer_limit = Mechanism(m, "psm_low_producer_limit")
 
     # Disruption mechanisms: fire a runtime action when the mechanism is
@@ -182,11 +184,15 @@ def default_model() -> SwarmModel:
 
     producer_eviction = Effect(m, "producer_eviction_observed", terminal_metric=None)
     producer_eviction.requires(
-        multiple_producers, idempotent_producer, psm_low_producer_limit,
+        multiple_producers,
+        idempotent_producer,
+        psm_low_producer_limit,
     )
 
     inflight_backpressure = Effect(
-        m, "inflight_backpressure_observed", terminal_metric=None,
+        m,
+        "inflight_backpressure_observed",
+        terminal_metric=None,
     )
     inflight_backpressure.requires(produce_inflight_limit_low)
 

@@ -9,7 +9,12 @@
 
 import pytest
 import z3
-from rptest.tests.cloud_topics_swarm_model import Effect, Mechanism, SwarmModel, default_model
+from rptest.tests.cloud_topics_swarm_model import (
+    Effect,
+    Mechanism,
+    SwarmModel,
+    default_model,
+)
 
 
 def test_solver_returns_minimum_dependency_set():
@@ -94,7 +99,8 @@ def test_transactional_implies_idempotent():
 def test_merged_cluster_config_for_short_term_gc():
     from rptest.tests.cloud_topics_swarm_model import default_model
     from rptest.tests.cloud_topics_swarm_primitives import (
-        attach_overrides, merged_cluster_config,
+        attach_overrides,
+        merged_cluster_config,
     )
 
     model = default_model()
@@ -114,7 +120,8 @@ def test_merged_topic_config_for_short_term_gc():
     from rptest.clients.types import TopicSpec
     from rptest.tests.cloud_topics_swarm_model import default_model
     from rptest.tests.cloud_topics_swarm_primitives import (
-        attach_overrides, merged_topic_config,
+        attach_overrides,
+        merged_topic_config,
     )
 
     model = default_model()

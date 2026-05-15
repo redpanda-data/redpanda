@@ -89,8 +89,9 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         topic_cfg = merged_topic_config(self._chosen)
         spec = TopicSpec(name=name, partition_count=partitions)
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic(spec.name, spec.partition_count, spec.replication_factor,
-                         config=topic_cfg)
+        rpk.create_topic(
+            spec.name, spec.partition_count, spec.replication_factor, config=topic_cfg
+        )
         return spec
 
     def _producer_kwargs(self) -> dict[str, Any]:
@@ -124,6 +125,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         single run."""
         import random
         import threading
+
         seed = getattr(self, "_disruption_seed", self.DISRUPTION_SEED)
         rng = random.Random(seed)
         self.logger.info(f"swarm: disruption seed = {seed}")
@@ -148,6 +150,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
 
     def _delayed_disruption(self, mech, delay: float, abort_event) -> None:
         import time
+
         end_at = time.monotonic() + delay
         while time.monotonic() < end_at:
             if abort_event.is_set():
@@ -157,9 +160,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         try:
             mech.disruption(self, abort_event)
         except Exception as e:
-            self.logger.error(
-                f"swarm: disruption {mech.name!r} raised: {e}"
-            )
+            self.logger.error(f"swarm: disruption {mech.name!r} raised: {e}")
 
     def run_smoke(
         self,
@@ -180,6 +181,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         for a roughly predictable amount of wall-clock time, leaving
         the disruption layer plenty of mid-produce time to operate."""
         import threading
+
         partition_count = self._compute_partition_count()
         spec = self._create_cloud_topic(topic_name, partitions=partition_count)
         self._smoke_topic_name = topic_name
@@ -241,12 +243,9 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             if disruption_thread is not None:
                 disruption_thread.join(timeout=180)
                 if disruption_thread.is_alive():
-                    self.logger.warn(
-                        "swarm: disruption thread did not finish in time"
-                    )
+                    self.logger.warn("swarm: disruption thread did not finish in time")
             assert acked >= msg_count * 3 // 4, (
-                f"too few acks for a meaningful run: "
-                f"{acked}/{msg_count}"
+                f"too few acks for a meaningful run: {acked}/{msg_count}"
             )
 
             consumer = KgoVerifierSeqConsumer(
@@ -349,9 +348,7 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
     PRODUCE_DURATION_SECONDS = 600
 
     def __init__(self, test_context: TestContext):
-        extras = list(self.BASE_EXTRA_MECHANISMS) + list(
-            self._ALWAYS_ON_DISRUPTIONS
-        )
+        extras = list(self.BASE_EXTRA_MECHANISMS) + list(self._ALWAYS_ON_DISRUPTIONS)
         super().__init__(
             test_context,
             target_effect_name=self.TARGET_EFFECT,
@@ -385,7 +382,9 @@ class CloudTopicsSwarmMatrixShortTermGc(_SwarmMatrixBase):
 
     @cluster(num_nodes=6)
     @matrix(
-        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
         seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
     def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
@@ -399,7 +398,9 @@ class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
 
     @cluster(num_nodes=6)
     @matrix(
-        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
         seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
     def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
@@ -413,7 +414,9 @@ class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
 
     @cluster(num_nodes=6)
     @matrix(
-        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
         seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
     def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
@@ -433,7 +436,9 @@ class CloudTopicsSwarmMatrixShortTermGcHighPartitions(_SwarmMatrixBase):
 
     @cluster(num_nodes=6)
     @matrix(
-        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
+        cloud_storage_type=get_cloud_storage_type(
+            applies_only_on=[CloudStorageType.S3]
+        ),
         seed=_SwarmMatrixBase.DISRUPTION_SEEDS,
     )
     def test_swarm(self, cloud_storage_type: CloudStorageType, seed: int):
