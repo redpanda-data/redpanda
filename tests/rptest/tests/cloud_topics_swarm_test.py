@@ -194,11 +194,14 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             msg_size=msg_size,
             msg_count=msg_count,
             rate_limit_bps=rate_limit_bps,
+            # Larger batches amortise the acks=all round-trip latency
+            # over many records; without this kgo-verifier produces tiny
+            # batches and the per-batch latency caps throughput.
+            batch_max_bytes=msg_size * 128,
             tolerate_failed_produce=True,
-            # Don't wait for ack=all; the cluster sustains 20+ MiB/s per
-            # partition but acks=all rounds up to the slowest replica
-            # and caps throughput. Content correctness is still validated
-            # at the SeqConsumer.
+            # Treat 'sent' (not 'acked') as completion. Doesn't change
+            # wire-level acks but lets the harness move past in-flight
+            # records during teardown.
             wait_for_acks=False,
             client_name="swarm-producer",
             **producer_kwargs,
@@ -286,7 +289,7 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
     {reconciliation, short_term_gc_fast, epoch_increment_fast}. Validation
     is content-only via KgoVerifierSeqConsumer."""
 
-    MSG_SIZE = 1024
+    MSG_SIZE = 8192
     # Target produce rate. With wait_for_acks=False the producer isn't
     # latency-bound; 20 MiB/s is well within what the cluster sustains
     # on a single cloud-topic partition.
@@ -334,7 +337,7 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
         "inject_leadership_transfer",
         "inject_minio_block",
     ]
-    MSG_SIZE = 1024
+    MSG_SIZE = 8192
     PRODUCE_RATE_BPS = 20 * 1024 * 1024
     PRODUCE_DURATION_SECONDS = 600
 
