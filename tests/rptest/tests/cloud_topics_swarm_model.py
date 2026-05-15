@@ -150,11 +150,11 @@ def default_model() -> SwarmModel:
     inject_leadership_transfer = Mechanism(m, "inject_leadership_transfer")
     inject_minio_block = Mechanism(m, "inject_minio_block")
 
-    # Bumps the target topic's partition count from 1 to a higher value.
-    # Phase 2 sets it to 8 so the harness can drive leadership-transfer
-    # storms across multiple partitions and exercise multi-partition
-    # cloud-topic upload/reconcile paths.
-    high_partition_count = Mechanism(m, "high_partition_count", partition_count=8)
+    # Bumps the target topic's partition count from 1 to a very high
+    # value (1000). Exercises multi-partition cloud-topic upload /
+    # reconcile paths and gives the looping leadership-transfer
+    # disruption a wide partition pool to randomise over.
+    high_partition_count = Mechanism(m, "high_partition_count", partition_count=1000)
 
     # transactional_producer => idempotent_producer
     m._implications.append(
