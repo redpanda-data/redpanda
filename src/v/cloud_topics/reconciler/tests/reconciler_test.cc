@@ -795,6 +795,73 @@ TEST_F(ReconcilerTest, EvaluatorPublishFailureDoesNotUpdateBookkeeping) {
     EXPECT_EQ(src->published_values().back(), kafka::offset{10});
 }
 
+// --- local_retention_eval_due trigger predicate tests ---
+
+TEST_F(ReconcilerTest, EvalDueNeverEvaluatedFires) {
+    auto src = add_source();
+    // Default: shape-in-sync=true, no prior eval. Predicate must still fire
+    // because the eval has never happened.
+    EXPECT_TRUE(_reconciler.local_retention_eval_due(src));
+}
+
+TEST_F(ReconcilerTest, EvalDueBytesThresholdFires) {
+    auto src = add_source();
+    src->set_segment_size_bytes(1024);
+    // Seed last_eval_time so the time/never-evaluated triggers don't fire.
+    src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+
+    EXPECT_FALSE(_reconciler.local_retention_eval_due(src));
+
+    src->add_local_retention_bytes(512);
+    EXPECT_FALSE(_reconciler.local_retention_eval_due(src));
+
+    src->add_local_retention_bytes(512);
+    EXPECT_TRUE(_reconciler.local_retention_eval_due(src));
+}
+
+TEST_F(ReconcilerTest, EvalDueTimeThresholdFires) {
+    auto src = add_source();
+    src->set_segment_size_bytes(1ULL << 40); // out of reach
+    // Seed last_eval_time = 90s ago.
+    src->set_local_retention_last_eval_time(
+      ss::lowres_clock::now() - std::chrono::seconds(90));
+    EXPECT_TRUE(_reconciler.local_retention_eval_due(src));
+
+    // Recent eval shouldn't fire.
+    src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+    EXPECT_FALSE(_reconciler.local_retention_eval_due(src));
+}
+
+TEST_F(ReconcilerTest, EvalDueConfigMismatchForcesEval) {
+    auto src = add_source();
+    src->set_segment_size_bytes(1ULL << 40);
+    src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+    src->set_shape_in_sync(false);
+    // Shape mismatch overrides time + bytes.
+    EXPECT_TRUE(_reconciler.local_retention_eval_due(src));
+
+    src->set_shape_in_sync(true);
+    EXPECT_FALSE(_reconciler.local_retention_eval_due(src));
+}
+
+TEST_F(ReconcilerTest, EvalDueNoSignalDoesNotFire) {
+    auto src = add_source();
+    src->set_segment_size_bytes(1ULL << 40);
+    src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+    src->set_shape_in_sync(true);
+    EXPECT_FALSE(_reconciler.local_retention_eval_due(src));
+}
+
+TEST_F(ReconcilerTest, ReconcileWiresLocalRetentionEvaluator) {
+    // A source eligible to publish (Some(nullopt)) should have the evaluator
+    // invoked during reconcile() because it has never been evaluated.
+    auto src = add_source();
+    src->set_compute_target(std::optional<kafka::offset>(std::nullopt));
+    reconcile();
+    ASSERT_EQ(src->published_values().size(), 1u);
+    EXPECT_EQ(src->published_values().back(), std::nullopt);
+}
+
 // Regression test: detaching a source during reconciliation (e.g. due to a
 // leadership change) must not leave an orphaned topic scheduler. Before the
 // fix, get_or_create_topic_scheduler in the post-reconciliation path would
