@@ -39,7 +39,8 @@ public:
           net::unresolved_address address,
           aws_region_name region,
           ss::abort_source& as,
-          retry_params retry_params);
+          retry_params retry_params,
+          ss::sstring metrics_tag = "");
         impl(impl&&) noexcept = default;
 
         impl& operator=(impl&&) noexcept = delete;
@@ -125,6 +126,12 @@ public:
         retry_params _retry_params;
         ss::shared_ptr<ss::tls::certificate_credentials> _tls_certs = nullptr;
         mutable std::optional<ss::abort_source> _per_sleep_as;
+
+        /// Identifier of the owning subsystem (e.g. "datalake"). Appended to
+        /// the TLS certificate probe's `detail` label so multiple
+        /// `refresh_credentials` instances using the same credential type
+        /// register distinct metrics.
+        ss::sstring _metrics_tag;
     };
 
     refresh_credentials(
@@ -211,7 +218,8 @@ refresh_credentials make_refresh_credentials(
       service,
       region,
       as,
-      retry_params);
+      retry_params,
+      metrics_tag);
     return refresh_credentials{
       std::move(impl),
       as,
