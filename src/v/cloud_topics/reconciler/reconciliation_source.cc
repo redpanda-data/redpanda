@@ -16,15 +16,23 @@
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/log_reader_config.h"
 #include "cloud_topics/logger.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
+#include "cluster/topic_properties.h"
 #include "config/configuration.h"
 #include "kafka/utils/txn_reader.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "storage/log.h"
+#include "storage/types.h"
 
+#include <chrono>
 #include <expected>
 #include <utility>
+
+using namespace std::chrono_literals;
 
 namespace cloud_topics::reconciler {
 
@@ -160,6 +168,118 @@ public:
         co_return model::make_readahead_record_batch_reader(
           model::make_record_batch_reader<kafka::read_committed_reader>(
             std::move(tracker), std::move(reader.reader)));
+    }
+
+    ss::future<std::optional<std::optional<kafka::offset>>>
+    compute_local_retention_target(
+      const cluster::topic_properties& props) override {
+        if (!_partition || !_partition->is_leader()) {
+            co_return std::nullopt;
+        }
+        const auto mode = props.storage_mode;
+        const bool compact
+          = props.cleanup_policy_bitflags.has_value()
+            && ((*props.cleanup_policy_bitflags & model::cleanup_policy_bitflags::compaction) == model::cleanup_policy_bitflags::compaction);
+
+        if (mode != model::redpanda_storage_mode::tiered_cloud || compact) {
+            co_return std::optional<kafka::offset>(std::nullopt);
+        }
+
+        auto log = _partition->log();
+        if (!log) {
+            co_return std::nullopt;
+        }
+
+        // Mirror disk_log_impl::apply_overrides(default_cfg). Build the
+        // effective retention cfg the way tiered storage would for this
+        // partition.
+        auto max_bytes = config::shard_local_cfg().retention_bytes();
+        auto default_ret_ms = config::shard_local_cfg().log_retention_ms();
+        auto upper_ts = default_ret_ms.has_value()
+                          ? model::to_timestamp(
+                              model::timestamp_clock::now() - *default_ret_ms)
+                          : model::timestamp::min();
+
+        if (props.retention_bytes.is_disabled()) {
+            max_bytes = std::nullopt;
+        } else if (props.retention_bytes.has_optional_value()) {
+            max_bytes = props.retention_bytes.value();
+        }
+        if (props.retention_duration.is_disabled()) {
+            upper_ts = model::timestamp::min();
+        } else if (props.retention_duration.has_optional_value()) {
+            upper_ts = model::to_timestamp(
+              model::timestamp_clock::now() - props.retention_duration.value());
+        }
+
+        const bool strict_local
+          = config::shard_local_cfg().retention_local_strict()
+            && config::shard_local_cfg().retention_local_strict_override();
+        if (strict_local) {
+            auto local_bytes_tri = props.retention_local_target_bytes;
+            auto local_ms_tri = props.retention_local_target_ms;
+            if (
+              !local_bytes_tri.is_disabled()
+              && !local_bytes_tri.has_optional_value()) {
+                local_bytes_tri = tristate<size_t>(
+                  config::shard_local_cfg()
+                    .retention_local_target_bytes_default());
+            }
+            if (!local_ms_tri.is_engaged()) {
+                local_ms_tri = tristate<std::chrono::milliseconds>(
+                  config::shard_local_cfg()
+                    .retention_local_target_ms_default());
+            }
+            if (local_bytes_tri.has_optional_value()) {
+                if (max_bytes.has_value()) {
+                    max_bytes = std::min(
+                      local_bytes_tri.value(), max_bytes.value());
+                } else {
+                    max_bytes = local_bytes_tri.value();
+                }
+            }
+            if (local_ms_tri.has_optional_value()) {
+                upper_ts = std::max(
+                  model::to_timestamp(
+                    model::timestamp_clock::now() - local_ms_tri.value()),
+                  upper_ts);
+            }
+        }
+
+        storage::gc_config cfg(upper_ts, max_bytes);
+
+        ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());
+        auto lro = api.get_last_reconciled_offset();
+        auto retention_log_offset = log->retention_offset(cfg);
+
+        std::optional<kafka::offset> target;
+        if (retention_log_offset.has_value()) {
+            auto kafka_off = model::offset_cast(
+              log->from_log_offset(*retention_log_offset));
+            target = std::min(kafka_off, lro);
+        }
+        co_return target;
+    }
+
+    ss::future<std::expected<void, errc>> publish_local_retention_target(
+      std::optional<kafka::offset> value, ss::abort_source& as) override {
+        ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());
+        auto deadline = model::timeout_clock::now() + 5s;
+        auto res = co_await api.set_allowed_local_start_offset(
+          value, deadline, as);
+        if (!res.has_value()) {
+            switch (res.error()) {
+            case ctp_stm_api_errc::timeout:
+                co_return std::unexpected(errc::timeout);
+            case ctp_stm_api_errc::not_leader:
+                co_return std::unexpected(errc::not_leader);
+            case ctp_stm_api_errc::shutdown:
+                co_return std::unexpected(errc::shutdown);
+            case ctp_stm_api_errc::failure:
+                co_return std::unexpected(errc::failure);
+            }
+        }
+        co_return std::expected<void, errc>();
     }
 
 private:

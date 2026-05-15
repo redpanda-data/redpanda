@@ -22,8 +22,10 @@
 #include <optional>
 
 namespace cluster {
+class metadata_cache;
 class partition;
-}
+struct topic_properties;
+} // namespace cluster
 
 namespace cloud_topics::reconciler {
 
@@ -95,6 +97,26 @@ public:
     // It *is* valid for this reader to outlive `source`.
     virtual ss::future<model::record_batch_reader>
       make_reader(reader_config) = 0;
+
+    // Compute the target value for the allowed_local_start_offset hint.
+    //
+    // Returns:
+    // - std::nullopt outer: the hint should not be evaluated/published (e.g.,
+    //   not leader, topic config missing, or this isn't a tiered_cloud topic).
+    // - std::optional<kafka::offset> inner: when present, the target value of
+    //   the hint that should be published via ctp_stm:
+    //     * Some(offset): clamp local log to this kafka offset.
+    //     * nullopt: clear the hint (no local-retention behavior).
+    //
+    // The outer optional disambiguates "do not touch the hint at all" from
+    // "publish a value (possibly nullopt)".
+    virtual ss::future<std::optional<std::optional<kafka::offset>>>
+    compute_local_retention_target(const cluster::topic_properties&) = 0;
+
+    // Replicate the allowed_local_start_offset hint value via ctp_stm.
+    virtual ss::future<std::expected<void, errc>>
+    publish_local_retention_target(
+      std::optional<kafka::offset>, ss::abort_source&) = 0;
 
     // Per-partition bookkeeping for the local-retention evaluator.
     size_t local_retention_bytes_since_eval() const noexcept {

@@ -107,12 +107,42 @@ public:
         _on_make_reader = std::move(cb);
     }
 
+    // Local-retention evaluator hooks for tests.
+    void
+    set_compute_target(std::optional<std::optional<kafka::offset>> target) {
+        _compute_target = target;
+    }
+
+    void fail_publish(bool fail) { _fail_publish = fail; }
+
+    const std::vector<std::optional<kafka::offset>>& published_values() const {
+        return _published_values;
+    }
+
+    ss::future<std::optional<std::optional<kafka::offset>>>
+    compute_local_retention_target(const cluster::topic_properties&) override {
+        co_return _compute_target;
+    }
+
+    ss::future<std::expected<void, errc>> publish_local_retention_target(
+      std::optional<kafka::offset> value, ss::abort_source&) override {
+        if (_fail_publish) {
+            co_return std::unexpected(errc::failure);
+        }
+        _published_values.push_back(value);
+        co_return std::expected<void, errc>{};
+    }
+
 private:
     kafka::offset _lro;
     chunked_vector<model::record_batch> _source_log;
     bool _fail_set_lro = false;
     bool _fail_make_reader = false;
     std::function<void()> _on_make_reader;
+
+    std::optional<std::optional<kafka::offset>> _compute_target;
+    bool _fail_publish = false;
+    std::vector<std::optional<kafka::offset>> _published_values;
 };
 
 class unreliable_metastore : public l1::simple_metastore {

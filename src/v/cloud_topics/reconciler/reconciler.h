@@ -124,6 +124,14 @@ public:
      */
     ss::future<> reconcile();
 
+    /*
+     * Evaluate the local-retention hint for one source, publishing the
+     * resulting `allowed_local_start_offset` value via ctp_stm if it
+     * differs from the last published value. Idempotent when the value
+     * is unchanged.
+     */
+    ss::future<> evaluate_local_retention_hint(ss::shared_ptr<source>);
+
 private:
     // NB: Partition attachment is the only part using ntps instead of
     //     topic id partitions.
