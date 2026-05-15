@@ -306,7 +306,7 @@ ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
                   apply_reset_state(std::move(r));
                   return ss::stop_iteration::no;
               case ctp_stm_key::set_allowed_local_start_offset:
-                  // TODO: implement apply path in a follow-up change.
+                  apply_set_allowed_local_start_offset(std::move(r));
                   return ss::stop_iteration::no;
               }
               throw std::runtime_error(fmt_with_ctx(
@@ -347,6 +347,14 @@ void ctp_stm::apply_reset_state(model::record record) {
     auto cmd = serde::from_iobuf<reset_state_cmd>(record.release_value());
     vlog(_log.info, "Resetting ctp_stm state: {}", cmd.state);
     _state = std::move(cmd.state);
+}
+
+void ctp_stm::apply_set_allowed_local_start_offset(model::record record) {
+    auto cmd = serde::from_iobuf<set_allowed_local_start_offset_cmd>(
+      record.release_value());
+    vlog(_log.debug, "Applying set_allowed_local_start_offset: {}", cmd.value);
+    _state.set_allowed_local_start_offset(cmd.value);
+    _lro_advanced.signal();
 }
 
 void ctp_stm::apply_placeholder(const model::record_batch& batch) {

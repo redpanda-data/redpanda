@@ -151,6 +151,18 @@ public:
           node, std::move(builder).build());
     }
 
+    ss::future<std::expected<model::offset, ct::ctp_stm_api_errc>>
+    replicate_set_allowed_local_start_offset(
+      raft::raft_node_instance& node, std::optional<kafka::offset> value) {
+        storage::record_batch_builder builder(
+          model::record_batch_type::ctp_stm_command, model::offset{0});
+        builder.add_raw_kv(
+          serde::to_iobuf(ct::set_allowed_local_start_offset_cmd::key),
+          serde::to_iobuf(ct::set_allowed_local_start_offset_cmd(value)));
+        co_return co_await replicate_record_batch(
+          node, std::move(builder).build());
+    }
+
     ss::abort_source as;
 };
 
@@ -1343,4 +1355,44 @@ TEST_F_CORO(ctp_stm_fixture, test_reset_state_cmd) {
       << "max_applied_epoch should be cleared after reset";
     ASSERT_FALSE_CORO(stm->state().get_last_reconciled_offset().has_value())
       << "LRO should be cleared after reset";
+}
+
+TEST_F_CORO(ctp_stm_fixture, apply_set_allowed_local_start_offset_some) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+
+    ASSERT_FALSE_CORO(
+      stm->state().get_allowed_local_start_offset().has_value());
+
+    auto res = co_await replicate_set_allowed_local_start_offset(
+      leader, kafka::offset{100});
+    ASSERT_TRUE_CORO(res.has_value());
+
+    ASSERT_TRUE_CORO(stm->state().get_allowed_local_start_offset().has_value());
+    ASSERT_EQ_CORO(
+      stm->state().get_allowed_local_start_offset().value(),
+      kafka::offset{100});
+}
+
+TEST_F_CORO(ctp_stm_fixture, apply_set_allowed_local_start_offset_clear) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+
+    auto res = co_await replicate_set_allowed_local_start_offset(
+      leader, kafka::offset{50});
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_EQ_CORO(
+      stm->state().get_allowed_local_start_offset().value(), kafka::offset{50});
+
+    res = co_await replicate_set_allowed_local_start_offset(
+      leader, std::nullopt);
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_FALSE_CORO(
+      stm->state().get_allowed_local_start_offset().has_value());
 }
