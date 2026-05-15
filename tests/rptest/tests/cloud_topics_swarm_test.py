@@ -341,14 +341,18 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
     # partition-count variant pins high_partition_count) on top of
     # the always-on disruption set below.
     BASE_EXTRA_MECHANISMS: list[str] = []
-    # Every matrix test exercises the full disruption suite.
+    # Every matrix test exercises the full disruption suite. The set
+    # excludes inject_node_decommission: ducktape allocates 4 nodes
+    # (1 client + 3 brokers) per test in CI, and decommissioning one
+    # of the 3 brokers would leave the cluster unable to maintain
+    # RF=3. The decommission mechanism stays in default_model() for
+    # future use against larger clusters.
     _ALWAYS_ON_DISRUPTIONS: list[str] = [
         "inject_broker_restart",
         "inject_leadership_transfer",
         "inject_minio_block",
         "inject_node_maintenance",
         "inject_partition_movement",
-        "inject_node_decommission",
     ]
     MSG_SIZE = 8192
     PRODUCE_RATE_BPS = 20 * 1024 * 1024
@@ -387,7 +391,7 @@ class CloudTopicsSwarmMatrixShortTermGc(_SwarmMatrixBase):
 
     TARGET_EFFECT = "short_term_gc_observed"
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(
             applies_only_on=[CloudStorageType.S3]
@@ -403,7 +407,7 @@ class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
 
     TARGET_EFFECT = "l1_upload_observed"
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(
             applies_only_on=[CloudStorageType.S3]
@@ -419,7 +423,7 @@ class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
 
     TARGET_EFFECT = "epoch_increment_observed"
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(
             applies_only_on=[CloudStorageType.S3]
@@ -441,7 +445,7 @@ class CloudTopicsSwarmMatrixShortTermGcHighPartitions(_SwarmMatrixBase):
     TARGET_EFFECT = "short_term_gc_observed"
     BASE_EXTRA_MECHANISMS = ["high_partition_count"]
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(
             applies_only_on=[CloudStorageType.S3]
