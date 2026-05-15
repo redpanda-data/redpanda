@@ -100,32 +100,62 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
         """Max partition_count across chosen mechanisms (baseline = 1)."""
         return max((m.partition_count for m in self._chosen), default=1)
 
-    # Disruptions fire after this many seconds of produce activity. That
-    # leaves the cluster enough time to upload a few L0/L1 objects so the
-    # disruption interrupts steady state rather than start-up.
-    DISRUPTION_DELAY_SEC = 30
+    # Fixed seed so the random per-disruption start times are
+    # reproducible across runs (each test class gets the same schedule
+    # every time). Override per-subclass if needed.
+    DISRUPTION_SEED = 42
+
+    # Random window each disruption's start time is sampled from,
+    # relative to produce-start. The upper bound leaves ~90 s after
+    # the latest start so even a 60 s disruption has time to complete
+    # before produce wraps up.
+    DISRUPTION_START_MIN_SEC = 30
+    DISRUPTION_START_MAX_SEC = 510
 
     def _run_disruptions(self, disruptions: list, abort_event) -> None:
+        """Spawn one thread per disruption. Each thread sleeps for a
+        per-disruption random delay (seeded by DISRUPTION_SEED), then
+        invokes its disruption callable. Returns after all disruption
+        threads join (or after the produce-end abort signal). The
+        seeded RNG only controls START TIMES -- in-disruption choices
+        (which node to restart, which partition to transfer, etc.)
+        remain unseeded so we get variety across a single run."""
+        import random
+        import threading
+        rng = random.Random(self.DISRUPTION_SEED)
+        threads: list[threading.Thread] = []
+        for mech in disruptions:
+            delay = rng.uniform(
+                self.DISRUPTION_START_MIN_SEC,
+                self.DISRUPTION_START_MAX_SEC,
+            )
+            self.logger.info(
+                f"swarm: scheduled disruption {mech.name!r} at +{delay:.0f}s"
+            )
+            t = threading.Thread(
+                target=self._delayed_disruption,
+                args=(mech, delay, abort_event),
+                daemon=True,
+            )
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join(timeout=self.DISRUPTION_START_MAX_SEC + 180)
+
+    def _delayed_disruption(self, mech, delay: float, abort_event) -> None:
         import time
-        # Initial delay: let produce make some progress first.
-        slept = 0
-        while slept < self.DISRUPTION_DELAY_SEC:
+        end_at = time.monotonic() + delay
+        while time.monotonic() < end_at:
             if abort_event.is_set():
                 return
             time.sleep(1)
-            slept += 1
-        for mech in disruptions:
-            if abort_event.is_set():
-                return
-            try:
-                self.logger.info(
-                    f"swarm: invoking disruption for {mech.name!r}"
-                )
-                mech.disruption(self, abort_event)
-            except Exception as e:
-                self.logger.error(
-                    f"swarm: disruption {mech.name!r} raised: {e}"
-                )
+        self.logger.info(f"swarm: invoking disruption {mech.name!r}")
+        try:
+            mech.disruption(self, abort_event)
+        except Exception as e:
+            self.logger.error(
+                f"swarm: disruption {mech.name!r} raised: {e}"
+            )
 
     def run_smoke(
         self,
@@ -282,51 +312,41 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
 
 
 class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
-    """Base for the disruption matrix. Subclasses hardcode the target
-    effect (matrix params can't reach the constructor in ducktape) and
-    inherit a test method that varies only the disruption flags."""
+    """Base for the disruption matrix. Every run includes all three
+    disruption mechanisms; each one's start time is chosen
+    independently from a seeded RNG so runs are reproducible. The
+    @matrix decorator on subclasses only pins cloud_storage_type."""
 
     TARGET_EFFECT: str = "short_term_gc_observed"
-    # Subclasses set this to the list of mechanism names to layer on
-    # top of the solver-required set for every matrix case (e.g. the
-    # high-partition-count variant pins high_partition_count=True).
+    # Subclasses set this to add extra mechanisms (e.g. the high-
+    # partition-count variant pins high_partition_count) on top of
+    # the always-on disruption set below.
     BASE_EXTRA_MECHANISMS: list[str] = []
+    # Every matrix test exercises the full disruption suite.
+    _ALWAYS_ON_DISRUPTIONS: list[str] = [
+        "inject_broker_restart",
+        "inject_leadership_transfer",
+        "inject_minio_block",
+    ]
     MSG_SIZE = 1024
     PRODUCE_RATE_BPS = 20 * 1024 * 1024
     PRODUCE_DURATION_SECONDS = 600
 
     def __init__(self, test_context: TestContext):
+        extras = list(self.BASE_EXTRA_MECHANISMS) + list(
+            self._ALWAYS_ON_DISRUPTIONS
+        )
         super().__init__(
             test_context,
             target_effect_name=self.TARGET_EFFECT,
-            extra_mechanism_names=self.BASE_EXTRA_MECHANISMS,
+            extra_mechanism_names=extras,
         )
 
     def _msg_count(self) -> int:
         total_bytes = self.PRODUCE_RATE_BPS * self.PRODUCE_DURATION_SECONDS
         return total_bytes // self.MSG_SIZE
 
-    def _run_with_disruptions(
-        self,
-        inject_broker_restart: bool,
-        inject_leadership_transfer: bool,
-        inject_minio_block: bool,
-    ) -> None:
-        extras: list[str] = []
-        if inject_broker_restart:
-            extras.append("inject_broker_restart")
-        if inject_leadership_transfer:
-            extras.append("inject_leadership_transfer")
-        if inject_minio_block:
-            extras.append("inject_minio_block")
-        # Disruption mechanisms have no cluster-config impact; we can
-        # add them to the chosen set at runtime.
-        existing = {m.name for m in self._chosen}
-        for name in extras:
-            if name not in existing:
-                self._chosen.append(self._model._mechs[name])
-        self._chosen_names = [m.name for m in self._chosen]
-
+    def _run(self) -> None:
         self.run_smoke(
             topic_name="ct-swarm-matrix",
             msg_size=self.MSG_SIZE,
@@ -336,91 +356,51 @@ class _SwarmMatrixBase(CloudTopicsSwarmTestBase):
 
 
 class CloudTopicsSwarmMatrixShortTermGc(_SwarmMatrixBase):
-    """Disruption matrix for the short-term GC path."""
+    """Short-term GC path with the full disruption suite."""
 
     TARGET_EFFECT = "short_term_gc_observed"
 
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
-        inject_broker_restart=[False, True],
-        inject_leadership_transfer=[False, True],
-        inject_minio_block=[False, True],
     )
-    def test_swarm(
-        self,
-        cloud_storage_type: CloudStorageType,
-        inject_broker_restart: bool,
-        inject_leadership_transfer: bool,
-        inject_minio_block: bool,
-    ):
-        self._run_with_disruptions(
-            inject_broker_restart,
-            inject_leadership_transfer,
-            inject_minio_block,
-        )
+    def test_swarm(self, cloud_storage_type: CloudStorageType):
+        self._run()
 
 
 class CloudTopicsSwarmMatrixL1Upload(_SwarmMatrixBase):
-    """Disruption matrix for the reconciler (L1 upload) path."""
+    """Reconciler (L1 upload) path with the full disruption suite."""
 
     TARGET_EFFECT = "l1_upload_observed"
 
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
-        inject_broker_restart=[False, True],
-        inject_leadership_transfer=[False, True],
-        inject_minio_block=[False, True],
     )
-    def test_swarm(
-        self,
-        cloud_storage_type: CloudStorageType,
-        inject_broker_restart: bool,
-        inject_leadership_transfer: bool,
-        inject_minio_block: bool,
-    ):
-        self._run_with_disruptions(
-            inject_broker_restart,
-            inject_leadership_transfer,
-            inject_minio_block,
-        )
+    def test_swarm(self, cloud_storage_type: CloudStorageType):
+        self._run()
 
 
 class CloudTopicsSwarmMatrixEpoch(_SwarmMatrixBase):
-    """Disruption matrix for the epoch service."""
+    """Epoch service with the full disruption suite."""
 
     TARGET_EFFECT = "epoch_increment_observed"
 
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
-        inject_broker_restart=[False, True],
-        inject_leadership_transfer=[False, True],
-        inject_minio_block=[False, True],
     )
-    def test_swarm(
-        self,
-        cloud_storage_type: CloudStorageType,
-        inject_broker_restart: bool,
-        inject_leadership_transfer: bool,
-        inject_minio_block: bool,
-    ):
-        self._run_with_disruptions(
-            inject_broker_restart,
-            inject_leadership_transfer,
-            inject_minio_block,
-        )
+    def test_swarm(self, cloud_storage_type: CloudStorageType):
+        self._run()
 
 
 class CloudTopicsSwarmMatrixShortTermGcHighPartitions(_SwarmMatrixBase):
     """High-partition-count variant of the short-term GC matrix.
 
-    Pins ``high_partition_count`` so every case runs against a 1000-
-    partition topic. Disruption flags vary across the @matrix; the
-    looping leadership-transfer disruption gets a wide partition pool
-    to pick from, and broker restart forces re-election of hundreds of
-    partition leaders at once."""
+    Pins ``high_partition_count`` so the run uses a 1000-partition
+    topic. The looping leadership-transfer burst gets a wide partition
+    pool to pick from, and broker restart forces re-election of
+    hundreds of partition leaders at once."""
 
     TARGET_EFFECT = "short_term_gc_observed"
     BASE_EXTRA_MECHANISMS = ["high_partition_count"]
@@ -428,22 +408,9 @@ class CloudTopicsSwarmMatrixShortTermGcHighPartitions(_SwarmMatrixBase):
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3]),
-        inject_broker_restart=[False, True],
-        inject_leadership_transfer=[False, True],
-        inject_minio_block=[False, True],
     )
-    def test_swarm(
-        self,
-        cloud_storage_type: CloudStorageType,
-        inject_broker_restart: bool,
-        inject_leadership_transfer: bool,
-        inject_minio_block: bool,
-    ):
-        self._run_with_disruptions(
-            inject_broker_restart,
-            inject_leadership_transfer,
-            inject_minio_block,
-        )
+    def test_swarm(self, cloud_storage_type: CloudStorageType):
+        self._run()
 
 
 # NOTE: a CloudTopicsSwarmMatrixProducerEviction class belongs here but is

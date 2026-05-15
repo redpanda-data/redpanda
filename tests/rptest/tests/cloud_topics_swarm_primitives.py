@@ -148,15 +148,18 @@ def attach_overrides(model: SwarmModel) -> None:
 # OUTPUT to this port from a broker simulates a network partition between
 # that broker and the object store while leaving Kafka traffic intact.
 _MINIO_PORT = 9000
-_MINIO_BLOCK_SECONDS = 15
+_MINIO_BLOCK_SECONDS = 60
 
 # How long a restarted broker stays down before being restarted. Long
 # enough that other brokers definitely re-elect leaders and that the
 # cluster has to absorb a non-trivial unavailability window.
 _BROKER_DOWNTIME_SECONDS = 60
 
-# How often the looping leadership-transfer disruption fires, in seconds.
+# Leadership-transfer disruption: a burst of transfers across a fixed
+# window. Each iteration picks a random partition and forces a leader
+# transfer.
 _LEADER_TRANSFER_INTERVAL_SECONDS = 5
+_LEADER_TRANSFER_BURST_SECONDS = 60
 
 
 def _disrupt_broker_restart(test, abort_event=None) -> None:
@@ -184,25 +187,28 @@ def _disrupt_broker_restart(test, abort_event=None) -> None:
 
 
 def _disrupt_leadership_transfer(test, abort_event=None) -> None:
-    """Force a leadership transfer on a random partition every
-    ``_LEADER_TRANSFER_INTERVAL_SECONDS`` seconds until ``abort_event``
-    is set or 30 minutes have elapsed (defensive cap)."""
+    """Force a burst of leadership transfers: every
+    ``_LEADER_TRANSFER_INTERVAL_SECONDS`` seconds for the next
+    ``_LEADER_TRANSFER_BURST_SECONDS`` seconds, pick a random partition
+    and force a leader transfer. Returns after the burst window ends
+    (or when ``abort_event`` is set)."""
     import random
     import time
     from rptest.services.admin import Admin
     admin = Admin(test.redpanda)
     topic = test._smoke_topic_name
     partition_count = test._smoke_partition_count
-    deadline = time.monotonic() + 30 * 60
+    test.logger.info(
+        f"swarm: disrupt: leadership-transfer burst on {topic} "
+        f"for {_LEADER_TRANSFER_BURST_SECONDS}s"
+    )
+    deadline = time.monotonic() + _LEADER_TRANSFER_BURST_SECONDS
     while time.monotonic() < deadline:
         if abort_event is not None and abort_event.is_set():
             break
         partition = random.randrange(partition_count)
         try:
             admin.partition_transfer_leadership("kafka", topic, partition)
-            test.logger.info(
-                f"swarm: disrupt: leadership transfer of {topic}/{partition} issued"
-            )
         except Exception as e:
             test.logger.warn(
                 f"swarm: disrupt: leadership transfer failed for {topic}/{partition}: {e}"
@@ -214,6 +220,7 @@ def _disrupt_leadership_transfer(test, abort_event=None) -> None:
                 return
             time.sleep(1)
             slept += 1
+    test.logger.info(f"swarm: disrupt: leadership-transfer burst complete")
 
 
 def _disrupt_minio_block(test, abort_event=None) -> None:
