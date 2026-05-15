@@ -132,6 +132,7 @@ redpanda_cc_library(
         "//src/v/cloud_storage_clients",
         "//src/v/config",
         "//src/v/hashing:secure",
+        "//src/v/model",
         "//src/v/net",
         "@boost//:beast",
         "@seastar",

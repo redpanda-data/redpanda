@@ -10,11 +10,14 @@
 
 #include "datalake/credential_manager.h"
 
+#include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/types.h"
 #include "cloud_storage_clients/configuration.h"
 #include "config/configuration.h"
 #include "datalake/logger.h"
 #include "hashing/secure.h"
+
+#include <cstdlib>
 
 namespace datalake {
 
@@ -69,17 +72,12 @@ create_gcp_configuration(const config::configuration&) {
     return cloud_storage_clients::client_configuration{s3_config};
 }
 
-model::cloud_credentials_source
-get_credentials_source(const config::configuration& cfg) {
-    if (
-      cfg.iceberg_rest_catalog_authentication_mode()
-      == config::datalake_catalog_auth_mode::gcp) {
-        return model::cloud_credentials_source::gcp_instance_metadata;
-    }
-
-    return cfg.iceberg_rest_catalog_aws_credentials_source().has_value()
-             ? cfg.iceberg_rest_catalog_aws_credentials_source().value()
-             : cfg.cloud_storage_credentials_source();
+bool irsa_env_present() {
+    return std::getenv(cloud_roles::aws_injected_env_vars::role_arn.data())
+             != nullptr
+           && std::getenv(
+                cloud_roles::aws_injected_env_vars::token_file_path.data())
+                != nullptr;
 }
 
 // Build the client configuration for refreshing credentials.
@@ -114,6 +112,33 @@ ss::sstring compute_sha256_hex(const iobuf& data) {
 }
 
 } // anonymous namespace
+
+model::cloud_credentials_source
+resolve_credentials_source(const config::configuration& cfg) {
+    if (
+      cfg.iceberg_rest_catalog_authentication_mode()
+      == config::datalake_catalog_auth_mode::gcp) {
+        return model::cloud_credentials_source::gcp_instance_metadata;
+    }
+
+    auto source = cfg.iceberg_rest_catalog_aws_credentials_source().has_value()
+                    ? cfg.iceberg_rest_catalog_aws_credentials_source().value()
+                    : cfg.cloud_storage_credentials_source();
+
+    if (
+      source == model::cloud_credentials_source::aws_instance_metadata
+      && irsa_env_present()) {
+        vlog(
+          datalake_log.info,
+          "IRSA env vars detected ({}, {}); resolving iceberg credentials "
+          "source aws_instance_metadata to sts",
+          cloud_roles::aws_injected_env_vars::role_arn,
+          cloud_roles::aws_injected_env_vars::token_file_path);
+        return model::cloud_credentials_source::sts;
+    }
+
+    return source;
+}
 
 credential_manager::credential_manager() = default;
 
@@ -233,17 +258,18 @@ void credential_manager::start_auth_refresh_if_needed() {
         return;
     }
 
+    auto credentials_source = resolve_credentials_source(cfg);
     auto config_source
       = cloud_storage_clients::build_refresh_credentials_source(
         *client_config,
-        get_credentials_source(cfg),
+        credentials_source,
         cfg.iceberg_rest_catalog_credentials_host());
 
     auth_refresh_bg_op_.emplace(
       datalake_log,
       gate_,
       auth_refresh_as_,
-      get_credentials_source(cfg),
+      credentials_source,
       std::move(config_source));
 
     auth_refresh_bg_op_->maybe_start_auth_refresh_op(

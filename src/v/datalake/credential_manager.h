@@ -13,6 +13,8 @@
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_roles/auth_refresh_bg_op.h"
 #include "cloud_roles/types.h"
+#include "config/configuration.h"
+#include "model/metadata.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -23,6 +25,21 @@
 #include <boost/beast/http/message.hpp>
 
 namespace datalake {
+
+/// Resolves the credentials source for the iceberg REST catalog from
+/// configuration.
+///
+/// In addition to the property fallback chain
+/// (`iceberg_rest_catalog_aws_credentials_source` →
+/// `cloud_storage_credentials_source`), this also implements IRSA
+/// auto-detection: when the resolved source is `aws_instance_metadata` and
+/// the AWS-injected IRSA env vars (`AWS_ROLE_ARN` and
+/// `AWS_WEB_IDENTITY_TOKEN_FILE`) are both present, the source is overridden
+/// to `sts`. This mirrors the AWS SDK default credential provider chain and
+/// unblocks BYOC EKS pods where the Glue policy is attached to the IRSA role
+/// rather than the EC2 node role.
+model::cloud_credentials_source
+resolve_credentials_source(const config::configuration& cfg);
 
 // Service responsible for managing credential refresh for datalake components.
 // Provides shared credential management for both datalake_manager and
