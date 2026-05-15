@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -e
 
+# Retry an apt-related command with exponential backoff. Tolerates transient
+# Canonical/Launchpad PPA outages observed in CDT (DEVPROD-4196).
+retry_apt() {
+  local max_attempts=3 delay=30 attempt=1
+  until "$@"; do
+    if ((attempt >= max_attempts)); then
+      echo "retry_apt: '$*' failed after ${max_attempts} attempts" >&2
+      return 1
+    fi
+    echo "retry_apt: attempt ${attempt}/${max_attempts} of '$*' failed; sleeping ${delay}s" >&2
+    sleep "$delay"
+    delay=$((delay * 2))
+    attempt=$((attempt + 1))
+  done
+}
+
 OCSF_SCHEMA_VERSION=9608805fe0b61035cb821bb9068096fe47fed12d # tip of v1.0.0 branch
 OCSF_SERVER_VERSION=d3b26de39df9eb33c6d63e34a126c77c0811c7a0
 
@@ -15,12 +31,12 @@ tar -xvzf ${OCSF_SERVER_VERSION}.tar.gz
 rm ${OCSF_SERVER_VERSION}.tar.gz
 mv ocsf-server-${OCSF_SERVER_VERSION} /opt/ocsf-server
 
-apt-get update
-apt-get install -qq software-properties-common
+retry_apt apt-get update
+retry_apt apt-get install -qq software-properties-common
 
-add-apt-repository -y ppa:rabbitmq/rabbitmq-erlang
-apt-get update
-apt-get install -qq elixir erlang-dev erlang-xmerl
+retry_apt add-apt-repository -y ppa:rabbitmq/rabbitmq-erlang
+retry_apt apt-get update
+retry_apt apt-get install -qq elixir erlang-dev erlang-xmerl
 
 mix local.hex --force && mix local.rebar --force
 
@@ -35,7 +51,7 @@ fi
 ./build_server.sh
 
 # remove added repository for other packages stability
-add-apt-repository -ry ppa:rabbitmq/rabbitmq-erlang
+retry_apt add-apt-repository -ry ppa:rabbitmq/rabbitmq-erlang
 
 # The following is required because the server attempts to write logs
 # to the `dist/tmp` directory.  This is fine in docker ducktape as the user
