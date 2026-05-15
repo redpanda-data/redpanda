@@ -55,6 +55,10 @@ struct ctp_stm_accessor {
     model::offset max_removable_local_log_offset(ctp_stm& stm) {
         return stm.max_removable_local_log_offset();
     }
+
+    model::offset prefix_truncate_target(ctp_stm& stm) {
+        return stm.prefix_truncate_target();
+    }
 };
 } // namespace cloud_topics
 
@@ -1395,4 +1399,112 @@ TEST_F_CORO(ctp_stm_fixture, apply_set_allowed_local_start_offset_clear) {
     ASSERT_TRUE_CORO(res.has_value());
     ASSERT_FALSE_CORO(
       stm->state().get_allowed_local_start_offset().has_value());
+}
+
+TEST_F_CORO(ctp_stm_fixture, prefix_truncate_target_returns_lrlo_when_no_hint) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    // Write a placeholder batch and advance LRO so LRLO is non-min.
+    co_await replicate_record_batch(
+      leader, make_record_batch(ct::cluster_epoch{1}, model::offset{0}, 0));
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{0}, model::no_timeout, as);
+
+    ct::ctp_stm_accessor accessor;
+    auto lrlo = accessor.max_removable_local_log_offset(*stm);
+    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+    ASSERT_FALSE_CORO(
+      stm->state().get_allowed_local_start_offset().has_value());
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, prefix_truncate_target_clamped_when_hint_below_lro) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    // Build a log of 100+ placeholders so log offsets exist for the hint.
+    for (int o = 0; o < 100; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{99}, model::no_timeout, as);
+
+    ct::ctp_stm_accessor accessor;
+    auto lrlo = accessor.max_removable_local_log_offset(*stm);
+
+    // Apply hint=60 below LRO=99.
+    auto res = co_await replicate_set_allowed_local_start_offset(
+      leader, kafka::offset{60});
+    ASSERT_TRUE_CORO(res.has_value());
+
+    auto target = accessor.prefix_truncate_target(*stm);
+    auto expected = leader.raft()->log()->to_log_offset(
+      kafka::offset_cast(kafka::offset{60}));
+    ASSERT_EQ_CORO(target, expected);
+    // max_removable_local_log_offset() must be unchanged.
+    ASSERT_EQ_CORO(accessor.max_removable_local_log_offset(*stm), lrlo);
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, prefix_truncate_target_uses_lrlo_when_hint_above_lro) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    for (int o = 0; o < 50; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{10}, model::no_timeout, as);
+
+    ct::ctp_stm_accessor accessor;
+    auto lrlo = accessor.max_removable_local_log_offset(*stm);
+
+    // Hint above LRO -> should fall back to LRLO.
+    auto res = co_await replicate_set_allowed_local_start_offset(
+      leader, kafka::offset{40});
+    ASSERT_TRUE_CORO(res.has_value());
+
+    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, prefix_truncate_target_uses_lrlo_when_hint_cleared) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    for (int o = 0; o < 100; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{99}, model::no_timeout, as);
+
+    ct::ctp_stm_accessor accessor;
+    auto lrlo = accessor.max_removable_local_log_offset(*stm);
+
+    auto res = co_await replicate_set_allowed_local_start_offset(
+      leader, kafka::offset{50});
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_NE_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+
+    // Clear the hint.
+    res = co_await replicate_set_allowed_local_start_offset(
+      leader, std::nullopt);
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
 }
