@@ -15,9 +15,11 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <expected>
+#include <optional>
 
 namespace cluster {
 class partition;
@@ -94,10 +96,43 @@ public:
     virtual ss::future<model::record_batch_reader>
       make_reader(reader_config) = 0;
 
+    // Per-partition bookkeeping for the local-retention evaluator.
+    size_t local_retention_bytes_since_eval() const noexcept {
+        return _local_retention_bytes_since_eval;
+    }
+    void add_local_retention_bytes(size_t n) noexcept {
+        _local_retention_bytes_since_eval += n;
+    }
+    void reset_local_retention_eval_counter() noexcept {
+        _local_retention_bytes_since_eval = 0;
+    }
+
+    std::optional<ss::lowres_clock::time_point>
+    local_retention_last_eval_time() const noexcept {
+        return _local_retention_last_eval_time;
+    }
+    void set_local_retention_last_eval_time(
+      ss::lowres_clock::time_point t) noexcept {
+        _local_retention_last_eval_time = t;
+    }
+
+    std::optional<std::optional<kafka::offset>>
+    local_retention_last_published() const noexcept {
+        return _local_retention_last_published;
+    }
+    void set_local_retention_last_published(
+      std::optional<kafka::offset> o) noexcept {
+        _local_retention_last_published = o;
+    }
+
 private:
     model::ntp _ntp;
     model::topic_id_partition _tidp;
     source_probe _probe;
+
+    size_t _local_retention_bytes_since_eval{0};
+    std::optional<ss::lowres_clock::time_point> _local_retention_last_eval_time;
+    std::optional<std::optional<kafka::offset>> _local_retention_last_published;
 };
 
 // Make a reconciliation source from L0 components (data plane) and the cluster
