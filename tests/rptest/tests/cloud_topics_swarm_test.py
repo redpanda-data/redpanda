@@ -195,6 +195,11 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
             msg_count=msg_count,
             rate_limit_bps=rate_limit_bps,
             tolerate_failed_produce=True,
+            # Don't wait for ack=all; the cluster sustains 20+ MiB/s per
+            # partition but acks=all rounds up to the slowest replica
+            # and caps throughput. Content correctness is still validated
+            # at the SeqConsumer.
+            wait_for_acks=False,
             client_name="swarm-producer",
             **producer_kwargs,
         )
@@ -282,12 +287,10 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
     is content-only via KgoVerifierSeqConsumer."""
 
     MSG_SIZE = 1024
-    # Target produce rate. Empirically the cluster sustains ~2.5 MiB/s
-    # on a single cloud-topic partition; 2 MiB/s sits just under that
-    # so the rate limit (not throughput) governs how long produce
-    # runs, on both the 1-partition default and the 1000-partition
-    # variant.
-    PRODUCE_RATE_BPS = 2 * 1024 * 1024
+    # Target produce rate. With wait_for_acks=False the producer isn't
+    # latency-bound; 20 MiB/s is well within what the cluster sustains
+    # on a single cloud-topic partition.
+    PRODUCE_RATE_BPS = 20 * 1024 * 1024
     # Wall-clock duration of the produce phase.
     PRODUCE_DURATION_SECONDS = 600
 
