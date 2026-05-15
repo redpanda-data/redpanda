@@ -1401,6 +1401,71 @@ TEST_F_CORO(ctp_stm_fixture, apply_set_allowed_local_start_offset_clear) {
       stm->state().get_allowed_local_start_offset().has_value());
 }
 
+TEST_F_CORO(ctp_stm_fixture, set_allowed_local_start_offset_replicates_some) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    ASSERT_FALSE_CORO(
+      stm->state().get_allowed_local_start_offset().has_value());
+
+    auto res = co_await leader_api.set_allowed_local_start_offset(
+      kafka::offset{77}, model::no_timeout, as);
+    ASSERT_TRUE_CORO(res.has_value());
+
+    ASSERT_TRUE_CORO(stm->state().get_allowed_local_start_offset().has_value());
+    ASSERT_EQ_CORO(
+      stm->state().get_allowed_local_start_offset().value(), kafka::offset{77});
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, set_allowed_local_start_offset_replicates_nullopt) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    auto res = co_await leader_api.set_allowed_local_start_offset(
+      kafka::offset{50}, model::no_timeout, as);
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_EQ_CORO(
+      stm->state().get_allowed_local_start_offset().value(), kafka::offset{50});
+
+    res = co_await leader_api.set_allowed_local_start_offset(
+      std::nullopt, model::no_timeout, as);
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_FALSE_CORO(
+      stm->state().get_allowed_local_start_offset().has_value());
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, set_allowed_local_start_offset_idempotent_when_unchanged) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    auto res = co_await leader_api.set_allowed_local_start_offset(
+      kafka::offset{50}, model::no_timeout, as);
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_EQ_CORO(
+      stm->state().get_allowed_local_start_offset().value(), kafka::offset{50});
+
+    // A second call with the same value should be a no-op: no new batch is
+    // replicated, so the raft dirty_offset should not advance.
+    auto dirty_before = leader.raft()->dirty_offset();
+    res = co_await leader_api.set_allowed_local_start_offset(
+      kafka::offset{50}, model::no_timeout, as);
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_EQ_CORO(leader.raft()->dirty_offset(), dirty_before);
+    ASSERT_EQ_CORO(
+      stm->state().get_allowed_local_start_offset().value(), kafka::offset{50});
+}
+
 TEST_F_CORO(ctp_stm_fixture, prefix_truncate_target_returns_lrlo_when_no_hint) {
     co_await start();
     co_await wait_for_leader(raft::default_timeout());

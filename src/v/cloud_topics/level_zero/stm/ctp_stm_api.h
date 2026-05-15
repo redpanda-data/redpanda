@@ -79,6 +79,14 @@ public:
       model::timeout_clock::time_point deadline,
       ss::abort_source& as);
 
+    /// Replicate a set_allowed_local_start_offset_cmd. The STM stores the
+    /// value as a hint for prefix_truncate_below_lro.
+    ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+    set_allowed_local_start_offset(
+      std::optional<kafka::offset> value,
+      model::timeout_clock::time_point deadline,
+      ss::abort_source& as);
+
     /// Fence and replicate an advance_epoch_cmd if new_epoch > max_epoch.
     ss::future<std::expected<std::monostate, ctp_stm_api_errc>> advance_epoch(
       cluster_epoch new_epoch,

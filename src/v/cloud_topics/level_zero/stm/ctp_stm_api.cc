@@ -184,6 +184,40 @@ ctp_stm_api::set_start_offset(
 }
 
 ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+ctp_stm_api::set_allowed_local_start_offset(
+  std::optional<kafka::offset> value,
+  model::timeout_clock::time_point deadline,
+  ss::abort_source& as) {
+    // Idempotency: skip replication if the cached value already matches.
+    if (_stm->state().get_allowed_local_start_offset() == value) {
+        co_return std::monostate{};
+    }
+
+    vlog(
+      _log.debug,
+      "Replicating ctp_stm_cmd::set_allowed_local_start_offset{{{}}}",
+      value);
+
+    // Capture the leader's term up front so the replicate fails fast if
+    // leadership transfers between building the batch and submitting it.
+    auto term = _stm->_raft->term();
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::ctp_stm_command, model::offset(0));
+    builder.add_raw_kv(
+      serde::to_iobuf(set_allowed_local_start_offset_cmd::key),
+      serde::to_iobuf(set_allowed_local_start_offset_cmd(value)));
+
+    auto batch = std::move(builder).build();
+    auto apply_result = co_await replicated_apply(
+      std::move(batch), term, deadline, as);
+    if (!apply_result.has_value()) {
+        co_return std::unexpected(apply_result.error());
+    }
+    co_return std::monostate{};
+}
+
+ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
 ctp_stm_api::advance_epoch(
   cluster_epoch new_epoch,
   model::timeout_clock::time_point deadline,
