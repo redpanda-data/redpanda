@@ -216,8 +216,8 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 )
                 disruption_thread.start()
 
-            # 10 min produce + up to 60s broker downtime + 5 min slack.
-            producer.wait(timeout_sec=1500)
+            # 10 min produce + up to 60s broker downtime + slack.
+            producer.wait(timeout_sec=1200)
             pstatus = producer.produce_status
             acked = pstatus.acked
             self.logger.info(
@@ -247,7 +247,7 @@ class CloudTopicsSwarmTestBase(RedpandaTest):
                 producer=producer,
             )
             consumer.start(clean=False)
-            consumer.wait(timeout_sec=600)
+            consumer.wait(timeout_sec=1200)
             cstatus = consumer.consumer_status
             self.logger.info(
                 f"swarm: consumer valid_reads={cstatus.validator.valid_reads} "
@@ -282,9 +282,12 @@ class CloudTopicsSwarmSmokeTest(CloudTopicsSwarmTestBase):
     is content-only via KgoVerifierSeqConsumer."""
 
     MSG_SIZE = 1024
-    # Target produce rate (bytes/sec). Aim for ~20 MiB/s -- high enough
-    # to push the cluster but not saturate the docker test environment.
-    PRODUCE_RATE_BPS = 20 * 1024 * 1024
+    # Target produce rate. Empirically the cluster sustains ~2.5 MiB/s
+    # on a single cloud-topic partition; 2 MiB/s sits just under that
+    # so the rate limit (not throughput) governs how long produce
+    # runs, on both the 1-partition default and the 1000-partition
+    # variant.
+    PRODUCE_RATE_BPS = 2 * 1024 * 1024
     # Wall-clock duration of the produce phase.
     PRODUCE_DURATION_SECONDS = 600
 
