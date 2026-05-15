@@ -26,17 +26,6 @@ static constexpr std::string_view response_node_credential_path
   = "AssumeRoleWithWebIdentityResponse.AssumeRoleWithWebIdentityResult."
     "Credentials";
 
-/// These variables injected by the AWS operator must be present on the redpanda
-/// pod to ensure we can get credentials from STS.
-/// ref:
-/// https://docs.amazonaws.cn/en_us/eks/latest/userguide/specify-service-account-role.html
-struct aws_injected_env_vars {
-    static constexpr std::string_view role_arn = "AWS_ROLE_ARN";
-
-    static constexpr std::string_view token_file_path
-      = "AWS_WEB_IDENTITY_TOKEN_FILE";
-};
-
 struct sts_params {
     static constexpr std::string_view role_session_name = "redpanda_si";
 
