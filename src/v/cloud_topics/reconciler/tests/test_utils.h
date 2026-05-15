@@ -133,6 +133,19 @@ public:
         co_return std::expected<void, errc>{};
     }
 
+    void set_shape_in_sync(bool v) { _shape_in_sync = v; }
+    void set_segment_size_bytes(size_t v) { _segment_size_bytes = v; }
+
+    bool is_local_retention_shape_in_sync(
+      const cluster::topic_properties&) const override {
+        return _shape_in_sync;
+    }
+
+    size_t
+    local_retention_segment_size_bytes(std::optional<size_t>) const override {
+        return _segment_size_bytes;
+    }
+
 private:
     kafka::offset _lro;
     chunked_vector<model::record_batch> _source_log;
@@ -143,6 +156,10 @@ private:
     std::optional<std::optional<kafka::offset>> _compute_target;
     bool _fail_publish = false;
     std::vector<std::optional<kafka::offset>> _published_values;
+    // Default: shape "in sync" so existing tests that don't care don't trigger
+    // forced evaluation.
+    bool _shape_in_sync = true;
+    size_t _segment_size_bytes = 128_MiB;
 };
 
 class unreliable_metastore : public l1::simple_metastore {

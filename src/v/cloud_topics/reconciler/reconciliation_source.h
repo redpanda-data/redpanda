@@ -22,7 +22,6 @@
 #include <optional>
 
 namespace cluster {
-class metadata_cache;
 class partition;
 struct topic_properties;
 } // namespace cluster
@@ -117,6 +116,28 @@ public:
     virtual ss::future<std::expected<void, errc>>
     publish_local_retention_target(
       std::optional<kafka::offset>, ss::abort_source&) = 0;
+
+    // Returns true if the cached `local_retention_last_published()` value
+    // matches the shape that the current topic configuration would imply.
+    //
+    // Concretely:
+    //  - For tiered_cloud + !compact topics with at least one local-retention
+    //    limit engaged, the expected shape is Some(Some(_)).
+    //  - For all other cases (cloud mode, compacted, or no local-retention
+    //    limits), the expected shape is Some(nullopt).
+    //
+    // If the cached value is missing (never published) or does not match the
+    // expected shape, returns false, which forces re-evaluation of the hint.
+    // If the source is not eligible for evaluation at all (e.g., not leader,
+    // missing topic config), returns true to avoid spurious wake-ups.
+    virtual bool is_local_retention_shape_in_sync(
+      const cluster::topic_properties&) const = 0;
+
+    // Effective segment size in bytes for the bytes-trigger threshold:
+    // topic-level `segment_size` if set, otherwise the cluster default
+    // `log_segment_size`.
+    virtual size_t local_retention_segment_size_bytes(
+      std::optional<size_t> topic_override) const = 0;
 
     // Per-partition bookkeeping for the local-retention evaluator.
     size_t local_retention_bytes_since_eval() const noexcept {
