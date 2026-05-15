@@ -124,6 +124,16 @@ public:
      */
     ss::future<> reconcile();
 
+    /// Returns true if evaluate_local_retention_hint should run now for src.
+    ///
+    /// Triggers (any of):
+    ///   * config-shape mismatch (cached published value disagrees with what
+    ///     storage.mode + cleanup.policy + local-retention limits would imply),
+    ///   * never evaluated before,
+    ///   * 60s elapsed since last evaluation,
+    ///   * `local_retention_bytes_since_eval()` >= the effective segment size.
+    bool local_retention_eval_due(const ss::shared_ptr<source>& src) const;
+
     /*
      * Evaluate the local-retention hint for one source, publishing the
      * resulting `allowed_local_start_offset` value via ctp_stm if it

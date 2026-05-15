@@ -38,6 +38,30 @@ namespace cloud_topics::reconciler {
 
 namespace {
 
+// True when the topic config implies the reconciler should publish a
+// non-null allowed_local_start_offset (i.e. tiered_cloud mode with a
+// non-compact cleanup policy and an engaged local retention limit).
+// Used by both compute_local_retention_target and
+// is_local_retention_shape_in_sync to avoid duplicating the predicate.
+bool tiered_cloud_with_local_limit(const cluster::topic_properties& props) {
+    const auto mode = props.storage_mode;
+    if (mode != model::redpanda_storage_mode::tiered_cloud) {
+        return false;
+    }
+    const bool compact
+      = props.cleanup_policy_bitflags.has_value()
+        && ((*props.cleanup_policy_bitflags & model::cleanup_policy_bitflags::compaction) == model::cleanup_policy_bitflags::compaction);
+    if (compact) {
+        return false;
+    }
+    const bool has_local_limit
+      = (!props.retention_local_target_bytes.is_disabled()
+         && props.retention_local_target_bytes.has_optional_value())
+        || (!props.retention_local_target_ms.is_disabled()
+            && props.retention_local_target_ms.has_optional_value());
+    return has_local_limit;
+}
+
 class aborted_transaction_tracker_impl
   : public kafka::aborted_transaction_tracker {
 public:
@@ -259,6 +283,27 @@ public:
             target = std::min(kafka_off, lro);
         }
         co_return target;
+    }
+
+    bool is_local_retention_shape_in_sync(
+      const cluster::topic_properties& props) const override {
+        if (!_partition || !_partition->is_leader()) {
+            return true;
+        }
+        auto cached = local_retention_last_published();
+        if (!cached.has_value()) {
+            return false;
+        }
+        if (tiered_cloud_with_local_limit(props)) {
+            return cached->has_value();
+        }
+        return !cached->has_value();
+    }
+
+    size_t local_retention_segment_size_bytes(
+      std::optional<size_t> topic_override) const override {
+        return topic_override.value_or(
+          config::shard_local_cfg().log_segment_size());
     }
 
     ss::future<std::expected<void, errc>> publish_local_retention_target(

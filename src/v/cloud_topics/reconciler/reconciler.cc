@@ -411,6 +411,22 @@ ss::future<> reconciler<Clock>::reconcile() {
               sched_it->second.last_reconciled = now;
           }
       });
+
+    // Per-tick local-retention evaluator pass: visit every attached source
+    // (not just those reconciled this round) so the time + shape-mismatch
+    // triggers fire even for idle / caught-up partitions. Bytes trigger has
+    // already been incremented in build_object().
+    chunked_vector<ss::shared_ptr<source>> due_for_eval;
+    for (auto& [_, src] : _sources) {
+        if (local_retention_eval_due(src)) {
+            due_for_eval.push_back(src);
+        }
+    }
+    static constexpr size_t max_concurrent_evals = 32;
+    co_await ss::max_concurrent_for_each(
+      due_for_eval, max_concurrent_evals, [this](ss::shared_ptr<source> src) {
+          return evaluate_local_retention_hint(std::move(src));
+      });
 }
 
 template<class Clock>
@@ -722,8 +738,15 @@ reconciler<Clock>::build_object(
         ctx.size_budget = current_size >= max_size ? 0
                                                    : max_size - current_size;
         auto start_offset = kafka::next_offset(src->last_reconciled_offset());
+        auto size_before = current_size;
         auto read_result = co_await add_source_to_object(
           ctx, src, start_offset);
+        // Approximate bytes contributed by this source to the in-progress
+        // object — used to drive the local-retention bytes trigger.
+        auto size_after = ctx.builder->file_size();
+        if (size_after > size_before) {
+            src->add_local_retention_bytes(size_after - size_before);
+        }
 
         if (!read_result.has_value()) {
             // Log an error, we don't want a single stuck partition to
@@ -991,6 +1014,36 @@ reconciler<Clock>::commit_objects(
             return std::unexpected(std::move(err));
         })
       .value_or(std::expected<void, reconcile_error>{});
+}
+
+template<class Clock>
+bool reconciler<Clock>::local_retention_eval_due(
+  const ss::shared_ptr<source>& src) const {
+    static const cluster::topic_properties empty_props;
+    const auto* props = &empty_props;
+    std::optional<cluster::topic_configuration> topic_cfg;
+    if (_metadata_cache != nullptr) {
+        topic_cfg = _metadata_cache->get_topic_cfg(
+          model::topic_namespace_view{src->ntp()});
+        if (!topic_cfg.has_value()) {
+            return false;
+        }
+        props = &topic_cfg->properties;
+    }
+    if (!src->is_local_retention_shape_in_sync(*props)) {
+        // Shape mismatch (including "never published"): force evaluation.
+        return true;
+    }
+    auto last = src->local_retention_last_eval_time();
+    if (!last.has_value()) {
+        return true;
+    }
+    if ((ss::lowres_clock::now() - *last) >= std::chrono::seconds(60)) {
+        return true;
+    }
+    auto seg_bytes = src->local_retention_segment_size_bytes(
+      props->segment_size);
+    return src->local_retention_bytes_since_eval() >= seg_bytes;
 }
 
 template<class Clock>
