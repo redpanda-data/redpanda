@@ -22,7 +22,7 @@ namespace cloud_topics {
 ///
 class ctp_stm_state
   : public serde::
-      envelope<ctp_stm_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<ctp_stm_state, serde::version<1>, serde::compat_version<0>> {
     friend class ctp_stm_state_accessor;
 
 public:
@@ -130,6 +130,18 @@ public:
     std::optional<model::offset>
     get_last_reconciled_log_offset() const noexcept;
 
+    /// Set the allowed local start offset hint.
+    ///
+    /// This value is produced by the reconciler and indicates the lower bound
+    /// of kafka offsets that may be retained locally. The STM caches it but
+    /// does not enforce truncation directly; a separate path applies it as a
+    /// prefix-truncate target on the raft log.
+    void set_allowed_local_start_offset(std::optional<kafka::offset>) noexcept;
+
+    /// Get the allowed local start offset hint, if any.
+    std::optional<kafka::offset>
+    get_allowed_local_start_offset() const noexcept;
+
     auto serde_fields() {
         return std::tie(
           _max_applied_epoch,
@@ -139,7 +151,8 @@ public:
           _min_epoch_lower_bound,
           _previous_applied_epoch,
           _start_offset,
-          _size_estimator);
+          _size_estimator,
+          _allowed_local_start_offset);
     }
 
     /// Max collectible offset is defined by the LRO.
@@ -219,6 +232,10 @@ private:
 
     // Estimates total cloud data bytes addressable by the surviving log.
     size_estimator _size_estimator;
+
+    /// Allowed local start offset hint, produced by the reconciler.
+    /// Cached state only; truncation is applied elsewhere.
+    std::optional<kafka::offset> _allowed_local_start_offset;
 };
 
 }; // namespace cloud_topics

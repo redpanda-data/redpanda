@@ -180,6 +180,16 @@ kafka::offset ctp_stm_state::start_offset() const noexcept {
     return _start_offset;
 }
 
+void ctp_stm_state::set_allowed_local_start_offset(
+  std::optional<kafka::offset> offset) noexcept {
+    _allowed_local_start_offset = offset;
+}
+
+std::optional<kafka::offset>
+ctp_stm_state::get_allowed_local_start_offset() const noexcept {
+    return _allowed_local_start_offset;
+}
+
 fmt::iterator ctp_stm_state::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
