@@ -24,6 +24,8 @@ auto fmt::formatter<cloud_topics::ctp_stm_key>::format(
         return fmt::format_to(ctx.out(), "advance_epoch");
     case cloud_topics::ctp_stm_key::reset_state:
         return fmt::format_to(ctx.out(), "reset_state");
+    case cloud_topics::ctp_stm_key::set_allowed_local_start_offset:
+        return fmt::format_to(ctx.out(), "set_allowed_local_start_offset");
     }
     return fmt::format_to(
       ctx.out(), "unknown ctp_stm_key({})", static_cast<int>(key));

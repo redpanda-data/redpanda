@@ -110,4 +110,28 @@ struct reset_state_cmd
     ctp_stm_state state;
 };
 
+/// Sets the cached `allowed_local_start_offset` hint on ctp_stm.
+///
+/// The reconciler replicates this command after computing the offset
+/// from local segment stats and effective local-retention targets.
+/// nullopt clears the hint (used when storage.mode != tiered_cloud or
+/// when compaction is enabled on the topic).
+struct set_allowed_local_start_offset_cmd
+  : public serde::envelope<
+      set_allowed_local_start_offset_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr cmd_key key = cmd_key(
+      std::to_underlying(ctp_stm_key::set_allowed_local_start_offset));
+
+    set_allowed_local_start_offset_cmd() noexcept = default;
+    explicit set_allowed_local_start_offset_cmd(
+      std::optional<kafka::offset> v) noexcept
+      : value(v) {}
+
+    auto serde_fields() { return std::tie(value); }
+
+    std::optional<kafka::offset> value;
+};
+
 } // namespace cloud_topics
