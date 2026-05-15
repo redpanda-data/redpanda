@@ -440,6 +440,7 @@ redpanda_cc_gtest(
         "//src/v/datalake:credential_manager",
         "//src/v/hashing:secure",
         "//src/v/http",
+        "//src/v/model",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:scoped_config",
         "@boost//:beast",

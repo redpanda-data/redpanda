@@ -9,16 +9,19 @@
  */
 
 #include "cloud_roles/apply_credentials.h"
+#include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/types.h"
 #include "config/types.h"
 #include "datalake/credential_manager.h"
 #include "hashing/secure.h"
 #include "http/client.h"
+#include "model/metadata.h"
 #include "test_utils/scoped_config.h"
 
 #include <boost/beast/http/message.hpp>
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <string_view>
 
 namespace datalake {
@@ -325,6 +328,135 @@ TEST_F(CredentialManagerTest, GCP) {
     // GCP mode should not set the x-amz-content-sha256 header (that's only for
     // AWS)
     EXPECT_FALSE(req.count("x-amz-content-sha256"));
+}
+
+class ResolveCredentialsSourceTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        unsetenv(cloud_roles::aws_injected_env_vars::role_arn.data());
+        unsetenv(cloud_roles::aws_injected_env_vars::token_file_path.data());
+    }
+
+    void TearDown() override {
+        unsetenv(cloud_roles::aws_injected_env_vars::role_arn.data());
+        unsetenv(cloud_roles::aws_injected_env_vars::token_file_path.data());
+    }
+
+    static void set_role_arn() {
+        setenv(
+          cloud_roles::aws_injected_env_vars::role_arn.data(),
+          "arn:aws:iam::123:role/test",
+          1);
+    }
+
+    static void set_token_file() {
+        setenv(
+          cloud_roles::aws_injected_env_vars::token_file_path.data(),
+          "/var/run/secrets/eks.amazonaws.com/serviceaccount/token",
+          1);
+    }
+};
+
+TEST_F(ResolveCredentialsSourceTest, IrsaEnvOverridesAwsInstanceMetadata) {
+    scoped_config cfg;
+    cfg.get("iceberg_rest_catalog_authentication_mode")
+      .set_value(config::datalake_catalog_auth_mode::aws_sigv4);
+    cfg.get("iceberg_rest_catalog_credentials_source")
+      .set_value(
+        std::make_optional(
+          model::cloud_credentials_source::aws_instance_metadata));
+    set_role_arn();
+    set_token_file();
+
+    EXPECT_EQ(
+      resolve_credentials_source(config::shard_local_cfg()),
+      model::cloud_credentials_source::sts);
+}
+
+TEST_F(ResolveCredentialsSourceTest, AwsInstanceMetadataWithoutEnvStays) {
+    scoped_config cfg;
+    cfg.get("iceberg_rest_catalog_authentication_mode")
+      .set_value(config::datalake_catalog_auth_mode::aws_sigv4);
+    cfg.get("iceberg_rest_catalog_credentials_source")
+      .set_value(
+        std::make_optional(
+          model::cloud_credentials_source::aws_instance_metadata));
+
+    EXPECT_EQ(
+      resolve_credentials_source(config::shard_local_cfg()),
+      model::cloud_credentials_source::aws_instance_metadata);
+}
+
+TEST_F(ResolveCredentialsSourceTest, OnlyRoleArnDoesNotOverride) {
+    scoped_config cfg;
+    cfg.get("iceberg_rest_catalog_authentication_mode")
+      .set_value(config::datalake_catalog_auth_mode::aws_sigv4);
+    cfg.get("iceberg_rest_catalog_credentials_source")
+      .set_value(
+        std::make_optional(
+          model::cloud_credentials_source::aws_instance_metadata));
+    set_role_arn();
+
+    EXPECT_EQ(
+      resolve_credentials_source(config::shard_local_cfg()),
+      model::cloud_credentials_source::aws_instance_metadata);
+}
+
+TEST_F(ResolveCredentialsSourceTest, OnlyTokenFileDoesNotOverride) {
+    scoped_config cfg;
+    cfg.get("iceberg_rest_catalog_authentication_mode")
+      .set_value(config::datalake_catalog_auth_mode::aws_sigv4);
+    cfg.get("iceberg_rest_catalog_credentials_source")
+      .set_value(
+        std::make_optional(
+          model::cloud_credentials_source::aws_instance_metadata));
+    set_token_file();
+
+    EXPECT_EQ(
+      resolve_credentials_source(config::shard_local_cfg()),
+      model::cloud_credentials_source::aws_instance_metadata);
+}
+
+TEST_F(ResolveCredentialsSourceTest, ExplicitStsUnchanged) {
+    scoped_config cfg;
+    cfg.get("iceberg_rest_catalog_authentication_mode")
+      .set_value(config::datalake_catalog_auth_mode::aws_sigv4);
+    cfg.get("iceberg_rest_catalog_credentials_source")
+      .set_value(std::make_optional(model::cloud_credentials_source::sts));
+    set_role_arn();
+    set_token_file();
+
+    EXPECT_EQ(
+      resolve_credentials_source(config::shard_local_cfg()),
+      model::cloud_credentials_source::sts);
+}
+
+TEST_F(ResolveCredentialsSourceTest, GcpAuthModeReturnsGcpInstanceMetadata) {
+    scoped_config cfg;
+    cfg.get("iceberg_rest_catalog_authentication_mode")
+      .set_value(config::datalake_catalog_auth_mode::gcp);
+    // IRSA env present should not affect the GCP path.
+    set_role_arn();
+    set_token_file();
+
+    EXPECT_EQ(
+      resolve_credentials_source(config::shard_local_cfg()),
+      model::cloud_credentials_source::gcp_instance_metadata);
+}
+
+TEST_F(ResolveCredentialsSourceTest, FallbackToCloudStorageWithIrsaOverride) {
+    scoped_config cfg;
+    cfg.get("iceberg_rest_catalog_authentication_mode")
+      .set_value(config::datalake_catalog_auth_mode::aws_sigv4);
+    // iceberg-specific source is unset; fall back to cloud_storage source.
+    cfg.get("cloud_storage_credentials_source")
+      .set_value(model::cloud_credentials_source::aws_instance_metadata);
+    set_role_arn();
+    set_token_file();
+
+    EXPECT_EQ(
+      resolve_credentials_source(config::shard_local_cfg()),
+      model::cloud_credentials_source::sts);
 }
 
 } // namespace datalake
