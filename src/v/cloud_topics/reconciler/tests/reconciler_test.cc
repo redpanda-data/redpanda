@@ -713,6 +713,88 @@ TEST_F(ReconcilerTest, OnlyDueTopicIsReconciled) {
     EXPECT_EQ(src1->last_reconciled_offset(), kafka::offset{19});
 }
 
+// --- evaluate_local_retention_hint tests ---
+
+TEST_F(ReconcilerTest, EvaluatorModeCloudClearsHint) {
+    // Source where compute_target returns Some(nullopt) (e.g. mode==cloud).
+    auto src = add_source();
+    src->set_compute_target(std::optional<kafka::offset>(std::nullopt));
+
+    // Initially no published value: should publish nullopt once.
+    _reconciler.evaluate_local_retention_hint(src).get();
+
+    ASSERT_EQ(src->published_values().size(), 1u);
+    EXPECT_EQ(src->published_values().back(), std::nullopt);
+    ASSERT_TRUE(src->local_retention_last_published().has_value());
+    EXPECT_EQ(*src->local_retention_last_published(), std::nullopt);
+
+    // Second call: idempotent, no new publish.
+    _reconciler.evaluate_local_retention_hint(src).get();
+    EXPECT_EQ(src->published_values().size(), 1u);
+}
+
+TEST_F(ReconcilerTest, EvaluatorModeTieredCloudCompactClearsHint) {
+    // Compaction enabled => target nullopt.
+    auto src = add_source();
+    // First publish an offset to simulate prior tiered_cloud delete state.
+    src->set_compute_target(kafka::offset{100});
+    _reconciler.evaluate_local_retention_hint(src).get();
+    ASSERT_EQ(src->published_values().size(), 1u);
+    EXPECT_EQ(src->published_values().back(), kafka::offset{100});
+
+    // Now switch to compaction (target -> nullopt) and expect a clearing
+    // publish.
+    src->set_compute_target(std::optional<kafka::offset>(std::nullopt));
+    _reconciler.evaluate_local_retention_hint(src).get();
+    ASSERT_EQ(src->published_values().size(), 2u);
+    EXPECT_EQ(src->published_values().back(), std::nullopt);
+}
+
+TEST_F(ReconcilerTest, EvaluatorModeTieredCloudDeletePublishesOffset) {
+    auto src = add_source();
+    src->set_compute_target(kafka::offset{42});
+
+    _reconciler.evaluate_local_retention_hint(src).get();
+
+    ASSERT_EQ(src->published_values().size(), 1u);
+    EXPECT_EQ(src->published_values().back(), kafka::offset{42});
+    ASSERT_TRUE(src->local_retention_last_published().has_value());
+    EXPECT_EQ(*src->local_retention_last_published(), kafka::offset{42});
+
+    // Recompute the same value: idempotent.
+    _reconciler.evaluate_local_retention_hint(src).get();
+    EXPECT_EQ(src->published_values().size(), 1u);
+
+    // Recompute a different value: publish again.
+    src->set_compute_target(kafka::offset{99});
+    _reconciler.evaluate_local_retention_hint(src).get();
+    ASSERT_EQ(src->published_values().size(), 2u);
+    EXPECT_EQ(src->published_values().back(), kafka::offset{99});
+}
+
+TEST_F(ReconcilerTest, EvaluatorSkipsWhenNotEligible) {
+    // compute returns outer-nullopt (e.g. not leader): no publish.
+    auto src = add_source();
+    src->set_compute_target(std::nullopt);
+    _reconciler.evaluate_local_retention_hint(src).get();
+    EXPECT_TRUE(src->published_values().empty());
+    EXPECT_FALSE(src->local_retention_last_published().has_value());
+}
+
+TEST_F(ReconcilerTest, EvaluatorPublishFailureDoesNotUpdateBookkeeping) {
+    auto src = add_source();
+    src->set_compute_target(kafka::offset{10});
+    src->fail_publish(true);
+    _reconciler.evaluate_local_retention_hint(src).get();
+    EXPECT_TRUE(src->published_values().empty());
+    EXPECT_FALSE(src->local_retention_last_published().has_value());
+
+    src->fail_publish(false);
+    _reconciler.evaluate_local_retention_hint(src).get();
+    ASSERT_EQ(src->published_values().size(), 1u);
+    EXPECT_EQ(src->published_values().back(), kafka::offset{10});
+}
+
 // Regression test: detaching a source during reconciliation (e.g. due to a
 // leadership change) must not leave an orphaned topic scheduler. Before the
 // fix, get_or_create_topic_scheduler in the post-reconciliation path would

@@ -993,6 +993,55 @@ reconciler<Clock>::commit_objects(
       .value_or(std::expected<void, reconcile_error>{});
 }
 
+template<class Clock>
+ss::future<>
+reconciler<Clock>::evaluate_local_retention_hint(ss::shared_ptr<source> src) {
+    static const cluster::topic_properties empty_props;
+    const auto* props = &empty_props;
+    std::optional<cluster::topic_configuration> topic_cfg;
+    if (_metadata_cache != nullptr) {
+        topic_cfg = _metadata_cache->get_topic_cfg(
+          model::topic_namespace_view{src->ntp()});
+        if (!topic_cfg.has_value()) {
+            src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+            src->reset_local_retention_eval_counter();
+            co_return;
+        }
+        props = &topic_cfg->properties;
+    }
+    auto target_opt = co_await src->compute_local_retention_target(*props);
+    if (!target_opt.has_value()) {
+        // Not eligible to evaluate the hint (e.g., not leader, no config).
+        // Still update the eval state so the time-trigger backoff applies
+        // and we don't re-check this source on every reconcile tick.
+        src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+        src->reset_local_retention_eval_counter();
+        co_return;
+    }
+    auto target = target_opt.value();
+
+    auto last_pub = src->local_retention_last_published();
+    if (last_pub.has_value() && *last_pub == target) {
+        // Idempotent: no change needed.
+        src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+        src->reset_local_retention_eval_counter();
+        co_return;
+    }
+
+    auto res = co_await src->publish_local_retention_target(target, _as);
+    if (!res.has_value()) {
+        vlog(
+          lg.warn,
+          "{}: failed to publish allowed_local_start_offset: {}",
+          src->ntp(),
+          res.error());
+        co_return;
+    }
+    src->set_local_retention_last_published(target);
+    src->set_local_retention_last_eval_time(ss::lowres_clock::now());
+    src->reset_local_retention_eval_counter();
+}
+
 // Explicit template instantiations.
 template class reconciler<ss::lowres_clock>;
 template class reconciler<ss::manual_clock>;

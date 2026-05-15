@@ -70,10 +70,13 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm_api",
         "//src/v/cluster:fwd",
+        "//src/v/cluster:topic_configuration",
         "//src/v/config",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/metrics",
+        "//src/v/storage",
         "//src/v/utils:retry_chain_node",
+        "//src/v/utils:tristate",
     ],
     visibility = ["//visibility:public"],
     deps = [
