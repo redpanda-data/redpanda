@@ -253,8 +253,30 @@ frontend::make_reader(cloud_topic_log_reader_config cfg) {
 
     const auto lro = _ctp_stm_api->get_last_reconciled_offset();
 
-    const auto level_one = lro > kafka::offset::min()
-                           && cfg.start_offset <= lro;
+    auto level_one = lro > kafka::offset::min() && cfg.start_offset <= lro;
+
+    // In tiered_cloud mode the local log may extend below LRO (its prefix
+    // truncation is held back by allowed_local_start_offset). Serve the
+    // request locally when the local log still covers the requested range.
+    //
+    // Skip this fast path for compacted topics: compaction operates on L1
+    // below LRO and rewrites values, so the local copy below LRO can be
+    // stale relative to the canonical compacted view. The reconciler also
+    // clears allowed_local_start_offset when compaction is enabled, but the
+    // read-side decision must not depend on that having happened yet.
+    //
+    // In `cloud` mode the local log is prefix-truncated up to LRO so this
+    // check is a no-op and the existing behavior is preserved.
+    if (
+      level_one && _partition->log()->config().is_tiered_cloud()
+      && !_partition->log()->config().is_remotely_compacted()) {
+        auto ot_state = _partition->get_offset_translator_state();
+        auto local_start_kafka = model::offset_cast(
+          ot_state->from_log_offset(_partition->raft_start_offset()));
+        if (cfg.start_offset >= local_start_kafka) {
+            level_one = false;
+        }
+    }
 
     vlog(
       cd_log.debug,
