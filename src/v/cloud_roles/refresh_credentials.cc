@@ -23,6 +23,7 @@
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -160,11 +161,13 @@ refresh_credentials::impl::impl(
   net::unresolved_address address,
   aws_region_name region,
   ss::abort_source& as,
-  retry_params retry_params)
+  retry_params retry_params,
+  ss::sstring metrics_tag)
   : _address{std::move(address)}
   , _region{std::move(region)}
   , _as{as}
-  , _retry_params{retry_params} {
+  , _retry_params{retry_params}
+  , _metrics_tag{std::move(metrics_tag)} {
     if (auto address_override = load_and_validate_env_var(override_address);
         address_override) {
         auto address = parse_address(address_override.value());
@@ -395,9 +398,13 @@ ss::future<> refresh_credentials::impl::init_tls_certs(ss::sstring name) {
       .require_client_auth = false,
     });
 
+    auto detail = _metrics_tag.empty()
+                    ? std::move(name)
+                    : ssx::sformat("{}_{}", name, _metrics_tag);
+
     _tls_certs = co_await net::build_reloadable_credentials_with_probe<
       ss::tls::certificate_credentials>(
-      std::move(builder), "cloud_provider_client", std::move(name));
+      std::move(builder), "cloud_provider_client", std::move(detail));
 }
 
 refresh_credentials make_refresh_credentials(

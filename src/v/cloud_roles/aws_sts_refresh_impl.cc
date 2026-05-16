@@ -81,9 +81,14 @@ aws_sts_refresh_impl::aws_sts_refresh_impl(
   aws_service_name service,
   aws_region_name region,
   ss::abort_source& as,
-  retry_params retry_params)
+  retry_params retry_params,
+  ss::sstring metrics_tag)
   : refresh_credentials::impl(
-      std::move(address), std::move(region), as, retry_params)
+      std::move(address),
+      std::move(region),
+      as,
+      retry_params,
+      std::move(metrics_tag))
   , _role{load_from_env(aws_injected_env_vars::role_arn)}
   , _token_file_path{load_from_env(aws_injected_env_vars::token_file_path)}
   , _service(std::move(service)) {}
