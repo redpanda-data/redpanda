@@ -18,6 +18,7 @@ from typing import Any, NamedTuple, Protocol
 
 import requests
 import yaml
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
@@ -116,7 +117,12 @@ def wait_for_version_sync(admin, redpanda, version):
     )
 
 
-def wait_for_version_status_sync(admin, redpanda, version, nodes=None):
+def wait_for_version_status_sync(
+    admin: Admin,
+    redpanda: RedpandaService,
+    version: int,
+    nodes: list[ClusterNode] | None = None,
+) -> None:
     """
     Stricter than _wait_for_version_sync: this requires not only that
     the config version has propagated to all nodes, but also that the
@@ -126,7 +132,7 @@ def wait_for_version_status_sync(admin, redpanda, version, nodes=None):
     if nodes is None:
         nodes = redpanda.nodes
 
-    def is_complete(node):
+    def is_complete(node: ClusterNode) -> bool:
         node_status = admin.get_cluster_config_status(node=node)
         return set(n["config_version"] for n in node_status) == {version} and len(
             node_status
