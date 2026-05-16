@@ -488,11 +488,47 @@ public:
         if (enable_cluster_config) {
             update_cluster_config("enable_schema_id_validation", "compat");
             update_cluster_config("cloud_storage_enabled", "true");
+            update_cluster_config("iceberg_enabled", "true");
         }
         auto unset_cluster_config = ss::defer([&] {
             update_cluster_config("enable_schema_id_validation", "none");
             update_cluster_config("cloud_storage_enabled", "false");
+            update_cluster_config("iceberg_enabled", "false");
         });
+
+        // Specific tests for iceberg.
+        if (enable_cluster_config) {
+            const auto iceberg_disabled = props_t{
+              with(kafka::topic_property_iceberg_mode, "disabled")};
+            const auto iceberg_enabled = props_t{
+              with(kafka::topic_property_iceberg_mode, "key_value")};
+            const auto non_enterprise_prop = props_t::value_type{
+              kafka::topic_property_max_message_bytes, "4096"};
+
+            test_cases.emplace_back(
+              "iceberg.enable",
+              iceberg_disabled,
+              alter_props_t{
+                {set(kafka::topic_property_iceberg_mode, "key_value")}},
+              failure);
+            test_cases.emplace_back(
+              "iceberg.disable",
+              iceberg_enabled,
+              alter_props_t{
+                {set(kafka::topic_property_iceberg_mode, "disabled")}},
+              success);
+            test_cases.emplace_back(
+              "iceberg.change_mode",
+              iceberg_enabled,
+              alter_props_t{{set(
+                kafka::topic_property_iceberg_mode, "value_schema_id_prefix")}},
+              success);
+            test_cases.emplace_back(
+              "iceberg.set_other",
+              iceberg_enabled,
+              alter_props_t{{std::apply(set, non_enterprise_prop)}},
+              success);
+        }
 
         // Specific tests for leadership pinning
         {
