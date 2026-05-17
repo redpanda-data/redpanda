@@ -13,6 +13,7 @@
 #include "bytes/iostream.h"
 #include "cloud_io/logger.h"
 #include "cloud_io/provider.h"
+#include "cloud_io/scheduler_types.h"
 #include "cloud_io/transfer_details.h"
 #include "cloud_storage_clients/bucket_name_parts.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -358,7 +359,8 @@ ss::future<download_result> remote::download_stream(
   const std::string_view stream_label,
   [[maybe_unused]] bool acquire_hydration_units,
   std::optional<cloud_storage_clients::http_byte_range> byte_range,
-  std::function<void(size_t)> throttle_metric_ms_cb) {
+  std::function<void(size_t)> throttle_metric_ms_cb,
+  group_id gid) {
     const auto& path = transfer_details.key;
     const auto& bucket = transfer_details.bucket;
     const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
@@ -379,11 +381,17 @@ ss::future<download_result> remote::download_stream(
     vlog(ctxlog.debug, "Download {} {}", stream_label, path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto fut = co_await [this, &fib, &transfer_details, &bucket_parts] {
-            transfer_details.on_client_acquire();
-            return ss::coroutine::as_future(_pool.local().acquire_with_timeout(
-              *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
-        }();
+        auto fut = co_await
+          [this, gid, &fib, &transfer_details, &bucket_parts] {
+              transfer_details.on_client_acquire();
+              return ss::coroutine::as_future(
+                _pool.local().acquire_with_timeout(
+                  *bucket_parts,
+                  gid,
+                  fib.root_abort_source(),
+                  _lease_timeout(),
+                  fib()));
+          }();
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), download_result::timedout);
@@ -494,7 +502,7 @@ ss::future<download_result> remote::download_stream(
 }
 
 ss::future<download_result>
-remote::download_object(download_request download_request) {
+remote::download_object(download_request download_request, group_id gid) {
     auto guard = _gate.hold();
     auto& transfer_details = download_request.transfer_details;
     retry_chain_node fib(&transfer_details.parent_rtc);
@@ -520,7 +528,11 @@ remote::download_object(download_request download_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts,
+            gid,
+            fib.root_abort_source(),
+            _lease_timeout(),
+            fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), download_result::timedout);
@@ -1213,7 +1225,8 @@ ss::future<list_result> remote::list_objects(
     co_return std::move(*result);
 }
 
-ss::future<upload_result> remote::upload_object(upload_request upload_request) {
+ss::future<upload_result>
+remote::upload_object(upload_request upload_request, group_id gid) {
     auto guard = _gate.hold();
 
     auto& transfer_details = upload_request.transfer_details;
@@ -1241,7 +1254,11 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto fut = co_await ss::coroutine::as_future(
           _pool.local().acquire_with_timeout(
-            *bucket_parts, fib.root_abort_source(), _lease_timeout(), fib()));
+            *bucket_parts,
+            gid,
+            fib.root_abort_source(),
+            _lease_timeout(),
+            fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(
               fut.get_exception(), upload_result::timedout);

@@ -229,7 +229,9 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
               "l1_file_download",
               /*acquire_hydration_units=*/true,
               cloud_storage_clients::http_byte_range{
-                extent.position, extent.position + extent.size - 1}));
+                extent.position, extent.position + extent.size - 1},
+              {},
+              cloud_io::group_id::default_group));
         if (result_fut.failed()) {
             auto ex = result_fut.get_exception();
             vlog(cd_log.warn, "Error downloading object {}: {}", extent, ex);

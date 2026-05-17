@@ -14,6 +14,7 @@
 #include "cloud_io/io_result.h"
 #include "cloud_io/provider.h"
 #include "cloud_io/remote_api.h"
+#include "cloud_io/scheduler_types.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/multipart_upload.h"
@@ -82,8 +83,9 @@ public:
     /// \param download_request holds a reference to an iobuf in the `payload`
     /// field which will hold the downloaded object if the download was
     /// successful
-    ss::future<download_result>
-    download_object(download_request download_request) override;
+    ss::future<download_result> download_object(
+      download_request download_request,
+      group_id gid = group_id::default_group) override;
 
     ss::future<download_result> object_exists(
       const cloud_storage_clients::bucket_name& bucket,
@@ -160,8 +162,9 @@ public:
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
-    ss::future<upload_result>
-    upload_object(upload_request upload_request) override;
+    ss::future<upload_result> upload_object(
+      upload_request upload_request,
+      group_id gid = group_id::default_group) override;
 
     /// \brief Initiate a multipart upload for large objects
     ///
@@ -202,7 +205,8 @@ public:
       bool acquire_hydration_units,
       std::optional<cloud_storage_clients::http_byte_range> byte_range
       = std::nullopt,
-      std::function<void(size_t)> throttle_metric_ms_cb = {}) override;
+      std::function<void(size_t)> throttle_metric_ms_cb = {},
+      group_id gid = group_id::default_group) override;
 
     template<typename R>
     requires std::ranges::range<R>

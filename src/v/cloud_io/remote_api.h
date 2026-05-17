@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_io/io_result.h"
+#include "cloud_io/scheduler_types.h"
 #include "cloud_io/transfer_details.h"
 #include "cloud_storage_clients/client.h"
 #include "utils/lazy_abort_source.h"
@@ -73,8 +74,9 @@ public:
     /// \param download_request holds a reference to an iobuf in the `payload`
     /// field which will hold the downloaded object if the download was
     /// successful
-    virtual ss::future<download_result>
-    download_object(download_request download_request) = 0;
+    virtual ss::future<download_result> download_object(
+      download_request download_request,
+      group_id gid = group_id::default_group) = 0;
 
     virtual ss::future<download_result> object_exists(
       const cloud_storage_clients::bucket_name& bucket,
@@ -85,8 +87,9 @@ public:
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
     /// upload function.
-    virtual ss::future<upload_result>
-    upload_object(upload_request upload_request) = 0;
+    virtual ss::future<upload_result> upload_object(
+      upload_request upload_request,
+      group_id gid = group_id::default_group) = 0;
 
     virtual ss::future<upload_result> upload_stream(
       transfer_details transfer_details,
@@ -103,7 +106,8 @@ public:
       bool acquire_hydration_units,
       std::optional<cloud_storage_clients::http_byte_range> byte_range
       = std::nullopt,
-      std::function<void(size_t)> throttle_metric_ms_cb = {}) = 0;
+      std::function<void(size_t)> throttle_metric_ms_cb = {},
+      group_id gid = group_id::default_group) = 0;
 };
 
 } // namespace cloud_io
