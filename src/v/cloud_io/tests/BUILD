@@ -162,6 +162,20 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "scheduler_test",
+    timeout = "short",
+    srcs = [
+        "scheduler_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_io:scheduler",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "directory_walker_test",
     timeout = "short",
