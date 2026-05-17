@@ -118,6 +118,7 @@ ss::future<configuration> configuration::get_s3_config() {
       .client_config = std::move(s3_conf),
       .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
+      .scheduler = {},
       .bucket_name = bucket_name,
       .cloud_credentials_source = cloud_credentials_source,
     };
@@ -180,6 +181,7 @@ ss::future<configuration> configuration::get_abs_config() {
       .client_config = std::move(abs_conf),
       .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
+      .scheduler = {},
       .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_azure_container,
         "cloud_storage_azure_container")),

@@ -199,6 +199,7 @@ void application::wire_up_redpanda_services(
           ss::sharded_parameter([this] { return std::ref(upstreams.local()); }),
           cloud_config->connection_limit,
           cloud_config->client_config,
+          cloud_config->scheduler,
           cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
           .get();
         cloud_storage_clients

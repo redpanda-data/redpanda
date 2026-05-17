@@ -95,6 +95,12 @@ public:
         return copy;
     }
 
+    client_pool_builder scheduler_config(cloud_io::scheduler_config sc) const {
+        auto copy = *this;
+        copy.scheduler_cfg_ = std::move(sc);
+        return copy;
+    }
+
     ss::future<client_pool_stop_guard>
     build(ss::sharded<cloud_storage_clients::client_pool>& pool) const {
         auto upstreams = std::make_unique<ss::sharded<upstream_registry>>();
@@ -105,6 +111,7 @@ public:
             [&upstreams] { return std::ref(upstreams->local()); }),
           num_connections_,
           conf_,
+          scheduler_cfg_,
           overdraft_policy_);
 
         std::exception_ptr e;
@@ -126,6 +133,7 @@ public:
 private:
     client_configuration conf_;
     size_t num_connections_{10};
+    cloud_io::scheduler_config scheduler_cfg_{};
     cloud_storage_clients::client_pool_overdraft_policy overdraft_policy_{
       cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty};
     bool skip_start_{false};

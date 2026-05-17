@@ -10,6 +10,7 @@
 #pragma once
 
 #include "base/format_to.h"
+#include "cloud_io/scheduler_types.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/configuration.h"
 #include "config/property.h"
@@ -21,6 +22,11 @@ struct configuration {
     cloud_storage_clients::client_configuration client_config;
     /// Number of simultaneous client uploads
     connection_limit connection_limit;
+    /// Admission scheduler configuration applied to the per-shard
+    /// cloud_storage_clients::client_pool. Populated once at startup
+    /// from cluster config; passed by value down to the pool and
+    /// scheduler so neither re-reads cluster state.
+    cloud_io::scheduler_config scheduler;
     /// The S3 bucket or ABS container to use
     cloud_storage_clients::bucket_name bucket_name;
 
