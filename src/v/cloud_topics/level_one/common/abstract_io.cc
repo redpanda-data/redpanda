@@ -18,9 +18,9 @@ ss::future<ss::input_stream<char>> io::read_file(staging_file* file) {
     return file->input_stream();
 }
 
-ss::future<std::expected<iobuf, io::errc>>
-io::read_object_as_iobuf(object_extent extent, ss::abort_source* as) {
-    auto result = co_await this->read_object(extent, as);
+ss::future<std::expected<iobuf, io::errc>> io::read_object_as_iobuf(
+  object_extent extent, ss::abort_source* as, cloud_io::group_id gid) {
+    auto result = co_await this->read_object(extent, as, gid);
     if (!result) {
         co_return std::unexpected(result.error());
     }

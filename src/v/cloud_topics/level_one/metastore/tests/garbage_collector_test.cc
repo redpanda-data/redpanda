@@ -204,9 +204,11 @@ public:
         return underlying_->put_object(id, f, as);
     }
 
-    ss::future<std::expected<ss::input_stream<char>, errc>>
-    read_object(object_extent ext, ss::abort_source* as) override {
-        return underlying_->read_object(ext, as);
+    ss::future<std::expected<ss::input_stream<char>, errc>> read_object(
+      object_extent ext,
+      ss::abort_source* as,
+      cloud_io::group_id g = cloud_io::group_id::default_group) override {
+        return underlying_->read_object(ext, as, g);
     }
 
     ss::future<std::expected<void, errc>>
