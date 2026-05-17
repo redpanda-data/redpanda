@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace cloud_io {
 
@@ -94,6 +95,47 @@ static_assert(
   std::to_underlying(group_id::default_group) + 1 == num_group_ids,
   "num_group_ids must equal the number of group_id enumerators; "
   "update both when adding or removing a group.");
+
+/// Returns (name, N) for a well-shaped "name:N" target spec, else nullopt. Does
+/// not check whether `name` maps to a known group_id; that lookup happens at
+/// the scheduler creation time so the cluster property survives across upgrades
+/// that add or remove group_ids.
+inline std::optional<std::pair<std::string_view, size_t>>
+parse_target_spec_shape(std::string_view spec) noexcept {
+    const auto colon = spec.find(':');
+    if (colon == std::string_view::npos || colon == 0) {
+        return std::nullopt;
+    }
+    const auto name = spec.substr(0, colon);
+    const auto value_str = spec.substr(colon + 1);
+    if (value_str.empty()) {
+        return std::nullopt;
+    }
+    size_t value = 0;
+    const auto [end, ec] = std::from_chars(
+      value_str.data(), value_str.data() + value_str.size(), value);
+    if (ec != std::errc{} || end != value_str.data() + value_str.size()) {
+        return std::nullopt;
+    }
+    return std::make_pair(name, value);
+}
+
+/// Full parse for a target spec: well-shaped AND name matches a known
+/// group_id. Returns nullopt if either check fails; the factory uses
+/// this and warns on the unknown-name case.
+inline std::optional<std::pair<group_id, size_t>>
+try_parse_target_spec(std::string_view spec) noexcept {
+    const auto shape = parse_target_spec_shape(spec);
+    if (!shape.has_value()) {
+        return std::nullopt;
+    }
+    for (const auto g : all_group_ids) {
+        if (shape->first == to_string_view(g)) {
+            return std::make_pair(g, shape->second);
+        }
+    }
+    return std::nullopt;
+}
 
 /// Fixed-size array of T indexed by group_id.
 template<typename T>

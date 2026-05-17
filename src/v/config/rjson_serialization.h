@@ -13,6 +13,7 @@
 
 #include "base/format_to.h"
 #include "base/seastarx.h"
+#include "cloud_io/scheduler_types.h"
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/leaders_preference.h"
@@ -90,6 +91,9 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const config::s3_url_style& v);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cloud_io::policy_type& v);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,

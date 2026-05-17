@@ -2187,6 +2187,50 @@ configuration::configuration()
       "to upload and download activities.",
       {.visibility = visibility::user},
       20)
+  , cloud_io_scheduler_policy(
+      *this,
+      "cloud_io_scheduler_policy",
+      "Selects the admission policy used by cloud_io::scheduler. "
+      "'passthrough' disables admission control (client pool is the only "
+      "constraint). 'reservation' enforces per-group reserved-slot admission "
+      "across producer_upload, consumer_fetch, and default_group.",
+      {.needs_restart = needs_restart::yes,
+       .example = "passthrough",
+       .visibility = visibility::tunable},
+      cloud_io::policy_type::passthrough,
+      {cloud_io::policy_type::passthrough, cloud_io::policy_type::reservation})
+  , cloud_io_scheduler_reservation(
+      *this,
+      "cloud_io_scheduler_reservation",
+      "Per-group target_reserved values for the reservation_policy "
+      "admission scheduler. Each entry has the form 'group_name:slots' "
+      "(e.g. 'producer_upload:2'). The policy keeps each group's "
+      "reservation lane sized to this target while the group is active; "
+      "idle reservations past the dwell window are reclaimed back to "
+      "the common pool. Entries with an unknown group name are ignored "
+      "(with a warning) so the schema survives adding or removing "
+      "group_ids across upgrades. Only consulted when "
+      "cloud_io_scheduler_policy=reservation.",
+      {.needs_restart = needs_restart::yes,
+       .example
+       = R"(['producer_upload:2', 'consumer_fetch:2', 'default_group:2'])",
+       .visibility = visibility::tunable},
+      {
+        "producer_upload:2",
+        "consumer_fetch:2",
+        "default_group:2",
+      },
+      [](const std::vector<ss::sstring>& specs) -> std::optional<ss::sstring> {
+          for (const auto& spec : specs) {
+              if (!cloud_io::parse_target_spec_shape(spec).has_value()) {
+                  return fmt::format(
+                    "invalid reservation target spec '{}': expected "
+                    "'group_name:slots'",
+                    spec);
+              }
+          }
+          return std::nullopt;
+      })
   , cloud_storage_disable_tls(
       *this,
       "cloud_storage_disable_tls",

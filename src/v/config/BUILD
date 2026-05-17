@@ -55,6 +55,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_io:scheduler_types",
         "//src/v/container:intrusive",
         "//src/v/features:enterprise_feature_messages",
         "//src/v/json",

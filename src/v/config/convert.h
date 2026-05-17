@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_io/scheduler_types.h"
 #include "config/leaders_preference.h"
 #include "config/types.h"
 #include "model/compression.h"
@@ -851,6 +852,26 @@ struct convert<security::oidc::nested_group_behavior> {
         std::istringstream iss(value);
         iss >> rhs;
         return true;
+    }
+};
+
+template<>
+struct convert<cloud_io::policy_type> {
+    static Node encode(cloud_io::policy_type rhs) {
+        return Node(fmt::format("{}", rhs));
+    }
+
+    static bool decode(const Node& node, cloud_io::policy_type& rhs) {
+        using type = cloud_io::policy_type;
+        try {
+            rhs = string_switch<type>(node.as<std::string>())
+                    .match(to_string_view(type::passthrough), type::passthrough)
+                    .match(
+                      to_string_view(type::reservation), type::reservation);
+            return true;
+        } catch (const std::runtime_error&) {
+            return false;
+        }
     }
 };
 

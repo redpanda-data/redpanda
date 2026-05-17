@@ -12,6 +12,7 @@
 #pragma once
 #include "base/oncore.h"
 #include "base/type_traits.h"
+#include "cloud_io/scheduler_types.h"
 #include "config/base_property.h"
 #include "config/logger.h"
 #include "config/rjson_serialization.h"
@@ -783,6 +784,8 @@ consteval std::string_view property_type_name() {
       std::is_same_v<type, security::oidc::nested_group_behavior>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::redpanda_storage_mode>) {
+        return "string";
+    } else if constexpr (std::is_same_v<type, cloud_io::policy_type>) {
         return "string";
     } else {
         static_assert(
