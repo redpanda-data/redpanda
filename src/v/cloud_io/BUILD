@@ -91,6 +91,7 @@ redpanda_cc_library(
         ":io_result",
         ":provider",
         ":remote_api",
+        ":scheduler_types",
         "//src/v/base",
         "//src/v/cloud_roles:types",
         "//src/v/cloud_storage_clients",
@@ -153,6 +154,25 @@ redpanda_cc_library(
         "provider.h",
     ],
     visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
+    name = "scheduler",
+    srcs = [
+        "scheduler.cc",
+    ],
+    hdrs = [
+        "scheduler.h",
+        "scheduler_policy.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":scheduler_types",
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
 )
 
 redpanda_cc_library(
