@@ -9,12 +9,6 @@
  */
 #pragma once
 
-#include "absl/numeric/int128.h"
-#include "bytes/bytes.h"
-#include "bytes/iobuf.h"
-
-#include <array>
-namespace iceberg {
 /**
  * @file
  * Helpers for encoding and decoding Avro `decimal` logical type values as
@@ -36,6 +30,20 @@ namespace iceberg {
  * `bytes` representation of `decimal`.
  */
 
+#include "absl/numeric/int128.h"
+#include "bytes/bytes.h"
+#include "bytes/iobuf.h"
+
+#include <array>
+#include <cstring>
+
+namespace iceberg {
+
+/// Byte width of an Avro `decimal` value once represented as `absl::int128`:
+/// 128 bits / 8 = 16 bytes. Used as both the fixed encoded width and the
+/// upper bound on accepted decode payloads.
+constexpr size_t max_decimal_bytes = 16;
+
 /**
  * Converts a decimal into an array of bytes (big endian), this works the same
  * way as the Java's BigInteger.toByteArray() method.
@@ -44,7 +52,7 @@ inline bytes encode_avro_decimal(absl::int128 decimal) {
     auto high_half = ss::cpu_to_be(absl::Uint128High64(decimal));
     auto low_half = ss::cpu_to_be(absl::Uint128Low64(decimal));
 
-    bytes decimal_bytes(bytes::initialized_zero{}, 16);
+    bytes decimal_bytes(bytes::initialized_zero{}, max_decimal_bytes);
 
     for (int i = 0; i < 8; i++) {
         // NOLINTNEXTLINE(hicpp-signed-bitwise)
@@ -56,22 +64,49 @@ inline bytes encode_avro_decimal(absl::int128 decimal) {
     return decimal_bytes;
 }
 /**
- * Converts an array of big endian encoded bytes to an absl::int128
+ * Decodes a big-endian two's-complement byte sequence into an absl::int128,
+ * matching Avro's `decimal` wire format.
+ *
+ * Avro uses the minimum number of bytes required to preserve the sign — e.g.
+ * `0`, `1`, and `-1` each fit in a single byte, while `128` needs a leading
+ * `0x00` to avoid being read as `-128`. The MSB of the first byte is
+ * sign-extended into the high bits of the result.
+ *
+ * Accepts 0..16 byte payloads; longer inputs are rejected.
  */
-inline absl::int128 decode_avro_decimal(bytes bytes) {
-    int64_t high_half = 0;
-    uint64_t low_half = 0;
-    for (size_t i = 0; i < 8; i++) {
-        // NOLINTNEXTLINE(hicpp-signed-bitwise)
-        high_half |= static_cast<int64_t>(bytes[i]) << i * 8;
-        low_half |= static_cast<uint64_t>(bytes[i + 8]) << i * 8;
+inline absl::int128 decode_avro_decimal(bytes input) {
+    if (input.size() > max_decimal_bytes) {
+        throw std::invalid_argument(
+          "Decimal bytes cannot be larger than 16 bytes");
     }
+    if (input.empty()) {
+        return 0;
+    }
+    // Right-align the payload in a 16-byte big-endian buffer and sign-extend
+    // the leading bytes from the MSB of input[0], then read it as two
+    // byteswapped 64-bit halves.
+    std::array<uint8_t, max_decimal_bytes> buf{};
+    buf.fill((input[0] & 0x80U) == 0 ? 0x00 : 0xFF);
 
-    return absl::MakeInt128(ss::be_to_cpu(high_half), ss::be_to_cpu(low_half));
+    std::memcpy(
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      buf.data() + (buf.size() - input.size()),
+      input.data(),
+      input.size());
+
+    uint64_t hi = 0;
+    uint64_t lo = 0;
+
+    std::memcpy(&hi, buf.data(), sizeof(hi));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    std::memcpy(&lo, buf.data() + sizeof(hi), sizeof(lo));
+
+    return absl::MakeInt128(
+      static_cast<int64_t>(ss::be_to_cpu(hi)), ss::be_to_cpu(lo));
 }
 
 inline iobuf avro_decimal_to_iobuf(absl::int128 decimal, size_t max_size) {
-    if (max_size > 16) {
+    if (max_size > max_decimal_bytes) {
         throw std::invalid_argument(
           "Decimal iobuf can not be larger than 16 bytes");
     }
@@ -79,7 +114,7 @@ inline iobuf avro_decimal_to_iobuf(absl::int128 decimal, size_t max_size) {
 }
 
 inline absl::int128 iobuf_to_avro_decimal(iobuf buf) {
-    if (buf.size_bytes() > 16) {
+    if (buf.size_bytes() > max_decimal_bytes) {
         throw std::invalid_argument(
           "Decimal iobuf can not be larger than 16 bytes");
     }
