@@ -102,6 +102,9 @@ public:
     ss::future<get_cluster_health_reply> get_cluster_health_report(
       get_cluster_health_request, rpc::streaming_context&) final;
 
+    ss::future<health_pull_reply>
+    health_pull(health_pull_request, rpc::streaming_context&) final;
+
     ss::future<feature_action_response>
     feature_action(feature_action_request req, rpc::streaming_context&) final;
 

@@ -558,6 +558,11 @@ ss::future<get_node_health_reply> service::collect_node_health_report(
       });
 }
 
+ss::future<health_pull_reply>
+service::health_pull(health_pull_request, rpc::streaming_context&) {
+    vassert(false, "not implemented");
+}
+
 ss::future<get_cluster_health_reply> service::get_cluster_health_report(
   get_cluster_health_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
