@@ -37,6 +37,7 @@ redpanda_test_cc_library(
     include_prefix = "iceberg/tests",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
         "//src/v/random:generators",
