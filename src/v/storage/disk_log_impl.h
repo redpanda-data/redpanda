@@ -191,6 +191,9 @@ public:
     auto& gate() { return _compaction_housekeeping_gate; }
     chunked_vector<ss::lw_shared_ptr<segment>> cloud_gc_eligible_segments();
     void set_cloud_gc_offset(model::offset) override;
+    std::optional<model::offset> cloud_gc_offset() const override {
+        return _cloud_gc_offset;
+    }
 
     ss::future<reclaimable_offsets>
     get_reclaimable_offsets(gc_config cfg) override;
@@ -333,7 +336,8 @@ private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
     friend ::storage_e2e_fixture;
-    friend ::reupload_fixture; // for tests
+    friend ::reupload_fixture;             // for tests
+    friend struct disk_log_test_accessor; // for tests
 
     ss::future<model::record_batch_reader>
       make_unchecked_reader(local_log_reader_config);

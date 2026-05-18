@@ -234,6 +234,19 @@ public:
     get_reclaimable_offsets(gc_config cfg) = 0;
     virtual void set_cloud_gc_offset(model::offset) = 0;
 
+    /// Pending cloud-driven GC offset, if any.
+    ///
+    /// Set by space management via set_cloud_gc_offset to communicate disk
+    /// pressure that should drive eviction beyond the partition's normal
+    /// retention boundary. Consumed by the regular do_gc housekeeping path
+    /// in disk_log_impl. cloud_topics partitions are exempt from that
+    /// housekeeping and must read this value through their own truncation
+    /// loop.
+    virtual std::optional<model::offset> cloud_gc_offset() const {
+        return std::nullopt;
+    }
+
+
     virtual const segment_set& segments() const = 0;
     virtual segment_set& segments() = 0;
 

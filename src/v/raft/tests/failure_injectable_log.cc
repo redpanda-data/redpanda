@@ -232,6 +232,10 @@ void failure_injectable_log::set_cloud_gc_offset(model::offset o) {
     return _underlying_log->set_cloud_gc_offset(o);
 }
 
+std::optional<model::offset> failure_injectable_log::cloud_gc_offset() const {
+    return _underlying_log->cloud_gc_offset();
+}
+
 const storage::segment_set& failure_injectable_log::segments() const {
     return _underlying_log->segments();
 }

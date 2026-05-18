@@ -19,9 +19,25 @@
 #include "model/timestamp.h"
 #include "raft/tests/raft_fixture.h"
 #include "ssx/when_all.h"
+#include "storage/disk_log_impl.h"
 #include "test_utils/async.h"
 
 #include <optional>
+
+namespace storage {
+// Test-only accessor to bypass the eligibility gate in
+// disk_log_impl::set_cloud_gc_offset so cloud_topics fixtures (whose
+// ntp_config has no overrides) can drive the offset directly.
+struct disk_log_test_accessor {
+    static void
+    set_cloud_gc_offset_unchecked(disk_log_impl& l, model::offset o) {
+        l._cloud_gc_offset = o;
+    }
+    static void clear_cloud_gc_offset(disk_log_impl& l) {
+        l._cloud_gc_offset.reset();
+    }
+};
+} // namespace storage
 
 namespace ct = cloud_topics;
 using namespace std::chrono_literals;
@@ -1572,4 +1588,107 @@ TEST_F_CORO(
       leader, std::nullopt);
     ASSERT_TRUE_CORO(res.has_value());
     ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, prefix_truncate_target_respects_cloud_gc_above_hint) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    for (int o = 0; o < 100; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{99}, model::no_timeout, as);
+
+    ct::ctp_stm_accessor accessor;
+    auto lrlo = accessor.max_removable_local_log_offset(*stm);
+
+    // Hint=20 would, on its own, hold the truncate target back to
+    // log_offset(kafka=20).
+    auto res = co_await replicate_set_allowed_local_start_offset(
+      leader, kafka::offset{20});
+    ASSERT_TRUE_CORO(res.has_value());
+    auto hint_log = leader.raft()->log()->to_log_offset(
+      kafka::offset_cast(kafka::offset{20}));
+    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), hint_log);
+
+    // Space management drives cloud_gc above the hint. The truncate target
+    // must rise to cloud_gc (more aggressive eviction), capped by LRLO.
+    auto cloud_gc = leader.raft()->log()->to_log_offset(
+      kafka::offset_cast(kafka::offset{60}));
+    auto* impl = dynamic_cast<storage::disk_log_impl*>(
+      leader.underlying_log().get());
+    ASSERT_NE_CORO(impl, nullptr);
+    storage::disk_log_test_accessor::set_cloud_gc_offset_unchecked(
+      *impl, cloud_gc);
+
+    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), cloud_gc);
+    // max_removable_local_log_offset() must still report LRLO.
+    ASSERT_EQ_CORO(accessor.max_removable_local_log_offset(*stm), lrlo);
+}
+
+TEST_F_CORO(ctp_stm_fixture, prefix_truncate_target_clamps_cloud_gc_to_lrlo) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    for (int o = 0; o < 50; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{10}, model::no_timeout, as);
+
+    ct::ctp_stm_accessor accessor;
+    auto lrlo = accessor.max_removable_local_log_offset(*stm);
+
+    // cloud_gc above LRLO — must clamp.
+    auto* impl = dynamic_cast<storage::disk_log_impl*>(
+      leader.underlying_log().get());
+    ASSERT_NE_CORO(impl, nullptr);
+    storage::disk_log_test_accessor::set_cloud_gc_offset_unchecked(
+      *impl, lrlo + model::offset{100});
+
+    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, prefix_truncate_target_uses_hint_when_cloud_gc_below) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    auto leader_api = api(leader);
+
+    for (int o = 0; o < 100; ++o) {
+        co_await replicate_record_batch(
+          leader, make_record_batch(ct::cluster_epoch{1}, model::offset{o}, 0));
+    }
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{99}, model::no_timeout, as);
+
+    ct::ctp_stm_accessor accessor;
+
+    auto res = co_await replicate_set_allowed_local_start_offset(
+      leader, kafka::offset{60});
+    ASSERT_TRUE_CORO(res.has_value());
+
+    auto hint_log = leader.raft()->log()->to_log_offset(
+      kafka::offset_cast(kafka::offset{60}));
+    // cloud_gc below the hint — hint wins (less aggressive truncation).
+    auto cloud_gc_below = hint_log - model::offset{20};
+    auto* impl = dynamic_cast<storage::disk_log_impl*>(
+      leader.underlying_log().get());
+    ASSERT_NE_CORO(impl, nullptr);
+    storage::disk_log_test_accessor::set_cloud_gc_offset_unchecked(
+      *impl, cloud_gc_below);
+
+    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), hint_log);
 }
