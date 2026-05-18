@@ -542,6 +542,15 @@ model::offset ctp_stm::prefix_truncate_target() {
             target = std::min(cap, hint_log);
         }
     }
+
+    // Space management may have published a more aggressive GC offset to
+    // free disk; honour it by raising the target (still capped so we never
+    // truncate unreconciled data or data needed by an active reader).
+    // Cloud_topics partitions are exempt from disk_log_impl's housekeeping,
+    // so this is the only place the cloud_gc value is consumed for them.
+    if (auto cloud_gc = _raft->log()->cloud_gc_offset(); cloud_gc.has_value()) {
+        target = std::min(cap, std::max(target, *cloud_gc));
+    }
     return target;
 }
 
