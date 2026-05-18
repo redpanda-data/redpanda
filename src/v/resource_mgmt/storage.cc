@@ -289,7 +289,11 @@ eviction_policy::collect_reclaimable_offsets() {
      */
     chunked_vector<ss::lw_shared_ptr<cluster::partition>> partitions;
     for (const auto& p : _pm->local().partitions()) {
-        if (!p.second->remote_partition()) {
+        // Include partitions whose data is mirrored to cloud storage —
+        // either classic tiered storage or a cloud_topics partition. Both
+        // keep data locally that the space manager may need to evict.
+        const auto& cfg = p.second->get_ntp_config();
+        if (!cfg.is_tiered_storage() && !cfg.cloud_topic_enabled()) {
             continue;
         }
         partitions.push_back(p.second);

@@ -241,11 +241,15 @@ public:
     /// retention boundary. Consumed by the regular do_gc housekeeping path
     /// in disk_log_impl. cloud_topics partitions are exempt from that
     /// housekeeping and must read this value through their own truncation
-    /// loop.
+    /// loop, then clear it via reset_cloud_gc_offset.
     virtual std::optional<model::offset> cloud_gc_offset() const {
         return std::nullopt;
     }
 
+    /// Clear a previously-set cloud_gc offset. Used by consumers (ctp_stm,
+    /// disk_log_impl::do_gc) after they have acted on the value so the next
+    /// space-management round can publish a fresh decision.
+    virtual void reset_cloud_gc_offset() {}
 
     virtual const segment_set& segments() const = 0;
     virtual segment_set& segments() = 0;

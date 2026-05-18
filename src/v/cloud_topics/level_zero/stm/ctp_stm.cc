@@ -161,6 +161,12 @@ ss::future<> ctp_stm::prefix_truncate_below_lro() {
               ex);
             continue;
         }
+        // We have acted on any pending cloud_gc offset; clear it so the
+        // next space-management round can publish a fresh decision (mirrors
+        // disk_log_impl::do_gc, which is bypassed for cloud_topics).
+        if (_raft->log()->cloud_gc_offset().has_value()) {
+            _raft->log()->reset_cloud_gc_offset();
+        }
         // If we successfully truncated our log, then wait a bit before
         // truncating it again so if LRO is making lots of rapid but small
         // progress we aren't snapshotting too much.

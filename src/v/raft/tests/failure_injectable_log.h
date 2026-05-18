@@ -127,6 +127,7 @@ public:
 
     void set_cloud_gc_offset(model::offset) final;
     std::optional<model::offset> cloud_gc_offset() const final;
+    void reset_cloud_gc_offset() final;
 
     const storage::segment_set& segments() const final;
     storage::segment_set& segments() final;

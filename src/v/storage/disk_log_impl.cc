@@ -1311,6 +1311,10 @@ bool disk_log_impl::is_cloud_retention_active() const {
            && (config().is_archival_enabled());
 }
 
+bool disk_log_impl::is_cloud_backed() const {
+    return is_cloud_retention_active() || config().cloud_topic_enabled();
+}
+
 /*
  * applies overrides for non-cloud storage settings
  */
@@ -3900,7 +3904,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
           && seg->offsets().get_dirty_offset() <= retention_offset.value()) {
             retention_segments.push_back(seg);
         } else if (
-          is_cloud_retention_active()
+          is_cloud_backed()
           && seg->offsets().get_dirty_offset() <= max_removable) {
             available_segments.push_back(seg);
         } else {
@@ -3916,8 +3920,8 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
          * get_reclaimable_offsets is going to be merged together.
          */
         if (
-          !config().is_read_replica_mode_enabled()
-          && is_cloud_retention_active() && seg != _segs.back()
+          !config().is_read_replica_mode_enabled() && is_cloud_backed()
+          && seg != _segs.back()
           && seg->offsets().get_dirty_offset() <= max_removable
           && local_retention_offset.has_value()
           && seg->offsets().get_dirty_offset()
@@ -4292,7 +4296,7 @@ disk_log_impl::cloud_gc_eligible_segments() {
 }
 
 void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
-    if (!is_cloud_retention_active()) {
+    if (!is_cloud_backed()) {
         vlog(
           stlog.debug,
           "Ignoring request to set GC offset on non-cloud enabled partition "
@@ -4317,7 +4321,7 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
 
     reclaimable_offsets res;
 
-    if (!is_cloud_retention_active()) {
+    if (!is_cloud_backed()) {
         vlog(
           stlog.debug,
           "Reporting no reclaimable offsets for non-cloud partition {}",
@@ -4519,7 +4523,7 @@ size_t disk_log_impl::reclaimable_size_bytes() const {
      * local retention size may change. catch these before reporting potentially
      * stale information.
      */
-    if (!is_cloud_retention_active()) {
+    if (!is_cloud_backed()) {
         return 0;
     }
     if (config().is_read_replica_mode_enabled()) {
