@@ -1,3 +1,4 @@
+load("@rules_python//python:defs.bzl", "py_binary")
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
@@ -539,6 +540,39 @@ redpanda_cc_gtest(
         "//src/v/iceberg:values_avro",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+py_binary(
+    name = "avro_decimal_interop_gen",
+    srcs = ["avro_decimal_interop_gen.py"],
+    main = "avro_decimal_interop_gen.py",
+    deps = ["@python_deps//avro"],
+)
+
+genrule(
+    name = "decimal_cases_avro",
+    outs = ["decimal_cases.avro"],
+    cmd = "$(execpath :avro_decimal_interop_gen) $@",
+    toolchains = ["@rules_python//python:current_py_toolchain"],
+    tools = [":avro_decimal_interop_gen"],
+)
+
+redpanda_cc_gtest(
+    name = "avro_decimal_interop_test",
+    timeout = "short",
+    srcs = [
+        "avro_decimal_interop_test.cc",
+    ],
+    data = [":decimal_cases.avro"],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/iceberg:avro_decimal",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:runfiles",
+        "@abseil-cpp//absl/numeric:int128",
+        "@avro",
         "@googletest//:gtest",
     ],
 )
