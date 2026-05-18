@@ -1661,41 +1661,39 @@ json_compatibility_result is_object_required_superset(
   const json::Value& newer,
   const std::filesystem::path& p) {
     json_compatibility_result res;
-    // to pass the check, a required property from newer has to be present in
-    // older, or if new it needs to have a default value.
-    // note that:
-    // 1. we check only required properties that are in both newer["properties"]
-    // and older["properties"]
-    // 2. there is no explicit check that older has an open content model
-    //    there might be a property name outside of (1) that could be rejected
-    //    by update, if update["additionalProperties"] is false
+    // older is a superset of newer iff every required property in older is
+    // also required in newer, with one exception: if older provides a
+    // "default" for the property, the consumer can fill it in when a writer
+    // (newer) omits it, so it doesn't have to be in newer.required.
+    //
+    // Note: this does not check for new required properties added on the
+    // newer side when older is closed (additionalProperties: false). That
+    // case is covered separately by
+    // required_property_added_to_unopen_content_model (TODO).
 
     auto older_req = get_array_or_empty(older, "required");
     auto newer_req = get_array_or_empty(newer, "required");
     auto older_props = get_object_or_empty(older, "properties");
-    auto newer_props = get_object_or_empty(newer, "properties");
-
-    // TODO O(n^2) lookup that can be a set_intersection.
-    auto older_req_in_both_properties
-      = older_req | std::views::filter([&](const json::Value& o) {
-            return newer_props.HasMember(o) && older_props.HasMember(o);
-        });
 
     // for each element:
     // in older.required? | in newer.required? | result
     //       yes          |        yes         |  yes
     //       yes          |         no         |  if it has "default" in older
     //       no           |        yes         |  yes
-    std::ranges::for_each(
-      older_req_in_both_properties, [&](const json::Value& o) {
-          if (
-            std::ranges::find(newer_req, o) == newer_req.End()
-            && !older_props.FindMember(o)->value.HasMember("default")) {
-              res.emplace<json_incompatibility>(
-                p / "required" / as_string_view(o),
-                json_incompatibility_type::required_attribute_added);
-          }
-      });
+
+    // TODO O(n^2) lookup that can be optimized using a flat_hash_set of
+    // newer_req.
+    std::ranges::for_each(older_req, [&](const json::Value& o) {
+        auto it = older_props.FindMember(o);
+        bool has_default = it != older_props.MemberEnd()
+                           && it->value.HasMember("default");
+        if (
+          std::ranges::find(newer_req, o) == newer_req.End() && !has_default) {
+            res.emplace<json_incompatibility>(
+              p / "required" / as_string_view(o),
+              json_incompatibility_type::required_attribute_added);
+        }
+    });
     return res;
 }
 
