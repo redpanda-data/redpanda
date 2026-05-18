@@ -24,53 +24,84 @@
  * See the Iceberg spec: "decimal(P, S) ... precision must be 38 or less"
  * https://iceberg.apache.org/spec/#primitive-types
  *
- * The encoder always emits exactly 16 bytes (Java `BigInteger.toByteArray()`
- * style, suitable for Avro `fixed[16]`), while the decoder accepts payloads
- * of 0..16 bytes and sign-extends as required by Avro's variable-width
- * `bytes` representation of `decimal`.
+ * Iceberg's Avro mapping (https://iceberg.apache.org/spec/#avro) requires
+ * `decimal(P, S)` to be stored as `fixed[minBytesRequired(P)]` — the
+ * minimum number of bytes needed to represent the given precision. In
+ * practice the same requirement applies to Iceberg manifest serialization.
+ * The encoder produces exactly that many bytes, big-endian two's-complement,
+ * with the value sign-extended on the left. The decoder accepts 0..16 byte
+ * payloads, covering both the `fixed` and `bytes` Avro forms of `decimal`,
+ * and sign-extends from the MSB of the first byte.
  */
 
 #include "absl/numeric/int128.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 
+#include <seastar/core/byteorder.hh>
+
 #include <array>
+#include <climits>
 #include <cstring>
+#include <stdexcept>
 
 namespace iceberg {
 
-/// Byte width of an Avro `decimal` value once represented as `absl::int128`:
-/// 128 bits / 8 = 16 bytes. Used as both the fixed encoded width and the
-/// upper bound on accepted decode payloads.
+/// Width of an `absl::int128`, in bytes — the upper bound on both encoded
+/// payload sizes and accepted decode payloads.
 constexpr size_t max_decimal_bytes = 16;
 
 /**
- * Converts a decimal into an array of bytes (big endian), this works the same
- * way as the Java's BigInteger.toByteArray() method.
- */
-inline bytes encode_avro_decimal(absl::int128 decimal) {
-    auto high_half = ss::cpu_to_be(absl::Uint128High64(decimal));
-    auto low_half = ss::cpu_to_be(absl::Uint128Low64(decimal));
-
-    bytes decimal_bytes(bytes::initialized_zero{}, max_decimal_bytes);
-
-    for (int i = 0; i < 8; i++) {
-        // NOLINTNEXTLINE(hicpp-signed-bitwise)
-        decimal_bytes[i] = (high_half >> (i * 8)) & 0xFF;
-        // NOLINTNEXTLINE(hicpp-signed-bitwise)
-        decimal_bytes[i + 8] = (low_half >> (i * 8)) & 0xFF;
-    }
-
-    return decimal_bytes;
-}
-/**
- * Decodes a big-endian two's-complement byte sequence into an absl::int128,
- * matching Avro's `decimal` wire format.
+ * Encode `decimal` as exactly `size` bytes of big-endian two's-complement —
+ * the Iceberg / Avro wire format for `fixed[size]` decimals. The output
+ * matches Java's reference encoder, which pads `BigInteger.toByteArray()`
+ * on the left with the sign byte to reach `size`; we get there by
+ * serializing the full 16-byte sign-extended representation and returning
+ * its rightmost `size` bytes.
  *
- * Avro uses the minimum number of bytes required to preserve the sign — e.g.
- * `0`, `1`, and `-1` each fit in a single byte, while `128` needs a leading
- * `0x00` to avoid being read as `-128`. The MSB of the first byte is
- * sign-extended into the high bits of the result.
+ * Throws if `size` is outside `[1, max_decimal_bytes]` or if `decimal` does
+ * not fit in a signed `size`-byte integer.
+ */
+inline bytes encode_avro_fixed_decimal(absl::int128 decimal, size_t size) {
+    if (size == 0 || size > max_decimal_bytes) {
+        throw std::invalid_argument(
+          fmt::format(
+            "Decimal size must be in [1, {}], got {}",
+            max_decimal_bytes,
+            size));
+    }
+    // Range check: a signed `size`-byte integer holds values in
+    // [-2^(8*size-1), 2^(8*size-1) - 1]. At max_decimal_bytes the limit
+    // would overflow int128 and every value fits anyway, so skip the check.
+    if (size < max_decimal_bytes) {
+        const auto shift = static_cast<int>(CHAR_BIT * size - 1);
+        const absl::int128 limit = absl::int128{1} << shift;
+        if (decimal < -limit || decimal >= limit) {
+            throw std::invalid_argument(
+              fmt::format("decimal value does not fit in {} bytes", size));
+        }
+    }
+    // Serialize as a 16-byte big-endian two's-complement integer; the
+    // sign-extending leading bytes are redundant once range-checked, so
+    // return only the rightmost `size` bytes.
+    const auto hi = ss::cpu_to_be(absl::Uint128High64(decimal));
+    const auto lo = ss::cpu_to_be(absl::Uint128Low64(decimal));
+    std::array<uint8_t, max_decimal_bytes> full{};
+    std::memcpy(full.data(), &hi, sizeof(hi));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    std::memcpy(full.data() + sizeof(hi), &lo, sizeof(lo));
+    return {full.begin() + (max_decimal_bytes - size), full.end()};
+}
+
+/**
+ * Decode a big-endian two's-complement byte sequence into an absl::int128.
+ *
+ * Handles both Avro encodings of `decimal`: the fixed-width `fixed[N]` form
+ * (value already sign-extended to fill N bytes) and the variable-width
+ * `bytes` form (minimum bytes needed to preserve the sign — e.g. `0`, `1`,
+ * and `-1` each fit in one byte, while `128` needs a leading `0x00` to
+ * avoid being read as `-128`). The MSB of the first byte is sign-extended
+ * into the high bits of the result.
  *
  * Accepts 0..16 byte payloads; longer inputs are rejected.
  */
@@ -105,20 +136,11 @@ inline absl::int128 decode_avro_decimal(bytes input) {
       static_cast<int64_t>(ss::be_to_cpu(hi)), ss::be_to_cpu(lo));
 }
 
-inline iobuf avro_decimal_to_iobuf(absl::int128 decimal, size_t max_size) {
-    if (max_size > max_decimal_bytes) {
-        throw std::invalid_argument(
-          "Decimal iobuf can not be larger than 16 bytes");
-    }
-    return bytes_to_iobuf(encode_avro_decimal(decimal));
+inline iobuf avro_fixed_decimal_to_iobuf(absl::int128 decimal, size_t size) {
+    return bytes_to_iobuf(encode_avro_fixed_decimal(decimal, size));
 }
 
 inline absl::int128 iobuf_to_avro_decimal(iobuf buf) {
-    if (buf.size_bytes() > max_decimal_bytes) {
-        throw std::invalid_argument(
-          "Decimal iobuf can not be larger than 16 bytes");
-    }
-
     return decode_avro_decimal(iobuf_to_bytes(buf));
 }
 } // namespace iceberg

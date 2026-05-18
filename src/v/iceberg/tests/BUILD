@@ -540,6 +540,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:values_avro",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
+        "@avro",
         "@googletest//:gtest",
     ],
 )
