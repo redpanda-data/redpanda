@@ -9,6 +9,7 @@
  */
 #include "iceberg/tests/value_generator.h"
 
+#include "base/vassert.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 #include "random/generators.h"
@@ -55,12 +56,28 @@ struct generating_primitive_value_visitor {
         return double_value{static_cast<double>(
           spec_.forced_num_val.value_or(generate_numeric_val()))};
     }
-    value operator()(const decimal_type&) {
+    value operator()(const decimal_type& t) {
         if (spec_.forced_num_val) {
             return decimal_value{absl::int128{spec_.forced_num_val.value()}};
         }
-        return decimal_value{
-          absl::MakeInt128(generate_numeric_val(), generate_numeric_val())};
+        switch (spec_.pattern) {
+        case value_pattern::zeros:
+            return decimal_value{absl::int128{0}};
+        case value_pattern::random: {
+            // Keep the magnitude within the column's declared precision:
+            // |value| <= 10^precision - 1.
+            vassert(
+              t.precision <= 38,
+              "decimal precision {} exceeds Iceberg max of 38",
+              t.precision);
+            absl::int128 mag{0};
+            for (uint32_t i = 0; i < t.precision; ++i) {
+                mag = mag * 10 + random_generators::get_int(0, 9);
+            }
+            const bool neg = random_generators::get_int(0, 1) == 1;
+            return decimal_value{neg ? -mag : mag};
+        }
+        }
     }
     value operator()(const date_type&) {
         return date_value{static_cast<int>(
