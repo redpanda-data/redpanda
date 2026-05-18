@@ -194,6 +194,7 @@ public:
     std::optional<model::offset> cloud_gc_offset() const override {
         return _cloud_gc_offset;
     }
+    void reset_cloud_gc_offset() override { _cloud_gc_offset.reset(); }
 
     ss::future<reclaimable_offsets>
     get_reclaimable_offsets(gc_config cfg) override;
@@ -336,7 +337,7 @@ private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
     friend ::storage_e2e_fixture;
-    friend ::reupload_fixture;             // for tests
+    friend ::reupload_fixture;            // for tests
     friend struct disk_log_test_accessor; // for tests
 
     ss::future<model::record_batch_reader>
@@ -417,6 +418,12 @@ private:
     gc_config apply_local_storage_overrides(gc_config) const;
 
     bool is_cloud_retention_active() const;
+    // True for partitions whose data is durably mirrored in cloud storage —
+    // either classic tiered storage or a cloud_topics partition. Used to gate
+    // surfaces that the space manager needs to drive on either kind of
+    // partition (set_cloud_gc_offset, get_reclaimable_offsets, available
+    // reclaim accounting).
+    bool is_cloud_backed() const;
 
     // returns retention_offset(cfg) but may also first apply adjustments to
     // future timestamps if this option is turned on in configuration.
