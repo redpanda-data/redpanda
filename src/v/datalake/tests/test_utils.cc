@@ -29,6 +29,18 @@ iceberg::unresolved_partition_spec hour_partition_spec() {
     };
 }
 
+iceberg::unresolved_partition_spec day_partition_spec() {
+    chunked_vector<iceberg::unresolved_partition_spec::field> fields;
+    fields.push_back({
+      .source_name = {"redpanda", "timestamp"},
+      .transform = iceberg::day_transform{},
+      .name = "redpanda.timestamp_day",
+    });
+    return {
+      .fields = std::move(fields),
+    };
+}
+
 direct_table_creator::direct_table_creator(
   type_resolver& tr, schema_manager& sm)
   : type_resolver_(tr)

@@ -18,6 +18,9 @@ namespace datalake {
 // Hourly partitioning on the redpanda.timestamp field.
 iceberg::unresolved_partition_spec hour_partition_spec();
 
+// Daily partitioning on the redpanda.timestamp field.
+iceberg::unresolved_partition_spec day_partition_spec();
+
 // Creates or alters the table by interfacing directly with a catalog.
 class direct_table_creator : public table_creator {
 public:

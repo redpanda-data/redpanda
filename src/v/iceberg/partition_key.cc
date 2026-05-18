@@ -72,4 +72,10 @@ int get_hour(const iceberg::partition_key& pk) {
       .val;
 }
 
+int32_t get_day(const iceberg::partition_key& pk) {
+    return std::get<iceberg::date_value>(
+             std::get<iceberg::primitive_value>(pk.val->fields.at(0).value()))
+      .val;
+}
+
 } // namespace iceberg
