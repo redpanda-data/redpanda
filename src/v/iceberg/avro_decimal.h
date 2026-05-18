@@ -16,6 +16,27 @@
 #include <array>
 namespace iceberg {
 /**
+ * @file
+ * Helpers for encoding and decoding Avro `decimal` logical type values as
+ * big-endian two's-complement integers.
+ *
+ * Precision is capped at 128 bits (i.e. up to the range of `absl::int128`).
+ * Avro itself does not bound the precision of a `decimal`, but our
+ * downstream consumer Iceberg restricts it to at most 38 digits, and
+ * 10^38 - 1 fits comfortably within a signed 128-bit integer
+ * (ceil(log2(10^38)) = 127 bits). No representable value is lost when data
+ * destined for this downstream consumer passes through `absl::int128`.
+ *
+ * See the Iceberg spec: "decimal(P, S) ... precision must be 38 or less"
+ * https://iceberg.apache.org/spec/#primitive-types
+ *
+ * The encoder always emits exactly 16 bytes (Java `BigInteger.toByteArray()`
+ * style, suitable for Avro `fixed[16]`), while the decoder accepts payloads
+ * of 0..16 bytes and sign-extends as required by Avro's variable-width
+ * `bytes` representation of `decimal`.
+ */
+
+/**
  * Converts a decimal into an array of bytes (big endian), this works the same
  * way as the Java's BigInteger.toByteArray() method.
  */
