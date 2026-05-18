@@ -19,6 +19,7 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
 #include "rpc/fwd.h"
 #include "ssx/mutex.h"
 #include "ssx/semaphore.h"
@@ -26,6 +27,7 @@
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer_fixed_capacity.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -76,7 +78,8 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<partition_leaders_table>&,
       ss::sharded<topic_table>&,
-      ss::sharded<node_status_table>&);
+      ss::sharded<node_status_table>&,
+      model::node_boot_id self_boot_id);
 
     ss::future<> stop();
 
@@ -159,7 +162,17 @@ private:
     using report_cache_t = absl::node_hash_map<model::node_id, nhr_ptr>;
 
     void tick();
-    ss::future<std::error_code> collect_cluster_health();
+    ss::future<std::error_code> collect_cluster_health_legacy();
+    model::timeout_clock::time_point node_freshness(model::node_id id) const;
+    /// Single-tick driver for the dissemination pull path. Defined in the .cc.
+    class report_puller;
+    ss::future<std::error_code>
+      collect_cluster_health_disseminate(force_refresh);
+    /// Refresh the self entry of \c _health_stores if it src_timestamp is
+    /// older than \p min_ts. Holds \c _report_collection_mutex during the
+    /// refresh and re-checks staleness inside the mutex so that concurrent
+    /// callers serialize but only one regenerates the report.
+    ss::future<> maybe_refresh_self(model::timeout_clock::time_point min_ts);
     ss::future<result<node_health_report>>
       collect_remote_node_health(model::node_id);
     ss::future<std::error_code> maybe_refresh_cluster_health(
@@ -245,7 +258,8 @@ private:
     ss::sharded<topic_table>& _topic_table;
     ss::sharded<node_status_table>& _node_status_table;
 
-    ss::lowres_clock::time_point _last_refresh;
+    ss::lowres_clock::time_point _last_refresh
+      = ss::lowres_clock::time_point::min();
     // Number of times collect_cluster_health() has completed without
     // throwing. Exposed as the `refreshes` counter and gates the
     // `metadata_age_seconds` gauge (returns -1 while this is 0).
@@ -265,6 +279,7 @@ private:
     ssx::mutex _refresh_mutex{"health_monitor_backend::refresh"};
     ss::sharded<node::local_monitor>& _local_monitor;
     model::node_id _self;
+    model::node_boot_id _self_boot_id;
 
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;
@@ -276,6 +291,10 @@ private:
     class health_probe;
     friend class health_probe;
     std::unique_ptr<health_probe> _health_probe;
+
+    // Per-node versioned health stores for the demand-driven pull protocol.
+    absl::node_hash_map<model::node_id, health::versioned_health_store>
+      _health_stores;
 
     friend struct health_report_accessor;
 };
@@ -336,6 +355,8 @@ public:
     /// saves the diff from the previous report (if present) internally. If the
     /// previous version was never sent, the version number is reused and the
     /// latest diff is updated in-place. Otherwise a new version is created.
+    /// \p self_boot stamps the version's boot id on the first call; subsequent
+    /// calls preserve whatever boot id is already stored.
     void update_self(node_health report, model::node_boot_id self_boot);
 
     /// Receiving a full report from a peer. Replaces everything.

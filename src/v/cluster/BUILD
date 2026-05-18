@@ -2499,6 +2499,7 @@ redpanda_cc_library(
         "//src/v/ssx:async_algorithm",
         "//src/v/ssx:async_clear",
         "//src/v/ssx:checkpoint_mutex",
+        "//src/v/ssx:condition_variable",
         "//src/v/ssx:event",
         "//src/v/ssx:future_util",
         "//src/v/ssx:minimum_interval_timer",

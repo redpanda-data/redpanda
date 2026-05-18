@@ -39,6 +39,7 @@
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "ssx/async_algorithm.h"
+#include "ssx/condition_variable.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -144,7 +145,8 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<partition_leaders_table>& partition_leaders_table,
   ss::sharded<topic_table>& topic_table,
-  ss::sharded<node_status_table>& node_status_table)
+  ss::sharded<node_status_table>& node_status_table,
+  model::node_boot_id self_boot_id)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -159,6 +161,7 @@ health_monitor_backend::health_monitor_backend(
   , _reports{ss::make_lw_shared<report_cache_t>()}
   , _local_monitor(local_monitor)
   , _self(_raft0->self().id())
+  , _self_boot_id(self_boot_id)
   , _health_probe(std::make_unique<health_probe>(*this)) {}
 
 // Defined out-of-line because health_probe is an incomplete type
@@ -344,7 +347,7 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     // just skip refresh request since current state is 'fresh enough' i.e.
     // not older than max metadata age
     auto now = model::timeout_clock::now();
-    if (!force && now - _last_refresh < max_metadata_age()) {
+    if (!force && now < _last_refresh + max_metadata_age()) {
         vlog(
           clusterlog.trace,
           "skipping metadata refresh request current metadata age: {} ms",
@@ -357,8 +360,11 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     _refresh_request = ss::make_lw_shared<abortable_refresh_request>(
       std::move(holder), std::move(units));
 
+    auto use_dissemination = _feature_table.local().is_active(
+      features::feature::health_dissemination);
     co_return co_await _refresh_request->abortable_await(
-      collect_cluster_health());
+      use_dissemination ? collect_cluster_health_disseminate(force)
+                        : collect_cluster_health_legacy());
 }
 
 void health_monitor_backend::abort_current_refresh() {
@@ -883,7 +889,352 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     return res;
 }
 
-ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
+model::timeout_clock::time_point
+health_monitor_backend::node_freshness(model::node_id id) const {
+    if (auto it = _health_stores.find(id); it != _health_stores.cend()) {
+        return it->second.freshness();
+    }
+    return model::timeout_clock::time_point::min();
+}
+
+ss::future<> health_monitor_backend::maybe_refresh_self(
+  model::timeout_clock::time_point min_ts) {
+    if (node_freshness(_self) >= min_ts) {
+        co_return;
+    }
+    co_await _report_collection_mutex.with(
+      [this, min_ts](this auto) -> ss::future<> {
+          // Re-check inside the mutex: a concurrent caller may have just
+          // refreshed self while we waited for the mutex.
+          if (node_freshness(_self) >= min_ts) {
+              co_return;
+          }
+          auto result = co_await collect_current_node_health();
+          if (result.has_value()) {
+              _health_stores[_self].update_self(
+                std::move(result.value()), _self_boot_id);
+          }
+      });
+}
+
+class health_monitor_backend::report_puller {
+public:
+    report_puller(
+      health_monitor_backend& backend, model::timeout_clock::time_point min_ts);
+
+    report_puller(const report_puller&) = delete;
+    report_puller(report_puller&&) = delete;
+    report_puller& operator=(const report_puller&) = delete;
+    report_puller& operator=(report_puller&&) = delete;
+
+    ss::future<> run() &&;
+
+private:
+    ss::future<ss::stop_iteration> pull_one();
+    ss::future<> primary_fiber();
+    ss::future<> helper_fiber();
+
+    health_monitor_backend& _backend;
+    const model::timeout_clock::time_point _min_ts;
+    const std::vector<model::node_id> _nodes_to_reach;
+    std::vector<model::node_id> _nodes_queue;
+    chunked_hash_set<model::node_id> _needed_nodes;
+    /// If the primary fiber is stuck for that long a helper fiber chimes in.
+    const std::chrono::milliseconds _hedge_delay;
+    ssx::condition_variable _cv;
+};
+
+health_monitor_backend::report_puller::report_puller(
+  health_monitor_backend& backend, model::timeout_clock::time_point min_ts)
+  : _backend(backend)
+  , _min_ts(min_ts)
+  , _nodes_to_reach([&] {
+      struct stale_node {
+          model::node_id id;
+          health::approx_timestamp existing_report_ts;
+      };
+      chunked_vector<stale_node> stale_nodes;
+      for (auto id : backend._members.local().nodes() | std::views::keys) {
+          if (id == backend._self) {
+              continue;
+          }
+          auto existing_report_ts = backend.node_freshness(id);
+          if (existing_report_ts >= min_ts) {
+              continue;
+          }
+          stale_nodes.emplace_back(id, existing_report_ts);
+      }
+      std::ranges::sort(
+        stale_nodes, std::greater{}, &stale_node::existing_report_ts);
+      return std::vector<model::node_id>{
+        std::from_range, stale_nodes | std::views::transform(&stale_node::id)};
+  }())
+  , _nodes_queue(_nodes_to_reach)
+  , _needed_nodes(ss::chunked_hash_set_from_range(_nodes_to_reach))
+  , _hedge_delay(
+      std::min<std::chrono::milliseconds>(
+        backend.max_metadata_age() / std::max(_nodes_to_reach.size(), 1UZ),
+        std::chrono::milliseconds{1000})) {}
+
+ss::future<ss::stop_iteration>
+health_monitor_backend::report_puller::pull_one() {
+    if (_nodes_queue.empty()) {
+        co_return ss::stop_iteration::yes;
+    }
+
+    // Pop the most stale node as the target
+    auto target_id = _nodes_queue.back();
+    _nodes_queue.pop_back();
+
+    // Build version vector with all nodes we still need data for,
+    // including any currently in-flight to another fiber.
+    auto get_current_version = [this](model::node_id id) {
+        auto store_it = _backend._health_stores.find(id);
+        return store_it != _backend._health_stores.end()
+                 ? store_it->second.version()
+                 : std::nullopt;
+    };
+    health_pull_request req{
+      .target_node_id = target_id,
+      .existing_versions = ss::chunked_hash_map_from_range(
+        _needed_nodes
+        | std::views::transform([&get_current_version](model::node_id id) {
+              return std::pair{id, get_current_version(id).value_or({})};
+          })),
+      .min_src_timestamp = _min_ts};
+    vlog(
+      clusterlog.debug,
+      "health pull: contacting node {} with version vector {}",
+      target_id,
+      req.existing_versions);
+
+    const auto rpc_timeout = _backend.max_metadata_age();
+    auto reply_result = co_await _backend._connections.local()
+                          .with_node_client<controller_client_protocol>(
+                            _backend._self,
+                            ss::this_shard_id(),
+                            target_id,
+                            rpc_timeout,
+                            [req = std::move(req), rpc_timeout](
+                              controller_client_protocol client) mutable {
+                                return client.health_pull(
+                                  std::move(req),
+                                  rpc::client_opts{rpc_timeout});
+                            })
+                          .then(&rpc::get_ctx_data<health_pull_reply>);
+    auto reply_error = reply_result
+                         ? make_error_code(reply_result.value().error)
+                         : reply_result.error();
+    if (reply_error) {
+        vlog(
+          clusterlog.warn,
+          "health pull from {} failed: {}",
+          target_id,
+          reply_error.message());
+        auto& store = _backend._health_stores[target_id];
+        if (store.current() && store.freshness() >= _min_ts) {
+            vlog(
+              clusterlog.debug,
+              "health pull from {} failed with {}, but existing report is "
+              "fresh enough (src_ts={}, min_ts={}), skipping failure mark",
+              target_id,
+              reply_error.message(),
+              store.current()->snapshot->src_timestamp.value.time_since_epoch(),
+              _min_ts.time_since_epoch());
+            // The other fiber has collected a fresh report in the meantime,
+            // don't overwrite it with a failure mark.
+            co_return ss::stop_iteration::no;
+        }
+        vlog(
+          clusterlog.debug,
+          "health pull from {} failed with {}, marking as failed",
+          target_id,
+          reply_error.message());
+        store.mark_failed(ss::lowres_clock::now());
+        co_return ss::stop_iteration::no;
+    }
+
+    bool target_sent_itselves_data = false;
+    for (auto& [node_id, update] : reply_result.value().items) {
+        if (node_id == target_id) {
+            target_sent_itselves_data = true;
+        }
+        auto& store = _backend._health_stores[node_id];
+        const auto received_src_ts = ss::visit(update, [](const auto& d) {
+            return (*d.snapshot).src_timestamp.value.time_since_epoch();
+        });
+        vlog(
+          clusterlog.debug,
+          "health pull from {}: received item for node {} src_ts={}",
+          target_id,
+          node_id,
+          received_src_ts);
+        bool updated = ss::visit(
+          update,
+          [&](health::diff_entry_serde& d) {
+              return store.update_from_diff(health::diff_entry{std::move(d)});
+          },
+          [&](health::versioned_report_serde& r) {
+              return store.update_from_report(
+                health::versioned_report{std::move(r)});
+          });
+        if (updated) {
+            _needed_nodes.erase(node_id);
+
+            auto it = std::ranges::find(_nodes_queue, node_id);
+            if (it != _nodes_queue.end()) {
+                _nodes_queue.erase(it);
+            }
+        } else if (store.freshness() < _min_ts) {
+            // This should not happen. If another fiber updated the store it
+            // should have done it with new enough data.
+            vlog(
+              clusterlog.error,
+              "health pull from {}: update for node {} failed to apply",
+              target_id,
+              node_id);
+            store.mark_failed(ss::lowres_clock::now());
+        }
+    }
+    // if the target node didn't include itself in the report, we don't have
+    // a better source of data for it
+    if (!target_sent_itselves_data) {
+        _backend._health_stores[target_id].mark_failed(ss::lowres_clock::now());
+        _needed_nodes.erase(target_id);
+    }
+    co_return ss::stop_iteration::no;
+}
+
+ss::future<> health_monitor_backend::report_puller::primary_fiber() {
+    co_await ss::repeat([this] {
+        _cv.signal();
+        return pull_one();
+    });
+    _cv.signal(); // for the helper fiber to see empty queue and exit too
+}
+
+ss::future<> health_monitor_backend::report_puller::helper_fiber() {
+    while (!_nodes_queue.empty()) {
+        bool timed_out
+          = co_await _cv.wait(ss::lowres_clock::now() + _hedge_delay)
+              .then([] { return false; })
+              .handle_exception_type(
+                [](const ss::condition_variable_timed_out&) { return true; });
+        if (_nodes_queue.empty()) {
+            break;
+        }
+        if (timed_out) {
+            // primary fiber is slow, help drain the queue
+            co_await ss::repeat([this] { return pull_one(); });
+            break;
+        }
+    }
+}
+
+ss::future<> health_monitor_backend::report_puller::run() && {
+    if (!_nodes_queue.empty()) {
+        co_await ss::when_all_succeed(primary_fiber(), helper_fiber());
+    }
+    for (const auto node_id : _nodes_to_reach) {
+        auto freshness = _backend._health_stores[node_id].freshness();
+        vassert(
+          freshness >= _min_ts,
+          "failed to update node {} report, still stale by {}",
+          node_id,
+          _min_ts - std::max(freshness, model::timeout_clock::time_point{}));
+    }
+}
+
+ss::future<std::error_code>
+health_monitor_backend::collect_cluster_health_disseminate(
+  force_refresh force) {
+    vlog(clusterlog.debug, "collecting cluster health (new dissemination)");
+
+    auto min_ts = force ? model::timeout_clock::now()
+                        : model::timeout_clock::now() - max_metadata_age();
+    absl::erase_if(_health_stores, [this](const auto& v) {
+        return !_members.local().nodes().contains(v.first);
+    });
+
+    // Collect self-report if needed
+    co_await maybe_refresh_self(min_ts);
+
+    // Pull from remote peers.
+    co_await report_puller(*this, min_ts).run();
+
+    // Convert all stores to legacy format for consumers. Stale entries (marked
+    // failed) keep their data internally for diff continuity but don't appear
+    // in the cluster-wide report.
+    auto new_reports = ss::make_lw_shared<report_cache_t>();
+    auto cluster_data_disk_health = storage::disk_space_alert::ok;
+
+    for (auto& [node_id, store] : _health_stores) {
+        if (store.last_failed_at()) {
+            continue;
+        }
+        const auto* nh = store.current();
+        if (!nh) {
+            continue;
+        }
+        auto report = health::to_node_health_report(node_id, *nh);
+
+        // Fire per-node callbacks.
+        auto old_report = [&]() -> std::optional<nhr_ptr> {
+            auto old_it = reports().find(node_id);
+            if (old_it != reports().end()) {
+                return old_it->second;
+            }
+            return std::nullopt;
+        }();
+        for (auto& cb : _node_callbacks) {
+            cb.second(report, old_report);
+        }
+
+        cluster_data_disk_health = storage::max_severity(
+          report.local_state.data_disk.alert, cluster_data_disk_health);
+
+        new_reports->emplace(
+          node_id,
+          ss::make_lw_shared<const node_health_report>(std::move(report)));
+    }
+
+    _reports_data_disk_health = cluster_data_disk_health;
+
+    if (config::shard_local_cfg().enable_usage()) {
+        vlog(clusterlog.info, "collecting cloud health statistics");
+        cluster::cloud_storage_size_reducer reducer(
+          _topic_table,
+          _members,
+          _partition_leaders_table,
+          _connections,
+          topic_table_partition_generator::default_batch_size,
+          cloud_storage_size_reducer::default_retries_allowed);
+        try {
+            _bytes_in_cloud_storage = co_await reducer.reduce();
+        } catch (const std::exception&) {
+            // already logged inside the reducer
+        }
+    }
+
+    // Remove entries for nodes no longer in the members table.
+    auto not_in_members = [this](const auto& kv) {
+        return !_members.local().contains(kv.first);
+    };
+    absl::erase_if(_status, not_in_members);
+    _reports = std::move(new_reports);
+    _restart_risks_collected = _feature_table.local().is_active(
+      features::feature::node_restart_risk_assessment);
+
+    _last_refresh = ss::lowres_clock::now();
+    for (const auto& [node_id, store] : _health_stores) {
+        _last_refresh = std::min(_last_refresh, store.freshness());
+    }
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code>
+health_monitor_backend::collect_cluster_health_legacy() {
     bool node_restart_risks_available = _feature_table.local().is_active(
       features::feature::node_restart_risk_assessment);
 
