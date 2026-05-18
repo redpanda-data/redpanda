@@ -91,6 +91,9 @@ public:
 
     ss::future<result<node_health_report>> collect_current_node_health_legacy();
     ss::future<result<health::node_health>> collect_current_node_health();
+
+    /// Handle a health pull request from a peer.
+    ss::future<health_pull_reply> handle_health_pull(health_pull_request);
     /**
      * Return cached version of current node health of collects it if it is not
      * available in cache.

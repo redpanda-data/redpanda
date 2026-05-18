@@ -203,6 +203,8 @@ private:
     ss::future<get_cluster_health_reply>
       do_get_cluster_health_report(get_cluster_health_request);
 
+    ss::future<health_pull_reply> do_health_pull(health_pull_request);
+
     ss::future<cancel_partition_movements_reply>
       do_cancel_all_partition_movements(cancel_all_partition_movements_request);
 

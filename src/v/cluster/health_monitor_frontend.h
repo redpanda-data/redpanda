@@ -62,6 +62,9 @@ public:
     // Collects or return cached version of current node health report.
     ss::future<result<node_health_report_ptr>> get_current_node_health();
 
+    // Handle a health pull request from a peer (new dissemination protocol).
+    ss::future<health_pull_reply> handle_health_pull(health_pull_request);
+
     /**
      * Return drain status for a given node.
      */

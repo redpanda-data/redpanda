@@ -1233,6 +1233,64 @@ health_monitor_backend::collect_cluster_health_disseminate(
     co_return errc::success;
 }
 
+ss::future<health_pull_reply>
+health_monitor_backend::handle_health_pull(health_pull_request req) {
+    if (req.target_node_id != _self) {
+        vlog(
+          clusterlog.debug,
+          "rejecting health pull addressed to node {} (we are node {}); "
+          "likely stale address resolution after a restack",
+          req.target_node_id,
+          _self);
+        co_return health_pull_reply{.error = errc::invalid_target_node_id};
+    }
+    co_await maybe_refresh_self(req.min_src_timestamp);
+
+    // Build response: only send data for nodes the requester asked about
+    // (present in existing_versions).
+    health_pull_reply reply;
+    size_t n_skip = 0, n_no_store = 0, n_diffs = 0, n_full = 0;
+    for (auto& [node_id, peer_version] : req.existing_versions) {
+        auto store_it = _health_stores.find(node_id);
+        if (store_it == _health_stores.end()) {
+            n_no_store++;
+            continue;
+        }
+        const auto* cur = store_it->second.current();
+        if (!cur || cur->snapshot->src_timestamp < req.min_src_timestamp) {
+            n_no_store++;
+            continue;
+        }
+
+        auto send_result = store_it->second.get_for_sending(peer_version);
+        ss::visit(
+          send_result,
+          [&](std::monostate) { n_skip++; },
+          [&](const health::diff_entry* diff) {
+              n_diffs++;
+              reply.items.emplace_back(
+                node_id, health::diff_entry_serde{*diff});
+          },
+          [&](const health::versioned_report* report) {
+              n_full++;
+              reply.items.emplace_back(
+                node_id, health::versioned_report_serde{*report});
+          });
+    }
+
+    vlog(
+      clusterlog.debug,
+      "handle_health_pull: requested {} nodes, responding with {} diffs "
+      "+ {} full ({} up-to-date, {} no store)",
+      req.existing_versions.size(),
+      n_diffs,
+      n_full,
+      n_skip,
+      n_no_store);
+
+    co_return reply;
+}
+
 ss::future<std::error_code>
 health_monitor_backend::collect_cluster_health_legacy() {
     bool node_restart_risks_available = _feature_table.local().is_active(
