@@ -12,10 +12,10 @@ import tempfile
 import time
 from typing import Any
 
-import kafka.protocol.types as types
 from kafka import errors as kerr
 from kafka.admin import KafkaAdminClient
-from kafka.protocol.api import Request, Response
+from kafka.protocol.commit import OffsetFetchRequest_v5
+from kafka.protocol.list_offsets import ListOffsetsRequest_v4
 
 from ducktape.mark.resource import cluster as ducktape_cluster
 from ducktape.tests.test import Test
@@ -32,103 +32,6 @@ from rptest.services.kafka import KafkaServiceAdapter
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
-
-
-# --- ListOffsets v4 (API key 2) ---
-# v4 is the first version with leader_epoch in the response.
-
-
-class ListOffsetsResponse_v4(Response):
-    API_KEY = 2
-    API_VERSION = 4
-    SCHEMA = types.Schema(
-        ("throttle_time_ms", types.Int32),
-        (
-            "topics",
-            types.Array(
-                ("topic", types.String("utf-8")),
-                (
-                    "partitions",
-                    types.Array(
-                        ("partition", types.Int32),
-                        ("error_code", types.Int16),
-                        ("timestamp", types.Int64),
-                        ("offset", types.Int64),
-                        ("leader_epoch", types.Int32),
-                    ),
-                ),
-            ),
-        ),
-    )
-
-
-class ListOffsetsRequest_v4(Request):
-    API_KEY = 2
-    API_VERSION = 4
-    RESPONSE_TYPE = ListOffsetsResponse_v4
-    SCHEMA = types.Schema(
-        ("replica_id", types.Int32),
-        ("isolation_level", types.Int8),
-        (
-            "topics",
-            types.Array(
-                ("topic", types.String("utf-8")),
-                (
-                    "partitions",
-                    types.Array(
-                        ("partition", types.Int32),
-                        ("current_leader_epoch", types.Int32),
-                        ("timestamp", types.Int64),
-                    ),
-                ),
-            ),
-        ),
-    )
-
-
-# --- OffsetFetch v5 (API key 9) ---
-# v5 is the first version with committed_leader_epoch in the response.
-
-
-class OffsetFetchResponse_v5(Response):
-    API_KEY = 9
-    API_VERSION = 5
-    SCHEMA = types.Schema(
-        ("throttle_time_ms", types.Int32),
-        (
-            "topics",
-            types.Array(
-                ("topic", types.String("utf-8")),
-                (
-                    "partitions",
-                    types.Array(
-                        ("partition", types.Int32),
-                        ("offset", types.Int64),
-                        ("leader_epoch", types.Int32),
-                        ("metadata", types.String("utf-8")),
-                        ("error_code", types.Int16),
-                    ),
-                ),
-            ),
-        ),
-        ("error_code", types.Int16),
-    )
-
-
-class OffsetFetchRequest_v5(Request):
-    API_KEY = 9
-    API_VERSION = 5
-    RESPONSE_TYPE = OffsetFetchResponse_v5
-    SCHEMA = types.Schema(
-        ("consumer_group", types.String("utf-8")),
-        (
-            "topics",
-            types.Array(
-                ("topic", types.String("utf-8")),
-                ("partitions", types.Array(types.Int32)),
-            ),
-        ),
-    )
 
 
 TOPIC_NAME = "epoch-test"

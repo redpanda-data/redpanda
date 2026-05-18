@@ -17,7 +17,6 @@ from collections import namedtuple
 from dataclasses import dataclass
 from typing import Dict, List
 
-import kafka.protocol.types as types
 import pytest
 from confluent_kafka import (
     Consumer,
@@ -32,8 +31,7 @@ from ducktape.utils.util import wait_until
 from kafka import KafkaConsumer
 from kafka import errors as kerr
 from kafka.admin import KafkaAdminClient
-from kafka.protocol.api import Request, Response
-from kafka.protocol.commit import OffsetFetchRequest_v3
+from kafka.protocol.commit import OffsetFetchRequest_v5
 
 from rptest.clients.default import DefaultClient
 from rptest.clients.kcl import RawKCL
@@ -1258,38 +1256,6 @@ class KafkaTestAdminClient:
                     offset, leader_epoch, metadata
                 )
         return offsets
-
-
-class OffsetFetchResponse_v5(Response):
-    API_KEY = 9
-    API_VERSION = 5
-    SCHEMA = types.Schema(
-        ("throttle_time_ms", types.Int32),
-        (
-            "topics",
-            types.Array(
-                ("topic", types.String("utf-8")),
-                (
-                    "partitions",
-                    types.Array(
-                        ("partition", types.Int32),
-                        ("offset", types.Int64),
-                        ("leader_epoch", types.Int32),
-                        ("metadata", types.String("utf-8")),
-                        ("error_code", types.Int16),
-                    ),
-                ),
-            ),
-        ),
-        ("error_code", types.Int16),
-    )
-
-
-class OffsetFetchRequest_v5(Request):
-    API_KEY = 9
-    API_VERSION = 5
-    RESPONSE_TYPE = OffsetFetchResponse_v5
-    SCHEMA = OffsetFetchRequest_v3.SCHEMA
 
 
 class TestConsumer:
