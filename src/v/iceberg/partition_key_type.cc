@@ -41,7 +41,7 @@ struct transform_result_type_visitor {
     }
     field_type operator()(const year_transform&) { return int_type(); }
     field_type operator()(const month_transform&) { return int_type(); }
-    field_type operator()(const day_transform&) { return int_type(); }
+    field_type operator()(const day_transform&) { return date_type(); }
     field_type operator()(const hour_transform&) { return int_type(); }
     field_type operator()(const void_transform&) {
         // TODO: the spec also says the result may also be the source type.

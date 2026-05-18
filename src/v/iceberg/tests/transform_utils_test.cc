@@ -166,20 +166,29 @@ struct TestTimeTransforms
 struct TestDateTransforms
   : public testing::TestWithParam<time_transform_test_case> {};
 
+namespace {
+int32_t get_int32_result(const transform& tr, const value& transformed) {
+    EXPECT_TRUE(std::holds_alternative<primitive_value>(transformed));
+    const auto& pval = std::get<primitive_value>(transformed);
+    // Per the Iceberg spec, `day` returns a date; other time transforms
+    // return an int representing the number of units since epoch.
+    if (std::holds_alternative<day_transform>(tr)) {
+        EXPECT_TRUE(std::holds_alternative<date_value>(pval));
+        return std::get<date_value>(pval).val;
+    }
+    EXPECT_TRUE(std::holds_alternative<int_value>(pval));
+    return std::get<int_value>(pval).val;
+}
+} // namespace
+
 TEST_P(TestTimeTransforms, TestConversion) {
     auto test_case = GetParam();
 
     auto transformed = apply_transform(
                          make_timestamp_val(test_case.time_shift), test_case.tr)
                          .value();
-    ASSERT_TRUE(std::holds_alternative<primitive_value>(transformed));
-    ASSERT_TRUE(
-      std::holds_alternative<int_value>(
-        std::get<primitive_value>(transformed)));
-    auto transformed_val = std::get<int_value>(
-      std::get<primitive_value>(transformed));
-
-    ASSERT_EQ(transformed_val.val, test_case.expected_result);
+    ASSERT_EQ(
+      get_int32_result(test_case.tr, transformed), test_case.expected_result);
 }
 
 TEST_P(TestDateTransforms, TestConversion) {
@@ -188,14 +197,8 @@ TEST_P(TestDateTransforms, TestConversion) {
     auto transformed = apply_transform(
                          make_date_val(test_case.time_shift), test_case.tr)
                          .value();
-    ASSERT_TRUE(std::holds_alternative<primitive_value>(transformed));
-    ASSERT_TRUE(
-      std::holds_alternative<int_value>(
-        std::get<primitive_value>(transformed)));
-    auto transformed_val = std::get<int_value>(
-      std::get<primitive_value>(transformed));
-
-    ASSERT_EQ(transformed_val.val, test_case.expected_result);
+    ASSERT_EQ(
+      get_int32_result(test_case.tr, transformed), test_case.expected_result);
 }
 
 INSTANTIATE_TEST_SUITE_P(
