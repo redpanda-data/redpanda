@@ -22,15 +22,25 @@
 
 #include <boost/beast/http/message.hpp>
 
+namespace config {
+struct configuration;
+} // namespace config
+
 namespace datalake {
 
 // Service responsible for managing credential refresh for datalake components.
 // Provides shared credential management for both datalake_manager and
 // coordinator_manager to avoid duplication of credential refresh logic.
+//
+// The constructor takes the configuration to read iceberg + cloud-storage
+// credential settings from. Production wiring passes a reference to the
+// shard-local config; ad-hoc callers (e.g. the TestCatalog admin handler
+// building an ephemeral catalog from a property overlay) can pass a
+// caller-owned configuration instance.
 class credential_manager
   : public ss::peering_sharded_service<credential_manager> {
 public:
-    credential_manager();
+    explicit credential_manager(const config::configuration& cfg);
     ~credential_manager();
 
     ss::future<> start();
@@ -41,6 +51,8 @@ public:
       boost::beast::http::request_header<>& request);
 
 private:
+    const config::configuration& cfg_;
+
     // Waits until credentials are available. Returns immediately if credentials
     // are already populated. Only waits on the first call when credentials are
     // not yet available. Times out after 5 seconds.

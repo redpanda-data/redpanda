@@ -115,7 +115,8 @@ ss::sstring compute_sha256_hex(const iobuf& data) {
 
 } // anonymous namespace
 
-credential_manager::credential_manager() = default;
+credential_manager::credential_manager(const config::configuration& cfg)
+  : cfg_(cfg) {}
 
 credential_manager::~credential_manager() = default;
 
@@ -170,11 +171,10 @@ ss::future<result<std::monostate>> credential_manager::wait_for_credentials() {
 ss::future<result<std::monostate>> credential_manager::maybe_sign(
   const std::optional<iobuf>& payload,
   boost::beast::http::request_header<>& request) {
-    const auto& cfg = config::shard_local_cfg();
     if (
-      cfg.iceberg_rest_catalog_authentication_mode()
+      cfg_.iceberg_rest_catalog_authentication_mode()
         != config::datalake_catalog_auth_mode::aws_sigv4
-      && cfg.iceberg_rest_catalog_authentication_mode()
+      && cfg_.iceberg_rest_catalog_authentication_mode()
            != config::datalake_catalog_auth_mode::gcp) {
         co_return std::monostate{};
     }
@@ -185,7 +185,7 @@ ss::future<result<std::monostate>> credential_manager::maybe_sign(
     }
 
     if (
-      cfg.iceberg_rest_catalog_authentication_mode()
+      cfg_.iceberg_rest_catalog_authentication_mode()
       == config::datalake_catalog_auth_mode::aws_sigv4) {
         // Clear the Authorization and sha headers to ensure clean signing.
         constexpr auto amz_sha_header = "x-amz-content-sha256";
@@ -201,17 +201,14 @@ ss::future<result<std::monostate>> credential_manager::maybe_sign(
     }
 
     if (
-      cfg.iceberg_rest_catalog_authentication_mode()
+      cfg_.iceberg_rest_catalog_authentication_mode()
         == config::datalake_catalog_auth_mode::gcp
-      && config::shard_local_cfg()
-           .iceberg_rest_catalog_gcp_user_project()
-           .has_value()) {
+      && cfg_.iceberg_rest_catalog_gcp_user_project().has_value()) {
         constexpr auto gcp_project_header = "x-goog-user-project";
 
         request.set(
           gcp_project_header,
-          std::string_view(*config::shard_local_cfg()
-                              .iceberg_rest_catalog_gcp_user_project()));
+          std::string_view(*cfg_.iceberg_rest_catalog_gcp_user_project()));
     }
 
     auto ec = apply_credentials_->add_auth(request);
@@ -227,8 +224,7 @@ void credential_manager::start_auth_refresh_if_needed() {
         return;
     }
 
-    const auto& cfg = config::shard_local_cfg();
-    auto client_config = create_auth_refresh_configuration(cfg);
+    auto client_config = create_auth_refresh_configuration(cfg_);
     if (!client_config.has_value()) {
         return;
     }
@@ -236,14 +232,14 @@ void credential_manager::start_auth_refresh_if_needed() {
     auto config_source
       = cloud_storage_clients::build_refresh_credentials_source(
         *client_config,
-        get_credentials_source(cfg),
-        cfg.iceberg_rest_catalog_credentials_host());
+        get_credentials_source(cfg_),
+        cfg_.iceberg_rest_catalog_credentials_host());
 
     auth_refresh_bg_op_.emplace(
       datalake_log,
       gate_,
       auth_refresh_as_,
-      get_credentials_source(cfg),
+      get_credentials_source(cfg_),
       std::move(config_source));
 
     auth_refresh_bg_op_->maybe_start_auth_refresh_op(
