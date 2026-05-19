@@ -77,7 +77,10 @@ def data_dependency():
         sha256 = "2157d92020d408ed63ebcd886a92d1346a1383b0f91123a0473b4f69b4a24861",
         strip_prefix = "krb5-krb5-1.21.3-final",
         url = "https://github.com/krb5/krb5/archive/refs/tags/krb5-1.21.3-final.tar.gz",
-        patches = ["//bazel/thirdparty:0001-Fix-two-unlikely-memory-leaks.patch"],
+        patches = [
+            "//bazel/thirdparty:0001-Fix-two-unlikely-memory-leaks.patch",
+            "//bazel/thirdparty:0001-Fix-two-NegoEx-parsing-vulnerabilities.patch",
+        ],
         patch_args = ["-p1"],
     )
 
