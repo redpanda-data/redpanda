@@ -86,23 +86,17 @@ get_credentials_source(const config::configuration& cfg) {
 // If the return is empty, no credential refresh is needed.
 std::optional<cloud_storage_clients::client_configuration>
 create_auth_refresh_configuration(const config::configuration& cfg) {
-    if (cfg.iceberg_catalog_type() != config::datalake_catalog_type::rest) {
+    if (!credential_manager::needs_background_credential_refresh(cfg)) {
         return std::nullopt;
     }
-
     switch (cfg.iceberg_rest_catalog_authentication_mode()) {
-    case config::datalake_catalog_auth_mode::none:
-        return std::nullopt;
-    case config::datalake_catalog_auth_mode::bearer:
-        return std::nullopt;
-    case config::datalake_catalog_auth_mode::oauth2:
-        // TODO: Implement OAuth2 auth refresh via the bg op.
-        // The client will handle refresh for now.
-        return std::nullopt;
     case config::datalake_catalog_auth_mode::aws_sigv4:
         return create_aws_sigv4_configuration(cfg);
     case config::datalake_catalog_auth_mode::gcp:
         return create_gcp_configuration(cfg);
+    default:
+        // Unreachable: needs_background_credential_refresh returned true.
+        return std::nullopt;
     }
 }
 
@@ -120,6 +114,25 @@ credential_manager::credential_manager(const config::configuration& cfg)
 
 credential_manager::~credential_manager() = default;
 
+bool credential_manager::needs_background_credential_refresh(
+  const config::configuration& cfg) {
+    if (cfg.iceberg_catalog_type() != config::datalake_catalog_type::rest) {
+        return false;
+    }
+    switch (cfg.iceberg_rest_catalog_authentication_mode()) {
+    case config::datalake_catalog_auth_mode::none:
+    case config::datalake_catalog_auth_mode::bearer:
+        return false;
+    case config::datalake_catalog_auth_mode::oauth2:
+        // TODO: Implement OAuth2 auth refresh via the bg op. The client
+        // handles refresh inline for now.
+        return false;
+    case config::datalake_catalog_auth_mode::aws_sigv4:
+    case config::datalake_catalog_auth_mode::gcp:
+        return true;
+    }
+}
+
 ss::future<> credential_manager::start() {
     start_auth_refresh_if_needed();
     co_return;
@@ -135,6 +148,19 @@ ss::future<> credential_manager::stop() {
     if (!gate_.is_closed()) {
         co_await gate_.close();
     }
+}
+
+ss::future<result<std::monostate>>
+credential_manager::ensure_initial_credentials_available() {
+    if (!needs_background_credential_refresh(cfg_)) {
+        // none / bearer / oauth2: credentials (if any) are applied inline
+        // by the REST client at request time; there's nothing for us to
+        // wait on. Callers should gate this method with
+        // needs_background_credential_refresh; the error returned here is
+        // a programming-error guard.
+        co_return std::make_error_code(std::errc::operation_not_supported);
+    }
+    co_return co_await wait_for_credentials();
 }
 
 ss::future<result<std::monostate>> credential_manager::wait_for_credentials() {

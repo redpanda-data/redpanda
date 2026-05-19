@@ -50,6 +50,21 @@ public:
       const std::optional<iobuf>& payload,
       boost::beast::http::request_header<>& request);
 
+    // True iff the configured iceberg auth mode obtains credentials via
+    // the background refresh op rather than applying them inline at
+    // request time. Callers can use this to decide whether calling
+    // ensure_initial_credentials_available() is meaningful for a given
+    // configuration.
+    static bool
+    needs_background_credential_refresh(const config::configuration& cfg);
+
+    // Waits up to 5 seconds for the background refresh op to populate
+    // credentials. Returns immediately with success if credentials are
+    // already available, or if the configured auth mode doesn't use the
+    // background refresh op. Returns an error on timeout. Callers
+    // typically gate this with needs_background_credential_refresh.
+    ss::future<result<std::monostate>> ensure_initial_credentials_available();
+
 private:
     const config::configuration& cfg_;
 
