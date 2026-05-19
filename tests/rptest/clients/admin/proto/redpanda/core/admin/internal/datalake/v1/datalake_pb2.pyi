@@ -357,3 +357,55 @@ class DescribeCatalogResponse(google.protobuf.message.Message):
     def __init__(self) -> None:
         ...
 Global___DescribeCatalogResponse: typing_extensions.TypeAlias = DescribeCatalogResponse
+
+@typing.final
+class TestCatalogRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    @typing.final
+    class PropertyOverridesEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+
+        def __init__(self, *, key: builtins.str=..., value: builtins.str=...) -> None:
+            ...
+
+        def ClearField(self, field_name: typing.Literal['key', b'key', 'value', b'value']) -> None:
+            ...
+    PROPERTY_OVERRIDES_FIELD_NUMBER: builtins.int
+
+    @property
+    def property_overrides(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """Cluster property overrides to apply when constructing the ephemeral
+        catalog used for the probe. Keys are cluster property names (e.g.
+        "iceberg_rest_catalog_endpoint"); values are the string forms
+        accepted by the property's set_value. Empty map = test the
+        currently-applied cluster config (no override).
+        """
+
+    def __init__(self, *, property_overrides: collections.abc.Mapping[builtins.str, builtins.str] | None=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['property_overrides', b'property_overrides']) -> None:
+        ...
+Global___TestCatalogRequest: typing_extensions.TypeAlias = TestCatalogRequest
+
+@typing.final
+class TestCatalogResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    CATALOG_DESCRIBE_ERROR_CODE_FIELD_NUMBER: builtins.int
+    CATALOG_DESCRIBE_ERROR_MESSAGE_FIELD_NUMBER: builtins.int
+    catalog_describe_error_code: builtins.str
+    'Empty on success. On failure, the iceberg::catalog_errc enum name\n    (e.g. "io_error", "timedout"), or "invalid_request" if a property\n    name/value in the overrides was rejected before probing.\n    '
+    catalog_describe_error_message: builtins.str
+    'Empty on success. On failure, a human-readable message from either\n    the catalog client or the request validator. Never contains secret\n    values from the override map.\n    '
+
+    def __init__(self, *, catalog_describe_error_code: builtins.str=..., catalog_describe_error_message: builtins.str=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['catalog_describe_error_code', b'catalog_describe_error_code', 'catalog_describe_error_message', b'catalog_describe_error_message']) -> None:
+        ...
+Global___TestCatalogResponse: typing_extensions.TypeAlias = TestCatalogResponse

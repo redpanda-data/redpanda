@@ -79,6 +79,21 @@ class DatalakeServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    def call_test_catalog(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogResponse]:
+        """Low-level method to call TestCatalog, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.datalake.v1.DatalakeService/TestCatalog'
+        return self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogResponse, extra_headers, timeout_seconds)
+
+    def test_catalog(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogResponse:
+        response = self.call_test_catalog(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 class AsyncDatalakeServiceClient:
 
     def __init__(self, base_url: str, http_client: aiohttp.ClientSession, protocol: ConnectProtocol=ConnectProtocol.CONNECT_PROTOBUF):
@@ -130,6 +145,21 @@ class AsyncDatalakeServiceClient:
             raise ConnectProtocolError('missing response message')
         return msg
 
+    async def call_test_catalog(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> UnaryOutput[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogResponse]:
+        """Low-level method to call TestCatalog, granting access to errors and metadata"""
+        url = self.base_url + '/redpanda.core.admin.internal.datalake.v1.DatalakeService/TestCatalog'
+        return await self._connect_client.call_unary(url, req, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogResponse, extra_headers, timeout_seconds)
+
+    async def test_catalog(self, req: proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogRequest, extra_headers: HeaderInput | None=None, timeout_seconds: float | None=None) -> proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogResponse:
+        response = await self.call_test_catalog(req, extra_headers, timeout_seconds)
+        err = response.error()
+        if err is not None:
+            raise err
+        msg = response.message()
+        if msg is None:
+            raise ConnectProtocolError('missing response message')
+        return msg
+
 @typing.runtime_checkable
 class DatalakeServiceProtocol(typing.Protocol):
 
@@ -141,6 +171,9 @@ class DatalakeServiceProtocol(typing.Protocol):
 
     def coordinator_reset_topic_state(self, req: ClientRequest[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateResponse]:
         ...
+
+    def test_catalog(self, req: ClientRequest[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogRequest]) -> ServerResponse[proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogResponse]:
+        ...
 DATALAKE_SERVICE_PATH_PREFIX = '/redpanda.core.admin.internal.datalake.v1.DatalakeService'
 
 def wsgi_datalake_service(implementation: DatalakeServiceProtocol) -> WSGIApplication:
@@ -148,4 +181,5 @@ def wsgi_datalake_service(implementation: DatalakeServiceProtocol) -> WSGIApplic
     app.register_unary_rpc('/redpanda.core.admin.internal.datalake.v1.DatalakeService/GetCoordinatorState', implementation.get_coordinator_state, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.GetCoordinatorStateRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.datalake.v1.DatalakeService/DescribeCatalog', implementation.describe_catalog, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.DescribeCatalogRequest)
     app.register_unary_rpc('/redpanda.core.admin.internal.datalake.v1.DatalakeService/CoordinatorResetTopicState', implementation.coordinator_reset_topic_state, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.CoordinatorResetTopicStateRequest)
+    app.register_unary_rpc('/redpanda.core.admin.internal.datalake.v1.DatalakeService/TestCatalog', implementation.test_catalog, proto.redpanda.core.admin.internal.datalake.v1.datalake_pb2.TestCatalogRequest)
     return app

@@ -11,12 +11,24 @@
 
 #include "redpanda/admin/services/datalake/datalake.h"
 
+#include "cloud_storage/configuration.h"
+#include "cloud_storage_clients/types.h"
+#include "config/configuration.h"
 #include "container/chunked_hash_map.h"
+#include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/types.h"
+#include "datalake/credential_manager.h"
+#include "iceberg/catalog.h"
+#include "iceberg/catalog_errors.h"
+
+#include <seastar/coroutine/as_future.hh>
+
+#include <yaml-cpp/yaml.h>
 
 namespace {
+
 proto::admin::data_file to_proto(const datalake::coordinator::data_file& df) {
     proto::admin::data_file pb_file;
     pb_file.set_remote_path(ss::sstring(df.remote_path));
@@ -114,9 +126,11 @@ namespace admin {
 
 datalake_service_impl::datalake_service_impl(
   admin::proxy::client proxy_client,
-  ss::sharded<datalake::coordinator::frontend>* coordinator_fe)
+  ss::sharded<datalake::coordinator::frontend>* coordinator_fe,
+  ss::sharded<cloud_io::remote>* cloud_io_remote)
   : _proxy_client(std::move(proxy_client))
-  , _coordinator_fe(coordinator_fe) {}
+  , _coordinator_fe(coordinator_fe)
+  , _cloud_io_remote(cloud_io_remote) {}
 
 ss::future<proto::admin::get_coordinator_state_response>
 datalake_service_impl::get_coordinator_state(
@@ -263,6 +277,156 @@ datalake_service_impl::describe_catalog(
     }
 
     co_return proto::admin::describe_catalog_response{};
+}
+
+ss::future<proto::admin::test_catalog_response>
+datalake_service_impl::test_catalog(
+  serde::pb::rpc::context, proto::admin::test_catalog_request req) {
+    const auto& overrides = req.get_property_overrides();
+
+    if (overrides.empty()) {
+        // No overrides: behave like describe_catalog but return structured
+        // errors instead of throwing.
+        if (!_coordinator_fe->local_is_initialized()) {
+            throw serde::pb::rpc::unavailable_exception(
+              "Datalake coordinator frontend not initialized");
+        }
+
+        auto res = co_await _coordinator_fe->local().describe_catalog();
+        proto::admin::test_catalog_response response;
+        if (res.has_error()) {
+            const auto& err = res.error();
+            response.set_catalog_describe_error_code(
+              ss::sstring(iceberg::to_string_view(err.errc)));
+            response.set_catalog_describe_error_message(
+              ss::sstring(err.message));
+        }
+        co_return response;
+    }
+
+    // Override path: construct an ephemeral catalog from a snapshot of the
+    // running config with the requested properties applied on top.
+    // Heap-allocate the configuration via config::make_config so it stays
+    // off the coroutine frame (it's ~130 KiB).
+    auto overlay_ptr = config::make_config();
+    auto& overlay = *overlay_ptr;
+    config::shard_local_cfg().for_each(
+      [&overlay](const config::base_property& p) {
+          auto& tmp_p = overlay.get(p.name());
+          tmp_p = p;
+      });
+
+    for (const auto& [name, value] : overrides) {
+        config::base_property* prop = nullptr;
+        try {
+            prop = &overlay.get(name);
+        } catch (...) {
+            proto::admin::test_catalog_response response;
+            response.set_catalog_describe_error_code("invalid_request");
+            response.set_catalog_describe_error_message(
+              fmt::format("unknown cluster property '{}'", name));
+            co_return response;
+        }
+
+        try {
+            prop->set_value(YAML::Load(value));
+        } catch (const std::exception& e) {
+            proto::admin::test_catalog_response response;
+            response.set_catalog_describe_error_code("invalid_request");
+            // Avoid echoing back the value if the property is marked secret.
+            if (prop->is_secret()) {
+                response.set_catalog_describe_error_message(
+                  fmt::format("property '{}': invalid value", name));
+            } else {
+                response.set_catalog_describe_error_message(
+                  fmt::format("property '{}': {}", name, e.what()));
+            }
+            co_return response;
+        }
+    }
+
+    auto bucket_cfg = cloud_storage::configuration::get_bucket_config()();
+    if (!bucket_cfg.has_value()) {
+        proto::admin::test_catalog_response response;
+        response.set_catalog_describe_error_code("invalid_request");
+        response.set_catalog_describe_error_message(
+          "cloud_storage_bucket is not configured");
+        co_return response;
+    }
+    auto bucket = cloud_storage_clients::bucket_name{bucket_cfg.value()};
+
+    // Build an ephemeral credential_manager from the overlay so the factory
+    // resolves credentials against the proposed config, not the running
+    // cluster's. Lives for the duration of this request only.
+    datalake::credential_manager ephemeral_cred_mgr(overlay);
+    co_await ephemeral_cred_mgr.start();
+
+    // For auth modes that obtain credentials via the bg refresh op
+    // (aws_sigv4 / gcp), validate that credentials are actually
+    // reachable before we attempt the catalog round-trip. This surfaces
+    // credential-source failures (unreachable IMDS, mis-configured
+    // aws_credentials_source) as a distinct error rather than as a
+    // generic catalog probe timeout. For other auth modes this branch
+    // is skipped and we rely on the catalog probe as the validator.
+    if (
+      datalake::credential_manager::needs_background_credential_refresh(
+        overlay)) {
+        auto cred_result
+          = co_await ephemeral_cred_mgr.ensure_initial_credentials_available();
+        if (cred_result.has_error()) {
+            proto::admin::test_catalog_response response;
+            response.set_catalog_describe_error_code("credential_unavailable");
+            response.set_catalog_describe_error_message(
+              fmt::format(
+                "could not obtain credentials from the configured source "
+                "(check iceberg_rest_catalog_aws_credentials_source / "
+                "iceberg_rest_catalog_credentials_host or the fallback "
+                "cloud_storage_credentials_source): {}",
+                cred_result.error().message()));
+            co_await ephemeral_cred_mgr.stop();
+            co_return response;
+        }
+    }
+
+    auto factory = datalake::coordinator::get_catalog_factory(
+      overlay,
+      _cloud_io_remote->local(),
+      bucket,
+      ss::metrics::label_instance{"test_catalog", "request"},
+      ephemeral_cred_mgr);
+
+    ss::abort_source as;
+
+    // Capture the probe result as a resolved future so we can both await
+    // catalog->stop() unconditionally and translate any thrown exception
+    // into a structured TestCatalog response.
+    auto catalog = co_await factory->create_catalog(as);
+    auto describe_fut = co_await ss::coroutine::as_future(
+      catalog->describe_catalog());
+    co_await catalog->stop();
+    co_await ephemeral_cred_mgr.stop();
+
+    proto::admin::test_catalog_response response;
+    if (describe_fut.failed()) {
+        try {
+            std::rethrow_exception(describe_fut.get_exception());
+        } catch (const std::exception& e) {
+            response.set_catalog_describe_error_code("probe_exception");
+            response.set_catalog_describe_error_message(e.what());
+        } catch (...) {
+            response.set_catalog_describe_error_code("probe_exception");
+            response.set_catalog_describe_error_message("unknown exception");
+        }
+        co_return response;
+    }
+    auto probe_result = describe_fut.get();
+    if (probe_result.has_error()) {
+        const auto& err = probe_result.error();
+        response.set_catalog_describe_error_code(
+          ss::sstring(iceberg::to_string_view(err.errc)));
+        response.set_catalog_describe_error_message(ss::sstring(err.message));
+    }
+    co_return response;
 }
 
 } // namespace admin
