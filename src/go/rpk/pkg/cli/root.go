@@ -30,6 +30,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/group"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/iceberg"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/plugin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry"
@@ -133,6 +134,7 @@ Use --print-tree to emit the full command tree as JSON.`,
 		debug.NewCommand(fs, p),
 		generate.NewCommand(fs, p),
 		group.NewCommand(fs, p),
+		iceberg.NewCommand(fs, p),
 		plugincmd.NewCommand(fs, p),
 		registry.NewCommand(fs, p),
 		security.NewCommand(fs, p),
