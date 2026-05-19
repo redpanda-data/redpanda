@@ -232,6 +232,8 @@ ss::future<> io_resources::set_disk_max_bandwidth(size_t tput) {
     try {
         if (tput == 0 || tput == std::numeric_limits<size_t>::max()) {
             _throttling_disabled = true;
+            co_await _scheduling_group.update_io_bandwidth(
+              effectively_unlimited_bw);
             vlog(
               log.info,
               "Scheduling group's {} bandwidth is not limited",
