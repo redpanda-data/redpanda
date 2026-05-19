@@ -21,16 +21,19 @@ import (
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "iceberg",
-		Short: "Validate the cluster's Iceberg catalog",
-		Long: `Validate the cluster's Iceberg catalog.
+		Short: "Validate and configure the cluster's Iceberg catalog",
+		Long: `Validate and configure the cluster's Iceberg catalog.
 
-Use 'rpk iceberg test' to probe the currently-applied catalog config, or
-to validate a proposed config without applying it (with '--set key=value'
-overrides).`,
+This command group helps operators set up and troubleshoot the Iceberg
+catalog connection. Use 'rpk iceberg test' to probe the currently-applied
+catalog config, or to validate a proposed config without applying it (with
+'--set key=value' overrides). Use 'rpk iceberg configure' for a guided
+catalog-specific setup flow.`,
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(
 		newTestCommand(fs, p),
+		newConfigureCommand(fs, p),
 	)
 	return cmd
 }

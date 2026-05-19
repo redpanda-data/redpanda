@@ -4,6 +4,13 @@ go_library(
     name = "iceberg",
     srcs = [
         "client.go",
+        "configure.go",
+        "configure_glue.go",
+        "configure_object_storage.go",
+        "configure_rest.go",
+        "configure_snowflake.go",
+        "configure_steps.go",
+        "configure_unity.go",
         "iceberg.go",
         "test.go",
     ],
