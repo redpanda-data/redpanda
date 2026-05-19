@@ -18,6 +18,7 @@
 #include "config/sasl_mechanisms.h"
 #include "config/types.h"
 #include "datalake/partition_spec_parser.h"
+#include "datalake/validators.h"
 #include "model/namespace.h"
 #include "model/validation.h"
 #include "serde/rw/chrono.h"
@@ -260,6 +261,19 @@ validate_iceberg_partition_spec(const ss::sstring& value) {
     if (!parsed.value().is_valid_for_default_spec()) {
         return fmt::format(
           "partition spec `{}' can't be used as a default spec", value);
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring> validate_iceberg_rest_catalog_endpoint(
+  const std::optional<ss::sstring>& endpoint) {
+    if (!endpoint.has_value()) {
+        return std::nullopt;
+    }
+    auto parsed = datalake::parse_iceberg_rest_catalog_endpoint(
+      endpoint.value());
+    if (!parsed.has_value()) {
+        return std::move(parsed).error();
     }
     return std::nullopt;
 }

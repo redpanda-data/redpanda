@@ -127,6 +127,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/config",
         "//src/v/datalake:logger",
+        "//src/v/datalake:validators",
         "//src/v/iceberg:catalog",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/iceberg:rest_catalog",
