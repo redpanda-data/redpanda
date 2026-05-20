@@ -285,6 +285,52 @@ class TieredCloudLocalRetentionTest(EndToEndCloudTopicsBase):
         )
 
     @cluster(num_nodes=4)
+    def test_space_manager_reclaim_under_pressure(self):
+        """
+        Even though the reconciler hint asks tiered_cloud partitions to keep
+        retention.local.target.bytes locally, the space manager must still be
+        able to reclaim from those partitions when the cluster-wide local
+        target capacity is tight. This relies on
+        ctp_stm::max_removable_local_log_offset() not being gated by the hint,
+        so resource_mgmt/storage.cc can drive prefix-truncation past the
+        cached hint without waiting for a new reconciliation pass.
+        """
+        self._create_topic(storage_mode=TopicSpec.STORAGE_MODE_TIERED_CLOUD)
+        self._wait_for_partition_info()
+
+        self._produce(self.bytes_to_produce)
+        self.wait_until_reconciled(topic=self.topic_name, partition=0)
+
+        # First, confirm the hint took effect and we are holding meaningful
+        # local data above one segment.
+        replication = 3
+        self._wait_local_at_least(
+            floor_bytes=replication * self.local_target_bytes // 2,
+            timeout_sec=120,
+        )
+
+        # Now apply tight cluster-wide disk pressure. retention_local_strict
+        # makes the space manager treat retention_local_target_capacity_bytes
+        # as a hard ceiling and reclaim aggressively from any partition,
+        # regardless of per-topic retention.local.target.bytes or the
+        # reconciler-published hint.
+        tight_capacity = 2 * self.segment_size
+        assert self.redpanda is not None
+        self.redpanda.set_cluster_config(
+            {
+                "retention_local_strict": True,
+                "retention_local_target_capacity_bytes": tight_capacity,
+            }
+        )
+
+        # Local footprint should shrink well below the per-topic local target,
+        # proving the space manager reclaimed past the reconciler's hint.
+        self._wait_local_below(
+            ceiling_bytes=replication * 3 * self.segment_size,
+            timeout_sec=180,
+        )
+
+    @cluster(num_nodes=4)
     def test_compact_topic_clears_hint(self):
         """
         Enabling compaction on a tiered_cloud topic should make the reconciler
