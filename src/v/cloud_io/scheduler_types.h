@@ -25,12 +25,19 @@ enum class policy_type : uint8_t {
     /// No-op admission gate; the client pool's capacity is the only
     /// constraint.
     passthrough,
+    /// Reservation-based admission policy. Each group has a
+    /// reservation lane sized to a configured target while it is
+    /// active; idle reservations are reclaimed to a common pool and
+    /// refilled into demanding groups.
+    reservation,
 };
 
 constexpr std::string_view to_string_view(policy_type t) {
     switch (t) {
     case policy_type::passthrough:
         return "passthrough";
+    case policy_type::reservation:
+        return "reservation";
     }
     std::unreachable();
 }
@@ -104,11 +111,31 @@ struct per_group {
     auto end() const noexcept { return data.end(); }
 };
 
+/// Per-group target_reserved values for the reservation policy. Built from
+/// cluster config at scheduler construction time, or directly in tests.
+/// Default-constructed is all zeros; the initializer-list constructor takes
+/// `{group_id, value}` pairs and leaves unmentioned groups at zero.
+struct reservation_policy_config {
+    per_group<uint32_t> target_reserved{};
+
+    reservation_policy_config() = default;
+    reservation_policy_config(
+      std::initializer_list<std::pair<group_id, uint32_t>> entries) {
+        for (const auto& [g, v] : entries) {
+            target_reserved[g] = v;
+        }
+    }
+};
+
 /// Runtime configuration for cloud_io::scheduler. Populated at startup
 /// from cluster config (see cloud_storage::configuration::get_config)
 /// and passed by value down to client_pool / scheduler.
 struct scheduler_config {
     policy_type policy = policy_type::passthrough;
+
+    /// Reservation policy targets. If absent, all targets are zero (no reserved
+    /// lanes, common-pool-only behavior when a reservation policy is selected).
+    std::optional<reservation_policy_config> reservation;
 };
 
 } // namespace cloud_io

@@ -48,6 +48,8 @@ scheduler::make_policy(size_t capacity, scheduler_config cfg) {
     switch (cfg.policy) {
     case policy_type::passthrough:
         return std::make_unique<passthrough>(capacity);
+    case policy_type::reservation:
+        throw std::runtime_error("reservation_policy: not implemented");
     }
     std::unreachable();
 }

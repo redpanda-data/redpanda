@@ -150,6 +150,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "reservation_policy_types",
+    hdrs = [
+        "reservation_policy_types.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":scheduler_types",
+        "//src/v/base",
+        "//src/v/container:intrusive",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "provider",
     hdrs = [
         "provider.h",
