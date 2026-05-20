@@ -1,6 +1,6 @@
 module redpanda-test-utils
 
-go 1.26.2
+go 1.26.3
 
 require (
 	github.com/kr/pretty v0.3.1
