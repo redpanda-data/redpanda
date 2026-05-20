@@ -479,6 +479,10 @@ public:
 
     void update_heartbeat_status(vnode, bool);
 
+    /// Zero `heartbeats_failed` for followers matching `node_id`. Called
+    /// after `ensure_disconnect` replaces the cached transport.
+    void reset_heartbeat_failures(model::node_id);
+
     bool should_reconnect_follower(const follower_index_metadata&);
 
     std::vector<follower_metrics> get_follower_metrics() const;
