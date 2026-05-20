@@ -129,52 +129,39 @@ node_health_report_serde::node_health_report_serde(const node_health_report& hr)
   : node_health_report_serde(
       hr.id,
       hr.local_state,
-      {std::from_range, hr.topics | std::views::transform([](const auto& kv) {
-                            return std::make_pair(
-                              kv.first, copy_to_vector(kv.second));
-                        })},
+      {std::from_range,
+       hr.topics | std::views::transform([](const auto& kv) -> topic_status {
+           return {kv.first, copy_to_vector(kv.second)};
+       })},
       hr.drain_status,
       hr.node_liveness_report) {}
 
 partition_statuses_map_t
 copy_partition_statuses(const partition_statuses_map_t& ps) {
-    partition_statuses_map_t ret;
-    ret.reserve(ps.size());
-    for (const auto& [p_id, status] : ps) {
-        ret.emplace(p_id, status);
-    }
-    return ret;
+    return ss::chunked_hash_map_from_range(ps);
 }
 
 partition_statuses_t copy_to_vector(const partition_statuses_map_t& ps) {
-    partition_statuses_t vec;
-    vec.reserve(ps.size());
-    std::ranges::copy(ps | std::views::values, std::back_inserter(vec));
-    return vec;
+    return {std::from_range, ps | std::views::values};
 }
 partition_statuses_t move_to_vector(partition_statuses_map_t&& ps) {
-    partition_statuses_t vec;
-    vec.reserve(ps.size());
-    std::ranges::move(ps | std::views::values, std::back_inserter(vec));
-    return vec;
+    return {
+      std::from_range, std::ranges::as_rvalue_view(ps) | std::views::values};
 }
 partition_statuses_map_t move_to_map(partition_statuses_t&& ps_vec) {
-    partition_statuses_map_t ret;
-    ret.reserve(ps_vec.size());
-    for (auto& status : ps_vec) {
-        ret.emplace(status.id, std::move(status));
-    }
-    return ret;
+    return ss::chunked_hash_map_from_range(
+      std::move(ps_vec) | std::views::transform([](partition_status& ps) {
+          return std::make_pair(ps.id, std::move(ps));
+      }));
 }
 
 partition_statuses_map_t copy_to_map(const partition_statuses_t& ps_vec) {
-    partition_statuses_map_t ret;
-    ret.reserve(ps_vec.size());
-    for (const auto& status : ps_vec) {
-        ret.emplace(status.id, status);
-    }
-    return ret;
+    return ss::chunked_hash_map_from_range(
+      ps_vec | std::views::transform([](const partition_status& ps) {
+          return std::make_pair(ps.id, ps);
+      }));
 }
+
 fmt::iterator node_health_report_serde::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
