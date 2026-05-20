@@ -82,9 +82,7 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
              return _partition.raft()->get_under_replicated().value_or(0);
          },
          sm::description("Number of under replicated replicas"),
-         labels)},
-      {},
-      {sm::shard_label});
+         labels)});
 
     _metrics.add_group(
       cluster_metrics_name,
