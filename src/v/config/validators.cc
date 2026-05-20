@@ -323,10 +323,12 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
               ? config.iceberg_rest_catalog_aws_credentials_source().value()
               : config.cloud_storage_credentials_source();
 
-        // When using aws_instance_metadata, AWS credentials are not required
+        // When using aws_instance_metadata or sts, AWS credentials are not
+        // required
         if (
           effective_creds_source
-          == model::cloud_credentials_source::aws_instance_metadata) {
+            == model::cloud_credentials_source::aws_instance_metadata
+          || effective_creds_source == model::cloud_credentials_source::sts) {
             // We still require the region of the Glue endpoint.
             auto effective_region
               = config.iceberg_rest_catalog_aws_region().has_value()
@@ -335,7 +337,7 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
             if (!effective_region.has_value()) {
                 return fmt::format(
                   "Must set AWS region when using SigV4 authentication with "
-                  "aws_instance_metadata credentials source.");
+                  "aws_instance_metadata or sts credentials source.");
             }
         } else {
             auto effective_access_key
