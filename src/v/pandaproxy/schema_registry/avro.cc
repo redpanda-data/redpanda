@@ -322,6 +322,95 @@ void unqualify_type_reference(json::Value& val, sanitize_context& ctx) {
     }
 }
 
+bool try_collapse_primitive_object(json::Value& v, sanitize_context& ctx) {
+    if (!v.IsObject()) {
+        return false;
+    }
+    auto o = v.GetObject();
+    if (o.MemberCount() != 1) {
+        return false;
+    }
+    auto it = o.FindMember("type");
+    if (it == o.MemberEnd() || !it->value.IsString()) {
+        return false;
+    }
+    std::string_view type{it->value.GetString(), it->value.GetStringLength()};
+    if (!string_switch<bool>(type)
+           .match("null", true)
+           .match("boolean", true)
+           .match("int", true)
+           .match("long", true)
+           .match("float", true)
+           .match("double", true)
+           .match("bytes", true)
+           .match("string", true)
+           .default_match(false)) {
+        return false;
+    }
+
+    // SetString frees v's storage (which backs `type`); copy first.
+    ss::sstring type_name{type};
+    v.SetString(type_name.data(), type_name.length(), ctx.alloc);
+    return true;
+}
+
+// Walk only Avro schema-bearing positions, leaving arbitrary custom metadata
+// untouched even when it happens to look like a schema object.
+void collapse_primitive_schema_objects(json::Value& v, sanitize_context& ctx) {
+    if (v.IsArray()) {
+        for (auto& e : v.GetArray()) {
+            collapse_primitive_schema_objects(e, ctx);
+        }
+        return;
+    }
+    if (!v.IsObject()) {
+        return;
+    }
+    auto o = v.GetObject();
+    if (try_collapse_primitive_object(v, ctx)) {
+        return;
+    }
+
+    auto type_it = o.FindMember("type");
+    if (type_it == o.MemberEnd()) {
+        return;
+    }
+    auto& type_v = type_it->value;
+    if (type_v.IsObject() || type_v.IsArray()) {
+        collapse_primitive_schema_objects(type_v, ctx);
+        return;
+    }
+    if (!type_v.IsString()) {
+        return;
+    }
+
+    std::string_view type_sv{type_v.GetString(), type_v.GetStringLength()};
+    if (type_sv == "record") {
+        auto fields_it = o.FindMember("fields");
+        if (fields_it == o.MemberEnd() || !fields_it->value.IsArray()) {
+            return;
+        }
+        for (auto& f : fields_it->value.GetArray()) {
+            if (!f.IsObject()) {
+                continue;
+            }
+            auto field_o = f.GetObject();
+            auto field_type_it = field_o.FindMember("type");
+            if (field_type_it != field_o.MemberEnd()) {
+                collapse_primitive_schema_objects(field_type_it->value, ctx);
+            }
+        }
+    } else if (type_sv == "array") {
+        if (auto it = o.FindMember("items"); it != o.MemberEnd()) {
+            collapse_primitive_schema_objects(it->value, ctx);
+        }
+    } else if (type_sv == "map") {
+        if (auto it = o.FindMember("values"); it != o.MemberEnd()) {
+            collapse_primitive_schema_objects(it->value, ctx);
+        }
+    }
+}
+
 result<void>
 sanitize_union_symbol_name(json::Value& name, sanitize_context& ctx) {
     // A name should have the leading dot stripped iff it's the only one
@@ -763,6 +852,7 @@ sanitize_avro_schema_definition(schema_definition def) {
             res.assume_error().message(),
             p.read_string(p.bytes_left()))};
     }
+    collapse_primitive_schema_objects(doc, ctx);
 
     json::chunked_buffer buf;
     json::Writer<json::chunked_buffer> w{buf};
