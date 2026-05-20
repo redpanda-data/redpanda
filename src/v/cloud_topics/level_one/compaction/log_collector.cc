@@ -58,9 +58,14 @@ ss::future<> partition_leader_log_collector::start_collecting_logs() {
 
 ss::future<> partition_leader_log_collector::stop_collecting_logs() {
     auto close_fut = _gate.close();
-    _topic_table->local().unregister_ntp_delta_notification(_ntp_notify_handle);
-    _leaders->local().unregister_leadership_change_notification(
-      _leader_notify_handle);
+    if (_topic_table->local_is_initialized()) {
+        _topic_table->local().unregister_ntp_delta_notification(
+          _ntp_notify_handle);
+    }
+    if (_leaders->local_is_initialized()) {
+        _leaders->local().unregister_leadership_change_notification(
+          _leader_notify_handle);
+    }
     co_await std::move(close_fut);
     co_return;
 }
