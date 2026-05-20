@@ -287,12 +287,11 @@ std::optional<node_health_report_ptr> health_monitor_backend::build_node_report(
     node_health_report ret{
       it->second->id,
       it->second->local_state,
-      {},
+      filter_topic_status(it->second->topics, f.ntp_filters),
       it->second->drain_status,
       it->second->node_liveness_report};
     ret.local_state.logical_version
       = features::feature_table::get_latest_logical_version();
-    ret.topics = filter_topic_status(it->second->topics, f.ntp_filters);
 
     return ss::make_foreign(
       ss::make_lw_shared<const node_health_report>(std::move(ret)));

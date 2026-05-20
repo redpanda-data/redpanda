@@ -267,6 +267,13 @@ struct node_health_report {
       std::optional<cluster::drain_status>,
       struct node_liveness_report);
 
+    node_health_report(
+      model::node_id,
+      node::local_state,
+      topics_t,
+      std::optional<cluster::drain_status>,
+      struct node_liveness_report);
+
     node_health_report copy() const;
 
     fmt::iterator format_to(fmt::iterator it) const;

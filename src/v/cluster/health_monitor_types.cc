@@ -14,6 +14,7 @@
 #include "cluster/drain_status.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
+#include "container/chunked_hash_map.h"
 #include "features/feature_table.h"
 #include "model/adl_serde.h"
 #include "model/metadata.h"
@@ -81,28 +82,43 @@ bool operator==(const node_liveness_report& a, const node_liveness_report& b) {
 node_health_report::node_health_report(
   model::node_id id,
   node::local_state local_state,
-  chunked_vector<topic_status> topics_vec,
+  topics_t topics,
   std::optional<cluster::drain_status> drain_status,
   struct node_liveness_report node_liveness_report)
   : id(id)
   , local_state(std::move(local_state))
+  , topics(std::move(topics))
   , drain_status(drain_status)
-  , node_liveness_report(std::move(node_liveness_report)) {
-    topics.reserve(topics_vec.size());
-    for (auto& topic : topics_vec) {
-        topics.emplace(
-          std::move(topic.tp_ns), move_to_map(std::move(topic.partitions)));
-    }
-}
+  , node_liveness_report(std::move(node_liveness_report)) {}
+
+node_health_report::node_health_report(
+  model::node_id id,
+  node::local_state local_state,
+  chunked_vector<topic_status> topics_vec,
+  std::optional<cluster::drain_status> drain_status,
+  struct node_liveness_report node_liveness_report)
+  : node_health_report(
+      id,
+      std::move(local_state),
+      ss::chunked_table_from_range<node_health_report::topics_t>(
+        std::move(topics_vec) | std::views::transform([](topic_status& ts) {
+            return std::make_pair(
+              std::move(ts.tp_ns), move_to_map(std::move(ts.partitions)));
+        })),
+      drain_status,
+      std::move(node_liveness_report)) {}
 
 node_health_report node_health_report::copy() const {
-    node_health_report ret{
-      id, local_state, {}, drain_status, node_liveness_report};
-    ret.topics.reserve(topics.bucket_count());
-    for (const auto& [tp_ns, partitions] : topics) {
-        ret.topics.emplace(tp_ns, copy_partition_statuses(partitions));
-    }
-    return ret;
+    return {
+      id,
+      local_state,
+      ss::chunked_table_from_range<topics_t>(
+        topics | std::views::transform([](const auto& kv) {
+            return std::make_pair(
+              kv.first, ss::chunked_hash_map_from_range(kv.second));
+        })),
+      drain_status,
+      node_liveness_report};
 }
 
 fmt::iterator node_health_report::format_to(fmt::iterator it) const {
@@ -113,14 +129,12 @@ node_health_report_serde::node_health_report_serde(const node_health_report& hr)
   : node_health_report_serde(
       hr.id,
       hr.local_state,
-      /* topics */ {},
+      {std::from_range, hr.topics | std::views::transform([](const auto& kv) {
+                            return std::make_pair(
+                              kv.first, copy_to_vector(kv.second));
+                        })},
       hr.drain_status,
-      hr.node_liveness_report) {
-    topics.reserve(hr.topics.size());
-    for (const auto& [tp_ns, partitions] : hr.topics) {
-        topics.emplace_back(tp_ns, copy_to_vector(partitions));
-    }
-}
+      hr.node_liveness_report) {}
 
 partition_statuses_map_t
 copy_partition_statuses(const partition_statuses_map_t& ps) {
