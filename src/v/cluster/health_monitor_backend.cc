@@ -222,6 +222,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
                                       : filter.nodes;
     reports.reserve(nodes.size());
     statuses.reserve(nodes.size());
+    const auto liveness_cutoff = alive_cutoff();
     for (const auto& node_id : nodes) {
         auto node_metadata = _members.local().get_node_metadata_ref(node_id);
         if (!node_metadata) {
@@ -233,13 +234,12 @@ cluster_health_report health_monitor_backend::build_cluster_report(
             reports.push_back(std::move(r.value()));
         }
 
-        auto it = _status.find(node_id);
-        if (it != _status.end()) {
-            statuses.emplace_back(
-              node_id,
-              node_metadata->get().state.get_membership_state(),
-              it->second.is_alive);
-        }
+        // Liveness derived from node_status_backend heartbeats, not from
+        // our own health-pull history
+        statuses.emplace_back(
+          node_id,
+          node_metadata->get().state.get_membership_state(),
+          peer_liveness_state(node_id, liveness_cutoff).value_or(alive::no));
     }
 
     return cluster_health_report{
@@ -847,45 +847,42 @@ result<node_health_report> map_reply_result(
     return {std::move(*reply.value().report).to_in_memory()};
 }
 
+rpc::clock_type::time_point health_monitor_backend::alive_cutoff() const {
+    return rpc::clock_type::now()
+           - config::shard_local_cfg().alive_timeout_ms();
+}
+
+std::optional<alive> health_monitor_backend::peer_liveness_state(
+  model::node_id id, rpc::clock_type::time_point cutoff) const {
+    return _node_status_table.local().get_node_status(id).transform(
+      [cutoff](const node_status& ns) {
+          return alive(ns.last_seen >= cutoff);
+      });
+}
+
+void health_monitor_backend::log_failed_rpc(
+  model::node_id id, std::error_code err) const {
+    const auto peer_alive
+      = peer_liveness_state(id, alive_cutoff()).value_or(alive::no);
+    vlogl(
+      clusterlog,
+      peer_alive ? ss::log_level::warn : ss::log_level::trace,
+      "health RPC to node {} failed: {}",
+      id,
+      err.message());
+}
+
 result<node_health_report> health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
     auto res = map_reply_result(id, std::move(reply));
-    auto [status_it, _] = _status.try_emplace(id);
     if (!res) {
-        vlog(
-          clusterlog.trace,
-          "unable to get node health report from {} - {}",
-          id,
-          res.error().message());
-        /**
-         * log only once node state transition from alive to down
-         */
-        if (status_it->second.is_alive) {
-            vlog(
-              clusterlog.warn,
-              "unable to get node health report from {} - {}, marking node as "
-              "down",
-              id,
-              res.error().message());
-            status_it->second.is_alive = alive::no;
-        }
+        log_failed_rpc(id, res.error());
         return res.error();
     }
 
     // TODO serialize storage_space_alert, instead of recomputing here.
     auto& s = res.value().local_state;
     node::local_monitor::update_alert(s.data_disk);
-    if (
-      !status_it->second.is_alive
-      && clusterlog.is_enabled(ss::log_level::info)) {
-        vlog(
-          clusterlog.info,
-          "received node {} health report, marking node as up",
-          id);
-    }
-    status_it->second.last_reply_timestamp = ss::lowres_clock::now();
-    status_it->second.is_alive = alive::yes;
-
     return res;
 }
 
@@ -949,6 +946,8 @@ health_monitor_backend::report_puller::report_puller(
   : _backend(backend)
   , _min_ts(min_ts)
   , _nodes_to_reach([&] {
+      const auto now = ss::lowres_clock::now();
+      const auto liveness_cutoff = backend.alive_cutoff();
       struct stale_node {
           model::node_id id;
           health::approx_timestamp existing_report_ts;
@@ -962,7 +961,16 @@ health_monitor_backend::report_puller::report_puller(
           if (existing_report_ts >= min_ts) {
               continue;
           }
-          stale_nodes.emplace_back(id, existing_report_ts);
+          if (backend.peer_liveness_state(id, liveness_cutoff) != alive::no) {
+              stale_nodes.emplace_back(id, existing_report_ts);
+          } else {
+              // don't even try to pull from dead nodes
+              vlog(
+                clusterlog.debug,
+                "node {} has no recent heartbeats, skipping health pull",
+                id);
+              backend._health_stores[id].mark_failed(now);
+          }
       }
       std::ranges::sort(
         stale_nodes, std::greater{}, &stale_node::existing_report_ts);
@@ -1026,11 +1034,7 @@ health_monitor_backend::report_puller::pull_one() {
                          ? make_error_code(reply_result.value().error)
                          : reply_result.error();
     if (reply_error) {
-        vlog(
-          clusterlog.warn,
-          "health pull from {} failed: {}",
-          target_id,
-          reply_error.message());
+        _backend.log_failed_rpc(target_id, reply_error);
         auto& store = _backend._health_stores[target_id];
         if (store.current() && store.freshness() >= _min_ts) {
             vlog(
@@ -1216,11 +1220,6 @@ health_monitor_backend::collect_cluster_health_disseminate(
         }
     }
 
-    // Remove entries for nodes no longer in the members table.
-    auto not_in_members = [this](const auto& kv) {
-        return !_members.local().contains(kv.first);
-    };
-    absl::erase_if(_status, not_in_members);
     _reports = std::move(new_reports);
     _restart_risks_collected = _feature_table.local().is_active(
       features::feature::node_restart_risk_assessment);
@@ -1381,7 +1380,6 @@ health_monitor_backend::collect_cluster_health_legacy() {
      * Remove reports from nodes that were removed
      */
     absl::erase_if(*new_reports, not_in_members_table);
-    absl::erase_if(_status, not_in_members_table);
 
     _reports = std::move(new_reports);
     _restart_risks_collected = node_restart_risks_available;
@@ -1403,10 +1401,6 @@ health_monitor_backend::collect_current_node_health_legacy() {
     auto topics = co_await collect_topic_status();
     auto node_liveness_report = collect_node_liveness_report();
 
-    auto [it, _] = _status.try_emplace(id);
-    it->second.is_alive = alive::yes;
-    it->second.last_reply_timestamp = ss::lowres_clock::now();
-
     co_return node_health_report{
       id,
       std::move(local_state),
@@ -1426,10 +1420,6 @@ health_monitor_backend::collect_current_node_health() {
     auto drain_status = co_await _drain_manager.local().status();
     auto topics = co_await collect_topic_status();
     auto liveness = collect_node_liveness_report();
-
-    auto [it, _] = _status.try_emplace(_self);
-    it->second.is_alive = alive::yes;
-    it->second.last_reply_timestamp = ss::lowres_clock::now();
 
     // Split partition_status into two tiers: metadata + data.
     auto snapshot = ss::make_lw_shared<health::health_snapshot>();
@@ -2011,11 +2001,11 @@ health_monitor_backend::get_cluster_health_overview(
     const auto& brokers = _members.local().nodes();
     ret.all_nodes.reserve(brokers.size());
 
+    const auto liveness_cutoff = alive_cutoff();
     for (auto& [id, _] : brokers) {
         ret.all_nodes.push_back(id);
         if (id != _self) {
-            auto it = _status.find(id);
-            if (it == _status.end() || !it->second.is_alive) {
+            if (peer_liveness_state(id, liveness_cutoff) != alive::yes) {
                 ret.nodes_down.push_back(id);
             }
         }

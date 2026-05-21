@@ -154,13 +154,6 @@ private:
         ss::promise<std::error_code> done;
     };
 
-    struct reply_status {
-        ss::lowres_clock::time_point last_reply_timestamp
-          = ss::lowres_clock::time_point::min();
-        alive is_alive = alive::no;
-    };
-
-    using status_cache_t = absl::node_hash_map<model::node_id, reply_status>;
     using nhr_ptr = ss::lw_shared_ptr<const node_health_report>;
     using report_cache_t = absl::node_hash_map<model::node_id, nhr_ptr>;
 
@@ -194,6 +187,21 @@ private:
 
     result<node_health_report>
       process_node_reply(model::node_id, result<get_node_health_reply>);
+
+    /// Cutoff time for peer liveness: a peer's last heartbeat must be at or
+    /// after this point for the peer to be considered alive. Compute once
+    /// per batch of checks to keep them internally consistent.
+    rpc::clock_type::time_point alive_cutoff() const;
+
+    /// nullopt if we have never heard from \p id (no heartbeat recorded).
+    /// Otherwise alive::yes iff the last heartbeat is at or after \p cutoff.
+    std::optional<alive> peer_liveness_state(
+      model::node_id id, rpc::clock_type::time_point cutoff) const;
+
+    /// Log a failed health RPC to peer \p id. Warn if the node is believed
+    /// alive (per node_status_backend heartbeats), trace otherwise — avoids
+    /// spamming warnings about peers that are already known to be down.
+    void log_failed_rpc(model::node_id id, std::error_code err) const;
 
     std::chrono::milliseconds max_metadata_age();
     void abort_current_refresh();
@@ -269,7 +277,6 @@ private:
     uint64_t _refresh_count{0};
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
 
-    status_cache_t _status;
     // individual reports get inserted but never get replaced or removed,
     // collection can also be replaced as a whole
     ss::lw_shared_ptr<report_cache_t> _reports;
