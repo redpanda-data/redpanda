@@ -4,6 +4,7 @@ Prefer using the methods in this module (e.g. redpanda_cc_library) over native
 Bazel functions (e.g. cc_library) because it provides a centralized place for
 making behavior changes across the entire build.
 """
+# no-op edit for CI trigger
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
