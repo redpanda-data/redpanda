@@ -183,13 +183,23 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
 
         chunked_hash_map<int32_t, proto::pandaproxy::partition_state>
           pb_partitions;
-        for (const auto& [pid, pstate] : state.pid_to_pending_files) {
-            proto::pandaproxy::partition_state pb_pstate;
-            if (pstate.last_committed.has_value()) {
-                pb_pstate.set_last_catalog_committed_offset(
-                  pstate.last_committed.value()());
+        auto p_ids = state.pid_to_pending_files | std::views::keys;
+        auto max_it = std::ranges::max_element(p_ids);
+        int32_t max_partition_id = max_it == std::ranges::end(p_ids)
+                                     ? -1
+                                     : (*max_it)();
+        auto partition_count = std::max<int32_t>(
+          tp_md->get().get_configuration().partition_count,
+          max_partition_id + 1);
+        for (int32_t pid = 0; pid < partition_count; ++pid) {
+            auto it = state.pid_to_pending_files.find(model::partition_id{pid});
+            auto& partition_state = pb_partitions[pid];
+            if (
+              it != state.pid_to_pending_files.end()
+              && it->second.last_committed.has_value()) {
+                partition_state.set_last_catalog_committed_offset(
+                  it->second.last_committed.value()());
             }
-            pb_partitions.emplace(pid(), std::move(pb_pstate));
         }
         pb_state.set_partition_states(std::move(pb_partitions));
         pb_topic_states.emplace(topic(), std::move(pb_state));
