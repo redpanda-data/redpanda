@@ -668,11 +668,13 @@ ss::future<> build_compaction_index(
   compaction::compaction_config cfg,
   storage_resources& resources,
   bool tx_batch_compaction_enabled) {
+    auto transactional_stm_type = stm_hookset->transactional_stm_type();
     auto w = storage::make_file_backed_compacted_index(
       p, false, resources, cfg.sanitizer_config);
     auto reducer = tx_reducer(
       p.get_ntp(),
       stm_hookset,
+      transactional_stm_type,
       std::move(aborted_txs),
       w.get(),
       tx_batch_compaction_enabled);

@@ -254,6 +254,7 @@ public:
     explicit tx_reducer(
       model::ntp ntp,
       ss::lw_shared_ptr<storage::stm_hookset> stm_mgr,
+      std::optional<storage::stm_type> transactional_stm_type,
       chunked_vector<model::tx_range>&& txs,
       compacted_index_writer* w,
       bool tx_batch_compaction_enabled) noexcept
@@ -261,7 +262,7 @@ public:
       , _delegate(index_rebuilder_reducer(w))
       , _aborted_txs(model::tx_range_cmp(), std::move(txs))
       , _stm_mgr(stm_mgr)
-      , _transactional_stm_type(stm_mgr->transactional_stm_type())
+      , _transactional_stm_type(transactional_stm_type)
       , _tx_batch_compaction_enabled(tx_batch_compaction_enabled) {
         _stats.num_aborted_txes = _aborted_txs.size();
     }
