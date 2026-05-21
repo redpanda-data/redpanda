@@ -30,6 +30,7 @@ redpanda_cc_library(
         "//src/v/serde:optional",
         "//src/v/serde:variant",
         "//src/v/serde:vector",
+        "//src/v/ssx:async_algorithm",
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:named_type",
         "//src/v/utils:unresolved_address",

@@ -784,6 +784,9 @@ struct configuration final : public config_store {
     bounded_property<uint32_t> shadow_link_failover_batch_size;
     property<std::chrono::milliseconds> internal_rpc_request_timeout_ms;
 
+    bounded_property<std::chrono::milliseconds>
+      shadow_link_report_caching_ttl_ms;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

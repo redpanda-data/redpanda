@@ -25,6 +25,8 @@ public:
     shadow_link_service_impl(
       admin::proxy::client proxy_client,
       ss::sharded<cluster_link::service>* service,
+      ss::sharded<cluster_link::shadow_link_report_cache>*
+        shadow_link_report_cache,
       ss::sharded<cluster::metadata_cache>* md_cache);
 
     ss::future<proto::admin::create_shadow_link_response> create_shadow_link(
@@ -76,6 +78,8 @@ private:
     admin::proxy::client _proxy_client;
 
     ss::sharded<cluster_link::service>* _service;
+    ss::sharded<cluster_link::shadow_link_report_cache>*
+      _shadow_link_report_cache;
     ss::sharded<cluster::metadata_cache>* _md_cache;
 };
 } // namespace admin

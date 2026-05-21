@@ -12,6 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/utils/partition_change_notifier_impl.h"
 #include "cluster_link/service.h"
+#include "cluster_link/shadow_link_report_cache.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "datalake/coordinator/catalog_factory.h"
@@ -292,6 +293,23 @@ void application::wire_up_runtime_services(
       &id_allocator_frontend,
       smp_service_groups.cluster_link_smp_sg(),
       scheduling_groups::instance().cluster_linking_sg())
+      .get();
+
+    construct_service(
+      _shadow_link_report_cache,
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .shadow_link_report_caching_ttl_ms.bind();
+      }),
+      ss::sharded_parameter(
+        [this] -> std::unique_ptr<cluster_link::shadow_link_report_fetcher> {
+            if (ss::this_shard_id() == 0) {
+                return std::make_unique<
+                  cluster_link::default_shadow_link_report_fetcher>(
+                  &_cluster_link_service);
+            }
+            return std::unique_ptr<cluster_link::shadow_link_report_fetcher>{};
+        }))
       .get();
 
     syschecks::systemd_message("Creating kafka usage manager frontend").get();

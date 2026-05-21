@@ -1227,6 +1227,8 @@ struct shadow_link_status_topic_response
 
     fmt::iterator format_to(fmt::iterator) const;
 
+    ss::future<shadow_link_status_topic_response> copy() const;
+
     auto serde_fields() { return std::tie(status, partition_reports); }
 };
 
@@ -1266,6 +1268,8 @@ struct shadow_link_status_report {
       topic_responses;
     chunked_hash_map<ss::sstring, chunked_vector<model::task_status_report>>
       task_status_reports;
+
+    ss::future<shadow_link_status_report> copy() const;
 
     fmt::iterator format_to(fmt::iterator) const;
 };

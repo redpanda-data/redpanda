@@ -201,6 +201,8 @@ public:
     std::unique_ptr<cloud_topics::app> cloud_topics_app;
 
     ss::sharded<cluster_link::service> _cluster_link_service;
+    ss::sharded<cluster_link::shadow_link_report_cache>
+      _shadow_link_report_cache;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;

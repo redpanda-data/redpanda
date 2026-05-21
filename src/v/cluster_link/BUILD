@@ -202,6 +202,30 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "shadow_link_report_cache",
+    srcs = [
+        "shadow_link_report_cache.cc",
+    ],
+    hdrs = [
+        "shadow_link_report_cache.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/ssx:future_util",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cluster_link",
+        "//src/v/cluster_link/model",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/ssx:semaphore",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster_link",
     srcs = [
         "service.cc",

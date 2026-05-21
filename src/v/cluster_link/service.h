@@ -172,6 +172,8 @@ public:
     ss::future<model::status_report_ret_t>
     shadow_link_report(model::name_t name);
 
+    const manager& get_manager() const { return *_manager; }
+
 private:
     void register_notifications();
     void unregister_notifications();
