@@ -10,8 +10,9 @@
 
 #include "iceberg/unicode.h"
 
+#include "utf8proc.h"
+
 #include <cstdlib>
-#include <utf8proc.h>
 
 namespace iceberg {
 
