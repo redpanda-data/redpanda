@@ -14,6 +14,7 @@
 #include "config/types.h"
 #include "datalake/credential_manager.h"
 #include "datalake/logger.h"
+#include "datalake/validators.h"
 #include "iceberg/catalog.h"
 #include "iceberg/filesystem_catalog.h"
 #include "iceberg/rest_catalog.h"
@@ -78,38 +79,28 @@ struct endpoint_information {
 };
 
 endpoint_information endpoint_to_address(const ss::sstring& url_str) {
-    auto url = ada::parse(url_str);
-    if (!url) {
-        throw std::invalid_argument(
-          fmt::format(
-            "Malformed Iceberg REST catalog endpoint url: {}", url_str));
+    auto parsed = datalake::parse_iceberg_rest_catalog_endpoint(url_str);
+    if (!parsed.has_value()) {
+        throw std::invalid_argument(std::string(parsed.error()));
     }
+    const auto& url = parsed.value();
     // Default port as used by the Iceberg catalogs
-    uint16_t port = url->type == ada::scheme::HTTPS ? 443 : 8181;
-    if (url->has_port()) {
+    uint16_t port = url.type == ada::scheme::HTTPS ? 443 : 8181;
+    if (url.has_port()) {
         int32_t port_from_uri{0};
-        auto parsed = absl::SimpleAtoi(url->get_port(), &port_from_uri);
-        if (
-          !parsed || port_from_uri < 0
-          || port_from_uri > std::numeric_limits<uint16_t>::max()) {
-            throw std::invalid_argument(
-              fmt::format(
-                "Malformed Iceberg REST catalog endpoint url: {}, unable to "
-                "parse port",
-                url_str));
-        }
+        // Already validated above; parse cannot fail.
+        std::ignore = absl::SimpleAtoi(url.get_port(), &port_from_uri);
         port = static_cast<uint16_t>(port_from_uri);
     }
     std::optional<iceberg::rest_client::base_path> path
-      = url->get_pathname() != ""
+      = url.get_pathname() != ""
           ? std::make_optional<iceberg::rest_client::base_path>(
-              url->get_pathname())
+              url.get_pathname())
           : std::nullopt;
 
     return {
-      .address
-      = net::unresolved_address{ss::sstring(url->get_hostname()), port},
-      .needs_tls = url->type == ada::scheme::HTTPS,
+      .address = net::unresolved_address{ss::sstring(url.get_hostname()), port},
+      .needs_tls = url.type == ada::scheme::HTTPS,
       .base_path = std::move(path)};
 }
 
