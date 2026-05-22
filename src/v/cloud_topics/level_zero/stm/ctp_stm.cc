@@ -537,9 +537,19 @@ model::offset ctp_stm::prefix_truncate_target() {
         // may return a sentinel for offsets outside the translator's known
         // range (e.g. a stale hint from a previous epoch); fall back to the
         // cap in that case rather than feeding garbage into std::min.
-        auto hint_log = _raft->log()->to_log_offset(kafka::offset_cast(*hint));
-        if (hint_log != model::offset{} && hint_log != model::offset::min()) {
-            target = std::min(cap, hint_log);
+        try {
+            auto hint_log = _raft->log()->to_log_offset(
+              kafka::offset_cast(*hint));
+            if (
+              hint_log != model::offset{} && hint_log != model::offset::min()) {
+                target = std::min(cap, hint_log);
+            }
+        } catch (...) {
+            vlog(
+              _log.warn,
+              "offset translation error for {}, {}",
+              *hint,
+              std::current_exception());
         }
     }
     return target;
