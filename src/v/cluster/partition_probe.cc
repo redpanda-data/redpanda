@@ -252,8 +252,7 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
           },
           sm::description(
             "Latest readable offset of the partition (i.e. high watermark)"),
-          labels)
-          .aggregate({sm::shard_label}),
+          labels),
         sm::make_gauge(
           "under_replicated_replicas",
           [this] {
@@ -268,8 +267,7 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
           sm::description(
             "Number of under replicated replicas (i.e. replicas "
             "that are live, but not at the latest offest)"),
-          labels)
-          .aggregate({sm::shard_label}),
+          labels),
         // Topic Level Metrics
         sm::make_total_bytes(
           "request_bytes_total",
