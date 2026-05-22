@@ -224,6 +224,7 @@ redpanda_cc_library(
         ":reservation_policy_types",
         ":scheduler_policy",
         ":scheduler_types",
+        "//src/v/metrics",
         "//src/v/ssx:semaphore",
         "@seastar",
     ],

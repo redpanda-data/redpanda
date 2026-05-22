@@ -13,6 +13,7 @@
 #include "cloud_io/reservation_policy_types.h"
 #include "cloud_io/scheduler_policy.h"
 #include "cloud_io/scheduler_types.h"
+#include "metrics/metrics.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>
@@ -21,7 +22,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <optional>
 
 namespace cloud_io {
@@ -101,6 +101,8 @@ public:
     void set_now_fn_for_test(now_fn_t);
 
 private:
+    void setup_metrics();
+
     /// Dispatch the next queued waiter. Two-tier choice:
     ///   1. Under-target preference: among groups with in_flight <
     ///      target_reserved AND queued waiters, the oldest seq wins.
@@ -143,6 +145,9 @@ private:
     /// Monotonically increments on every dispatch; modulo-throttles
     /// the periodic diagnostic log.
     uint64_t _dispatch_counter = 0;
+
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace cloud_io

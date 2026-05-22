@@ -12,17 +12,30 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "cloud_io/logger.h"
+#include "config/configuration.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/metrics.hh>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <utility>
+#include <vector>
 
 namespace cloud_io {
 
 namespace {
+
+constexpr std::array<group_id, num_group_ids> all_groups{
+  group_id::producer_upload,
+  group_id::consumer_fetch,
+  group_id::default_group,
+};
 
 /// Build the per-group state. Each group's reservation lane gets a
 /// semaphore named after its group_id.
@@ -37,6 +50,119 @@ make_group_states(std::index_sequence<Is...>) {
 }
 
 } // namespace
+
+void reservation_policy::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+    const auto group_name = prometheus_sanitize::metrics_name(
+      "cloud_io_scheduler");
+
+    _metrics.add_group(
+      group_name,
+      {
+        sm::make_gauge(
+          "available_slots",
+          [this] { return available_slots(); },
+          sm::description(
+            "Total slots currently available (shared + all reserved).")),
+        sm::make_gauge(
+          "total_capacity",
+          [this] { return total_capacity(); },
+          sm::description("Configured total slot capacity.")),
+        sm::make_gauge(
+          "total_waiters",
+          [this] { return total_waiters(); },
+          sm::description("Total fibers queued across all groups.")),
+      });
+
+    constexpr auto group_label_key = "group_id";
+
+    for (auto g : all_groups) {
+        const std::vector<sm::label_instance> labels{
+          sm::label(group_label_key)(ssx::sformat("{}", g))};
+
+        _metrics.add_group(
+          group_name,
+          {
+            sm::make_gauge(
+              "in_flight",
+              [this, g] { return in_flight(g); },
+              sm::description("Concurrent ops currently holding a slot."),
+              labels),
+            sm::make_gauge(
+              "waiters",
+              [this, g] { return waiters(g); },
+              sm::description("Fibers queued on this group."),
+              labels),
+            sm::make_counter(
+              "admit_total",
+              [this, g] { return admit_total(g); },
+              sm::description("Total admit() calls completed for this group."),
+              labels),
+            sm::make_counter(
+              "admit_immediate_total",
+              [this, g] { return admit_immediate_total(g); },
+              sm::description(
+                "admit() calls that took the fast path (no queue)."),
+              labels),
+            sm::make_gauge(
+              "current_reserved",
+              [this, g] { return current_reserved(g); },
+              sm::description(
+                "Runtime reservation size. Starts at target_reserved; "
+                "reclaimed by the policy when idle past dwell; rebuilt "
+                "via refill."),
+              labels),
+          });
+    }
+
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+
+    const auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
+
+    _public_metrics.add_group(
+      group_name,
+      {
+        sm::make_gauge(
+          "available_slots",
+          [this] { return available_slots(); },
+          sm::description(
+            "Total slots currently available (shared + all reserved)."))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "total_capacity",
+          [this] { return total_capacity(); },
+          sm::description("Configured total slot capacity."))
+          .aggregate(aggregate_labels),
+      });
+
+    for (auto g : all_groups) {
+        const std::vector<sm::label_instance> labels{
+          sm::label(group_label_key)(ssx::sformat("{}", g))};
+
+        _public_metrics.add_group(
+          group_name,
+          {
+            sm::make_gauge(
+              "in_flight",
+              [this, g] { return in_flight(g); },
+              sm::description("Concurrent ops currently holding a slot."),
+              labels)
+              .aggregate(aggregate_labels),
+            sm::make_gauge(
+              "waiters",
+              [this, g] { return waiters(g); },
+              sm::description("Fibers queued on this group."),
+              labels)
+              .aggregate(aggregate_labels),
+          });
+    }
+}
 
 fmt::iterator reservation_group_state::format_to(fmt::iterator out) const {
     return fmt::format_to(
@@ -71,6 +197,8 @@ reservation_policy::reservation_policy(
         set_target_reserved(g, cfg.target_reserved[g]);
     }
 
+    setup_metrics();
+
     vlog(
       log.info,
       "reservation_policy initialized: capacity={} dwell={}s "
@@ -89,6 +217,8 @@ reservation_policy::~reservation_policy() noexcept {
 }
 
 ss::future<> reservation_policy::stop() {
+    _metrics.clear();
+    _public_metrics.clear();
     // Synchronous: abort all queued waiters.
     for (auto& gs : _groups) {
         while (!gs.waiters.empty()) {
