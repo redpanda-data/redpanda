@@ -995,6 +995,16 @@ class SISettings:
 
         if self.cloud_storage_max_connections:
             conf["cloud_storage_max_connections"] = self.cloud_storage_max_connections
+            # The reservation policy (the default) asserts that the sum of
+            # per-group target_reserved values fits under the pool capacity.
+            # The cluster default sums to 6; shrink when the pool is sized
+            # below that.
+            if self.cloud_storage_max_connections < 6:
+                conf["cloud_io_scheduler_reservation"] = [
+                    "producer_upload:1",
+                    "consumer_fetch:1",
+                    "default_group:1",
+                ]
         if self.cloud_storage_readreplica_manifest_sync_timeout_ms:
             conf["cloud_storage_readreplica_manifest_sync_timeout_ms"] = (
                 self.cloud_storage_readreplica_manifest_sync_timeout_ms

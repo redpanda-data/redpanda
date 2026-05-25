@@ -2197,7 +2197,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::yes,
        .example = "passthrough",
        .visibility = visibility::tunable},
-      cloud_io::policy_type::passthrough,
+      cloud_io::policy_type::reservation,
       {cloud_io::policy_type::passthrough, cloud_io::policy_type::reservation})
   , cloud_io_scheduler_reservation(
       *this,

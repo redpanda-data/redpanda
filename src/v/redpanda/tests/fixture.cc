@@ -453,6 +453,16 @@ void redpanda_thread_fixture::configure(
             config.get("cloud_storage_enable_remote_write").set_value(true);
             config.get("cloud_storage_max_connections")
               .set_value(static_cast<int16_t>(cloud_cfg->connection_limit()));
+            // Test fixtures run with single-digit pool capacities and
+            // exercise housekeeping (default_group) operations
+            // concurrently. The cluster default reservation
+            // ([2,2,2] = 6) would either trip the
+            // target_reserved-sum-fits-cap assertion or starve groups
+            // without their own lane; an empty reservation keeps the
+            // policy active while routing every admit through the
+            // common pool.
+            config.get("cloud_io_scheduler_reservation")
+              .set_value(std::vector<ss::sstring>{});
         }
 
         config.get("data_transforms_enabled")
