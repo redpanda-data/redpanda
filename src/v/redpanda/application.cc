@@ -210,12 +210,6 @@ void application::shutdown() {
         });
     }
 
-    // NOTE: we must shut down the partitions first above to ensure in-flight
-    // replication is stopped, as it may cause cloud topics shutdown to hang.
-    if (cloud_topics_app) {
-        shutdown_with_watchdog(
-          cloud_topics_app, [](auto& app) { return app->stop(); });
-    }
     // Wait for all requests to finish before destructing services that may be
     // used by pending requests.
     if (_kafka_server.ref().local_is_initialized()) {
@@ -226,6 +220,16 @@ void application::shutdown() {
             return kafka_server.stop();
         });
     }
+
+    // Shutdown cloud topics _after_ partitions have been shut down to ensure
+    // in-flight replication is stopped, and _after_ the kafka server in order
+    // to ensure we don't serve any last minute requests with cloud topics
+    // machinery mid tear-down.
+    if (cloud_topics_app) {
+        shutdown_with_watchdog(
+          cloud_topics_app, [](auto& app) { return app->stop(); });
+    }
+
     if (_kafka_conn_quotas.local_is_initialized()) {
         shutdown_with_watchdog(_kafka_conn_quotas, [](auto& conn_quotas) {
             return conn_quotas.stop();
