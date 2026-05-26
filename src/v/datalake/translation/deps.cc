@@ -50,6 +50,8 @@ map_error_code(datalake::translation_task::errc errc) {
         return translation_errc::out_of_disk;
     case datalake::translation_task::errc::type_resolution_error:
         return translation_errc::type_resolution_error;
+    case datalake::translation_task::errc::unknown_error:
+        return translation_errc::unknown_error;
     }
 }
 } // namespace
@@ -454,6 +456,8 @@ std::ostream& operator<<(std::ostream& o, translation_errc ec) {
         return o << "translation_errc::out_of_disk";
     case type_resolution_error:
         return o << "translation_errc::type_resolution_error";
+    case unknown_error:
+        return o << "translation_errc::unknown_error";
     }
 }
 
