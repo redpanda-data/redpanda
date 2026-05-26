@@ -335,6 +335,7 @@ public:
             return;
         }
 
+        static constexpr auto end_index = std::numeric_limits<size_t>::max();
         // construct a column_store with the frames and hints that are before
         // the replacements
         auto first_replacement_index = [&] {
@@ -348,11 +349,22 @@ public:
             if (candidate.is_end()) {
                 // replacements are append only, return an index that will
                 // signal this
-                return std::numeric_limits<size_t>::max();
+                return end_index;
             }
             // replacements are in the middle of current store
             return candidate.index();
         }();
+
+        if (first_replacement_index == end_index) {
+            // Append-only: every entry in [offset_seg_it, offset_seg_end)
+            // lands strictly past the current tail, so no segment in *this is
+            // replaced.
+            for (; offset_seg_it != offset_seg_end; ++offset_seg_it) {
+                append(offset_seg_it->second);
+            }
+            return;
+        }
+
         // tuple of [begin, end] iterators to std::list<frame_t>
         auto to_clone_frames = std::apply(
           [&](auto&... col) {
