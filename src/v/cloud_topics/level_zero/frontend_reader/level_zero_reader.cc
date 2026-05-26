@@ -19,6 +19,7 @@
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/timeout_clock.h"
+#include "ssx/future-util.h"
 
 #include <seastar/coroutine/exception.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -49,13 +50,13 @@ ss::future<model::record_batch_reader::storage_t>
 level_zero_log_reader_impl::do_load_slice(
   model::timeout_clock::time_point deadline) {
     try {
-        co_return co_await read_some(deadline);
+        return read_some(deadline);
     } catch (...) {
         auto ex = std::current_exception();
         vlogl(
           _log,
           ssx::is_shutdown_exception(ex) ? ss::log_level::debug
-                                         : ss::log_level::warn,
+                                         : ss::log_level::error,
           "Reader caught exception: {}",
           ex);
         set_end_of_stream();

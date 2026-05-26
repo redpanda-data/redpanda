@@ -59,7 +59,6 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/metastore:retry",
         "//src/v/model",
         "//src/v/model:timeout_clock",
-        "//src/v/ssx:future_util",
         "//src/v/utils:prefix_logger",
         "//src/v/utils:retry_chain_node",
         "@seastar",

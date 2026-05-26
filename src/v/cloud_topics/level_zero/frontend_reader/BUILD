@@ -24,6 +24,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/stm:placeholder",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/ssx:future_util",
     ],
     visibility = ["//visibility:public"],
     deps = [

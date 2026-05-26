@@ -14,7 +14,6 @@
 #include "cloud_topics/logger.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
-#include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/coroutine/as_future.hh>
@@ -65,15 +64,10 @@ ss::future<model::record_batch_reader::storage_t>
 level_one_log_reader_impl::do_load_slice(
   model::timeout_clock::time_point deadline) {
     try {
-        co_return co_await read_some(deadline);
+        return read_some(deadline);
     } catch (...) {
-        auto ex = std::current_exception();
-        vlogl(
-          _log,
-          ssx::is_shutdown_exception(ex) ? ss::log_level::debug
-                                         : ss::log_level::warn,
-          "Reader caught exception: {}",
-          ex);
+        vlog(
+          _log.error, "Reader caught exception: {}", std::current_exception());
         set_end_of_stream();
         throw;
     }
