@@ -2069,6 +2069,40 @@ class ClusterConfigIcebergTest(RedpandaTest):
             expect_restart=True,
         )
 
+    @cluster(num_nodes=1)
+    def test_iceberg_rest_catalog_endpoint_url_validation(self):
+        """
+        Verifies that malformed `iceberg_rest_catalog_endpoint` values are
+        rejected, while well-formed URLs are accepted.
+        """
+        malformed_values = [
+            "not a url",
+            "://missing-scheme",
+            "http://host:not-a-port",
+            "http://host:99999",
+        ]
+        for value in malformed_values:
+            with expect_exception(
+                requests.exceptions.HTTPError,
+                lambda e: e.response.status_code == 400,
+            ):
+                self.redpanda.set_cluster_config(
+                    {"iceberg_rest_catalog_endpoint": value},
+                    expect_restart=True,
+                )
+
+        # Well-formed values should be accepted.
+        valid_values = [
+            "http://localhost:8181",
+            "https://catalog.example.com",
+            "https://catalog.example.com:443/path",
+        ]
+        for value in valid_values:
+            self.redpanda.set_cluster_config(
+                {"iceberg_rest_catalog_endpoint": value},
+                expect_restart=True,
+            )
+
 
 class PropertyAliasData(NamedTuple):
     """Data structure for property alias testing configuration."""

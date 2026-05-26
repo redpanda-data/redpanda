@@ -205,6 +205,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "validators",
+    srcs = [
+        "validators.cc",
+    ],
+    hdrs = [
+        "validators.h",
+    ],
+    implementation_deps = [
+        "@abseil-cpp//absl/strings",
+        "@fmt",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@ada",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "translation_task",
     srcs = [
         "translation_task.cc",

@@ -4147,7 +4147,8 @@ configuration::configuration()
         .example = "http://hostname:8181",
         .visibility = visibility::user,
       },
-      std::nullopt)
+      std::nullopt,
+      &validate_iceberg_rest_catalog_endpoint)
   , iceberg_rest_catalog_client_id(
       *this,
       "iceberg_rest_catalog_client_id",
