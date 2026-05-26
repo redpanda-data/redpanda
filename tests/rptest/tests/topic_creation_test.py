@@ -189,9 +189,22 @@ class TopicRecreateTest(RedpandaTest):
 
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
+            # Restart the producer swarm each iteration so each
+            # client-swarm process attaches a fresh librdkafka client to
+            # the new topic. Without this, librdkafka 2.10+ preserves
+            # per-partition state (leader_epoch cache, idempotent
+            # producer_id and sequence numbers) across the topic
+            # delete+recreate window, which then conflicts with the new
+            # topic's fresh broker-side state and stalls produces until
+            # librdkafka's drain/reset path catches up. Pre-2.10
+            # librdkafka tore that state down on topic deletion; this
+            # restart restores the equivalent behavior for the test.
+            swarm.stop()
+            swarm.wait()
             self.client().delete_topic(spec.name)
             spec.replication_factor = rf
             self.client().create_topic(spec)
+            swarm.start()
             wait_until(topic_is_healthy, 30, 2, err_msg=f"Topic {spec.name} health")
             sleep(5)
 
