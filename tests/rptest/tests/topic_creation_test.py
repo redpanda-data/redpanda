@@ -184,24 +184,28 @@ class TopicRecreateTest(RedpandaTest):
             self.logger.debug(f"High watermark offsets: {hw_offsets}")
             return len(offsets_present) == partition_count and all(offsets_present)
 
+        # Only the idempotent workload needs the swarm restarted each
+        # iteration: librdkafka 2.10+ preserves per-partition idempotent
+        # producer_id and sequence numbers across the topic delete+recreate
+        # window, which conflicts with the new topic's fresh broker-side
+        # state and stalls produces. Restarting the swarm forces a fresh
+        # librdkafka client, restoring the pre-2.10 effect the test was
+        # implicitly relying on. The non-idempotent acks=1 / acks=-1
+        # workloads don't carry this state, and restarting the swarm for
+        # them just adds librdkafka cold-start latency that can push the
+        # topic_is_healthy wait_until past its 30s budget on slow runners.
+        restart_swarm_each_iteration = workload == Workload.IDEMPOTENT
+
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
-            # Restart the producer swarm each iteration so each
-            # client-swarm process attaches a fresh librdkafka client to
-            # the new topic. Without this, librdkafka 2.10+ preserves
-            # per-partition state (leader_epoch cache, idempotent
-            # producer_id and sequence numbers) across the topic
-            # delete+recreate window, which then conflicts with the new
-            # topic's fresh broker-side state and stalls produces until
-            # librdkafka's drain/reset path catches up. Pre-2.10
-            # librdkafka tore that state down on topic deletion; this
-            # restart restores the equivalent behavior for the test.
-            swarm.stop()
-            swarm.wait()
+            if restart_swarm_each_iteration:
+                swarm.stop()
+                swarm.wait()
             self.client().delete_topic(spec.name)
             spec.replication_factor = rf
             self.client().create_topic(spec)
-            swarm.start()
+            if restart_swarm_each_iteration:
+                swarm.start()
             wait_until(topic_is_healthy, 30, 2, err_msg=f"Topic {spec.name} health")
             sleep(5)
 
