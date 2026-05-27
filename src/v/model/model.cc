@@ -808,16 +808,17 @@ std::istream& operator>>(std::istream& is, iceberg_invalid_record_action& a) {
     return is;
 }
 
-fmt::iterator format_to(iceberg_schema_case_insensitive n, fmt::iterator out) {
+std::ostream&
+operator<<(std::ostream& os, const iceberg_schema_case_insensitive& n) {
     switch (n) {
     case iceberg_schema_case_insensitive::auto_:
-        return fmt::format_to(out, "auto");
+        return os << "auto";
     case iceberg_schema_case_insensitive::no:
-        return fmt::format_to(out, "no");
+        return os << "no";
     case iceberg_schema_case_insensitive::yes:
-        return fmt::format_to(out, "yes");
+        return os << "yes";
     }
-    return fmt::format_to(out, "unknown");
+    return os << "unknown";
 }
 
 std::istream& operator>>(std::istream& is, iceberg_schema_case_insensitive& n) {

@@ -794,7 +794,7 @@ enum class iceberg_schema_case_insensitive : uint8_t {
     yes = 2,
 };
 
-fmt::iterator format_to(iceberg_schema_case_insensitive n, fmt::iterator out);
+std::ostream& operator<<(std::ostream&, const iceberg_schema_case_insensitive&);
 std::istream& operator>>(std::istream&, iceberg_schema_case_insensitive&);
 
 enum class kafka_batch_validation_mode : uint8_t {
