@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_one/compaction/meta.h"
 #include "cloud_topics/level_one/compaction/scheduler_probe.h"
+#include "cloud_topics/level_one/compaction/scheduling_policies.h"
 #include "cloud_topics/level_one/compaction/worker.h"
 #include "cloud_topics/level_one/compaction/worker_manager.h"
 #include "model/fundamental.h"
@@ -112,4 +113,82 @@ TEST_F(WorkerManagerTestFixture, AcquireWork) {
     manager.complete_work(work_opt.value().get());
     ASSERT_FALSE(work_opt.value()->inflight_shard.has_value());
     ASSERT_EQ(work_opt.value()->state, state::idle);
+}
+
+// Verifies that `dirty_ratio_scheduling_policy` orders partitions from
+// highest `dirty_ratio` to lowest.
+TEST(DirtyRatioSchedulingPolicyTest, OrdersHighestDirtyRatioFirst) {
+    auto make_meta = [](std::string_view topic_name, double ratio) {
+        auto ntp = model::ntp(
+          model::ns("kafka"),
+          model::topic(ss::sstring{topic_name}),
+          model::partition_id(0));
+        auto tidp = model::topic_id_partition(
+          model::topic_id(uuid_t::create()), ntp.tp.partition);
+        auto m = ss::make_lw_shared<l1::log_compaction_meta>(tidp, ntp);
+        m->info_and_ts = l1::compaction_info_and_timestamp{
+          .info = {.dirty_ratio = ratio},
+          .collected_at = model::timestamp::now(),
+          .max_compactible_offset = kafka::offset::max(),
+        };
+        return m;
+    };
+
+    auto low = make_meta("low", 0.1);
+    auto mid = make_meta("mid", 0.5);
+    auto high = make_meta("high", 0.9);
+
+    l1::dirty_ratio_scheduling_policy policy;
+    l1::log_compaction_queue q(policy.get_comparator());
+    q.push(low);
+    q.push(mid);
+    q.push(high);
+
+    // Pop order should be: most dirty -> least dirty.
+    ASSERT_DOUBLE_EQ(q.top()->info_and_ts->info.dirty_ratio, 0.9);
+    q.pop();
+    ASSERT_DOUBLE_EQ(q.top()->info_and_ts->info.dirty_ratio, 0.5);
+    q.pop();
+    ASSERT_DOUBLE_EQ(q.top()->info_and_ts->info.dirty_ratio, 0.1);
+}
+
+// Verifies that `compaction_lag_scheduling_policy` orders partitions from
+// highest lag (oldest `earliest_dirty_ts`) to lowest (most recent).
+TEST(CompactionLagSchedulingPolicyTest, OrdersHighestLagFirst) {
+    auto make_meta = [](std::string_view topic_name, model::timestamp ts) {
+        auto ntp = model::ntp(
+          model::ns("kafka"),
+          model::topic(ss::sstring{topic_name}),
+          model::partition_id(0));
+        auto tidp = model::topic_id_partition(
+          model::topic_id(uuid_t::create()), ntp.tp.partition);
+        auto m = ss::make_lw_shared<l1::log_compaction_meta>(tidp, ntp);
+        m->info_and_ts = l1::compaction_info_and_timestamp{
+          .info = {.earliest_dirty_ts = ts},
+          .collected_at = model::timestamp::now(),
+          .max_compactible_offset = kafka::offset::max(),
+        };
+        return m;
+    };
+
+    // Smaller timestamp = older = higher lag.
+    auto old_log = make_meta("old", model::timestamp{1000});
+    auto mid_log = make_meta("mid", model::timestamp{5000});
+    auto new_log = make_meta("new", model::timestamp{9000});
+
+    l1::compaction_lag_scheduling_policy policy;
+    l1::log_compaction_queue q(policy.get_comparator());
+    q.push(mid_log);
+    q.push(new_log);
+    q.push(old_log);
+
+    // Pop order should be: oldest (highest lag) -> newest (lowest lag).
+    ASSERT_EQ(
+      q.top()->info_and_ts->info.earliest_dirty_ts, model::timestamp{1000});
+    q.pop();
+    ASSERT_EQ(
+      q.top()->info_and_ts->info.earliest_dirty_ts, model::timestamp{5000});
+    q.pop();
+    ASSERT_EQ(
+      q.top()->info_and_ts->info.earliest_dirty_ts, model::timestamp{9000});
 }

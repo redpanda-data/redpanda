@@ -45,7 +45,7 @@ private:
               "Sorting policy applied to logs without info_and_ts assigned- "
               "concurrency issue?");
             return a->info_and_ts->info.dirty_ratio
-                   > b->info_and_ts->info.dirty_ratio;
+                   < b->info_and_ts->info.dirty_ratio;
         }
     };
 };
@@ -66,7 +66,7 @@ private:
               "Sorting policy applied to logs without info_and_ts assigned- "
               "concurrency issue?");
             return a->info_and_ts->info.earliest_dirty_ts
-                   < b->info_and_ts->info.earliest_dirty_ts;
+                   > b->info_and_ts->info.earliest_dirty_ts;
         }
     };
 };
