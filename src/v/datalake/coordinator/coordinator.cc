@@ -14,11 +14,13 @@
 #include "config/configuration.h"
 #include "container/chunked_vector.h"
 #include "datalake/catalog_schema_manager.h"
+#include "datalake/coordinator/catalog_config.h"
 #include "datalake/coordinator/state_update.h"
 #include "datalake/logger.h"
 #include "datalake/partition_spec_parser.h"
 #include "datalake/record_translator.h"
 #include "datalake/table_id_provider.h"
+#include "iceberg/field_name_comparison.h"
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
@@ -404,7 +406,10 @@ coordinator::do_ensure_table_exists(
     }
 
     auto ensure_res = co_await schema_mgr_.ensure_table_schema(
-      table_id, record_type.value(), partition_spec.value());
+      table_id,
+      record_type.value(),
+      partition_spec.value(),
+      resolve_field_name_comparison());
     if (ensure_res.has_error()) {
         switch (ensure_res.error()) {
         case schema_manager::errc::not_supported:

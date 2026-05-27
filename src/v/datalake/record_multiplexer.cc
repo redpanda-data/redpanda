@@ -80,6 +80,7 @@ record_multiplexer::record_multiplexer(
   record_translator& record_translator,
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
+  iceberg::field_name_comparison norm,
   location_provider location_provider,
   translation_probe& translation_probe,
   features::feature_table* features)
@@ -92,6 +93,7 @@ record_multiplexer::record_multiplexer(
   , _record_translator(record_translator)
   , _table_creator(table_creator)
   , _invalid_record_action(invalid_record_action)
+  , _norm(norm)
   , _location_provider(std::move(location_provider))
   , _translation_probe(translation_probe)
   , _features(features) {}
@@ -282,7 +284,7 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 desired_type = std::make_optional(std::ref(record_type.type));
             }
             auto load_res = co_await _schema_mgr.get_table_info(
-              table_id, desired_type);
+              table_id, desired_type, _norm);
             if (load_res.has_error()) {
                 auto e = load_res.error();
                 switch (e) {
@@ -301,7 +303,8 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 co_return ss::stop_iteration::yes;
             }
 
-            if (!load_res.value().fill_registered_ids(record_type.type)) {
+            if (!load_res.value().fill_registered_ids(
+                  record_type.type, _norm)) {
                 // This shouldn't happen because we ensured the schema with the
                 // call to table_creator. Probably someone managed to change the
                 // table between two calls.
@@ -534,7 +537,8 @@ record_multiplexer::handle_invalid_record(
             }
 
             auto table_id = table_id_provider::dlq_table_id(_ntp.tp.topic);
-            auto load_res = co_await _schema_mgr.get_table_info(table_id);
+            auto load_res = co_await _schema_mgr.get_table_info(
+              table_id, std::nullopt, _norm);
             if (load_res.has_error()) {
                 auto e = load_res.error();
                 switch (e) {
@@ -552,7 +556,8 @@ record_multiplexer::handle_invalid_record(
             }
 
             auto record_type = key_value_translator{}.build_type(std::nullopt);
-            if (!load_res.value().fill_registered_ids(record_type.type)) {
+            if (!load_res.value().fill_registered_ids(
+                  record_type.type, _norm)) {
                 // This shouldn't happen because we ensured the schema with the
                 // call to table_creator. Probably someone managed to change the
                 // table between two calls.

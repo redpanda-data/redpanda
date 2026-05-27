@@ -781,6 +781,22 @@ enum class iceberg_invalid_record_action : uint8_t {
 std::ostream& operator<<(std::ostream&, const iceberg_invalid_record_action&);
 std::istream& operator>>(std::istream&, iceberg_invalid_record_action&);
 
+/// Whether field names are compared case-insensitively when matching
+/// Redpanda's schema against the one returned by the Iceberg catalog.
+/// Some catalogs (e.g. AWS Glue) return field names with inconsistent casing
+/// relative to what was originally written, so exact-match comparisons fail.
+enum class iceberg_schema_case_insensitive : uint8_t {
+    /// Infer from catalog type: yes for Glue, no otherwise.
+    auto_ = 0,
+    /// Exact (case-sensitive) comparison.
+    no = 1,
+    /// Case-insensitive comparison (Unicode lowercase via boost::locale).
+    yes = 2,
+};
+
+std::ostream& operator<<(std::ostream&, const iceberg_schema_case_insensitive&);
+std::istream& operator>>(std::istream&, iceberg_schema_case_insensitive&);
+
 enum class kafka_batch_validation_mode : uint8_t {
     legacy = 0,
     relaxed = 1,

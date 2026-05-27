@@ -754,6 +754,8 @@ struct configuration final : public config_store {
     property<ss::sstring> iceberg_default_partition_spec;
     enum_property<model::iceberg_invalid_record_action>
       iceberg_invalid_record_action;
+    enum_property<model::iceberg_schema_case_insensitive>
+      iceberg_schema_case_insensitive;
     bounded_property<std::chrono::milliseconds> iceberg_target_lag_ms;
     property<bool> iceberg_disable_snapshot_tagging;
     property<bool> iceberg_disable_automatic_snapshot_expiry;

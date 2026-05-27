@@ -21,6 +21,7 @@
 #include "datalake/translation/translation_probe.h"
 #include "features/feature_table.h"
 #include "gmock/gmock.h"
+#include "iceberg/field_name_comparison.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
@@ -135,6 +136,7 @@ public:
           translator,
           t_creator,
           model::iceberg_invalid_record_action::dlq_table,
+          iceberg::field_name_comparison::verbatim,
           location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
           *get_or_create_probe(ntp),
@@ -602,6 +604,7 @@ TEST_F(RecordMultiplexerTest, TestRecordTimestamp) {
       kv_translator,
       table_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider(scoped_remote->remote.local().provider(), bucket_name),
       *get_or_create_probe(ntp),
       &features);

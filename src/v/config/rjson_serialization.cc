@@ -300,6 +300,12 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::iceberg_schema_case_insensitive& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
   json::Writer<json::StringBuffer>& w, config::datalake_catalog_auth_mode cam) {
     stringize(w, cam);
 }

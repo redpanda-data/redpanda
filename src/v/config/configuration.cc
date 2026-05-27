@@ -4422,6 +4422,22 @@ configuration::configuration()
         model::iceberg_invalid_record_action::drop,
         model::iceberg_invalid_record_action::dlq_table,
       })
+  , iceberg_schema_case_insensitive(
+      *this,
+      "iceberg_schema_case_insensitive",
+      "Schema field name comparison mode when matching Redpanda's "
+      "schema against the one returned by the Iceberg catalog. Some catalogs "
+      "(e.g. AWS Glue) return field names with inconsistent casing, requiring "
+      "case-insensitive comparison. \"auto\" enables case-insensitive "
+      "comparison when the catalog is AWS Glue, and exact comparison "
+      "otherwise.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      model::iceberg_schema_case_insensitive::auto_,
+      {
+        model::iceberg_schema_case_insensitive::auto_,
+        model::iceberg_schema_case_insensitive::no,
+        model::iceberg_schema_case_insensitive::yes,
+      })
   , iceberg_target_lag_ms(
       *this,
       "iceberg_target_lag_ms",

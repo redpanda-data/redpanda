@@ -702,6 +702,9 @@ consteval std::string_view property_type_name() {
       std::is_same_v<type, model::iceberg_invalid_record_action>) {
         return "string";
     } else if constexpr (
+      std::is_same_v<type, model::iceberg_schema_case_insensitive>) {
+        return "string";
+    } else if constexpr (
       std::is_same_v<type, config::datalake_catalog_auth_mode>) {
         return "string";
     } else if constexpr (std::is_same_v<type, config::tls_name_format>) {

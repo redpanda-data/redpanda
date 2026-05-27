@@ -12,6 +12,7 @@
 
 #include "iceberg/compatibility_types.h"
 #include "iceberg/datatypes.h"
+#include "iceberg/field_name_comparison.h"
 #include "iceberg/partition.h"
 #include "iceberg/values.h"
 
@@ -83,7 +84,8 @@ promote_primitive_value_type(primitive_value value, const primitive_type& dest);
 schema_transform_result annotate_schema_transform(
   const struct_type& source,
   const struct_type& dest,
-  const partition_spec& spec);
+  const partition_spec& spec,
+  field_name_comparison norm);
 
 /**
  * validate_schema_transform - Finish evaluating backwards compatibility of
@@ -139,7 +141,10 @@ schema_transform_result validate_schema_transform(
  * @return Whether the schema changed from source->dest, or an error
  */
 schema_evolution_result evolve_schema(
-  const struct_type& source, struct_type& dest, const partition_spec& spec);
+  const struct_type& source,
+  struct_type& dest,
+  const partition_spec& spec,
+  field_name_comparison norm);
 
 /**
  * Fill all writer struct field IDs from host struct by name while following
@@ -161,7 +166,9 @@ schema_evolution_result evolve_schema(
  * thrown away.
  */
 ids_filled try_fill_field_ids(
-  const struct_type& host_struct_type, struct_type& writer_struct_type);
+  const struct_type& host_struct_type,
+  struct_type& writer_struct_type,
+  field_name_comparison norm);
 
 using schema_merge_result = checked<void, schema_evolution_errc>;
 
@@ -184,6 +191,8 @@ using schema_merge_result = checked<void, schema_evolution_errc>;
  * case.
  */
 schema_merge_result merge_struct_types(
-  const struct_type& writer_struct_type, struct_type& host_struct_type);
+  const struct_type& writer_struct_type,
+  struct_type& host_struct_type,
+  field_name_comparison norm);
 
 } // namespace iceberg

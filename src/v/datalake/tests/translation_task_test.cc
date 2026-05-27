@@ -23,6 +23,7 @@
 #include "datalake/translation/translation_probe.h"
 #include "datalake/translation_task.h"
 #include "features/feature_table.h"
+#include "iceberg/field_name_comparison.h"
 #include "iceberg/uri.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"
@@ -178,6 +179,7 @@ public:
           *translator,
           *t_creator,
           model::iceberg_invalid_record_action::dlq_table,
+          iceberg::field_name_comparison::verbatim,
           location_provider,
           probe);
     }
@@ -289,6 +291,7 @@ TEST_F(TranslateTaskTest, TestUploadError) {
       *translator,
       *t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider,
       probe);
     // fail all PUT requests
@@ -334,6 +337,7 @@ TEST_F(TranslateTaskTest, TestCleanupAfterOOMError) {
       *translator,
       *t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider,
       probe);
 
@@ -373,6 +377,7 @@ TEST_F(TranslateTaskTest, TestCleanupAfterTransientError) {
       *translator,
       *t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider,
       probe);
 
@@ -415,6 +420,7 @@ TEST_F(TranslateTaskTest, TestCleanupAfterTransientErrorDiscard) {
       *translator,
       *t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider,
       probe);
 

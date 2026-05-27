@@ -10,8 +10,13 @@
 
 #include "iceberg/compatibility_utils.h"
 
+#include "iceberg/unicode.h"
+
 namespace iceberg {
-bool schemas_equivalent(const struct_type& source, const struct_type& dest) {
+bool schemas_equivalent(
+  const struct_type& source,
+  const struct_type& dest,
+  field_name_comparison norm) {
     chunked_vector<const nested_field*> source_stk;
     source_stk.reserve(source.fields.size());
     for (const auto& f : std::ranges::reverse_view(source.fields)) {
@@ -47,8 +52,9 @@ bool schemas_equivalent(const struct_type& source, const struct_type& dest) {
             return ft.index();
         };
 
+        const bool names_match = names_equal(sf->name, df->name, norm);
         if (
-          sf->name != df->name || sf->required != df->required
+          !names_match || sf->required != df->required
           || is_primitive(sf->type) != is_primitive(df->type)
           || get_index(sf->type) != get_index(df->type)) {
             return false;

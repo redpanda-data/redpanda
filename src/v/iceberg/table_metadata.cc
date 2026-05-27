@@ -34,13 +34,13 @@ sort_order sort_order::copy() const {
     };
 }
 
-const schema*
-table_metadata::get_equivalent_schema(const struct_type& type) const {
+const schema* table_metadata::get_equivalent_schema(
+  const struct_type& type, field_name_comparison norm) const {
     auto schemas_reversed = std::ranges::reverse_view(schemas);
     auto it = std::ranges::find_if(
       schemas_reversed,
-      [&type](const iceberg::struct_type& source) {
-          return iceberg::schemas_equivalent(source, type);
+      [&type, norm](const iceberg::struct_type& source) {
+          return iceberg::schemas_equivalent(source, type, norm);
       },
       &iceberg::schema::schema_struct);
     return it != schemas_reversed.end() ? &*it : nullptr;
