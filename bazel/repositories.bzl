@@ -74,11 +74,10 @@ def data_dependency():
     http_archive(
         name = "krb5",
         build_file = "//bazel/thirdparty:krb5.BUILD",
-        sha256 = "2157d92020d408ed63ebcd886a92d1346a1383b0f91123a0473b4f69b4a24861",
-        strip_prefix = "krb5-krb5-1.21.3-final",
-        url = "https://github.com/krb5/krb5/archive/refs/tags/krb5-1.21.3-final.tar.gz",
+        sha256 = "289f5bb81d1f2f8d5eecebe56a056aeed95d35fd9bb4a7071c5dd7ad4b3fe888",
+        strip_prefix = "krb5-krb5-1.22.2-final",
+        url = "https://github.com/krb5/krb5/archive/refs/tags/krb5-1.22.2-final.tar.gz",
         patches = [
-            "//bazel/thirdparty:0001-Fix-two-unlikely-memory-leaks.patch",
             "//bazel/thirdparty:0002-Fix-two-NegoEx-parsing-vulnerabilities.patch",
         ],
         patch_args = ["-p1"],
