@@ -18,6 +18,7 @@
 #include <boost/locale/encoding_utf.hpp>
 #include <boost/locale/utf.hpp>
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -165,3 +166,25 @@ inline void validate_utf8(std::string_view s, const Thrower& thrower) {
 inline void validate_utf8(std::string_view s) {
     validate_utf8(s, default_utf8_thrower{});
 }
+
+/// Returns the longest prefix of `s` ending on a complete UTF-8 code point
+/// boundary with at most `max_bytes` bytes.
+///
+/// Suitable as a truncated lower bound for column statistics: the result is
+/// lexicographically ≤ any string that begins with (or equals) the full input.
+std::string_view utf8_truncate_min(std::string_view s, size_t max_bytes);
+
+/// Returns a string that is lexicographically strictly greater than every
+/// string prefixed by `utf8_truncate_min(s, max_bytes)`.
+///
+/// Returns std::nullopt when the valid prefix consists entirely of U+10FFFF
+/// code points and no incrementable code point exists.
+///
+/// The result is always valid UTF-8 and suitable as a truncated upper bound
+/// for column statistics. It may be up to one byte longer than max_bytes when
+/// incrementing the last codepoint changes its encoding length (e.g. U+007F
+/// → U+0080 grows 1→2 bytes). This matches the behaviour of the Iceberg Java
+/// reference implementation; the Iceberg spec constrains code-point count, not
+/// byte length.
+std::optional<std::string>
+utf8_truncate_max(std::string_view s, size_t max_bytes);

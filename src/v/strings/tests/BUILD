@@ -28,3 +28,16 @@ redpanda_cc_gtest(
         "@googletest//:gtest_main",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "utf8_bounds_test",
+    timeout = "short",
+    srcs = [
+        "utf8_bounds_test.cc",
+    ],
+    deps = [
+        "//src/v/strings:utf8",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)

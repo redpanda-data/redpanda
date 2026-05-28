@@ -12,6 +12,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "@boost//:locale",
+        "@utf8proc",
     ],
 )
 
