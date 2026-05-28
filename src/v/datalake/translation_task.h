@@ -57,6 +57,7 @@ public:
         shutting_down,
         out_of_disk,
         type_resolution_error,
+        unknown_error,
     };
 
     using custom_partitioning_enabled
