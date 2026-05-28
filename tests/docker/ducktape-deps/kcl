@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -e
-go install github.com/twmb/kcl@v0.16.0
+go install github.com/twmb/kcl@51d725e230193ac04f2c132460f21e921637d82e
 mv /root/go/bin/kcl /usr/local/bin/
