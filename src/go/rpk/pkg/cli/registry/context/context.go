@@ -50,6 +50,9 @@ func ListContexts(ctx context.Context, cl *sr.Client) ([]string, error) {
 // schema_registry_enable_qualified_subjects config set to true via the
 // Admin API.
 func checkQualifiedSubjectsEnabled(ctx context.Context, fs afero.Fs, profile *config.RpkProfile) error {
+	if profile.FromCloud {
+		return fmt.Errorf("unable to verify schema context support: admin API is not available on cloud clusters\nUse --skip-context-check to skip this verification")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cl, err := adminapi.NewClient(ctx, fs, profile)
