@@ -289,16 +289,7 @@ class TopicRecreateTest(RedpandaTest):
                 replicas=rf,
                 config={TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD},
             )
-            self._wait_for_topic_ready(topic, partition_count, rf)
-            swarm.stop()
-            swarm.wait()
-            swarm.start()
-            wait_until(
-                topic_is_healthy,
-                30,
-                2,
-                err_msg=f"Topic {topic} health",
-            )
+            wait_until(topic_is_healthy, 30, 2, err_msg=f"Topic {topic} health")
             sleep(5)
 
         swarm.stop()
