@@ -11,7 +11,7 @@
 #include "cloud_storage/configuration.h"
 
 #include "base/vlog.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "cloud_storage/logger.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
@@ -23,13 +23,13 @@ namespace cloud_storage {
 
 namespace {
 
-cloud_io::scheduler_config build_scheduler_config(size_t capacity) {
-    cloud_io::scheduler_config cfg;
-    cfg.policy = config::shard_local_cfg().cloud_io_scheduler_policy();
+cloud_io::admission_config build_admission_config(size_t capacity) {
+    cloud_io::admission_config cfg;
+    cfg.policy = config::shard_local_cfg().cloud_io_admission_policy();
     if (cfg.policy == cloud_io::policy_type::reservation) {
         cloud_io::reservation_policy_config rcfg;
         for (const auto& spec :
-             config::shard_local_cfg().cloud_io_scheduler_reservation()) {
+             config::shard_local_cfg().cloud_io_admission_reservation()) {
             if (
               const auto parsed = cloud_io::try_parse_target_spec(spec);
               parsed.has_value()) {
@@ -40,7 +40,7 @@ cloud_io::scheduler_config build_scheduler_config(size_t capacity) {
                 // known group_id; skip with a warning.
                 vlog(
                   cst_log.warn,
-                  "cloud_io_scheduler_reservation: ignoring unknown spec "
+                  "cloud_io_admission_reservation: ignoring unknown spec "
                   "'{}'",
                   spec);
             }
@@ -49,7 +49,7 @@ cloud_io::scheduler_config build_scheduler_config(size_t capacity) {
         // target_reserved values fits under the pool capacity. If a
         // mismatch slips in — most commonly during a rolling upgrade
         // where the prior version didn't know about
-        // cloud_io_scheduler_reservation, so cluster state carries the
+        // cloud_io_admission_reservation, so cluster state carries the
         // built-in default ([2,2,2] = 6) against a smaller operator-
         // configured cloud_storage_max_connections — drop the
         // reservation rather than tripping the assertion at startup.
@@ -60,7 +60,7 @@ cloud_io::scheduler_config build_scheduler_config(size_t capacity) {
         if (target_sum > capacity) {
             vlog(
               cst_log.warn,
-              "cloud_io_scheduler_reservation target_reserved sum ({}) "
+              "cloud_io_admission_reservation target_reserved sum ({}) "
               "exceeds cloud_storage_max_connections ({}); falling back "
               "to no reservation. Adjust either property to enable "
               "per-group reservation lanes.",
@@ -174,7 +174,7 @@ ss::future<configuration> configuration::get_s3_config() {
     configuration cfg{
       .client_config = std::move(s3_conf),
       .connection_limit = cloud_storage::connection_limit(cap),
-      .scheduler = build_scheduler_config(cap),
+      .admission = build_admission_config(cap),
       .bucket_name = bucket_name,
       .cloud_credentials_source = cloud_credentials_source,
     };
@@ -238,7 +238,7 @@ ss::future<configuration> configuration::get_abs_config() {
     configuration cfg{
       .client_config = std::move(abs_conf),
       .connection_limit = cloud_storage::connection_limit(cap),
-      .scheduler = build_scheduler_config(cap),
+      .admission = build_admission_config(cap),
       .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_azure_container,
         "cloud_storage_azure_container")),

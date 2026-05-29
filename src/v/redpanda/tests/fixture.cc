@@ -461,7 +461,7 @@ void redpanda_thread_fixture::configure(
             // without their own lane; an empty reservation keeps the
             // policy active while routing every admit through the
             // common pool.
-            config.get("cloud_io_scheduler_reservation")
+            config.get("cloud_io_admission_reservation")
               .set_value(std::vector<ss::sstring>{});
         }
 

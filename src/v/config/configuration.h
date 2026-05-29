@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "config/bounded_property.h"
 #include "config/broker_endpoint.h"
 #include "config/config_store.h"
@@ -398,8 +398,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       cloud_storage_upload_loop_max_backoff_ms;
     property<int16_t> cloud_storage_max_connections;
-    enum_property<cloud_io::policy_type> cloud_io_scheduler_policy;
-    property<std::vector<ss::sstring>> cloud_io_scheduler_reservation;
+    enum_property<cloud_io::policy_type> cloud_io_admission_policy;
+    property<std::vector<ss::sstring>> cloud_io_admission_reservation;
     property<bool> cloud_storage_disable_tls;
     property<int16_t> cloud_storage_api_endpoint_port;
     property<std::optional<ss::sstring>> cloud_storage_trust_file;

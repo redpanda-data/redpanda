@@ -21,7 +21,7 @@
 
 namespace cloud_io {
 
-/// Identifies a cloud_io::scheduler admission policy.
+/// Identifies a cloud_io::admission_controller admission policy.
 enum class policy_type : uint8_t {
     /// No-op admission gate; the client pool's capacity is the only
     /// constraint.
@@ -48,7 +48,7 @@ inline fmt::iterator format_to(policy_type t, fmt::iterator out) {
 }
 
 /// Caller-supplied intent label for a cloud_io operation. Used as the
-/// scheduling key for cloud_io::scheduler.
+/// scheduling key for cloud_io::admission_controller.
 enum class group_id : uint8_t {
     /// Object uploads on the Kafka produce path. Latency-critical.
     producer_upload,
@@ -98,7 +98,7 @@ static_assert(
 
 /// Returns (name, N) for a well-shaped "name:N" target spec, else nullopt. Does
 /// not check whether `name` maps to a known group_id; that lookup happens at
-/// the scheduler creation time so the cluster property survives across upgrades
+/// the admission_controller creation time so the cluster property survives across upgrades
 /// that add or remove group_ids.
 inline std::optional<std::pair<std::string_view, size_t>>
 parse_target_spec_shape(std::string_view spec) noexcept {
@@ -154,7 +154,7 @@ struct per_group {
 };
 
 /// Per-group target_reserved values for the reservation policy. Built from
-/// cluster config at scheduler construction time, or directly in tests.
+/// cluster config at admission_controller construction time, or directly in tests.
 /// Default-constructed is all zeros; the initializer-list constructor takes
 /// `{group_id, value}` pairs and leaves unmentioned groups at zero.
 struct reservation_policy_config {
@@ -169,10 +169,10 @@ struct reservation_policy_config {
     }
 };
 
-/// Runtime configuration for cloud_io::scheduler. Populated at startup
+/// Runtime configuration for cloud_io::admission_controller. Populated at startup
 /// from cluster config (see cloud_storage::configuration::get_config)
-/// and passed by value down to client_pool / scheduler.
-struct scheduler_config {
+/// and passed by value down to client_pool / admission_controller.
+struct admission_config {
     policy_type policy = policy_type::passthrough;
 
     /// Reservation policy targets. If absent, all targets are zero (no reserved

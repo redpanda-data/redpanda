@@ -12,7 +12,7 @@
 #pragma once
 #include "base/oncore.h"
 #include "base/type_traits.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "config/base_property.h"
 #include "config/logger.h"
 #include "config/rjson_serialization.h"

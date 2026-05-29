@@ -11,7 +11,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "cloud_storage_clients/multipart_upload.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "container/chunked_vector.h"

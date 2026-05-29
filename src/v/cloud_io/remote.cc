@@ -13,7 +13,7 @@
 #include "bytes/iostream.h"
 #include "cloud_io/logger.h"
 #include "cloud_io/provider.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "cloud_io/transfer_details.h"
 #include "cloud_storage_clients/bucket_name_parts.h"
 #include "cloud_storage_clients/client_pool.h"

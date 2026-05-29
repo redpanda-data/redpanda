@@ -10,7 +10,7 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -20,17 +20,17 @@
 
 namespace cloud_io {
 
-/// Abstract base for cloud_io::scheduler admission policies. A policy
+/// Abstract base for cloud_io::admission_controller admission policies. A policy
 /// decides whether and when an admit request is allowed to proceed.
-class scheduler_policy {
+class admission_policy {
 public:
-    explicit scheduler_policy(size_t capacity) noexcept
+    explicit admission_policy(size_t capacity) noexcept
       : _capacity(capacity) {}
-    scheduler_policy(const scheduler_policy&) = delete;
-    scheduler_policy& operator=(const scheduler_policy&) = delete;
-    scheduler_policy(scheduler_policy&&) = delete;
-    scheduler_policy& operator=(scheduler_policy&&) = delete;
-    virtual ~scheduler_policy() noexcept = default;
+    admission_policy(const admission_policy&) = delete;
+    admission_policy& operator=(const admission_policy&) = delete;
+    admission_policy(admission_policy&&) = delete;
+    admission_policy& operator=(admission_policy&&) = delete;
+    virtual ~admission_policy() noexcept = default;
 
     /// Wait until the policy admits an op tagged with `g`. Throws
     /// ss::abort_requested_exception if `as` fires during the wait.
@@ -41,7 +41,7 @@ public:
     [[nodiscard]] virtual bool try_admit(group_id g) = 0;
 
     /// Return one admitted slot. Called on the owning shard's
-    /// scheduler when a lease drops (locally or via invoke_on for
+    /// admission_controller when a lease drops (locally or via invoke_on for
     /// cross-shard borrows).
     virtual void release(group_id g) = 0;
 

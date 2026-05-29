@@ -11,7 +11,7 @@
 #pragma once
 
 #include "cloud_io/io_result.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "cloud_io/transfer_details.h"
 #include "cloud_storage_clients/client.h"
 #include "utils/lazy_abort_source.h"

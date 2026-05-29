@@ -83,7 +83,7 @@ archiver_fixture::archiver_fixture()
         ss::sharded_parameter([this] { return std::ref(upstreams.local()); }),
         remote_cfg.connection_limit(),
         sharded_client_conf,
-        remote_cfg.scheduler)
+        remote_cfg.admission)
       .get();
     pool.invoke_on_all(&cloud_storage_clients::client_pool::start, std::nullopt)
       .get();
@@ -221,8 +221,8 @@ archiver_fixture::get_configurations() {
     // Reservation policy asserts target_reserved sum <= capacity; cap
     // is 2, so reserve one slot each for producer_upload and
     // consumer_fetch.
-    cconf.scheduler.policy = cloud_io::policy_type::reservation;
-    cconf.scheduler.reservation = cloud_io::reservation_policy_config{
+    cconf.admission.policy = cloud_io::policy_type::reservation;
+    cconf.admission.reservation = cloud_io::reservation_policy_config{
       {cloud_io::group_id::default_group, 2},
     };
     cconf.cloud_credentials_source

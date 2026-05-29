@@ -11,8 +11,8 @@
 
 #include "base/seastarx.h"
 #include "cloud_io/reservation_policy_types.h"
-#include "cloud_io/scheduler_policy.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_policy.h"
+#include "cloud_io/admission_types.h"
 #include "metrics/metrics.h"
 #include "ssx/semaphore.h"
 
@@ -37,7 +37,7 @@ namespace cloud_io {
 /// the dwell window. See reservation_group_state for the mechanism details.
 ///
 /// Per-shard; not movable (metrics lambdas capture `this`).
-class reservation_policy final : public scheduler_policy {
+class reservation_policy final : public admission_policy {
 public:
     explicit reservation_policy(
       size_t capacity, reservation_policy_config = {});

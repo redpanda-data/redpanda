@@ -58,7 +58,7 @@ void reservation_policy::setup_metrics() {
 
     namespace sm = ss::metrics;
     const auto group_name = prometheus_sanitize::metrics_name(
-      "cloud_io_scheduler");
+      "cloud_io_admission");
 
     _metrics.add_group(
       group_name,
@@ -179,7 +179,7 @@ fmt::iterator reservation_group_state::format_to(fmt::iterator out) const {
 
 reservation_policy::reservation_policy(
   size_t capacity, reservation_policy_config cfg)
-  : scheduler_policy(capacity)
+  : admission_policy(capacity)
   , _current_total_capacity(capacity)
   , _shared(0, "cloud_io/reservation_policy/shared")
   , _groups(make_group_states(std::make_index_sequence<num_group_ids>{}))

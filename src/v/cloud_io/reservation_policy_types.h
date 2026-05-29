@@ -12,7 +12,7 @@
 #include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/vassert.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "container/intrusive_list_helpers.h"
 #include "ssx/semaphore.h"
 

@@ -10,7 +10,7 @@
 
 #include "cloud_storage_clients/client_pool.h"
 
-#include "cloud_io/scheduler.h"
+#include "cloud_io/admission_controller.h"
 #include "cloud_storage_clients/logger.h"
 #include "crash_tracker/recorder.h"
 #include "model/timeout_clock.h"
@@ -82,19 +82,19 @@ client_pool::client_pool(
   upstream_registry& registry,
   size_t size,
   client_configuration conf,
-  cloud_io::scheduler_config scheduler_cfg,
+  cloud_io::admission_config admission_cfg,
   client_pool_overdraft_policy policy)
   : _upstreams(registry)
   , _capacity(size)
-  , _scheduler_cfg(std::move(scheduler_cfg))
+  , _admission_cfg(std::move(admission_cfg))
   , _config(std::move(conf))
   , _probe(registry.probe())
   , _policy(policy) {}
 
 ss::future<> client_pool::start(
   std::optional<std::reference_wrapper<stop_signal>> application_stop_signal) {
-    _sched = std::make_unique<cloud_io::scheduler>(
-      _capacity, std::move(_scheduler_cfg));
+    _admission = std::make_unique<cloud_io::admission_controller>(
+      _capacity, std::move(_admission_cfg));
     ssx::spawn_with_gate(_gate, [this, application_stop_signal]() {
         // Eagerly attempt to start the default upstream and trigger stop on
         // any failure.
@@ -159,8 +159,8 @@ ss::future<> client_pool::stop() {
         _as.request_abort();
     }
     _cvar.broken();
-    if (_sched) {
-        co_await _sched->stop();
+    if (_admission) {
+        co_await _admission->stop();
     }
     _pool_ready_barrier.broken();
     // Wait for all background operations to complete.
@@ -286,11 +286,11 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                       _cvar.wait(), deadline.value_or(model::no_timeout), as);
                     continue;
                 }
-                co_await _sched->admit(gid, as);
+                co_await _admission->admit(gid, as);
                 // Guard against another fiber draining _idle_clients
                 // while we were suspended in admit.
                 if (_idle_clients.empty()) {
-                    _sched->release(gid);
+                    _admission->release(gid);
                     continue;
                 }
                 // Consume a slot from the pool.
@@ -319,11 +319,11 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                     }();
                     if (!source_sid.has_value()) {
                         // This client was popped from the local pool after
-                        // a successful _sched->admit; release the slot
-                        // before retrying so we don't leak scheduler
+                        // a successful _admission->admit; release the slot
+                        // before retrying so we don't leak admission controller
                         // capacity. Peer-borrowed clients are tracked via
-                        // source_sid and accounted on the peer's scheduler.
-                        _sched->release(gid);
+                        // source_sid and accounted on the peer's admission controller.
+                        _admission->release(gid);
                     } else {
                         source_sid.reset();
                     }
@@ -333,9 +333,9 @@ ss::future<client_pool::client_lease> client_pool::acquire(
             }
 
             if (likely(!_idle_clients.empty())) {
-                co_await _sched->admit(gid, as);
+                co_await _admission->admit(gid, as);
                 if (_idle_clients.empty()) {
-                    _sched->release(gid);
+                    _admission->release(gid);
                     continue;
                 }
                 client = pop_most_recently_used();
@@ -460,7 +460,7 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                   // upstreams. Just shutdown the client and return the slot
                   // to the pool.
                   pool->emplace_idle(pool->_default_upstream.value());
-                  pool->_sched->release(gid);
+                  pool->_admission->release(gid);
                   pool->_cvar.signal();
                   client->shutdown();
                   ssx::spawn_with_gate(pool->_bg_gate, [client] {
@@ -503,11 +503,11 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                               if (other._as.abort_requested()) {
                                   // We are shutting down, ok to skip
                                   // returning the borrowed connection.
-                                  // The scheduler slot was obtained on
+                                  // The admission controller slot was obtained on
                                   // this peer by try_admit_then_borrow,
                                   // though, and the admit/release
                                   // pairing must hold across shutdown.
-                                  other._sched->release(gid);
+                                  other._admission->release(gid);
                                   return ss::now();
                               }
                               auto h = other._bg_gate.hold();
@@ -516,14 +516,14 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                                         ssx::semaphore_units) {
                                     other.return_one(
                                       other._default_upstream.value(), my_sid);
-                                    other._sched->release(gid);
+                                    other._admission->release(gid);
                                 })
                                 .finally([h = std::move(h)] {});
                           });
                     });
               } else {
                   pool->release_most_recently_used(client);
-                  pool->_sched->release(gid);
+                  pool->_admission->release(gid);
               }
           }
       }),
@@ -647,11 +647,11 @@ ss::future<bool> client_pool::try_admit_then_borrow(
   cloud_io::group_id g, ss::shard_id requester) noexcept {
     try {
         auto units_h = co_await ss::get_units(_pool_ready_barrier, 1);
-        if (_idle_clients.empty() || !_sched->try_admit(g)) {
+        if (_idle_clients.empty() || !_admission->try_admit(g)) {
             co_return false;
         }
         if (!borrow_one(requester)) {
-            _sched->release(g);
+            _admission->release(g);
             co_return false;
         }
         co_return true;

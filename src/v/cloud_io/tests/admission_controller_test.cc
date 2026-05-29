@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_io/scheduler.h"
+#include "cloud_io/admission_controller.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/abort_source.hh>
@@ -18,8 +18,8 @@
 
 using namespace cloud_io;
 
-TEST_CORO(scheduler, PassthroughAdmitAlwaysSucceeds) {
-    scheduler s{2};
+TEST_CORO(admission_controller, PassthroughAdmitAlwaysSucceeds) {
+    admission_controller s{2};
     EXPECT_EQ(s.total_capacity(), 2u);
 
     ss::abort_source as;
@@ -30,8 +30,8 @@ TEST_CORO(scheduler, PassthroughAdmitAlwaysSucceeds) {
     co_await s.stop();
 }
 
-TEST_CORO(scheduler, PassthroughTryAdmitAlwaysSucceeds) {
-    scheduler s{1};
+TEST_CORO(admission_controller, PassthroughTryAdmitAlwaysSucceeds) {
+    admission_controller s{1};
 
     EXPECT_TRUE(s.try_admit(group_id::default_group));
     EXPECT_TRUE(s.try_admit(group_id::consumer_fetch));
@@ -39,14 +39,14 @@ TEST_CORO(scheduler, PassthroughTryAdmitAlwaysSucceeds) {
     co_await s.stop();
 }
 
-// The tests below construct a real reservation_policy through the scheduler
+// The tests below construct a real reservation_policy through the admission_controller
 // shell to exercise the integration: factory wiring, has_waiters
 // aggregation, the stop()-then-admit drain, and that the configured
 // per-group reservation flows through to admission behavior. Policy
 // internals are exercised by reservation_policy_test.cc.
 
-TEST_CORO(scheduler, ReservationHasWaitersReflectsQueueState) {
-    scheduler s{1, scheduler_config{.policy = policy_type::reservation}};
+TEST_CORO(admission_controller, ReservationHasWaitersReflectsQueueState) {
+    admission_controller s{1, admission_config{.policy = policy_type::reservation}};
     EXPECT_FALSE(s.has_waiters());
 
     ss::abort_source as;
@@ -65,8 +65,8 @@ TEST_CORO(scheduler, ReservationHasWaitersReflectsQueueState) {
     co_await s.stop();
 }
 
-TEST_CORO(scheduler, ReservationStopDrainsAndRejectsAdmits) {
-    scheduler s{1, scheduler_config{.policy = policy_type::reservation}};
+TEST_CORO(admission_controller, ReservationStopDrainsAndRejectsAdmits) {
+    admission_controller s{1, admission_config{.policy = policy_type::reservation}};
 
     ss::abort_source as;
     co_await s.admit(group_id::default_group, as);
@@ -89,13 +89,13 @@ TEST_CORO(scheduler, ReservationStopDrainsAndRejectsAdmits) {
     s.release(group_id::default_group);
 }
 
-TEST_CORO(scheduler, ReservationReservationsRespectConfiguredTargets) {
+TEST_CORO(admission_controller, ReservationReservationsRespectConfiguredTargets) {
     // capacity=4, producer_upload reserved=2 → shared=2. Once pu is
     // active, the shared pool is exhausted by default_group, but
     // producer_upload can still admit twice from its dedicated lane.
-    scheduler s{
+    admission_controller s{
       4,
-      scheduler_config{
+      admission_config{
         .policy = policy_type::reservation,
         .reservation = reservation_policy_config{
           {group_id::producer_upload, 2}}}};

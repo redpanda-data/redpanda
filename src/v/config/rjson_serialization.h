@@ -13,7 +13,7 @@
 
 #include "base/format_to.h"
 #include "base/seastarx.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/leaders_preference.h"

@@ -1000,7 +1000,7 @@ class SISettings:
             # The cluster default sums to 6; shrink when the pool is sized
             # below that.
             if self.cloud_storage_max_connections < 6:
-                conf["cloud_io_scheduler_reservation"] = [
+                conf["cloud_io_admission_reservation"] = [
                     "producer_upload:1",
                     "consumer_fetch:1",
                     "default_group:1",

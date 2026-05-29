@@ -9,7 +9,7 @@
  */
 
 #include "cloud_io/reservation_policy.h"
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/abort_source.hh>

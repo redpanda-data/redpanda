@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_io/scheduler_types.h"
+#include "cloud_io/admission_types.h"
 #include "config/leaders_preference.h"
 #include "config/types.h"
 #include "model/compression.h"
