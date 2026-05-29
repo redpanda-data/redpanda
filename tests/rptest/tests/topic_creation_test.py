@@ -170,8 +170,6 @@ class TopicRecreateTest(RedpandaTest):
         spec = TopicSpec(partition_count=partition_count, replication_factor=3)
         spec.cleanup_policy = cleanup_policy
 
-        rpk = RpkTool(self.redpanda)
-
         self.client().create_topic(spec)
         self._wait_for_topic_ready(spec.name, partition_count, spec.replication_factor)
 
@@ -196,6 +194,8 @@ class TopicRecreateTest(RedpandaTest):
             properties=producer_properties,
         )
         swarm.start()
+
+        rpk = RpkTool(self.redpanda)
 
         def topic_is_healthy():
             if not swarm.is_alive():
