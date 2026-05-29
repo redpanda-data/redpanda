@@ -10,6 +10,7 @@
 import json
 import os
 import subprocess
+import threading
 import time
 from logging import Logger
 from typing import Any, Generator, Union, overload, Literal
@@ -101,6 +102,12 @@ class KubectlTool:
     TELEPORT_DEST_DIR = "/tmp/machine-id"
     TELEPORT_IDENT_FILE = f"{TELEPORT_DEST_DIR}/identity"
 
+    # breakglass-tools.sh can hang silently (apt lock, slow download).
+    # Use a shorter per-attempt timeout and retry rather than burning
+    # the full 900s default once with no diagnostic output.
+    BREAKGLASS_TIMEOUT_SEC = 300
+    BREAKGLASS_RETRIES = 3
+
     def __init__(
         self,
         redpanda: Any,
@@ -182,14 +189,59 @@ class KubectlTool:
         ]
 
     def _install_kubectl(self):
-        """Installs kubectl on a remote target host"""
+        """Installs kubectl on a remote target host.
+
+        Runs breakglass-tools.sh with streaming output and retries on timeout
+        so hangs (e.g. apt lock, slow download) are visible and recoverable.
+        """
         breakglass_cmd = ["./breakglass-tools.sh"]
         if self._provider == "azure":
             # for azure, we manually override the path here to ensure
             # that azure-cli installed as a snap gets found (workaround)
             p = ["env", "PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin"]
             breakglass_cmd = p + breakglass_cmd
-        self._ssh_cmd(breakglass_cmd)
+
+        ssh_cmd = self._ssh_prefix() + breakglass_cmd
+
+        for attempt in range(1, self.BREAKGLASS_RETRIES + 1):
+            self._redpanda.logger.info(
+                f"breakglass-tools.sh attempt {attempt}/{self.BREAKGLASS_RETRIES}: {ssh_cmd}"
+            )
+            try:
+                process = subprocess.Popen(
+                    ssh_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+
+                def _stream(proc=process):
+                    for line in iter(proc.stdout.readline, ""):
+                        self._redpanda.logger.info(f"[breakglass] {line.rstrip()}")
+
+                reader = threading.Thread(target=_stream, daemon=True)
+                reader.start()
+                try:
+                    process.wait(timeout=self.BREAKGLASS_TIMEOUT_SEC)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                    raise
+                finally:
+                    reader.join(timeout=5)
+
+                if process.returncode != 0:
+                    raise subprocess.CalledProcessError(process.returncode, ssh_cmd)
+                break
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+                self._redpanda.logger.warning(
+                    f"breakglass-tools.sh failed (attempt {attempt}/{self.BREAKGLASS_RETRIES}): {e}"
+                )
+                if attempt == self.BREAKGLASS_RETRIES:
+                    raise
+                backoff = 10 * attempt
+                self._redpanda.logger.info(f"Retrying in {backoff}s...")
+                time.sleep(backoff)
 
         # Install EKS token caching wrapper for AWS to avoid calling
         # 'aws eks get-token' on every kubectl invocation
