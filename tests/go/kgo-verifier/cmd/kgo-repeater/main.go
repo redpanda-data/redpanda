@@ -62,6 +62,7 @@ func NewAdmin() (*kadm.Client, error) {
 
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(strings.Split(*brokers, ",")...),
+		kgo.AlwaysRetryEOF(), // workaround for CORE-14849
 	}
 
 	if len(*username) > 0 {

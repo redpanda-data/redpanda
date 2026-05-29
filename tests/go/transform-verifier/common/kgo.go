@@ -75,6 +75,7 @@ func NewClient(opts ...kgo.Opt) (*kgo.Client, error) {
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumeTopics(topic),
 		kgo.DefaultProduceTopic(topic),
+		kgo.AlwaysRetryEOF(), // workaround for CORE-14849
 	}
 	finalOps = append(finalOps, opts...)
 	return kgo.NewClient(finalOps...)

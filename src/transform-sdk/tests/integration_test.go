@@ -63,6 +63,7 @@ func TestMain(m *testing.M) {
 	}
 	kgoClient, err := kgo.NewClient(
 		kgo.SeedBrokers(broker),
+		kgo.AlwaysRetryEOF(), // workaround for CORE-14849
 	)
 	if err != nil {
 		log.Fatalf("unable to create kafka client: %v", err)
@@ -95,7 +96,7 @@ func TestMain(m *testing.M) {
 func makeClient(t *testing.T, opts ...kgo.Opt) *kgo.Client {
 	broker, err := container.KafkaSeedBroker(ctx)
 	require.NoError(t, err)
-	opts = append(opts, kgo.SeedBrokers(broker))
+	opts = append(opts, kgo.SeedBrokers(broker), kgo.AlwaysRetryEOF()) // AlwaysRetryEOF: workaround for CORE-14849
 	kgoClient, err := kgo.NewClient(opts...)
 	require.NoError(t, err)
 	return kgoClient
