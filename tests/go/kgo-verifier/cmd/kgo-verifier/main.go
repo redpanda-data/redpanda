@@ -80,12 +80,15 @@ var (
 	validateLatestValues  = flag.Bool("validate-latest-values", false, "If true, values consumed by a worker will be validated against the last produced value by a producer. This value should only be set if compaction has been allowed to fully de-duplicate the entirety of the log before consuming.")
 
 	produceRandomBytes = flag.Bool("produce-random-bytes", false, "If true, when generating random values, generate random bytes rather than random ascii")
+
+	metadataMaxAge = flag.Duration("metadata-max-age", 15*time.Second, "kgo MetadataMaxAge; 0 uses franz-go's default. See WorkerConfig.MetadataMaxAge.")
 )
 
 func makeWorkerConfig() worker.WorkerConfig {
 	c := worker.WorkerConfig{
 		Brokers:               *brokers,
 		Trace:                 *trace,
+		MetadataMaxAge:        *metadataMaxAge,
 		Topic:                 *topic,
 		Linger:                *linger,
 		MaxBufferedRecords:    *maxBufferedRecords,

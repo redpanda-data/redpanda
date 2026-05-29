@@ -973,6 +973,7 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
         use_transactions: bool | None = False,
         compacted: bool | None = False,
         validate_latest_values: bool | None = False,
+        metadata_max_age_ms: int | None = None,
     ):
         super().__init__(
             context,
@@ -994,6 +995,7 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
         self._use_transactions = use_transactions
         self._compacted = compacted
         self._validate_latest_values = validate_latest_values
+        self._metadata_max_age_ms = metadata_max_age_ms
 
     def start_node(self, node: ClusterNode, clean: bool = False, **kwargs) -> None:
         assert not kwargs, f"Unexpected kwargs: {kwargs}"
@@ -1015,6 +1017,8 @@ class KgoVerifierSeqConsumer(AbstractConsumer):
             cmd += f" --consume-throughput-mb {self._max_throughput_mb}"
         if self._continuous:
             cmd += " --continuous"
+        if self._metadata_max_age_ms is not None:
+            cmd += f" --metadata-max-age {self._metadata_max_age_ms}ms"
         if self._tolerate_data_loss:
             cmd += " --tolerate-data-loss"
         if self._use_transactions:

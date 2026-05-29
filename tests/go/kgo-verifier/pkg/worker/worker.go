@@ -200,6 +200,12 @@ type WorkerConfig struct {
 	TolerateFailedProduce bool
 	Continuous            bool
 	ValidateLatestValues  bool
+
+	// MetadataMaxAge sets kgo.MetadataMaxAge (0 = franz-go's 5m default). Defaults to 15s: franz-go
+	// only re-checks for a log rewind (KIP-320) when metadata shows a new leader epoch, and after an
+	// all-nodes-crash leaderless window the next refresh is otherwise up to 5m away (past test
+	// timeouts), so the consumer stalls. https://redpandadata.atlassian.net/browse/CORE-13458
+	MetadataMaxAge time.Duration
 }
 
 func CompressionCodecFromString(s string) (kgo.CompressionCodec, error) {
@@ -296,6 +302,10 @@ func (wc *WorkerConfig) MakeKgoOpts() []kgo.Opt {
 		opts = append(opts, kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, func() string {
 			return fmt.Sprintf("time=\"%s\" name=%s", time.Now().UTC().Format(time.RFC3339), wc.Name)
 		})))
+	}
+
+	if wc.MetadataMaxAge > 0 {
+		opts = append(opts, kgo.MetadataMaxAge(wc.MetadataMaxAge))
 	}
 
 	return opts
