@@ -79,6 +79,7 @@ def data_dependency():
         url = "https://github.com/krb5/krb5/archive/refs/tags/krb5-1.22.2-final.tar.gz",
         patches = [
             "//bazel/thirdparty:0002-Fix-two-NegoEx-parsing-vulnerabilities.patch",
+            "//bazel/thirdparty:0003-Fix-build-when-KRB5_DNS_LOOKUP-isnt-defined.patch",
         ],
         patch_args = ["-p1"],
     )
