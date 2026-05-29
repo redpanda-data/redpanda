@@ -32,6 +32,7 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
 )
 from rptest.services.catalog_service import CatalogService
 from rptest.services.redpanda import (
@@ -72,6 +73,15 @@ TS_LOG_ALLOW_LIST = [
     ),
 ]
 
+RNOT_CHURN_ALLOW_LIST = [
+    re.compile(
+        r".*ctp_stm.*Error occurred when attempting to write snapshot: std::invalid_argument \(can not take raft snapshot at offset \d+ which is smaller than raft start offset\).*"
+    ),
+    re.compile(
+        r".*tx_gateway_frontend.*begin_tx request for pid:.*result: tx::errc::.*"
+    ),
+]
+
 
 class CompactionMode(str, Enum):
     SLIDING_WINDOW = "sliding_window"
@@ -79,7 +89,12 @@ class CompactionMode(str, Enum):
     ADJACENT_MERGE = "adjacent_merge"
 
 
-RNOT_ALLOW_LIST = CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST
+RNOT_ALLOW_LIST = (
+    CHAOS_LOG_ALLOW_LIST
+    + PREV_VERSION_LOG_ALLOW_LIST
+    + TS_LOG_ALLOW_LIST
+    + RNOT_CHURN_ALLOW_LIST
+)
 
 
 class RandomNodeOperationsBase(PreallocNodesTest):
@@ -106,8 +121,12 @@ class RandomNodeOperationsBase(PreallocNodesTest):
                 # this way the disk size information will be updated more frequently
                 "retention_local_trim_interval": 5000,
             },
-            # 2 nodes for kgo producer/consumer workloads
-            node_prealloc_count=3,
+            # 4 nodes for kgo producer/consumer workloads:
+            # node 0: deletion workload
+            # node 1: compaction workload
+            # node 2: fast + cloud topics + write-caching workloads
+            # node 3: tx-delete + tx-compact workloads
+            node_prealloc_count=4,
             schema_registry_config=SchemaRegistryConfig(),
             pandaproxy_config=PandaproxyConfig(),
             *args,
@@ -320,6 +339,9 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             tolerate_data_loss: bool = False,
             iceberg_enabled: bool = False,
             catalog_service: CatalogService | None = None,
+            use_transactions: bool = False,
+            msgs_per_transaction: int | None = None,
+            transaction_abort_rate: float | None = None,
         ):
             self.test_context = test_context
             self.logger = logger
@@ -335,6 +357,9 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             self.tolerate_data_loss = tolerate_data_loss
             self.iceberg_enabled = iceberg_enabled
             self.catalog_service = catalog_service
+            self.use_transactions = use_transactions
+            self.msgs_per_transaction = msgs_per_transaction
+            self.transaction_abort_rate = transaction_abort_rate
 
         def _start_producer(self, clean: bool):
             self.producer = KgoVerifierProducer(
@@ -347,6 +372,9 @@ class RandomNodeOperationsBase(PreallocNodesTest):
                 rate_limit_bps=self.rate_limit_bps,
                 key_set_cardinality=self.key_set_cardinality,
                 tolerate_data_loss=self.tolerate_data_loss,
+                use_transactions=self.use_transactions,
+                msgs_per_transaction=self.msgs_per_transaction,
+                transaction_abort_rate=self.transaction_abort_rate,
             )
 
             self.producer.start(clean=clean)
@@ -358,7 +386,7 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             )
             self.producer.wait_for_offset_map()
 
-        def _start_consumer(self, with_logs: bool = False):
+        def _start_consumer(self, with_logs: bool = False, max_msgs: int | None = None):
             self.consumer = KgoVerifierConsumerGroupConsumer(
                 self.test_context,
                 self.redpanda,
@@ -370,6 +398,8 @@ class RandomNodeOperationsBase(PreallocNodesTest):
                 trace_logs=with_logs,
                 compacted=self.compaction_enabled,
                 tolerate_data_loss=self.tolerate_data_loss,
+                use_transactions=self.use_transactions,
+                max_msgs=max_msgs,
             )
 
             self.consumer.start(clean=False)
@@ -400,15 +430,44 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             )
             del self.consumer
 
-            # Start a new consumer to read all data written
-            self._start_consumer(with_logs=True)
-            self.consumer.wait()
+            # Start a new consumer to read all data written.
+            expected_reads = None
             if not self.compaction_enabled:
+                expected_reads = self.producer.produce_status.acked
+                if self.use_transactions:
+                    expected_reads -= (
+                        self.producer.produce_status.aborted_transaction_messages
+                    )
+
+            if self.use_transactions:
+                # Use a sequential consumer for transactional topics
+                # because the seq_read_worker handles control records
+                # correctly (via kgo.KeepControlRecords). The group
+                # consumer hangs when control records at the end of
+                # a partition inflate HWM beyond what it can reach.
+                self.consumer = KgoVerifierSeqConsumer(
+                    self.test_context,
+                    self.redpanda,
+                    self.topic,
+                    self.msg_size,
+                    max_msgs=expected_reads,
+                    nodes=self.nodes,
+                    debug_logs=True,
+                    trace_logs=True,
+                    compacted=self.compaction_enabled,
+                    tolerate_data_loss=self.tolerate_data_loss,
+                    use_transactions=self.use_transactions,
+                )
+                self.consumer.start(clean=False)
+            else:
+                self._start_consumer(with_logs=True, max_msgs=expected_reads)
+            self.consumer.wait()
+            if expected_reads is not None:
                 assert (
                     self.consumer.consumer_status.validator.valid_reads
-                    >= self.producer.produce_status.acked
+                    >= expected_reads
                 ), (
-                    f"Missing messages from topic: {self.topic}. valid reads: {self.consumer.consumer_status.validator.valid_reads}, acked messages: {self.producer.produce_status.acked}"
+                    f"Missing messages from topic: {self.topic}. valid reads: {self.consumer.consumer_status.validator.valid_reads}, expected committed messages: {expected_reads}"
                 )
 
             assert self.consumer.consumer_status.validator.invalid_reads == 0, (
@@ -472,12 +531,14 @@ class RandomNodeOperationsBase(PreallocNodesTest):
         cloud_storage_type: CloudStorageType,
     ):
         # In order to reduce the number of parameters and at the same time cover
-        # as many use cases as possible this test uses 3 topics which 3 separate
+        # as many use cases as possible this test uses topics with separate
         # producer/consumer pairs:
         #
         # tp-workload-deletion   - topic with delete cleanup policy
         # tp-workload-compaction - topic with compaction
         # tp-workload-fast       - topic with fast partition movements enabled
+        # tp-workload-tx-delete  - topic with transactional producer (delete)
+        # tp-workload-tx-compact - topic with transactional producer (compact)
         if with_iceberg:
             if mixed_versions:
                 self.should_skip = True
@@ -525,7 +586,13 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             with_cloud_topics=with_cloud_topics,
         )
 
-        self.redpanda.set_cluster_config({"controller_snapshot_max_age_sec": 1})
+        self.redpanda.set_cluster_config(
+            {
+                "controller_snapshot_max_age_sec": 1,
+                # Default 50 is too much noise.
+                "transaction_coordinator_partitions": 3,
+            }
+        )
 
         if with_iceberg:
             self.redpanda.set_cluster_config(
@@ -654,6 +721,69 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             catalog_service=self.catalog_service,
         )
         fast_producer_consumer.start(clean=True)
+
+        tx_delete_topic = TopicSpec(
+            name="tp-workload-tx-delete",
+            partition_count=self.max_partitions,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_DELETE,
+            segment_bytes=default_segment_size,
+            redpanda_remote_read=True,
+            redpanda_remote_write=True,
+        )
+        client.create_topic(tx_delete_topic)
+        self.maybe_enable_iceberg_for_topic(tx_delete_topic.name, with_iceberg)
+
+        tx_delete_producer_consumer = RandomNodeOperationsBase.producer_consumer(
+            test_context=self.test_context,
+            logger=self.logger,
+            topic_name=tx_delete_topic.name,
+            redpanda=self.redpanda,
+            nodes=[self.preallocated_nodes[3]],
+            msg_size=self.msg_size,
+            rate_limit_bps=self.rate_limit,
+            msg_count=self.msg_count,
+            consumers_count=self.consumers_count,
+            compaction_enabled=False,
+            iceberg_enabled=with_iceberg,
+            catalog_service=self.catalog_service,
+            use_transactions=True,
+            msgs_per_transaction=100,
+            transaction_abort_rate=0.3,
+        )
+        tx_delete_producer_consumer.start(clean=False)
+
+        tx_compact_topic = TopicSpec(
+            name="tp-workload-tx-compact",
+            partition_count=self.max_partitions,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+            segment_bytes=default_segment_size,
+            redpanda_remote_read=False,
+            redpanda_remote_write=False,
+        )
+        client.create_topic(tx_compact_topic)
+        self.maybe_enable_iceberg_for_topic(tx_compact_topic.name, with_iceberg)
+
+        tx_compact_producer_consumer = RandomNodeOperationsBase.producer_consumer(
+            test_context=self.test_context,
+            logger=self.logger,
+            topic_name=tx_compact_topic.name,
+            redpanda=self.redpanda,
+            nodes=[self.preallocated_nodes[3]],
+            msg_size=self.msg_size,
+            rate_limit_bps=self.rate_limit,
+            msg_count=self.msg_count,
+            consumers_count=self.consumers_count,
+            key_set_cardinality=500,
+            compaction_enabled=True,
+            iceberg_enabled=with_iceberg,
+            catalog_service=self.catalog_service,
+            use_transactions=True,
+            msgs_per_transaction=100,
+            transaction_abort_rate=0.3,
+        )
+        tx_compact_producer_consumer.start(clean=False)
 
         cloud_topics_delete_consumer = RandomNodeOperationsBase.producer_consumer(
             test_context=self.test_context,
@@ -880,6 +1010,8 @@ class RandomNodeOperationsBase(PreallocNodesTest):
             write_caching_producer_consumer.verify()
 
         fast_producer_consumer.verify()
+        tx_delete_producer_consumer.verify()
+        tx_compact_producer_consumer.verify()
 
         if with_cloud_topics:
             cloud_topics_delete_consumer.verify()
@@ -986,7 +1118,7 @@ class RedpandaNodeOperationsSmokeTest(RandomNodeOperationsBase):
             ),
         )
 
-    @cluster(num_nodes=9, log_allow_list=RNOT_ALLOW_LIST)
+    @cluster(num_nodes=10, log_allow_list=RNOT_ALLOW_LIST)
     @matrix(
         cloud_storage_type=get_cloud_storage_type()[:1], mixed_versions=[True, False]
     )

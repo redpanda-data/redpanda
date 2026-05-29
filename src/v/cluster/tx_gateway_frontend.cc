@@ -1418,6 +1418,7 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         if (should_abort) {
             break;
         }
+        should_retry = should_retry && !stm->gate().is_closed();
         if (should_retry) {
             if (!co_await sleep_abortable(delay_ms, _as)) {
                 break;
@@ -2258,6 +2259,9 @@ ss::future<tx_gateway_frontend::op_result_t> tx_gateway_frontend::commit_data(
         }
 
         tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
+        if (stm->gate().is_closed()) {
+            break;
+        }
         if (co_await sleep_abortable(delay_ms, _as)) {
             vlog(
               txlog.trace,
@@ -2387,6 +2391,9 @@ ss::future<tx_gateway_frontend::op_result_t> tx_gateway_frontend::abort_data(
             co_return tx::errc::request_rejected;
         }
         tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
+        if (stm->gate().is_closed()) {
+            break;
+        }
         if (!co_await sleep_abortable(delay_ms, _as)) {
             break;
         }

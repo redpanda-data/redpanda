@@ -64,6 +64,28 @@ func (t *TransactionSTM) TryEndTransaction() error {
 	return nil
 }
 
+// AbortTransaction aborts the current transaction if one is active. This
+// is used to recover from produce errors like OUT_OF_ORDER_SEQUENCE_NUMBER
+// that leave the transaction in an unrecoverable state.
+func (t *TransactionSTM) AbortTransaction() error {
+	if !t.activeTransaction {
+		return nil
+	}
+
+	t.client.AbortBufferedRecords(t.ctx)
+	if err := t.client.EndTransaction(t.ctx, kgo.TryAbort); err != nil {
+		log.Errorf("Unable to abort transaction: %v", err)
+		return err
+	}
+
+	log.Infof("Aborted transaction after produce error; currentMgsProduced = %d", t.currentMgsProduced)
+
+	t.currentMgsProduced = 0
+	t.activeTransaction = false
+	t.abortedTransaction = false
+	return nil
+}
+
 // BeforeMessageSent ends the current transaction if it has reached
 // msgsPerTransaction, then begins a new one if needed. Must be called
 // before each produce.

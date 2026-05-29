@@ -1226,6 +1226,7 @@ class ProduceStatus:
         active=False,
         failed_transactions=0,
         aborted_transaction_msgs=0,
+        ambiguous_transaction_msgs=0,
         fails=0,
         tombstones_produced=0,
     ):
@@ -1241,12 +1242,13 @@ class ProduceStatus:
         self.active = active
         self.failed_transactions = failed_transactions
         self.aborted_transaction_messages = aborted_transaction_msgs
+        self.ambiguous_transaction_messages = ambiguous_transaction_msgs
         self.fails = fails
         self.tombstones_produced = tombstones_produced
 
     def __str__(self):
         l = self.latency
-        return f"ProduceStatus<{self.topic}: {self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {self.fails} {self.tombstones_produced} {l['p50']}/{l['p90']}/{l['p99']}>"
+        return f"ProduceStatus<{self.topic}: {self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {self.ambiguous_transaction_messages} {self.fails} {self.tombstones_produced} {l['p50']}/{l['p90']}/{l['p99']}>"
 
 
 Status: TypeAlias = ProduceStatus | ConsumerStatus

@@ -67,7 +67,15 @@ type ProducerWorker struct {
 	transactionsEnabled  bool
 	transactionSTMConfig worker.TransactionSTMConfig
 	transactionSTM       *worker.TransactionSTM
-	churnProducers       bool
+	// transactionalID is generated once per worker and reused across every
+	// kgo.Client created by produceInner restarts. Reusing it lets the
+	// next restart's InitProducerId fence the prior epoch and have the
+	// coordinator drive any in-flight tx from that epoch to a clean
+	// commit/abort, instead of leaving an orphan that lands a control
+	// marker at an unpredictable point in time inside the new producer's
+	// txn boundaries.
+	transactionalID string
+	churnProducers  bool
 
 	tolerateDataLoss      bool
 	tolerateFailedProduce bool
@@ -103,6 +111,9 @@ func NewProducerWorker(cfg ProducerConfig) ProducerWorker {
 func (v *ProducerWorker) EnableTransactions(config worker.TransactionSTMConfig) {
 	v.transactionSTMConfig = config
 	v.transactionsEnabled = true
+	// Generate the TransactionalID once. It is reused on every produceInner
+	// restart so InitProducerId can fence the prior epoch.
+	v.transactionalID = "kgo-verifier-" + v.config.workerCfg.Topic + "-" + uuid.New().String()
 }
 
 func (pw *ProducerWorker) newRecord(producerId int, sequence int64) *kgo.Record {
@@ -115,8 +126,9 @@ func (pw *ProducerWorker) newRecord(producerId int, sequence int64) *kgo.Record 
 		// This message ensures that `ValidatorStatus.ValidateRecord`
 		// will report it as an invalid read if it's consumed. This is
 		// since messages in aborted transactions should never be read.
+		// AbortedTransactionMessages is incremented on the produce ack
+		// (in OnAcked) so failed produces don't inflate the counter.
 		fmt.Fprintf(&header_key, "ABORTED MSG: %06d.%018d", producerId, sequence)
-		pw.Status.AbortedTransactionMessages += 1
 	}
 
 	var payload []byte
@@ -199,6 +211,19 @@ type ProducerWorkerStatus struct {
 	//  inside those transactions)
 	AbortedTransactionMessages int64 `json:"aborted_transaction_msgs"`
 
+	// Records whose transaction outcome is unknown to the producer:
+	// EndTransaction(commit) returned an error (e.g. REQUEST_TIMED_OUT,
+	// OPERATION_NOT_ATTEMPTED) so the broker may or may not have
+	// committed them. The verifier should treat the consumer's
+	// read_committed view as ground truth for these.
+	AmbiguousTransactionMessages int64 `json:"ambiguous_transaction_msgs"`
+
+	// Records acked in the current in-flight transaction with commit
+	// intent. Reset to 0 when a transaction commits successfully;
+	// rolled into AbortedTransactionMessages or
+	// AmbiguousTransactionMessages on transaction failure.
+	currentTxCommitIntentAcked int64
+
 	// Ack latency: a private histogram for the data,
 	// and a public summary for JSON output
 	latency metrics.Histogram
@@ -221,11 +246,21 @@ func NewProducerWorkerStatus(topic string) ProducerWorkerStatus {
 	}
 }
 
-func (pw *ProducerWorker) OnAcked(r *kgo.Record) {
+func (pw *ProducerWorker) OnAcked(r *kgo.Record, abortedMsg bool) {
 	pw.Status.lock.Lock()
 	defer pw.Status.lock.Unlock()
 
 	pw.Status.OnAcked(r.Partition, r.Offset)
+	if abortedMsg {
+		// Only count records that successfully produced as part of an
+		// intentionally-aborted transaction. Records that failed to
+		// produce should not inflate this counter.
+		pw.Status.AbortedTransactionMessages += 1
+	} else if pw.transactionsEnabled {
+		// Track commit-intent records in the current tx so we can
+		// account for them as aborted if the tx ends in abort/error.
+		pw.Status.currentTxCommitIntentAcked += 1
+	}
 
 	pw.validOffsets.Insert(r.Partition, r.Offset)
 	if pw.validateLatestValues || pw.config.producesTombstones {
@@ -340,12 +375,10 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	}...)
 
 	if pw.transactionsEnabled {
-		randId := uuid.New()
-		tid := "p" + randId.String()
-		log.Debugf("Configuring transactions with TransactionalID %s", tid)
+		log.Debugf("Configuring transactions with TransactionalID %s", pw.transactionalID)
 
 		opts = append(opts, []kgo.Opt{
-			kgo.TransactionalID(tid),
+			kgo.TransactionalID(pw.transactionalID),
 		}...)
 	}
 
@@ -356,10 +389,36 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	}
 
 	if pw.transactionsEnabled {
+		// Force InitProducerId synchronously via a no-op BeginTransaction
+		// so any prior-epoch tx that was Ongoing on the coordinator is
+		// driven to a terminal state before we sample offsets.
+		if err := client.BeginTransaction(); err != nil {
+			client.Close()
+			log.Warnf("Warmup BeginTransaction failed (will retry produceInner): %v", err)
+			time.Sleep(500 * time.Millisecond)
+			return 0, nil, nil
+		}
+		if err := client.EndTransaction(context.Background(), kgo.TryAbort); err != nil {
+			client.Close()
+			log.Warnf("Warmup EndTransaction failed (will retry produceInner): %v", err)
+			time.Sleep(500 * time.Millisecond)
+			return 0, nil, nil
+		}
+
 		pw.transactionSTM = worker.NewTransactionSTM(context.Background(), client, pw.transactionSTMConfig)
 	}
 
-	nextOffset := GetOffsets(client, pw.config.workerCfg.Topic, pw.config.nPartitions, -1)
+	var nextOffset []int64
+	if pw.transactionsEnabled {
+		// HWM alone is racy after a restart: a prior tx the coordinator
+		// already finalized may still have an abort/commit marker in
+		// flight to the data partition leader. LSO only advances past
+		// resolved markers, so once LSO == HWM we know the partition
+		// reflects all completed txs.
+		nextOffset = GetStableOffsets(client, pw.config.workerCfg.Topic, pw.config.nPartitions, 30*time.Second)
+	} else {
+		nextOffset = GetOffsets(client, pw.config.workerCfg.Topic, pw.config.nPartitions, -1)
+	}
 
 	for i, o := range nextOffset {
 		log.Infof("Produce start offset %s/%d %d...", pw.config.workerCfg.Topic, i, o)
@@ -368,7 +427,9 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	var wg sync.WaitGroup
 
 	errored := false
+	commitErrored := false
 	produced := int64(0)
+	failsBefore := pw.Status.Fails
 
 	// Channel must be >= concurrency
 	bad_offsets := make(chan BadOffset, 16384)
@@ -391,8 +452,6 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 	for i := int64(0); i < n && !errored; i = i + 1 {
 		concurrent.Acquire(context.Background(), 1)
-		produced += 1
-		pw.Status.Sent += 1
 		var p = rand.Int31n(pw.config.nPartitions)
 
 		if pw.transactionsEnabled {
@@ -400,8 +459,16 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 			err := pw.transactionSTM.BeforeMessageSent()
 			if err != nil {
+				concurrent.Release(1)
 				log.Errorf("Transaction error %v", err)
 				errored = true
+				// If the failure was on a tx-ending call (Flush+
+				// EndTransaction inside BeforeMessageSent), the records
+				// produced so far had commit intent and the broker may
+				// or may not have committed them.
+				if willEnd {
+					commitErrored = true
+				}
 				pw.Status.FailedTransactions += 1
 				break
 			}
@@ -414,6 +481,13 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				}
 				txPartitions = make(map[int32]bool)
 				txPartitionSeen = make(map[int32]bool)
+				// Previous tx ended successfully. Reset the
+				// commit-intent counter — those records are now
+				// committed (intent-commit) or were already counted
+				// as aborted at ack time (intent-abort).
+				pw.Status.lock.Lock()
+				pw.Status.currentTxCommitIntentAcked = 0
+				pw.Status.lock.Unlock()
 			}
 
 			// First produce to this partition in this transaction
@@ -426,12 +500,20 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 			txPartitions[p] = true
 		}
 
+		produced += 1
+		pw.Status.Sent += 1
+
 		if pw.churnProducers && pw.Status.Sent > 0 && pw.Status.Sent%int64(pw.config.messagesPerProducerId) == 0 {
 			break
 		}
 
 		expectOffset := nextOffset[p]
 		nextOffset[p] += 1
+
+		// Capture abort intent at produce time — by the time the
+		// callback fires the transaction may have already ended and
+		// InAbortedTransaction() reflects the next tx's state.
+		abortedMsg := pw.transactionsEnabled && pw.transactionSTM.InAbortedTransaction()
 
 		r := pw.newRecord(0, expectOffset)
 		r.Partition = p
@@ -449,11 +531,15 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 
 			if err != nil {
 				pw.Status.OnFail()
-				errHandler := util.Die
-				if pw.tolerateFailedProduce {
-					errHandler = log.Warnf
+				if pw.transactionsEnabled {
+					log.Warnf("Produce failed in transaction, will abort and retry: %v", err)
+				} else {
+					errHandler := util.Die
+					if pw.tolerateFailedProduce {
+						errHandler = log.Warnf
+					}
+					errHandler("Produce failed: %v", err)
 				}
-				errHandler("Produce failed: %v", err)
 				errored = true
 			} else if expectOffset != r.Offset {
 				log.Warnf("Produced at unexpected offset %d (expected %d) on partition %d", r.Offset, expectOffset, r.Partition)
@@ -463,7 +549,7 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 				log.Debugf("errored = %t", errored)
 			} else {
 				ackLatency := time.Now().Sub(sentAt)
-				pw.OnAcked(r)
+				pw.OnAcked(r, abortedMsg)
 				pw.Status.latency.Update(ackLatency.Microseconds())
 				log.Debugf("Wrote partition %d at %d", r.Partition, r.Offset)
 			}
@@ -481,10 +567,39 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 	}
 
 	if pw.transactionsEnabled {
-		if err := pw.transactionSTM.TryEndTransaction(); err != nil {
-			log.Errorf("unable to end transaction: %v", err)
-			errored = true
+		if errored {
+			if err := pw.transactionSTM.AbortTransaction(); err != nil {
+				log.Errorf("unable to abort transaction: %v", err)
+			}
 			pw.Status.FailedTransactions += 1
+			pw.Status.lock.Lock()
+			if commitErrored {
+				// EndTransaction(commit) returned an ambiguous error;
+				// the broker may or may not have committed.
+				pw.Status.AmbiguousTransactionMessages += pw.Status.currentTxCommitIntentAcked
+			} else {
+				// Produce failed mid-tx; the subsequent abort is
+				// deterministic so these records are aborted.
+				pw.Status.AbortedTransactionMessages += pw.Status.currentTxCommitIntentAcked
+			}
+			pw.Status.currentTxCommitIntentAcked = 0
+			pw.Status.lock.Unlock()
+		} else {
+			if err := pw.transactionSTM.TryEndTransaction(); err != nil {
+				log.Errorf("unable to end transaction: %v", err)
+				errored = true
+				pw.Status.FailedTransactions += 1
+				// End-of-loop EndTransaction failed; outcome unknown.
+				pw.Status.lock.Lock()
+				pw.Status.AmbiguousTransactionMessages += pw.Status.currentTxCommitIntentAcked
+				pw.Status.currentTxCommitIntentAcked = 0
+				pw.Status.lock.Unlock()
+			} else {
+				// Tx committed successfully. Reset the counter.
+				pw.Status.lock.Lock()
+				pw.Status.currentTxCommitIntentAcked = 0
+				pw.Status.lock.Unlock()
+			}
 		}
 	}
 
@@ -510,7 +625,8 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 		if len(r) == 0 && pw.Status.Fails == 0 && pw.Status.FailedTransactions == 0 {
 			util.Die("No bad offsets or failed produces or transactions but errored?")
 		}
-		successful_produced := produced - int64(len(r))
+		failsThisRound := pw.Status.Fails - failsBefore
+		successful_produced := produced - int64(len(r)) - failsThisRound
 		return successful_produced, r, nil
 	} else {
 		wg.Wait()

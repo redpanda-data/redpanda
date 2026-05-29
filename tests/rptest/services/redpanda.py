@@ -269,6 +269,14 @@ CHAOS_LOG_ALLOW_LIST = [
     # Failure to handle an internal RPC because the RPC server already handles connections but doesn't yet handle this method. This can happen while the node is still starting up/restarting.
     # e.g. "admin_api_server - server.cc:655 - [_anonymous] exception intercepted - url: [http://ip-172-31-9-208:9644/v1/brokers/7/decommission] http_return_status[500] reason - seastar::httpd::server_error_exception (Unexpected error: rpc::errc::method_not_found)"
     re.compile("admin_api_server - .*Unexpected error: rpc::errc::method_not_found"),
+    # Transaction coordinator errors under fault injection
+    re.compile(r"tx - .*Error during writing a barrier batch.*timed_out_error"),
+    re.compile(r"tx - .*begin_tx request.*(?:leader_not_found|request_rejected)"),
+    # Begin retried by client after the previous attempt already advanced
+    # the rm_stm; benign under network faults.
+    re.compile(
+        r"tx - .*duplicate begin request with producer after the transaction already"
+    ),
 ]
 
 # Log errors emitted by refresh credentials system when cloud storage is enabled with IAM roles
