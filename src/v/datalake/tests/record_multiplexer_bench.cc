@@ -377,7 +377,7 @@ struct counting_consumer {
 
 // Specifies how many batches should be in the test dataset.
 #ifdef NDEBUG
-static constexpr size_t batches = 1000;
+static constexpr size_t batches = 100;
 #else
 static constexpr size_t batches = 1;
 #endif
@@ -386,6 +386,9 @@ static constexpr size_t records_per_batch = 10;
 
 static constexpr size_t small_field_size_bytes = 8;
 static constexpr size_t large_field_size_bytes = 256;
+static constexpr size_t field_size_bytes_1024 = 1024;
+static constexpr size_t field_size_bytes_4096 = 4096;
+static constexpr size_t field_size_bytes_8192 = 8192;
 static constexpr size_t max_nesting_level = 40;
 
 } // namespace
@@ -729,6 +732,82 @@ PERF_TEST_CN(
       1, large_field_size_bytes, model::compression::zstd);
 }
 
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_1_field_1024) {
+    co_return co_await run_protobuf_linear_bench(1, field_size_bytes_1024);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_1_field_4096) {
+    co_return co_await run_protobuf_linear_bench(1, field_size_bytes_4096);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_1_field_8192) {
+    co_return co_await run_protobuf_linear_bench(1, field_size_bytes_8192);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_5_fields_small) {
+    co_return co_await run_protobuf_linear_bench(5, small_field_size_bytes);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_5_fields_large) {
+    co_return co_await run_protobuf_linear_bench(5, large_field_size_bytes);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_5_fields_1024) {
+    co_return co_await run_protobuf_linear_bench(5, field_size_bytes_1024);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_5_fields_4096) {
+    co_return co_await run_protobuf_linear_bench(5, field_size_bytes_4096);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_5_fields_8192) {
+    co_return co_await run_protobuf_linear_bench(5, field_size_bytes_8192);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_10_fields_small) {
+    co_return co_await run_protobuf_linear_bench(10, small_field_size_bytes);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_10_fields_large) {
+    co_return co_await run_protobuf_linear_bench(10, large_field_size_bytes);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_10_fields_1024) {
+    co_return co_await run_protobuf_linear_bench(10, field_size_bytes_1024);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_10_fields_4096) {
+    co_return co_await run_protobuf_linear_bench(10, field_size_bytes_4096);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_10_fields_8192) {
+    co_return co_await run_protobuf_linear_bench(10, field_size_bytes_8192);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_20_fields_small) {
+    co_return co_await run_protobuf_linear_bench(20, small_field_size_bytes);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_20_fields_large) {
+    co_return co_await run_protobuf_linear_bench(20, large_field_size_bytes);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_20_fields_1024) {
+    co_return co_await run_protobuf_linear_bench(20, field_size_bytes_1024);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_20_fields_4096) {
+    co_return co_await run_protobuf_linear_bench(20, field_size_bytes_4096);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_20_fields_8192) {
+    co_return co_await run_protobuf_linear_bench(20, field_size_bytes_8192);
+}
+
 PERF_TEST_CN(
   record_multiplexer_bench_fixture, protobuf_linear_40_fields_small) {
     co_return co_await run_protobuf_linear_bench(40, small_field_size_bytes);
@@ -751,6 +830,18 @@ PERF_TEST_CN(
       40, large_field_size_bytes, model::compression::zstd);
 }
 
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_40_fields_1024) {
+    co_return co_await run_protobuf_linear_bench(40, field_size_bytes_1024);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_40_fields_4096) {
+    co_return co_await run_protobuf_linear_bench(40, field_size_bytes_4096);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_40_fields_8192) {
+    co_return co_await run_protobuf_linear_bench(40, field_size_bytes_8192);
+}
+
 PERF_TEST_CN(
   record_multiplexer_bench_fixture, protobuf_linear_80_fields_small) {
     co_return co_await run_protobuf_linear_bench(80, small_field_size_bytes);
@@ -771,6 +862,18 @@ PERF_TEST_CN(
   record_multiplexer_bench_fixture, protobuf_linear_80_fields_large_zstd) {
     co_return co_await run_protobuf_linear_bench(
       80, large_field_size_bytes, model::compression::zstd);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_80_fields_1024) {
+    co_return co_await run_protobuf_linear_bench(80, field_size_bytes_1024);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_80_fields_4096) {
+    co_return co_await run_protobuf_linear_bench(80, field_size_bytes_4096);
+}
+
+PERF_TEST_CN(record_multiplexer_bench_fixture, protobuf_linear_80_fields_8192) {
+    co_return co_await run_protobuf_linear_bench(80, field_size_bytes_8192);
 }
 
 PERF_TEST_CN(

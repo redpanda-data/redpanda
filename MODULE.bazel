@@ -479,6 +479,14 @@ http_archive(
 )
 
 http_archive(
+    name = "gradle_dist",
+    build_file = "//bazel/thirdparty:gradle.BUILD",
+    integrity = "sha256-nZJnhwZqCBc56CAIWDOLSmnoN8OoIaM6yp2wndSkECY=",
+    strip_prefix = "gradle-8.5",
+    urls = ["https://services.gradle.org/distributions/gradle-8.5-bin.zip"],
+)
+
+http_archive(
     name = "omb",
     add_prefix = "omb",
     build_file = "//bazel/thirdparty:omb.BUILD",
