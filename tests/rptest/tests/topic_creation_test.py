@@ -130,6 +130,28 @@ class TopicRecreateTest(RedpandaTest):
             },
         )
 
+    def _wait_for_topic_ready(
+        self,
+        topic: str,
+        partition_count: int,
+        replication_factor: int,
+    ) -> None:
+        rpk = RpkTool(self.redpanda)
+
+        def topic_is_ready():
+            partitions = list(rpk.describe_topic(topic))
+            return len(partitions) == partition_count and all(
+                p.leader != -1 and len(p.replicas) == replication_factor
+                for p in partitions
+            )
+
+        wait_until(
+            topic_is_ready,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=f"Topic {topic} readiness",
+        )
+
     @cluster(num_nodes=6)
     @matrix(
         workload=[Workload.ACKS_1, Workload.ACKS_ALL, Workload.IDEMPOTENT],
@@ -148,7 +170,10 @@ class TopicRecreateTest(RedpandaTest):
         spec = TopicSpec(partition_count=partition_count, replication_factor=3)
         spec.cleanup_policy = cleanup_policy
 
+        rpk = RpkTool(self.redpanda)
+
         self.client().create_topic(spec)
+        self._wait_for_topic_ready(spec.name, partition_count, spec.replication_factor)
 
         producer_properties = {}
         if workload == Workload.ACKS_1:
@@ -172,8 +197,6 @@ class TopicRecreateTest(RedpandaTest):
         )
         swarm.start()
 
-        rpk = RpkTool(self.redpanda)
-
         def topic_is_healthy():
             if not swarm.is_alive():
                 swarm.stop()
@@ -184,29 +207,30 @@ class TopicRecreateTest(RedpandaTest):
             self.logger.debug(f"High watermark offsets: {hw_offsets}")
             return len(offsets_present) == partition_count and all(offsets_present)
 
-        # Only the idempotent workload needs the swarm restarted each
-        # iteration: librdkafka 2.10+ preserves per-partition idempotent
-        # producer_id and sequence numbers across the topic delete+recreate
-        # window, which conflicts with the new topic's fresh broker-side
-        # state and stalls produces. Restarting the swarm forces a fresh
-        # librdkafka client, restoring the pre-2.10 effect the test was
-        # implicitly relying on. The non-idempotent acks=1 / acks=-1
-        # workloads don't carry this state, and restarting the swarm for
-        # them just adds librdkafka cold-start latency that can push the
-        # topic_is_healthy wait_until past its 30s budget on slow runners.
-        restart_swarm_each_iteration = workload == Workload.IDEMPOTENT
+        # librdkafka 2.10+ keeps per-topic metadata through transient
+        # UNKNOWN_TOPIC_OR_PARTITION responses, so per-partition
+        # leader_epoch, producer_id, and sequence state survive a topic
+        # delete+recreate window. Recreate the swarm after each topic
+        # recreation so this broker test does not depend on librdkafka's
+        # local topic incarnation cache for the post-recreate health
+        # check.
+        topic_health_timeout_sec = 90
 
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
-            if restart_swarm_each_iteration:
-                swarm.stop()
-                swarm.wait()
             self.client().delete_topic(spec.name)
             spec.replication_factor = rf
             self.client().create_topic(spec)
-            if restart_swarm_each_iteration:
-                swarm.start()
-            wait_until(topic_is_healthy, 30, 2, err_msg=f"Topic {spec.name} health")
+            self._wait_for_topic_ready(spec.name, partition_count, rf)
+            swarm.stop()
+            swarm.wait()
+            swarm.start()
+            wait_until(
+                topic_is_healthy,
+                topic_health_timeout_sec,
+                2,
+                err_msg=f"Topic {spec.name} health",
+            )
             sleep(5)
 
         swarm.stop()
@@ -258,6 +282,8 @@ class TopicRecreateTest(RedpandaTest):
             self.logger.debug(f"High watermark offsets: {hw_offsets}")
             return len(offsets_present) == partition_count and all(offsets_present)
 
+        topic_health_timeout_sec = 90
+
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
             self.client().delete_topic(topic)
@@ -267,7 +293,16 @@ class TopicRecreateTest(RedpandaTest):
                 replicas=rf,
                 config={TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD},
             )
-            wait_until(topic_is_healthy, 30, 2, err_msg=f"Topic {topic} health")
+            self._wait_for_topic_ready(topic, partition_count, rf)
+            swarm.stop()
+            swarm.wait()
+            swarm.start()
+            wait_until(
+                topic_is_healthy,
+                topic_health_timeout_sec,
+                2,
+                err_msg=f"Topic {topic} health",
+            )
             sleep(5)
 
         swarm.stop()
