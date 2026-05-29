@@ -130,16 +130,6 @@ class TopicRecreateTest(RedpandaTest):
             },
         )
 
-    def _log_timing_summary(self, label: str, durations: list[float]) -> None:
-        if not durations:
-            return
-        mean = sum(durations) / len(durations)
-        self.logger.info(
-            f"{label} summary: count={len(durations)} "
-            f"min={min(durations):.2f}s max={max(durations):.2f}s "
-            f"mean={mean:.2f}s all={[round(d, 2) for d in durations]}"
-        )
-
     def _wait_for_topic_ready(
         self,
         topic: str,
@@ -157,7 +147,7 @@ class TopicRecreateTest(RedpandaTest):
 
         wait_until(
             topic_is_ready,
-            timeout_sec=60,
+            timeout_sec=30,
             backoff_sec=1,
             err_msg=f"Topic {topic} readiness",
         )
@@ -224,39 +214,22 @@ class TopicRecreateTest(RedpandaTest):
         # recreation so this broker test does not depend on librdkafka's
         # local topic incarnation cache for the post-recreate health
         # check.
-        topic_health_timeout_sec = 90
-        ready_durations: list[float] = []
-        health_durations: list[float] = []
-
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
             self.client().delete_topic(spec.name)
             spec.replication_factor = rf
             self.client().create_topic(spec)
-            ready_start = time.monotonic()
             self._wait_for_topic_ready(spec.name, partition_count, rf)
-            ready_duration = time.monotonic() - ready_start
-            ready_durations.append(ready_duration)
             swarm.stop()
             swarm.wait()
             swarm.start()
-            health_start = time.monotonic()
             wait_until(
                 topic_is_healthy,
-                topic_health_timeout_sec,
+                30,
                 2,
                 err_msg=f"Topic {spec.name} health",
             )
-            health_duration = time.monotonic() - health_start
-            health_durations.append(health_duration)
-            self.logger.info(
-                f"recreate timings iter={i} rf={rf} "
-                f"ready={ready_duration:.2f}s health={health_duration:.2f}s"
-            )
             sleep(5)
-
-        self._log_timing_summary("topic_ready", ready_durations)
-        self._log_timing_summary("topic_is_healthy", health_durations)
 
         swarm.stop()
         swarm.wait()
@@ -307,10 +280,6 @@ class TopicRecreateTest(RedpandaTest):
             self.logger.debug(f"High watermark offsets: {hw_offsets}")
             return len(offsets_present) == partition_count and all(offsets_present)
 
-        topic_health_timeout_sec = 90
-        ready_durations: list[float] = []
-        health_durations: list[float] = []
-
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
             self.client().delete_topic(topic)
@@ -320,30 +289,17 @@ class TopicRecreateTest(RedpandaTest):
                 replicas=rf,
                 config={TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD},
             )
-            ready_start = time.monotonic()
             self._wait_for_topic_ready(topic, partition_count, rf)
-            ready_duration = time.monotonic() - ready_start
-            ready_durations.append(ready_duration)
             swarm.stop()
             swarm.wait()
             swarm.start()
-            health_start = time.monotonic()
             wait_until(
                 topic_is_healthy,
-                topic_health_timeout_sec,
+                30,
                 2,
                 err_msg=f"Topic {topic} health",
             )
-            health_duration = time.monotonic() - health_start
-            health_durations.append(health_duration)
-            self.logger.info(
-                f"recreate timings iter={i} rf={rf} "
-                f"ready={ready_duration:.2f}s health={health_duration:.2f}s"
-            )
             sleep(5)
-
-        self._log_timing_summary("topic_ready", ready_durations)
-        self._log_timing_summary("topic_is_healthy", health_durations)
 
         swarm.stop()
         swarm.wait()
