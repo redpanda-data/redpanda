@@ -60,8 +60,8 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	github.com/tklauser/go-sysconf v0.3.16
 	github.com/twmb/avro v1.3.4
-	github.com/twmb/franz-go v1.20.5
-	github.com/twmb/franz-go/pkg/kadm v1.17.2
+	github.com/twmb/franz-go v1.21.2
+	github.com/twmb/franz-go/pkg/kadm v1.18.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251024215757-aea970d4d0d2
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
 	github.com/twmb/franz-go/pkg/sr v1.7.0
@@ -136,7 +136,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/httprc v1.0.6 // indirect
