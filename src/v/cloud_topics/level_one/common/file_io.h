@@ -33,6 +33,8 @@ namespace cloud_topics::l1 {
 //
 // Reads are cached locally on disk in the cloud cache before being returned.
 class file_io : public io {
+    friend class file_io_test_fixture;
+
 public:
     /// `probe` is an externally-owned per-shard probe. Nullable:
     /// secondary per-shard file_io instances (read-replica refreshers,
