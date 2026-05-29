@@ -1,0 +1,183 @@
+/*
+ * Copyright 2026 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+#pragma once
+
+#include "base/format_to.h"
+
+#include <array>
+#include <charconv>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string_view>
+#include <utility>
+
+namespace cloud_io {
+
+/// Identifies a cloud_io::admission_controller admission policy.
+enum class policy_type : uint8_t {
+    /// No-op admission gate; the client pool's capacity is the only
+    /// constraint.
+    passthrough,
+    /// Reservation-based admission policy. Each group has a
+    /// reservation lane sized to a configured target while it is
+    /// active; idle reservations are reclaimed to a common pool and
+    /// refilled into demanding groups.
+    reservation,
+};
+
+constexpr std::string_view to_string_view(policy_type t) {
+    switch (t) {
+    case policy_type::passthrough:
+        return "passthrough";
+    case policy_type::reservation:
+        return "reservation";
+    }
+    std::unreachable();
+}
+
+inline fmt::iterator format_to(policy_type t, fmt::iterator out) {
+    return fmt::format_to(out, "{}", to_string_view(t));
+}
+
+/// Caller-supplied intent label for a cloud_io operation. Used as the
+/// scheduling key for cloud_io::admission_controller.
+enum class group_id : uint8_t {
+    /// Object uploads on the Kafka produce path. Latency-critical.
+    producer_upload,
+    /// Reads serving Kafka fetch requests. Latency-critical.
+    consumer_fetch,
+    /// Everything else: manifest I/O, archival writes, hydration,
+    /// replication, housekeeping.
+    default_group,
+};
+
+inline constexpr size_t num_group_ids = 3;
+
+constexpr std::string_view to_string_view(group_id g) {
+    switch (g) {
+    case group_id::producer_upload:
+        return "producer_upload";
+    case group_id::consumer_fetch:
+        return "consumer_fetch";
+    case group_id::default_group:
+        return "default_group";
+    }
+    std::unreachable();
+}
+
+inline fmt::iterator format_to(group_id g, fmt::iterator out) {
+    return fmt::format_to(out, "{}", to_string_view(g));
+}
+
+namespace detail {
+template<size_t... Is>
+constexpr std::array<group_id, num_group_ids>
+make_all_group_ids(std::index_sequence<Is...>) {
+    return {static_cast<group_id>(Is)...};
+}
+} // namespace detail
+
+/// All group_id values in enum order. Bounded by num_group_ids; when
+/// adding a group_id enumerator, update num_group_ids to match — the
+/// static_assert below catches the most common slip.
+inline constexpr auto all_group_ids = detail::make_all_group_ids(
+  std::make_index_sequence<num_group_ids>{});
+
+static_assert(
+  std::to_underlying(group_id::default_group) + 1 == num_group_ids,
+  "num_group_ids must equal the number of group_id enumerators; "
+  "update both when adding or removing a group.");
+
+/// Returns (name, N) for a well-shaped "name:N" target spec, else nullopt. Does
+/// not check whether `name` maps to a known group_id; that lookup happens at
+/// the admission_controller creation time so the cluster property survives across upgrades
+/// that add or remove group_ids.
+inline std::optional<std::pair<std::string_view, size_t>>
+parse_target_spec_shape(std::string_view spec) noexcept {
+    const auto colon = spec.find(':');
+    if (colon == std::string_view::npos || colon == 0) {
+        return std::nullopt;
+    }
+    const auto name = spec.substr(0, colon);
+    const auto value_str = spec.substr(colon + 1);
+    if (value_str.empty()) {
+        return std::nullopt;
+    }
+    size_t value = 0;
+    const auto [end, ec] = std::from_chars(
+      value_str.data(), value_str.data() + value_str.size(), value);
+    if (ec != std::errc{} || end != value_str.data() + value_str.size()) {
+        return std::nullopt;
+    }
+    return std::make_pair(name, value);
+}
+
+/// Full parse for a target spec: well-shaped AND name matches a known
+/// group_id. Returns nullopt if either check fails; the factory uses
+/// this and warns on the unknown-name case.
+inline std::optional<std::pair<group_id, size_t>>
+try_parse_target_spec(std::string_view spec) noexcept {
+    const auto shape = parse_target_spec_shape(spec);
+    if (!shape.has_value()) {
+        return std::nullopt;
+    }
+    for (const auto g : all_group_ids) {
+        if (shape->first == to_string_view(g)) {
+            return std::make_pair(g, shape->second);
+        }
+    }
+    return std::nullopt;
+}
+
+/// Fixed-size array of T indexed by group_id.
+template<typename T>
+struct per_group {
+    std::array<T, num_group_ids> data;
+
+    T& operator[](group_id g) noexcept { return data[static_cast<size_t>(g)]; }
+    const T& operator[](group_id g) const noexcept {
+        return data[static_cast<size_t>(g)];
+    }
+
+    auto begin() noexcept { return data.begin(); }
+    auto end() noexcept { return data.end(); }
+    auto begin() const noexcept { return data.begin(); }
+    auto end() const noexcept { return data.end(); }
+};
+
+/// Per-group target_reserved values for the reservation policy. Built from
+/// cluster config at admission_controller construction time, or directly in tests.
+/// Default-constructed is all zeros; the initializer-list constructor takes
+/// `{group_id, value}` pairs and leaves unmentioned groups at zero.
+struct reservation_policy_config {
+    per_group<uint32_t> target_reserved{};
+
+    reservation_policy_config() = default;
+    reservation_policy_config(
+      std::initializer_list<std::pair<group_id, uint32_t>> entries) {
+        for (const auto& [g, v] : entries) {
+            target_reserved[g] = v;
+        }
+    }
+};
+
+/// Runtime configuration for cloud_io::admission_controller. Populated at startup
+/// from cluster config (see cloud_storage::configuration::get_config)
+/// and passed by value down to client_pool / admission_controller.
+struct admission_config {
+    policy_type policy = policy_type::passthrough;
+
+    /// Reservation policy targets. If absent, all targets are zero (no reserved
+    /// lanes, common-pool-only behavior when a reservation policy is selected).
+    std::optional<reservation_policy_config> reservation;
+};
+
+} // namespace cloud_io

@@ -58,6 +58,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":admission_types",
         "//src/v/cloud_io:io_result",
         "//src/v/cloud_io:transfer_details",
         "//src/v/cloud_storage_clients",
@@ -91,6 +92,7 @@ redpanda_cc_library(
         ":io_result",
         ":provider",
         ":remote_api",
+        ":admission_types",
         "//src/v/base",
         "//src/v/cloud_roles:types",
         "//src/v/cloud_storage_clients",
@@ -136,11 +138,100 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "admission_types",
+    hdrs = [
+        "admission_types.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
+    name = "reservation_policy_types",
+    hdrs = [
+        "reservation_policy_types.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":admission_types",
+        "//src/v/base",
+        "//src/v/container:intrusive",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "admission_policy",
+    hdrs = [
+        "admission_policy.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":admission_types",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "provider",
     hdrs = [
         "provider.h",
     ],
     visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
+    name = "admission_controller",
+    srcs = [
+        "admission_controller.cc",
+    ],
+    hdrs = [
+        "admission_controller.h",
+    ],
+    implementation_deps = [
+        ":reservation_policy",
+        "//src/v/base",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":admission_policy",
+        ":admission_types",
+        "//src/v/base",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "reservation_policy",
+    srcs = [
+        "reservation_policy.cc",
+    ],
+    hdrs = [
+        "reservation_policy.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/cloud_io:logger",
+        "//src/v/config",
+        "//src/v/ssx:sformat",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":reservation_policy_types",
+        ":admission_policy",
+        ":admission_types",
+        "//src/v/metrics",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
 )
 
 redpanda_cc_library(

@@ -39,7 +39,7 @@ public:
     MOCK_METHOD(
       ss::future<cloud_io::download_result>,
       download_object,
-      (cloud_io::basic_download_request<ss::manual_clock>),
+      (cloud_io::basic_download_request<ss::manual_clock>, cloud_io::group_id),
       (override));
 
     MOCK_METHOD(
@@ -54,7 +54,7 @@ public:
     MOCK_METHOD(
       ss::future<cloud_io::upload_result>,
       upload_object,
-      (cloud_io::basic_upload_request<ss::manual_clock>),
+      (cloud_io::basic_upload_request<ss::manual_clock>, cloud_io::group_id),
       (override));
 
     MOCK_METHOD(
@@ -76,12 +76,13 @@ public:
        const std::string_view,
        bool,
        std::optional<cloud_storage_clients::http_byte_range>,
-       std::function<void(size_t)>),
+       std::function<void(size_t)>,
+       cloud_io::group_id),
       (override));
 
     void expect_upload_object(
       cloud_io::upload_result res = cloud_io::upload_result::success) {
-        EXPECT_CALL(*this, upload_object(::testing::_))
+        EXPECT_CALL(*this, upload_object(::testing::_, ::testing::_))
           .Times(1)
           .WillOnce(
             ::testing::Return(
@@ -91,10 +92,11 @@ public:
     /// Accept any number of upload_object calls, recording keys and payloads.
     void expect_upload_object_repeatedly(
       cloud_io::upload_result res = cloud_io::upload_result::success) {
-        EXPECT_CALL(*this, upload_object(::testing::_))
+        EXPECT_CALL(*this, upload_object(::testing::_, ::testing::_))
           .WillRepeatedly(
-            [this,
-             res](const cloud_io::basic_upload_request<ss::manual_clock>& req) {
+            [this, res](
+              const cloud_io::basic_upload_request<ss::manual_clock>& req,
+              cloud_io::group_id) {
                 keys.push_back(req.transfer_details.key);
                 payloads.push_back(iobuf_to_bytes(req.payload));
                 return ss::make_ready_future<cloud_io::upload_result>(res);
@@ -117,8 +119,8 @@ public:
         ON_CALL(*this, upload_object)
           .WillByDefault(
             [this, expected = convert_bytes_to_string(expected), upl_res](
-              const cloud_io::basic_upload_request<ss::manual_clock>&
-                req) mutable {
+              const cloud_io::basic_upload_request<ss::manual_clock>& req,
+              cloud_io::group_id) mutable {
                 auto p = iobuf_to_bytes(req.payload);
                 if (!disable_request_collection) {
                     keys.push_back(req.transfer_details.key);

@@ -94,8 +94,8 @@ level_one_log_reader_impl::open_reader_at(
     auto* abort_source = _config.abort_source
                            ? &_config.abort_source.value().get()
                            : &default_abort_source;
-    auto stream_fut = co_await ss::coroutine::as_future(
-      _io->read_object(extent, abort_source));
+    auto stream_fut = co_await ss::coroutine::as_future(_io->read_object(
+      extent, abort_source, cloud_io::group_id::consumer_fetch));
     if (stream_fut.failed()) {
         auto ex = stream_fut.get_exception();
         vlog(
@@ -314,7 +314,8 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
                            ? &_config.abort_source.value().get()
                            : &default_abort_source;
     auto read_fut = co_await ss::coroutine::as_future(
-      _io->read_object_as_iobuf(extent, abort_source));
+      _io->read_object_as_iobuf(
+        extent, abort_source, cloud_io::group_id::consumer_fetch));
     if (read_fut.failed()) {
         auto ex = read_fut.get_exception();
         vlog(

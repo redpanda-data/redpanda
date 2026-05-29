@@ -61,7 +61,7 @@ public:
     MOCK_METHOD(
       ss::future<cloud_io::upload_result>,
       upload_object,
-      (cloud_io::basic_upload_request<ss::lowres_clock>),
+      (cloud_io::basic_upload_request<ss::lowres_clock>, cloud_io::group_id),
       (override));
 
     MOCK_METHOD(
@@ -83,7 +83,8 @@ public:
        const std::string_view,
        bool,
        std::optional<cloud_storage_clients::http_byte_range>,
-       std::function<void(size_t)>),
+       std::function<void(size_t)>,
+       cloud_io::group_id),
       (override));
 
     MOCK_METHOD(
@@ -93,7 +94,8 @@ public:
       (override));
 
     ss::future<cloud_io::download_result> download_object(
-      cloud_io::basic_download_request<ss::lowres_clock> req) override {
+      cloud_io::basic_download_request<ss::lowres_clock> req,
+      cloud_io::group_id /*g*/ = cloud_io::group_id::default_group) override {
         auto [buf, err] = _do_download_object(req.transfer_details.key);
         req.payload = std::move(buf);
         co_return err;

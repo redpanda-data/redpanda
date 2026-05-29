@@ -265,7 +265,8 @@ ss::future<result<iobuf>> materialize_from_cloud_storage(
       .payload = payload};
 
     auto dl_result = result_from_ready_future(
-      co_await ss::coroutine::as_future(api->download_object(std::move(req))),
+      co_await ss::coroutine::as_future(api->download_object(
+        std::move(req), cloud_io::group_id::consumer_fetch)),
       [](std::exception_ptr e) {
           vlog(cd_log.error, "Unexpected error during L0 download: {}", e);
       });

@@ -100,11 +100,13 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
             },
           .backoff_cb = [&probe] { probe.num_cloud_writes++; }};
 
-        auto upl_result = co_await _remote.upload_object({
-          .transfer_details = std::move(td),
-          .display_str = "L0_object",
-          .payload = std::move(payload),
-        });
+        auto upl_result = co_await _remote.upload_object(
+          {
+            .transfer_details = std::move(td),
+            .display_str = "L0_object",
+            .payload = std::move(payload),
+          },
+          cloud_io::group_id::producer_upload);
 
         _stage.register_micro_probe(probe);
 

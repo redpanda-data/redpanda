@@ -164,7 +164,8 @@ ss::future<uint64_t> file_io::save_to_cache(
 }
 
 ss::future<std::expected<ss::input_stream<char>, io::errc>>
-file_io::read_object(object_extent extent, ss::abort_source* as) {
+file_io::read_object(
+  object_extent extent, ss::abort_source* as, cloud_io::group_id gid) {
     static constexpr auto timeout = 10s;
     static constexpr auto backoff = 100ms;
     retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);
@@ -229,7 +230,9 @@ file_io::read_object(object_extent extent, ss::abort_source* as) {
               "l1_file_download",
               /*acquire_hydration_units=*/true,
               cloud_storage_clients::http_byte_range{
-                extent.position, extent.position + extent.size - 1}));
+                extent.position, extent.position + extent.size - 1},
+              {},
+              gid));
         if (result_fut.failed()) {
             auto ex = result_fut.get_exception();
             vlog(cd_log.warn, "Error downloading object {}: {}", extent, ex);

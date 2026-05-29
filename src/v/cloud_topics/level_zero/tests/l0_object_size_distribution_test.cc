@@ -51,7 +51,7 @@ public:
     MOCK_METHOD(
       ss::future<cloud_io::download_result>,
       download_object,
-      (cloud_io::basic_download_request<ss::manual_clock>),
+      (cloud_io::basic_download_request<ss::manual_clock>, cloud_io::group_id),
       (override));
 
     MOCK_METHOD(
@@ -66,7 +66,7 @@ public:
     MOCK_METHOD(
       ss::future<cloud_io::upload_result>,
       upload_object,
-      (cloud_io::basic_upload_request<ss::manual_clock>),
+      (cloud_io::basic_upload_request<ss::manual_clock>, cloud_io::group_id),
       (override));
 
     MOCK_METHOD(
@@ -88,7 +88,8 @@ public:
        const std::string_view,
        bool,
        std::optional<cloud_storage_clients::http_byte_range>,
-       std::function<void(size_t)>),
+       std::function<void(size_t)>,
+       cloud_io::group_id),
       (override));
 };
 
@@ -129,8 +130,8 @@ public:
         co_await remote.start();
         co_await uploads.start();
         co_await remote.invoke_on_all([this](remote_mock& remote) {
-            EXPECT_CALL(remote, upload_object(::testing::_))
-              .WillRepeatedly([this](auto req) {
+            EXPECT_CALL(remote, upload_object(::testing::_, ::testing::_))
+              .WillRepeatedly([this](auto req, cloud_io::group_id) {
                   uploads.local().push_back(req.payload.size_bytes());
                   return seastar::make_ready_future<cloud_io::upload_result>(
                     cloud_io::upload_result::success);

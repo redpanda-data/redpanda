@@ -111,7 +111,10 @@ fake_io::put_object(object_id oid, staging_file* file, ss::abort_source*) {
 }
 
 ss::future<std::expected<ss::input_stream<char>, io::errc>>
-fake_io::read_object(object_extent extent, ss::abort_source*) {
+fake_io::read_object(
+  object_extent extent,
+  ss::abort_source*,
+  [[maybe_unused]] cloud_io::group_id gid) {
     co_return get_object(extent.id)
       .transform(
         [&extent](

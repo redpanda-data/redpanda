@@ -162,6 +162,35 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "admission_controller_test",
+    timeout = "short",
+    srcs = [
+        "admission_controller_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_io:admission_controller",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "reservation_policy_test",
+    timeout = "short",
+    srcs = [
+        "reservation_policy_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_io:reservation_policy",
+        "//src/v/cloud_io:admission_types",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "directory_walker_test",
     timeout = "short",

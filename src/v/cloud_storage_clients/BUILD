@@ -46,6 +46,8 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
+        "//src/v/cloud_io:admission_controller",
+        "//src/v/cloud_io:admission_types",
         "//src/v/cloud_roles",
         "//src/v/cloud_roles:auth_refresh_bg_op",
         "//src/v/cloud_roles:types",
