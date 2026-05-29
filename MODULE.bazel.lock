@@ -355,7 +355,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "Mztpah+gr75XPhPALc1PogZGuFEmAhocT6Do3FZQtuA=",
+        "bzlTransitiveDigest": "jFn1y0jZFkpmqhpyfbU/wNurSJI2TMc4N1/k+//Wwqs=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -447,7 +447,8 @@
               "strip_prefix": "krb5-krb5-1.22.2-final",
               "url": "https://github.com/krb5/krb5/archive/refs/tags/krb5-1.22.2-final.tar.gz",
               "patches": [
-                "@@//bazel/thirdparty:0002-Fix-two-NegoEx-parsing-vulnerabilities.patch"
+                "@@//bazel/thirdparty:0002-Fix-two-NegoEx-parsing-vulnerabilities.patch",
+                "@@//bazel/thirdparty:0003-Fix-build-when-KRB5_DNS_LOOKUP-isnt-defined.patch"
               ],
               "patch_args": [
                 "-p1"
