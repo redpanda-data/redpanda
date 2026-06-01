@@ -23,30 +23,33 @@ namespace compaction {
 ss::future<ss::stop_iteration> filter::operator()(model::record_batch b) {
     const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
-        co_return co_await filter_and_rewrite_with_sink(comp, std::move(b));
+        co_return co_await filter_and_rewrite_with_sink(
+          comp, std::move(b), std::nullopt);
     }
-    auto batch = co_await model::decompress_batch(std::move(b));
-
-    co_return co_await filter_and_rewrite_with_sink(comp, std::move(batch));
+    // Decompress for filtering, but keep the original compressed batch so it
+    // can be reused verbatim if nothing was removed.
+    auto decompressed = co_await model::decompress_batch(b);
+    co_return co_await filter_and_rewrite_with_sink(
+      comp, std::move(decompressed), std::move(b));
 }
 
-ss::future<std::optional<model::record_batch>>
+ss::future<std::optional<filter::filtered_batch>>
 filter::filter_batch(model::record_batch b) const {
     // do not filter non-removable batch types under any circumstances
     if (!is_filterable(b.header().type)) {
-        co_return std::move(b);
+        co_return filtered_batch{
+          .mode = filtered_batch::result::identical, .batch = std::move(b)};
     }
 
     // compute which records to keep
     chunked_vector<int32_t> offset_deltas
       = co_await compute_offset_deltas_to_keep(b);
 
-    auto ret = co_await filter_batch_with_offset_deltas(
+    co_return co_await filter_batch_with_offset_deltas(
       std::move(b), std::move(offset_deltas));
-    co_return ret;
 }
 
-ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
+ss::future<std::optional<filter::filtered_batch>> filter::do_filter_batch(
   model::record_batch b, chunked_vector<int32_t> offset_deltas) const {
     // no records to keep
     if (offset_deltas.empty()) {
@@ -55,7 +58,8 @@ ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
 
     // keep all records
     if (offset_deltas.size() == static_cast<size_t>(b.record_count())) {
-        co_return std::move(b);
+        co_return filtered_batch{
+          .mode = filtered_batch::result::identical, .batch = std::move(b)};
     }
 
     // filter
@@ -118,30 +122,40 @@ ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
     new_hdr.reset_size_checksum_metadata(ret);
     auto new_batch = model::record_batch(
       new_hdr, std::move(ret), model::record_batch::tag_ctor_ng{});
-    co_return new_batch;
+    co_return filtered_batch{
+      .mode = filtered_batch::result::rebuilt, .batch = std::move(new_batch)};
 }
 
 ss::future<ss::stop_iteration> filter::filter_and_rewrite_with_sink(
-  model::compression original, model::record_batch b) {
+  model::compression original,
+  model::record_batch b,
+  std::optional<model::record_batch> compressed_b_opt) {
     ++_stats.batches_processed;
     const auto record_count_before = b.record_count();
     auto to_copy = co_await filter_batch(std::move(b));
-    if (to_copy.has_value()) {
-        const auto records_to_remove = record_count_before
-                                       - to_copy->record_count();
-        _stats.records_discarded += records_to_remove;
-        bool compactible_batch = is_compactible(to_copy->header());
-        if (!compactible_batch) {
-            ++_stats.non_compactible_batches;
-        }
-
-        co_return co_await _sink(std::move(to_copy).value(), original);
-    } else {
+    if (!to_copy.has_value()) {
         ++_stats.batches_discarded;
         _stats.records_discarded += record_count_before;
+        co_return ss::stop_iteration::no;
+    }
+    auto filtered = std::move(to_copy).value();
+    _stats.records_discarded += record_count_before
+                                - filtered.batch.record_count();
+    if (!is_compactible(filtered.batch.header())) {
+        ++_stats.non_compactible_batches;
     }
 
-    co_return ss::stop_iteration::no;
+    // If filtering left the records unchanged and the source was compressed,
+    // hand the original compressed batch to the sink with no compression to
+    // re-apply, rather than paying to re-compress byte-identical output.
+    if (
+      filtered.mode == filtered_batch::result::identical
+      && compressed_b_opt.has_value()) {
+        ++_stats.compressed_batches_reused;
+        co_return co_await _sink(
+          std::move(compressed_b_opt).value(), model::compression::none);
+    }
+    co_return co_await _sink(std::move(filtered.batch), original);
 }
 
 } // namespace compaction
