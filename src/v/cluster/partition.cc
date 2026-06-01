@@ -776,21 +776,36 @@ bool partition::should_construct_archiver() {
     // in the case of read replicas -- we still need the archiver to drive
     // manifest updates, etc.
     const auto& ntp_config = _raft->log()->config();
-    return config::shard_local_cfg().cloud_storage_enabled()
-           && config::shard_local_cfg().cloud_storage_disable_archiver_manager()
-           && _cloud_storage_api.local_is_initialized()
-           // The archiver can only be created for partitions that belong to
-           // user topics. This includes everything inside the kafka namespace
-           // except for the kafka consumer offsets topic. The consumer offsets
-           // topic is backed up separately by the cluster/cluster_metadata
-           // subsystem. The archival_metadata_stm can't be created for the
-           // consumer offsets topic partitions. The schema registry topic is
-           // not exempt from this. It should be possible to create an archiver
-           // for it.
-           && _raft->ntp().ns == model::kafka_namespace
-           && _raft->ntp().tp.topic != model::kafka_consumer_offsets_topic
-           && !ntp_config.cloud_topic_enabled()
-           && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled());
+    const bool base
+      = config::shard_local_cfg().cloud_storage_enabled()
+        && config::shard_local_cfg().cloud_storage_disable_archiver_manager()
+        && _cloud_storage_api.local_is_initialized()
+        // The archiver can only be created for partitions that belong to
+        // user topics. This includes everything inside the kafka namespace
+        // except for the kafka consumer offsets topic. The consumer offsets
+        // topic is backed up separately by the cluster/cluster_metadata
+        // subsystem. The archival_metadata_stm can't be created for the
+        // consumer offsets topic partitions. The schema registry topic is
+        // not exempt from this. It should be possible to create an archiver
+        // for it.
+        && _raft->ntp().ns == model::kafka_namespace
+        && _raft->ntp().tp.topic != model::kafka_consumer_offsets_topic;
+    if (!base) {
+        return false;
+    }
+    if (!ntp_config.cloud_topic_enabled()) {
+        return ntp_config.is_archival_enabled()
+               || ntp_config.is_read_replica_mode_enabled();
+    }
+    // Cloud topic: keep the archiver alive only while there are pre-migration
+    // TS segments that still need GC via apply_retention() + garbage_collect().
+    // Uploads are suppressed in the upload loop (see ntp_archiver), so the
+    // archiver does GC-only work here. Once the archival manifest is drained,
+    // this returns false and the archiver is not rebuilt on the next
+    // restart_archiver() call -- which is also when the migration seal is
+    // completed and the partition becomes a native cloud topic.
+    return _archival_meta_stm != nullptr
+           && !_archival_meta_stm->manifest().empty();
 }
 
 void partition::maybe_construct_archiver() {

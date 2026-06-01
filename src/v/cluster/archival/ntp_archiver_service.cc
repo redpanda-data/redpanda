@@ -1091,7 +1091,9 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
           "Upload loop: archival metadata STM is not created for {} archiver",
           _ntp.path());
 
-        if (_parent.ntp().tp.partition == 0 && _topic_manifest_dirty) {
+        if (
+          _parent.ntp().tp.partition == 0 && _topic_manifest_dirty
+          && !_parent.ts_migration_boundary().has_value()) {
             co_await upload_topic_manifest();
         }
 
@@ -1117,8 +1119,14 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
           fence,
           _parent.archival_meta_stm()->get_insync_offset());
 
+        // After a TS->CT migration the archiver is kept alive for GC (expiring
+        // old TS segments via housekeeping) but must not upload new segments:
+        // post-migration raft segments contain ctp_placeholder batches (not
+        // raft_data) that the S3 reader silently skips, so uploading them would
+        // make committed CT records invisible to read_committed consumers.
         bool uploads_paused
-          = !config::shard_local_cfg().cloud_storage_enable_segment_uploads();
+          = !config::shard_local_cfg().cloud_storage_enable_segment_uploads()
+            || _parent.ts_migration_boundary().has_value();
         std::optional<batch_result> result;
         auto track_paused = _probe.value().register_archiver_on_hold(
           uploads_paused);
