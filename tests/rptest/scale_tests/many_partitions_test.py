@@ -18,6 +18,7 @@ from ducktape.mark import parametrize
 from ducktape.utils.util import TimeoutError, wait_until
 
 from rptest.clients.rpk import RpkException, RpkTool
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import (
@@ -698,6 +699,34 @@ class ManyPartitionsTest(PreallocNodesTest):
             readers=math.ceil(scale.partition_limit / 5000),
             custom_node=[self.preallocated_nodes[2]],
         )
+        # TEMP DIAGNOSTIC (CORE-15812): the verify-consume below is where
+        # cloud-topic (cloud_NNNNNN) fetches fail en masse with
+        # std::system_error(ECONNABORTED) in the L1 read path, which fetch.cc
+        # masks as not_leader_for_partition so the consumer retries to timeout.
+        # Raise the read-path loggers to debug for the consume window: the last
+        # "cloud_topics" debug line before "Reader caught exception" pinpoints
+        # the failing co_await, and "http" shows the wire-level connection abort.
+        # Scoped to one broker + a short `expires` window to bound log volume;
+        # auto-reverts. REVERT before merge.
+        if getattr(self, "_cloud_topics_enabled", False):
+            diag_node = self.redpanda.nodes[0]
+            diag_admin = Admin(self.redpanda)
+            for lg in ("cloud_topics", "http", "cloud_storage"):
+                try:
+                    diag_admin._request(
+                        "put",
+                        f"config/log_level/{lg}?level=debug&expires=240",
+                        node=diag_node,
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"TEMP CORE-15812: could not raise logger {lg}: {e}"
+                    )
+            self.logger.info(
+                "TEMP CORE-15812: raised cloud_topics/http/cloud_storage to debug "
+                f"on {diag_node.name} for the verify-consume window"
+            )
+
         verifier.start(clean=False)
 
         verifier.wait(timeout_sec=expect_transmit_time)
@@ -856,6 +885,15 @@ class ManyPartitionsTest(PreallocNodesTest):
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
         topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
     )
+    # TEMP DIAGNOSTIC (CORE-15812): reduced-scale variant to test whether the
+    # ECONNABORTED read-path failure is scale-bound. If this passes while the
+    # 3000 variant fails -> needs scale/load; if it also fails -> not scale-bound
+    # (good for a cheap local repro). topic_partitions_per_shard is tunable.
+    # REVERT before merge.
+    @parametrize(
+        mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+        topic_partitions_per_shard=500,
+    )
     def test_many_partitions_cloud_topics(
         self, mib_per_partition: float, topic_partitions_per_shard: int
     ):
@@ -952,6 +990,9 @@ class ManyPartitionsTest(PreallocNodesTest):
         self._stop_timeout = (
             CLOUD_TOPICS_STOP_TIMEOUT if cloud_topics_enabled else STOP_TIMEOUT
         )
+        # TEMP DIAGNOSTIC (CORE-15812): consumed by _write_and_random_read to
+        # scope read-path debug logging to cloud-topic runs. REVERT before merge.
+        self._cloud_topics_enabled = cloud_topics_enabled
 
         replication_factor = 3
 
