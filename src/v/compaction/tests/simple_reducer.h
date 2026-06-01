@@ -56,8 +56,7 @@ private:
         co_return offset_deltas;
     }
 
-    ss::future<std::optional<model::record_batch>>
-    filter_batch_with_offset_deltas(
+    ss::future<std::optional<filtered_batch>> filter_batch_with_offset_deltas(
       model::record_batch b,
       chunked_vector<int32_t> offset_deltas) const final {
         co_return co_await do_filter_batch(

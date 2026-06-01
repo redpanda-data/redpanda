@@ -70,7 +70,7 @@ compaction_filter::compute_offset_deltas_to_keep(
     co_return offset_deltas;
 }
 
-ss::future<std::optional<model::record_batch>>
+ss::future<std::optional<compaction::filter::filtered_batch>>
 compaction_filter::filter_batch_with_offset_deltas(
   model::record_batch b, chunked_vector<int32_t> offset_deltas) const {
     co_return co_await do_filter_batch(std::move(b), std::move(offset_deltas));

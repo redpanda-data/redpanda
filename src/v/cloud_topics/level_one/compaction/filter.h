@@ -36,9 +36,8 @@ private:
     ss::future<chunked_vector<int32_t>>
     compute_offset_deltas_to_keep(const model::record_batch&) const final;
 
-    ss::future<std::optional<model::record_batch>>
-      filter_batch_with_offset_deltas(
-        model::record_batch, chunked_vector<int32_t>) const final;
+    ss::future<std::optional<filtered_batch>> filter_batch_with_offset_deltas(
+      model::record_batch, chunked_vector<int32_t>) const final;
 
 private:
     const compaction::key_offset_map& _map;
