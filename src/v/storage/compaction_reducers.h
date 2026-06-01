@@ -163,8 +163,30 @@ public:
     idx_and_stats end_of_stream() { return {std::move(_idx), _stats}; }
 
 private:
-    ss::future<ss::stop_iteration>
-      filter_and_append(model::compression, model::record_batch);
+    // Result of filtering a single batch. `mode` says how the source's
+    // compression can be reused, avoiding re-compression where possible.
+    struct filtered_batch {
+        enum class result : uint8_t {
+            // Records and header unchanged: a compressed source batch can be
+            // appended verbatim. Output is byte-identical to the input.
+            identical,
+            // Records unchanged, but the transactional bit must be cleared
+            // from the header. A compressed source's payload is reused as-is;
+            // only the header and checksum are rewritten, so no re-compression
+            // is needed.
+            clear_transactional_bit,
+            // The batch was rebuilt (records removed or placeholder installed)
+            // and must be re-compressed if the source was compressed.
+            rebuilt,
+        };
+        result mode;
+        model::record_batch batch;
+    };
+
+    ss::future<ss::stop_iteration> filter_and_append(
+      model::compression,
+      model::record_batch,
+      std::optional<model::record_batch>);
 
     ss::future<> maybe_keep_offset(
       const model::record_batch&,
@@ -172,7 +194,7 @@ private:
       bool,
       chunked_vector<int32_t>&);
 
-    ss::future<std::optional<model::record_batch>> filter(model::record_batch);
+    ss::future<std::optional<filtered_batch>> filter(model::record_batch);
 
     // Creates a placeholder batch with same offset range as the input header.
     model::record_batch make_placeholder_batch(model::record_batch_header&);
