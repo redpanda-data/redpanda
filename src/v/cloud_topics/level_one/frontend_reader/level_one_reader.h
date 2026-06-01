@@ -17,6 +17,8 @@
 #include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/shared_ptr.hh>
+
 #include <deque>
 #include <expected>
 #include <variant>
@@ -110,7 +112,7 @@ public:
 private:
     struct object_info {
         l1::object_id oid;
-        l1::footer footer;
+        ss::lw_shared_ptr<const l1::footer> footer;
         kafka::offset last_offset;
     };
 
@@ -160,7 +162,12 @@ private:
     ss::future<chunked_circular_buffer<model::record_batch>>
     read_batches(l1::object_reader& reader);
 
-    ss::future<l1::footer>
+    /// Fetch and parse the L1 object's footer. Caches the most recent
+    /// footer on the reader; subsequent calls for the same `oid` are
+    /// served from the stash (the common case for sequential read +
+    /// next-L1 prefetch within a single reader). A miss replaces the
+    /// stash. Auto-evicted when the reader closes.
+    ss::future<ss::lw_shared_ptr<const l1::footer>>
     read_footer(l1::object_id oid, size_t footer_pos, size_t object_size);
 
     /*
@@ -212,6 +219,15 @@ private:
     // Consumed front-to-back as the reader advances through objects.
     // Populated with 1 entry (no prefetch) or N entries (prefetch).
     std::deque<l1::metastore::object_response> _lookahead_buffer;
+
+    // Per-reader footer stash. Single entry; replaced on miss.
+    struct cached_footer {
+        l1::object_id oid;
+        size_t footer_pos;
+        size_t object_size;
+        ss::lw_shared_ptr<const l1::footer> footer;
+    };
+    std::optional<cached_footer> _cached_footer;
 };
 
 } // namespace cloud_topics

@@ -296,8 +296,30 @@ level_one_log_reader_impl::lookup_object_for_offset(
     };
 }
 
-ss::future<l1::footer> level_one_log_reader_impl::read_footer(
+ss::future<ss::lw_shared_ptr<const l1::footer>>
+level_one_log_reader_impl::read_footer(
   l1::object_id oid, size_t footer_pos, size_t object_size) {
+    if (_cached_footer && _cached_footer->oid == oid) {
+        // Footers are immutable once an L1 object commits, so (pos,
+        // size) are uniquely determined by oid. Catch invariant
+        // violations in debug builds without paying for the check in
+        // release.
+        dassert(
+          _cached_footer->footer_pos == footer_pos
+            && _cached_footer->object_size == object_size,
+          "cached footer for {} has stale (pos {}, size {}) vs requested "
+          "(pos {}, size {})",
+          oid,
+          _cached_footer->footer_pos,
+          _cached_footer->object_size,
+          footer_pos,
+          object_size);
+        if (_probe != nullptr) {
+            _probe->register_footer_cache_hit();
+        }
+        co_return _cached_footer->footer;
+    }
+
     size_t footer_total_size = object_size - footer_pos;
     if (_probe != nullptr) {
         _probe->register_footer_read(footer_total_size);
@@ -364,7 +386,15 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
           object_size));
     }
 
-    co_return std::get<l1::footer>(std::move(footer_result));
+    auto wrapped = ss::make_lw_shared<const l1::footer>(
+      std::get<l1::footer>(std::move(footer_result)));
+    _cached_footer = cached_footer{
+      .oid = oid,
+      .footer_pos = footer_pos,
+      .object_size = object_size,
+      .footer = wrapped,
+    };
+    co_return wrapped;
 }
 
 ss::future<chunked_circular_buffer<model::record_batch>>
@@ -424,12 +454,12 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
     // must hold, so we start at whichever position is further into the
     // file.
     auto seek_res = [&] {
-        auto offset_seek = object.footer.file_position_before_kafka_offset(
+        auto offset_seek = object.footer->file_position_before_kafka_offset(
           _tidp, offset);
         if (!_config.first_timestamp) {
             return offset_seek;
         }
-        auto time_seek = object.footer.file_position_before_max_timestamp(
+        auto time_seek = object.footer->file_position_before_max_timestamp(
           _tidp, *_config.first_timestamp);
         if (time_seek == l1::footer::npos) {
             return offset_seek;

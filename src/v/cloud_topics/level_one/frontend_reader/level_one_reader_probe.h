@@ -21,6 +21,8 @@ public:
         _footer_bytes_read += bytes_requested;
     }
 
+    void register_footer_cache_hit() { ++_footer_cache_hits; }
+
     void register_bytes_read(size_t bytes_read) { _bytes_read += bytes_read; }
 
     void register_bytes_skipped(size_t bytes_skipped) {
@@ -31,6 +33,7 @@ private:
     void setup_metrics();
 
     uint64_t _footer_bytes_read{0};
+    uint64_t _footer_cache_hits{0};
     uint64_t _bytes_read{0};
     uint64_t _bytes_skipped{0};
 

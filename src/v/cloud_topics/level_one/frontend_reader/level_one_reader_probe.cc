@@ -31,7 +31,15 @@ void level_one_reader_probe::setup_metrics() {
         sm::make_counter(
           "footer_read_bytes",
           [this] { return _footer_bytes_read; },
-          sm::description("Number of footer bytes read by L1 readers.")),
+          sm::description(
+            "Number of footer bytes fetched from object storage by L1 "
+            "readers (cache hits not counted; see footer_cache_hits).")),
+        sm::make_counter(
+          "footer_cache_hits",
+          [this] { return _footer_cache_hits; },
+          sm::description(
+            "L1 reader footer-stash hits: read_footer calls that "
+            "returned the cached parse instead of fetching.")),
         sm::make_counter(
           "read_bytes",
           [this] { return _bytes_read; },
