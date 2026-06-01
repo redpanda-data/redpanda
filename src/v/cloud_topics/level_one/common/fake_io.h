@@ -48,8 +48,20 @@ public:
     // Return a list of the object IDs that haven't been removed.
     chunked_vector<object_id> list_objects() const;
 
+    // Test hooks to simulate an idle object-store connection dropping while a
+    // reader holds a stream open in the L1 reader cache:
+    //   arm_connection_drop()   - streams opened after this carry an abort hook
+    //   drop_open_connections() - armed streams now throw ECONNABORTED on their
+    //                             next read, while streams opened afterwards
+    //                             are healthy (modelling a fresh connection on
+    //                             reopen).
+    void arm_connection_drop() { _arm_connection_drop = true; }
+    void drop_open_connections() { _connections_dropped = true; }
+
 private:
     absl::btree_map<object_id, iobuf> _storage;
+    bool _arm_connection_drop{false};
+    bool _connections_dropped{false};
 };
 
 } // namespace cloud_topics::l1

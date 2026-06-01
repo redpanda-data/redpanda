@@ -149,13 +149,28 @@ level_one_log_reader_impl::read_some(
               read_batches(*_current_stream->reader));
             if (read_fut.failed()) {
                 auto ex = read_fut.get_exception();
-                vlog(
-                  _log.error,
-                  "Exception reading from open stream (object {}): {}",
-                  _current_stream->oid,
-                  ex);
+                auto oid = _current_stream->oid;
                 co_await close_current_stream();
-                std::rethrow_exception(ex);
+                if (ssx::is_shutdown_exception(ex)) {
+                    co_await ss::coroutine::return_exception_ptr(std::move(ex));
+                }
+                // The cached stream went stale: its object-store connection
+                // was dropped while the reader sat idle in the L1 reader
+                // cache. Drop the stream and reopen from the metastore on the
+                // next loop iteration rather than failing the fetch -- a
+                // propagated error becomes not_leader_for_partition in the
+                // fetch handler, which traps consumers in a retry loop. The
+                // failed read returned no batches, so reset the per-fetch byte
+                // budget that read_batches advanced before throwing.
+                _bytes_consumed = 0;
+                vlog(
+                  _log.debug,
+                  "Reopening reader after reused stream for object {} failed "
+                  "at offset {}: {}",
+                  oid,
+                  _next_offset,
+                  ex);
+                continue;
             }
             batches = read_fut.get();
         } else {

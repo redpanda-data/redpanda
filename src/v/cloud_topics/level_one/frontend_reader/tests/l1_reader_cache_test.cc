@@ -374,4 +374,62 @@ TEST_F(l1_reader_cache_test, byte_limited_reader_is_reusable) {
     EXPECT_EQ(data1.size() + data2.size(), expected_count);
 }
 
+TEST_F(l1_reader_cache_test, reused_stream_connection_abort_is_recovered) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, /*count=*/2).get();
+    auto expected_count = batches.size();
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    // Arm connection drops: the stream opened by the first fetch (and reused
+    // by the second) becomes droppable.
+    _io.arm_connection_drop();
+
+    // First fetch: byte-limited read returns the first batch and leaves the
+    // reader cached with its stream open.
+    auto wrapped = _cache->put(make_reader_impl(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      /*max_bytes=*/1,
+      /*strict_max_bytes=*/true));
+    auto data1 = model::consume_reader_to_memory(
+                   std::move(wrapped), model::no_timeout)
+                   .get();
+    ASSERT_EQ(data1.size(), 1);
+    auto next_offset = kafka::offset(data1.back().last_offset()() + 1);
+
+    // Drop the held-open connection: reads from the cached reader's stream now
+    // fail with ECONNABORTED, while a freshly opened stream stays healthy.
+    _io.drop_open_connections();
+
+    // Second fetch: cache hit reuses the now-dead stream. The reader must
+    // recover by reopening from the object store rather than surfacing the
+    // connection abort (which fetch.cc would turn into
+    // not_leader_for_partition, trapping the consumer in a retry loop).
+    cloud_topic_log_reader_config cfg2(
+      /*group=*/cloud_io::group_id::consumer_fetch,
+      next_offset,
+      kafka::offset::max(),
+      /*min_bytes=*/0,
+      /*max_bytes=*/1,
+      /*type_filter=*/std::nullopt,
+      /*first_timestamp=*/std::nullopt,
+      /*abort_source=*/std::nullopt,
+      /*client_addr=*/std::nullopt,
+      /*strict_max_bytes=*/true);
+    auto hit = _cache->get_reader(tidp, cfg2);
+    ASSERT_TRUE(hit.has_value());
+    auto data2 = model::consume_reader_to_memory(
+                   std::move(*hit), model::no_timeout)
+                   .get();
+
+    EXPECT_EQ(data1.size() + data2.size(), expected_count);
+}
+
 } // namespace cloud_topics::l1

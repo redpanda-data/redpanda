@@ -14,9 +14,43 @@
 #include "cloud_storage_clients/multipart_upload.h"
 #include "cloud_topics/level_one/common/object_id.h"
 
+#include <seastar/core/iostream.hh>
+#include <seastar/coroutine/exception.hh>
+
+#include <cerrno>
+#include <system_error>
+
 namespace cloud_topics::l1 {
 
 static ss::logger fake_io_log("fake_io");
+
+namespace {
+// Wraps an input stream so its reads can be made to fail with ECONNABORTED on
+// demand, simulating an object-store connection dropped while a reader holds
+// the stream open. Delivers small chunks so a reader that resumes reading
+// (e.g. a cached reader reused on a later fetch) is forced to issue a fresh
+// read and thus hit the drop, rather than serving everything from a buffer.
+class droppable_source final : public ss::data_source_impl {
+public:
+    droppable_source(ss::input_stream<char> stream, const bool& dropped)
+      : _stream(std::move(stream))
+      , _dropped(&dropped) {}
+
+    ss::future<ss::temporary_buffer<char>> get() override {
+        if (*_dropped) {
+            co_await ss::coroutine::return_exception(
+              std::system_error(ECONNABORTED, std::system_category()));
+        }
+        co_return co_await _stream.read_up_to(64);
+    }
+
+    ss::future<> close() override { return _stream.close(); }
+
+private:
+    ss::input_stream<char> _stream;
+    const bool* _dropped;
+};
+} // namespace
 
 // In-memory multipart upload state for testing.
 class fake_multipart_state final
@@ -115,14 +149,21 @@ fake_io::read_object(
   object_extent extent,
   ss::abort_source*,
   [[maybe_unused]] cloud_io::group_id gid) {
-    co_return get_object(extent.id)
-      .transform(
-        [&extent](
-          iobuf data) -> std::expected<ss::input_stream<char>, io::errc> {
-            return make_iobuf_input_stream(
-              data.share(extent.position, extent.size));
-        })
-      .value_or(std::unexpected(io::errc::cloud_missing_object));
+    auto data = get_object(extent.id);
+    if (!data.has_value()) {
+        co_return std::unexpected(io::errc::cloud_missing_object);
+    }
+    auto stream = make_iobuf_input_stream(
+      data->share(extent.position, extent.size));
+    // Streams opened while armed (and before the drop fires) carry a hook that
+    // lets the test fail their reads later; streams opened after the drop stay
+    // healthy, modelling a fresh connection on reopen.
+    if (_arm_connection_drop && !_connections_dropped) {
+        co_return ss::input_stream<char>(ss::data_source(
+          std::make_unique<droppable_source>(
+            std::move(stream), _connections_dropped)));
+    }
+    co_return std::move(stream);
 }
 
 ss::future<std::expected<void, io::errc>>
