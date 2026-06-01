@@ -1459,6 +1459,15 @@ model::offset archival_metadata_stm::max_removable_local_log_offset() {
         collect_all = false;
     }
 
+    // A migrated (tiered->cloud/tiered_cloud) partition has
+    // is_archival_enabled()
+    // == false once set_overrides flips its storage mode, which would otherwise
+    // make us collect_all and stop constraining truncation -- evicting TS data
+    // that has not yet been uploaded. While the migration seal is set we keep
+    // constraining via cloud_recoverable_offset() so the pre-migration TS
+    // region stays protected until it has been uploaded and aged out.
+    collect_all = collect_all && !_migration_boundary.has_value();
+
     if (collect_all || is_read_replica || (uploads_paused && gaps_allowed)) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
@@ -1844,10 +1853,15 @@ archival_metadata_stm_factory::archival_metadata_stm_factory(
 
 bool archival_metadata_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
+    // The archival STM is created on cloud-topic partitions too (no
+    // cloud_topic_enabled() == false guard). For a partition migrated from
+    // tiered storage it is reconstructed from its snapshot and its manifest +
+    // migration seal stay available to serve passthrough reads and gate
+    // truncation. For a partition that was always a cloud topic the manifest is
+    // empty and the seal is unset, so it is an inert passenger.
     return _cloud_storage_enabled && _cloud_storage_api.local_is_initialized()
            && ntp_cfg.ntp().tp.topic != model::kafka_consumer_offsets_topic
-           && ntp_cfg.ntp().ns == model::kafka_namespace
-           && ntp_cfg.cloud_topic_enabled() == false;
+           && ntp_cfg.ntp().ns == model::kafka_namespace;
 }
 
 void archival_metadata_stm_factory::create(

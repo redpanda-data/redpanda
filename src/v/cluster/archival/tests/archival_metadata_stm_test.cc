@@ -19,6 +19,7 @@
 #include "raft/persisted_stm.h"
 #include "raft/state_machine_manager.h"
 #include "raft/tests/simple_raft_fixture.h"
+#include "storage/ntp_config.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/boost_fixture.h"
 
@@ -302,6 +303,118 @@ FIXTURE_TEST(
                      .get());
     BOOST_REQUIRE_EQUAL(
       archival_stm->migration_boundary().value(), kafka::offset(200));
+}
+
+// While the migration seal is set, the STM keeps constraining local-log
+// truncation via cloud_recoverable_offset() even though is_archival_enabled()
+// is false post-migration -- otherwise un-uploaded TS data could be evicted.
+FIXTURE_TEST(
+  test_migration_seal_constrains_truncation, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+
+    // The default fixture's ntp_config has archival disabled (storage_mode
+    // unset), so without a seal the STM steps aside and allows unconstrained
+    // local-log eviction.
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->max_removable_local_log_offset(), model::offset::max());
+
+    // Add a segment and mark the manifest clean so cloud_recoverable_offset()
+    // has a concrete value (this is the post-migration state: TS segments in
+    // the manifest, archival disabled by the flipped storage mode).
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(
+      segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1)});
+    archival_stm
+      ->add_segments(
+        m,
+        std::nullopt,
+        model::producer_id{},
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
+      .get();
+    archival_stm
+      ->mark_clean(
+        ss::lowres_clock::now() + 10s,
+        archival_stm->get_insync_offset(),
+        never_abort)
+      .get();
+
+    // Still no seal: archival disabled => collect everything.
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->max_removable_local_log_offset(), model::offset::max());
+
+    // Once sealed, truncation is constrained by cloud_recoverable_offset().
+    BOOST_REQUIRE(!archival_stm
+                     ->seal_migration(
+                       kafka::offset(99),
+                       model::offset(99),
+                       ss::lowres_clock::now() + 10s,
+                       never_abort)
+                     .get());
+    BOOST_REQUIRE(
+      archival_stm->max_removable_local_log_offset() != model::offset::max());
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->max_removable_local_log_offset(),
+      archival_stm->cloud_recoverable_offset());
+
+    // Completing the migration releases the constraint again (back to native CT
+    // behavior).
+    BOOST_REQUIRE(
+      !archival_stm
+         ->complete_migration(ss::lowres_clock::now() + 10s, never_abort)
+         .get());
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->max_removable_local_log_offset(), model::offset::max());
+}
+
+// The archival STM factory now creates the STM on cloud-topic partitions too,
+// so a migrated partition keeps (and a native CT partition gains) an
+// archival_stm. STM membership is fixed at construction, so this is what lets a
+// migrated partition eventually become indistinguishable from a native one.
+FIXTURE_TEST(
+  test_archival_stm_factory_applicable_for_cloud_topic,
+  archival_metadata_stm_fixture) {
+    cluster::archival_metadata_stm_factory factory(
+      /*cloud_storage_enabled=*/true, cloud_api, _feature_table);
+
+    auto make_cfg = [](
+                      const model::ns& ns,
+                      const model::topic& topic,
+                      model::redpanda_storage_mode mode) {
+        storage::ntp_config::default_overrides ov;
+        ov.storage_mode = mode;
+        return storage::ntp_config(
+          model::ntp(ns, topic, model::partition_id(0)),
+          "/tmp/archival-stm-factory-test",
+          std::make_unique<storage::ntp_config::default_overrides>(ov));
+    };
+
+    using sm = model::redpanda_storage_mode;
+    const model::topic t{"t"};
+
+    // Cloud-topic partitions are now applicable (the changed behavior).
+    BOOST_CHECK(factory.is_applicable_for(
+      make_cfg(model::kafka_namespace, t, sm::tiered_cloud)));
+    BOOST_CHECK(factory.is_applicable_for(
+      make_cfg(model::kafka_namespace, t, sm::cloud)));
+
+    // Plain tiered partitions remain applicable.
+    BOOST_CHECK(factory.is_applicable_for(
+      make_cfg(model::kafka_namespace, t, sm::tiered)));
+
+    // Existing guards still hold: non-kafka namespace and the consumer offsets
+    // topic are excluded.
+    BOOST_CHECK(!factory.is_applicable_for(
+      make_cfg(model::redpanda_ns, t, sm::tiered_cloud)));
+    BOOST_CHECK(!factory.is_applicable_for(make_cfg(
+      model::kafka_namespace,
+      model::kafka_consumer_offsets_topic,
+      sm::tiered_cloud)));
 }
 
 FIXTURE_TEST(
