@@ -226,6 +226,84 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       == cluster::archival_metadata_stm::state_dirty::clean);
 }
 
+// TS->CT migration seal: seal records the boundary, is idempotent, and
+// complete clears it back to the passenger baseline.
+FIXTURE_TEST(test_migration_seal_and_complete, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+
+    // Not migrating initially.
+    BOOST_REQUIRE(!archival_stm->migration_boundary().has_value());
+
+    // Seal records the boundary.
+    BOOST_REQUIRE(!archival_stm
+                     ->seal_migration(
+                       kafka::offset(100),
+                       model::offset(102),
+                       ss::lowres_clock::now() + 10s,
+                       never_abort)
+                     .get());
+    BOOST_REQUIRE(archival_stm->migration_boundary().has_value());
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->migration_boundary().value(), kafka::offset(100));
+
+    // A second seal with a different boundary is a no-op (idempotent).
+    BOOST_REQUIRE(!archival_stm
+                     ->seal_migration(
+                       kafka::offset(999),
+                       model::offset(1001),
+                       ss::lowres_clock::now() + 10s,
+                       never_abort)
+                     .get());
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->migration_boundary().value(), kafka::offset(100));
+
+    // Complete clears the boundary back to the passenger baseline.
+    BOOST_REQUIRE(
+      !archival_stm
+         ->complete_migration(ss::lowres_clock::now() + 10s, never_abort)
+         .get());
+    BOOST_REQUIRE(!archival_stm->migration_boundary().has_value());
+
+    // Completing again is a harmless no-op.
+    BOOST_REQUIRE(
+      !archival_stm
+         ->complete_migration(ss::lowres_clock::now() + 10s, never_abort)
+         .get());
+    BOOST_REQUIRE(!archival_stm->migration_boundary().has_value());
+}
+
+// After completion the seal handler can record a fresh boundary again. This
+// can't happen in production (the tiered->cloud transition is one-way) but it
+// documents that 'complete' fully resets the state machine rather than latching
+// a terminal flag.
+FIXTURE_TEST(
+  test_migration_reseal_after_complete, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+
+    BOOST_REQUIRE(!archival_stm
+                     ->seal_migration(
+                       kafka::offset(100),
+                       model::offset(102),
+                       ss::lowres_clock::now() + 10s,
+                       never_abort)
+                     .get());
+    BOOST_REQUIRE(
+      !archival_stm
+         ->complete_migration(ss::lowres_clock::now() + 10s, never_abort)
+         .get());
+    BOOST_REQUIRE(!archival_stm->migration_boundary().has_value());
+
+    BOOST_REQUIRE(!archival_stm
+                     ->seal_migration(
+                       kafka::offset(200),
+                       model::offset(202),
+                       ss::lowres_clock::now() + 10s,
+                       never_abort)
+                     .get());
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->migration_boundary().value(), kafka::offset(200));
+}
+
 FIXTURE_TEST(
   test_archival_stm_update_lco_when_compacted_segment_added,
   archival_metadata_stm_fixture) {

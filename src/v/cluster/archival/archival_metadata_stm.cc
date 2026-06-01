@@ -217,13 +217,36 @@ struct archival_metadata_stm::read_write_fence_cmd
     auto serde_fields() { return std::tie(last_applied_offset); }
 };
 
+struct archival_metadata_stm::migration_seal_cmd
+  : public serde::envelope<
+      migration_seal_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr cmd_key key{15};
+
+    // Last Kafka offset covered by the pre-migration TS manifest.
+    kafka::offset boundary;
+    // Raft offset of the last durably-uploaded TS segment.
+    model::offset log_boundary;
+
+    auto serde_fields() { return std::tie(boundary, log_boundary); }
+};
+
+struct archival_metadata_stm::complete_migration_cmd {
+    static constexpr cmd_key key{16};
+};
+
 // Serde format description
 // v5
 //  - add apply_offset field
+// v6
+//  - add last_clean_at, last_dirty_at fields
+// v7
+//  - add migration_boundary, migration_log_boundary fields
 //
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<6>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<7>, serde::compat_version<0>> {
     /// List of segments
     chunked_vector<segment> segments;
     /// List of replaced segments
@@ -274,6 +297,12 @@ struct archival_metadata_stm::snapshot
     // The offset of the last record that modified the stm;
     // default (-inf) in v5 and earlier
     model::offset last_dirty_at;
+    // TS->CT migration boundary (nullopt if not mid-migration);
+    // default (nullopt) in v6 and earlier
+    std::optional<kafka::offset> migration_boundary;
+    // Raft offset of the last uploaded TS segment at migration time;
+    // default in v6 and earlier
+    model::offset migration_log_boundary;
 
     auto serde_fields() {
         return std::tie(
@@ -295,7 +324,9 @@ struct archival_metadata_stm::snapshot
           highest_producer_id,
           applied_offset,
           last_clean_at,
-          last_dirty_at);
+          last_dirty_at,
+          migration_boundary,
+          migration_log_boundary);
     }
 };
 
@@ -471,6 +502,24 @@ command_batch_builder& command_batch_builder::update_highest_producer_id(
         iobuf val_buf = serde::to_iobuf(highest_pid());
         _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
     }
+    return *this;
+}
+
+command_batch_builder& command_batch_builder::seal_migration(
+  kafka::offset boundary, model::offset log_boundary) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::migration_seal_cmd::key);
+    auto record_val = archival_metadata_stm::migration_seal_cmd{
+      .boundary = boundary, .log_boundary = log_boundary};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder& command_batch_builder::complete_migration() {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::complete_migration_cmd::key);
+    _builder.add_raw_kv(std::move(key_buf), std::nullopt);
     return *this;
 }
 
@@ -722,6 +771,29 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
     auto builder = batch_start(deadline, as);
     builder.update_start_kafka_offset(start_kafka_offset);
     co_return co_await builder.replicate();
+}
+
+ss::future<std::error_code> archival_metadata_stm::seal_migration(
+  kafka::offset boundary,
+  model::offset log_boundary,
+  ss::lowres_clock::time_point deadline,
+  ss::abort_source& as) {
+    auto holder = _gate.hold();
+    auto builder = batch_start(deadline, as);
+    builder.seal_migration(boundary, log_boundary);
+    co_return co_await builder.replicate();
+}
+
+ss::future<std::error_code> archival_metadata_stm::complete_migration(
+  ss::lowres_clock::time_point deadline, ss::abort_source& as) {
+    auto holder = _gate.hold();
+    auto builder = batch_start(deadline, as);
+    builder.complete_migration();
+    co_return co_await builder.replicate();
+}
+
+std::optional<kafka::offset> archival_metadata_stm::migration_boundary() const {
+    return _migration_boundary;
 }
 
 ss::future<std::error_code> archival_metadata_stm::spillover(
@@ -1134,6 +1206,14 @@ ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
                         return ss::stop_iteration::yes;
                     }
                     break;
+                case migration_seal_cmd::key: {
+                    auto cmd = serde::from_iobuf<migration_seal_cmd>(
+                      r.release_value());
+                    apply_migration_seal(cmd.boundary, cmd.log_boundary);
+                } break;
+                case complete_migration_cmd::key:
+                    apply_complete_migration();
+                    break;
                 default:
                     throw std::runtime_error(fmt_with_ctx(
                       fmt::format,
@@ -1295,6 +1375,8 @@ archival_metadata_stm::apply_local_snapshot(
     }
 
     _last_dirty_at = snap.last_dirty_at;
+    _migration_boundary = snap.migration_boundary;
+    _migration_log_boundary = snap.migration_log_boundary;
 
     co_return raft::local_snapshot_applied::yes;
 }
@@ -1326,7 +1408,9 @@ archival_metadata_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
         .highest_producer_id = _manifest->highest_producer_id(),
         .applied_offset = _manifest->get_applied_offset(),
         .last_clean_at = _last_clean_at,
-        .last_dirty_at = _last_dirty_at});
+        .last_dirty_at = _last_dirty_at,
+        .migration_boundary = _migration_boundary,
+        .migration_log_boundary = _migration_log_boundary});
     auto snapshot_offset = last_applied_offset();
     apply_units.return_all();
 
@@ -1500,6 +1584,35 @@ void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
           so,
           manifest().get_start_kafka_offset_override());
     }
+}
+
+void archival_metadata_stm::apply_migration_seal(
+  kafka::offset boundary, model::offset log_boundary) {
+    if (_migration_boundary.has_value()) {
+        // Idempotent: the boundary is recorded once at migration time. A
+        // second seal (e.g. a retried replicate) is ignored.
+        return;
+    }
+    _migration_boundary = boundary;
+    _migration_log_boundary = log_boundary;
+    vlog(
+      _logger.info,
+      "TS->CT migration sealed at kafka boundary {} (log boundary {})",
+      boundary,
+      log_boundary);
+}
+
+void archival_metadata_stm::apply_complete_migration() {
+    if (!_migration_boundary.has_value()) {
+        return;
+    }
+    vlog(
+      _logger.info,
+      "TS->CT migration completed; clearing boundary {} (partition is now "
+      "indistinguishable from a native cloud topic)",
+      _migration_boundary.value());
+    _migration_boundary.reset();
+    _migration_log_boundary = {};
 }
 
 void archival_metadata_stm::apply_reset_metadata() {

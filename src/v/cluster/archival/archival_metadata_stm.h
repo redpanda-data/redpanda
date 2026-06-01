@@ -109,6 +109,14 @@ public:
     command_batch_builder&
     update_highest_producer_id(model::producer_id highest_pid);
 
+    /// Record the TS->CT migration boundary on the STM.
+    command_batch_builder&
+    seal_migration(kafka::offset boundary, model::offset log_boundary);
+
+    /// Clear the migration boundary, returning the STM to its passenger
+    /// baseline.
+    command_batch_builder& complete_migration();
+
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
@@ -209,6 +217,31 @@ public:
     /// as the offset at end of upload might have changed.
     ss::future<std::error_code>
     mark_clean(ss::lowres_clock::time_point, model::offset, ss::abort_source&);
+
+    /// Record the tiered-storage migration boundary (TS->CT migration) so the
+    /// read path can serve pre-migration offsets via the TS passthrough path.
+    /// Idempotent: a second call is a no-op while a boundary is already set.
+    ///
+    /// \param boundary the last Kafka offset covered by the pre-migration TS
+    ///   manifest; reads at or below it are served from cloud storage.
+    /// \param log_boundary the raft offset of the last durably-uploaded TS
+    ///   segment, used to seed CT local-log truncation past the TS region.
+    ss::future<std::error_code> seal_migration(
+      kafka::offset boundary,
+      model::offset log_boundary,
+      ss::lowres_clock::time_point deadline,
+      ss::abort_source&);
+
+    /// Clear the migration boundary, returning the STM to the state of a
+    /// partition that never migrated. Called once the pre-migration TS data has
+    /// fully aged out of cloud storage.
+    ss::future<std::error_code> complete_migration(
+      ss::lowres_clock::time_point deadline, ss::abort_source&);
+
+    /// The recorded TS->CT migration boundary, or nullopt if the partition is
+    /// not mid-migration (never migrated, or migration completed). This is the
+    /// authoritative signal that a partition is in the TS->CT overlap window.
+    std::optional<kafka::offset> migration_boundary() const;
 
     /// A set of archived segments. NOTE: manifest can be out-of-date if this
     /// node is not leader; or if the STM hasn't yet performed sync; or if the
@@ -341,6 +374,8 @@ private:
     struct reset_scrubbing_metadata;
     struct update_highest_producer_id_cmd;
     struct read_write_fence_cmd;
+    struct migration_seal_cmd;
+    struct complete_migration_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -369,6 +404,9 @@ private:
     void apply_process_anomalies(iobuf);
     void apply_reset_scrubbing_metadata();
     void apply_update_highest_producer_id(model::producer_id pid);
+    void
+    apply_migration_seal(kafka::offset boundary, model::offset log_boundary);
+    void apply_complete_migration();
     // apply fence command and return true if the 'apply' call should
     // be interrupted
     bool apply_read_write_fence(const read_write_fence_cmd&) noexcept;
@@ -391,6 +429,17 @@ private:
 
     // The offset of the last record that modified this stm
     model::offset _last_dirty_at;
+
+    // Set once when the partition transitions from tiered to cloud/tiered_cloud
+    // (TS->CT migration), and cleared again once the pre-migration TS data has
+    // aged out. nullopt means the partition is a native cloud topic (never
+    // migrated, or migration completed).
+    std::optional<kafka::offset> _migration_boundary;
+
+    // The raft offset of the last durably-uploaded TS segment at migration
+    // time. Only meaningful while _migration_boundary is set; reset on
+    // completion.
+    model::offset _migration_log_boundary;
 
     std::optional<ss::promise<errc>> _active_operation_res;
 
