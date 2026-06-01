@@ -2538,3 +2538,82 @@ FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
     BOOST_TEST_REQUIRE(
       timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
 }
+
+// Regression test for the scenario where GC fails repeatedly (e.g. Azure
+// batch delete bug) but retention continues to succeed. This leaves stale
+// segments in _segments below _start_offset which led to a bad optional
+// access on the fetch path.
+FIXTURE_TEST(
+  test_remote_partition_start_beyond_all_segments_crash,
+  cloud_storage_fixture) {
+    constexpr int num_segments = 10;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+    const std::vector<std::vector<batch_t>> batch_types(
+      num_segments, std::vector<batch_t>(10, data));
+
+    auto old_segs = setup_s3_imposter(*this, batch_types);
+    const auto& old_last = old_segs.back();
+
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+
+    // Simulate retention deciding all segments should be deleted.
+    auto beyond = model::next_offset(old_last.max_offset);
+    BOOST_REQUIRE(manifest.advance_start_offset(beyond));
+    // GC fails: deliberately skip manifest.truncate().
+
+    // A new segment arrives after the gap (simulating 2 config batches between
+    // the old log tail and the new write). base_offset != beyond, so
+    // _segments.find(_start_offset) will fail.
+    auto new_base = model::offset(beyond() + 2);
+    auto new_seg = make_segment(new_base, std::vector<batch_t>(5, data));
+
+    partition_manifest::segment_meta new_meta{
+      .is_compacted = false,
+      .size_bytes = new_seg.bytes.size(),
+      .base_offset = new_seg.base_offset,
+      .committed_offset = new_seg.max_offset,
+      .delta_offset = model::offset_delta(0),
+      .ntp_revision = manifest.get_revision_id(),
+      .segment_term = model::term_id{1},
+      .sname_format = segment_name_format::v3};
+    BOOST_REQUIRE(manifest.add(new_seg.sname, new_meta).has_value());
+    manifest.advance_insync_offset(new_seg.max_offset);
+
+    // Verify preconditions:
+    // _start_offset is the raw beyond value, not a segment base_offset.
+    BOOST_REQUIRE_EQUAL(manifest.get_start_offset().value(), beyond);
+    // Stale segments sit below _start_offset.
+    BOOST_REQUIRE_LT(manifest.begin()->base_offset, beyond);
+    // New segment extends the log so is_data_available() returns true.
+    BOOST_REQUIRE_GE(manifest.get_last_offset(), beyond);
+
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto manifest_view_stop = ss::defer(
+      [&manifest_view] { manifest_view->stop().get(); });
+    manifest_view->start().get();
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+    partition->start().get();
+
+    BOOST_REQUIRE_NO_THROW(partition->first_uploaded_offset());
+
+    // "Upload" the new segment and read the log to make sure reading doesn't
+    // break.
+    auto seg_path = manifest.generate_segment_path(
+      *manifest.get(new_base), path_provider);
+    add_expectations({cloud_storage_fixture::expectation{
+      .url = seg_path().string(), .body = new_seg.bytes}});
+
+    auto log_start = partition->first_uploaded_offset();
+    cloud_log_reader_config reader_config(
+      log_start, model::offset_cast(new_seg.max_offset));
+    auto reader = partition->make_reader(reader_config).get().reader;
+    auto headers = reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
+    BOOST_REQUIRE(!headers.empty());
+}
