@@ -534,13 +534,17 @@ create_topic_properties_update(
                 continue;
             }
             if (cfg.name == topic_property_redpanda_storage_mode) {
-                auto validator = [current_storage_mode,
-                                  &feature_table = ctx.feature_table().local()](
-                                   const ss::sstring& raw,
-                                   const model::redpanda_storage_mode& value)
+                auto validator =
+                  [current_storage_mode,
+                   has_infinite_retention
+                   = topic_cfg
+                     && topic_cfg->properties.retention_duration.is_disabled(),
+                   &feature_table = ctx.feature_table().local()](
+                    const ss::sstring& raw,
+                    const model::redpanda_storage_mode& value)
                   -> std::optional<ss::sstring> {
                     auto transition_err = storage_mode_validator{
-                      current_storage_mode}(raw, value);
+                      current_storage_mode, has_infinite_retention}(raw, value);
                     if (transition_err) {
                         return transition_err;
                     }

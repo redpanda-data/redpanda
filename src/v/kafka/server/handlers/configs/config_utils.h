@@ -371,18 +371,17 @@ struct batch_max_bytes_limits_validator {
 //   tiered -> local: Permitted (with caution)
 //   unset -> local: Permitted (with caution)
 //   unset -> tiered: Permitted
-//   cloud -> tiered_cloud: Permitted
-//   tiered_cloud -> cloud: Permitted
+//   tiered -> cloud: Permitted (TS migration; sets TS import boundary)
+//   tiered -> tiered_cloud: Permitted (TS migration; sets TS import boundary)
+//   cloud <-> tiered_cloud: Permitted
 // Not permitted:
 //   local -> unset: Not permitted
 //   local -> cloud: Not permitted
 //   tiered -> unset: Not permitted
-//   tiered -> cloud: Not permitted
 //   cloud -> local: Not permitted
 //   cloud -> tiered: Not permitted
 //   unset <-> cloud: Not permitted (cloud requires explicit choice)
 //   local -> tiered_cloud: Not permitted
-//   tiered -> tiered_cloud: Not permitted
 //   tiered_cloud -> local: Not permitted
 //   tiered_cloud -> tiered: Not permitted
 //   unset <-> tiered_cloud: Not permitted
@@ -413,6 +412,15 @@ inline bool is_storage_mode_transition_permitted(
         return true;
     }
 
+    // tiered -> cloud/tiered_cloud: migration from tiered storage to cloud
+    // topics; the TS import boundary is recorded during the transition.
+    if (from == sm::tiered && to == sm::cloud) {
+        return true;
+    }
+    if (from == sm::tiered && to == sm::tiered_cloud) {
+        return true;
+    }
+
     // cloud <-> tiered_cloud: Permitted
     if (from == sm::cloud && to == sm::tiered_cloud) {
         return true;
@@ -430,6 +438,7 @@ inline bool is_storage_mode_transition_permitted(
 /// permitted.
 struct storage_mode_validator {
     std::optional<model::redpanda_storage_mode> current_mode;
+    bool has_infinite_retention = false;
 
     std::optional<ss::sstring>
     operator()(const ss::sstring&, const model::redpanda_storage_mode& value) {
@@ -445,6 +454,23 @@ struct storage_mode_validator {
               *current_mode,
               value);
         }
+
+        // TS->CT migration requires pre-migration data to age out within a
+        // bounded window, so the partition can eventually shed its archival
+        // state and become a native cloud topic. Infinite retention prevents
+        // that, so reject the migration in that case.
+        using sm = model::redpanda_storage_mode;
+        const bool is_ts_migration
+          = *current_mode == sm::tiered
+            && (value == sm::cloud || value == sm::tiered_cloud);
+        if (is_ts_migration && has_infinite_retention) {
+            return fmt::format(
+              "Cannot alter redpanda.storage.mode from {} to {} on a topic "
+              "with infinite retention (retention.ms=-1)",
+              *current_mode,
+              value);
+        }
+
         return std::nullopt;
     }
 };

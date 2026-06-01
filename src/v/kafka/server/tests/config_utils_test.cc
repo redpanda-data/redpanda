@@ -136,6 +136,41 @@ BOOST_AUTO_TEST_CASE(parse_and_set_topic_replication_factor_test) {
     BOOST_REQUIRE_EQUAL(property.value.has_value(), false);
 }
 
+BOOST_AUTO_TEST_CASE(storage_mode_validator_tiered_to_cloud_permitted) {
+    // TS->CT migration transitions are permitted when retention is finite.
+    using sm = model::redpanda_storage_mode;
+    kafka::storage_mode_validator v{
+      sm::tiered,
+      /*has_infinite_retention=*/false};
+    BOOST_CHECK(!v("", sm::cloud));
+    BOOST_CHECK(!v("", sm::tiered_cloud));
+}
+
+BOOST_AUTO_TEST_CASE(
+  storage_mode_validator_tiered_to_cloud_rejected_when_infinite_retention) {
+    using sm = model::redpanda_storage_mode;
+    kafka::storage_mode_validator v{
+      sm::tiered,
+      /*has_infinite_retention=*/true};
+    auto err_cloud = v("", sm::cloud);
+    BOOST_REQUIRE(err_cloud.has_value());
+    BOOST_CHECK(err_cloud->contains("infinite retention"));
+    auto err_tc = v("", sm::tiered_cloud);
+    BOOST_REQUIRE(err_tc.has_value());
+    BOOST_CHECK(err_tc->contains("infinite retention"));
+}
+
+BOOST_AUTO_TEST_CASE(
+  storage_mode_validator_cloud_to_tiered_cloud_permitted_when_infinite_retention) {
+    // cloud <-> tiered_cloud transitions are not TS migrations; infinite
+    // retention must not block them.
+    using sm = model::redpanda_storage_mode;
+    kafka::storage_mode_validator v{
+      sm::cloud,
+      /*has_infinite_retention=*/true};
+    BOOST_CHECK(!v("", sm::tiered_cloud));
+}
+
 BOOST_AUTO_TEST_CASE(test_min_replication_factor) {
     using namespace kafka;
     cluster::property_update<std::optional<cluster::replication_factor>>
