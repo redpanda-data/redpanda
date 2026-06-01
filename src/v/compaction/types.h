@@ -117,6 +117,9 @@ struct stats {
     // Number of transactional control batches that were removed.
     // This is only relevant for local storage compaction.
     size_t control_batches_discarded{0};
+    // Number of compressed batches that were appended by reusing the source's
+    // compressed payload instead of re-compressing after filtering.
+    size_t compressed_batches_reused{0};
 
     // Returns whether any data was removed by this reducer.
     bool has_removed_data() const {

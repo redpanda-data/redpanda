@@ -10,12 +10,14 @@
 #include "compaction/key_offset_map.h"
 #include "config/configuration.h"
 #include "gmock/gmock.h"
+#include "model/batch_compression.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "storage/chunk_cache.h"
+#include "storage/compaction_reducers.h"
 #include "storage/disk_log_impl.h"
 #include "storage/segment_deduplication_utils.h"
 #include "storage/segment_utils.h"
@@ -590,4 +592,104 @@ TEST(DeduplicateSegmentsTest, SegmentNeedsRewriteNoCompactedIndex) {
       ss::file_exists(seg->path().to_compacted_index().string()).get());
 
     ASSERT_EQ(needs_rewrite, true);
+}
+
+TEST(CopyReducerCompressionReuseTest, ReusesCompressedPayloadWhenUnchanged) {
+    storage::disk_log_builder b;
+    build_segments(
+      b,
+      /*num_segs=*/2,
+      /*records_per_seg=*/1,
+      /*start_offset=*/0,
+      /*mark_compacted=*/false);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+    auto& segs = disk_log.segments();
+
+    compaction::compaction_config cfg(
+      model::offset{0},
+      model::offset{0},
+      model::offset{0},
+      std::nullopt,
+      std::nullopt,
+      never_abort);
+    const auto apply_offset = storage::internal::should_apply_delta_time_offset(
+      b.feature_table());
+
+    // Runs the reducer over `batch` into a fresh appender backed by `seg`'s
+    // staging path, and returns the resulting reducer stats.
+    auto run_one =
+      [&](
+        const ss::lw_shared_ptr<storage::segment>& seg,
+        model::record_batch batch,
+        storage::internal::copy_data_segment_reducer::filter_t keep_fn) {
+          const auto tmpname = seg->reader().path().to_compaction_staging();
+          auto appender = storage::internal::make_segment_appender(
+                            tmpname,
+                            std::nullopt,
+                            disk_log.resources(),
+                            cfg.sanitizer_config)
+                            .get();
+          auto close = ss::defer([&] { appender->close().get(); });
+          const auto seg_last_offset = batch.last_offset();
+          const auto base_offset = batch.base_offset();
+          storage::internal::copy_data_segment_reducer reducer(
+            disk_log.config().ntp(),
+            std::move(keep_fn),
+            appender.get(),
+            /*internal_topic=*/false,
+            apply_offset,
+            base_offset,
+            seg_last_offset,
+            /*compaction_placeholder_enabled=*/false,
+            /*unset_transaction_bit_enabled=*/false,
+            /*cidx=*/nullptr,
+            /*inject_failure=*/false,
+            &never_abort);
+          reducer(std::move(batch)).get();
+          return reducer.end_of_stream().reducer_stats;
+      };
+
+    auto keep_all = [](const model::record_batch&, const model::record&, bool) {
+        return ss::make_ready_future<bool>(true);
+    };
+
+    auto make_batch = [](bool compress) {
+        auto batch = model::test::make_random_batch(
+          model::test::record_batch_spec{
+            .offset = model::offset{0},
+            .allow_compression = false,
+            .count = 4});
+        if (compress) {
+            batch = model::compress_batch_sync(
+              model::compression::zstd, std::move(batch));
+        }
+        return batch;
+    };
+
+    // A compressed batch with nothing removed is reused, not re-compressed.
+    {
+        auto batch = make_batch(/*compress=*/true);
+        ASSERT_TRUE(batch.compressed());
+        auto stats = run_one(segs[0], std::move(batch), keep_all);
+        EXPECT_EQ(stats.records_discarded, 0);
+        EXPECT_EQ(stats.compressed_batches_reused, 1);
+    }
+
+    // When a record is removed, the batch is rebuilt and re-compressed rather
+    // than reused.
+    {
+        auto batch = make_batch(/*compress=*/true);
+        ASSERT_TRUE(batch.compressed());
+        bool drop = true;
+        auto drop_first =
+          [&](const model::record_batch&, const model::record&, bool) mutable {
+              // Keep every record except the first: the predicate returns
+              // whether to keep, so negate the one-shot drop flag.
+              return ss::make_ready_future<bool>(!std::exchange(drop, false));
+          };
+        auto stats = run_one(segs[1], std::move(batch), std::move(drop_first));
+        EXPECT_EQ(stats.records_discarded, 1);
+        EXPECT_EQ(stats.compressed_batches_reused, 0);
+    }
 }
