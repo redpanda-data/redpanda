@@ -43,12 +43,14 @@ redpanda_cc_library(
     srcs = [
         "cloud_topic_partition.cc",
         "cloud_topic_read_replica.cc",
+        "migrated_partition.cc",
         "partition_proxy.cc",
         "replicated_partition.cc",
     ],
     hdrs = [
         "cloud_topic_partition.h",
         "cloud_topic_read_replica.h",
+        "migrated_partition.h",
         "partition_proxy.h",
         "replicated_partition.h",
     ],
@@ -70,6 +72,7 @@ redpanda_cc_library(
     deps = [
         ":exact_offset_replicator",
         "//src/v/base",
+        "//src/v/cloud_storage",
         "//src/v/cloud_storage:types",
         "//src/v/cloud_topics:data_plane_api",
         "//src/v/cloud_topics:log_reader_config",

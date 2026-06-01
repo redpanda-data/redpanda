@@ -17,6 +17,7 @@
 #include "cluster/partition_manager.h"
 #include "kafka/data/cloud_topic_partition.h"
 #include "kafka/data/cloud_topic_read_replica.h"
+#include "kafka/data/migrated_partition.h"
 #include "kafka/data/replicated_partition.h"
 
 namespace kafka {
@@ -52,6 +53,29 @@ make_partition_proxy(const ss::lw_shared_ptr<cluster::partition>& partition) {
 
         auto frontend_instance = std::make_unique<cloud_topics::frontend>(
           partition, ct_state->local().get_data_plane());
+
+        // A partition mid-migration from tiered storage carries a migration
+        // seal on its archival_metadata_stm. Serve it with a composite proxy
+        // that routes pre-migration reads (offset <= boundary) to the
+        // tiered-storage path and everything else to the cloud-topics path.
+        // Once the pre-migration TS data ages out the seal is cleared and we
+        // fall through to a plain cloud_topic_partition below.
+        //
+        // Note: the seal is set after set_overrides (which makes
+        // cloud_topic_enabled() true), so on the leader a sealed partition is
+        // always cloud_topic_enabled here. A follower that has applied the
+        // replicated seal but not yet its config update may briefly route to
+        // replicated_partition; this resolves once the config update lands.
+        if (
+          auto boundary = partition->ts_migration_boundary();
+          boundary.has_value()) {
+            auto ts = std::make_unique<replicated_partition>(partition);
+            auto ct = std::make_unique<cloud_topic_partition>(
+              partition, std::move(frontend_instance));
+            return make_with_impl<migrated_partition>(
+              partition, *boundary, std::move(ts), std::move(ct));
+        }
+
         return make_with_impl<cloud_topic_partition>(
           partition, std::move(frontend_instance));
     }
