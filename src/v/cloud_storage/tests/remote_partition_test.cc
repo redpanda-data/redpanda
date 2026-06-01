@@ -2557,13 +2557,13 @@ FIXTURE_TEST(
     // break.
     auto seg_path = manifest.generate_segment_path(
       *manifest.get(new_base), path_provider);
-    add_expectations(chunked_vector<cloud_storage_fixture::expectation>::single(
+    add_expectations(std::vector<cloud_storage_fixture::expectation>{
       cloud_storage_fixture::expectation{
-        .url = seg_path().string(), .body = new_seg.bytes}));
+        .url = seg_path().string(), .body = new_seg.bytes}});
 
     auto log_start = partition->first_uploaded_offset();
-    cloud_log_reader_config reader_config(
-      log_start, model::offset_cast(new_seg.max_offset));
+    storage::log_reader_config reader_config(
+      kafka::offset_cast(log_start), new_seg.max_offset);
     auto reader = partition->make_reader(reader_config).get().reader;
     auto headers = reader.consume(test_consumer(), model::no_timeout).get();
     std::move(reader).release();
