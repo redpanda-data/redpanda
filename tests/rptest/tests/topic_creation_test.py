@@ -130,28 +130,6 @@ class TopicRecreateTest(RedpandaTest):
             },
         )
 
-    def _wait_for_topic_ready(
-        self,
-        topic: str,
-        partition_count: int,
-        replication_factor: int,
-    ) -> None:
-        rpk = RpkTool(self.redpanda)
-
-        def topic_is_ready():
-            partitions = list(rpk.describe_topic(topic))
-            return len(partitions) == partition_count and all(
-                p.leader != -1 and len(p.replicas) == replication_factor
-                for p in partitions
-            )
-
-        wait_until(
-            topic_is_ready,
-            timeout_sec=30,
-            backoff_sec=1,
-            err_msg=f"Topic {topic} readiness",
-        )
-
     @cluster(num_nodes=6)
     @matrix(
         workload=[Workload.ACKS_1, Workload.ACKS_ALL, Workload.IDEMPOTENT],
@@ -171,7 +149,6 @@ class TopicRecreateTest(RedpandaTest):
         spec.cleanup_policy = cleanup_policy
 
         self.client().create_topic(spec)
-        self._wait_for_topic_ready(spec.name, partition_count, spec.replication_factor)
 
         producer_properties = {}
         if workload == Workload.ACKS_1:
@@ -183,6 +160,15 @@ class TopicRecreateTest(RedpandaTest):
             producer_properties["enable.idempotence"] = True
         else:
             assert False
+
+        # librdkafka 2.10+ holds a deleted topic's partitions for up to
+        # topic.metadata.propagation.max.ms (default 30s); the stale per-partition
+        # leader epoch then makes the client reject the recreated topic's leaders
+        # (2.8+ only migrates to a leader with a >= cached epoch), stalling produce
+        # until the grace expires and racing the 30s health check. Disable the
+        # grace so the long-lived swarm adopts the recreated topic's leaders
+        # immediately.
+        producer_properties["topic.metadata.propagation.max.ms"] = 0
 
         swarm = ProducerSwarm(
             self.test_context,
@@ -207,28 +193,12 @@ class TopicRecreateTest(RedpandaTest):
             self.logger.debug(f"High watermark offsets: {hw_offsets}")
             return len(offsets_present) == partition_count and all(offsets_present)
 
-        # librdkafka 2.10+ keeps per-topic metadata through transient
-        # UNKNOWN_TOPIC_OR_PARTITION responses, so per-partition
-        # leader_epoch, producer_id, and sequence state survive a topic
-        # delete+recreate window. Recreate the swarm after each topic
-        # recreation so this broker test does not depend on librdkafka's
-        # local topic incarnation cache for the post-recreate health
-        # check.
         for i in range(1, 20):
             rf = 3 if i % 2 == 0 else 1
             self.client().delete_topic(spec.name)
             spec.replication_factor = rf
             self.client().create_topic(spec)
-            self._wait_for_topic_ready(spec.name, partition_count, rf)
-            swarm.stop()
-            swarm.wait()
-            swarm.start()
-            wait_until(
-                topic_is_healthy,
-                30,
-                2,
-                err_msg=f"Topic {spec.name} health",
-            )
+            wait_until(topic_is_healthy, 30, 2, err_msg=f"Topic {spec.name} health")
             sleep(5)
 
         swarm.stop()
