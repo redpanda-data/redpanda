@@ -2557,10 +2557,9 @@ FIXTURE_TEST(
     // break.
     auto seg_path = manifest.generate_segment_path(
       *manifest.get(new_base), path_provider);
-    add_expectations(
-      chunked_vector<cloud_storage_fixture::expectation>::single(
-        cloud_storage_fixture::expectation{
-          .url = seg_path().string(), .body = new_seg.bytes}));
+    add_expectations(chunked_vector<cloud_storage_fixture::expectation>::single(
+      cloud_storage_fixture::expectation{
+        .url = seg_path().string(), .body = new_seg.bytes}));
 
     auto log_start = partition->first_uploaded_offset();
     cloud_log_reader_config reader_config(
