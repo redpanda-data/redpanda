@@ -25,6 +25,7 @@
 #include "cloud_topics/reconciler/reconciler.h"
 #include "cloud_topics/topic_manifest_upload_manager.h"
 #include "cluster/controller.h"
+#include "cluster/partition.h"
 #include "cluster/utils/partition_change_notifier_impl.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
@@ -271,6 +272,22 @@ ss::future<> app::wire_up_notifications() {
               });
         });
     }
+    manager.local().on_ctp_partition_leader([](
+                                              const model::ntp&,
+                                              const model::topic_id_partition&,
+                                              const auto& partition) noexcept {
+        if (!partition) {
+            return;
+        }
+        // A leader that won election after the previous leader failed before
+        // the migration seal was committed must (re-)record the boundary.
+        // seal_ts_migration is idempotent and leader-only, so firing it on
+        // every CT-partition leadership acquisition is safe.
+        ssx::background = (*partition)
+                            ->seal_ts_migration()
+                            .handle_exception(
+                              [](const std::exception_ptr&) noexcept {});
+    });
     co_await housekeeper_manager.invoke_on_all([this](auto& hm) {
         manager.local().on_ctp_partition_leader(
           [&hm](

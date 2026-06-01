@@ -883,6 +883,15 @@ ss::future<> partition::update_configuration(topic_properties new_properties) {
         cloud_storage_changed = true;
     }
 
+    // Detect a tiered->cloud/tiered_cloud transition (TS->CT migration) from
+    // the old config, before set_overrides() overwrites it.
+    const bool needs_ct_migration
+      = !old_ntp_config.cloud_topic_enabled()
+        && (new_overrides.storage_mode
+              == model::redpanda_storage_mode::tiered_cloud
+            || new_overrides.storage_mode
+                 == model::redpanda_storage_mode::cloud);
+
     // Pass the configuration update into the storage layer
     _raft->log()->set_overrides(new_overrides);
     bool compaction_changed = _raft->log()->notify_compaction_update();
@@ -901,6 +910,13 @@ ss::future<> partition::update_configuration(topic_properties new_properties) {
 
     // Pass the configuration update to the raft layer
     _raft->notify_config_update();
+
+    // Record the TS->CT migration boundary after the storage config is updated.
+    // The archival_metadata_stm (which holds the seal) outlives the archiver,
+    // so this is safe regardless of any archiver rebuild below.
+    if (needs_ct_migration) {
+        co_await seal_ts_migration();
+    }
 
     // If this partition's cloud storage mode changed, rebuild the archiver.
     // This must happen after the raft+storage update, because it reads raft's
@@ -944,6 +960,76 @@ ss::future<> partition::restart_archiver(bool should_notify_topic_config) {
         }
         co_await _archiver->start();
     }
+}
+
+ss::future<> partition::seal_ts_migration() {
+    if (!_raft->is_leader()) {
+        co_return;
+    }
+    if (!_archival_meta_stm) {
+        vlog(
+          clusterlog.warn,
+          "[{}] archival_metadata_stm absent during tiered->cloud-topic "
+          "transition; cannot record migration boundary",
+          _raft->ntp());
+        co_return;
+    }
+    if (_archival_meta_stm->migration_boundary().has_value()) {
+        // Already sealed; idempotent (covers repeated update_configuration and
+        // the leader-election callback).
+        co_return;
+    }
+
+    // The migration boundary is the highest kafka offset recoverable from cloud
+    // storage. archival_metadata_stm only records a segment after its S3 upload
+    // succeeds, so manifest().get_last_kafka_offset() never leads S3 state --
+    // it can lag (a concurrently-uploaded segment not yet applied), in which
+    // case the CT reconciler re-reads and re-uploads those records, which is
+    // fine.
+    const auto boundary
+      = _archival_meta_stm->manifest().get_last_kafka_offset();
+    if (!boundary.has_value()) {
+        // No TS data has been uploaded: nothing to serve via the passthrough
+        // path, so no seal is needed. The partition is a native cloud topic
+        // starting at offset 0. (Sealing at offset::min() would otherwise drive
+        // routing and truncation off a sentinel value.)
+        vlog(
+          clusterlog.info,
+          "[{}] tiered->cloud-topic transition with no uploaded TS data; "
+          "no migration seal recorded",
+          _raft->ntp());
+        co_return;
+    }
+
+    // log_boundary is the raft offset of the last uploaded TS segment; a later
+    // slice uses it to let the CT local log trim past the TS region promptly.
+    const model::offset log_boundary = _archival_meta_stm->get_last_offset();
+    const auto deadline = model::timeout_clock::now()
+                          + std::chrono::seconds{30};
+    auto ec = co_await _archival_meta_stm->seal_migration(
+      *boundary, log_boundary, deadline, _as);
+    if (ec) {
+        vlog(
+          clusterlog.warn,
+          "[{}] failed to record TS->CT migration seal (boundary={}): {}",
+          _raft->ntp(),
+          *boundary,
+          ec.message());
+    } else {
+        vlog(
+          clusterlog.info,
+          "[{}] TS->CT migration boundary set to {} (log boundary {})",
+          _raft->ntp(),
+          *boundary,
+          log_boundary);
+    }
+}
+
+std::optional<kafka::offset> partition::ts_migration_boundary() const {
+    if (!_archival_meta_stm) {
+        return std::nullopt;
+    }
+    return _archival_meta_stm->migration_boundary();
 }
 
 std::optional<model::offset>

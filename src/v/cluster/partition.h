@@ -307,6 +307,11 @@ public:
         }
     }
 
+    // On a tiered->cloud/tiered_cloud transition, record the TS->CT migration
+    // boundary on the archival_metadata_stm (the seal) if not already set.
+    // Idempotent and leader-only; a no-op if there is no uploaded TS data.
+    ss::future<> seal_ts_migration();
+
     uint64_t upload_backlog_size() const;
 
     /**
@@ -370,6 +375,13 @@ public:
     // perform housekeeping.
     ss::shared_ptr<cloud_storage::async_manifest_view>
     get_cloud_storage_manifest_view();
+
+    /// The TS->CT migration boundary if this partition is mid-migration (its
+    /// pre-migration tiered-storage data is still being served via the
+    /// passthrough path), or nullopt for a native cloud topic / never-migrated
+    /// partition. Read from the archival_metadata_stm seal, so it is ordered
+    /// w.r.t. raft operations.
+    std::optional<kafka::offset> ts_migration_boundary() const;
 
     ss::future<result<model::offset>> set_writes_disabled(
       partition_properties_stm::writes_disabled disable,

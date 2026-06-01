@@ -150,6 +150,31 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "ts_import_boundary_test",
+    timeout = "short",
+    srcs = ["ts_import_boundary_test.cc"],
+    cpu = 1,
+    deps = [
+        ":cluster_fixture",
+        "//src/v/cluster",
+        "//src/v/cluster:fwd",
+        "//src/v/cluster:inventory_service",
+        "//src/v/cluster:leader_balancer_strategy",
+        "//src/v/cluster:members_table",
+        "//src/v/cluster:node_status_backend",
+        "//src/v/cluster:partition_properties_stm",
+        "//src/v/cluster:self_test",
+        "//src/v/cluster:topic_metrics_watcher",
+        "//src/v/cluster:tx_manager_migrator_rpc",
+        "//src/v/cluster:types",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "cluster_recovery_test",
     timeout = "moderate",
     srcs = [
