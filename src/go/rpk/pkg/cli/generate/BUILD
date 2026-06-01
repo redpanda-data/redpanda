@@ -9,6 +9,7 @@ go_library(
         "grafana.go",
         "license.go",
         "prometheus.go",
+        "skill.go",
     ],
     embedsrcs = [
         "app-templates/go-produce-consume.tar.gz",
@@ -51,6 +52,7 @@ go_test(
         "app_test.go",
         "grafana_test.go",
         "prometheus_test.go",
+        "skill_test.go",
     ],
     embed = [":generate"],
     deps = [

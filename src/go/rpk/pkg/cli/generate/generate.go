@@ -28,6 +28,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newLicenseCommand(fs, p),
 		newPrometheusConfigCmd(fs, p),
 		newShellCompletionCommand(),
+		newSkillCmd(fs),
 	)
 	return cmd
 }

@@ -117,6 +117,20 @@ func PickIndex(options []string, msg string, args ...any) (int, error) {
 	return selected, nil
 }
 
+// PickMultiple prompts the user to select zero or more options, returning the
+// selected options or an error.
+func PickMultiple(options []string, msg string, args ...any) ([]string, error) {
+	var selected []string
+	err := survey.AskOne(&survey.MultiSelect{
+		Message: fmt.Sprintf(msg, args...),
+		Options: options,
+	}, &selected)
+	if err != nil {
+		return nil, err
+	}
+	return selected, nil
+}
+
 // Prompt prompts the user for input, returning the input or an error.
 func Prompt(msg string, args ...any) (string, error) {
 	return PromptWithSuggestion("", msg, args...)
