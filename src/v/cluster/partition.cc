@@ -13,6 +13,8 @@
 #include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
+#include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/archival/upload_housekeeping_service.h"
@@ -1016,8 +1018,8 @@ ss::future<> partition::seal_ts_migration() {
         co_return;
     }
 
-    // log_boundary is the raft offset of the last uploaded TS segment; a later
-    // slice uses it to let the CT local log trim past the TS region promptly.
+    // log_boundary is the raft offset of the last uploaded TS segment; it is
+    // used below to seed the CT reconciliation baseline.
     const model::offset log_boundary = _archival_meta_stm->get_last_offset();
     const auto deadline = model::timeout_clock::now()
                           + std::chrono::seconds{30};
@@ -1030,13 +1032,38 @@ ss::future<> partition::seal_ts_migration() {
           _raft->ntp(),
           *boundary,
           ec.message());
-    } else {
-        vlog(
-          clusterlog.info,
-          "[{}] TS->CT migration boundary set to {} (log boundary {})",
-          _raft->ntp(),
-          *boundary,
-          log_boundary);
+        co_return;
+    }
+    vlog(
+      clusterlog.info,
+      "[{}] TS->CT migration boundary set to {} (log boundary {})",
+      _raft->ntp(),
+      *boundary,
+      log_boundary);
+
+    // Seed the CT reconciliation baseline to the migration boundary so the
+    // already-uploaded TS region of the local raft log can be trimmed
+    // immediately, rather than waiting for the CT reconciler to first advance
+    // the LRO past the boundary (otherwise ctp_stm's collectible offset pins
+    // the log at min() once the first CT placeholder is applied). This is a
+    // disk-reclamation optimization; correctness does not depend on it. ctp_stm
+    // is pre-installed on tiered partitions (see ctp_stm_factory), so it is
+    // present here. It is expressed as "reconciliation starts at the boundary",
+    // a CT-domain concept -- ctp_stm carries no migration state of its own.
+    auto ctp = _raft->stm_manager()->get<cloud_topics::ctp_stm>();
+    if (ctp) {
+        cloud_topics::ctp_stm_api api{ctp};
+        auto seed = co_await api.advance_reconciled_offset(
+          *boundary, log_boundary, deadline, _as);
+        if (!seed.has_value()) {
+            vlog(
+              clusterlog.info,
+              "[{}] failed to seed CT reconciliation baseline at {} (the LRO "
+              "will advance on first reconciliation): {}",
+              _raft->ntp(),
+              *boundary,
+              seed.error());
+        }
     }
 }
 

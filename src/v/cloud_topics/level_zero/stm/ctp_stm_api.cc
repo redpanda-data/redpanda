@@ -122,11 +122,19 @@ ctp_stm_api::advance_reconciled_offset(
   kafka::offset lro,
   model::timeout_clock::time_point deadline,
   ss::abort_source& as) {
+    auto lrlo = _stm->_raft->log()->to_log_offset(kafka::offset_cast(lro));
+    return advance_reconciled_offset(lro, lrlo, deadline, as);
+}
+
+ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+ctp_stm_api::advance_reconciled_offset(
+  kafka::offset lro,
+  model::offset lrlo,
+  model::timeout_clock::time_point deadline,
+  ss::abort_source& as) {
     if (lro <= get_last_reconciled_offset()) {
         co_return std::monostate{};
     }
-
-    auto lrlo = _stm->_raft->log()->to_log_offset(kafka::offset_cast(lro));
 
     vlog(
       _log.debug,

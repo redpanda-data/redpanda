@@ -8,6 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/tests/cluster_fixture.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/partition.h"
@@ -186,6 +188,31 @@ TEST_F(TsImportBoundaryTest, CompleteMigrationNoOpWhileTsDataPresent) {
     // Manifest still holds the pre-migration segment, so completion is a no-op.
     leader_p->complete_ts_migration().get();
     EXPECT_TRUE(leader_p->ts_migration_boundary().has_value());
+}
+
+// On migration the CT reconciliation baseline (ctp_stm LRO) is seeded to the
+// boundary, so the already-uploaded TS region of the raft log can be trimmed
+// without waiting for the first CT reconciliation cycle.
+TEST_F(TsImportBoundaryTest, ReconciliationBaselineSeededOnMigration) {
+    create_tiered_topic().get();
+
+    ss::lw_shared_ptr<cluster::partition> leader_p;
+    wait_for_leader(leader_p).get();
+    produce_and_wait_for_ts_upload(leader_p).get();
+
+    set_storage_mode(model::redpanda_storage_mode::tiered_cloud).get();
+    wait_for_migration_boundary(leader_p).get();
+    auto boundary = leader_p->ts_migration_boundary();
+    ASSERT_TRUE(boundary.has_value());
+
+    auto ctp = leader_p->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    ASSERT_TRUE(ctp);
+    cloud_topics::ctp_stm_api api{ctp};
+    // The seed is replicated just after the seal, so wait for it to apply.
+    tests::cooperative_spin_wait_with_timeout(10s, [&] {
+        return api.get_last_reconciled_offset() == *boundary;
+    }).get();
+    EXPECT_EQ(api.get_last_reconciled_offset(), *boundary);
 }
 
 // A tiered partition with no uploaded TS data records no seal on promotion:
