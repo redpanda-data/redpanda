@@ -110,6 +110,15 @@ ss::future<> cloud_topics_manager::start() {
               on_leadership_change(ntp, tidp, is_leader);
               [[fallthrough]];
           case notif_type::partition_properties_change:
+              if (t == notif_type::partition_properties_change && is_leader) {
+                  // A properties change on an already-leading broker does not
+                  // trigger on_leadership_change (the reconciler/housekeeper
+                  // attach callbacks) via the fallthrough path above. Fire it
+                  // explicitly so they attach immediately after a storage-mode
+                  // transition (e.g. a TS->CT migration), rather than waiting
+                  // for a step-down and re-election. Callbacks are idempotent.
+                  on_leadership_change(ntp, tidp, is_leader);
+              }
               on_leadership_or_properties_change(ntp, tidp, is_leader);
               break;
           }
