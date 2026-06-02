@@ -68,11 +68,19 @@ level_one_log_reader_impl::do_load_slice(
         co_return co_await read_some(deadline);
     } catch (...) {
         auto ex = std::current_exception();
+        // TEMP DIAGNOSTIC (CORE-15812): _last_stage pins which read-path
+        // co_await threw; the abort bypasses every inner handler so this is
+        // how we locate it. REVERT before merge.
         vlogl(
           _log,
           ssx::is_shutdown_exception(ex) ? ss::log_level::debug
                                          : ss::log_level::warn,
-          "Reader caught exception: {}",
+          "Reader caught exception at stage [{}] (has_stream={}, "
+          "next_offset={}, lookahead={}): {}",
+          _last_stage,
+          _current_stream.has_value(),
+          _next_offset,
+          _lookahead_buffer.size(),
           ex);
         set_end_of_stream();
         throw;
@@ -94,6 +102,7 @@ level_one_log_reader_impl::open_reader_at(
     auto* abort_source = _config.abort_source
                            ? &_config.abort_source.value().get()
                            : &default_abort_source;
+    _last_stage = "open:read_object"; // TEMP CORE-15812
     auto stream_fut = co_await ss::coroutine::as_future(
       _io->read_object(extent, abort_source, _config.group));
     if (stream_fut.failed()) {
@@ -145,6 +154,7 @@ level_one_log_reader_impl::read_some(
               _next_offset,
               _current_stream->oid);
 
+            _last_stage = "reuse:read_batches"; // TEMP CORE-15812
             auto read_fut = co_await ss::coroutine::as_future(
               read_batches(*_current_stream->reader));
             if (read_fut.failed()) {
@@ -240,6 +250,7 @@ ss::future<> level_one_log_reader_impl::fill_lookahead_buffer(
                            ? &_config.abort_source.value().get()
                            : &default_abort_source;
     retry_chain_node rtc = l1::make_default_metastore_rtc(*abort_source);
+    _last_stage = "metastore:get_extent_metadata_forwards"; // TEMP CORE-15812
     auto response = co_await l1::retry_metastore_op(
       [this, offset, num_objects] -> ss::future<std::expected<
                                     l1::metastore::extent_metadata_response,
@@ -291,6 +302,7 @@ level_one_log_reader_impl::lookup_object_for_offset(
   kafka::offset offset, model::timeout_clock::time_point /*deadline*/) {
     if (_lookahead_buffer.empty()) {
         auto num_objects = std::max<size_t>(1, _config.lookahead_objects);
+        _last_stage = "lookup:fill_lookahead_buffer"; // TEMP CORE-15812
         co_await fill_lookahead_buffer(offset, num_objects);
     }
     auto obj_resp = consume_lookahead_buffer(offset);
@@ -301,6 +313,7 @@ level_one_log_reader_impl::lookup_object_for_offset(
     auto& obj = obj_resp.value();
     vlog(_log.debug, "Found L1 object {} at offset {}", obj.oid, offset);
 
+    _last_stage = "lookup:read_footer"; // TEMP CORE-15812
     auto footer = co_await read_footer(
       obj.oid, obj.footer_pos, obj.object_size);
 
@@ -328,6 +341,7 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
     auto* abort_source = _config.abort_source
                            ? &_config.abort_source.value().get()
                            : &default_abort_source;
+    _last_stage = "footer:read_object_as_iobuf"; // TEMP CORE-15812
     auto read_fut = co_await ss::coroutine::as_future(
       _io->read_object_as_iobuf(extent, abort_source, _config.group));
     if (read_fut.failed()) {
@@ -361,6 +375,7 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
     }
 
     // Parse the footer - we have the complete footer so this should succeed.
+    _last_stage = "footer:parse"; // TEMP CORE-15812
     auto footer_result = co_await l1::footer::read(
       std::move(read_result).value());
 
@@ -468,6 +483,7 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
         };
     }
 
+    _last_stage = "materialize:open_reader_at"; // TEMP CORE-15812
     auto reader_result = co_await open_reader_at(
       object.oid, object.last_offset, seek_res.file_position, seek_res.length);
     if (!reader_result.has_value()) {
@@ -485,6 +501,7 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
     }
 
     // _current_stream is now populated by open_reader_at.
+    _last_stage = "materialize:read_batches"; // TEMP CORE-15812
     auto read_fut = co_await ss::coroutine::as_future(
       read_batches(*_current_stream->reader));
     if (read_fut.failed()) {

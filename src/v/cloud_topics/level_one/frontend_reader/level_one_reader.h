@@ -203,6 +203,11 @@ private:
     size_t _bytes_consumed{0};
     bool _was_cached{false};
 
+    // TEMP DIAGNOSTIC (CORE-15812): name of the most recently entered
+    // co_await stage in the read path, logged by do_load_slice's catch to
+    // pin which operation throws the ECONNABORTED. REVERT before merge.
+    const char* _last_stage{"init"};
+
     // Open stream for the current object. Non-null while the reader is
     // positioned within an object; null before the first read, when
     // transitioning between objects, and in end-of-stream state.
