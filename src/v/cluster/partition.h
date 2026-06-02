@@ -389,6 +389,17 @@ public:
     /// w.r.t. raft operations.
     std::optional<kafka::offset> ts_migration_boundary() const;
 
+    /// True if this partition should serve fetches from cloud storage via the
+    /// remote_partition (tiered-storage) read path: either remote fetch is
+    /// enabled by its storage mode (tiered), or it is mid TS->CT migration and
+    /// its pre-migration data still lives in cloud storage. A migrated
+    /// partition has storage_mode cloud/tiered_cloud, for which
+    /// is_remote_fetch_enabled() is false, so the migration seal re-enables the
+    /// path for the pre-migration range.
+    bool is_remote_fetch_enabled_or_migrating() const {
+        return is_remote_fetch_enabled() || ts_migration_boundary().has_value();
+    }
+
     ss::future<result<model::offset>> set_writes_disabled(
       partition_properties_stm::writes_disabled disable,
       model::timeout_clock::time_point deadline,

@@ -292,7 +292,7 @@ replicated_partition::aborted_transactions_remote(
  */
 bool replicated_partition::may_read_from_cloud(
   kafka::offset start_offset) const {
-    return _partition->is_remote_fetch_enabled()
+    return _partition->is_remote_fetch_enabled_or_migrating()
            && _partition->cloud_data_available()
            && (start_offset < model::offset_cast(_translator->from_log_offset(_partition->raft_start_offset())));
 }
@@ -472,7 +472,7 @@ model::offset replicated_partition::partition_kafka_start_offset() const {
     auto local_kafka_start_offset = _translator->from_log_offset(
       _partition->raft_start_offset());
     if (
-      _partition->is_remote_fetch_enabled()
+      _partition->is_remote_fetch_enabled_or_migrating()
       && _partition->cloud_data_available()
       && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
         return _partition->start_cloud_offset();
@@ -555,7 +555,7 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     // Check cloud storage for a viable offset.
     if (
       is_read_replica
-      || (_partition->is_remote_fetch_enabled() && _partition->cloud_data_available())) {
+      || (_partition->is_remote_fetch_enabled_or_migrating() && _partition->cloud_data_available())) {
         if (is_read_replica && !_partition->cloud_data_available()) {
             // If we didn't sync the manifest yet the cloud_data_available will
             // return false. We can't call `get_cloud_term_last_offset` in this
