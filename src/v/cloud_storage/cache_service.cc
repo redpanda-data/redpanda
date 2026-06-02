@@ -1306,18 +1306,26 @@ ss::future<> cache::put(
               "Removing temporary file {}. Exception during copy: {}",
               tmp_filepath.native(),
               eptr);
-            auto delete_tmp_fut = co_await ss::coroutine::as_future(
-              delete_file_and_empty_parents(tmp_filepath.native()));
-            if (delete_tmp_fut.failed()) {
-                auto e = delete_tmp_fut.get_exception();
-                if (!ssx::is_shutdown_exception(e)) {
-                    vlog(
-                      cst_log.error,
-                      "Failed to delete tmp file {}: {}",
-                      tmp_filepath.native(),
-                      e);
-                }
-            }
+            co_await ss::remove_file(tmp_filepath.native())
+              .handle_exception_type(
+                [&](const std::filesystem::filesystem_error& e) {
+                    if (e.code() != std::errc::no_such_file_or_directory) {
+                        vlog(
+                          cst_log.error,
+                          "Failed to delete tmp file {}: {}",
+                          tmp_filepath.native(),
+                          e);
+                    }
+                })
+              .handle_exception([&](std::exception_ptr e) {
+                  if (!ssx::is_shutdown_exception(e)) {
+                      vlog(
+                        cst_log.error,
+                        "Failed to delete tmp file {}: {}",
+                        tmp_filepath.native(),
+                        e);
+                  }
+              });
         }
 
         if (no_space_on_device) {
@@ -1393,11 +1401,22 @@ ss::future<> cache::_invalidate(const std::filesystem::path& key) {
       cst_log.debug,
       "Trying to invalidate {} from archival cache.",
       key.native());
+    auto normal_path = (_cache_dir / key).lexically_normal();
+    auto normal_cache_dir = _cache_dir.lexically_normal();
+    auto [p1, p2] = std::mismatch(
+      normal_cache_dir.begin(), normal_cache_dir.end(), normal_path.begin());
+    if (p1 != normal_cache_dir.end()) {
+        throw std::invalid_argument(fmt_with_ctx(
+          fmt::format,
+          "Tried to invalidate {}, which is outside of cache_dir {}.",
+          normal_path.native(),
+          normal_cache_dir.native()));
+    }
     try {
-        auto path = (_cache_dir / key).native();
+        auto path = normal_path.native();
         auto stat = co_await ss::file_stat(path);
         _access_time_tracker.remove(key.native());
-        co_await delete_file_and_empty_parents(path);
+        co_await ss::remove_file(path);
         _current_cache_size -= stat.size;
         _current_cache_objects -= 1;
         probe.set_size(_current_cache_size);
