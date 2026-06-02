@@ -110,6 +110,40 @@ ss::future<> max_compactible_offset_provider_impl::fill_max_compactible_offsets(
     }
 }
 
+ss::future<> max_compactible_offset_provider_impl::fill_migrating_ntps(
+  chunked_hash_map<model::ntp, bool>& migrating_ntps) const {
+    // Group NTPs by their owning shard to batch cross-shard calls.
+    chunked_hash_map<ss::shard_id, chunked_vector<model::ntp>> ntps_by_shard;
+    for (const auto& [ntp, _] : migrating_ntps) {
+        auto shard_opt = _shard_table->local().shard_for(ntp);
+        if (shard_opt) {
+            ntps_by_shard[*shard_opt].push_back(ntp);
+        }
+    }
+
+    for (auto& [shard, shard_ntps] : ntps_by_shard) {
+        auto shard_results = co_await _partition_manager->invoke_on(
+          shard,
+          [ntps = std::move(shard_ntps)](
+            const cluster::partition_manager& pm) mutable {
+              chunked_hash_map<model::ntp, bool> results;
+              for (auto& ntp : ntps) {
+                  auto p = pm.get(ntp);
+                  if (!p) {
+                      continue;
+                  }
+                  results.insert_or_assign(
+                    std::move(ntp), p->ts_migration_boundary().has_value());
+              }
+              return results;
+          });
+
+        for (auto& [ntp, migrating] : shard_results) {
+            migrating_ntps.insert_or_assign(std::move(ntp), migrating);
+        }
+    }
+}
+
 log_info_collector::log_info_collector(
   metastore* metastore,
   std::unique_ptr<topic_cfg_provider> tp_metadata_provider,
@@ -126,7 +160,19 @@ ss::future<> log_info_collector::collect_info_for_logs(
   log_compaction_queue& compaction_queue) const {
     auto now = model::timestamp::now();
 
-    auto to_collect = get_logs_to_collect(logs_list, logs_set.size(), now);
+    // Determine which partitions are mid TS->CT migration; their tombstones
+    // must not be removed by compaction until the migration completes.
+    chunked_hash_map<model::ntp, bool> migrating_ntps;
+    for (const auto& log : logs_list) {
+        if (log.link.is_linked()) {
+            migrating_ntps.insert_or_assign(log.ntp, false);
+        }
+    }
+    co_await _max_compactible_offset_provider->fill_migrating_ntps(
+      migrating_ntps);
+
+    auto to_collect = get_logs_to_collect(
+      logs_list, logs_set.size(), now, migrating_ntps);
 
     auto compaction_infos_res = co_await _metastore->get_compaction_infos(
       to_collect);
@@ -167,11 +213,37 @@ ss::future<> log_info_collector::collect_info_for_logs(
       now);
 }
 
+model::timestamp tombstone_removal_upper_bound(
+  const cluster::topic_properties& props,
+  std::optional<std::chrono::milliseconds> cluster_default_retention,
+  model::timestamp now,
+  bool partition_migrating) {
+    // A partition mid TS->CT migration must not have its tombstones removed:
+    // its pre-migration data still lives in tiered-storage cloud, and removing
+    // a CT tombstone could resurrect a key whose superseded value is in that
+    // range. Disable tombstone removal until the migration completes (its TS
+    // data ages out and the seal clears).
+    if (partition_migrating) {
+        return model::timestamp::min();
+    }
+    auto delete_retention_ms = cluster_default_retention;
+    if (props.delete_retention_ms.has_optional_value()) {
+        delete_retention_ms = props.delete_retention_ms.value();
+    }
+    if (props.delete_retention_ms.is_disabled()) {
+        delete_retention_ms = std::nullopt;
+    }
+    return delete_retention_ms.has_value()
+             ? now - model::timestamp(delete_retention_ms->count())
+             : model::timestamp::min();
+}
+
 chunked_vector<metastore::compaction_info_spec>
 log_info_collector::get_logs_to_collect(
   log_list_t& logs_list,
   size_t size,
-  model::timestamp collection_timestamp) const {
+  model::timestamp collection_timestamp,
+  const chunked_hash_map<model::ntp, bool>& migrating_ntps) const {
     chunked_vector<metastore::compaction_info_spec> to_collect;
 
     to_collect.reserve(size);
@@ -215,27 +287,14 @@ log_info_collector::get_logs_to_collect(
         }
 
         const auto& topic_cfg = topic_cfg_opt.value().get();
-        auto tombstone_removal_ts =
-          [&topic_cfg, collection_timestamp]() -> model::timestamp {
-            // Cleaned ranges with tombstones that were cleaned at or below
-            // tombstone_removal_upper_bound_ts are eligible to have tombstones
-            // entirely removed.
-            auto delete_retention_ms
-              = config::shard_local_cfg().tombstone_retention_ms();
-            if (topic_cfg.properties.delete_retention_ms.has_optional_value()) {
-                delete_retention_ms
-                  = topic_cfg.properties.delete_retention_ms.value();
-            }
-
-            if (topic_cfg.properties.delete_retention_ms.is_disabled()) {
-                delete_retention_ms = std::nullopt;
-            }
-
-            return delete_retention_ms.has_value()
-                     ? collection_timestamp
-                         - model::timestamp(delete_retention_ms->count())
-                     : model::timestamp::min();
-        }();
+        auto migrating_it = migrating_ntps.find(log.ntp);
+        const bool partition_migrating = migrating_it != migrating_ntps.end()
+                                         && migrating_it->second;
+        auto tombstone_removal_ts = tombstone_removal_upper_bound(
+          topic_cfg.properties,
+          config::shard_local_cfg().tombstone_retention_ms(),
+          collection_timestamp,
+          partition_migrating);
         vlog(
           compaction_log.debug,
           "Sampling CTP {} with tombstone removal upper bound timestamp {}",

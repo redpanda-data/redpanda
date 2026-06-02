@@ -20,6 +20,21 @@
 
 namespace cloud_topics::l1 {
 
+// Compute the delete horizon for CT compaction: cleaned ranges whose tombstones
+// were cleaned at or below the returned timestamp are eligible to have their
+// tombstones removed. Returns model::timestamp::min() (nothing removable) when
+// delete.retention.ms is disabled, or while the partition is mid TS->CT
+// migration -- its pre-migration data still lives in tiered-storage cloud, and
+// removing a tombstone could resurrect a key whose superseded value is in that
+// range. Once the migration completes (its TS data ages out) the bound reverts
+// to now - delete.retention.ms. This mirrors the tiered-storage rule, where
+// ntp_config::delete_retention_ms() returns nullopt while archival is enabled.
+model::timestamp tombstone_removal_upper_bound(
+  const cluster::topic_properties& props,
+  std::optional<std::chrono::milliseconds> cluster_default_retention,
+  model::timestamp now,
+  bool partition_migrating);
+
 // A wrapper to provide easy mocking and break dependency on a multitude of
 // cluster objects within the `log_info_collector`.
 class topic_cfg_provider {
@@ -53,6 +68,12 @@ public:
     // an entry added to the map.
     virtual ss::future<> fill_max_compactible_offsets(
       chunked_hash_map<model::ntp, kafka::offset>&) const = 0;
+
+    // Sets the value for each key NTP to whether its partition is mid TS->CT
+    // migration (a migration seal is recorded). NTPs that cannot be looked up
+    // are left untouched.
+    virtual ss::future<>
+    fill_migrating_ntps(chunked_hash_map<model::ntp, bool>&) const = 0;
 };
 
 // Default max_compactible_offset_provider, which uses the `shard_table` and
@@ -68,6 +89,9 @@ public:
 
     ss::future<> fill_max_compactible_offsets(
       chunked_hash_map<model::ntp, kafka::offset>&) const final;
+
+    ss::future<>
+    fill_migrating_ntps(chunked_hash_map<model::ntp, bool>&) const final;
 
 private:
     ss::sharded<cluster::shard_table>* _shard_table;
@@ -107,8 +131,11 @@ public:
 private:
     // Returns a container of `compaction_info_spec` to sample the metastore
     // with based on the input `log_list_t`.
-    chunked_vector<metastore::compaction_info_spec>
-    get_logs_to_collect(log_list_t&, size_t, model::timestamp) const;
+    chunked_vector<metastore::compaction_info_spec> get_logs_to_collect(
+      log_list_t&,
+      size_t,
+      model::timestamp,
+      const chunked_hash_map<model::ntp, bool>& migrating_ntps) const;
 
     // Sets compaction info state within the input logs per the
     // `compaction_info_map` collected from the metastore and pushes logs

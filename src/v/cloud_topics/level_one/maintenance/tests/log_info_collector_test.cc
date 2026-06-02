@@ -12,13 +12,78 @@
 #include "cloud_topics/level_one/maintenance/log_info_collector.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cluster/topic_configuration.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
+#include "utils/tristate.h"
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <optional>
+
 using namespace cloud_topics;
+using namespace std::chrono_literals;
+
+namespace {
+cluster::topic_properties
+props_with_delete_retention(tristate<std::chrono::milliseconds> dr) {
+    cluster::topic_properties p;
+    p.delete_retention_ms = dr;
+    return p;
+}
+} // namespace
+
+// While a partition is migrating, tombstones are never removable regardless of
+// delete.retention.ms (mirrors the tiered-storage rule).
+TEST(TombstoneRemovalUpperBound, MigratingNeverRemoves) {
+    const auto now = model::timestamp{1'000'000};
+    auto props = props_with_delete_retention(
+      tristate<std::chrono::milliseconds>(std::make_optional(1000ms)));
+    EXPECT_EQ(
+      l1::tombstone_removal_upper_bound(
+        props, /*cluster_default=*/5000ms, now, /*migrating=*/true),
+      model::timestamp::min());
+}
+
+TEST(TombstoneRemovalUpperBound, DisabledRetentionNeverRemoves) {
+    const auto now = model::timestamp{1'000'000};
+    // Default tristate is disabled.
+    auto props = props_with_delete_retention(
+      tristate<std::chrono::milliseconds>{});
+    EXPECT_EQ(
+      l1::tombstone_removal_upper_bound(
+        props, 5000ms, now, /*migrating=*/false),
+      model::timestamp::min());
+}
+
+TEST(TombstoneRemovalUpperBound, TopicOverrideUsed) {
+    const auto now = model::timestamp{1'000'000};
+    auto props = props_with_delete_retention(
+      tristate<std::chrono::milliseconds>(std::make_optional(1000ms)));
+    EXPECT_EQ(
+      l1::tombstone_removal_upper_bound(
+        props, 5000ms, now, /*migrating=*/false),
+      now - model::timestamp(1000));
+}
+
+TEST(TombstoneRemovalUpperBound, ClusterDefaultUsedWhenUnset) {
+    const auto now = model::timestamp{1'000'000};
+    // not-set tristate -> fall back to the cluster default.
+    auto props = props_with_delete_retention(
+      tristate<std::chrono::milliseconds>(
+        std::optional<std::chrono::milliseconds>{}));
+    EXPECT_EQ(
+      l1::tombstone_removal_upper_bound(
+        props, 5000ms, now, /*migrating=*/false),
+      now - model::timestamp(5000));
+    // Cluster default also disabled -> nothing removable.
+    EXPECT_EQ(
+      l1::tombstone_removal_upper_bound(
+        props, std::nullopt, now, /*migrating=*/false),
+      model::timestamp::min());
+}
 
 class LogInfoCollectorTestFixture : public l1::l1_reader_fixture {};
 
@@ -39,6 +104,10 @@ class fake_offset_provider : public l1::max_compactible_offset_provider {
 public:
     ss::future<> fill_max_compactible_offsets(
       chunked_hash_map<model::ntp, kafka::offset>&) const final {
+        co_return;
+    }
+    ss::future<>
+    fill_migrating_ntps(chunked_hash_map<model::ntp, bool>&) const final {
         co_return;
     }
 };

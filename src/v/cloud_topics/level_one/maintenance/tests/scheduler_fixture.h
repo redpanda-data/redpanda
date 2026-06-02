@@ -46,6 +46,10 @@ public:
       chunked_hash_map<model::ntp, kafka::offset>&) const final {
         co_return;
     }
+    ss::future<>
+    fill_migrating_ntps(chunked_hash_map<model::ntp, bool>&) const final {
+        co_return;
+    }
 };
 
 class SchedulerTestFixture : public l1::l1_reader_fixture {
