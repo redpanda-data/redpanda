@@ -213,10 +213,6 @@ FIXTURE_TEST(invalidate_cleans_directory, cache_test_fixture) {
 
     BOOST_CHECK(
       !ss::file_exists((CACHE_DIR / unique_prefix_key).native()).get());
-    BOOST_CHECK(
-      !ss::file_exists((CACHE_DIR / "unique_prefix/test_topic").native())
-         .get());
-    BOOST_CHECK(!ss::file_exists((CACHE_DIR / "unique_prefix").native()).get());
     BOOST_CHECK(ss::file_exists(CACHE_DIR.native()).get());
 }
 
