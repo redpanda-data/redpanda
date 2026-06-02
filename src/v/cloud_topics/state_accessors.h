@@ -23,6 +23,7 @@ class l1_reader_cache;
 namespace l1 {
 class metastore;
 class io;
+class l1_footer_cache;
 } // namespace l1
 
 namespace read_replica {
@@ -43,6 +44,7 @@ public:
       cluster::metadata_cache* metadata_cache,
       level_one_reader_probe* l1_reader_probe,
       l1_reader_cache* l1_reader_cache,
+      l1::l1_footer_cache* l1_footer_cache,
       read_replica::metadata_provider* rr_metadata_provider,
       read_replica::snapshot_provider* rr_snapshot_provider)
       : data_plane(data_plane)
@@ -51,6 +53,7 @@ public:
       , metadata_cache(metadata_cache)
       , l1_reader_probe(l1_reader_probe)
       , l1_reader_cache_(l1_reader_cache)
+      , l1_footer_cache_(l1_footer_cache)
       , rr_metadata_provider_(rr_metadata_provider)
       , rr_snapshot_provider_(rr_snapshot_provider) {}
 
@@ -59,6 +62,7 @@ public:
     l1::io* get_l1_io() { return l1_io; }
     level_one_reader_probe* get_l1_reader_probe() { return l1_reader_probe; }
     l1_reader_cache* get_l1_reader_cache() { return l1_reader_cache_; }
+    l1::l1_footer_cache* get_l1_footer_cache() { return l1_footer_cache_; }
     cluster::metadata_cache* get_metadata_cache() { return metadata_cache; }
     read_replica::metadata_provider* get_rr_metadata_provider() {
         return rr_metadata_provider_;
@@ -74,6 +78,7 @@ private:
     cluster::metadata_cache* metadata_cache;
     level_one_reader_probe* l1_reader_probe;
     l1_reader_cache* l1_reader_cache_;
+    l1::l1_footer_cache* l1_footer_cache_;
     read_replica::metadata_provider* rr_metadata_provider_;
     read_replica::snapshot_provider* rr_snapshot_provider_;
 };

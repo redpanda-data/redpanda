@@ -39,12 +39,38 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "l1_footer_cache",
+    srcs = [
+        "l1_footer_cache.cc",
+    ],
+    hdrs = [
+        "l1_footer_cache.h",
+    ],
+    implementation_deps = [
+        ":level_one_reader_probe",
+        "//src/v/random:time_jitter",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/config",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:intrusive",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "reader",
     srcs = [
         "level_one_reader.cc",
     ],
     hdrs = [
         "level_one_reader.h",
+    ],
+    implementation_deps = [
+        ":l1_footer_cache",
     ],
     visibility = ["//visibility:public"],
     deps = [

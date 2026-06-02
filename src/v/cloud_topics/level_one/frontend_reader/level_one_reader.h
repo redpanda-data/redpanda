@@ -17,6 +17,8 @@
 #include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/shared_ptr.hh>
+
 #include <deque>
 #include <expected>
 #include <variant>
@@ -24,6 +26,10 @@
 namespace cloud_topics {
 
 class level_one_reader_probe;
+
+namespace l1 {
+class l1_footer_cache;
+} // namespace l1
 
 /// Open stream for the current L1 object, held inside the reader
 /// between read_some calls within the same object.
@@ -75,13 +81,18 @@ struct open_stream {
  */
 class level_one_log_reader_impl : public model::record_batch_reader::impl {
 public:
+    /// Note that the footer cache is not required to construct a reader.
+    /// For example, it's not currently used for compaction reads because we
+    /// haven't observed a benefit, empirically. We might do in the future, but
+    /// it's neither strictly required nor difficult to add.
     level_one_log_reader_impl(
       const cloud_topic_log_reader_config& cfg,
       model::ntp ntp,
       model::topic_id_partition tidp,
       l1::metastore* metastore,
       l1::io* io_interface,
-      level_one_reader_probe* probe = nullptr);
+      level_one_reader_probe* probe = nullptr,
+      l1::l1_footer_cache* footer_cache = nullptr);
 
     bool is_end_of_stream() const final;
 
@@ -110,7 +121,7 @@ public:
 private:
     struct object_info {
         l1::object_id oid;
-        l1::footer footer;
+        ss::lw_shared_ptr<const l1::footer> footer;
         kafka::offset last_offset;
     };
 
@@ -160,7 +171,7 @@ private:
     ss::future<chunked_circular_buffer<model::record_batch>>
     read_batches(l1::object_reader& reader);
 
-    ss::future<l1::footer>
+    ss::future<ss::lw_shared_ptr<const l1::footer>>
     read_footer(l1::object_id oid, size_t footer_pos, size_t object_size);
 
     /*
@@ -199,6 +210,7 @@ private:
     l1::metastore* _metastore;
     l1::io* _io;
     level_one_reader_probe* _probe;
+    l1::l1_footer_cache* _footer_cache;
     prefix_logger _log;
     size_t _bytes_consumed{0};
     bool _was_cached{false};
