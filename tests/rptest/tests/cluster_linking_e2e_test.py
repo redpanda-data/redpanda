@@ -1915,7 +1915,32 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
             msg_size=128,
             msg_cnt=10000,
             use_transactions=True,
-            producer_properties={"transaction_abort_rate": "0.3"},
+            producer_properties={
+                "transaction_abort_rate": "0.3",
+            },
+        ):
+            self.verify()
+
+        topic_2 = TopicSpec(
+            name="source-topic-2", partition_count=1, replication_factor=3
+        )
+        self.source_default_client().create_topic(topic_2)
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic_2),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic_2.name} not found in target cluster",
+        )
+
+        with self.producer_consumer(
+            topic=topic_2.name,
+            msg_size=128,
+            msg_cnt=5000000,
+            use_transactions=True,
+            producer_properties={
+                "msgs_per_transaction": "1000000",
+                "transaction_abort_rate": "0.3",
+            },
         ):
             self.verify()
 
