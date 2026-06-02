@@ -317,11 +317,59 @@ std::expected<std::monostate, stm_update_error> add_objects_update::can_apply(
     chunked_hash_map<model::topic_id_partition, kafka::offset>
       corrected_next_offsets;
     for (const auto& [tidp, extents] : new_extents) {
-        // TODO: maybe we need some mount operation that adopts a partition log
-        // and allows it to start a specific offset.
         auto p_state = state.partition_state(tidp);
-        auto expected_next = p_state ? p_state->get().next_offset
-                                     : kafka::offset{0};
+        kafka::offset expected_next;
+        if (p_state) {
+            expected_next = p_state->get().next_offset;
+        } else {
+            // For a new partition, require data to start at offset 0 unless
+            // a TS-migration signal is present:
+            //   1. term_start < extent_start: the term predates the migration
+            //      boundary. Report a correction so the caller knows where CT
+            //      data actually begins.
+            //   2. term_id > 0 && term_start == extent_start > 0: a valid
+            //      elected term starts exactly at the migration boundary.
+            //      Accept without a correction.
+            // Any other combination (e.g. term_id==0, term_start>0) is
+            // anomalous and the data is dropped.
+            auto terms_it = new_terms.find(tidp);
+            const bool has_terms = terms_it != new_terms.end()
+                                   && !terms_it->second.empty();
+            auto base = extents.begin()->base_offset;
+            if (has_terms && terms_it->second.begin()->start_offset < base) {
+                // TS-migration: term anchors before CT data.
+                expected_next = base;
+                corrected_next_offsets[tidp] = base;
+                vlog(
+                  cd_log.info,
+                  "Adopting TS-migrated partition {} at CT base offset {}",
+                  tidp,
+                  base);
+            } else if (
+              has_terms && terms_it->second.begin()->start_offset == base
+              && base > kafka::offset{0}
+              && terms_it->second.begin()->term_id > model::term_id{0}) {
+                // TS-migration at a term boundary: valid elected term starts
+                // exactly where CT data begins.
+                expected_next = base;
+                vlog(
+                  cd_log.info,
+                  "Registering new partition {} in L1 at base_offset {}",
+                  tidp,
+                  base);
+            } else {
+                // Anomalous: term_id==0 with term_start>0, or no term info.
+                // expected_next stays at 0, so the incoming extent (base > 0)
+                // will be counted as dropped in the alignment check below.
+                expected_next = kafka::offset{0};
+                vlog(
+                  cd_log.info,
+                  "Dropping anomalous new partition {} data at base_offset {} "
+                  "(expected offset 0)",
+                  tidp,
+                  base);
+            }
+        }
 
         if (extents.begin()->base_offset != expected_next) {
             // If the start of the new extents for this partition aren't
@@ -469,8 +517,29 @@ add_objects_update::apply(state& state) {
     }
     for (const auto& [tidp, extents] : extents_by_tp) {
         auto p_state = state.partition_state(tidp);
-        auto expected_next = p_state ? p_state->get().next_offset
-                                     : kafka::offset{0};
+        kafka::offset expected_next;
+        if (p_state) {
+            expected_next = p_state->get().next_offset;
+        } else {
+            // Mirror the TS-migration acceptance logic from can_apply: a new
+            // partition may legitimately start past offset 0 at the migration
+            // boundary.
+            auto terms_it = new_terms.find(tidp);
+            const bool has_terms = terms_it != new_terms.end()
+                                   && !terms_it->second.empty();
+            auto base = extents.begin()->base_offset;
+            if (
+              has_terms
+              && (terms_it->second.begin()->start_offset < base
+                  || (terms_it->second.begin()->start_offset == base
+                      && base > kafka::offset{0}
+                      && terms_it->second.begin()->term_id
+                           > model::term_id{0}))) {
+                expected_next = base;
+            } else {
+                expected_next = kafka::offset{0};
+            }
+        }
         if (extents.begin()->base_offset == expected_next) {
             auto& t_state = state.topic_to_state[tidp.topic_id];
             auto& p_state = t_state.pid_to_state[tidp.partition];

@@ -285,6 +285,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":keys",
         ":values",
+        "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/metastore:state_update_utils",
     ],
     visibility = ["//visibility:public"],

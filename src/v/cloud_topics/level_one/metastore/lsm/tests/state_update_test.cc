@@ -672,6 +672,41 @@ TEST_F(StateUpdateTest, TestAddObjectsAgain) {
     verify_max_term(tidp0, model::term_id(2), kafka::offset(350));
 }
 
+// A TS-migrated partition has no L1 metadata yet. The first CT extent starts at
+// the migration boundary (e.g. offset 499), not at 0. Verify that add_objects
+// adopts the partition at that starting offset with no correction.
+TEST_F(StateUpdateTest, TestAddObjectsNewPartitionNonZeroStart) {
+    auto oid = make_oid();
+    chunked_vector<object_id> prereg_oids;
+    prereg_oids.push_back(oid);
+    preregister_objects(std::move(prereg_oids), model::timestamp(1000));
+
+    auto update = make_add_objects_update(
+      {terms(tidp0, {{499, 1}})},
+      make_object(oid, tp(tidp0, 499, 1497).pos(0, 1023)));
+    auto reader = make_reader();
+    chunked_vector<write_batch_row> rows;
+    chunked_hash_map<model::topic_id_partition, kafka::offset> corrections;
+    auto result = update.build_rows(reader, rows, &corrections).get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(corrections.empty());
+
+    auto wb = db_->create_write_batch();
+    auto seqno = next_seqno();
+    for (const auto& row : rows) {
+        if (row.value.empty()) {
+            wb.remove(row.key, seqno);
+        } else {
+            wb.put(row.key, row.value.copy(), seqno);
+        }
+    }
+    db_->apply(std::move(wb)).get();
+
+    verify_metadata(tidp0, kafka::offset(499), kafka::offset(1498));
+    verify_extent_exists(tidp0, kafka::offset(499), kafka::offset(1497));
+    verify_object_exists(oid, 1024);
+}
+
 TEST_F(StateUpdateTest, TestAddObjectsRejectsDuplicateObject) {
     auto oid = make_oid();
     add_objects(

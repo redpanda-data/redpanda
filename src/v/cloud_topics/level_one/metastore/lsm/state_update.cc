@@ -13,6 +13,7 @@
 #include "cloud_topics/level_one/metastore/lsm/values.h"
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/level_one/metastore/state_update_utils.h"
+#include "cloud_topics/logger.h"
 
 #include <seastar/coroutine/as_future.hh>
 
@@ -660,8 +661,6 @@ add_objects_db_update::build_rows(
     chunked_hash_map<model::topic_id_partition, metadata_row_value>
       verified_meta_vals;
     for (const auto& [tidp, extents] : new_extents_by_tp) {
-        // TODO: maybe we need some mount operation that adopts a partition log
-        // and allows it to start a specific offset.
         auto meta_res = co_await state.get_metadata(tidp);
         if (!meta_res.has_value()) {
             co_return std::unexpected(wrap_read_err(
@@ -670,7 +669,40 @@ add_objects_db_update::build_rows(
               tidp));
         }
         auto opt = meta_res.value();
-        auto expected_next = opt ? opt->next_offset : kafka::offset{0};
+        kafka::offset expected_next;
+        if (opt) {
+            expected_next = opt->next_offset;
+        } else {
+            // For a new partition, require data to start at offset 0 unless a
+            // TS-migration signal is present. See the non-LSM state_update.cc
+            // for the full description of the two valid TS-migration cases.
+            auto terms_it = new_terms.find(tidp);
+            const bool has_terms = terms_it != new_terms.end()
+                                   && !terms_it->second.empty();
+            auto base = extents.begin()->base_offset;
+            if (has_terms && terms_it->second.begin()->start_offset < base) {
+                // Term anchors before CT data; report the actual start.
+                expected_next = base;
+                corrected_next_offsets[tidp] = base;
+            } else if (
+              has_terms && terms_it->second.begin()->start_offset == base
+              && base > kafka::offset{0}
+              && terms_it->second.begin()->term_id > model::term_id{0}) {
+                // Valid elected term at the migration boundary; no correction.
+                expected_next = base;
+            } else {
+                // Anomalous: term_id==0 with term_start>0, or no term info.
+                // expected_next stays at 0, so the incoming extent (base > 0)
+                // is counted as removed data in the alignment check below.
+                expected_next = kafka::offset{0};
+                vlog(
+                  cd_log.info,
+                  "Dropping anomalous new partition {} data at base_offset {} "
+                  "(expected offset 0)",
+                  tidp,
+                  base);
+            }
+        }
 
         if (extents.begin()->base_offset != expected_next) {
             // If the start of the new extents for this partition aren't
@@ -689,7 +721,8 @@ add_objects_db_update::build_rows(
             extent_size_sum += extent.len;
         }
         verified_meta_vals[tidp] = metadata_row_value{
-          .start_offset = opt ? opt->start_offset : kafka::offset{0},
+          .start_offset = opt ? opt->start_offset
+                              : extents.begin()->base_offset,
           .next_offset = kafka::next_offset(extents.rbegin()->last_offset),
           .compaction_epoch = opt ? opt->compaction_epoch
                                   : partition_state::compaction_epoch_t{0},
