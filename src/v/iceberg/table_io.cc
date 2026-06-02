@@ -61,7 +61,7 @@ table_io::version_hint_exists(const version_hint_path& path) {
 }
 
 ss::future<checked<std::nullopt_t, metadata_io::errc>>
-table_io::delete_all_metadata(const metadata_location_path& path) {
+table_io::delete_objects_with_prefix(const std::filesystem::path& prefix) {
     retry_chain_node root_rcn(
       io_.as(),
       ss::lowres_clock::duration{30s},
@@ -73,7 +73,7 @@ table_io::delete_all_metadata(const metadata_location_path& path) {
                            const std::exception_ptr& ex, std::string_view ctx) {
         auto level = ssx::is_shutdown_exception(ex) ? ss::log_level::debug
                                                     : ss::log_level::warn;
-        vlogl(ctxlog, level, "exception while {} in {}: {}", ctx, path, ex);
+        vlogl(ctxlog, level, "exception while {} in {}: {}", ctx, prefix, ex);
     };
 
     // deleting may require several iterations if list_objects doesn't return
@@ -81,7 +81,7 @@ table_io::delete_all_metadata(const metadata_location_path& path) {
     while (true) {
         retry_chain_node list_rcn(10ms, retry_strategy::backoff, &root_rcn);
         auto list_fut = co_await ss::coroutine::as_future(io_.list_objects(
-          bucket_, list_rcn, cloud_storage_clients::object_key{path}));
+          bucket_, list_rcn, cloud_storage_clients::object_key{prefix}));
         if (list_fut.failed()) {
             log_exception(list_fut.get_exception(), "listing objects");
             co_return errc::failed;
@@ -95,7 +95,7 @@ table_io::delete_all_metadata(const metadata_location_path& path) {
         chunked_vector<cloud_storage_clients::object_key> to_delete;
         to_delete.reserve(list_res.value().contents.size());
         for (auto& obj : list_res.value().contents) {
-            vlog(ctxlog.debug, "deleting metadata object {}", obj.key);
+            vlog(ctxlog.debug, "deleting object {}", obj.key);
             to_delete.emplace_back(std::move(obj.key));
         }
 
@@ -131,6 +131,16 @@ table_io::delete_all_metadata(const metadata_location_path& path) {
     }
 
     co_return std::nullopt;
+}
+
+ss::future<checked<std::nullopt_t, metadata_io::errc>>
+table_io::delete_all_metadata(const metadata_location_path& path) {
+    return delete_objects_with_prefix(path());
+}
+
+ss::future<checked<std::nullopt_t, metadata_io::errc>>
+table_io::delete_all_table_files(const table_location_path& path) {
+    return delete_objects_with_prefix(path());
 }
 
 } // namespace iceberg

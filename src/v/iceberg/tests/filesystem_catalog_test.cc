@@ -20,6 +20,7 @@
 #include "iceberg/tests/test_schemas.h"
 #include "iceberg/transform.h"
 #include "json/document.h"
+#include "utils/retry_chain_node.h"
 
 #include <gtest/gtest.h>
 
@@ -271,5 +272,108 @@ TEST_F(FileSystemCatalogTest, TestDrop) {
           = catalog.create_table(id, schema{}, partition_spec{}).get();
         ASSERT_FALSE(create_res.has_error());
         ASSERT_EQ(create_res.value().last_sequence_number, sequence_number{0});
+    }
+}
+
+TEST_F(FileSystemCatalogTest, TestDropWithoutPurgePreservesDataFiles) {
+    const table_identifier id{.ns = {"ns"}, .table = "table"};
+    auto create_res
+      = catalog.create_table(id, schema{}, partition_spec{}).get();
+    ASSERT_FALSE(create_res.has_error());
+
+    // Upload a fake data file under the table's data/ directory.
+    const ss::sstring data_file_key{"test/ns/table/data/fake-0.parquet"};
+    ss::abort_source never_abort;
+    retry_chain_node retry(never_abort, 10s, 1s);
+    auto ul_res = remote()
+                    .upload_object({
+                      .transfer_details = cloud_io::transfer_details{
+                        .bucket = bucket_name,
+                        .key = cloud_storage_clients::object_key{data_file_key},
+                        .parent_rtc = retry,
+                      },
+                      .display_str = "fake data file",
+                      .payload = iobuf::from("fake parquet data"),
+                    })
+                    .get();
+    ASSERT_EQ(ul_res, cloud_io::upload_result::success);
+
+    // Drop without purge should remove the catalog entry but leave data alone.
+    {
+        auto res = catalog.drop_table(id, /*purge=*/false).get();
+        ASSERT_FALSE(res.has_error());
+    }
+
+    // The table should be gone from the catalog.
+    {
+        auto load_res = catalog.load_table(id).get();
+        ASSERT_TRUE(load_res.has_error());
+        ASSERT_EQ(load_res.error(), catalog::errc::not_found);
+    }
+
+    // But the data file should still be present.
+    {
+        auto exists = remote()
+                        .object_exists(
+                          bucket_name,
+                          cloud_storage_clients::object_key{data_file_key},
+                          retry,
+                          "fake data file")
+                        .get();
+        ASSERT_EQ(exists, cloud_io::download_result::success);
+    }
+}
+
+TEST_F(FileSystemCatalogTest, TestDropPurgesDataFiles) {
+    const table_identifier id{.ns = {"ns"}, .table = "table"};
+    auto create_res
+      = catalog.create_table(id, schema{}, partition_spec{}).get();
+    ASSERT_FALSE(create_res.has_error());
+
+    // Upload a fake data file under the table's data/ directory.
+    const ss::sstring data_file_key{"test/ns/table/data/fake-0.parquet"};
+    ss::abort_source never_abort;
+    retry_chain_node retry(never_abort, 10s, 1s);
+    auto ul_res = remote()
+                    .upload_object({
+                      .transfer_details = cloud_io::transfer_details{
+                        .bucket = bucket_name,
+                        .key = cloud_storage_clients::object_key{data_file_key},
+                        .parent_rtc = retry,
+                      },
+                      .display_str = "fake data file",
+                      .payload = iobuf::from("fake parquet data"),
+                    })
+                    .get();
+    ASSERT_EQ(ul_res, cloud_io::upload_result::success);
+
+    // Verify the data file exists before drop.
+    {
+        auto exists = remote()
+                        .object_exists(
+                          bucket_name,
+                          cloud_storage_clients::object_key{data_file_key},
+                          retry,
+                          "fake data file")
+                        .get();
+        ASSERT_EQ(exists, cloud_io::download_result::success);
+    }
+
+    // Drop with purge=true should delete everything including data files.
+    {
+        auto res = catalog.drop_table(id, /*purge=*/true).get();
+        ASSERT_FALSE(res.has_error());
+    }
+
+    // Verify the data file is gone.
+    {
+        auto exists = remote()
+                        .object_exists(
+                          bucket_name,
+                          cloud_storage_clients::object_key{data_file_key},
+                          retry,
+                          "fake data file")
+                        .get();
+        ASSERT_EQ(exists, cloud_io::download_result::notfound);
     }
 }
