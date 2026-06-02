@@ -22,6 +22,9 @@
 #include "rpc/connection_cache.h"
 
 #include <seastar/coroutine/switch_to.hh>
+#include <seastar/util/defer.hh>
+
+#include <chrono>
 
 namespace cloud_topics::l1 {
 
@@ -858,6 +861,31 @@ leader_router::get_extent_metadata_locally(
 ss::future<rpc::get_extent_metadata_reply> leader_router::get_extent_metadata(
   rpc::get_extent_metadata_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
+    // TEMP DIAGNOSTIC (CORE-15812): caller-side end-to-end latency of a single
+    // forwarded get_extent_metadata attempt (leader resolution + RPC or
+    // cross-shard hop + queue-wait on the domain leader's shard 0 + local
+    // exec). Subtract the broker-side "slow get_extent_metadata" phase-log
+    // (local exec only, same tp) to isolate the shard-0 funnel (RPC + queue)
+    // cost. Rate-limited so it can't itself become an observer effect. REVERT
+    // before merge.
+    const auto _diag_tp = request.tp;
+    const auto _diag_t0 = std::chrono::steady_clock::now();
+    auto _diag = ss::defer([&]() noexcept {
+        auto total = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - _diag_t0);
+        if (total >= std::chrono::milliseconds{25}) {
+            thread_local static ss::logger::rate_limit _diag_rl{
+              std::chrono::seconds{1}};
+            cd_log.log(
+              ss::log_level::warn,
+              _diag_rl,
+              "TEMP CORE-15812 slow get_extent_metadata CALLER-SIDE tp={} "
+              "total={}ms local_only={}",
+              _diag_tp,
+              total.count(),
+              bool(local_only_exec));
+        }
+    });
     co_return co_await process<
       &leader_router::get_extent_metadata_locally,
       &client::get_extent_metadata>(std::move(request), bool(local_only_exec));

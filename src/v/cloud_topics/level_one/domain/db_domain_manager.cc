@@ -22,6 +22,10 @@
 #include "lsm/io/cloud_cache_persistence.h"
 #include "lsm/proto/manifest.proto.h"
 
+#include <seastar/util/defer.hh>
+
+#include <chrono>
+
 namespace cloud_topics::l1 {
 namespace {
 
@@ -1486,11 +1490,80 @@ db_domain_manager::get_leveling_infos(rpc::get_leveling_infos_request req) {
 
 ss::future<rpc::get_extent_metadata_reply>
 db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
+    // TEMP DIAGNOSTIC (CORE-15812): phase latency breakdown for the L1
+    // metastore read path (leader-side / local execution on the domain
+    // leader's shard 0), to confirm/attribute domain latency at scale. The
+    // per-call WARN is rate-limited and the aggregate is a time-bounded INFO
+    // line, so the instrumentation can't itself become an observer effect
+    // under load. Compare total here against the leader_router CALLER-SIDE log
+    // (same tp): the difference is the shard-0 funnel (RPC + queue) cost.
+    // REVERT before merge.
+    using _diag_clk = std::chrono::steady_clock;
+    const auto _diag_t0 = _diag_clk::now();
+    std::chrono::microseconds _diag_lock{0}, _diag_snap{0}, _diag_extents{0};
+    size_t _diag_rows = 0;
+    auto _diag = ss::defer([&]() noexcept {
+        auto total = std::chrono::duration_cast<std::chrono::milliseconds>(
+          _diag_clk::now() - _diag_t0);
+
+        thread_local static size_t _diag_calls = 0;
+        thread_local static size_t _diag_slow = 0;
+        thread_local static std::chrono::milliseconds _diag_sum{0};
+        thread_local static std::chrono::milliseconds _diag_max{0};
+        thread_local static _diag_clk::time_point _diag_last_flush
+          = _diag_clk::now();
+        ++_diag_calls;
+        _diag_sum += total;
+        if (total > _diag_max) {
+            _diag_max = total;
+        }
+        if (total >= std::chrono::milliseconds{25}) {
+            ++_diag_slow;
+            thread_local static ss::logger::rate_limit _diag_rl{
+              std::chrono::seconds{1}};
+            cd_log.log(
+              ss::log_level::warn,
+              _diag_rl,
+              "TEMP CORE-15812 slow get_extent_metadata tp={} total={}ms "
+              "lock_wait={}us snapshot={}us extent_read={}us rows={}",
+              req.tp,
+              total.count(),
+              _diag_lock.count(),
+              _diag_snap.count(),
+              _diag_extents.count(),
+              _diag_rows);
+        }
+        if (_diag_clk::now() - _diag_last_flush >= std::chrono::seconds{2}) {
+            vlog(
+              cd_log.info,
+              "TEMP CORE-15812 get_extent_metadata rate: calls={} "
+              "slow(>=25ms)={} avg={}ms max={}ms (last {}s window)",
+              _diag_calls,
+              _diag_slow,
+              _diag_calls ? _diag_sum.count() / _diag_calls : 0,
+              _diag_max.count(),
+              std::chrono::duration_cast<std::chrono::seconds>(
+                _diag_clk::now() - _diag_last_flush)
+                .count());
+            _diag_calls = 0;
+            _diag_slow = 0;
+            _diag_sum = std::chrono::milliseconds{0};
+            _diag_max = std::chrono::milliseconds{0};
+            _diag_last_flush = _diag_clk::now();
+        }
+    });
+
+    auto _diag_t = _diag_clk::now();
     auto gl_res = co_await gate_and_open_reads();
+    _diag_lock = std::chrono::duration_cast<std::chrono::microseconds>(
+      _diag_clk::now() - _diag_t);
     if (!gl_res.has_value()) {
         co_return rpc::get_extent_metadata_reply{.ec = gl_res.error()};
     }
+    _diag_t = _diag_clk::now();
     auto reader = state_reader(db_->db().create_snapshot());
+    _diag_snap = std::chrono::duration_cast<std::chrono::microseconds>(
+      _diag_clk::now() - _diag_t);
 
     // Get extents either forwards or backwards based on request order.
     auto extents_res = [&]() {
@@ -1503,7 +1576,10 @@ db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
               req.tp, req.min_offset, req.max_offset);
         }
     }();
+    _diag_t = _diag_clk::now();
     auto extents_result = co_await std::move(extents_res);
+    _diag_extents = std::chrono::duration_cast<std::chrono::microseconds>(
+      _diag_clk::now() - _diag_t);
     if (!extents_result.has_value()) {
         co_return rpc::get_extent_metadata_reply{
           .ec = log_and_convert(
@@ -1522,6 +1598,7 @@ db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
     bool end_of_stream = true;
     auto gen = (*extents_result)->get_rows();
     while (auto row_opt = co_await gen()) {
+        ++_diag_rows;
         const auto& row = row_opt->get();
         if (!row.has_value()) {
             co_return rpc::get_extent_metadata_reply{
