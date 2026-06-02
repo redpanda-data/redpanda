@@ -711,7 +711,10 @@ class ManyPartitionsTest(PreallocNodesTest):
         if getattr(self, "_cloud_topics_enabled", False):
             diag_node = self.redpanda.nodes[0]
             diag_admin = Admin(self.redpanda)
-            for lg in ("cloud_topics", "http", "cloud_storage"):
+            # kafka/rpc added to surface the consumer connection input-shutdown
+            # ("aborting operations", connection_context.cc) + RPC timeouts that
+            # abort in-flight cloud-topic fetches.
+            for lg in ("cloud_topics", "http", "cloud_storage", "kafka", "rpc"):
                 try:
                     diag_admin._request(
                         "put",
@@ -723,8 +726,8 @@ class ManyPartitionsTest(PreallocNodesTest):
                         f"TEMP CORE-15812: could not raise logger {lg}: {e}"
                     )
             self.logger.info(
-                "TEMP CORE-15812: raised cloud_topics/http/cloud_storage to debug "
-                f"on {diag_node.name} for the verify-consume window"
+                "TEMP CORE-15812: raised cloud_topics/http/cloud_storage/kafka/rpc "
+                f"to debug on {diag_node.name} for the verify-consume window"
             )
 
         verifier.start(clean=False)
