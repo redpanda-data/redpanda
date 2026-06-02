@@ -181,6 +181,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":metastore",
+        "//src/v/ssx:future_util",
         "//src/v/utils:retry_chain_node",
         "@seastar",
     ],

@@ -10,11 +10,14 @@
 #pragma once
 
 #include "cloud_topics/level_one/metastore/metastore.h"
+#include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 
 #include <chrono>
 #include <concepts>
@@ -47,22 +50,37 @@ template<typename Func>
 requires metastore_operation<Func>
 auto retry_metastore_op(Func&& func, retry_chain_node& rtc)
   -> ss::future<typename std::invoke_result_t<Func>::value_type> {
+    using value_type = typename std::invoke_result_t<Func>::value_type;
     for (auto permit = rtc.retry(); permit.is_allowed; permit = rtc.retry()) {
-        auto result = co_await func();
+        auto fut = co_await ss::coroutine::as_future(func());
 
-        if (result.has_value()) {
-            co_return result;
-        }
-
-        if (result.error() != metastore::errc::transport_error) {
-            co_return result;
+        if (!fut.failed()) {
+            auto result = fut.get();
+            if (result.has_value()) {
+                co_return result;
+            }
+            if (result.error() != metastore::errc::transport_error) {
+                co_return result;
+            }
+            // transport_error: fall through to backoff + retry.
+        } else {
+            // A thrown exception (e.g. a connection abort from the metastore
+            // RPC transport) is treated as a transient transport error and
+            // retried rather than propagated: in the fetch path an escaped
+            // exception is turned into not_leader_for_partition, trapping
+            // consumers in an endless metadata-refresh/retry loop. Genuine
+            // shutdown exceptions still propagate.
+            auto ex = fut.get_exception();
+            if (ssx::is_shutdown_exception(ex)) {
+                co_await ss::coroutine::return_exception_ptr(std::move(ex));
+            }
+            // fall through to backoff + retry.
         }
 
         co_await ss::sleep_abortable(permit.delay, rtc.root_abort_source());
     }
 
-    co_return typename std::invoke_result_t<Func>::value_type{
-      std::unexpected(metastore::errc::transport_error)};
+    co_return value_type{std::unexpected(metastore::errc::transport_error)};
 }
 
 template<typename Func>
