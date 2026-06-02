@@ -174,6 +174,14 @@ void reconciler<Clock>::attach_partition(
   model::topic_id_partition tidp,
   data_plane_api* data_plane,
   ss::lw_shared_ptr<cluster::partition> partition) {
+    // Dedup before constructing the source: make_source() builds a source
+    // whose constructor registers per-partition metrics, so constructing a
+    // second one for an already-attached ntp would double-register them (and
+    // abort). attach_partition is idempotent -- it may be invoked again for a
+    // partition this broker already leads, e.g. on a properties change.
+    if (_sources.contains(ntp)) {
+        return;
+    }
     attach_source(make_source(ntp, tidp, data_plane, std::move(partition)));
 }
 
