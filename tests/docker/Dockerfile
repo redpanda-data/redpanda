@@ -466,5 +466,12 @@ COPY --from=nodejs-test-clients /opt/redpanda-tests/nodejs /opt/redpanda-tests/n
 
 RUN ldconfig
 
+# DEBUG (CORE-16410, throwaway): gdb + python3 debug symbols so the hang
+# instrumentation can capture native C frames (gdb `thread apply all bt` + `py-bt`)
+# of a wedged worker. Placed last so the rebuild only adds one cached-on-top layer.
+# TODO: move to a deps script / drop before merge.
+RUN apt-get update && apt-get install -y --no-install-recommends gdb python3-dbg \
+    && rm -rf /var/lib/apt/lists/*
+
 # define sshd as the entrypoint
 CMD service ssh start && tail -f /dev/null

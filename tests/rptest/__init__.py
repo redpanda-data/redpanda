@@ -6,3 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+
+# DEBUG (CORE-16410, throwaway): install hang dumpers (for_nodes watchdog +
+# SIGALRM pre-dump + native gdb C frames). Guarded so it can't break collection.
+try:
+    from . import _dbg_hang
+
+    _dbg_hang.install()
+except Exception:
+    pass
