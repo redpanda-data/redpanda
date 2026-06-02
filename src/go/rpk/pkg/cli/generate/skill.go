@@ -38,6 +38,11 @@ const (
 	skillsRepo      = "redpanda-data/skills"
 	skillsRepoURL   = "https://github.com/" + skillsRepo
 	defaultProvider = "claude"
+
+	// maxSkillDownloadBytes caps the compressed tarball we buffer from GitHub.
+	maxSkillDownloadBytes = 64 << 20 // 64 MiB
+	// maxSkillUnpackedBytes caps the total decompressed archive size.
+	maxSkillUnpackedBytes = 256 << 20 // 256 MiB
 )
 
 // skillProvider describes where an AI coding assistant loads skills from and
@@ -228,10 +233,26 @@ func downloadSkillsTarball(ctx context.Context, branch string) ([]byte, error) {
 		httpapi.HTTPClient(&http.Client{Timeout: 2 * time.Minute}),
 	)
 	var buf bytes.Buffer
-	if err := cl.Get(ctx, url, nil, &buf); err != nil {
+	if err := cl.Get(ctx, url, nil, &limitedWriter{w: &buf, n: maxSkillDownloadBytes}); err != nil {
 		return nil, fmt.Errorf("unable to download skills from %s: %w", url, err)
 	}
 	return buf.Bytes(), nil
+}
+
+// limitedWriter writes through to w until more than its byte budget is used,
+// then fails. It guards against an oversized download exhausting memory.
+type limitedWriter struct {
+	w io.Writer
+	n int64 // remaining bytes allowed
+}
+
+func (lw *limitedWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > lw.n {
+		return 0, fmt.Errorf("download exceeds maximum size of %d bytes", maxSkillDownloadBytes)
+	}
+	n, err := lw.w.Write(p)
+	lw.n -= int64(n)
+	return n, err
 }
 
 func wantSkill(name string, all bool) bool {
@@ -249,6 +270,25 @@ func matchSkills(available []string, re *regexp.Regexp) []string {
 	return matched
 }
 
+// cappedReader fails once more than its byte budget has been read. It guards
+// against a decompression bomb when reading the (gzip-expanded) tar stream.
+type cappedReader struct {
+	r io.Reader
+	n int64 // remaining bytes allowed
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.n <= 0 {
+		return 0, fmt.Errorf("skills archive exceeds maximum unpacked size of %d bytes", maxSkillUnpackedBytes)
+	}
+	if int64(len(p)) > c.n {
+		p = p[:c.n]
+	}
+	n, err := c.r.Read(p)
+	c.n -= int64(n)
+	return n, err
+}
+
 // walkSkillFiles iterates the regular files of the skills repository tarball,
 // invoking fn for each file under "skills/<name>/<rel>". GitHub tarballs nest
 // everything under a "<repo>-<branch>/" directory, which is stripped here.
@@ -259,7 +299,7 @@ func walkSkillFiles(tarGz io.Reader, fn func(name, rel string, h *tar.Header, tr
 	}
 	defer gzr.Close()
 
-	tr := tar.NewReader(gzr)
+	tr := tar.NewReader(&cappedReader{r: gzr, n: maxSkillUnpackedBytes})
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {

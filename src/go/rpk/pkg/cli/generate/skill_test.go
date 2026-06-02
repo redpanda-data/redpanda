@@ -13,9 +13,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -234,5 +236,46 @@ func TestSkillProvider(t *testing.T) {
 
 	t.Run("sorted provider names", func(t *testing.T) {
 		require.Equal(t, []string{"claude"}, sortedProviderNames())
+	})
+}
+
+func TestLimitedWriter(t *testing.T) {
+	t.Run("within budget passes through", func(t *testing.T) {
+		var buf bytes.Buffer
+		lw := &limitedWriter{w: &buf, n: 8}
+		n, err := lw.Write([]byte("abcd"))
+		require.NoError(t, err)
+		require.Equal(t, 4, n)
+		n, err = lw.Write([]byte("efgh"))
+		require.NoError(t, err)
+		require.Equal(t, 4, n)
+		require.Equal(t, "abcdefgh", buf.String())
+	})
+
+	t.Run("write crossing budget errors and does not exceed cap", func(t *testing.T) {
+		var buf bytes.Buffer
+		lw := &limitedWriter{w: &buf, n: 4}
+		_, err := lw.Write([]byte("abc"))
+		require.NoError(t, err)
+		_, err = lw.Write([]byte("de"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "download exceeds maximum size")
+		require.LessOrEqual(t, buf.Len(), 4)
+	})
+}
+
+func TestCappedReader(t *testing.T) {
+	t.Run("within budget reads fully", func(t *testing.T) {
+		c := &cappedReader{r: strings.NewReader("hello"), n: 16}
+		got, err := io.ReadAll(c)
+		require.NoError(t, err)
+		require.Equal(t, "hello", string(got))
+	})
+
+	t.Run("exceeding budget errors", func(t *testing.T) {
+		c := &cappedReader{r: strings.NewReader(strings.Repeat("x", 100)), n: 10}
+		_, err := io.ReadAll(c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "exceeds maximum unpacked size")
 	})
 }
