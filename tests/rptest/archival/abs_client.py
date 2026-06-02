@@ -4,6 +4,7 @@ from itertools import islice
 from logging import Logger
 from typing import Iterator, Optional, cast
 
+from azure.core.exceptions import ResourceExistsError
 from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
 from rptest.archival.s3_client import ObjectMetadata
 from rptest.archival.shared_client_utils import key_to_topic
@@ -67,7 +68,10 @@ class ABSClient:
 
     def create_bucket(self, name: str):
         blob_service = BlobServiceClient.from_connection_string(self.conn_str)
-        blob_service.create_container(name)
+        try:
+            blob_service.create_container(name)
+        except ResourceExistsError:
+            self.logger.debug(f"Container {name} already exists")
 
     def empty_and_delete_bucket(self, name: str, parallel: bool = False) -> None:
         """
