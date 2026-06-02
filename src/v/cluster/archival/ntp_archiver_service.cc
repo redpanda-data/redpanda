@@ -1093,7 +1093,7 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
 
         if (
           _parent.ntp().tp.partition == 0 && _topic_manifest_dirty
-          && !_parent.ts_migration_boundary().has_value()) {
+          && !_parent.get_ntp_config().cloud_topic_enabled()) {
             co_await upload_topic_manifest();
         }
 
@@ -1119,14 +1119,16 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
           fence,
           _parent.archival_meta_stm()->get_insync_offset());
 
-        // After a TS->CT migration the archiver is kept alive for GC (expiring
-        // old TS segments via housekeeping) but must not upload new segments:
-        // post-migration raft segments contain ctp_placeholder batches (not
-        // raft_data) that the S3 reader silently skips, so uploading them would
-        // make committed CT records invisible to read_committed consumers.
+        // A cloud-topic partition's archiver exists only to GC pre-migration
+        // tiered-storage data; it must never upload segments. Post-migration
+        // raft segments contain ctp_placeholder batches (not raft_data) that
+        // the S3 reader silently skips, so uploading them would make committed
+        // CT records invisible to read_committed consumers. Gate on
+        // cloud_topic_enabled() rather than the migration seal so uploads stay
+        // suppressed even after the seal is cleared on migration completion.
         bool uploads_paused
           = !config::shard_local_cfg().cloud_storage_enable_segment_uploads()
-            || _parent.ts_migration_boundary().has_value();
+            || _parent.get_ntp_config().cloud_topic_enabled();
         std::optional<batch_result> result;
         auto track_paused = _probe.value().register_archiver_on_hold(
           uploads_paused);
@@ -2756,6 +2758,13 @@ ss::future<ntp_archiver::housekeeping_result> ntp_archiver::housekeeping() {
                 co_await garbage_collect();
             }
             co_await apply_spillover();
+
+            // If GC has drained the pre-migration tiered-storage data, complete
+            // the TS->CT migration: clear the seal so the partition becomes
+            // indistinguishable from a native cloud topic (and this archiver is
+            // not rebuilt on the next restart). No-op unless sealed and the
+            // manifest is now empty.
+            co_await _parent.complete_ts_migration();
         }
     } catch (const ss::abort_requested_exception&) {
     } catch (const ss::gate_closed_exception&) {

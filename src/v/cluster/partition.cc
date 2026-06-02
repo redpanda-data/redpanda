@@ -1047,6 +1047,39 @@ std::optional<kafka::offset> partition::ts_migration_boundary() const {
     return _archival_meta_stm->migration_boundary();
 }
 
+ss::future<> partition::complete_ts_migration() {
+    if (!_raft->is_leader()) {
+        co_return;
+    }
+    if (!_archival_meta_stm) {
+        co_return;
+    }
+    if (!_archival_meta_stm->migration_boundary().has_value()) {
+        // Not sealed, or migration already completed.
+        co_return;
+    }
+    if (!_archival_meta_stm->manifest().empty()) {
+        // Pre-migration TS data is still present; nothing to complete yet.
+        co_return;
+    }
+    const auto deadline = model::timeout_clock::now()
+                          + std::chrono::seconds{30};
+    auto ec = co_await _archival_meta_stm->complete_migration(deadline, _as);
+    if (ec) {
+        vlog(
+          clusterlog.warn,
+          "[{}] failed to complete TS->CT migration: {}",
+          _raft->ntp(),
+          ec.message());
+    } else {
+        vlog(
+          clusterlog.info,
+          "[{}] TS->CT migration complete: pre-migration data drained, "
+          "partition is now a native cloud topic",
+          _raft->ntp());
+    }
+}
+
 std::optional<model::offset>
 partition::get_term_last_offset(model::term_id term) const {
     auto o = _raft->log()->get_term_last_offset(term);

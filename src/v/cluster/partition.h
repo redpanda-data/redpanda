@@ -312,6 +312,12 @@ public:
     // Idempotent and leader-only; a no-op if there is no uploaded TS data.
     ss::future<> seal_ts_migration();
 
+    // Once the pre-migration tiered-storage data has been GC'd (manifest
+    // empty), clear the migration seal so the partition becomes a native cloud
+    // topic. Idempotent and leader-only; a no-op unless sealed and drained.
+    // Driven by the archiver housekeeping loop.
+    ss::future<> complete_ts_migration();
+
     uint64_t upload_backlog_size() const;
 
     /**

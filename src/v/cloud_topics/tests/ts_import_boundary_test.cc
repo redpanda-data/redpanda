@@ -58,9 +58,9 @@ public:
 
     // Produce records, explicitly seal the segment via force_roll(), then wait
     // until the archiver has uploaded it and recorded a non-null
-    // last_kafka_offset in the archival_metadata_stm manifest. seal_ts_migration
-    // requires a non-empty manifest to record the boundary, so this must happen
-    // before set_storage_mode.
+    // last_kafka_offset in the archival_metadata_stm manifest.
+    // seal_ts_migration requires a non-empty manifest to record the boundary,
+    // so this must happen before set_storage_mode.
     ss::future<> produce_and_wait_for_ts_upload(
       ss::lw_shared_ptr<cluster::partition>& leader_p) {
         auto* producer = co_await make_producer(model::node_id{0});
@@ -79,10 +79,9 @@ public:
         updates.storage_mode.op = cluster::incremental_update_operation::set;
         updates.storage_mode.value = mode;
 
-        auto& topics_frontend
-          = instance(model::node_id{0})
-              ->app.controller->get_topics_frontend()
-              .local();
+        auto& topics_frontend = instance(model::node_id{0})
+                                  ->app.controller->get_topics_frontend()
+                                  .local();
         cluster::topic_properties_update update(test_tp_ns);
         update.properties = updates;
         cluster::topic_properties_update_vector updates_vec;
@@ -104,8 +103,8 @@ public:
         });
     }
 
-    ss::future<>
-    wait_for_migration_boundary(ss::lw_shared_ptr<cluster::partition>& leader_p) {
+    ss::future<> wait_for_migration_boundary(
+      ss::lw_shared_ptr<cluster::partition>& leader_p) {
         RPTEST_REQUIRE_EVENTUALLY_CORO(
           10s, [&] { return leader_p->ts_migration_boundary().has_value(); });
     }
@@ -166,6 +165,27 @@ TEST_F(TsImportBoundaryTest, BoundaryStableAfterDoublePromotion) {
     ss::sleep(200ms).get();
 
     EXPECT_EQ(leader_p->ts_migration_boundary(), first_boundary);
+}
+
+// complete_ts_migration must not clear the seal while pre-migration TS data is
+// still present in the manifest -- doing so would drop the passthrough read
+// path while the data is still live. The positive case (manifest drained ->
+// seal cleared) is covered by the GC ducktape test.
+TEST_F(TsImportBoundaryTest, CompleteMigrationNoOpWhileTsDataPresent) {
+    create_tiered_topic().get();
+
+    ss::lw_shared_ptr<cluster::partition> leader_p;
+    wait_for_leader(leader_p).get();
+    produce_and_wait_for_ts_upload(leader_p).get();
+
+    set_storage_mode(model::redpanda_storage_mode::tiered_cloud).get();
+    wait_for_migration_boundary(leader_p).get();
+    ASSERT_TRUE(leader_p->ts_migration_boundary().has_value());
+    ASSERT_FALSE(leader_p->archival_meta_stm()->manifest().empty());
+
+    // Manifest still holds the pre-migration segment, so completion is a no-op.
+    leader_p->complete_ts_migration().get();
+    EXPECT_TRUE(leader_p->ts_migration_boundary().has_value());
 }
 
 // A tiered partition with no uploaded TS data records no seal on promotion:
