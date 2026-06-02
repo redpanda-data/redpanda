@@ -22,7 +22,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import MetricsEndpoint, SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -62,6 +62,8 @@ class TsMigrationTest(RedpandaTest):
     NUM_TX_MSGS_PHASE2 = 1000
     TX_MSGS_PER_TXN = 200
     TX_ABORT_RATE = 0.3
+
+    TOPIC_COMPACT = "ts-migration-compact-test"
 
     # Topics are created inside the test body after selecting storage mode.
     topics = ()
@@ -106,11 +108,33 @@ class TsMigrationTest(RedpandaTest):
                 # retention.local.target.bytes regardless of strict-mode flags.
                 "retention_local_target_capacity_bytes": 1024,
                 "retention_local_trim_interval": 1000,
+                # Run the CT (L1) compaction scheduler frequently so the
+                # compaction test observes several rounds quickly.
+                "cloud_topics_compaction_interval_ms": 5000,
             },
         )
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
         self.admin_v2 = AdminV2(self.redpanda)
+
+    def _metric_sum(self, metric_name: str) -> float:
+        return self.redpanda.metric_sum(
+            metric_name=metric_name,
+            metrics_endpoint=MetricsEndpoint.METRICS,
+            expect_metric=True,
+        )
+
+    def get_records_removed(self) -> float:
+        # Superseded records dropped by key dedup (does not count tombstone
+        # removals).
+        return self._metric_sum(
+            "vectorized_cloud_topics_compaction_worker_records_removed"
+        )
+
+    def get_tombstones_removed(self) -> float:
+        return self._metric_sum(
+            "vectorized_cloud_topics_compaction_worker_tombstones_removed"
+        )
 
     @cluster(num_nodes=2)
     @matrix(storage_mode=[
@@ -728,4 +752,165 @@ class TsMigrationTest(RedpandaTest):
             f"manifest last_offset advanced from {baseline_last_offset} to "
             f"{final_last_offset} after CT migration, confirming post-migration "
             f"TS segment uploads occurred."
+        )
+
+    @cluster(num_nodes=2)
+    @matrix(storage_mode=[
+        TopicSpec.STORAGE_MODE_CLOUD,
+        TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+    ])
+    def test_ts_to_ct_migration_compaction(self, storage_mode: str):
+        """
+        Compaction on a topic mid TS->CT migration must behave like tiered
+        storage: CT (L1) compaction dedups within its own (CT) range, but
+        tombstones must NOT be removed while the pre-migration TS section is
+        still present.  A CT tombstone can supersede a key whose last value is
+        in the TS range (served via the passthrough reader); removing it would
+        resurrect that key.  Once the TS section ages out and the migration
+        completes (the seal clears), tombstones become removable again.
+
+        delete.retention.ms is intentionally short so that the only thing
+        preventing tombstone removal during migration is the seal; if the gate
+        were missing, tombstones would be removed almost immediately.
+        """
+        if storage_mode == TopicSpec.STORAGE_MODE_TIERED_CLOUD:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+
+        KEY_CARD = 100
+
+        # retention.ms starts large so the pre-migration TS section persists
+        # through the "migrating" assertions; it is shortened later to age the
+        # TS section out and complete the migration.
+        self.rpk.create_topic(
+            self.TOPIC_COMPACT,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                TopicSpec.PROPERTY_CLEANUP_POLICY: "compact,delete",
+                "segment.bytes": str(32 * 1024),
+                "segment.ms": "1000",
+                "delete.retention.ms": "1000",
+                "retention.ms": str(24 * 3600 * 1000),
+                "retention.local.target.bytes": str(64 * 1024),
+                "min.cleanable.dirty.ratio": "0.0",
+            },
+        )
+
+        # Phase 1: keyed records + tombstones archived to tiered storage.
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT,
+            msg_size=self.MSG_SIZE,
+            msg_count=4000,
+            key_set_cardinality=KEY_CARD,
+            tombstone_probability=0.3,
+        )
+
+        def has_ts_segments() -> bool:
+            m = self.admin.get_partition_manifest(self.TOPIC_COMPACT, 0)
+            return len(m.get("segments", {})) >= 2
+
+        wait_until(
+            has_ts_segments,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="Fewer than 2 TS segments uploaded within 120s",
+            retry_on_exc=True,
+        )
+
+        # Migrate -> records the migration seal.
+        self.rpk.alter_topic_config(
+            self.TOPIC_COMPACT, TopicSpec.PROPERTY_STORAGE_MODE, storage_mode
+        )
+
+        # Phase 2: keyed records + tombstones written via the CT path (these
+        # land in the CT range above the migration boundary, in L1).
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT,
+            msg_size=self.MSG_SIZE,
+            msg_count=4000,
+            key_set_cardinality=KEY_CARD,
+            tombstone_probability=0.3,
+        )
+
+        # CT compaction must dedup the CT range (records removed)...
+        wait_until(
+            lambda: self.get_records_removed() > 0,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="CT compaction removed no records while migrating",
+        )
+
+        # ...but must NOT remove tombstones while the seal is set, even though
+        # delete.retention.ms is short. Give compaction several more rounds to
+        # make the point robust, then assert no tombstones were removed.
+        time.sleep(20)
+        tombstones_removed_migrating = self.get_tombstones_removed()
+        assert tombstones_removed_migrating == 0, (
+            f"{tombstones_removed_migrating} tombstone(s) were removed by CT "
+            f"compaction while the partition was mid-migration; tombstones must "
+            f"be retained until the TS section ages out (storage_mode="
+            f"{storage_mode})."
+        )
+
+        # Age out the TS section: shorten retention so the archiver GC drains
+        # the TS manifest. An empty manifest triggers complete_migration, which
+        # clears the seal and makes the partition a native cloud topic.
+        self.rpk.alter_topic_config(
+            self.TOPIC_COMPACT, "retention.ms", "1000"
+        )
+
+        def ts_drained() -> bool:
+            m = self.admin.get_partition_manifest(self.TOPIC_COMPACT, 0)
+            segments = len(m.get("segments", {}))
+            self.logger.info(f"TS drain check: {segments} segments remain")
+            return segments == 0
+
+        wait_until(
+            ts_drained,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="TS section did not fully drain after shortening retention",
+            retry_on_exc=True,
+        )
+
+        # Restore a large retention before producing phase 3. The short
+        # retention that drained the TS section also evicts CT data; if left in
+        # place it would delete phase-3 (and its tombstones) before compaction
+        # could remove them, so tombstone removal could never be observed.
+        # delete.retention.ms stays short so phase-3 tombstones become removable
+        # quickly once the seal has cleared.
+        self.rpk.alter_topic_config(
+            self.TOPIC_COMPACT, "retention.ms", str(24 * 3600 * 1000)
+        )
+
+        # Phase 3: produce more to drive a compaction round after the seal has
+        # cleared.
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT,
+            msg_size=self.MSG_SIZE,
+            msg_count=4000,
+            key_set_cardinality=KEY_CARD,
+            tombstone_probability=0.3,
+        )
+
+        # With the migration complete, tombstones past delete.retention.ms are
+        # once again removable.
+        wait_until(
+            lambda: self.get_tombstones_removed() > 0,
+            timeout_sec=180,
+            backoff_sec=5,
+            err_msg=(
+                "no tombstones were removed after the migration completed; "
+                "tombstone removal should resume once the TS section ages out "
+                f"(storage_mode={storage_mode})."
+            ),
         )
