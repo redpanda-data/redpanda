@@ -774,6 +774,51 @@ PERF_TEST_CN(
 }
 
 PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_5_fields_1024_bytes) {
+    co_return co_await run_protobuf_linear_bench(5, 1024);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_5_fields_4096_bytes) {
+    co_return co_await run_protobuf_linear_bench(5, 4096);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_5_fields_8192_bytes) {
+    co_return co_await run_protobuf_linear_bench(5, 8192);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_10_fields_1024_bytes) {
+    co_return co_await run_protobuf_linear_bench(10, 1024);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_10_fields_4096_bytes) {
+    co_return co_await run_protobuf_linear_bench(10, 4096);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_10_fields_8192_bytes) {
+    co_return co_await run_protobuf_linear_bench(10, 8192);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_20_fields_1024_bytes) {
+    co_return co_await run_protobuf_linear_bench(20, 1024);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_20_fields_4096_bytes) {
+    co_return co_await run_protobuf_linear_bench(20, 4096);
+}
+
+PERF_TEST_CN(
+  record_multiplexer_bench_fixture, protobuf_linear_20_fields_8192_bytes) {
+    co_return co_await run_protobuf_linear_bench(20, 8192);
+}
+
+PERF_TEST_CN(
   record_multiplexer_bench_fixture, protobuf_nested_10_levels_small) {
     co_return co_await run_protobuf_nested_bench(10, small_field_size_bytes);
 }
