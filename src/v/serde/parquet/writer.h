@@ -114,6 +114,22 @@ public:
     // class.
     ss::future<> flush_row_group();
 
+    // Aggregated per-column statistics for the entire file.
+    //
+    // Entries appear in schema DFS order, one per leaf column. Must be called
+    // after close().
+    struct file_column_stats {
+        /// Iceberg field id, if present in the schema element.
+        std::optional<int32_t> field_id;
+        /// Min/max bounds and null count accumulated across all row groups.
+        statistics bounds;
+        /// Total number of values (including nulls) across all row groups.
+        int64_t value_count = 0;
+        /// Total compressed size in bytes across all row groups.
+        int64_t column_size_bytes = 0;
+    };
+    chunked_vector<file_column_stats> column_file_stats();
+
     // Close the writer by writing the parquet file footer. Then flush/close the
     // underlying stream that is being written too.
     //

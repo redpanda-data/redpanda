@@ -259,10 +259,13 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":test_data_writer",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
         "//src/v/datalake:serde_parquet_writer",
         "//src/v/datalake/tests:test_data",
         "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
         "//src/v/iceberg/tests:value_generator",
         "//src/v/test_utils:gtest",
         "@fmt",
