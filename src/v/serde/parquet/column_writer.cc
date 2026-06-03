@@ -51,6 +51,7 @@ public:
     virtual int64_t current_page_memory_usage() const = 0;
     virtual ss::future<> next_page() = 0;
     virtual ss::future<flushed_pages> flush_pages() = 0;
+    virtual statistics file_column_stats() = 0;
 };
 
 namespace {
@@ -261,7 +262,6 @@ public:
             } else {
                 max_bound.emplace(encode_for_stats(*max), true);
             }
-            _flushed_stats.record_value(*max);
         }
         std::optional<statistics::bound> min_bound;
         if (bound_type min = _current_page_stats.min()) {
@@ -274,9 +274,8 @@ public:
             } else {
                 min_bound.emplace(encode_for_stats(*min), true);
             }
-            _flushed_stats.record_value(*min);
         }
-        _flushed_stats.record_null(_current_page_stats.null_count());
+        _flushed_stats.merge(_current_page_stats);
         page_header header{
           .uncompressed_page_size = static_cast<int32_t>(uncompressed_page_size),
           .compressed_page_size = static_cast<int32_t>(compressed_page_size),
@@ -333,38 +332,8 @@ public:
         if (_num_values > 0) {
             co_await flush_page();
         }
-
-        statistics full_stats{
-          .null_count = _flushed_stats.null_count(),
-          .max = {},
-          .min = {},
-        };
-        using bound_type = decltype(_flushed_stats)::bound_ref_type;
-        if (bound_type max = _flushed_stats.max()) {
-            if constexpr (std::is_same_v<value_type, byte_array_value>) {
-                if (
-                  auto truncated = truncate_max(
-                    encode_for_stats(*max),
-                    _opts.max_stats_truncate_length,
-                    _opts.is_utf8_string)) {
-                    auto [val, is_exact] = std::move(*truncated);
-                    full_stats.max.emplace(std::move(val), is_exact);
-                }
-            } else {
-                full_stats.max.emplace(encode_for_stats(*max), true);
-            }
-        }
-        if (bound_type min = _flushed_stats.min()) {
-            if constexpr (std::is_same_v<value_type, byte_array_value>) {
-                auto [val, is_exact] = truncate_min(
-                  encode_for_stats(*min),
-                  _opts.max_stats_truncate_length,
-                  _opts.is_utf8_string);
-                full_stats.min.emplace(std::move(val), is_exact);
-            } else {
-                full_stats.min.emplace(encode_for_stats(*min), true);
-            }
-        }
+        _file_stats.merge(_flushed_stats);
+        auto full_stats = build_statistics(_flushed_stats);
         _flushed_stats.reset();
         _total_memory_usage = 0;
         iobuf bf;
@@ -387,9 +356,47 @@ public:
         };
     }
 
+    statistics file_column_stats() override {
+        return build_statistics(_file_stats);
+    }
+
 private:
+    using collector = column_stats_collector<value_type, comparator>;
+
+    statistics build_statistics(collector& c) {
+        statistics result{.null_count = c.null_count()};
+        using bound_type = typename collector::bound_ref_type;
+        if (bound_type max = c.max()) {
+            if constexpr (std::is_same_v<value_type, byte_array_value>) {
+                if (
+                  auto truncated = truncate_max(
+                    encode_for_stats(*max),
+                    _opts.max_stats_truncate_length,
+                    _opts.is_utf8_string)) {
+                    auto [val, is_exact] = std::move(*truncated);
+                    result.max.emplace(std::move(val), is_exact);
+                }
+            } else {
+                result.max.emplace(encode_for_stats(*max), true);
+            }
+        }
+        if (bound_type min = c.min()) {
+            if constexpr (std::is_same_v<value_type, byte_array_value>) {
+                auto [val, is_exact] = truncate_min(
+                  encode_for_stats(*min),
+                  _opts.max_stats_truncate_length,
+                  _opts.is_utf8_string);
+                result.min.emplace(std::move(val), is_exact);
+            } else {
+                result.min.emplace(encode_for_stats(*min), true);
+            }
+        }
+        return result;
+    }
+
     column_stats_collector<value_type, comparator> _current_page_stats;
     column_stats_collector<value_type, comparator> _flushed_stats;
+    column_stats_collector<value_type, comparator> _file_stats;
     std::optional<bloom_filter> _bloom_filter;
     int64_t _total_memory_usage = 0;
     plain_encoder<value_type> _value_buffer;
@@ -503,6 +510,10 @@ ss::future<> column_writer::next_page() { return _impl->next_page(); }
 
 ss::future<flushed_pages> column_writer::flush_pages() {
     return _impl->flush_pages();
+}
+
+statistics column_writer::file_column_stats() {
+    return _impl->file_column_stats();
 }
 
 } // namespace serde::parquet

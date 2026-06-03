@@ -145,11 +145,13 @@ local_parquet_file_writer::finish() {
     }
     try {
         auto f_size = co_await ss::file_size(_output_file_path().string());
+        auto col_stats = _writer->column_stats();
 
         co_return local_file_metadata{
           .path = _output_file_path,
           .row_count = _row_count,
           .size_bytes = f_size,
+          .column_stats = std::move(col_stats),
         };
     } catch (...) {
         vlog(
