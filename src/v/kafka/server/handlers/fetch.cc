@@ -368,6 +368,8 @@ static void fill_fetch_responses(
           0, std::min({results.size(), responses.size()}));
     }
 
+    auto& fetch_metadata_cache = octx.rctx.get_fetch_metadata_cache();
+
     for (auto idx : range) {
         auto& res = results[idx];
         const auto& resp_it = responses[idx];
@@ -398,7 +400,7 @@ static void fill_fetch_responses(
         /**
          * Cache fetch metadata
          */
-        octx.rctx.get_fetch_metadata_cache().insert_or_assign(
+        fetch_metadata_cache.insert_or_assign(
           ktp,
           res.start_offset,
           res.high_watermark,
