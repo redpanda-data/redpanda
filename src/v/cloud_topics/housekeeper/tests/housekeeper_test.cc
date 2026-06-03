@@ -220,8 +220,13 @@ public:
           &_l0_metastore,
           &_l1_metastore,
           _config_impl.get(),
-          config::mock_binding<std::chrono::milliseconds>(1ms)};
+          config::mock_binding<std::chrono::milliseconds>(1ms),
+          [this] { return _migrating; }};
     }
+
+    // When true, the housekeeper must skip CT retention (the TS archiver owns
+    // the start offset during a TS->CT migration).
+    bool _migrating{false};
 
     kafka::offset start_offset() const { return _l0_metastore.start_offset(); }
 
@@ -339,6 +344,33 @@ TEST_F(HousekeeperTest, TimeBasedRetention) {
       .max_timestamp = model::timestamp_clock::now() - 10min,
     });
 
+    housekeeper.do_housekeeping().get();
+    EXPECT_EQ(start_offset(), kafka::offset{50});
+}
+
+TEST_F(HousekeeperTest, RetentionSkippedWhileMigrating) {
+    // While a TS->CT migration is in progress the TS archiver owns the start
+    // offset; the CT housekeeper must not advance it, even when retention would
+    // otherwise apply.
+    _migrating = true;
+    simple_retention_config cfg;
+    cfg.duration = 30min;
+    auto housekeeper = make_housekeeper(cfg);
+    EXPECT_EQ(start_offset(), kafka::offset{0});
+
+    add_object({
+      .records = 50,
+      .size = 500_KiB,
+      .max_timestamp = model::timestamp_clock::now() - 2h,
+    });
+
+    housekeeper.do_housekeeping().get();
+    // Start offset untouched despite the object being well past retention.
+    EXPECT_EQ(start_offset(), kafka::offset{0});
+    EXPECT_EQ(l1_set_start_offset_calls(), 0u);
+
+    // Once migration completes, the same housekeeping pass applies retention.
+    _migrating = false;
     housekeeper.do_housekeeping().get();
     EXPECT_EQ(start_offset(), kafka::offset{50});
 }

@@ -199,7 +199,8 @@ void housekeeper_manager::start_housekeeper(
           _l1_metastore,
           _retention_configuration.get(),
           config::shard_local_cfg()
-            .cloud_storage_housekeeping_interval_ms.bind());
+            .cloud_storage_housekeeping_interval_ms.bind(),
+          [p] { return p->ts_migration_boundary().has_value(); });
         vlog(cd_log.debug, "starting housekeeper for: {}", tidp);
         auto [it, _] = _state.emplace(
           tidp,

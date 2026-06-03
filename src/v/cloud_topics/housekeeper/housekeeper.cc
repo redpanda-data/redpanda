@@ -28,12 +28,14 @@ housekeeper::housekeeper(
   l0_metadata_storage* l0_metastore,
   l1::metastore* l1_metastore,
   retention_configuration* config,
-  config::binding<std::chrono::milliseconds> loop_interval)
+  config::binding<std::chrono::milliseconds> loop_interval,
+  ss::noncopyable_function<bool()> is_migrating)
   : _tidp(tidp)
   , _l0_metastore(l0_metastore)
   , _l1_metastore(l1_metastore)
   , _config(config)
-  , _loop_interval(std::move(loop_interval)) {}
+  , _loop_interval(std::move(loop_interval))
+  , _is_migrating(std::move(is_migrating)) {}
 
 ss::future<> housekeeper::start() {
     _gate = {};
@@ -49,6 +51,17 @@ ss::future<> housekeeper::stop() {
 }
 
 ss::future<> housekeeper::do_housekeeping() {
+    if (_is_migrating()) {
+        // The TS archiver owns retention (including the whole-partition byte
+        // budget) until the pre-migration data drains and the migration
+        // completes. Skip start-offset advancement here to avoid two retention
+        // engines racing on the same partition.
+        vlog(
+          cd_log.trace,
+          "{} - skipping CT retention while TS->CT migration is in progress",
+          _tidp);
+        co_return;
+    }
     kafka::offset new_start_offset = kafka::offset::min();
     if (auto retention_bytes = _config->retention_bytes(_tidp)) {
         new_start_offset = co_await do_bytes_retention(*retention_bytes);

@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
 
@@ -102,7 +103,8 @@ public:
       l0_metadata_storage*,
       l1::metastore*,
       retention_configuration*,
-      config::binding<std::chrono::milliseconds> loop_interval);
+      config::binding<std::chrono::milliseconds> loop_interval,
+      ss::noncopyable_function<bool()> is_migrating);
     housekeeper(const housekeeper&) = delete;
     housekeeper(housekeeper&&) = delete;
     housekeeper& operator=(const housekeeper&) = delete;
@@ -137,6 +139,12 @@ private:
     l1::metastore* _l1_metastore;
     retention_configuration* _config;
     config::binding<std::chrono::milliseconds> _loop_interval;
+    // True while the partition is mid TS->CT migration. Retention (start-offset
+    // advancement) is owned by the TS archiver until the migration completes, so
+    // the CT housekeeper must not also advance the start offset; doing so would
+    // race the archiver and split the retention budget across two engines that
+    // each see only their own tier. Epoch bumping is unaffected.
+    ss::noncopyable_function<bool()> _is_migrating;
     ss::gate _gate;
     ss::abort_source _as;
 
