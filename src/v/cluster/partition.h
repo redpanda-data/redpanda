@@ -389,6 +389,14 @@ public:
     /// w.r.t. raft operations.
     std::optional<kafka::offset> ts_migration_boundary() const;
 
+    /// The size in bytes of this partition's cloud-topics (L1) data, or nullopt
+    /// if the partition has no cloud-topics state or the size is unavailable.
+    /// During a TS->CT migration this is the post-migration portion of the
+    /// partition (the pre-migration portion lives in the tiered-storage
+    /// manifest); used to make the archiver's size-based retention account for
+    /// the whole partition.
+    ss::future<std::optional<size_t>> cloud_topic_log_size_bytes() const;
+
     /// True if this partition should serve fetches from cloud storage via the
     /// remote_partition (tiered-storage) read path: either remote fetch is
     /// enabled by its storage mode (tiered), or it is mid TS->CT migration and

@@ -3394,8 +3394,22 @@ ss::future<> ntp_archiver::apply_retention() {
 
     auto pinned_offset
       = _parent.raft()->log()->stm_hookset()->lowest_pinned_data_offset();
+
+    // While a TS->CT migration is in progress, the post-migration data lives in
+    // the cloud-topics (L1) store, not this manifest. Size-based retention is a
+    // whole-partition budget, so feed the CT byte count in as additional size;
+    // reclamation still only deletes TS segments from this manifest. The CT
+    // housekeeper suppresses its own retention while sealed, so the archiver is
+    // the single retention authority for the whole partition until completion.
+    uint64_t additional_cloud_size_bytes = 0;
+    if (_parent.archival_meta_stm()->migration_boundary().has_value()) {
+        auto ct_size = co_await _parent.cloud_topic_log_size_bytes();
+        additional_cloud_size_bytes = ct_size.value_or(0);
+    }
+
     auto retention_calculator = retention_calculator::factory(
-      manifest(), _parent.get_ntp_config(), pinned_offset);
+      manifest(), _parent.get_ntp_config(), pinned_offset,
+      additional_cloud_size_bytes);
     if (!retention_calculator) {
         co_return;
     }

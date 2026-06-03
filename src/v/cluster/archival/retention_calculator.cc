@@ -78,7 +78,8 @@ private:
 std::optional<retention_calculator> retention_calculator::factory(
   const cloud_storage::partition_manifest& manifest,
   const storage::ntp_config& ntp_config,
-  std::optional<kafka::offset> pinned_offset) {
+  std::optional<kafka::offset> pinned_offset,
+  uint64_t additional_cloud_size_bytes) {
     if (!ntp_config.is_remotely_collectable()) {
         vlog(
           archival_log.trace, "{} Partition not collectible", ntp_config.ntp());
@@ -112,18 +113,26 @@ std::optional<retention_calculator> retention_calculator::factory(
     if (ntp_config.retention_bytes()) {
         auto total_retention_bytes = ntp_config.retention_bytes();
 
-        auto stm_region_size = manifest.stm_region_size_bytes();
-        if (stm_region_size > *total_retention_bytes) {
-            auto overshot_by = stm_region_size - *total_retention_bytes;
+        // Size-based retention applies to the whole partition. During a TS->CT
+        // migration the post-migration bytes live outside this manifest (in the
+        // CT/L1 store); include them so the overshoot reflects the partition's
+        // true size. Reclamation still only deletes segments from this manifest
+        // (the TS region), draining as much of it as needed.
+        auto partition_size = manifest.stm_region_size_bytes()
+                              + additional_cloud_size_bytes;
+        if (partition_size > *total_retention_bytes) {
+            auto overshot_by = partition_size - *total_retention_bytes;
             strats.push_back(
               std::make_unique<size_based_strategy>(overshot_by));
             vlog(
               archival_log.trace,
               "{} size based retention strategy added, total retention bytes: "
-              "{}, STM regions size: {}, overshot by: {}",
+              "{}, STM region size: {}, additional cloud size: {}, overshot "
+              "by: {}",
               ntp_config.ntp(),
               total_retention_bytes,
-              stm_region_size,
+              manifest.stm_region_size_bytes(),
+              additional_cloud_size_bytes,
               overshot_by);
         }
     }

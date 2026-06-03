@@ -337,3 +337,52 @@ SEASTAR_THREAD_TEST_CASE(test_retention_after_truncation) {
     vlog(test_log.info, "Truncating to {}", second_truncated_offset);
     BOOST_REQUIRE(m.advance_start_offset(second_truncated_offset));
 }
+
+// During a TS->CT migration, post-migration bytes live in the CT (L1) store,
+// outside this manifest. `additional_cloud_size_bytes` makes size-based
+// retention account for them: the overshoot is computed against the whole
+// partition, but only the (TS) manifest segments are reclaimed.
+SEASTAR_THREAD_TEST_CASE(test_size_retention_with_additional_cloud_size) {
+    temporary_dir tmp_dir("retention_strategy_test");
+    auto data_path = tmp_dir.get_path();
+
+    // 4 TS segments * 1024 = 4096 bytes in the manifest.
+    cloud_storage::partition_manifest m;
+    populate_manifest(
+      m, {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}});
+
+    ntp_config config{{"test_ns", "test_topic", 0}, {data_path}};
+    config.set_overrides(
+      {.retention_bytes = tristate<size_t>{5120}, // 5 KiB
+       .retention_time = tristate<std::chrono::milliseconds>{}});
+
+    // TS alone (4096) is under the 5120 budget -> no size retention.
+    {
+        auto calc = retention_calculator::factory(m, config);
+        BOOST_REQUIRE(!calc || !calc->next_start_offset());
+    }
+
+    // With 4096 bytes of CT data, the partition (8192) overshoots by 3072, so
+    // retention reclaims 3 TS segments (3072 bytes), advancing to offset 30.
+    {
+        auto calc = retention_calculator::factory(
+          m, config, std::nullopt, /*additional_cloud_size_bytes=*/4096);
+        BOOST_REQUIRE(calc.has_value());
+        auto next_so = calc->next_start_offset();
+        BOOST_REQUIRE(next_so.has_value());
+        BOOST_REQUIRE_EQUAL(*next_so, model::offset{30});
+    }
+
+    // If the CT data alone already exceeds the budget, every TS segment is
+    // reclaimable: retention drains the whole manifest (start past the last
+    // offset), which is what lets the TS section age out and the migration
+    // complete.
+    {
+        auto calc = retention_calculator::factory(
+          m, config, std::nullopt, /*additional_cloud_size_bytes=*/100 * 1024);
+        BOOST_REQUIRE(calc.has_value());
+        auto next_so = calc->next_start_offset();
+        BOOST_REQUIRE(next_so.has_value());
+        BOOST_REQUIRE_EQUAL(*next_so, model::next_offset(m.get_last_offset()));
+    }
+}

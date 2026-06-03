@@ -34,10 +34,17 @@ public:
  */
 class retention_calculator {
 public:
+    /// \param additional_cloud_size_bytes bytes that live outside this manifest
+    /// but still count toward the partition's size-based retention budget. Used
+    /// during a TS->CT migration, where the post-migration data lives in the
+    /// cloud-topics (L1) store rather than the tiered-storage manifest: passing
+    /// the CT byte count here makes size retention reclaim the right amount of
+    /// TS data even though only TS segments are deletable from this manifest.
     static std::optional<retention_calculator> factory(
       const cloud_storage::partition_manifest&,
       const storage::ntp_config&,
-      std::optional<kafka::offset> pinned_offset = std::nullopt);
+      std::optional<kafka::offset> pinned_offset = std::nullopt,
+      uint64_t additional_cloud_size_bytes = 0);
 
     std::optional<model::offset> next_start_offset();
 

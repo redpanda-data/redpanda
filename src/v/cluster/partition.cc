@@ -13,14 +13,17 @@
 #include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
+#include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
+#include "cloud_topics/state_accessors.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/archival/upload_housekeeping_service.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
 #include "cluster/logger.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_properties_stm.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
@@ -2019,6 +2022,38 @@ ss::future<result<ss::rwlock::holder>> partition::hold_writes_enabled() {
 ss::sharded<cloud_topics::state_accessors>*
 partition::get_cloud_topics_state() noexcept {
     return _cloud_topics_state;
+}
+
+ss::future<std::optional<size_t>>
+partition::cloud_topic_log_size_bytes() const {
+    if (!_cloud_topics_state) {
+        co_return std::nullopt;
+    }
+    auto& accessors = _cloud_topics_state->local();
+    auto* metadata_cache = accessors.get_metadata_cache();
+    auto* l1_metastore = accessors.get_l1_metastore();
+    if (!metadata_cache || !l1_metastore) {
+        co_return std::nullopt;
+    }
+
+    const auto& ntp = _raft->ntp();
+    auto topic_cfg = metadata_cache->get_topic_cfg(
+      model::topic_namespace_view(ntp));
+    if (!topic_cfg || !topic_cfg->tp_id) {
+        co_return std::nullopt;
+    }
+    model::topic_id_partition tidp{*topic_cfg->tp_id, ntp.tp.partition};
+
+    auto size_res = co_await l1_metastore->get_size(tidp);
+    if (!size_res.has_value()) {
+        vlog(
+          clusterlog.debug,
+          "[{}] could not fetch cloud-topics (L1) size: {}",
+          ntp,
+          size_res.error());
+        co_return std::nullopt;
+    }
+    co_return size_res.value().size;
 }
 
 } // namespace cluster
