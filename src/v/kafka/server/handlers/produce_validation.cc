@@ -210,25 +210,41 @@ validate_records_and_compute_max_timestamp(
   bool is_strict_validation = false) {
     std::optional<error_code_and_msg> res;
     int64_t max_timestamp = -1;
+    const auto first_timestamp = b.header().first_timestamp();
+    const auto base_offset = b.base_offset();
+    const auto before_max = model::timestamp(
+      message_timestamp_before_max_ms.count());
+    const auto after_max = model::timestamp(
+      message_timestamp_after_max_ms.count());
+    const auto validate_timestamps = timestamp_type
+                                     != model::timestamp_type::append_time;
     auto iterable_res = iterate_over_records(
       iterable_batch_ref,
       [&](model::record_metadata r) mutable {
           auto timestamp = model::timestamp{
-            b.header().first_timestamp() + r.timestamp_delta()};
-          auto offset = b.base_offset() + model::offset_delta(r.offset_delta());
-          res = validate_timestamp(
-            timestamp,
-            offset,
-            broker_time,
-            timestamp_type,
-            message_timestamp_before_max_ms,
-            message_timestamp_after_max_ms,
-            probe,
-            ntp);
+            first_timestamp + r.timestamp_delta()};
+          if (validate_timestamps) {
+              auto delta = broker_time - timestamp;
+              auto is_invalid = delta > before_max
+                                || model::timestamp(-1 * delta()) > after_max;
+              if (is_invalid) {
+                  auto offset = base_offset
+                                + model::offset_delta(r.offset_delta());
+                  res = validate_timestamp(
+                    timestamp,
+                    offset,
+                    broker_time,
+                    timestamp_type,
+                    message_timestamp_before_max_ms,
+                    message_timestamp_after_max_ms,
+                    probe,
+                    ntp);
+                  return ss::stop_iteration::yes;
+              }
+          }
           max_timestamp = std::max(timestamp(), max_timestamp);
 
-          return res.has_value() ? ss::stop_iteration::yes
-                                 : ss::stop_iteration::no;
+          return ss::stop_iteration::no;
       },
       is_strict_validation);
 

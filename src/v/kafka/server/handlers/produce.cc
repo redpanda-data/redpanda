@@ -136,7 +136,7 @@ partition_produce_stages partition_append(
   model::partition_id id,
   partition_proxy partition,
   model::batch_identity bid,
-  std::unique_ptr<model::record_batch> batch,
+  model::record_batch batch,
   int16_t acks,
   int32_t num_records,
   int64_t num_bytes,
@@ -145,12 +145,12 @@ partition_produce_stages partition_append(
     // If CreateTime is used for the topic, the timestamp will be -1. If
     // LogAppendTime is used for the topic, the timestamp will be the broker
     // local time when the messages are appended.
-    auto log_append_time_ms = batch->header().attrs.timestamp_type()
+    auto log_append_time_ms = batch.header().attrs.timestamp_type()
                                   == model::timestamp_type::create_time
                                 ? model::timestamp::missing()
-                                : batch->header().max_timestamp;
+                                : batch.header().max_timestamp;
     auto stages = partition.replicate(
-      bid, std::move(*batch), acks_to_replicate_options(acks, timeout_ms));
+      bid, std::move(batch), acks_to_replicate_options(acks, timeout_ms));
     return partition_produce_stages{
       .dispatched = std::move(stages.request_enqueued),
       .produced = stages.replicate_finished.then_wrapped(
@@ -204,7 +204,7 @@ produce_response::partition finalize_request_with_error_code(
 
 struct ntp_produce_request {
     model::ntp ntp;
-    std::unique_ptr<model::record_batch> batch;
+    model::record_batch batch;
     std::optional<pandaproxy::schema_registry::schema_id_validator>
       schema_id_validator;
 
@@ -220,7 +220,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
   std::unique_ptr<ss::promise<>> dispatched) {
     auto start = std::chrono::steady_clock::now();
     auto validate_batch_res = co_await validate_batch(
-      {.batch = *req.batch,
+      {.batch = req.batch,
        .timestamp_type = req.timestamp_type,
        .message_timestamp_before_max_ms = req.message_timestamp_before_max_ms,
        .message_timestamp_after_max_ms = req.message_timestamp_after_max_ms,
@@ -237,7 +237,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           std::move(validate_batch_res->msg));
     }
 
-    auto batch_size = req.batch->size_bytes();
+    auto batch_size = req.batch.size_bytes();
     if (static_cast<uint32_t>(batch_size) > req.batch_max_bytes) {
         auto msg = ssx::sformat(
           "batch size {} exceeds max {}", batch_size, req.batch_max_bytes);
@@ -252,7 +252,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     }
 
     if (auto& validator = req.schema_id_validator) {
-        auto ec = co_await (*validator)(*req.batch);
+        auto ec = co_await (*validator)(req.batch);
         if (ec != error_code::none) {
             // TODO: It's a bit much to post this to the partition probe for
             // this metric. We should probably move the metric.
@@ -286,7 +286,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
 
     auto m = octx.rctx.probe().auto_produce_measurement();
     octx.rctx.probe().record_batch(
-      batch_size, req.batch->header().attrs.compression());
+      batch_size, req.batch.header().attrs.compression());
     octx.rctx.connection()->attributes().produce_bytes.record(batch_size);
     octx.rctx.connection()->attributes().produce_batch_count.record(1);
 
@@ -317,9 +317,9 @@ ss::future<produce_response::partition> do_produce_topic_partition(
                 source_shard));
           }
 
-          auto bid = model::batch_identity::from(batch->header());
-          auto num_records = batch->record_count();
-          auto batch_size = batch->size_bytes();
+          auto bid = model::batch_identity::from(batch.header());
+          auto num_records = batch.record_count();
+          auto batch_size = batch.size_bytes();
           auto stages = partition_append(
             ntp.tp.partition,
             std::move(*partition),
@@ -383,8 +383,7 @@ partition_produce_stages produce_topic_partition(
       = pandaproxy::schema_registry::maybe_make_schema_id_validator(
         octx.rctx.schema_registry(), topic.name, *cfg_ctx.properties);
     // steal the batch from the adapter
-    auto batch = std::make_unique<model::record_batch>(
-      std::move(part.records->adapter.batch.value()));
+    auto batch = std::move(part.records->adapter.batch.value());
     auto dispatch = std::make_unique<ss::promise<>>();
     auto dispatch_f = dispatch->get_future();
     auto f = do_produce_topic_partition(
