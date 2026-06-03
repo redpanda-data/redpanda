@@ -155,7 +155,57 @@ std::optional<error_code_and_msg> iterate_over_records(
       "Cannot iterate over records within a compressed batch.");
 
     try {
-        b.for_each_record_metadata(std::forward<Func>(f), is_strict_validation);
+        if (is_strict_validation) {
+            b.for_each_record_metadata(
+              std::forward<Func>(f), is_strict_validation);
+        } else {
+            const auto rc = b.record_count();
+            auto parser = iobuf_const_parser(b.data());
+            int32_t i = 0;
+            for (; i < rc; ++i) {
+                auto [record_size, _] = parser.read_varlong();
+                if (static_cast<size_t>(record_size) > parser.bytes_left())
+                  [[unlikely]] {
+                    throw std::out_of_range(
+                      ssx::sformat(
+                        "Expected record size {} but only {} bytes left",
+                        record_size,
+                        parser.bytes_left()));
+                }
+
+                auto attr
+                  = parser.consume_type<model::record_attributes::type>();
+                auto [timestamp_delta, tv] = parser.read_varlong();
+                auto [offset_delta, ov] = parser.read_varlong();
+                auto total_bytes_read = 1 + tv + ov;
+                if (record_size <= total_bytes_read) [[unlikely]] {
+                    throw std::out_of_range(
+                      ssx::sformat(
+                        "Expected record size {} to be greater than bytes read "
+                        "{}",
+                        record_size,
+                        total_bytes_read));
+                }
+                parser.skip(record_size - total_bytes_read);
+
+                auto res = f(
+                  model::record_metadata(
+                    record_size,
+                    model::record_attributes(attr),
+                    timestamp_delta,
+                    offset_delta));
+                if (res == ss::stop_iteration::yes) {
+                    break;
+                }
+            }
+
+            if (i == rc && parser.bytes_left()) [[unlikely]] {
+                throw std::out_of_range(
+                  ssx::sformat(
+                    "Record metadata iteration stopped with {} bytes remaining",
+                    parser.bytes_left()));
+            }
+        }
     } catch (const std::exception& e) {
         vlog(
           klog.error,
