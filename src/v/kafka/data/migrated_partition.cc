@@ -227,17 +227,35 @@ result<partition_info> migrated_partition::get_partition_info() const {
 
 size_t migrated_partition::estimate_size_between(
   kafka::offset base, kafka::offset last) const {
-    return _ct->estimate_size_between(base, last);
+    // Split the range at the boundary: the pre-migration bytes (<= boundary)
+    // come from the TS path, the post-migration bytes (> boundary) from the CT
+    // path. Each impl returns 0 for an inverted (empty) sub-range, so a range
+    // that falls entirely on one side contributes only that side.
+    auto ts_sz = _ts->estimate_size_between(base, std::min(last, _boundary));
+    auto ct_sz = _ct->estimate_size_between(
+      std::max(base, kafka::next_offset(_boundary)), last);
+    return ts_sz + ct_sz;
 }
 
 cluster::partition_probe& migrated_partition::probe() { return _ct->probe(); }
 
 size_t migrated_partition::local_size_bytes() const {
+    // Both backends wrap the same underlying raft log, so the local log size is
+    // a single value; summing would double-count. Report it once.
     return _ct->local_size_bytes();
 }
 
 ss::future<std::optional<size_t>> migrated_partition::cloud_size_bytes() const {
-    return _ct->cloud_size_bytes();
+    // The partition's cloud bytes are split across both backends and disjoint:
+    // pre-migration data (<= boundary) in the tiered-storage manifest (_ts),
+    // post-migration data (> boundary) in cloud topics (_ct). Report the sum so
+    // a migrating partition is not under-reported by the TS bytes.
+    auto ts_sz = co_await _ts->cloud_size_bytes();
+    auto ct_sz = co_await _ct->cloud_size_bytes();
+    if (!ts_sz.has_value() && !ct_sz.has_value()) {
+        co_return std::nullopt;
+    }
+    co_return ts_sz.value_or(0) + ct_sz.value_or(0);
 }
 
 model::offset migrated_partition::offset_lag() const {
@@ -246,7 +264,15 @@ model::offset migrated_partition::offset_lag() const {
 
 ss::future<cluster::partition_cloud_storage_status>
 migrated_partition::get_cloud_storage_status() const {
-    return _ct->get_cloud_storage_status();
+    // Start from the CT-side status (authoritative for mode and the L0/L1
+    // segment metadata) and fold in the tiered-storage cloud bytes still
+    // present below the boundary, so the reported cloud size covers the whole
+    // partition rather than just the CT range.
+    auto status = co_await _ct->get_cloud_storage_status();
+    auto ts_cloud = (co_await _ts->cloud_size_bytes()).value_or(0);
+    status.cloud_log_size_bytes += ts_cloud;
+    status.total_log_size_bytes += ts_cloud;
+    co_return status;
 }
 
 } // namespace kafka

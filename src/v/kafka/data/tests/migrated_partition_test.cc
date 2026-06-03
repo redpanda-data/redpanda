@@ -180,7 +180,11 @@ public:
         info.leader = model::node_id(_id);
         return info;
     }
-    size_t estimate_size_between(kafka::offset, kafka::offset) const final {
+    size_t estimate_size_between(kafka::offset b, kafka::offset e) const final {
+        // Match the real impls: an inverted (empty) range contributes nothing.
+        if (b > e) {
+            return 0;
+        }
         return static_cast<size_t>(_id);
     }
     cluster::partition_probe& probe() final { return _probe; }
@@ -193,6 +197,8 @@ public:
     get_cloud_storage_status() const final {
         cluster::partition_cloud_storage_status status{};
         status.local_log_size_bytes = static_cast<size_t>(_id);
+        status.cloud_log_size_bytes = static_cast<size_t>(_id);
+        status.total_log_size_bytes = static_cast<size_t>(_id);
         co_return status;
     }
 
@@ -318,13 +324,22 @@ TEST_CORO(migrated_partition_test, get_partition_info_delegates_to_ct) {
     co_return;
 }
 
-TEST_CORO(migrated_partition_test, estimate_size_between_delegates_to_ct) {
+TEST_CORO(migrated_partition_test, estimate_size_between_splits_at_boundary) {
     fake_impl* ts = nullptr;
     fake_impl* ct = nullptr;
     auto mp = make_migrated(&ts, &ct);
+    // Range entirely below the boundary -> TS only.
     ASSERT_EQ_CORO(
       mp.estimate_size_between(kafka::offset{0}, kafka::offset{1}),
+      static_cast<size_t>(ts_id));
+    // Range entirely above the boundary -> CT only.
+    ASSERT_EQ_CORO(
+      mp.estimate_size_between(kafka::offset{200}, kafka::offset{300}),
       static_cast<size_t>(ct_id));
+    // Range spanning the boundary -> sum of both sides.
+    ASSERT_EQ_CORO(
+      mp.estimate_size_between(kafka::offset{0}, kafka::offset{200}),
+      static_cast<size_t>(ts_id + ct_id));
     co_return;
 }
 
@@ -346,13 +361,15 @@ TEST_CORO(migrated_partition_test, local_size_bytes_delegates_to_ct) {
     co_return;
 }
 
-TEST_CORO(migrated_partition_test, cloud_size_bytes_delegates_to_ct) {
+TEST_CORO(migrated_partition_test, cloud_size_bytes_sums_both_paths) {
     fake_impl* ts = nullptr;
     fake_impl* ct = nullptr;
     auto mp = make_migrated(&ts, &ct);
+    // Cloud bytes are disjoint across the boundary, so the composite reports the
+    // sum (TS + CT) rather than the CT side alone.
     auto r = co_await mp.cloud_size_bytes();
     ASSERT_TRUE_CORO(r.has_value());
-    ASSERT_EQ_CORO(r.value(), static_cast<size_t>(ct_id));
+    ASSERT_EQ_CORO(r.value(), static_cast<size_t>(ts_id + ct_id));
 }
 
 TEST_CORO(migrated_partition_test, offset_lag_delegates_to_ct) {
@@ -363,12 +380,18 @@ TEST_CORO(migrated_partition_test, offset_lag_delegates_to_ct) {
     co_return;
 }
 
-TEST_CORO(migrated_partition_test, get_cloud_storage_status_delegates_to_ct) {
+TEST_CORO(migrated_partition_test, get_cloud_storage_status_folds_in_ts) {
     fake_impl* ts = nullptr;
     fake_impl* ct = nullptr;
     auto mp = make_migrated(&ts, &ct);
     auto status = co_await mp.get_cloud_storage_status();
+    // local size is the shared raft log: reported once (CT side).
     ASSERT_EQ_CORO(status.local_log_size_bytes, static_cast<size_t>(ct_id));
+    // cloud/total sizes fold in the TS cloud bytes below the boundary.
+    ASSERT_EQ_CORO(
+      status.cloud_log_size_bytes, static_cast<size_t>(ct_id + ts_id));
+    ASSERT_EQ_CORO(
+      status.total_log_size_bytes, static_cast<size_t>(ct_id + ts_id));
 }
 
 // ---- side-effecting methods that delegate to the CT child ----
