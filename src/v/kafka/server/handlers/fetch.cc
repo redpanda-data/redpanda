@@ -485,15 +485,6 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
     const size_t max_bytes_per_fetch = std::min<size_t>(
       config::shard_local_cfg().kafka_max_bytes_per_fetch(), bytes_left);
 
-    const auto config_indexes = std::views::iota(
-      (size_t)0, ntp_fetch_configs.size());
-
-    chunked_vector<read_result> results;
-    results.reserve(ntp_fetch_configs.size());
-    for (const auto& _ : config_indexes) {
-        results.emplace_back(error_code::none);
-    }
-
     // Ensure fetch_deadline is at least as large as deadline. The deadline is
     // the point in time at which fetch.max.wait has elapsed. The fetch_deadline
     // is the point in time before which we want to complete the fetch request.
@@ -502,6 +493,73 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
     fetch_deadline = std::max(
       deadline.value_or(model::timeout_clock::time_point::min()),
       fetch_deadline);
+
+    auto read_one = [&](
+                      ntp_fetch_config& ntp_cfg,
+                      bool obligatory_batch_read) -> ss::future<read_result> {
+        try {
+            auto res = co_await do_read_from_ntp(
+              cluster_pm,
+              md_cache,
+              replica_selector,
+              ntp_cfg,
+              fetch_deadline,
+              obligatory_batch_read,
+              units_mgr);
+            res.partition = ntp_cfg.ktp().get_partition();
+
+            if (res.delta_from_tip_ms.has_value()) {
+                read_probe.add_read_event_delta_from_tip(
+                  res.delta_from_tip_ms.value());
+            }
+
+            co_return res;
+        } catch (...) {
+            auto e = std::current_exception();
+            bool is_shutdown = ssx::is_shutdown_exception(e);
+            // Return not_leader_for_partition error to force clients retry
+            // for potential transient errors.
+            auto ec = error_code::not_leader_for_partition;
+            vlogl(
+              klog,
+              is_shutdown ? ss::log_level::debug : ss::log_level::warn,
+              "ntp {}: caught unhandled exception {} in fetch path",
+              ntp_cfg.ktp(),
+              e);
+            auto res = make_errored_read_result(md_cache, ntp_cfg.ktp(), ec);
+            res.partition = ntp_cfg.ktp().get_partition();
+            co_return res;
+        }
+    };
+
+    if (ntp_fetch_configs.size() == 1) {
+        auto& ntp_cfg = ntp_fetch_configs.front();
+        if (total_read_size >= max_bytes_per_fetch) {
+            ntp_cfg.cfg.skip_read = true;
+        }
+
+        chunked_vector<read_result> results;
+        results.reserve(1);
+        auto res = co_await read_one(ntp_cfg, /*obligatory_batch_read=*/true);
+        total_read_size += res.data_size_bytes();
+        results.push_back(std::move(res));
+
+        vlog(
+          klog.trace,
+          "fetch_ntps: for {} partitions returning {} total bytes",
+          results.size(),
+          total_read_size);
+        co_return results;
+    }
+
+    const auto config_indexes = std::views::iota(
+      (size_t)0, ntp_fetch_configs.size());
+
+    chunked_vector<read_result> results;
+    results.reserve(ntp_fetch_configs.size());
+    for (const auto& _ : config_indexes) {
+        results.emplace_back(error_code::none);
+    }
 
     co_await ss::max_concurrent_for_each(
       config_indexes,
@@ -523,41 +581,11 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
           // obligatory until a batch is read.
           const bool obligatory_batch_read = total_read_size == 0;
 
-          return do_read_from_ntp(
-                   cluster_pm,
-                   md_cache,
-                   replica_selector,
-                   ntp_cfg,
-                   fetch_deadline,
-                   obligatory_batch_read,
-                   units_mgr)
+          return read_one(ntp_cfg, obligatory_batch_read)
             .then([&, cfg_idx](read_result&& res) {
-                res.partition = ntp_cfg.ktp().get_partition();
-
                 auto read_size = res.data_size_bytes();
                 total_read_size += read_size;
 
-                if (res.delta_from_tip_ms.has_value()) {
-                    read_probe.add_read_event_delta_from_tip(
-                      res.delta_from_tip_ms.value());
-                }
-
-                results[cfg_idx] = std::move(res);
-            })
-            .handle_exception([&, cfg_idx](const std::exception_ptr& e) {
-                bool is_shutdown = ssx::is_shutdown_exception(e);
-                // Return not_leader_for_partition error to force clients retry
-                // for potential transient errors.
-                auto ec = error_code::not_leader_for_partition;
-                vlogl(
-                  klog,
-                  is_shutdown ? ss::log_level::debug : ss::log_level::warn,
-                  "ntp {}: caught unhandled exception {} in fetch path",
-                  ntp_cfg.ktp(),
-                  e);
-                auto res = make_errored_read_result(
-                  md_cache, ntp_cfg.ktp(), ec);
-                res.partition = ntp_cfg.ktp().get_partition();
                 results[cfg_idx] = std::move(res);
             });
       });
