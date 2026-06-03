@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "kafka",
-    srcs = ["client_franz.go"],
+    srcs = [
+        "client_franz.go",
+        "offsets.go",
+    ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka",
     visibility = ["//visibility:public"],
     deps = [
