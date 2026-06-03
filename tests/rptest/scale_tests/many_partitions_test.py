@@ -709,25 +709,43 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Scoped to one broker + a short `expires` window to bound log volume;
         # auto-reverts. REVERT before merge.
         if getattr(self, "_cloud_topics_enabled", False):
-            diag_node = self.redpanda.nodes[0]
             diag_admin = Admin(self.redpanda)
-            # kafka/rpc added to surface the consumer connection input-shutdown
-            # ("aborting operations", connection_context.cc) + RPC timeouts that
-            # abort in-flight cloud-topic fetches.
+            # High-volume read-path + connection loggers on ONE broker for the
+            # whole consume window. expires extended to 900s: the prior 240s
+            # window expired ~6 min before the 600s consume timed out, leaving
+            # the back half of the run (and the connection-churn root) dark.
+            diag_node = self.redpanda.nodes[0]
             for lg in ("cloud_topics", "http", "cloud_storage", "kafka", "rpc"):
                 try:
                     diag_admin._request(
                         "put",
-                        f"config/log_level/{lg}?level=debug&expires=240",
+                        f"config/log_level/{lg}?level=debug&expires=900",
                         node=diag_node,
                     )
                 except Exception as e:
                     self.logger.warning(
-                        f"TEMP CORE-15812: could not raise logger {lg}: {e}"
+                        f"TEMP CORE-15812: could not raise logger {lg} on "
+                        f"{diag_node.name}: {e}"
+                    )
+            # Consumer-group logger (kafka-cg) on ALL brokers: low volume, and
+            # the group coordinator -- where rebalances surface -- can be any
+            # broker. Key signal for whether the consumer is rebalance-looping
+            # vs. just losing connections.
+            for node in self.redpanda.nodes:
+                try:
+                    diag_admin._request(
+                        "put",
+                        "config/log_level/kafka-cg?level=debug&expires=900",
+                        node=node,
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"TEMP CORE-15812: could not raise kafka-cg on "
+                        f"{node.name}: {e}"
                     )
             self.logger.info(
-                "TEMP CORE-15812: raised cloud_topics/http/cloud_storage/kafka/rpc "
-                f"to debug on {diag_node.name} for the verify-consume window"
+                "TEMP CORE-15812: raised read-path loggers on "
+                f"{diag_node.name} + kafka-cg cluster-wide for the consume window"
             )
 
         verifier.start(clean=False)
