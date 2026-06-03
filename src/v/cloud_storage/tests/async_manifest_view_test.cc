@@ -780,6 +780,23 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     BOOST_REQUIRE_EQUAL(rr5.value().offset, prefix_base_offset);
     BOOST_REQUIRE_EQUAL(rr5.value().delta, prefix_delta);
 
+    // additional_size_bytes: bytes outside this manifest (post-migration
+    // cloud-topics data) count toward the size budget. With the limit equal to
+    // the archive size, nothing is reclaimable on its own...
+    auto rr_ct0 = view.compute_retention(total_size, std::nullopt).get();
+    BOOST_REQUIRE(rr_ct0.has_value());
+    BOOST_REQUIRE_EQUAL(rr_ct0.value().offset, model::offset{});
+
+    // ...but counting `prefix_size` external bytes pushes the partition over the
+    // limit by exactly that much, reclaiming the same prefix as the equivalent
+    // pure size-based case (rr4). Only this manifest's segments are removed.
+    auto rr_ct1
+      = view.compute_retention(total_size, std::nullopt, std::nullopt, prefix_size)
+          .get();
+    BOOST_REQUIRE(rr_ct1.has_value());
+    BOOST_REQUIRE_EQUAL(rr_ct1.value().offset, prefix_base_offset);
+    BOOST_REQUIRE_EQUAL(rr_ct1.value().delta, prefix_delta);
+
     // Check case when the start offset in the archive is advanced past
     // start kafka offset override.
     auto cur_res

@@ -2800,10 +2800,26 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     std::optional<std::chrono::milliseconds> retention_ms
       = ntp_conf.retention_duration();
 
+    // While a TS->CT migration is in progress, the post-migration data lives in
+    // the cloud-topics (L1) store, not this manifest. Size-based retention is a
+    // whole-partition budget, so pass the CT byte count as additional size:
+    // compute_retention computes the overshoot against (archive size + CT size)
+    // while still only reclaiming TS (archive) segments. This drains as much of
+    // the archive as needed -- which is what lets the TS section age out and the
+    // migration complete. The CT housekeeper suppresses its own retention while
+    // sealed, so the archiver is the single authority.
+    size_t additional_size_bytes = 0;
+    if (
+      retention_bytes.has_value()
+      && _parent.archival_meta_stm()->migration_boundary().has_value()) {
+        auto ct_size = co_await _parent.cloud_topic_log_size_bytes();
+        additional_size_bytes = ct_size.value_or(0);
+    }
+
     auto pinned_offset
       = _parent.raft()->log()->stm_hookset()->lowest_pinned_data_offset();
     auto res = co_await _manifest_view->compute_retention(
-      retention_bytes, retention_ms, pinned_offset);
+      retention_bytes, retention_ms, pinned_offset, additional_size_bytes);
 
     if (res.has_error()) {
         if (res.error() == cloud_storage::error_outcome::shutting_down) {

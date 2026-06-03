@@ -163,11 +163,18 @@ public:
 
     /// Compute how the start archive offset has to be advanced based on current
     /// log size and retention parameters.
+    ///
+    /// \param additional_size_bytes bytes that count toward the size-based
+    /// retention budget but live outside this manifest. During a TS->CT
+    /// migration the post-migration data lives in the cloud-topics (L1) store;
+    /// passing its size here makes size retention reclaim against the whole
+    /// partition (only segments in this manifest are actually removed).
     ss::future<result<archive_start_offset_advance, error_outcome>>
     compute_retention(
       std::optional<size_t> size_limit,
       std::optional<std::chrono::milliseconds> time_limit,
-      std::optional<kafka::offset> pinned_offset = std::nullopt) noexcept;
+      std::optional<kafka::offset> pinned_offset = std::nullopt,
+      size_t additional_size_bytes = 0) noexcept;
 
     const remote_path_provider& path_provider() const {
         return _remote_path_provider;
@@ -178,7 +185,8 @@ private:
     time_based_retention(std::chrono::milliseconds time_limit) noexcept;
 
     ss::future<result<archive_start_offset_advance, error_outcome>>
-    size_based_retention(size_t size_limit) noexcept;
+    size_based_retention(
+      size_t size_limit, size_t additional_size_bytes) noexcept;
 
     // Find the next possible start offset for the archive (spillover region).
     // If the offset is in the STM manifest, returns start offset of the STM

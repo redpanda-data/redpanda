@@ -755,7 +755,8 @@ ss::future<
 async_manifest_view::compute_retention(
   std::optional<size_t> size_limit,
   std::optional<std::chrono::milliseconds> time_limit,
-  std::optional<kafka::offset> pinned_offset) noexcept {
+  std::optional<kafka::offset> pinned_offset,
+  size_t additional_size_bytes) noexcept {
     archive_start_offset_advance time_result;
     archive_start_offset_advance size_result;
     if (time_limit.has_value()) {
@@ -773,7 +774,8 @@ async_manifest_view::compute_retention(
         }
     }
     if (size_limit.has_value()) {
-        auto res = co_await size_based_retention(size_limit.value());
+        auto res = co_await size_based_retention(
+          size_limit.value(), additional_size_bytes);
         if (res.has_value()) {
             size_result = res.value();
         } else {
@@ -1067,18 +1069,26 @@ async_manifest_view::time_based_retention(
 
 ss::future<
   result<async_manifest_view::archive_start_offset_advance, error_outcome>>
-async_manifest_view::size_based_retention(size_t size_limit) noexcept {
+async_manifest_view::size_based_retention(
+  size_t size_limit, size_t additional_size_bytes) noexcept {
     archive_start_offset_advance result;
     try {
         const auto cloud_log_size = _stm_manifest.cloud_log_size();
+        // Size-based retention is a whole-partition budget. additional_size_bytes
+        // are bytes counted toward it that live outside this manifest (the
+        // post-migration cloud-topics data during a TS->CT migration); only this
+        // manifest's segments are removable, but the overshoot is computed
+        // against the whole partition.
+        const auto partition_size = cloud_log_size + additional_size_bytes;
         const auto clean_offset = _stm_manifest.get_archive_clean_offset();
-        if (cloud_log_size > size_limit) {
-            auto to_remove = cloud_log_size - size_limit;
+        if (partition_size > size_limit) {
+            auto to_remove = partition_size - size_limit;
             vlog(
               _ctxlog.debug,
-              "Computing size-based retention, log size: {}, limit: {}, {} "
-              "bytes will be removed",
+              "Computing size-based retention, cloud log size: {}, external "
+              "size: {}, limit: {}, {} bytes will be removed",
               cloud_log_size,
+              additional_size_bytes,
               size_limit,
               to_remove);
 
@@ -1212,8 +1222,9 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
         } else {
             vlog(
               _ctxlog.debug,
-              "Log size ({}) is withing the limit ({})",
-              cloud_log_size,
+              "Log size ({}, including {} external) is within the limit ({})",
+              partition_size,
+              additional_size_bytes,
               size_limit);
         }
     } catch (const std::system_error& err) {
