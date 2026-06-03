@@ -65,6 +65,8 @@ class TsMigrationTest(RedpandaTest):
 
     TOPIC_COMPACT = "ts-migration-compact-test"
 
+    TOPIC_RETENTION = "ts-migration-retention-test"
+
     # Topics are created inside the test body after selecting storage mode.
     topics = ()
 
@@ -913,4 +915,199 @@ class TsMigrationTest(RedpandaTest):
                 "tombstone removal should resume once the TS section ages out "
                 f"(storage_mode={storage_mode})."
             ),
+        )
+
+    @cluster(num_nodes=2)
+    @matrix(storage_mode=[
+        TopicSpec.STORAGE_MODE_CLOUD,
+        TopicSpec.STORAGE_MODE_TIERED_CLOUD,
+    ])
+    def test_ts_to_ct_migration_retention_bytes(self, storage_mode: str):
+        """
+        retention.bytes is a whole-partition budget. During a TS->CT migration
+        the post-migration data lives in cloud topics (L1), outside the
+        tiered-storage manifest the archiver reclaims from, so the archiver must
+        count those CT bytes when deciding how much TS to remove. Otherwise a
+        partition whose TS section is under the byte budget on its own would
+        never be trimmed no matter how much CT data accumulated.
+
+        This drives the *archive/spillover* retention path:
+        cloud_storage_spillover_manifest_max_segments is set low so the TS
+        manifest spills over (archive_size_bytes > 0), and retention is computed
+        against the whole partition there too.
+
+        Flow:
+          1. Produce TS data and let it spill over; the TS cloud log is under the
+             byte budget on its own.
+          2. Migrate. Set retention.bytes just above the observed TS size.
+          3. Produce CT data that pushes the partition over the budget. The
+             archiver must trim the (spilled) TS section -> cloud_log_start_offset
+             advances even though TS alone is still under budget.
+          4. Shorten retention.ms; the remaining TS ages out and the manifest
+             drains to empty -- completion under time-based retention.
+        """
+        if storage_mode == TopicSpec.STORAGE_MODE_TIERED_CLOUD:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+
+        # Force spillover so the archive-region retention path is exercised:
+        # a small per-manifest segment cap, and no size-based spillover cap that
+        # would otherwise keep the small test segments in the STM region.
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_spillover_manifest_max_segments": 4}
+        )
+        self.redpanda.set_cluster_config_to_null(
+            "cloud_storage_spillover_manifest_size"
+        )
+
+        # retention.ms starts large-but-finite: finite so the migration is
+        # permitted (infinite retention is rejected), large so time retention
+        # does not fire during the size-retention phase. retention.bytes is set
+        # later, from the observed TS size, to make the test robust to the exact
+        # on-disk segment overhead.
+        self.rpk.create_topic(
+            self.TOPIC_RETENTION,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "segment.ms": "1000",
+                "retention.ms": str(24 * 3600 * 1000),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        # Phase 1: TS data, uploaded and spilled into the archive region.
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_RETENTION,
+            msg_size=self.MSG_SIZE,
+            msg_count=6000,
+        )
+
+        # Wait until the manifest has spilled over (archive region non-empty)
+        # and the cloud log size has settled.
+        def spilled_over() -> bool:
+            status = self.admin.get_partition_cloud_storage_status(
+                self.TOPIC_RETENTION, 0
+            )
+            archive = status.get("archive_size_bytes", 0)
+            cloud = status.get("cloud_log_size_bytes", 0)
+            self.logger.info(
+                f"spillover check: archive_size_bytes={archive}, "
+                f"cloud_log_size_bytes={cloud}"
+            )
+            return archive > 0
+
+        wait_until(
+            spilled_over,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="TS manifest did not spill over within 120s",
+            retry_on_exc=True,
+        )
+
+        # Pre-migration the cloud-storage status reads the archival manifest
+        # directly, so it is a reliable source for the TS section's size here.
+        # (Once migrating, the same admin endpoint routes through the composite
+        # partition proxy and reports the CT side, so post-migration we observe
+        # the TS manifest directly via get_partition_manifest instead.)
+        status0 = self.admin.get_partition_cloud_storage_status(
+            self.TOPIC_RETENTION, 0
+        )
+        ts_size = status0["cloud_log_size_bytes"]
+        self.logger.info(
+            f"Pre-migration TS cloud log: size={ts_size}, "
+            f"archive={status0.get('archive_size_bytes')}"
+        )
+
+        # Migrate.
+        self.rpk.alter_topic_config(
+            self.TOPIC_RETENTION, TopicSpec.PROPERTY_STORAGE_MODE, storage_mode
+        )
+
+        # Snapshot the TS manifest right after migration, before any CT data:
+        # the TS section is under the byte budget on its own, so it must not be
+        # trimmed yet.
+        manifest_post_migrate = self.admin.get_partition_manifest(
+            self.TOPIC_RETENTION, 0
+        )
+        segments_post_migrate = len(manifest_post_migrate.get("segments", {}))
+        self.logger.info(
+            f"Post-migration TS manifest: {segments_post_migrate} segments, "
+            f"start_offset={manifest_post_migrate.get('start_offset', 0)}"
+        )
+
+        # Whole-partition byte budget set just above the TS section's own size:
+        # TS alone stays under budget, so any trimming must be driven by the CT
+        # bytes counting toward the budget.
+        MARGIN = 96 * 1024
+        retention_bytes = ts_size + MARGIN
+        self.rpk.alter_topic_config(
+            self.TOPIC_RETENTION, "retention.bytes", str(retention_bytes)
+        )
+
+        # Phase 2: CT data well in excess of MARGIN, pushing TS+CT over budget.
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_RETENTION,
+            msg_size=self.MSG_SIZE,
+            msg_count=6000,
+        )
+
+        # The archiver must trim the (spilled) TS section to honor the
+        # whole-partition budget -- the manifest's start offset advances and its
+        # segment count drops -- even though the TS section is under the budget
+        # on its own. Observed directly on the archival manifest.
+        def ts_trimmed() -> bool:
+            manifest = self.admin.get_partition_manifest(
+                self.TOPIC_RETENTION, 0
+            )
+            start = manifest.get("start_offset", 0)
+            segments = len(manifest.get("segments", {}))
+            self.logger.info(
+                f"trim check: manifest start_offset={start}, "
+                f"segments={segments} (post-migration {segments_post_migrate}, "
+                f"retention.bytes={retention_bytes}, ts_size={ts_size})"
+            )
+            return start > 0 or segments < segments_post_migrate
+
+        wait_until(
+            ts_trimmed,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg=(
+                "TS section was not trimmed after CT data pushed the partition "
+                "over retention.bytes; the archiver is not counting cloud-topics "
+                f"bytes toward the size budget (storage_mode={storage_mode})."
+            ),
+            retry_on_exc=True,
+        )
+
+        # Part (b): completion under time-based retention. Shorten retention.ms
+        # so the remaining TS ages out; the manifest drains to empty, which
+        # triggers complete_migration (the partition becomes a native cloud
+        # topic).
+        self.rpk.alter_topic_config(
+            self.TOPIC_RETENTION, "retention.ms", "5000"
+        )
+
+        def ts_drained() -> bool:
+            manifest = self.admin.get_partition_manifest(
+                self.TOPIC_RETENTION, 0
+            )
+            segments = len(manifest.get("segments", {}))
+            self.logger.info(f"drain check: {segments} TS segments remain")
+            return segments == 0
+
+        wait_until(
+            ts_drained,
+            timeout_sec=120,
+            backoff_sec=5,
+            err_msg="TS section did not fully drain under time retention",
+            retry_on_exc=True,
         )
