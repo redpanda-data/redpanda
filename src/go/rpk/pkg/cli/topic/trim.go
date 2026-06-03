@@ -42,7 +42,7 @@ func newTrimPrefixCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 This command allows you to trim records from topics, to trim the topics Redpanda
 sets the LogStartOffset for partitions to the requested offset. All segments
-whose base offset is less then the requested offset are deleted, and any records
+whose base offset is less than the requested offset are deleted, and any records
 within the segment before the requested offset can no longer be read.
 
 The --offset/-o flag allows you to indicate which index you want to set the
