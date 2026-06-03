@@ -159,6 +159,11 @@ ENV PATH="${PATH}:/root/.cargo/bin"
 
 FROM rust AS client-swarm
 
+# librdkafka-sys 4.10+ (used by rdkafka 0.39+) generates Rust bindings via
+# bindgen at build time, which requires libclang.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends libclang-dev
+
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/client-swarm /
 RUN /client-swarm && \
     rm /client-swarm
