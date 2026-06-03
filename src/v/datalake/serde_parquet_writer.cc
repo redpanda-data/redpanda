@@ -1,12 +1,16 @@
 #include "datalake/serde_parquet_writer.h"
 
 #include "base/vlog.h"
+#include "bytes/bytes.h"
 #include "datalake/logger.h"
 #include "iceberg/conversion/schema_parquet.h"
 #include "iceberg/conversion/values_parquet.h"
+#include "serde/parquet/metadata.h"
 #include "version/version.h"
 
 #include <seastar/util/defer.hh>
+
+#include <variant>
 
 namespace datalake {
 
@@ -111,8 +115,31 @@ ss::future<> serde_parquet_writer::flush() {
 
 ss::future<writer_error> serde_parquet_writer::finish() {
     co_await _writer.close();
+    for (auto& cs : _writer.column_file_stats()) {
+        if (!cs.field_id) {
+            continue;
+        }
+        per_column_stats ps;
+        ps.field_id = *cs.field_id;
+        ps.value_count = cs.value_count;
+        ps.column_size_bytes = cs.column_size_bytes;
+        if (cs.bounds.null_count) {
+            ps.null_value_count = *cs.bounds.null_count;
+        }
+        if (cs.bounds.min) {
+            ps.lower_bound = iobuf_to_bytes(cs.bounds.min->value.copy());
+        }
+        if (cs.bounds.max) {
+            ps.upper_bound = iobuf_to_bytes(cs.bounds.max->value.copy());
+        }
+        _column_stats.push_back(std::move(ps));
+    }
     _buffered_bytes = _flushed_bytes = 0;
     co_return writer_error::ok;
+}
+
+chunked_vector<per_column_stats> serde_parquet_writer::column_stats() const {
+    return _column_stats.copy();
 }
 
 ss::future<std::unique_ptr<parquet_ostream>>

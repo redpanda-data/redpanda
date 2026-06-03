@@ -191,6 +191,7 @@ upload_files(
           .table_schema_id = file.schema_id,
           .partition_spec_id = file.partition_spec_id,
           .partition_key = std::move(pk_fields),
+          .column_stats = file.local_file.column_stats.copy(),
         };
 
         if (!is_custom_partitioning_enabled) {

@@ -144,6 +144,8 @@ public:
             rg.num_rows = row_count;
             rg.total_byte_size += chunk.meta_data.total_uncompressed_size;
             rg.total_compressed_size += chunk.meta_data.total_compressed_size;
+            col.file_value_count += chunk.meta_data.num_values;
+            col.file_column_size_bytes += chunk.meta_data.total_compressed_size;
             rg.columns.push_back(std::move(chunk));
         }
         if (page_count == 0) {
@@ -182,6 +184,19 @@ public:
         co_await _output.close();
     }
 
+    chunked_vector<file_column_stats> column_file_stats() {
+        chunked_vector<file_column_stats> result;
+        for (auto& [_, col] : _columns) {
+            result.push_back({
+              .field_id = col.leaf->field_id,
+              .bounds = col.writer.file_column_stats(),
+              .value_count = col.file_value_count,
+              .column_size_bytes = col.file_column_size_bytes,
+            });
+        }
+        return result;
+    }
+
 private:
     iobuf encode_footer_size(size_t size) {
         iobuf b;
@@ -205,6 +220,8 @@ private:
     struct column {
         const schema_element* leaf;
         column_writer writer;
+        int64_t file_value_count = 0;
+        int64_t file_column_size_bytes = 0;
     };
 
     options _opts;
@@ -232,5 +249,9 @@ file_stats writer::stats() const { return _impl->stats(); }
 ss::future<> writer::flush_row_group() { return _impl->flush_row_group(); }
 
 ss::future<> writer::close() { return _impl->close(); }
+
+chunked_vector<writer::file_column_stats> writer::column_file_stats() {
+    return _impl->column_file_stats();
+}
 
 } // namespace serde::parquet
