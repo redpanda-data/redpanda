@@ -17,6 +17,9 @@
 
 namespace iceberg {
 
+// /<table-location>/
+using table_location_path
+  = named_type<std::filesystem::path, struct table_location_path_tag>;
 // /<table-location>/metadata/
 using metadata_location_path
   = named_type<std::filesystem::path, struct metadata_location_path_tag>;
@@ -49,6 +52,13 @@ public:
 
     ss::future<checked<std::nullopt_t, metadata_io::errc>>
     delete_all_metadata(const metadata_location_path& path);
+
+    ss::future<checked<std::nullopt_t, metadata_io::errc>>
+    delete_all_table_files(const table_location_path& path);
+
+private:
+    ss::future<checked<std::nullopt_t, metadata_io::errc>>
+    delete_objects_with_prefix(const std::filesystem::path& prefix);
 };
 
 } // namespace iceberg
