@@ -409,14 +409,13 @@ class CloudCluster:
         return _users
 
     def _get_cluster_users(self):
-        _r = self.rpcloud._http_get(
-            base_url=self.current.consoleUrl,
-            endpoint="/api/users",
+        _r = self.public_api._http_get(
+            base_url=self._get_dataplane_api_url(),
+            endpoint="/v1/users",
         )
         if _r is None:
             return []
-        else:
-            return _r["users"]
+        return [u["name"] for u in _r.get("users", [])]
 
     def cloudUserExists(self, username):
         _users = self._get_cloud_users()
@@ -1103,46 +1102,49 @@ class CloudCluster:
             )
             self._logger.debug(f"resp: {json.dumps(resp)}")
 
+    @staticmethod
+    def _to_sasl_mechanism(algorithm: str) -> str:
+        # The data plane API expects the proto enum form, e.g.
+        # 'SCRAM-SHA-256' -> 'SASL_MECHANISM_SCRAM_SHA_256'.
+        return f"SASL_MECHANISM_{algorithm.replace('-', '_')}"
+
     def _create_user(self, user: SaslCredentials):
         """Create SASL user"""
         payload = {
-            "mechanism": user.algorithm,
+            "mechanism": self._to_sasl_mechanism(user.algorithm),
+            "name": user.username,
             "password": user.password,
-            "username": user.username,
         }
-        # use the console api url to create sasl users; uses the same auth token
-        return self.rpcloud._http_post(
-            base_url=self.current.consoleUrl, endpoint="/api/users", json=payload
+        return self.public_api._http_post(
+            base_url=self._get_dataplane_api_url(),
+            endpoint="/v1/users",
+            json=payload,
         )
 
     def _create_acls(self, username):
-        """Create ACLs for user"""
-
-        base_url = self._get_cluster_console_url()
-        for rt in ("Topic", "Group", "TransactionalID"):
+        """Create ACLs for user via the data plane API"""
+        dataplane_url = self._get_dataplane_api_url()
+        principal = f"User:{username}"
+        # (resource_type, resource_name) pairs; CLUSTER uses the fixed
+        # 'kafka-cluster' resource name.
+        for resource_type, resource_name in (
+            ("RESOURCE_TYPE_TOPIC", "*"),
+            ("RESOURCE_TYPE_GROUP", "*"),
+            ("RESOURCE_TYPE_TRANSACTIONAL_ID", "*"),
+            ("RESOURCE_TYPE_CLUSTER", "kafka-cluster"),
+        ):
             payload = {
                 "host": "*",
-                "operation": "All",
-                "permissionType": "Allow",
-                "principal": f"User:{username}",
-                "resourceName": "*",
-                "resourcePatternType": "Literal",
-                "resourceType": rt,
+                "operation": "OPERATION_ALL",
+                "permission_type": "PERMISSION_TYPE_ALLOW",
+                "principal": principal,
+                "resource_name": resource_name,
+                "resource_pattern_type": "RESOURCE_PATTERN_TYPE_LITERAL",
+                "resource_type": resource_type,
             }
-            self.rpcloud._http_post(
-                base_url=base_url, endpoint="/api/acls", json=payload
+            self.public_api._http_post(
+                base_url=dataplane_url, endpoint="/v1/acls", json=payload
             )
-
-        payload = {
-            "host": "*",
-            "operation": "All",
-            "permissionType": "Allow",
-            "principal": f"User:{username}",
-            "resourceName": "kafka-cluster",
-            "resourcePatternType": "Literal",
-            "resourceType": "Cluster",
-        }
-        self.rpcloud._http_post(base_url=base_url, endpoint="/api/acls", json=payload)
 
     def get_broker_address(self):
         cluster = self.rpcloud.get_cluster(self.current.cluster_id)
@@ -1695,7 +1697,12 @@ class CloudCluster:
         return response
 
     def _get_dataplane_api_url(self):
-        cluster = self.rpcloud.get_cluster(self.current.cluster_id)
+        # Serverless and BYOC/dedicated clusters are fetched via different
+        # control-plane endpoints, but both expose dataplane_api.url.
+        is_serverless = self.config.type == "SERVERLESS"
+        cluster = self._get_cluster(
+            self.current.cluster_id, is_serverless_cluster=is_serverless
+        )
         return cluster["dataplane_api"]["url"]
 
     def wait_for_operation_complete(
