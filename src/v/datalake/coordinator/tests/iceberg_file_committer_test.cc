@@ -726,3 +726,93 @@ TEST_F(FileCommitterTest, TestDontLoadMainTable) {
     auto main_reqs = get_requests(is_main_request);
     ASSERT_EQ(0, main_reqs.size());
 }
+
+// Verify that per_column_stats on coordinator::data_file are written into the
+// Iceberg manifest entry as lower_bounds, upper_bounds, null_value_counts,
+// value_counts, and column_sizes.
+TEST_F(FileCommitterTest, TestColumnStatsInManifest) {
+    create_table();
+
+    auto t_state = make_topic_state({{{0, 99}}}, model::offset{1000});
+
+    // Build a data_file with column stats for field_id=1.
+    datalake::per_column_stats cs;
+    cs.field_id = 1;
+    cs.lower_bound = bytes::from_string("aardvark");
+    cs.upper_bound = bytes::from_string("zebra");
+    cs.null_value_count = 5;
+    cs.value_count = 100;
+    cs.column_size_bytes = 4096;
+
+    data_file df{
+      .remote_path = "test-file.parquet",
+      .row_count = 100,
+      .file_size_bytes = 4096,
+      .table_schema_id = 0,
+      .partition_spec_id = 0,
+      .partition_key = chunked_vector<std::optional<bytes>>::single(
+        std::nullopt),
+    };
+    df.column_stats.push_back(std::move(cs));
+
+    auto& p_entries
+      = t_state.pid_to_pending_files[model::partition_id{0}].pending_entries;
+    ASSERT_FALSE(p_entries.empty());
+    p_entries.front().data.files.push_back(std::move(df));
+
+    topics_state state;
+    state.topic_to_state[topic] = std::move(t_state);
+
+    auto res = committer.commit_topic_files_to_catalog(topic, state).get();
+    ASSERT_FALSE(res.has_error());
+    ASSERT_EQ(1, res.value().size());
+
+    // Read back the manifest and inspect the committed iceberg::data_file.
+    auto load_res = catalog.load_table(table_ident).get();
+    ASSERT_FALSE(load_res.has_error());
+    const auto& table = load_res.value();
+    ASSERT_TRUE(table.current_snapshot_id.has_value());
+    const auto snap = table.get_snapshots_by_id().at(
+      *table.current_snapshot_id);
+
+    auto mlist_res
+      = manifest_io.download_manifest_list(snap.manifest_list_path).get();
+    ASSERT_TRUE(mlist_res.has_value());
+
+    chunked_vector<iceberg::manifest_entry> entries;
+    for (const auto& m : mlist_res.value().files) {
+        auto m_res = manifest_io.download_manifest(m.manifest_path).get();
+        ASSERT_TRUE(m_res.has_value());
+        for (auto& e : m_res.value().entries) {
+            entries.push_back(std::move(e));
+        }
+    }
+    ASSERT_EQ(1, entries.size());
+
+    const auto& ifile = entries[0].data_file;
+    const auto fid = iceberg::nested_field::id_t{1};
+
+    ASSERT_TRUE(ifile.lower_bounds.has_value());
+    ASSERT_TRUE(ifile.upper_bounds.has_value());
+    ASSERT_TRUE(ifile.null_value_counts.has_value());
+    ASSERT_TRUE(ifile.value_counts.has_value());
+    ASSERT_TRUE(ifile.column_sizes.has_value());
+
+    ASSERT_NE(ifile.lower_bounds->find(fid), ifile.lower_bounds->end());
+    ASSERT_NE(ifile.upper_bounds->find(fid), ifile.upper_bounds->end());
+    EXPECT_EQ(
+      bytes::from_string("aardvark"),
+      iobuf_to_bytes(ifile.lower_bounds->at(fid)));
+    EXPECT_EQ(
+      bytes::from_string("zebra"), iobuf_to_bytes(ifile.upper_bounds->at(fid)));
+
+    ASSERT_NE(
+      ifile.null_value_counts->find(fid), ifile.null_value_counts->end());
+    EXPECT_EQ(5, ifile.null_value_counts->at(fid));
+
+    ASSERT_NE(ifile.value_counts->find(fid), ifile.value_counts->end());
+    EXPECT_EQ(100, ifile.value_counts->at(fid));
+
+    ASSERT_NE(ifile.column_sizes->find(fid), ifile.column_sizes->end());
+    EXPECT_EQ(4096, ifile.column_sizes->at(fid));
+}
