@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import pyhive.exc
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
@@ -159,12 +160,23 @@ class DatalakeTableNameTest(RedpandaTest):
                 timeout_sec=30,
                 err_msg=f"Topic {topic} was not deleted",
             )
+
+            def dlq_table_gone() -> bool:
+                try:
+                    return expected_dlq_table not in [
+                        row[1]
+                        for row in spark.run_query_fetch_all("SHOW TABLES IN redpanda")
+                    ]
+                except pyhive.exc.OperationalError as e:
+                    if "NoSuchNamespaceException" in str(e):
+                        # Purging the last table deletes all files under the
+                        # namespace prefix in S3, so the namespace disappears.
+                        # An absent namespace means the table is gone too.
+                        return True
+                    raise
+
             wait_until(
-                lambda: expected_dlq_table
-                not in [
-                    row[1]
-                    for row in spark.run_query_fetch_all("SHOW TABLES IN redpanda")
-                ],
+                dlq_table_gone,
                 timeout_sec=30,
                 err_msg=f"DLQ table {expected_dlq_table} was not deleted",
             )

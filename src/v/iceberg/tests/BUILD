@@ -114,6 +114,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:transform",
         "//src/v/json",
         "//src/v/test_utils:gtest",
+        "//src/v/utils:retry_chain_node",
         "@googletest//:gtest",
     ],
 )
