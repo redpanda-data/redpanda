@@ -179,6 +179,43 @@ TEST_F(PartitionValidatorTest, MidExtentStartOffset) {
     write_term(tp_a, model::term_id{1}, 0_o);
     expect_clean(validate({.tidp = tp_a}));
 }
+// A partition mid TS->CT migration: the CT (L1) metastore legitimately starts at
+// the migration boundary (non-zero), with the first CT extent at that base and
+// the term anchoring in the pre-migration TS era (start_offset < base, per
+// state_update.cc "term anchors before CT data"). The validator must treat this
+// as valid -- the data below the boundary lives in tiered storage, not L1.
+TEST_F(PartitionValidatorTest, MigratingPartitionTermBelowCtBase) {
+    auto o = create_object_id();
+    write_metadata(tp_a, 100_o, 200_o);
+    write_extent(tp_a, 100_o, 199_o, o);
+    write_object(o);
+    write_term(tp_a, model::term_id{1}, 0_o);
+    expect_clean(validate({.tidp = tp_a}));
+}
+// The other accepted migration shape: an elected term starting exactly at the CT
+// base (state_update.cc "valid elected term starts where CT data begins").
+TEST_F(PartitionValidatorTest, MigratingPartitionTermAtCtBase) {
+    auto o = create_object_id();
+    write_metadata(tp_a, 100_o, 200_o);
+    write_extent(tp_a, 100_o, 199_o, o);
+    write_object(o);
+    write_term(tp_a, model::term_id{2}, 100_o);
+    expect_clean(validate({.tidp = tp_a}));
+}
+// CT compaction during migration only cleans the CT range (>= CT base), so a
+// cleaned range that starts at the non-zero start offset is valid, not a
+// compaction_range_below_start anomaly.
+TEST_F(PartitionValidatorTest, MigratingPartitionCompactionInCtRange) {
+    auto o = create_object_id();
+    write_metadata(tp_a, 100_o, 200_o, partition_state::compaction_epoch_t{1});
+    write_extent(tp_a, 100_o, 199_o, o);
+    write_object(o);
+    write_term(tp_a, model::term_id{1}, 0_o);
+    compaction_state c;
+    c.cleaned_ranges.insert(100_o, 150_o);
+    write_compaction(tp_a, std::move(c));
+    expect_clean(validate({.tidp = tp_a}));
+}
 TEST_F(PartitionValidatorTest, ExtentGap) {
     auto o1 = create_object_id(), o2 = create_object_id();
     write_metadata(tp_a, 0_o, 300_o);
