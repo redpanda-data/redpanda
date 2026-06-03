@@ -267,6 +267,87 @@ validate_records_and_compute_max_timestamp(
       message_timestamp_after_max_ms.count());
     const auto validate_timestamps = timestamp_type
                                      != model::timestamp_type::append_time;
+
+    if (!is_strict_validation) {
+        try {
+            const auto rc = iterable_batch_ref.record_count();
+            auto parser = iobuf_const_parser(iterable_batch_ref.data());
+            int32_t i = 0;
+            for (; i < rc; ++i) {
+                auto [record_size, _] = parser.read_varlong();
+                if (static_cast<size_t>(record_size) > parser.bytes_left())
+                  [[unlikely]] {
+                    throw std::out_of_range(
+                      ssx::sformat(
+                        "Expected record size {} but only {} bytes left",
+                        record_size,
+                        parser.bytes_left()));
+                }
+
+                parser.consume_type<model::record_attributes::type>();
+                auto [timestamp_delta, tv] = parser.read_varlong();
+                auto [offset_delta, ov] = parser.read_varlong();
+                auto total_bytes_read = 1 + tv + ov;
+                if (record_size <= total_bytes_read) [[unlikely]] {
+                    throw std::out_of_range(
+                      ssx::sformat(
+                        "Expected record size {} to be greater than bytes read "
+                        "{}",
+                        record_size,
+                        total_bytes_read));
+                }
+                parser.skip(record_size - total_bytes_read);
+
+                auto timestamp = model::timestamp{
+                  first_timestamp + timestamp_delta};
+                if (validate_timestamps) {
+                    auto delta = broker_time - timestamp;
+                    auto is_invalid = delta > before_max
+                                      || model::timestamp(-1 * delta())
+                                           > after_max;
+                    if (is_invalid) {
+                        auto offset = base_offset
+                                      + model::offset_delta(offset_delta);
+                        res = validate_timestamp(
+                          timestamp,
+                          offset,
+                          broker_time,
+                          timestamp_type,
+                          message_timestamp_before_max_ms,
+                          message_timestamp_after_max_ms,
+                          probe,
+                          ntp);
+                        break;
+                    }
+                }
+                max_timestamp = std::max(timestamp(), max_timestamp);
+            }
+
+            if (i == rc && parser.bytes_left()) [[unlikely]] {
+                throw std::out_of_range(
+                  ssx::sformat(
+                    "Record metadata iteration stopped with {} bytes remaining",
+                    parser.bytes_left()));
+            }
+        } catch (const std::exception& e) {
+            vlog(
+              klog.error,
+              "Caught exception while validating record timestamps for batch "
+              "{}: {}",
+              iterable_batch_ref.header(),
+              e.what());
+            return std::unexpected(
+              error_code_and_msg{
+                .err = error_code::invalid_record, .msg = e.what()});
+        }
+
+        if (res.has_value()) {
+            return std::unexpected(res.value());
+        }
+
+        return model::timestamp(max_timestamp);
+    }
+
     auto iterable_res = iterate_over_records(
       iterable_batch_ref,
       [&](model::record_metadata r) mutable {
