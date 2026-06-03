@@ -363,11 +363,11 @@ func (c *consumer) parseOffset(
 		return nil
 	}
 
-	lstart, err := adm.ListStartOffsets(context.Background(), topics...)
+	lstart, err := kafka.ListStartOffsetsWithRetries(context.Background(), adm, topics...)
 	if err != nil {
 		return fmt.Errorf("unable to list start offsets: %v", err)
 	}
-	lend, err := adm.ListEndOffsets(context.Background(), topics...)
+	lend, err := kafka.ListEndOffsetsWithRetries(context.Background(), adm, topics...)
 	if err != nil {
 		return fmt.Errorf("unable to list end offsets: %v", err)
 	}
@@ -594,10 +594,7 @@ func (c *consumer) parseTimeOffset(
 		// If there are no offsets after the requested milli, we get
 		// the default offset -1, which below in NewOffset().At(-1)
 		// actually coincidentally maps to AtEnd(). So it all works.
-		lstart, err := adm.ListOffsetsAfterMilli(context.Background(), startAt.UnixMilli(), topics...)
-		if err == nil {
-			err = lstart.Error()
-		}
+		lstart, err := kafka.ListOffsetsAfterMilliWithRetries(context.Background(), adm, startAt.UnixMilli(), topics...)
 		if err != nil {
 			return fmt.Errorf("unable to list offsets after milli %d: %v", startAt.UnixMilli(), err)
 		}
@@ -608,10 +605,7 @@ func (c *consumer) parseTimeOffset(
 			return nil
 		}
 	} else {
-		lstart, err := adm.ListStartOffsets(context.Background(), topics...)
-		if err == nil {
-			err = lstart.Error()
-		}
+		lstart, err := kafka.ListStartOffsetsWithRetries(context.Background(), adm, topics...)
 		if err != nil {
 			return fmt.Errorf("unable to list start offsets: %v", err)
 		}
@@ -632,18 +626,12 @@ func (c *consumer) parseTimeOffset(
 	}
 	var lend kadm.ListedOffsets
 	if end {
-		lend, err = adm.ListEndOffsets(context.Background(), topics...)
-		if err == nil {
-			err = lend.Error()
-		}
+		lend, err = kafka.ListEndOffsetsWithRetries(context.Background(), adm, topics...)
 		if err != nil {
 			return fmt.Errorf("unable to list end offsets: %v", err)
 		}
 	} else {
-		lend, err = adm.ListOffsetsAfterMilli(context.Background(), endAt.UnixMilli(), topics...)
-		if err == nil {
-			err = lend.Error()
-		}
+		lend, err = kafka.ListOffsetsAfterMilliWithRetries(context.Background(), adm, endAt.UnixMilli(), topics...)
 		if err != nil {
 			return fmt.Errorf("unable to list offsets after milli %d: %v", endAt.UnixMilli(), err)
 		}
@@ -654,10 +642,7 @@ func (c *consumer) parseTimeOffset(
 	// we want to list offsets to see where to start from and filter empty
 	// partitions.
 	if c.partEnds == nil {
-		lstart, err := adm.ListStartOffsets(context.Background(), topics...)
-		if err == nil {
-			err = lstart.Error()
-		}
+		lstart, err := kafka.ListStartOffsetsWithRetries(context.Background(), adm, topics...)
 		if err != nil {
 			return fmt.Errorf("unable to list start offsets: %v", err)
 		}
