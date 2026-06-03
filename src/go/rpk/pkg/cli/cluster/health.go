@@ -37,6 +37,7 @@ type healthResponse struct {
 	LeaderlessCount           *int     `json:"leaderless_count,omitempty" yaml:"leaderless_count,omitempty"`
 	UnderReplicatedCount      *int     `json:"under_replicated_count,omitempty" yaml:"under_replicated_count,omitempty"`
 	UnderReplicatedPartitions []string `json:"under_replicated_partitions" yaml:"under_replicated_partitions"`
+	HighDiskUsageNodes        []int    `json:"high_disk_usage_nodes" yaml:"high_disk_usage_nodes"`
 }
 
 func newHealthOverviewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -148,6 +149,7 @@ func buildHealthResponses(hov *rpadmin.ClusterHealthOverview, clusterUUID *strin
 		LeaderlessCount:           hov.LeaderlessCount,
 		UnderReplicatedCount:      hov.UnderReplicatedCount,
 		UnderReplicatedPartitions: hov.UnderReplicatedPartitions,
+		HighDiskUsageNodes:        hov.HighDiskUsageNodes,
 	}
 }
 
@@ -182,6 +184,7 @@ func printHealthOverview(hr healthResponse) {
 	if hr.NodesInRecoveryMode != nil {
 		tw.Print("Nodes in recovery mode:", hr.NodesInRecoveryMode)
 	}
+	tw.Print("Nodes with high disk usage:", hr.HighDiskUsageNodes)
 	tw.Print(lp, hr.LeaderlessPartitions)
 	tw.Print(urp, hr.UnderReplicatedPartitions)
 	if hr.ClusterUUID != nil {
