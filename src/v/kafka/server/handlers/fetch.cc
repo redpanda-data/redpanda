@@ -466,6 +466,25 @@ static void fill_fetch_responses(
     }
 }
 
+// A partition read can fail because the client connection is going away: when
+// the connection's input is shut down the request's abort source is aborted
+// with std::errc::connection_aborted (see connection_context), which surfaces
+// here as a std::system_error. That is not a partition error -- mapping it to
+// not_leader_for_partition both spams the log and, on a half-closed connection
+// whose response is still delivered, falsely tells the client the partition
+// moved, triggering a metadata-refresh storm at high partition counts. Detect
+// it (using the same predicate the fetch worker's handle_exceptions() uses to
+// recognize a disconnect) so the caller can re-raise instead.
+static bool is_client_disconnect_error(const std::exception_ptr& e) {
+    try {
+        std::rethrow_exception(e);
+    } catch (const std::system_error& se) {
+        return net::is_reconnect_error(se);
+    } catch (...) {
+    }
+    return false;
+}
+
 static ss::future<chunked_vector<read_result>> fetch_ntps(
   cluster::partition_manager& cluster_pm,
   const cluster::metadata_cache& md_cache,
@@ -543,6 +562,13 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
                 results[cfg_idx] = std::move(res);
             })
             .handle_exception([&, cfg_idx](const std::exception_ptr& e) {
+                if (is_client_disconnect_error(e)) {
+                    // The client connection is going away; abandon rather than
+                    // masking it as a partition error. Re-raised here it
+                    // propagates to the fetch worker's handle_exceptions(),
+                    // which recognizes it as a reconnect and drops it quietly.
+                    std::rethrow_exception(e);
+                }
                 bool is_shutdown = ssx::is_shutdown_exception(e);
                 // Return not_leader_for_partition error to force clients retry
                 // for potential transient errors.
