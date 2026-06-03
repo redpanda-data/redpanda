@@ -158,21 +158,15 @@ type offsetRanges struct {
 func getOffsetsForTimeRange(ctx context.Context, adm *kadm.Client, tr timeRange, topics []string) (offsetRanges, error) {
 	var offsets offsetRanges
 
-	lstart, err := adm.ListOffsetsAfterMilli(ctx, tr.Start.UnixMilli(), topics...)
+	lstart, err := kafka.ListOffsetsAfterMilliWithRetries(ctx, adm, tr.Start.UnixMilli(), topics...)
 	if err != nil {
-		return offsets, err
-	}
-	if lstart.Error() != nil {
-		return offsets, fmt.Errorf("unable to list start offsets: %v", lstart.Error())
+		return offsets, fmt.Errorf("unable to list start offsets: %v", err)
 	}
 	offsets.startOffsets = lstart.Offsets()
 
-	lend, err := adm.ListOffsetsAfterMilli(ctx, tr.End.UnixMilli(), topics...)
+	lend, err := kafka.ListOffsetsAfterMilliWithRetries(ctx, adm, tr.End.UnixMilli(), topics...)
 	if err != nil {
-		return offsets, err
-	}
-	if lend.Error() != nil {
-		return offsets, fmt.Errorf("unable to list end offsets: %v", lend.Error())
+		return offsets, fmt.Errorf("unable to list end offsets: %v", err)
 	}
 	offsets.endOffsets = lend.Offsets()
 
