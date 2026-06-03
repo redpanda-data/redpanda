@@ -171,6 +171,35 @@ BOOST_AUTO_TEST_CASE(
     BOOST_CHECK(!v("", sm::tiered_cloud));
 }
 
+BOOST_AUTO_TEST_CASE(
+  storage_mode_validator_tiered_to_cloud_rejected_for_read_replica) {
+    // A read replica has no writable tiered log to migrate; the TS->CT
+    // migration must be rejected even with finite retention.
+    using sm = model::redpanda_storage_mode;
+    kafka::storage_mode_validator v{
+      sm::tiered,
+      /*has_infinite_retention=*/false,
+      /*is_read_replica=*/true};
+    auto err_cloud = v("", sm::cloud);
+    BOOST_REQUIRE(err_cloud.has_value());
+    BOOST_CHECK(err_cloud->contains("read replica"));
+    auto err_tc = v("", sm::tiered_cloud);
+    BOOST_REQUIRE(err_tc.has_value());
+    BOOST_CHECK(err_tc->contains("read replica"));
+}
+
+BOOST_AUTO_TEST_CASE(
+  storage_mode_validator_read_replica_non_migration_transition_allowed) {
+    // The read-replica guard must only fire on the TS->CT migration, not on
+    // unrelated permitted transitions.
+    using sm = model::redpanda_storage_mode;
+    kafka::storage_mode_validator v{
+      sm::local,
+      /*has_infinite_retention=*/false,
+      /*is_read_replica=*/true};
+    BOOST_CHECK(!v("", sm::tiered));
+}
+
 BOOST_AUTO_TEST_CASE(test_min_replication_factor) {
     using namespace kafka;
     cluster::property_update<std::optional<cluster::replication_factor>>

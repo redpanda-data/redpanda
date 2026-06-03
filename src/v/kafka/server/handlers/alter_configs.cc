@@ -539,12 +539,15 @@ create_topic_properties_update(
                    has_infinite_retention
                    = topic_cfg
                      && topic_cfg->properties.retention_duration.is_disabled(),
+                   is_read_replica = topic_cfg && topic_cfg->is_read_replica(),
                    &feature_table = ctx.feature_table().local()](
                     const ss::sstring& raw,
                     const model::redpanda_storage_mode& value)
                   -> std::optional<ss::sstring> {
                     auto transition_err = storage_mode_validator{
-                      current_storage_mode, has_infinite_retention}(raw, value);
+                      current_storage_mode,
+                      has_infinite_retention,
+                      is_read_replica}(raw, value);
                     if (transition_err) {
                         return transition_err;
                     }

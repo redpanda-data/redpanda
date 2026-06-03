@@ -439,6 +439,7 @@ inline bool is_storage_mode_transition_permitted(
 struct storage_mode_validator {
     std::optional<model::redpanda_storage_mode> current_mode;
     bool has_infinite_retention = false;
+    bool is_read_replica = false;
 
     std::optional<ss::sstring>
     operator()(const ss::sstring&, const model::redpanda_storage_mode& value) {
@@ -467,6 +468,17 @@ struct storage_mode_validator {
             return fmt::format(
               "Cannot alter redpanda.storage.mode from {} to {} on a topic "
               "with infinite retention (retention.ms=-1)",
+              *current_mode,
+              value);
+        }
+
+        // A read replica is a read-only mirror of another cluster's topic; it
+        // has no writable tiered-storage log to migrate into cloud topics, and
+        // the migration machinery (seal, archiver-driven drain) does not apply.
+        if (is_ts_migration && is_read_replica) {
+            return fmt::format(
+              "Cannot alter redpanda.storage.mode from {} to {} on a read "
+              "replica topic",
               *current_mode,
               value);
         }
