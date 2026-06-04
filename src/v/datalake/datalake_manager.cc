@@ -615,7 +615,9 @@ ss::future<> datalake_manager::handle_translator_state_change(
              != model::iceberg_mode::disabled;
 
     if (!requires_active_translator) {
-        // no active translator needed, so nothing to do
+        // no active translator needed, so drop the probe to avoid leaking its
+        // metrics
+        _translation_probe_by_ntp.erase(ntp);
         co_return;
     }
 
