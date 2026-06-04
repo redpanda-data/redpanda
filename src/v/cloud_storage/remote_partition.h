@@ -94,7 +94,8 @@ public:
     /// record in the log.
     bool bounds_timestamp(model::timestamp) const;
 
-    /// Return first uploaded kafka offset
+    /// Return first uploaded kafka offset.
+    /// Precondition: is_data_available() == true
     kafka::offset first_uploaded_offset();
 
     /// Return the offset one past the end of the last offset (i.e. the high
