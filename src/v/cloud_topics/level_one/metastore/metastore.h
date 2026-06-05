@@ -85,6 +85,11 @@ public:
             model::timestamp max_timestamp;
             size_t pos;
             size_t size;
+            // Set when this extent is an imported tiered-storage segment (the
+            // TS->CT migration mirror): the segment descriptor (path + delta +
+            // term). The extent's Kafka offset bounds come from
+            // base_offset/last_offset above. nullopt for a native L1 extent.
+            std::optional<imported_ts_info> imported;
         };
         using ntp_metas_list_t = chunked_vector<ntp_metadata>;
 
@@ -146,6 +151,17 @@ public:
         // that finish() has not yet been called on the object.
         virtual std::expected<void, error>
           add(object_id, object_metadata::ntp_metadata) = 0;
+
+        // Registers a single imported tiered-storage segment as a finished,
+        // single-extent object (the TS->CT migration mirror). Unlike the
+        // native path there is no L1 write to reserve, so the object is not
+        // pre-registered: this creates the object id, records it as finished,
+        // and returns it. `meta.imported` must be set. The object is added to
+        // the metastore by a subsequent add_objects() (which adopts a migrating
+        // partition's log at a non-zero start and skips the pre-registration
+        // check for imported objects).
+        virtual std::expected<object_id, error>
+          add_imported(object_metadata::ntp_metadata) = 0;
 
         // Tracks the given object as finished. Further calls to
         // get_or_create_object_for() will not return the finished object ID.
