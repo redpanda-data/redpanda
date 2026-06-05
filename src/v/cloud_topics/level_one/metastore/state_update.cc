@@ -938,6 +938,51 @@ set_start_offset_update::apply(state& state) {
     return std::monostate{};
 }
 
+std::expected<set_migrating_update, stm_update_error>
+set_migrating_update::build(
+  const state& state,
+  const model::topic_id_partition& tp,
+  bool migrating,
+  bool* is_no_op) {
+    set_migrating_update update{
+      .tp = tp,
+      .migrating = migrating,
+    };
+    auto allowed = update.can_apply(state, is_no_op);
+    if (!allowed.has_value()) {
+        return std::unexpected(allowed.error());
+    }
+    return update;
+}
+
+std::expected<std::monostate, stm_update_error>
+set_migrating_update::can_apply(const state& state, bool* is_no_op) {
+    // An absent partition defaults to not-migrating; setting it migrating
+    // creates the partition (the migrating marker may be its first write).
+    auto prt_ref = state.partition_state(tp);
+    auto current = prt_ref.has_value() && prt_ref->get().migrating;
+    if (is_no_op) {
+        *is_no_op = migrating == current;
+    }
+    return std::monostate{};
+}
+
+std::expected<std::monostate, stm_update_error>
+set_migrating_update::apply(state& state) {
+    bool is_no_op = false;
+    auto allowed = can_apply(state, &is_no_op);
+    if (!allowed.has_value()) {
+        return std::unexpected(allowed.error());
+    }
+    if (is_no_op) {
+        return std::monostate{};
+    }
+    auto& p_state
+      = state.topic_to_state[tp.topic_id].pid_to_state[tp.partition];
+    p_state.migrating = migrating;
+    return std::monostate{};
+}
+
 std::expected<remove_objects_update, stm_update_error>
 remove_objects_update::build(
   const state& state, chunked_vector<object_id> objects) {

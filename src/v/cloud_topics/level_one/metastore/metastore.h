@@ -14,6 +14,7 @@
 #include "cloud_topics/level_one/metastore/leveling_range_builder.h"
 #include "cloud_topics/level_one/metastore/metastore_manifest.h"
 #include "cloud_topics/level_one/metastore/offset_interval_set.h"
+#include "cloud_topics/level_one/metastore/state.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
@@ -161,6 +162,9 @@ public:
     struct offsets_response {
         kafka::offset start_offset;
         kafka::offset next_offset;
+        // True while mid tiered->cloud migration; for offline/remote consumers.
+        // false for a native cloud topic.
+        bool migrating{};
     };
     virtual ss::future<
       std::expected<std::unique_ptr<object_metadata_builder>, errc>>
@@ -218,6 +222,12 @@ public:
     // Moves the start offset of the given partition's log to the given offset.
     virtual ss::future<std::expected<void, errc>>
     set_start_offset(const model::topic_id_partition&, kafka::offset) = 0;
+
+    // Sets the partition's migration phase. Monotonic (none -> migrating ->
+    // complete) and idempotent; a backward transition is rejected. Creates the
+    // partition's metastore entry if absent.
+    virtual ss::future<std::expected<void, errc>>
+    set_migrating(const model::topic_id_partition&, bool) = 0;
 
     struct topic_removal_response {
         // Topic IDs that were not removed from the metastore and still have

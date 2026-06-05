@@ -222,6 +222,28 @@ TEST(DebugReaderTest, RoundTripMetadataValue) {
     EXPECT_EQ(decoded->get_metadata().get_compaction_epoch(), 1);
     EXPECT_EQ(decoded->get_metadata().get_size(), 1000);
     EXPECT_EQ(decoded->get_metadata().get_num_extents(), 42);
+    EXPECT_FALSE(decoded->get_metadata().get_migrating());
+}
+
+TEST(DebugReaderTest, RoundTripMetadataValueMigrating) {
+    pm::row_value val;
+    pm::metadata_value mv;
+    mv.set_start_offset(10);
+    mv.set_next_offset(20);
+    mv.set_compaction_epoch(1);
+    mv.set_size(1000);
+    mv.set_num_extents(42);
+    mv.set_migrating(true);
+    val.set_metadata(std::move(mv));
+
+    auto encoded = debug_encode_value(val);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto decoded = debug_reader::decode_value(
+      row_type::metadata, std::move(*encoded));
+    ASSERT_TRUE(decoded.has_value());
+    ASSERT_TRUE(decoded->has_metadata());
+    EXPECT_TRUE(decoded->get_metadata().get_migrating());
 }
 
 TEST(DebugReaderTest, RoundTripExtentValue) {

@@ -323,6 +323,46 @@ protected:
     }
 
     std::expected<std::monostate, stm_update_error>
+    apply_set_migrating(const model::topic_id_partition& tp, bool migrating) {
+        if (GetParam() == state_backend::simple) {
+            auto update = set_migrating_update::build(state_, tp, migrating);
+            if (!update.has_value()) {
+                return std::unexpected(
+                  stm_update_error{fmt::format("{}", update.error())});
+            }
+            return update->apply(state_);
+        }
+        set_migrating_db_update db_update{
+          .tp = tp,
+          .migrating = migrating,
+        };
+        auto reader = state_reader(db_->create_snapshot());
+        chunked_vector<write_batch_row> rows;
+        auto result = db_update.build_rows(reader, rows).get();
+        if (!result.has_value()) {
+            return std::unexpected(
+              stm_update_error{fmt::format("{}", result.error())});
+        }
+        apply_rows_to_db(rows);
+        return std::monostate{};
+    }
+
+    // Reads the partition's `migrating` flag from whichever backend is active,
+    // defaulting to false when the partition has no state yet.
+    bool read_migrating(const model::topic_id_partition& tp) {
+        if (GetParam() == state_backend::simple) {
+            auto prt = state_.partition_state(tp);
+            return prt.has_value() && prt->get().migrating;
+        }
+        auto reader = state_reader(db_->create_snapshot());
+        auto meta = reader.get_metadata(tp).get();
+        if (!meta.has_value() || !meta->has_value()) {
+            return false;
+        }
+        return (*meta)->migrating;
+    }
+
+    std::expected<std::monostate, stm_update_error>
     apply_remove_topics(std::initializer_list<model::topic_id> topics_list) {
         chunked_vector<model::topic_id> topics;
         for (const auto& t : topics_list) {
@@ -540,6 +580,47 @@ TEST_P(StateUpdateParamTest, TestAddBasic) {
         EXPECT_TRUE(res.has_value());
         EXPECT_EQ(3, get_state().topic_to_state.size());
     }
+}
+
+TEST_P(StateUpdateParamTest, TestSetMigratingCreatesOnAbsentPartition) {
+    auto tp = model::topic_id_partition::from(tidp_a);
+    // Setting `migrating` on a partition with no prior state creates it.
+    EXPECT_FALSE(read_migrating(tp));
+    auto res = apply_set_migrating(tp, true);
+    EXPECT_TRUE(res.has_value());
+    EXPECT_TRUE(read_migrating(tp));
+}
+
+TEST_P(StateUpdateParamTest, TestSetMigratingThenClear) {
+    auto tp = model::topic_id_partition::from(tidp_a);
+    // The mirror sets migrating; cutover clears it. Both directions apply.
+    ASSERT_TRUE(apply_set_migrating(tp, true).has_value());
+    EXPECT_TRUE(read_migrating(tp));
+    ASSERT_TRUE(apply_set_migrating(tp, false).has_value());
+    EXPECT_FALSE(read_migrating(tp));
+}
+
+TEST_P(StateUpdateParamTest, TestSetMigratingIdempotent) {
+    auto tp = model::topic_id_partition::from(tidp_a);
+    ASSERT_TRUE(apply_set_migrating(tp, true).has_value());
+    // Re-setting the current value is a no-op success.
+    auto res = apply_set_migrating(tp, true);
+    EXPECT_TRUE(res.has_value());
+    EXPECT_TRUE(read_migrating(tp));
+}
+
+TEST_P(StateUpdateParamTest, TestSetMigratingPreservedAcrossAddObjects) {
+    auto tp = model::topic_id_partition::from(tidp_a);
+    ASSERT_TRUE(apply_set_migrating(tp, true).has_value());
+    auto update = add_objects_builder()
+                    .add(new_obj_builder(oid1, 100, 1100)
+                           .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
+                           .build())
+                    .add_term_start(tidp_a, 0_tm, 0_o)
+                    .build();
+    ASSERT_TRUE(apply_add_objects(std::move(update)).has_value());
+    // Adding objects must not clobber the migration phase.
+    EXPECT_TRUE(read_migrating(tp));
 }
 
 TEST_P(StateUpdateParamTest, TestDuplicateAddSingleUpdate) {

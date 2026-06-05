@@ -91,6 +91,9 @@ public:
     virtual ss::future<rpc::set_start_offset_reply>
       set_start_offset(rpc::set_start_offset_request) = 0;
 
+    virtual ss::future<rpc::set_migrating_reply>
+      set_migrating(rpc::set_migrating_request) = 0;
+
     virtual ss::future<rpc::remove_topics_reply>
       remove_topics(rpc::remove_topics_request) = 0;
 

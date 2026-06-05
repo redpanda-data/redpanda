@@ -745,6 +745,7 @@ db_domain_manager::get_offsets(rpc::get_offsets_request req) {
       .ec = rpc::errc::ok,
       .start_offset = metadata.start_offset,
       .next_offset = metadata.next_offset,
+      .migrating = metadata.migrating,
     };
 }
 
@@ -1141,6 +1142,44 @@ db_domain_manager::set_start_offset(rpc::set_start_offset_request req) {
     }
 
     co_return co_await do_set_start_offset(locks_res.value(), req);
+}
+
+ss::future<rpc::set_migrating_reply>
+db_domain_manager::set_migrating(rpc::set_migrating_request req) {
+    auto locks_res = co_await gate_and_open_writes({
+      .topic_read_locks = {req.tp.topic_id},
+      .partition_locks = {req.tp},
+    });
+    if (!locks_res.has_value()) {
+        co_return rpc::set_migrating_reply{
+          .ec = locks_res.error(),
+        };
+    }
+
+    auto reader = state_reader(db_->db().create_snapshot());
+    auto update = set_migrating_db_update{
+      .tp = req.tp,
+      .migrating = req.migrating,
+    };
+    chunked_vector<write_batch_row> rows;
+    bool is_no_op = false;
+    auto build_res = co_await update.build_rows(reader, rows, &is_no_op);
+    if (!build_res.has_value()) {
+        co_return rpc::set_migrating_reply{
+          .ec = log_and_convert(
+            build_res.error(), "Rejecting request to set migration phase: "),
+        };
+    }
+    if (is_no_op) {
+        co_return rpc::set_migrating_reply{.ec = rpc::errc::ok};
+    }
+    auto apply_res = co_await write_rows(locks_res.value(), std::move(rows));
+    if (!apply_res.has_value()) {
+        co_return rpc::set_migrating_reply{
+          .ec = apply_res.error(),
+        };
+    }
+    co_return rpc::set_migrating_reply{.ec = rpc::errc::ok};
 }
 
 ss::future<

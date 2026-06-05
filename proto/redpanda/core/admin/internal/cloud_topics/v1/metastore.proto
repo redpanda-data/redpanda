@@ -237,6 +237,8 @@ message MetadataValue {
     int64 compaction_epoch = 3;
     uint64 size = 4;
     uint64 num_extents = 5;
+    // True while the partition is mid tiered->cloud migration.
+    bool migrating = 6;
 }
 
 // Where the backing tiered-storage segment of an imported object lives. An
