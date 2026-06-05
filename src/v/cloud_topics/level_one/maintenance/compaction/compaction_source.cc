@@ -317,6 +317,13 @@ ss::future<ss::stop_iteration> compaction_source::deduplication_iteration(
         }
 
         _probe.add_stats(stats);
+    } else {
+        vlog(
+          _ctxlog.trace,
+          "Skipping compaction of extent {}, ineligible per "
+          "min.compaction.lag.ms: {}",
+          extent,
+          _min_compaction_lag_ms);
     }
 
     co_return ss::stop_iteration::no;
