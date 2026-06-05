@@ -215,6 +215,24 @@ bool l1_reader_cache::over_size_limit() const {
            && _readers.size() + _in_use.size() > _target_max_size();
 }
 
+void l1_reader_cache::invalidate_range(
+  const model::topic_id_partition& tidp,
+  const l1::offset_interval_set& evict_ranges) {
+    auto invalidate_if_match = [&](entry& e) {
+        if (
+          e.reader->tidp() == tidp
+          && evict_ranges.contains(e.reader->next_read_lower_bound())) {
+            e.reader->invalidate();
+        }
+    };
+    for (auto& e : _readers) {
+        invalidate_if_match(e);
+    }
+    for (auto& e : _in_use) {
+        invalidate_if_match(e);
+    }
+}
+
 void l1_reader_cache::maybe_evict_size() {
     if (!over_size_limit()) [[likely]] {
         return;

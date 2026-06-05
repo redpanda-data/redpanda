@@ -36,6 +36,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics:log_reader_config",
         "//src/v/cloud_topics/level_one/frontend_reader:l1_reader_cache",
         "//src/v/cloud_topics/level_one/frontend_reader:reader",
+        "//src/v/cloud_topics/level_one/metastore:offset_interval_set",
         "//src/v/config",
         "//src/v/model",
         "//src/v/model/tests:random",

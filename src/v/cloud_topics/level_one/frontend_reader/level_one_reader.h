@@ -104,6 +104,9 @@ public:
     /// Whether the reader has state worth preserving in the cache.
     bool is_reusable() const;
 
+    /// Mark this reader as non-reusable for the cache.
+    void invalidate() noexcept { _invalidated = true; }
+
     const model::ntp& ntp() const { return _ntp; }
     const model::topic_id_partition& tidp() const { return _tidp; }
 
@@ -191,6 +194,7 @@ private:
 
     void set_end_of_stream();
     bool _end_of_stream{false};
+    bool _invalidated{false};
 
     cloud_topic_log_reader_config _config;
     model::ntp _ntp;

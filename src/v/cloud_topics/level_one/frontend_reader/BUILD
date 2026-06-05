@@ -29,6 +29,7 @@ redpanda_cc_library(
         ":reader",
         "//src/v/cloud_topics:log_reader_config",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/metastore:offset_interval_set",
         "//src/v/config",
         "//src/v/container:intrusive",
         "//src/v/model",

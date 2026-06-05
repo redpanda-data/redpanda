@@ -374,4 +374,181 @@ TEST_F(l1_reader_cache_test, byte_limited_reader_is_reusable) {
     EXPECT_EQ(data1.size() + data2.size(), expected_count);
 }
 
+TEST_F(l1_reader_cache_test, evict_partition_removes_cached_reader_in_range) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, /*count=*/5).get();
+
+    std::vector<tidp_batches_t> tb;
+    tb.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tb)).get();
+
+    // Read one batch with byte limit so the reader stays reusable.
+    auto r = make_reader_impl(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      /*max_bytes=*/1,
+      /*strict_max_bytes=*/true);
+    auto wrapped = _cache->put(std::move(r));
+    auto data = model::consume_reader_to_memory(
+                  std::move(wrapped), model::no_timeout)
+                  .get();
+    ASSERT_EQ(data.size(), 1);
+    ASSERT_EQ(_cache->get_stats().cached_readers, 1);
+
+    // Evict with a range that includes the reader's current position (near 0).
+    offset_interval_set evict_range;
+    evict_range.insert(kafka::offset{0}, kafka::offset{10000});
+    _cache->invalidate_range(tidp, evict_range);
+
+    // The reader is invalidated and will not be served; it stays in the
+    // list until the eviction timer fires (is_reusable() == false).
+    auto cfg = make_test_config(kafka::offset{0}, kafka::offset::max());
+    EXPECT_FALSE(_cache->get_reader(tidp, cfg).has_value());
+}
+
+TEST_F(
+  l1_reader_cache_test, evict_partition_spares_cached_reader_outside_range) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, /*count=*/5).get();
+
+    std::vector<tidp_batches_t> tb;
+    tb.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tb)).get();
+
+    auto r = make_reader_impl(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      /*max_bytes=*/1,
+      /*strict_max_bytes=*/true);
+    auto wrapped = _cache->put(std::move(r));
+    auto data = model::consume_reader_to_memory(
+                  std::move(wrapped), model::no_timeout)
+                  .get();
+    ASSERT_EQ(data.size(), 1);
+    ASSERT_EQ(_cache->get_stats().cached_readers, 1);
+
+    // Evict with a range that is far above the reader's position (near 0).
+    offset_interval_set evict_range;
+    evict_range.insert(kafka::offset{10000}, kafka::offset{20000});
+    _cache->invalidate_range(tidp, evict_range);
+
+    EXPECT_EQ(_cache->get_stats().cached_readers, 1);
+}
+
+TEST_F(l1_reader_cache_test, evict_partition_spares_different_partition) {
+    auto [ntp1, tidp1] = make_ntidp("topic_a");
+    auto [ntp2, tidp2] = make_ntidp("topic_b");
+
+    for (auto& [ntp, tidp] : {
+           std::pair{ntp1, tidp1},
+           std::pair{ntp2, tidp2},
+         }) {
+        auto batches = model::test::make_random_batches(
+                         model::offset{0}, /*count=*/3)
+                         .get();
+        std::vector<tidp_batches_t> tb;
+        tb.emplace_back(tidp, std::move(batches));
+        make_l1_objects(std::move(tb)).get();
+
+        auto r = make_reader_impl(
+          ntp,
+          tidp,
+          kafka::offset{0},
+          kafka::offset::max(),
+          /*max_bytes=*/1,
+          /*strict_max_bytes=*/true);
+        auto wrapped = _cache->put(std::move(r));
+        model::consume_reader_to_memory(std::move(wrapped), model::no_timeout)
+          .get();
+    }
+    ASSERT_EQ(_cache->get_stats().cached_readers, 2);
+
+    // Evict tidp1 only.
+    offset_interval_set evict_range;
+    evict_range.insert(kafka::offset{0}, kafka::offset{10000});
+    _cache->invalidate_range(tidp1, evict_range);
+
+    // Both readers stay in the list (invalidate() doesn't remove them);
+    // tidp1's is marked non-reusable so get_reader won't serve it.
+    EXPECT_EQ(_cache->get_stats().cached_readers, 2);
+    auto cfg = make_test_config(kafka::offset{0}, kafka::offset::max());
+    EXPECT_FALSE(_cache->get_reader(tidp1, cfg).has_value());
+}
+
+TEST_F(
+  l1_reader_cache_test, evict_partition_invalidates_in_use_reader_in_range) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, /*count=*/5).get();
+
+    std::vector<tidp_batches_t> tb;
+    tb.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tb)).get();
+
+    // Put reader (byte-limited so it would normally be reusable after one
+    // batch).
+    auto r = make_reader_impl(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      /*max_bytes=*/1,
+      /*strict_max_bytes=*/true);
+    auto wrapped = _cache->put(std::move(r));
+    ASSERT_EQ(_cache->get_stats().in_use_readers, 1);
+
+    // Evict while in-use. Reader is at next_read_lower_bound() == 0, in range.
+    offset_interval_set evict_range;
+    evict_range.insert(kafka::offset{0}, kafka::offset{10000});
+    _cache->invalidate_range(tidp, evict_range);
+
+    // Consume. Reader is invalidated so it is disposed, not re-cached.
+    auto data = model::consume_reader_to_memory(
+                  std::move(wrapped), model::no_timeout)
+                  .get();
+    ASSERT_EQ(data.size(), 1);
+
+    EXPECT_EQ(_cache->get_stats().cached_readers, 0);
+    EXPECT_EQ(_cache->get_stats().in_use_readers, 0);
+}
+
+TEST_F(
+  l1_reader_cache_test, evict_partition_spares_in_use_reader_outside_range) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, /*count=*/5).get();
+
+    std::vector<tidp_batches_t> tb;
+    tb.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tb)).get();
+
+    auto r = make_reader_impl(
+      ntp,
+      tidp,
+      kafka::offset{0},
+      kafka::offset::max(),
+      /*max_bytes=*/1,
+      /*strict_max_bytes=*/true);
+    auto wrapped = _cache->put(std::move(r));
+
+    // Evict with range that does not include offset 0 (reader's position).
+    offset_interval_set evict_range;
+    evict_range.insert(kafka::offset{10000}, kafka::offset{20000});
+    _cache->invalidate_range(tidp, evict_range);
+
+    // Reader is not invalidated so it returns to cache after consumption.
+    auto data = model::consume_reader_to_memory(
+                  std::move(wrapped), model::no_timeout)
+                  .get();
+    ASSERT_EQ(data.size(), 1);
+
+    EXPECT_EQ(_cache->get_stats().cached_readers, 1);
+}
+
 } // namespace cloud_topics::l1

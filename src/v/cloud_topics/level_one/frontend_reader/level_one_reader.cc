@@ -537,7 +537,8 @@ void level_one_log_reader_impl::reset_config(
 }
 
 bool level_one_log_reader_impl::is_reusable() const {
-    return _current_stream.has_value() || !_lookahead_buffer.empty();
+    return !_invalidated
+           && (_current_stream.has_value() || !_lookahead_buffer.empty());
 }
 
 bool level_one_log_reader_impl::is_over_limit_with_bytes(size_t size) const {

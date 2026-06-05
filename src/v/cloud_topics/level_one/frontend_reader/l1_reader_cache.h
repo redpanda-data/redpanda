@@ -10,6 +10,7 @@
 #pragma once
 
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
+#include "cloud_topics/level_one/metastore/offset_interval_set.h"
 #include "cloud_topics/log_reader_config.h"
 #include "config/property.h"
 #include "container/intrusive_list_helpers.h"
@@ -60,6 +61,13 @@ public:
     put(std::unique_ptr<level_one_log_reader_impl> reader);
 
     stats get_stats() const;
+
+    /// Invalidate cached readers for the given partition whose next read
+    /// position falls within any of the ranges. This marks any matching in-use
+    /// or idle readers as non-reusable.
+    void invalidate_range(
+      const model::topic_id_partition& tidp,
+      const l1::offset_interval_set& evict_ranges);
 
     ss::future<> stop();
 
