@@ -81,6 +81,10 @@ void leader_router_probe::setup_metrics() {
           [this] { return _set_start_offset.internal_histogram_logform(); },
           sm::description("Latency of local set_start_offset requests")),
         sm::make_histogram(
+          "set_migrating_duration_microseconds",
+          [this] { return _set_migrating.internal_histogram_logform(); },
+          sm::description("Latency of local set_migrating requests")),
+        sm::make_histogram(
           "remove_topics_duration_microseconds",
           [this] { return _remove_topics.internal_histogram_logform(); },
           sm::description("Latency of local remove_topics requests")),

@@ -421,6 +421,7 @@ simple_domain_manager::get_offsets(rpc::get_offsets_request req) {
       .ec = rpc::errc::ok,
       .start_offset = get_res->start_offset,
       .next_offset = get_res->next_offset,
+      .migrating = get_res->migrating,
     };
 }
 
@@ -604,6 +605,48 @@ simple_domain_manager::set_start_offset(rpc::set_start_offset_request req) {
     }
 
     co_return rpc::set_start_offset_reply{.ec = rpc::errc::ok};
+}
+
+ss::future<rpc::set_migrating_reply>
+simple_domain_manager::set_migrating(rpc::set_migrating_request req) {
+    auto gate = maybe_gate();
+    if (!gate.has_value()) {
+        co_return rpc::set_migrating_reply{.ec = rpc::errc::not_leader};
+    }
+
+    auto sync_res = co_await stm_->sync(10s);
+    if (!sync_res.has_value()) {
+        co_return rpc::set_migrating_reply{
+          .ec = convert_stm_errc(sync_res.error())};
+    }
+    bool is_no_op = false;
+    auto update_res = set_migrating_update::build(
+      stm_->state(), req.tp, req.migrating, &is_no_op);
+    if (!update_res.has_value()) {
+        vlog(
+          cd_log.debug,
+          "Rejecting request to set migration phase: {}",
+          update_res.error());
+        co_return rpc::set_migrating_reply{
+          .ec = rpc::errc::concurrent_requests,
+        };
+    }
+    if (is_no_op) {
+        co_return rpc::set_migrating_reply{.ec = rpc::errc::ok};
+    }
+    storage::record_batch_builder builder(
+      model::record_batch_type::l1_stm, model::offset{0});
+    builder.add_raw_kv(
+      serde::to_iobuf(set_migrating_update::key),
+      serde::to_iobuf(std::move(update_res.value())));
+    auto repl_res = co_await stm_->replicate_and_wait(
+      sync_res.value(), std::move(builder).build(), as_);
+    if (!repl_res.has_value()) {
+        co_return rpc::set_migrating_reply{
+          .ec = convert_stm_errc(repl_res.error()),
+        };
+    }
+    co_return rpc::set_migrating_reply{.ec = rpc::errc::ok};
 }
 
 ss::future<rpc::remove_topics_reply>

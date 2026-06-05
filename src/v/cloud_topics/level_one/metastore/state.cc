@@ -201,6 +201,7 @@ partition_state partition_state::copy() const {
                             : std::nullopt,
       .compaction_epoch = compaction_epoch,
       .term_starts = term_starts,
+      .migrating = migrating,
     };
     return res;
 }

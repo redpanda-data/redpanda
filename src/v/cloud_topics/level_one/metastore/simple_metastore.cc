@@ -189,6 +189,7 @@ simple_metastore::get_offsets(
     return offsets_response{
       .start_offset = prt.start_offset,
       .next_offset = prt.next_offset,
+      .migrating = prt.migrating,
     };
 }
 
@@ -302,6 +303,22 @@ simple_metastore::set_start_offset(
     auto update_res = set_start_offset_update::build(state_, tp, requested_o);
     if (!update_res.has_value()) {
         vlog(cd_log.debug, "Set start offset failed: {}", update_res.error());
+        co_return std::unexpected(metastore::errc::invalid_request);
+    }
+    auto apply_res = update_res->apply(state_);
+    vassert(
+      apply_res.has_value(),
+      "Apply must succeed if can_apply() is true: {}",
+      apply_res.error());
+    co_return std::expected<void, metastore::errc>{};
+}
+
+ss::future<std::expected<void, metastore::errc>>
+simple_metastore::set_migrating(
+  const model::topic_id_partition& tp, bool migrating) {
+    auto update_res = set_migrating_update::build(state_, tp, migrating);
+    if (!update_res.has_value()) {
+        vlog(cd_log.debug, "set_migrating failed: {}", update_res.error());
         co_return std::unexpected(metastore::errc::invalid_request);
     }
     auto apply_res = update_res->apply(state_);

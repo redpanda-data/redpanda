@@ -50,6 +50,9 @@ public:
     ss::future<std::expected<void, errc>>
     set_start_offset(const model::topic_id_partition&, kafka::offset) override;
 
+    ss::future<std::expected<void, errc>>
+    set_migrating(const model::topic_id_partition&, bool) override;
+
     ss::future<std::expected<topic_removal_response, errc>>
     remove_topics(const chunked_vector<model::topic_id>&) override;
 
