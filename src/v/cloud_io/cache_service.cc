@@ -1393,17 +1393,22 @@ cache::_is_cached(const std::filesystem::path& key) {
 }
 
 ss::future<> cache::invalidate(const std::filesystem::path& key) {
+    return container().invoke_on(
+      0, [key](cache& c) { return c.do_invalidate(key); });
+}
+
+ss::future<> cache::do_invalidate(const std::filesystem::path& key) {
     std::vector<std::filesystem::path> keys = make_candidate_object_names(
       key, "invalidate");
     for (const auto& k : keys) {
         // We shouldn't stop invalidating if we actually deleted the file
         // because cache may store two files, one with old-style name and
         // another one with new-style name.
-        co_await _invalidate(k);
+        co_await invalidate_candidate(k);
     }
 }
 
-ss::future<> cache::_invalidate(const std::filesystem::path& key) {
+ss::future<> cache::invalidate_candidate(const std::filesystem::path& key) {
     auto guard = _gate.hold();
     vlog(
       log.debug, "Trying to invalidate {} from archival cache.", key.native());

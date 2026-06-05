@@ -221,8 +221,11 @@ private:
 
     ss::future<std::optional<cache_item>> _get(std::filesystem::path key);
 
-    /// Remove object from cache
-    ss::future<> _invalidate(const std::filesystem::path& key);
+    /// Invalidate every candidate name for a key. Runs on shard 0.
+    ss::future<> do_invalidate(const std::filesystem::path& key);
+
+    /// Remove a single resolved object from the cache.
+    ss::future<> invalidate_candidate(const std::filesystem::path& key);
 
     ss::future<cache_element_status>
     _is_cached(const std::filesystem::path& key);
