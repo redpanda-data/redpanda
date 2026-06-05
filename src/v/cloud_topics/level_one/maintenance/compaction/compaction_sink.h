@@ -19,6 +19,12 @@
 #include "model/fundamental.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/sharded.hh>
+
+namespace cloud_topics {
+class l1_reader_cache;
+} // namespace cloud_topics
+
 namespace cloud_topics::l1 {
 
 class compaction_sink : public l1_object_sink {
@@ -35,7 +41,8 @@ public:
       config::binding<size_t>,
       size_t,
       prefix_logger&,
-      object_builder::options = {});
+      object_builder::options = {},
+      ss::sharded<cloud_topics::l1_reader_cache>* = nullptr);
 
     ss::future<bool>
     initialize(compaction::sliding_window_reducer::source&) final;
@@ -78,6 +85,8 @@ private:
     // `map_deduplication_iteration`.
     chunked_vector<metastore::compaction_update::cleaned_range>
       _new_cleaned_ranges;
+
+    ss::sharded<cloud_topics::l1_reader_cache>* _reader_cache{nullptr};
 
 private:
     friend class throwing_compaction_sink;

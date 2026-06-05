@@ -12,6 +12,10 @@
 
 #include "cloud_topics/level_one/common/file_io.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
+
+namespace cloud_topics {
+class l1_reader_cache;
+} // namespace cloud_topics
 #include "cloud_topics/level_one/maintenance/log_collector.h"
 #include "cloud_topics/level_one/maintenance/log_info_collector.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
@@ -49,7 +53,8 @@ public:
       compaction_cluster_state,
       ss::sharded<file_io>*,
       ss::sharded<l1::replicated_metastore>*,
-      ss::sharded<level_one_reader_probe>*);
+      ss::sharded<level_one_reader_probe>*,
+      ss::sharded<cloud_topics::l1_reader_cache>*);
 
     // Starts the contained `_log_collector`, `_worker_manager`, and the
     // backgrounded scheduling loop.

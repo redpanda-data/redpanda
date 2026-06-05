@@ -44,6 +44,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:log_reader_config",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/cloud_topics/level_one/frontend_reader:l1_reader_cache",
         "//src/v/cloud_topics/level_one/frontend_reader:level_one_reader_probe",
         "//src/v/cloud_topics/level_one/frontend_reader:reader",
         "//src/v/cloud_topics/level_one/maintenance:l1_object_sink",

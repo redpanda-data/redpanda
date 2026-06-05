@@ -66,6 +66,7 @@ public:
           ss::sharded_parameter([this] { return &_metastore; }),
           nullptr,
           ss::default_scheduling_group(),
+          nullptr,
           nullptr);
         co_await scheduler->_worker_manager._workers.invoke_on_all(
           &l1::compaction_worker::start);

@@ -12,6 +12,10 @@
 
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
+
+namespace cloud_topics {
+class l1_reader_cache;
+} // namespace cloud_topics
 #include "cloud_topics/level_one/maintenance/compaction/compaction_source.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cloud_topics/level_one/maintenance/worker_probe.h"
@@ -22,6 +26,7 @@
 #include "ssx/work_queue.h"
 
 #include <seastar/core/scheduling.hh>
+#include <seastar/core/sharded.hh>
 
 class WorkerManagerTestFixture;
 
@@ -46,7 +51,8 @@ public:
       metastore*,
       cluster::metadata_cache*,
       ss::scheduling_group,
-      level_one_reader_probe*);
+      level_one_reader_probe*,
+      ss::sharded<cloud_topics::l1_reader_cache>*);
 
     // Launches background loop.
     ss::future<> start();
@@ -209,6 +215,9 @@ private:
 
     // Owned by `app`.
     level_one_reader_probe* _l1_reader_probe;
+
+    // Owned by `app`.
+    ss::sharded<cloud_topics::l1_reader_cache>* _reader_cache;
 };
 
 } // namespace cloud_topics::l1

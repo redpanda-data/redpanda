@@ -11,6 +11,7 @@
 #include "cloud_topics/level_one/maintenance/compaction/compaction_sink.h"
 
 #include "cloud_topics/level_one/common/object.h"
+#include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 #include "cloud_topics/level_one/maintenance/compaction/compaction_source.h"
 #include "cloud_topics/level_one/maintenance/l1_object_sink.h"
 #include "cloud_topics/level_one/metastore/offset_interval_set.h"
@@ -80,7 +81,8 @@ compaction_sink::compaction_sink(
   config::binding<size_t> max_object_size,
   size_t upload_part_size,
   prefix_logger& ctxlog,
-  object_builder::options opts)
+  object_builder::options opts,
+  ss::sharded<cloud_topics::l1_reader_cache>* reader_cache)
   : l1_object_sink(
       std::move(tp),
       io,
@@ -93,7 +95,8 @@ compaction_sink::compaction_sink(
   , _dirty_range_intervals(dirty_range_intervals)
   , _removable_tombstone_ranges(removable_tombstone_ranges)
   , _expected_compaction_epoch(expected_compaction_epoch)
-  , _start_offset(start_offset) {}
+  , _start_offset(start_offset)
+  , _reader_cache(reader_cache) {}
 
 ss::future<bool>
 compaction_sink::initialize(compaction::sliding_window_reducer::source& src) {

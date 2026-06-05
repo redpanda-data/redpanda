@@ -12,6 +12,10 @@
 
 #include "cloud_topics/level_one/common/file_io.h"
 #include "cloud_topics/level_one/maintenance/logger.h"
+
+namespace cloud_topics {
+class l1_reader_cache;
+} // namespace cloud_topics
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cloud_topics/level_one/maintenance/scheduler_probe.h"
 #include "cloud_topics/level_one/maintenance/worker.h"
@@ -45,7 +49,8 @@ public:
       ss::sharded<replicated_metastore>*,
       ss::sharded<cluster::metadata_cache>*,
       compaction_scheduler_probe&,
-      ss::sharded<level_one_reader_probe>*);
+      ss::sharded<level_one_reader_probe>*,
+      ss::sharded<cloud_topics::l1_reader_cache>*);
 
     // Starts the pool of workers, making them available for compaction jobs.
     ss::future<> start();
@@ -108,6 +113,9 @@ private:
 
     // Owned by `app`.
     ss::sharded<level_one_reader_probe>* _l1_reader_probe;
+
+    // Owned by `app`.
+    ss::sharded<cloud_topics::l1_reader_cache>* _reader_cache;
 
     // A sharded pool of compaction workers.
     ss::sharded<compaction_worker> _workers;

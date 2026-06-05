@@ -35,7 +35,8 @@ compaction_worker::compaction_worker(
   metastore* metastore,
   cluster::metadata_cache* metadata_cache,
   ss::scheduling_group compaction_sg,
-  level_one_reader_probe* l1_reader_probe)
+  level_one_reader_probe* l1_reader_probe,
+  ss::sharded<cloud_topics::l1_reader_cache>* reader_cache)
   : _worker_update_queue([](const std::exception_ptr& ex) {
       vlog(
         compaction_log.error,
@@ -50,7 +51,8 @@ compaction_worker::compaction_worker(
   , _metastore(metastore)
   , _metadata_cache(metadata_cache)
   , _compaction_sg(compaction_sg)
-  , _l1_reader_probe(l1_reader_probe) {
+  , _l1_reader_probe(l1_reader_probe)
+  , _reader_cache(reader_cache) {
     _poll_interval.watch([this]() { _compaction_cv.signal(); });
 }
 
@@ -251,7 +253,8 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
       l1::object_builder::options{
         .indexing_interval
         = config::shard_local_cfg().cloud_topics_l1_indexing_interval(),
-      });
+      },
+      _reader_cache);
     auto reducer = compaction::sliding_window_reducer(
       std::move(src), std::move(sink));
 

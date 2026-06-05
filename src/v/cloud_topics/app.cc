@@ -196,7 +196,8 @@ ss::future<> app::construct(
         .partition_manager = &controller->get_partition_manager()},
       &l1_io,
       &replicated_metastore,
-      &_l1_reader_probe);
+      &_l1_reader_probe,
+      &_l1_reader_cache);
 
     // Must be last to register so it will be first to be stopped in
     // `app::stop`. This is to ensure that stopped services don't receive
