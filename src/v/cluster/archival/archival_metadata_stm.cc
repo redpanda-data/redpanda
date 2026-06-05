@@ -1729,10 +1729,14 @@ archival_metadata_stm_factory::archival_metadata_stm_factory(
 
 bool archival_metadata_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
+    // The archival STM is created on cloud-topic partitions too (no
+    // cloud_topic_enabled() == false guard). For a partition migrated from
+    // tiered storage it is reconstructed from its snapshot and its manifest
+    // stays available to gate local-log truncation. For a partition that was
+    // always a cloud topic the manifest is empty, so it is an inert passenger.
     return _cloud_storage_enabled && _cloud_storage_api.local_is_initialized()
            && ntp_cfg.ntp().tp.topic != model::kafka_consumer_offsets_topic
-           && ntp_cfg.ntp().ns == model::kafka_namespace
-           && ntp_cfg.cloud_topic_enabled() == false;
+           && ntp_cfg.ntp().ns == model::kafka_namespace;
 }
 
 void archival_metadata_stm_factory::create(
