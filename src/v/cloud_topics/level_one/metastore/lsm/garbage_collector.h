@@ -60,6 +60,14 @@ public:
       model::timestamp prereg_expiry_cutoff,
       model::timestamp deletion_delay_cutoff);
 
+    // Deletes the given objects' backing storage from object storage (for an
+    // imported segment, also its .tx and .index) and drops their metastore
+    // rows.
+    ss::future<std::expected<void, error>> remove_objects(
+      replicated_database*,
+      chunked_vector<object_location> to_remove,
+      ss::abort_source*);
+
 private:
     // Removes the given batch size worth of objects, evaluating objects
     // starting from the given object. Returns the next object that needs to be

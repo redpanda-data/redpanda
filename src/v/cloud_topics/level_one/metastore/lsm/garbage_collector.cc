@@ -205,6 +205,21 @@ db_garbage_collector::remove_unreferenced_batch(
         co_return next_batch_start;
     }
 
+    auto remove_res = co_await remove_objects(db, std::move(to_remove), as);
+    if (!remove_res.has_value()) {
+        co_return std::unexpected(std::move(remove_res.error()));
+    }
+    co_return next_batch_start;
+}
+
+ss::future<std::expected<void, db_garbage_collector::error>>
+db_garbage_collector::remove_objects(
+  replicated_database* db,
+  chunked_vector<object_location> to_remove,
+  ss::abort_source* as) {
+    if (to_remove.empty()) {
+        co_return std::expected<void, error>{};
+    }
     auto num_to_remove = to_remove.size();
     auto del_res = co_await io_->delete_objects(to_remove.copy(), as);
     if (!del_res.has_value()) {
@@ -234,7 +249,7 @@ db_garbage_collector::remove_unreferenced_batch(
         }
     }
     probe_->gc_object_deletions_replicated(num_to_remove);
-    co_return next_batch_start;
+    co_return std::expected<void, error>{};
 }
 
 ss::future<
