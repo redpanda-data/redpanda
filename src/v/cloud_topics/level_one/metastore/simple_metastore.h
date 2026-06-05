@@ -37,6 +37,8 @@ public:
     std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
       add(object_id, metastore::object_metadata::ntp_metadata) override;
+    std::expected<object_id, error>
+      add_imported(metastore::object_metadata::ntp_metadata) override;
     std::expected<void, error>
     finish(object_id, size_t footer_pos, size_t object_size) override;
     bool is_empty() const override;

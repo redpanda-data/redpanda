@@ -84,6 +84,31 @@ void remove_extents_below_start_offset_for_tp(
     }
 }
 
+// The offset a batch of extents must connect at for a partition.
+//
+// An empty partition marked migrating (via set_migrating) adopts its log at
+// the first incoming extent's base, allowing a non-zero start.
+// Note, this may happen more than once if, during the migration process,
+// segments happen to be gc'd past the latest point so far mirrored once more
+// emptying the partition.  In such a case, we want to still adopt the first
+// incoming extent's base as there might be a gap.
+//
+// A brand-new (untracked) partition starts at 0; an existing non-empty one
+// continues from its next_offset.
+kafka::offset expected_next_offset(
+  const state& s,
+  const model::topic_id_partition& tidp,
+  kafka::offset first_base) {
+    auto p = s.partition_state(tidp);
+    if (p.has_value() && !p->get().extents.empty()) {
+        return p->get().next_offset;
+    }
+    if (p.has_value() && p->get().migrating) {
+        return first_base;
+    }
+    return kafka::offset{0};
+}
+
 // Validates the basic shape of new_objects against the state:
 // - non-empty
 // - every object is pre-registered and not yet finalized
@@ -302,15 +327,22 @@ std::expected<std::monostate, stm_update_error> add_objects_update::can_apply(
     }
     sorted_extents_by_tidp_t new_extents;
     for (const auto& o : new_objects) {
-        auto it = state.objects.find(o.oid);
-        if (it == state.objects.end()) {
-            return std::unexpected(
-              stm_update_error{
-                fmt::format("Object {} not pre-registered", o.oid)});
-        }
-        if (!it->second.is_preregistration) {
-            return std::unexpected(
-              stm_update_error{fmt::format("Object {} already exists", o.oid)});
+        if (!o.imported_ts_location.has_value()) {
+            // Native objects are reserved before being written, so they must
+            // already be pre-registered. An imported object references an
+            // existing tiered-storage segment (nothing is written to L1), so
+            // there is no reservation to honor -- it is added directly.
+            auto it = state.objects.find(o.oid);
+            if (it == state.objects.end()) {
+                return std::unexpected(
+                  stm_update_error{
+                    fmt::format("Object {} not pre-registered", o.oid)});
+            }
+            if (!it->second.is_preregistration) {
+                return std::unexpected(
+                  stm_update_error{
+                    fmt::format("Object {} already exists", o.oid)});
+            }
         }
         o.collect_extents_by_tidp(&new_extents);
     }
@@ -318,11 +350,8 @@ std::expected<std::monostate, stm_update_error> add_objects_update::can_apply(
     chunked_hash_map<model::topic_id_partition, kafka::offset>
       corrected_next_offsets;
     for (const auto& [tidp, extents] : new_extents) {
-        // TODO: maybe we need some mount operation that adopts a partition log
-        // and allows it to start a specific offset.
-        auto p_state = state.partition_state(tidp);
-        auto expected_next = p_state ? p_state->get().next_offset
-                                     : kafka::offset{0};
+        auto expected_next = expected_next_offset(
+          state, tidp, extents.begin()->base_offset);
 
         if (extents.begin()->base_offset != expected_next) {
             // If the start of the new extents for this partition aren't
@@ -466,17 +495,21 @@ add_objects_update::apply(state& state) {
           .object_size = o.object_size,
           .last_updated = model::timestamp::now(),
           .is_preregistration = false,
+          .imported_ts_location = o.imported_ts_location,
         };
     }
     for (const auto& [tidp, extents] : extents_by_tp) {
-        auto p_state = state.partition_state(tidp);
-        auto expected_next = p_state ? p_state->get().next_offset
-                                     : kafka::offset{0};
+        auto expected_next = expected_next_offset(
+          state, tidp, extents.begin()->base_offset);
         if (extents.begin()->base_offset == expected_next) {
             auto& t_state = state.topic_to_state[tidp.topic_id];
             auto& p_state = t_state.pid_to_state[tidp.partition];
             // We've validated that all extents form a contiguous offset space.
-            // Accept them all.
+            // Accept them all. A migrating partition adopting its log at a
+            // non-zero start seeds its start offset at the first extent.
+            if (p_state.extents.empty() && p_state.migrating) {
+                p_state.start_offset = extents.begin()->base_offset;
+            }
             for (const auto& e : extents) {
                 p_state.extents.emplace(e);
             }

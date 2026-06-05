@@ -156,6 +156,14 @@ private:
       chunked_hash_set<object_id> seen_objects,
       partition_validation_result& result);
 
+    /// HEAD-probe cloud storage for an object at `path`. Returns true if it
+    /// exists and false if it is absent; a timed-out or failed probe becomes
+    /// an error. `oid` is used only for diagnostics.
+    ss::future<std::expected<bool, error>> object_present_in_storage(
+      const validate_partition_options& opts,
+      object_id oid,
+      const cloud_storage_clients::object_key& path);
+
     state_reader& reader_;
 };
 
