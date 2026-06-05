@@ -209,6 +209,12 @@ ss::future<> compaction_sink::finalize(bool success) {
         co_return;
     }
 
+    if (_reader_cache) {
+        co_await _reader_cache->invoke_on_all([this](l1_reader_cache& cache) {
+            cache.invalidate_range(_tp, _processed_extents);
+        });
+    }
+
     if (_any_object_failed) {
         co_await compact_objects_without_update();
     } else {

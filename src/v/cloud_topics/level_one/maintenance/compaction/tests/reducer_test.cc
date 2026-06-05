@@ -13,6 +13,8 @@
 #include "bytes/iostream.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
+#include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/maintenance/compaction/compaction_sink.h"
 #include "cloud_topics/level_one/maintenance/compaction/compaction_source.h"
@@ -100,7 +102,8 @@ ss::future<> do_compact(
   l1::metastore* metastore,
   l1::io* io,
   std::chrono::milliseconds min_compaction_lag_ms = 0ms,
-  kafka::offset max_compactible_offset = kafka::offset::max()) {
+  kafka::offset max_compactible_offset = kafka::offset::max(),
+  ss::sharded<cloud_topics::l1_reader_cache>* reader_cache = nullptr) {
     ss::abort_source as;
     auto state = l1::compaction_job_state::running;
     auto map = compaction::simple_key_offset_map();
@@ -133,7 +136,9 @@ ss::future<> do_compact(
       as,
       config::mock_binding<size_t>(128_MiB),
       16_MiB,
-      logger);
+      logger,
+      l1::object_builder::options{},
+      reader_cache);
     auto reducer = compaction::sliding_window_reducer(
       std::move(src), std::move(sink));
 
@@ -1084,4 +1089,79 @@ TEST_F(ReducerTestFixture, ExceptionalFinalizePartialExtent) {
           << " physical last offset does not match metadata last offset: "
           << physical_last_offset << " != " << extent.last_offset;
     }
+}
+
+class CompactionSinkCacheTest : public ReducerTestFixture {
+public:
+    ss::future<> SetUpAsync() override {
+        co_await _cache.start(
+          config::mock_binding(std::chrono::milliseconds{60000}),
+          config::mock_binding<size_t>(128));
+    }
+
+    ss::future<> TearDownAsync() override { co_await _cache.stop(); }
+
+protected:
+    ss::sharded<cloud_topics::l1_reader_cache> _cache;
+};
+
+// Verifies that running compaction_sink with a sharded l1_reader_cache causes
+// every cached reader whose position falls inside the compacted range to be
+// invalidated before the metastore commit.
+TEST_F(CompactionSinkCacheTest, CompactionSinkInvalidatesCachedReaders) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    int num_batches = 5;
+    int cardinality = 5;
+    auto batches = generate_batches(num_batches, cardinality);
+    std::vector<tidp_batches_t> tb;
+    tb.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tb)).get();
+
+    // Byte-limit a read so the reader stays reusable and is cached at
+    // next_read_lower_bound() somewhere inside the dirty range [0, N].
+    auto read_cfg = make_test_config(
+      kafka::offset{0},
+      kafka::offset::max(),
+      /*max_bytes=*/1,
+      /*strict_max_bytes=*/true);
+    auto reader_impl
+      = std::make_unique<cloud_topics::level_one_log_reader_impl>(
+        read_cfg, ntp, tidp, &_metastore, &_io);
+    auto wrapped = _cache.local().put(std::move(reader_impl));
+    auto data = model::consume_reader_to_memory(
+                  std::move(wrapped), model::no_timeout)
+                  .get();
+    ASSERT_EQ(data.size(), 1);
+    ASSERT_EQ(_cache.local().get_stats().cached_readers, 1);
+
+    // The reader is cached at the offset immediately after the first batch.
+    auto next_offset = kafka::offset(data.back().last_offset()() + 1);
+    auto lookup_cfg = make_test_config(next_offset, kafka::offset::max());
+
+    // Before compaction the reader is accessible at its current position.
+    EXPECT_TRUE(_cache.local().get_reader(tidp, lookup_cfg).has_value());
+
+    auto info_spec = l1::metastore::compaction_info_spec{
+      .tidp = tidp,
+      .tombstone_removal_upper_bound_ts = model::timestamp::max()};
+    auto compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_FALSE(compaction_info->offsets_response.dirty_ranges.empty());
+
+    do_compact(
+      tidp,
+      ntp,
+      std::move(compaction_info->offsets_response),
+      compaction_info->compaction_epoch,
+      compaction_info->start_offset,
+      &_metastore,
+      &_io,
+      0ms,
+      kafka::offset::max(),
+      &_cache)
+      .get();
+
+    // The cached reader was inside the dirty range. After compaction the
+    // reader is invalidated (non-reusable) and no longer served by get_reader.
+    EXPECT_FALSE(_cache.local().get_reader(tidp, lookup_cfg).has_value());
 }

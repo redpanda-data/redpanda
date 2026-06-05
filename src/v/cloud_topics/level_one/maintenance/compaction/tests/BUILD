@@ -47,6 +47,8 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/level_one/common:object",
         "//src/v/cloud_topics/level_one/common:object_id",
         "//src/v/cloud_topics/level_one/common:object_utils",
+        "//src/v/cloud_topics/level_one/frontend_reader:l1_reader_cache",
+        "//src/v/cloud_topics/level_one/frontend_reader:reader",
         "//src/v/cloud_topics/level_one/frontend_reader/tests:l1_reader_fixture",
         "//src/v/cloud_topics/level_one/maintenance:logger",
         "//src/v/cloud_topics/level_one/maintenance:meta",
