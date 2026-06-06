@@ -137,6 +137,29 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "compaction_task_test",
+    timeout = "short",
+    srcs = [
+        "compaction_task_test.cc",
+    ],
+    deps = [
+        ":db_test_base",
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/lsm/core/internal:keys",
+        "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/db:compaction_task",
+        "//src/v/lsm/db:snapshot",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/lsm/io:persistence",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "iter_test",
     timeout = "short",
     srcs = [

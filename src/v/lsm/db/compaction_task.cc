@@ -12,6 +12,7 @@
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/logger.h"
 #include "lsm/sst/builder.h"
+#include "ssx/future-util.h"
 #include "ssx/when_all.h"
 
 #include <exception>
@@ -229,8 +230,8 @@ ss::future<ss::lw_shared_ptr<version_edit>> do_run_compaction_task(
             }
             co_await input->next();
         }
-    } catch (const base_exception& ex) {
-        state.err = std::make_exception_ptr(ex);
+    } catch (...) {
+        state.err = std::current_exception();
     }
     co_await state.finish();
     auto edit = compaction->edit();
@@ -266,13 +267,22 @@ ss::future<ss::lw_shared_ptr<version_edit>> run_compaction_task(
   ss::lw_shared_ptr<internal::options> opts,
   compaction* compaction,
   ss::abort_source* as) {
+    std::exception_ptr ex;
+    auto level = ss::log_level::error;
     try {
         co_return co_await do_run_compaction_task(
           persistence, snapshots, versions, std::move(opts), compaction, as);
+    } catch (const io_error_exception&) {
+        ex = std::current_exception();
+        level = ss::log_level::warn;
     } catch (...) {
-        vlog(log.warn, "compaction_end error=\"{}\"", std::current_exception());
-        throw;
+        ex = std::current_exception();
+        if (is_abort_exception(ex) || ssx::is_shutdown_exception(ex)) {
+            level = ss::log_level::debug;
+        }
     }
+    vlogl(log, level, "compaction_end error=\"{}\"", ex);
+    std::rethrow_exception(ex);
 }
 
 } // namespace lsm::db

@@ -297,6 +297,7 @@ redpanda_cc_library(
         "//src/v/lsm/core:exceptions",
         "//src/v/lsm/core/internal:logger",
         "//src/v/lsm/sst:builder",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:when_all",
     ],
     deps = [
