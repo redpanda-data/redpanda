@@ -373,6 +373,8 @@ create_security_settings_sync_config(
 
     config.is_enabled = cluster_link::model::enabled_t{!options.get_paused()};
 
+    config.sync_deletions = options.get_sync_deletions();
+
     return config;
 }
 
@@ -930,6 +932,7 @@ security_settings_sync_options create_security_settings_sync_options(
       absl::FromChrono(config.get_task_interval()));
     options.set_acl_filters(to_acl_filters(config.acl_filters));
     options.set_paused(!bool(config.is_enabled));
+    options.set_sync_deletions(config.sync_deletions);
 
     return options;
 }

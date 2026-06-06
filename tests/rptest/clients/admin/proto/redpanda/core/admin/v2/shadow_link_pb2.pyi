@@ -880,8 +880,11 @@ class SecuritySettingsSyncOptions(google.protobuf.message.Message):
     EFFECTIVE_INTERVAL_FIELD_NUMBER: builtins.int
     PAUSED_FIELD_NUMBER: builtins.int
     ACL_FILTERS_FIELD_NUMBER: builtins.int
+    SYNC_DELETIONS_FIELD_NUMBER: builtins.int
     paused: builtins.bool
     "Allows user to pause the security settings sync task.  If paused,\n    then the task will enter the 'paused' state and will not sync security\n    settings from the source cluster\n    "
+    sync_deletions: builtins.bool
+    'When true, ACLs removed on the source are also removed from the target\n    within the configured filter scope (full reconciliation). When false\n    (the default), the sync is additive-only: ACLs are created but never\n    deleted.\n    '
 
     @property
     def interval(self) -> google.protobuf.duration_pb2.Duration:
@@ -897,13 +900,13 @@ class SecuritySettingsSyncOptions(google.protobuf.message.Message):
     def acl_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___ACLFilter]:
         """ACL filters"""
 
-    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., effective_interval: google.protobuf.duration_pb2.Duration | None=..., paused: builtins.bool=..., acl_filters: collections.abc.Iterable[Global___ACLFilter] | None=...) -> None:
+    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., effective_interval: google.protobuf.duration_pb2.Duration | None=..., paused: builtins.bool=..., acl_filters: collections.abc.Iterable[Global___ACLFilter] | None=..., sync_deletions: builtins.bool=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['effective_interval', b'effective_interval', 'interval', b'interval']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['acl_filters', b'acl_filters', 'effective_interval', b'effective_interval', 'interval', b'interval', 'paused', b'paused']) -> None:
+    def ClearField(self, field_name: typing.Literal['acl_filters', b'acl_filters', 'effective_interval', b'effective_interval', 'interval', b'interval', 'paused', b'paused', 'sync_deletions', b'sync_deletions']) -> None:
         ...
 Global___SecuritySettingsSyncOptions: typing_extensions.TypeAlias = SecuritySettingsSyncOptions
 

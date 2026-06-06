@@ -442,6 +442,11 @@ message SecuritySettingsSyncOptions {
     bool paused = 3;
     // ACL filters
     repeated ACLFilter acl_filters = 4;
+    // When true, ACLs removed on the source are also removed from the target
+    // within the configured filter scope (full reconciliation). When false
+    // (the default), the sync is additive-only: ACLs are created but never
+    // deleted.
+    bool sync_deletions = 5;
 }
 // Authentication config.  Supports:
 // * SASL/SCRAM

@@ -177,6 +177,7 @@ security_settings_sync_config security_settings_sync_config::copy() const {
     for (const auto& filter : acl_filters) {
         copy.acl_filters.emplace_back(filter);
     }
+    copy.sync_deletions = sync_deletions;
     return copy;
 }
 
