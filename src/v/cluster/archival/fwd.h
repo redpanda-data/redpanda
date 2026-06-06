@@ -14,6 +14,7 @@ namespace archival {
 
 class upload_controller;
 class ntp_archiver;
+class migration_metastore;
 struct configuration;
 class upload_housekeeping_service;
 class purger;

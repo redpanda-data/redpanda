@@ -117,6 +117,17 @@ ss::future<> app::construct(
       ss::sharded_parameter([&remote] { return std::ref(remote->local()); }),
       bucket);
 
+    // The migration mirror runs in the archiver (cluster) but writes to the L1
+    // metastore (here); inject the sink so the archiver can reach it without
+    // cluster depending on cloud_topics.
+    co_await construct_service(migration_sink, ss::sharded_parameter([this] {
+                                   return &replicated_metastore.local();
+                               }));
+    co_await controller->get_partition_manager().invoke_on_all(
+      [this](cluster::partition_manager& pm) {
+          pm.set_migration_metastore(&migration_sink.local());
+      });
+
     co_await construct_service(
       rr_snapshot_manager_,
       config::node().l1_staging_path(),
@@ -407,6 +418,12 @@ ss::future<> app::cleanup_tmp_files() {
 }
 
 ss::future<> app::stop() {
+    // shutdown() blocks (ss::future::get) and so must run in the ss::thread
+    // context the caller invokes stop() from -- i.e. before the first co_await.
+    // The migration sink need not be deregistered from the partition manager
+    // here: the partition manager (and the archivers that hold the sink) is
+    // torn down before cloud_topics::app, so the sink always outlives its
+    // users.
     ssx::sharded_service_container::shutdown();
     co_await data_plane->stop();
 }

@@ -18,6 +18,7 @@
 #include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
+#include "cloud_topics/migration/metastore_sink.h"
 #include "cloud_topics/reconciler/reconciler.h"
 #include "cloud_topics/state_accessors.h"
 #include "ssx/sharded_service_container.h"
@@ -110,6 +111,7 @@ private:
     ss::sharded<state_accessors> state;
     ss::sharded<l1::file_io> l1_io;
     ss::sharded<l1::replicated_metastore> replicated_metastore;
+    ss::sharded<migration_metastore_sink> migration_sink;
     ss::sharded<reconciler::reconciler<>> reconciler;
     ss::sharded<l1::domain_supervisor> domain_supervisor;
     ss::sharded<l1::leader_router> l1_metastore_router;

@@ -371,6 +371,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _upload_hks,
       read_replica_bucket,
       _cloud_topics_state);
+    p->set_migration_metastore(_migration_metastore);
 
     _ntp_table.emplace(log->config().ntp(), p);
     _raft_table.emplace(group, p);

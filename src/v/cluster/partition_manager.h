@@ -178,6 +178,16 @@ public:
      */
     const ntp_table_container& partitions() const { return _ntp_table; }
 
+    // Register the sink the migration mirror writes through (injected from the
+    // cloud-topics subsystem once it is up). Propagates to all current and
+    // future partitions on this shard.
+    void set_migration_metastore(archival::migration_metastore* m) {
+        _migration_metastore = m;
+        for (auto& e : _ntp_table) {
+            e.second->set_migration_metastore(m);
+        }
+    }
+
     /*
      * Block/unblock current node from leadership for new and existing raft
      * groups.
@@ -319,6 +329,7 @@ private:
 
     // The sharded app may not be initialized if cloud topics isn't enabled.
     ss::sharded<cloud_topics::state_accessors>* _cloud_topics_state;
+    archival::migration_metastore* _migration_metastore{nullptr};
 
     static std::string_view
     shutdown_stage_string(partition_shutdown_stage stage);
