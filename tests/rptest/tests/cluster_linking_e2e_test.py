@@ -3361,6 +3361,231 @@ class ShadowLinkSecurityTests(ShadowLinkTestBase):
 
         self.logger.info("All mixed principal ACLs successfully synced")
 
+    @cluster(num_nodes=6)
+    def test_acl_deletion_sync(self):
+        """
+        With sync_deletions enabled, deleting an ACL on the source cluster is
+        synced to the target, i.e. the ACL is removed on the target as well.
+        """
+        req = self.create_default_link_request("test-link")
+        # Opt into deletion sync; the security sync is additive-only by default.
+        req.shadow_link.configurations.security_sync_options.sync_deletions = True
+        _ = self.create_link_with_request(req=req)
+        self.logger.info("Successfully created link")
+
+        target_acls: Any = self.target_cluster_rpk.acl_list(format="json")
+        assert len(target_acls["matches"]) == 0, (
+            f"Expected no ACLs on target cluster, got {target_acls}"
+        )
+
+        def has_acl(
+            rpk: RpkTool,
+            acl: RPKACLInput,
+            *,
+            principal_type: str = "User",
+            resource_type: str = "TOPIC",
+            permission: str = "ALLOW",
+        ) -> bool:
+            expected_principal = f"{principal_type}:{acl.allow_principal[0]}"
+            result: Any = rpk.acl_list(format="json")
+            return any(
+                entry["principal"] == expected_principal
+                and entry["operation"] == acl.operation[0].upper()
+                and entry["resource_type"] == resource_type
+                and entry["resource_name"] == acl.topic[0]
+                and entry["resource_pattern_type"] == acl.resource_pattern_type.upper()
+                and entry["permission"] == permission
+                for entry in result.get("matches", [])
+            )
+
+        foo_acl = RPKACLInput(
+            allow_principal=["test-user"],
+            topic=["foo"],
+            operation=["read"],
+            resource_pattern_type="literal",
+        )
+        bar_acl = RPKACLInput(
+            allow_principal=["other-user"],
+            topic=["bar"],
+            operation=["write"],
+            resource_pattern_type="literal",
+        )
+        baz_acl = RPKACLInput(
+            allow_principal=["third-user"],
+            topic=["baz"],
+            operation=["describe"],
+            resource_pattern_type="literal",
+        )
+
+        # 1. Create two distinct ACLs on the source and confirm both sync to
+        #    the target, so a failure below can only mean the deletion did not
+        #    sync.
+        self.source_cluster_rpk.acl_create(foo_acl)
+        self.source_cluster_rpk.acl_create(bar_acl)
+
+        wait_until(
+            lambda: has_acl(self.target_cluster_rpk, foo_acl)
+            and has_acl(self.target_cluster_rpk, bar_acl),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="ACLs were not synced to target cluster",
+        )
+        self.logger.info("Both ACLs synced to target cluster")
+
+        # 2. Delete one ACL on the source and confirm it is gone there.
+        self.source_cluster_rpk.acl_delete(foo_acl)
+        wait_until(
+            lambda: not has_acl(self.source_cluster_rpk, foo_acl),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="ACL was not deleted from source cluster",
+        )
+        self.logger.info("Deleted one ACL from source cluster")
+
+        # 3. The deletion should propagate to the target...
+        wait_until(
+            lambda: not has_acl(self.target_cluster_rpk, foo_acl),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="ACL deletion was not synced to target cluster; the shadow "
+            "retains a superset of the source cluster's ACLs",
+        )
+        # ...and only the deleted ACL should be removed; the unrelated ACL must
+        # remain on the target.
+        assert has_acl(self.target_cluster_rpk, bar_acl), (
+            "Deleting one ACL on the source removed an unrelated ACL from the "
+            "target cluster"
+        )
+        self.logger.info("Deletion synced to target cluster; unrelated ACL retained")
+
+        # 4. Sync must keep working after a deletion: a newly created ACL
+        #    should still propagate to the target.
+        self.source_cluster_rpk.acl_create(baz_acl)
+        wait_until(
+            lambda: has_acl(self.target_cluster_rpk, baz_acl),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="ACL created after a deletion was not synced to the target",
+        )
+        self.logger.info("ACL created after deletion synced to target cluster")
+
+    @cluster(num_nodes=6)
+    def test_acl_deletion_sync_respects_narrowed_filter(self):
+        """
+        With sync_deletions enabled, narrowing a link's ACL filters must not
+        cause ACLs that fall out of the new scope to be deleted from the shadow.
+
+        Two ACLs are synced under a broad filter; the filter is then narrowed so
+        only one stays in scope. Deleting both on the source must remove only the
+        in-scope ACL from the shadow, leaving the out-of-scope one untouched
+        because the shadow's reconciler applies the same filter locally and so
+        no longer manages it.
+        """
+
+        def has_acl(rpk: RpkTool, topic: str, principal: str) -> bool:
+            result: Any = rpk.acl_list(format="json")
+            return any(
+                entry["principal"] == principal
+                and entry["resource_type"] == "TOPIC"
+                and entry["resource_name"] == topic
+                for entry in result.get("matches", [])
+            )
+
+        req = self.create_default_link_request("test-link")
+        # Start with a filter that matches every ACL, with deletion sync on.
+        broad_filter = shadow_link_pb2.ACLFilter(
+            resource_filter=shadow_link_pb2.ACLResourceFilter(
+                resource_type=acl_pb2.ACL_RESOURCE_ANY,
+                pattern_type=acl_pb2.ACL_PATTERN_ANY,
+            ),
+            access_filter=shadow_link_pb2.ACLAccessFilter(
+                permission_type=acl_pb2.ACL_PERMISSION_TYPE_ANY,
+                operation=acl_pb2.ACL_OPERATION_ANY,
+            ),
+        )
+        req.shadow_link.configurations.security_sync_options.CopyFrom(
+            shadow_link_pb2.SecuritySettingsSyncOptions(
+                interval=google.protobuf.duration_pb2.Duration(seconds=1),
+                acl_filters=[broad_filter],
+                sync_deletions=True,
+            )
+        )
+        _ = self.create_link_with_request(req=req)
+        self.logger.info("Successfully created link")
+
+        foo_acl = RPKACLInput(
+            allow_principal=["test-user"],
+            topic=["foo"],
+            operation=["read"],
+            resource_pattern_type="literal",
+        )
+        bar_acl = RPKACLInput(
+            allow_principal=["other-user"],
+            topic=["bar"],
+            operation=["write"],
+            resource_pattern_type="literal",
+        )
+
+        # Both ACLs are in scope under the broad filter and sync to the target.
+        self.source_cluster_rpk.acl_create(foo_acl)
+        self.source_cluster_rpk.acl_create(bar_acl)
+        wait_until(
+            lambda: has_acl(self.target_cluster_rpk, "foo", "User:test-user")
+            and has_acl(self.target_cluster_rpk, "bar", "User:other-user"),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="ACLs were not synced to target cluster",
+        )
+        self.logger.info("Both ACLs synced to target cluster")
+
+        # Narrow the filter scope to only the "foo" topic. "bar" now falls out
+        # of scope while still present on both source and target.
+        shadow_link = self.get_link("test-link")
+        shadow_link.configurations.security_sync_options.ClearField("acl_filters")
+        shadow_link.configurations.security_sync_options.acl_filters.append(
+            shadow_link_pb2.ACLFilter(
+                resource_filter=shadow_link_pb2.ACLResourceFilter(
+                    resource_type=acl_pb2.ACL_RESOURCE_TOPIC,
+                    pattern_type=acl_pb2.ACL_PATTERN_LITERAL,
+                    name="foo",
+                ),
+                access_filter=shadow_link_pb2.ACLAccessFilter(
+                    permission_type=acl_pb2.ACL_PERMISSION_TYPE_ANY,
+                    operation=acl_pb2.ACL_OPERATION_ANY,
+                ),
+            )
+        )
+        self.update_link(
+            shadow_link=shadow_link,
+            update_mask=google.protobuf.field_mask_pb2.FieldMask(
+                paths=["configurations.security_sync_options"]
+            ),
+        )
+        self.logger.info("Narrowed ACL filter scope to the 'foo' topic")
+
+        # Delete both ACLs on the source.
+        self.source_cluster_rpk.acl_delete(foo_acl)
+        self.source_cluster_rpk.acl_delete(bar_acl)
+
+        # The in-scope "foo" deletion propagates to the target. Observing it
+        # confirms a reconcile cycle ran after the source-side deletions.
+        wait_until(
+            lambda: not has_acl(self.target_cluster_rpk, "foo", "User:test-user"),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="In-scope ACL deletion was not synced to the target",
+        )
+        self.logger.info("In-scope ACL deleted from target cluster")
+
+        # The out-of-scope "bar" must persist: the narrowed filter no longer
+        # manages it, so the reconciler never deletes it despite its removal on
+        # the source.
+        assert has_acl(self.target_cluster_rpk, "bar", "User:other-user"), (
+            "Out-of-scope ACL was deleted from the target after the filter was "
+            "narrowed; the shadow deleted an ACL it no longer manages"
+        )
+        self.logger.info("Out-of-scope ACL correctly retained on target cluster")
+
 
 class ShadowLinkTopicFailoverTests(ShadowLinkPreAllocTestBase):
     def _maybe_failure_injector(self, with_failures: bool):

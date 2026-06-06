@@ -13,12 +13,15 @@
 
 #include "cluster_link/link.h"
 #include "cluster_link/model/types.h"
+#include "container/chunked_hash_map.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/details/security.h"
 #include "security/acl.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
+#include <ranges>
 
 using namespace std::chrono_literals;
 
@@ -206,6 +209,91 @@ filter_to_request_data(const model::acl_filter& filter) {
     return data;
 }
 
+// Converts a cluster link ACL filter into the security filter used to query
+// and delete ACLs on the local (target) cluster, mirroring the source-side
+// conversion done by filter_to_request_data.
+security::acl_binding_filter
+filter_to_acl_binding_filter(const model::acl_filter& filter) {
+    using subsystem = security::resource_pattern_filter::resource_subsystem;
+    const auto& rf = filter.resource_filter;
+    const auto& af = filter.access_filter;
+
+    // is_registry_resource also covers the *_any wildcards, so the subsystem
+    // decision needs no special-casing for them.
+    auto sub = is_registry_resource(rf.resource_type)
+                 ? subsystem::schema_registry
+                 : subsystem::kafka;
+    std::optional<security::resource_type> resource_type;
+    if (
+      rf.resource_type != model::acl_resource::any
+      && rf.resource_type != model::acl_resource::schema_registry_any) {
+        resource_type = model_to_security(rf.resource_type);
+    }
+
+    std::optional<ss::sstring> name;
+    if (!rf.name.empty()) {
+        name = rf.name;
+    }
+
+    std::optional<security::resource_pattern_filter::pattern_filter_type>
+      pattern;
+    switch (rf.pattern_type) {
+    case model::acl_pattern::any:
+        break;
+    case model::acl_pattern::match:
+        pattern.emplace(security::resource_pattern_filter::pattern_match{});
+        break;
+    case model::acl_pattern::literal:
+    case model::acl_pattern::prefixed:
+        pattern.emplace(model_to_security(rf.pattern_type));
+        break;
+    }
+
+    security::resource_pattern_filter pattern_filter(
+      resource_type, std::move(name), std::move(pattern), sub);
+
+    std::optional<security::acl_principal> principal;
+    if (!af.principal.empty()) {
+        principal = security::acl_principal::from_string(af.principal);
+    }
+    std::optional<security::acl_host> host;
+    if (!af.host.empty()) {
+        host = kafka::details::to_acl_host(af.host);
+    }
+    std::optional<security::acl_operation> operation;
+    if (af.operation != model::acl_operation::any) {
+        operation = model_to_security(af.operation);
+    }
+    std::optional<security::acl_permission> permission;
+    if (af.permission_type != model::acl_permission_type::any) {
+        permission = model_to_security(af.permission_type);
+    }
+
+    security::acl_entry_filter entry_filter(
+      std::move(principal), host, operation, permission);
+
+    return {std::move(pattern_filter), std::move(entry_filter)};
+}
+
+// Builds an exact-match filter for a binding to be deleted. The subsystem is
+// derived from the resource type: resource_pattern_filter's implicit
+// constructor defaults to kafka, and resource_pattern_filter::matches rejects
+// sr_* resources under the kafka subsystem, so schema-registry ACLs would
+// otherwise never match (and never be deleted).
+security::acl_binding_filter
+to_delete_filter(const security::acl_binding& binding) {
+    using subsystem = security::resource_pattern_filter::resource_subsystem;
+    const auto& pattern = binding.pattern();
+    auto sub = pattern.resource() == security::resource_type::sr_subject
+                   || pattern.resource() == security::resource_type::sr_registry
+                 ? subsystem::schema_registry
+                 : subsystem::kafka;
+    return {
+      security::resource_pattern_filter(
+        pattern.resource(), pattern.name(), pattern.pattern(), sub),
+      security::acl_entry_filter(binding.entry())};
+}
+
 chunked_vector<security::acl_binding>
 to_acl_bindings(const kafka::describe_acls_resource& r) {
     if (r.name.empty()) {
@@ -375,16 +463,9 @@ security_migrator::run_impl(ss::abort_source& as) {
     auto acls = std::move(acls_f).get();
     vlog(logger().trace, "Fetched ACLs: {}", acls);
 
-    if (acls.empty()) {
-        vlog(logger().trace, "No ACLS fetched, nothing to migrate");
-        co_return state_transition{
-          .desired_state = model::task_state::active,
-          .reason = "Security migrator task run successfully"};
-    }
-
-    chunked_vector<security::acl_binding> bindings;
+    chunked_vector<security::acl_binding> source_bindings;
     try {
-        bindings = to_acl_bindings(acls);
+        source_bindings = to_acl_bindings(acls);
     } catch (const std::exception& e) {
         vlog(logger().warn, "Error transforming received ACLs: {}", e.what());
         co_return state_transition{
@@ -392,18 +473,73 @@ security_migrator::run_impl(ss::abort_source& as) {
           .reason = ssx::sformat(
             "Error transforming received ACLs: {}", e.what())};
     }
-    vlog(logger().trace, "bindings fetched from source cluster: {}", bindings);
+    vlog(
+      logger().trace,
+      "bindings fetched from source cluster: {}",
+      source_bindings);
 
     as.check();
 
-    auto res = co_await get_link()->get_security_service().create_acls(
-      std::move(bindings), acl_creation_timeout);
-
-    std::ranges::for_each(res, [this](cluster::errc ec) {
-        if (ec != cluster::errc::success) {
-            vlog(logger().warn, "Failure during ACL creation: {}", ec);
+    chunked_vector<security::acl_binding_filter> filters;
+    filters.reserve(_config.acl_filters.size());
+    for (const auto& filter : _config.acl_filters) {
+        try {
+            filters.push_back(filter_to_acl_binding_filter(filter));
+        } catch (const std::exception& e) {
+            auto msg = ssx::sformat(
+              "Error building ACL filter {}: {}", filter, e.what());
+            vlog(logger().warn, "{}", msg);
+            co_return state_transition{
+              .desired_state = model::task_state::faulted,
+              .reason = std::move(msg)};
         }
-    });
+    }
+    auto target_set = co_await get_link()->get_security_service().describe_acls(
+      std::move(filters));
+
+    auto source_set = std::ranges::to<chunked_hash_set<security::acl_binding>>(
+      source_bindings);
+
+    chunked_vector<security::acl_binding> to_create;
+    for (const auto& binding : source_set) {
+        if (!target_set.contains(binding)) {
+            to_create.push_back(binding);
+        }
+    }
+
+    // When sync_deletions is set the link owns ACLs within its filter scope, so
+    // a target ACL absent from the source is deleted, even one created directly
+    // on the shadow. Otherwise the sync is additive-only.
+    chunked_vector<security::acl_binding_filter> to_delete;
+    if (_config.sync_deletions) {
+        for (const auto& binding : target_set) {
+            if (!source_set.contains(binding)) {
+                to_delete.push_back(to_delete_filter(binding));
+            }
+        }
+    }
+
+    if (!to_create.empty()) {
+        as.check();
+        auto res = co_await get_link()->get_security_service().create_acls(
+          std::move(to_create), acl_creation_timeout);
+        std::ranges::for_each(res, [this](cluster::errc ec) {
+            if (ec != cluster::errc::success) {
+                vlog(logger().warn, "Failure during ACL creation: {}", ec);
+            }
+        });
+    }
+
+    if (!to_delete.empty()) {
+        as.check();
+        auto res = co_await get_link()->get_security_service().delete_acls(
+          std::move(to_delete), acl_creation_timeout);
+        std::ranges::for_each(res, [this](cluster::errc ec) {
+            if (ec != cluster::errc::success) {
+                vlog(logger().warn, "Failure during ACL deletion: {}", ec);
+            }
+        });
+    }
 
     vlog(logger().trace, "Security migrator task completed");
     co_return state_transition{
