@@ -16,22 +16,51 @@
 #include "cluster_link/utils.h"
 #include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/serde.h"
+#include "security/authorizer.h"
 
 namespace cluster_link {
 
 namespace {
 class security_impl : public security_service {
 public:
-    explicit security_impl(ss::sharded<cluster::security_frontend>* security_fe)
-      : _security_fe(security_fe) {}
+    security_impl(
+      ss::sharded<cluster::security_frontend>* security_fe,
+      ss::sharded<security::authorizer>* authorizer)
+      : _security_fe(security_fe)
+      , _authorizer(authorizer) {}
     ss::future<chunked_vector<cluster::errc>> create_acls(
       chunked_vector<security::acl_binding> bindings,
       ::model::timeout_clock::duration timeout) final {
         return _security_fe->local().create_acls(std::move(bindings), timeout);
     }
 
+    ss::future<chunked_hash_set<security::acl_binding>>
+    describe_acls(chunked_vector<security::acl_binding_filter> filters) final {
+        chunked_hash_set<security::acl_binding> bindings;
+        for (const auto& filter : filters) {
+            for (auto& binding : _authorizer->local().acls(filter)) {
+                bindings.insert(std::move(binding));
+            }
+        }
+        co_return bindings;
+    }
+
+    ss::future<chunked_vector<cluster::errc>> delete_acls(
+      chunked_vector<security::acl_binding_filter> filters,
+      ::model::timeout_clock::duration timeout) final {
+        auto results = co_await _security_fe->local().delete_acls(
+          std::move(filters), timeout);
+        chunked_vector<cluster::errc> errcs;
+        errcs.reserve(results.size());
+        for (const auto& result : results) {
+            errcs.emplace_back(result.error);
+        }
+        co_return errcs;
+    }
+
 private:
     ss::sharded<cluster::security_frontend>* _security_fe;
+    ss::sharded<security::authorizer>* _authorizer;
 };
 
 class kafka_rpc_client_impl : public kafka_rpc_client_service {
@@ -66,8 +95,9 @@ private:
 } // namespace
 
 std::unique_ptr<security_service> security_service::make_default(
-  ss::sharded<cluster::security_frontend>* security_fe) {
-    return std::make_unique<security_impl>(security_fe);
+  ss::sharded<cluster::security_frontend>* security_fe,
+  ss::sharded<security::authorizer>* authorizer) {
+    return std::make_unique<security_impl>(security_fe, authorizer);
 }
 
 std::unique_ptr<kafka::client::cluster>

@@ -26,6 +26,8 @@
 
 #include <seastar/util/defer.hh>
 
+#include <algorithm>
+
 using test_config_provider
   = cluster_link::replication::tests::test_config_provider;
 using data_src_factory
@@ -594,6 +596,49 @@ public:
             results.emplace_back(cluster::errc::success);
         }
 
+        co_return results;
+    }
+
+    ss::future<chunked_hash_set<security::acl_binding>>
+    describe_acls(chunked_vector<security::acl_binding_filter> filters) final {
+        chunked_hash_set<security::acl_binding> bindings;
+        for (const auto& [pattern, entries] : _acls) {
+            for (const auto& entry : entries) {
+                security::acl_binding binding(pattern, entry);
+                if (
+                  std::ranges::any_of(
+                    filters, [&binding](const security::acl_binding_filter& f) {
+                        return f.matches(binding);
+                    })) {
+                    bindings.insert(std::move(binding));
+                }
+            }
+        }
+        co_return bindings;
+    }
+
+    ss::future<chunked_vector<cluster::errc>> delete_acls(
+      chunked_vector<security::acl_binding_filter> filters,
+      ::model::timeout_clock::duration) final {
+        chunked_vector<cluster::errc> results;
+        results.reserve(filters.size());
+        for (const auto& filter : filters) {
+            chunked_vector<security::resource_pattern> emptied;
+            for (auto& [pattern, entries] : _acls) {
+                entries.erase_if(
+                  [&filter, &pattern](const security::acl_entry& entry) {
+                      return filter.matches(
+                        security::acl_binding(pattern, entry));
+                  });
+                if (entries.empty()) {
+                    emptied.push_back(pattern);
+                }
+            }
+            for (const auto& pattern : emptied) {
+                _acls.erase(pattern);
+            }
+            results.emplace_back(cluster::errc::success);
+        }
         co_return results;
     }
 

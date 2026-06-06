@@ -14,14 +14,20 @@
 #include "cluster_link/errc.h"
 #include "cluster_link/fwd.h"
 #include "cluster_link/model/types.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "kafka/client/cluster.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/fwd.h"
 #include "kafka/data/rpc/serde.h"
 #include "model/fundamental.h"
+#include "security/acl.h"
 
 #include <expected>
+
+namespace security {
+class authorizer;
+} // namespace security
 
 namespace cluster_link {
 
@@ -189,11 +195,23 @@ public:
     security_service& operator=(security_service&&) = delete;
     virtual ~security_service() = default;
 
-    static std::unique_ptr<security_service>
-    make_default(ss::sharded<cluster::security_frontend>*);
+    static std::unique_ptr<security_service> make_default(
+      ss::sharded<cluster::security_frontend>*,
+      ss::sharded<security::authorizer>*);
 
     virtual ss::future<chunked_vector<cluster::errc>> create_acls(
       chunked_vector<security::acl_binding>,
+      ::model::timeout_clock::duration) = 0;
+
+    /// List the ACLs on the local (target) cluster that match any of the
+    /// provided filters, as a deduplicated set (filters may overlap).
+    virtual ss::future<chunked_hash_set<security::acl_binding>>
+      describe_acls(chunked_vector<security::acl_binding_filter>) = 0;
+
+    /// Delete ACLs from the local (target) cluster matching the provided
+    /// filters.
+    virtual ss::future<chunked_vector<cluster::errc>> delete_acls(
+      chunked_vector<security::acl_binding_filter>,
       ::model::timeout_clock::duration) = 0;
 };
 
