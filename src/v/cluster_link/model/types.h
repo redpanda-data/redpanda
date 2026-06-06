@@ -753,7 +753,7 @@ struct acl_filter
 struct security_settings_sync_config
   : serde::envelope<
       security_settings_sync_config,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     /// Flag to indicate if the task is enabled or not
     enabled_t is_enabled{enabled_t::yes};
@@ -768,12 +768,18 @@ struct security_settings_sync_config
 
     chunked_vector<acl_filter> acl_filters;
 
+    /// When true, ACLs removed on the source are also removed from the target
+    /// within the configured filter scope (full reconciliation). When false,
+    /// the sync is additive-only: ACLs are created but never deleted. Defaults
+    /// to false so existing links retain their additive-only behavior.
+    bool sync_deletions{false};
+
     friend bool operator==(
       const security_settings_sync_config&,
       const security_settings_sync_config&) = default;
 
     auto serde_fields() {
-        return std::tie(is_enabled, task_interval, acl_filters);
+        return std::tie(is_enabled, task_interval, acl_filters, sync_deletions);
     }
 
     security_settings_sync_config copy() const;

@@ -60,6 +60,7 @@ TEST(converter_test, create_to_metadata_no_authn) {
     EXPECT_TRUE(md.configuration.topic_metadata_mirroring_cfg.is_enabled);
     EXPECT_TRUE(md.configuration.consumer_groups_mirroring_cfg.is_enabled);
     EXPECT_TRUE(md.configuration.security_settings_sync_cfg.is_enabled);
+    EXPECT_FALSE(md.configuration.security_settings_sync_cfg.sync_deletions);
 }
 
 TEST(converter_test, create_to_metadata_tasks_disabled) {
@@ -97,6 +98,37 @@ TEST(converter_test, create_to_metadata_tasks_disabled) {
     EXPECT_FALSE(md.configuration.topic_metadata_mirroring_cfg.is_enabled);
     EXPECT_FALSE(md.configuration.consumer_groups_mirroring_cfg.is_enabled);
     EXPECT_FALSE(md.configuration.security_settings_sync_cfg.is_enabled);
+}
+
+TEST(converter_test, sync_deletions_round_trips) {
+    const auto name = "test-link";
+    proto::admin::shadow_link shadow_link;
+    proto::admin::create_shadow_link_request req;
+    proto::admin::shadow_link_configurations shadow_link_configurations;
+    proto::admin::shadow_link_client_options shadow_link_client_options;
+
+    shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
+    shadow_link_configurations.set_client_options(
+      std::move(shadow_link_client_options));
+
+    proto::admin::security_settings_sync_options security_settings_sync_options;
+    security_settings_sync_options.set_sync_deletions(true);
+    shadow_link_configurations.set_security_sync_options(
+      std::move(security_settings_sync_options));
+
+    shadow_link.set_configurations(std::move(shadow_link_configurations));
+    shadow_link.set_name(ss::sstring{name});
+    req.set_shadow_link(std::move(shadow_link));
+
+    // proto -> model
+    auto md = admin::convert_create_to_metadata(std::move(req));
+    EXPECT_TRUE(md.configuration.security_settings_sync_cfg.sync_deletions);
+
+    // model -> proto: the flag survives the reverse conversion too.
+    auto sl = admin::metadata_to_shadow_link(
+      ss::make_lw_shared<cluster_link::model::metadata>(std::move(md)), {});
+    EXPECT_TRUE(
+      sl.get_configurations().get_security_sync_options().get_sync_deletions());
 }
 
 TEST(converter_test, create_no_bootstrap) {
@@ -696,6 +728,7 @@ TEST(converter_test, metadata_to_shadow_link) {
         cluster_link::model::security_settings_sync_config::
           task_interval_default));
     EXPECT_FALSE(security_settings.get_paused());
+    EXPECT_FALSE(security_settings.get_sync_deletions());
 
     const auto& cg_settings
       = sl.get_configurations().get_consumer_offset_sync_options();
