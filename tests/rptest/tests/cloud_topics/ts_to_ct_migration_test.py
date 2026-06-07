@@ -43,6 +43,9 @@ from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
+from connectrpc.errors import ConnectError, ConnectErrorCode
+
+from rptest.clients.admin.v2 import Admin as AdminV2, metastore_pb, ntp_pb
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
@@ -64,6 +67,8 @@ class TsToCtMigrationTest(RedpandaTest):
     NUM_PHASE2 = 1000
     MSG_SIZE = 128
     TOPIC = "ts-ct-migration-test"
+
+    TOPIC_CUTOVER = "ts-ct-migration-cutover-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -167,6 +172,25 @@ class TsToCtMigrationTest(RedpandaTest):
             err_msg=f"{topic} did not cut over to cloud topics within 240s",
             retry_on_exc=True,
         )
+
+    def _l1_next_offset(self, topic: str, partition: int = 0) -> int | None:
+        """The L1 metastore's next_offset for the partition -- the offset up to
+        which the cloud-topic reconciler has materialized data into L1. Returns
+        None if the partition is absent from the metastore. This is the signal
+        that post-cutover writes actually reached the cloud-topic path: native
+        CT writes (L0 -> reconciler -> L1) advance it; writes that go to the raft
+        log + tiered storage instead do not."""
+        metastore = AdminV2(self.redpanda).metastore()
+        req = metastore_pb.GetOffsetsRequest(
+            partition=ntp_pb.TopicPartition(topic=topic, partition=partition)
+        )
+        try:
+            resp = metastore.get_offsets(req=req)
+            return resp.offsets.next_offset
+        except ConnectError as e:
+            if e.code == ConnectErrorCode.NOT_FOUND:
+                return None
+            raise
 
     def _records_removed(self) -> float:
         return self.redpanda.metric_sum(
@@ -501,6 +525,138 @@ class TsToCtMigrationTest(RedpandaTest):
             consumer.stop()
             consumer.free()
             producer.free()
+
+    @cluster(num_nodes=2)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ]
+    )
+    def test_ts_to_ct_migration_cutover_transition(self, storage_mode: str):
+        """Migration liveness + correctness under concurrent writes.
+
+        A producer runs continuously *through* the trigger and does not stop.
+        The partition must cut over to cloud topics WHILE the producer is still
+        writing -- migration does not require the workload to quiesce. No record
+        is lost across the mid-stream cutover: a consumer from offset 0 sees
+        every acked record, contiguous (data above the boundary is reconciled
+        into L1 from the raft log, and writes arriving after cutover go to the
+        cloud-topic path).
+
+        Then -- the part that proves cutover is terminal -- post-cutover produce
+        must go to the cloud-topic write path: the cloud-topic reconciler must
+        materialize it into L1 (the L1 metastore next_offset advances to cover
+        it), and the archival manifest must stay empty (the archiver is dormant,
+        not re-uploading raft-log writes to tiered storage and re-triggering the
+        migration). If post-cutover writes went to tiered storage instead, the
+        L1 next_offset would not advance and the manifest would re-populate.
+        """
+        self._enable_migration()
+        if storage_mode == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+
+        self.rpk.create_topic(
+            self.TOPIC_CUTOVER,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        # Rate-limited so archival keeps pace and the manifest stays bounded;
+        # still high enough that segments seal and upload steadily. msg_count is
+        # effectively unbounded so the producer never stops on its own.
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CUTOVER,
+            msg_size=self.MSG_SIZE,
+            msg_count=100_000_000,
+            rate_limit_bps=1024 * 1024,
+        )
+        producer.start()
+        try:
+            self._wait_for_ts_segment(self.TOPIC_CUTOVER)
+            self._trigger_migration(self.TOPIC_CUTOVER, storage_mode)
+            # Liveness: the partition must cut over while the producer is still
+            # actively writing -- it does not require the producer to stop.
+            acked_before = producer.produce_status.acked
+            self._wait_for_cutover(self.TOPIC_CUTOVER)
+            acked_after = producer.produce_status.acked
+            assert acked_after > acked_before, (
+                "producer made no progress across cutover -- the cutover did "
+                "not happen under concurrent writes"
+            )
+            # Let a bit more land on the post-cutover (cloud-topic) path before
+            # stopping, so the consume covers writes from both sides of cutover.
+            time.sleep(5)
+            acked = producer.produce_status.acked
+            assert acked > self.NUM_PHASE1, "producer made too little progress"
+        finally:
+            producer.stop()
+            producer.free()
+
+        # No wipe: every acked record must be served from offset 0, contiguous.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CUTOVER,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, (
+            f"data stranded across cutover: offset_gaps={status.offset_gaps}"
+        )
+        assert status.valid_reads >= acked, (
+            f"records lost across cutover: read {status.valid_reads} < acked {acked}"
+        )
+        consumer.stop()
+        consumer.free()
+
+        # Post-cutover writes must go to the cloud-topic path. Produce more and
+        # require the reconciler to materialize it into L1 (next_offset advances)
+        # while the archival manifest stays empty (archiver dormant, no TS
+        # re-upload / re-migration).
+        pre = self._l1_next_offset(self.TOPIC_CUTOVER)
+        assert pre is not None, "partition absent from L1 metastore after cutover"
+        post_count = 2000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CUTOVER,
+            msg_size=self.MSG_SIZE,
+            msg_count=post_count,
+            timeout_sec=120,
+        )
+
+        def reconciled_into_l1() -> bool:
+            nxt = self._l1_next_offset(self.TOPIC_CUTOVER)
+            return nxt is not None and nxt >= pre + post_count
+
+        wait_until(
+            reconciled_into_l1,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="post-cutover writes were not reconciled into L1 -- they "
+            "did not go to the cloud-topic path (L1 next_offset did not "
+            "advance to cover them)",
+            retry_on_exc=True,
+        )
+        # And the archiver must not have re-uploaded them to tiered storage.
+        manifest = self.admin.get_partition_manifest(self.TOPIC_CUTOVER, 0)
+        assert len(manifest.get("segments", {})) == 0, (
+            "archiver re-populated the TS manifest after cutover -- post-cutover "
+            "writes went to tiered storage instead of the cloud-topic path"
+        )
 
 
 class TsToCtMigrationRecoveryTest(RedpandaTest):
