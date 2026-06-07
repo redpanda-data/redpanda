@@ -51,7 +51,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import SISettings, make_redpanda_service
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -599,3 +599,172 @@ class TsToCtMigrationRecoveryTest(RedpandaTest):
         )
         consumer.stop()
         consumer.free()
+
+
+class TsToCtMigrationReadReplicaTest(RedpandaTest):
+    """Read replica of a source partition that is mid tiered->cloud migration
+    (E2).
+
+    The cutover-last mirror copies the migrating source's tiered-storage data
+    into the source's L1 metastore as imported extents, which the source uploads
+    for read-replica consumption. The cloud-topic read replica reads the source's
+    migration_phase from the snapshot and serves the imported extents through the
+    same L1 read path it uses for a native cloud topic -- so a replica of a
+    still-migrating source returns a correct, gap-free prefix of the source's
+    data (lagging the source tail until cutover).
+    """
+
+    TOPIC = "ts-ct-rr-test"
+    MSG_SIZE = 128
+
+    def __init__(self, test_context: TestContext):
+        si_settings = SISettings(test_context, fast_uploads=True)
+        super().__init__(
+            test_context=test_context,
+            num_brokers=1,
+            si_settings=si_settings,
+            extra_rp_conf={
+                "enable_topic_mode_migration": True,
+                "cloud_topics_produce_batching_size_threshold": 65536,
+                "log_segment_size_min": 1,
+                "log_segment_ms_min": 1000,
+                "log_segment_size": 1048576,
+                "cloud_storage_housekeeping_interval_ms": 1000,
+                "log_compaction_interval_ms": 1000,
+                # Flush the L1 metastore manifest frequently so the migrating
+                # source's imported extents are uploaded for the replica to read.
+                "cloud_topics_long_term_flush_interval": 2000,
+            },
+        )
+        self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
+        # The read replica must not own a bucket or write; it reads the source's
+        # bucket. Disable the metastore flush / L0 GC loops on the replica.
+        self.rr_settings = SISettings(
+            test_context,
+            bypass_bucket_creation=True,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+        self.rr_settings.reset_cloud_storage_bucket(si_settings.cloud_storage_bucket)
+        self.source_bucket = si_settings.cloud_storage_bucket
+        self.second_cluster = None
+
+    def _has_ts_segments(self, topic: str) -> bool:
+        manifest = self.admin.get_partition_manifest(topic, 0)
+        return len(manifest.get("segments", {})) >= 1
+
+    @cluster(num_nodes=4)
+    def test_ts_to_ct_migration_read_replica(self):
+        self.redpanda.set_feature_active("topic_mode_migration", True, timeout_sec=30)
+        # Hold the source in the migrating phase so the replica reads a
+        # mid-migration source (rather than the source cutting over first).
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+
+        self.rpk.create_topic(
+            self.TOPIC,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        # A producer so the source has migrating data for the replica to read.
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC,
+            msg_size=self.MSG_SIZE,
+            msg_count=100_000_000,
+        )
+        producer.start()
+        try:
+            wait_until(
+                lambda: self._has_ts_segments(self.TOPIC),
+                timeout_sec=120,
+                backoff_sec=2,
+                err_msg="No TS segment uploaded within 120s",
+                retry_on_exc=True,
+            )
+            # Trigger the migration; the source stays TS-served and the mirror
+            # imports into L1 (marking the metastore phase migrating).
+            self.rpk.alter_topic_config(
+                self.TOPIC,
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_CLOUD,
+            )
+            # Still migrating (manifest non-empty) -- give the mirror time to
+            # import and the source to upload its L1 snapshot for the replica.
+            wait_until(
+                lambda: self._has_ts_segments(self.TOPIC),
+                timeout_sec=60,
+                backoff_sec=2,
+                err_msg="source cut over before the replica could read it",
+                retry_on_exc=True,
+            )
+            time.sleep(8)
+
+            # Bring up the replica cluster (reads the source's bucket; no bucket
+            # of its own) and create a read replica of the migrating source.
+            self.second_cluster = make_redpanda_service(
+                self.test_context,
+                num_brokers=1,
+                si_settings=self.rr_settings,
+                extra_rp_conf={
+                    "enable_cluster_metadata_upload_loop": False,
+                    "cloud_topics_disable_metastore_flush_loop_for_tests": True,
+                    "cloud_topics_disable_level_zero_gc_for_tests": True,
+                },
+            )
+            self.second_cluster.start(start_si=False)
+            rr_rpk = RpkTool(self.second_cluster)
+            rr_rpk.create_topic(
+                self.TOPIC,
+                config={"redpanda.remote.readreplica": self.source_bucket},
+            )
+
+            def rr_has_leader() -> bool:
+                parts = list(rr_rpk.describe_topic(self.TOPIC, tolerant=True))
+                return len(parts) > 0 and all(p.leader != -1 for p in parts)
+
+            wait_until(
+                rr_has_leader,
+                timeout_sec=90,
+                backoff_sec=3,
+                err_msg="read replica never got a leader",
+                retry_on_exc=True,
+            )
+
+            # The replica reads the migrating source via its L1 imported extents.
+            # Consume the available prefix from offset 0 and verify correctness.
+            consumer = KgoVerifierSeqConsumer(
+                self.test_context,
+                self.second_cluster,
+                self.TOPIC,
+                loop=False,
+            )
+            consumer.start()
+            consumer.wait(timeout_sec=120)
+            status = consumer.consumer_status.validator
+            assert status.invalid_reads == 0, (
+                f"replica served incorrect records: "
+                f"invalid_reads={status.invalid_reads}"
+            )
+            assert status.offset_gaps == 0, (
+                f"replica prefix has gaps: offset_gaps={status.offset_gaps}"
+            )
+            assert status.valid_reads > 1000, (
+                f"replica served too few records: {status.valid_reads}"
+            )
+            consumer.stop()
+            consumer.free()
+        finally:
+            producer.stop()
+            producer.free()
+            if self.second_cluster is not None:
+                self.second_cluster.stop()
