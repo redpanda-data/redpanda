@@ -51,7 +51,11 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
-from rptest.services.redpanda import SISettings, make_redpanda_service
+from rptest.services.redpanda import (
+    MetricsEndpoint,
+    SISettings,
+    make_redpanda_service,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -69,6 +73,14 @@ class TsToCtMigrationTest(RedpandaTest):
     NUM_TX_MSGS_PHASE2 = 1000
     TX_MSGS_PER_TXN = 200
     TX_ABORT_RATE = 0.3
+
+    # Compaction parameters. A small key set so phase-2 keys supersede phase-1
+    # keys (forcing cross-boundary compaction decisions), with tombstones.
+    TOPIC_COMPACT = "ts-ct-migration-compact-test"
+    NUM_COMPACT_PHASE1 = 4000
+    NUM_COMPACT_PHASE2 = 4000
+    COMPACT_KEY_CARDINALITY = 100
+    COMPACT_TOMBSTONE_PROB = 0.3
 
     topics = ()
 
@@ -89,6 +101,9 @@ class TsToCtMigrationTest(RedpandaTest):
                 "log_segment_size": 1048576,
                 "cloud_storage_housekeeping_interval_ms": 1000,
                 "log_compaction_interval_ms": 1000,
+                # Run cloud-topic (L1) compaction promptly so the compaction
+                # test's quiesce wait converges quickly after cutover.
+                "cloud_topics_compaction_interval_ms": 5000,
             },
         )
         self.rpk = RpkTool(self.redpanda)
@@ -150,6 +165,43 @@ class TsToCtMigrationTest(RedpandaTest):
             timeout_sec=240,
             backoff_sec=5,
             err_msg=f"{topic} did not cut over to cloud topics within 240s",
+            retry_on_exc=True,
+        )
+
+    def _records_removed(self) -> float:
+        return self.redpanda.metric_sum(
+            metric_name="vectorized_cloud_topics_compaction_worker_records_removed",
+            metrics_endpoint=MetricsEndpoint.METRICS,
+            expect_metric=True,
+        )
+
+    def _wait_for_compaction_quiesce(
+        self, stable_sec: int = 20, timeout_sec: int = 240
+    ):
+        """Wait until CT (L1) compaction has converged -- the records-removed
+        metric is unchanged for `stable_sec`. latest-value validation is only
+        meaningful once the log is fully compacted to one value per key."""
+        wait_until(
+            lambda: self._records_removed() > 0,
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="CT compaction never removed any records",
+            retry_on_exc=True,
+        )
+        state = {"prev": -1.0, "since": time.time()}
+
+        def stable() -> bool:
+            now = self._records_removed()
+            if now != state["prev"]:
+                state["prev"] = now
+                state["since"] = time.time()
+            return time.time() - state["since"] >= stable_sec
+
+        wait_until(
+            stable,
+            timeout_sec=timeout_sec,
+            backoff_sec=5,
+            err_msg="CT compaction did not quiesce",
             retry_on_exc=True,
         )
 
@@ -348,6 +400,107 @@ class TsToCtMigrationTest(RedpandaTest):
         )
         consumer.stop()
         consumer.free()
+
+    @cluster(num_nodes=2)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ]
+    )
+    def test_ts_to_ct_migration_compaction(self, storage_mode: str):
+        """Compaction correctness across the migration boundary.
+
+        A compacted (compact,delete) topic is migrated mid-stream. Phase-1 keyed
+        records + tombstones are archived to tiered storage (and compacted there);
+        phase-2 keyed records + tombstones over the SAME key set are written
+        after the trigger. After cutover everything lives in L1 (imported extents
+        for the pre-cutover range + native CT for the residual), and CT
+        compaction runs over the unified log.
+
+        A read from offset 0 with latest-value validation must see, for every
+        key, exactly the last value the producer wrote for it -- no key
+        resurrected by a stale pre-cutover value surviving a later tombstone, and
+        no tombstone resurrecting a key. invalid_reads > 0 is the failure signal.
+        """
+        self._enable_migration()
+        if storage_mode == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+
+        self.rpk.create_topic(
+            self.TOPIC_COMPACT,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                TopicSpec.PROPERTY_CLEANUP_POLICY: "compact,delete",
+                "segment.bytes": str(32 * 1024),
+                "segment.ms": "1000",
+                "retention.local.target.bytes": str(64 * 1024),
+                # Force compaction to run aggressively; keep data from aging out
+                # of the log via time/size retention during the test.
+                "min.cleanable.dirty.ratio": "0.0",
+                "retention.ms": str(24 * 3600 * 1000),
+            },
+        )
+
+        # A single producer over both phases so it owns one latest-value map
+        # (phase-2 keys supersede phase-1 keys); the verifying consumer reads
+        # that map. validate_latest_values requires the producer to outlive the
+        # consumer, so it is stopped (not freed) before the consume.
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT,
+            msg_size=self.MSG_SIZE,
+            msg_count=self.NUM_COMPACT_PHASE1 + self.NUM_COMPACT_PHASE2,
+            key_set_cardinality=self.COMPACT_KEY_CARDINALITY,
+            tombstone_probability=self.COMPACT_TOMBSTONE_PROB,
+            validate_latest_values=True,
+        )
+        producer.start()
+        try:
+            # Trigger mid-stream, once tiered data (compacted on TS) exists.
+            self._wait_for_ts_segment(self.TOPIC_COMPACT)
+            self._trigger_migration(self.TOPIC_COMPACT, storage_mode)
+            producer.wait_for_latest_value_map()
+            producer.wait(timeout_sec=180)
+        finally:
+            producer.stop()
+
+        self._wait_for_cutover(self.TOPIC_COMPACT)
+
+        # CT (L1) compaction runs over the unified log (imported + native) after
+        # cutover; latest-value validation only holds once it has converged to
+        # one value per key, so wait for it to quiesce first.
+        self._wait_for_compaction_quiesce()
+
+        # Read the now-cloud-topic-served compacted log and validate that every
+        # key resolves to the producer's last value for it.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT,
+            msg_size=0,
+            loop=False,
+            compacted=True,
+            validate_latest_values=True,
+            nodes=[producer.nodes[0]],
+        )
+        consumer.start(clean=False)
+        try:
+            consumer.wait(timeout_sec=180)
+            status = consumer.consumer_status.validator
+            assert status.invalid_reads == 0, (
+                f"compaction across migration resurrected/corrupted a key: "
+                f"invalid_reads={status.invalid_reads}"
+            )
+        finally:
+            consumer.stop()
+            consumer.free()
+            producer.free()
 
 
 class TsToCtMigrationRecoveryTest(RedpandaTest):
