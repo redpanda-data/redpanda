@@ -56,6 +56,7 @@ redpanda_cc_library(
         ":logger",
         "//src/v/cloud_io:admission_control_types",
         "//src/v/cloud_topics:log_reader_config",
+        "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/frontend_reader:reader",
         "//src/v/cloud_topics/read_replica:metadata_provider",
         "//src/v/cloud_topics/read_replica:partition_metadata",

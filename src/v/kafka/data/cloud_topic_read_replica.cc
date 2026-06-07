@@ -13,6 +13,7 @@
 #include "cloud_io/admission_control_types.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/log_reader_config.h"
+#include "cloud_topics/logger.h"
 #include "cloud_topics/read_replica/metadata_provider.h"
 #include "cloud_topics/read_replica/snapshot_metastore.h"
 #include "cloud_topics/read_replica/snapshot_provider.h"
@@ -403,10 +404,27 @@ partition_proxy::get_snapshot() const {
             replicated_seqno,
             snapshot_res.error()));
     }
+    // Read whether the source is still migrating from the snapshot. While the
+    // source is mid migration (tiered->cloud), its data lives in L1 as imported
+    // extents (the dark mirror); the L1 read path below serves those exactly as
+    // it serves native extents, so no separate tiered-storage read path is
+    // needed. Surfaced for observability and to gate behavior at cutover.
+    auto migrating = false;
+    auto offs = co_await snapshot_res->metastore->get_offsets(metadata->tidp);
+    if (offs.has_value()) {
+        migrating = offs->migrating;
+    }
+    vlog(
+      cd_log.debug,
+      "read replica {} snapshot: source migrating={}",
+      ntp(),
+      migrating);
+
     co_return snapshot{
       .metadata = *metadata,
       .metastore = std::move(snapshot_res->metastore),
       .io = snapshot_res->io,
+      .source_migrating = migrating,
     };
 }
 
