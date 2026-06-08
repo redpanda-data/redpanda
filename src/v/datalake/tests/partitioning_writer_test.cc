@@ -47,6 +47,7 @@ iceberg::struct_type default_type_with_columns(size_t extra_columns) {
 static constexpr auto schema_id = iceberg::schema::id_t{0};
 
 static constexpr auto ms_per_hr = 3600 * 1000;
+static constexpr int64_t ms_per_day = int64_t{24} * ms_per_hr;
 
 // Create a bunch of records spread over multiple hours.
 chunked_vector<struct_value> generate_values(
@@ -58,6 +59,22 @@ chunked_vector<struct_value> generate_values(
             vals.emplace_back(val_with_timestamp(
               schema_field,
               model::timestamp{start_time.value() + h * ms_per_hr + i}));
+        }
+    }
+    return vals;
+}
+
+// Create records spread across multiple UTC days, anchored to a deterministic
+// midnight so the test is not sensitive to wall-clock time of day.
+chunked_vector<struct_value> generate_values_over_days(
+  const field_type& schema_field, int num_days, int records_per_day) {
+    const int64_t midnight = (model::timestamp::now().value() / ms_per_day)
+                             * ms_per_day;
+    chunked_vector<struct_value> vals;
+    for (int d = 0; d < num_days; d++) {
+        for (int i = 0; i < records_per_day; i++) {
+            vals.emplace_back(val_with_timestamp(
+              schema_field, model::timestamp{midnight + d * ms_per_day + i}));
         }
     }
     return vals;
@@ -188,6 +205,55 @@ TEST(PartitioningWriterTest, TestEmptyKey) {
     const auto& file = files[0];
     ASSERT_EQ(file.partition_spec_id, spec_id);
     ASSERT_EQ(file.partition_key.val->fields.size(), 0);
+}
+
+TEST(PartitioningWriterTest, TestDayTransform) {
+    auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
+      false);
+    auto field = field_type{default_type_with_columns(0)};
+    auto& default_type = std::get<struct_type>(field);
+    auto pspec = partition_spec::resolve(day_partition_spec(), default_type);
+    ASSERT_TRUE(pspec.has_value());
+    partitioning_writer writer(
+      *writer_factory,
+      schema_id,
+      default_type.copy(),
+      pspec.value().copy(),
+      {});
+
+    static constexpr int num_days = 4;
+    static constexpr int records_per_day = 5;
+    auto source_vals = generate_values_over_days(
+      field, num_days, records_per_day);
+
+    for (auto& v : source_vals) {
+        auto err = writer.add_data(std::move(v), /*approx_size=*/0, as).get();
+        EXPECT_EQ(err, writer_error::ok);
+    }
+
+    auto res = std::move(writer).finish().get();
+    ASSERT_FALSE(res.has_error()) << res.error();
+    const auto& files = res.value();
+    ASSERT_EQ(num_days, files.size());
+
+    int32_t min_day = std::numeric_limits<int32_t>::max();
+    int32_t max_day = std::numeric_limits<int32_t>::min();
+    size_t total_records = 0;
+    for (const auto& f : files) {
+        total_records += f.local_file.row_count;
+        ASSERT_EQ(f.partition_key.val->fields.size(), 1);
+        const auto& key_field = f.partition_key.val->fields[0];
+        ASSERT_TRUE(key_field.has_value());
+        const auto& prim = std::get<primitive_value>(key_field.value());
+        // Per the Iceberg spec, the day transform produces a date value, not
+        // an int value.
+        ASSERT_TRUE(std::holds_alternative<date_value>(prim));
+        int32_t day = get_day(f.partition_key);
+        min_day = std::min(day, min_day);
+        max_day = std::max(day, max_day);
+    }
+    EXPECT_EQ(num_days - 1, max_day - min_day);
+    EXPECT_EQ(total_records, records_per_day * num_days);
 }
 
 TEST(PartitioningWriterTest, TestCompositeKey) {
