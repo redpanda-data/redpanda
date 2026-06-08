@@ -343,6 +343,10 @@ private:
     ss::gate _gate;
     uint64_t _cnt;
 
+    // Shard that owns the cache's global bookkeeping (usage counters, access
+    // time tracker, space reservations and trimming).
+    static constexpr ss::shard_id coordinator_shard{0};
+
     // When trimming, trim to this fraction of the target size to leave some
     // slack free space and thereby avoid continuously trimming.
     static constexpr double _cache_size_low_watermark{0.8};
