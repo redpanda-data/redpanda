@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
@@ -22,6 +23,14 @@ from rptest.tests.redpanda_oauth_test import (
     RedpandaOIDCTestBase,
 )
 from rptest.util import firewall_blocked
+
+# Emitted whenever an OIDC discovery / JWKS refresh fails to reach the
+# IdP (blocked egress, unreachable proxy, rejected CONNECT, ...). Several
+# tests deliberately provoke a failed refresh and must whitelist these.
+OIDC_REFRESH_ERROR_LOGS = [
+    "Error updating metadata",
+    "Error updating jwks",
+]
 
 
 class OIDCViaProxyTestBase(RedpandaOIDCTestBase):
@@ -41,9 +50,34 @@ class OIDCViaProxyTestBase(RedpandaOIDCTestBase):
         super().__init__(test_context, use_ssl=True, **kwargs)
         self.mitmproxy = MitmproxyService(test_context)
 
+    def _proxy_scheme(self) -> str:
+        # Driven by @matrix(proxy_scheme=...) on the test method; read
+        # here rather than as a method arg because the scheme has to be
+        # known in setUp, before the test body runs. Defaults to http
+        # for unparametrized subclasses (e.g. live-reload).
+        return (self.test_context.injected_args or {}).get("proxy_scheme", "http")
+
+    def _enable_tls_listener(self) -> None:
+        # mitmproxy's regular-mode listener autodetects plaintext HTTP
+        # vs TLS and presents this cert, so Redpanda connects via
+        # https:// before issuing CONNECT (the "HTTPS proxy" scheme).
+        # The cert is signed by the same TLSCertManager CA already
+        # installed into each broker's system trust by
+        # RedpandaOIDCTestBase when use_ssl=True (always passed by this
+        # base), so Redpanda's OIDC system-trust credentials validate it.
+        assert self.tls is not None
+        hostname = self.mitmproxy.node.account.hostname
+        cert = self.tls.create_cert(
+            hostname, common_name=hostname, name="mitmproxy-server"
+        )
+        self.mitmproxy.set_server_cert(cert)
+
     def _prepare_mitmproxy(self):
-        """Hook for subclasses to enable a TLS listener before start."""
-        pass
+        # Enable the TLS listener for the https:// proxy variant; the
+        # plaintext variant needs no listener setup. proxy_url() then
+        # reports the matching scheme.
+        if self._proxy_scheme() == "https":
+            self._enable_tls_listener()
 
     def setUp(self):
         # Skips super().setUp(): broker start is deferred to
@@ -128,40 +162,18 @@ class OIDCViaProxyTestBase(RedpandaOIDCTestBase):
 
 
 class OIDCViaProxyTest(OIDCViaProxyTestBase):
-    """Plaintext http:// proxy variant: mitmproxy's listener is
-    unwrapped, Redpanda TCP-connects directly and issues CONNECT.
+    """OIDC discovery routed through an unauthenticated forward proxy.
+
+    proxy_scheme=http  - mitmproxy's listener is unwrapped; Redpanda
+        TCP-connects directly and issues CONNECT.
+    proxy_scheme=https - nested TLS; Redpanda TLS-handshakes with
+        mitmproxy's listener, sends CONNECT through the wrapped socket,
+        then TLS-handshakes with Keycloak inside the tunnel.
     """
 
     @cluster(num_nodes=5)
-    def test_oidc_discovery_via_http_proxy(self):
-        self._run_oidc_discovery_via_proxy()
-
-
-class OIDCViaHttpsProxyTest(OIDCViaProxyTestBase):
-    """TLS https:// proxy variant (nested TLS): Redpanda
-    TLS-handshakes with mitmproxy's listener, sends CONNECT through
-    the wrapped socket, then TLS-handshakes with Keycloak inside the
-    tunnel.
-
-    mitmproxy's regular-mode listener autodetects plaintext HTTP vs
-    TLS and presents the cert configured via --certs. That cert is
-    signed by the same TLSCertManager CA already installed into each
-    broker's system trust by RedpandaOIDCTestBase when use_ssl=True,
-    so Redpanda's OIDC system-trust credentials validate it.
-    """
-
-    def _prepare_mitmproxy(self):
-        # self.tls is populated by RedpandaOIDCTestBase when use_ssl=True,
-        # which the parent class always passes.
-        assert self.tls is not None
-        hostname = self.mitmproxy.node.account.hostname
-        cert = self.tls.create_cert(
-            hostname, common_name=hostname, name="mitmproxy-server"
-        )
-        self.mitmproxy.set_server_cert(cert)
-
-    @cluster(num_nodes=5)
-    def test_oidc_discovery_via_http_proxy(self):
+    @matrix(proxy_scheme=["http", "https"])
+    def test_oidc_discovery_via_proxy(self, proxy_scheme):
         self._run_oidc_discovery_via_proxy()
 
 
@@ -174,14 +186,9 @@ class OIDCProxyLiveReloadTest(OIDCViaProxyTestBase):
 
     SET_PROXY_URL_AT_STARTUP = False
 
-    # Pre-PATCH discovery + JWKS fetches error out because direct
-    # egress is blocked and no proxy is configured yet.
-    EXPECTED_ERROR_LOGS = [
-        "Error updating metadata",
-        "Error updating jwks",
-    ]
-
-    @cluster(num_nodes=5, log_allow_list=EXPECTED_ERROR_LOGS)
+    # Pre-PATCH discovery + JWKS fetches error out because direct egress
+    # is blocked and no proxy is configured yet.
+    @cluster(num_nodes=5, log_allow_list=OIDC_REFRESH_ERROR_LOGS)
     def test_proxy_url_live_reload(self):
         with firewall_blocked(self.redpanda.nodes, KC_HTTPS_PORT):
             self._start_broker()
@@ -282,14 +289,6 @@ class OIDCProxyRejectedAtConfigCommitTest(RedpandaOIDCTestBase):
     triggers the check.
     """
 
-    # Unreachable proxy URL → OIDC refresh logs ERROR. Not the
-    # behaviour under test; whitelist rather than contrive a
-    # reachable dummy proxy.
-    EXPECTED_ERROR_LOGS = [
-        "Error updating metadata",
-        "Error updating jwks",
-    ]
-
     def __init__(self, test_context, **kwargs):
         # use_ssl=False so the discovery URL starts as http://.
         super().__init__(test_context, use_ssl=False, **kwargs)
@@ -320,7 +319,9 @@ class OIDCProxyRejectedAtConfigCommitTest(RedpandaOIDCTestBase):
             admin, upsert={"oidc_http_proxy_url": "http://proxy.example:8888"}
         )
 
-    @cluster(num_nodes=4, log_allow_list=EXPECTED_ERROR_LOGS)
+    # Unreachable proxy URL → OIDC refresh logs ERROR. Not the behaviour
+    # under test; whitelist rather than contrive a reachable dummy proxy.
+    @cluster(num_nodes=4, log_allow_list=OIDC_REFRESH_ERROR_LOGS)
     def test_rejects_reverting_discovery_to_http_while_proxy_set(self):
         # Direction 2: reach a valid (proxy set, https discovery) state
         # via admin PATCH, then try to revert discovery to http.
