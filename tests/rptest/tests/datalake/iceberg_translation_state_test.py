@@ -147,6 +147,13 @@ class IcebergTranslationStateTest(RedpandaTest):
             assert state.dlq_table_name == f"{topic_name}~dlq", (
                 f"Expected DLQ table name '{topic_name}~dlq', got '{state.dlq_table_name}'"
             )
+            assert len(state.partition_states) == 3, (
+                f"Expected 3 partition states, got {len(state.partition_states)}: "
+                f"{dict(state.partition_states)}"
+            )
+            assert set(state.partition_states.keys()) == {0, 1, 2}, (
+                f"Expected partition ids 0,1,2, got {sorted(state.partition_states.keys())}"
+            )
             self.logger.info(f"Translation state for {topic_name}: {state}")
 
             # Requesting with an empty topics_filter must return 400
