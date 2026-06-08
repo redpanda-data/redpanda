@@ -69,6 +69,8 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC = "ts-ct-migration-test"
 
     TOPIC_CUTOVER = "ts-ct-migration-cutover-test"
+    TOPIC_MULTI = "ts-ct-migration-multi-test"
+    MULTI_PARTITION_COUNT = 4
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -191,6 +193,30 @@ class TsToCtMigrationTest(RedpandaTest):
             if e.code == ConnectErrorCode.NOT_FOUND:
                 return None
             raise
+
+    def _wait_for_cutover_all(self, topic: str, num_partitions: int):
+        """Wait until every partition of the topic has cut over (its archival
+        manifest is empty). Each partition migrates and cuts over
+        independently."""
+
+        def all_cut_over() -> bool:
+            for p in range(num_partitions):
+                m = self.admin.get_partition_manifest(topic, p)
+                if len(m.get("segments", {})) != 0:
+                    return False
+            return True
+
+        wait_until(
+            all_cut_over,
+            timeout_sec=240,
+            backoff_sec=5,
+            err_msg=f"not all partitions of {topic} cut over within 240s",
+            retry_on_exc=True,
+        )
+
+    def _partition_start_offset(self, topic: str) -> int:
+        parts = list(self.rpk.describe_topic(topic))
+        return parts[0].start_offset if parts else 0
 
     def _records_removed(self) -> float:
         return self.redpanda.metric_sum(
@@ -657,6 +683,94 @@ class TsToCtMigrationTest(RedpandaTest):
             "archiver re-populated the TS manifest after cutover -- post-cutover "
             "writes went to tiered storage instead of the cloud-topic path"
         )
+
+    @cluster(num_nodes=2)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ]
+    )
+    @cluster(num_nodes=2)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ]
+    )
+    def test_ts_to_ct_migration_multi_partition(self, storage_mode: str):
+        """A multi-partition topic migrates: each partition runs its own mirror
+        and cuts over independently (one trigger, fanned out). Exercises the
+        per-partition cutover path and the sink's ntp -> topic_id_partition
+        resolution under fan-out. A consumer from offset 0 must see every record
+        across all partitions, contiguous per partition."""
+        self._enable_migration()
+        if storage_mode == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+
+        self.rpk.create_topic(
+            self.TOPIC_MULTI,
+            partitions=self.MULTI_PARTITION_COUNT,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        # Enough records that every partition accrues tiered data to migrate.
+        msg_count = self.MULTI_PARTITION_COUNT * 4000
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_MULTI,
+            msg_size=self.MSG_SIZE,
+            msg_count=msg_count,
+        )
+        try:
+            producer.start()
+            # Wait until every partition has a TS segment, then trigger.
+            for p in range(self.MULTI_PARTITION_COUNT):
+                wait_until(
+                    lambda p=p: len(
+                        self.admin.get_partition_manifest(self.TOPIC_MULTI, p).get(
+                            "segments", {}
+                        )
+                    )
+                    >= 1,
+                    timeout_sec=120,
+                    backoff_sec=2,
+                    err_msg=f"partition {p} got no TS segment within 120s",
+                    retry_on_exc=True,
+                )
+            self._trigger_migration(self.TOPIC_MULTI, storage_mode)
+            producer.wait(timeout_sec=180)
+        finally:
+            producer.stop()
+            producer.free()
+
+        total = producer.produce_status.acked
+        self._wait_for_cutover_all(self.TOPIC_MULTI, self.MULTI_PARTITION_COUNT)
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_MULTI,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= total, (
+            f"records lost: read {status.valid_reads} < acked {total}"
+        )
+        consumer.stop()
+        consumer.free()
 
 
 class TsToCtMigrationRecoveryTest(RedpandaTest):
