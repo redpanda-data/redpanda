@@ -940,6 +940,18 @@ class TsToCtMigrationRecoveryTest(RedpandaTest):
         manifest = self.admin.get_partition_manifest(topic, 0)
         return len(manifest.get("segments", {})) >= 1
 
+    def _metastore_manifest_uploaded(self) -> bool:
+        """True once the L1 metastore manifest has been durably uploaded to
+        object storage. Recovery restores the metastore from this manifest, so
+        waiting on it makes the completed-migration recovery deterministic
+        (recovery has the full L1 rather than racing the upload)."""
+        client = self.redpanda.cloud_storage_client
+        bucket = self.redpanda.si_settings.cloud_storage_bucket
+        for o in client.list_objects(bucket):
+            if "meta/metastore" in o.key and o.key.endswith("manifest.bin"):
+                return True
+        return False
+
     @cluster(num_nodes=2)
     def test_ts_to_ct_migration_recovery(self):
         self.redpanda.set_feature_active("topic_mode_migration", True, timeout_sec=30)
@@ -1134,6 +1146,199 @@ class TsToCtMigrationRecoveryTest(RedpandaTest):
         )
         assert status.valid_reads > 1000, (
             f"recovered partition served too few records: {status.valid_reads}"
+        )
+        consumer.stop()
+        consumer.free()
+
+    TOPIC_COMPLETE = "ts-ct-recovery-complete-test"
+    NUM_COMPLETE = 30000
+
+    def _l1_next_offset(self, topic: str, partition: int = 0) -> int | None:
+        metastore = AdminV2(self.redpanda).metastore()
+        req = metastore_pb.GetOffsetsRequest(
+            partition=ntp_pb.TopicPartition(topic=topic, partition=partition)
+        )
+        try:
+            resp = metastore.get_offsets(req=req)
+            return resp.offsets.next_offset
+        except ConnectError as e:
+            if e.code == ConnectErrorCode.NOT_FOUND:
+                return None
+            raise
+
+    @cluster(num_nodes=2)
+    def test_recovery_of_completed_migration(self):
+        """Whole-cluster recovery of a partition whose migration has *completed*
+        (the `complete` branch -- L1 is authoritative).
+
+        Regression test for a recovery routing defect. Cutover advances
+        partition_mode to cloud -- flipping routing to the cloud-topic path,
+        since routing keys on partition_mode -- and empties the *live* archival
+        manifest. But the *remote* archival manifest still holds the pre-cutover
+        tiered-storage segments (the dormant archiver does not re-upload an empty
+        one), and on whole-cluster recovery the archival STM rebuilds from it via
+        the topic's leftover remote_topic_properties. That gives the recovered
+        partition a non-empty archival manifest, which routes it back to tiered
+        storage -- serving only the pre-cutover data, so a consumer reading to the
+        (L1-derived) high watermark hangs on the un-served post-cutover residual.
+        The L1 snapshot is consistent and complete; the fix makes recovery drop
+        the leftover remote_topic_properties for a completed cloud topic so it
+        serves entirely from L1. The test makes this deterministic by waiting for
+        the L1 metastore manifest to be uploaded (full L1) while leaving the
+        remote archival manifest stale, then asserting a from-0 consume reaches
+        the high watermark with every record.
+        """
+        self.redpanda.set_feature_active("topic_mode_migration", True, timeout_sec=30)
+
+        # Deterministic recovery condition (scoped to this test, not the class,
+        # so the mid-migration recovery test keeps the default cadences): fast L1
+        # metastore upload so recovery restores the full L1, plus a large
+        # archival manifest upload interval so the post-cutover (dormant)
+        # archiver does not re-upload the emptied archival manifest -- the remote
+        # archival manifest stays stale (non-empty), which is exactly the
+        # recovery scenario under test.
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_topics_long_term_flush_interval": 500,
+                "cloud_storage_manifest_max_upload_interval_sec": 3600,
+            }
+        )
+
+        self.rpk.create_topic(
+            self.TOPIC_COMPLETE,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        # Finite producer: it finishes, then the migration cuts over.
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPLETE,
+            msg_size=self.MSG_SIZE,
+            msg_count=self.NUM_COMPLETE,
+        )
+        producer.start()
+        wait_until(
+            lambda: self._has_ts_segments(self.TOPIC_COMPLETE),
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="No TS segment uploaded within 120s",
+            retry_on_exc=True,
+        )
+        # Trigger mid-stream so the migration spans the produce.
+        self.rpk.alter_topic_config(
+            self.TOPIC_COMPLETE,
+            TopicSpec.PROPERTY_STORAGE_MODE,
+            TopicSpec.STORAGE_MODE_CLOUD,
+        )
+        producer.wait()
+        producer.stop()
+        producer.free()
+
+        # Cutover empties the (live) archival manifest.
+        wait_until(
+            lambda: len(
+                self.admin.get_partition_manifest(self.TOPIC_COMPLETE, 0).get(
+                    "segments", {}
+                )
+            )
+            == 0,
+            timeout_sec=240,
+            backoff_sec=5,
+            err_msg="topic did not cut over within 240s",
+            retry_on_exc=True,
+        )
+
+        # Wait until L1 covers every produced record (the reconciler has
+        # materialized the post-cutover residual), so recovery has the complete
+        # topic in L1.
+        wait_until(
+            lambda: (self._l1_next_offset(self.TOPIC_COMPLETE) or 0)
+            >= self.NUM_COMPLETE,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="L1 did not cover all records after cutover",
+            retry_on_exc=True,
+        )
+
+        # Capture the completed state in object storage, then wipe + recover.
+        # DETERMINISTIC: wait until the L1 metastore manifest is durably uploaded
+        # so recovery restores the full L1. The remote archival manifest stays
+        # stale (the post-cutover archiver is dormant and does not re-upload the
+        # emptied manifest; proactive uploads are throttled to 1h) -- so recovery
+        # faces "full L1 + stale archival manifest", the scenario under test.
+        self.redpanda.wait_for_controller_snapshot(self.redpanda.nodes[0])
+        wait_until(
+            self._metastore_manifest_uploaded,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="L1 metastore manifest was not uploaded within 60s",
+            retry_on_exc=True,
+        )
+        self.redpanda.stop()
+        for n in self.redpanda.nodes:
+            self.redpanda.remove_local_data(n)
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes,
+            auto_assign_node_id=True,
+            omit_seeds_on_idx_one=False,
+        )
+        self.redpanda._admin.await_stable_leader(
+            "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
+        )
+        self.redpanda._admin.initialize_cluster_recovery()
+
+        def recovery_done() -> bool:
+            state = self.redpanda._admin.get_cluster_recovery_status().json()["state"]
+            if "failed" in state:
+                raise RuntimeError(f"cluster recovery failed: {state}")
+            return "inactive" in state
+
+        wait_until(
+            recovery_done,
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="cluster recovery did not complete within 120s",
+            retry_on_exc=True,
+        )
+
+        assert self.TOPIC_COMPLETE in set(self.rpk.list_topics()), (
+            "topic was not recovered"
+        )
+
+        # The restored metastore must be internally consistent and complete: the
+        # snapshot is atomic, so next_offset, the extents, and their backing
+        # objects all agree (this is not where the defect lives).
+        self.redpanda.validate_metastore(check_object_storage=True)
+
+        # The completed migration must recover as a cloud topic served from L1.
+        # A stale remote archival manifest must NOT route it back to tiered
+        # storage: that path serves only the pre-cutover tiered-storage data and
+        # cannot serve the post-cutover residual, so a consumer reading to the
+        # high watermark would hang. Reading every record to the high watermark
+        # therefore both checks completeness and would hang on a regression.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPLETE,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, (
+            f"recovered topic has gaps: offset_gaps={status.offset_gaps}"
+        )
+        assert status.valid_reads >= self.NUM_COMPLETE, (
+            f"recovered topic served {status.valid_reads} of "
+            f"{self.NUM_COMPLETE} records"
         )
         consumer.stop()
         consumer.free()
