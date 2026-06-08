@@ -14,6 +14,7 @@ from typing import Any
 from rptest.tests.datalake.iceberg import Identifier
 
 from ducktape.services.service import Service
+from ducktape.utils.util import wait_until
 
 
 class QueryEngineType(str, Enum):
@@ -61,6 +62,27 @@ class QueryEngineBase(Service, ABC):
     @abstractmethod
     def escape_identifier(self, table: str) -> str:
         raise NotImplementedError
+
+    def wait_for_ready(self, timeout_sec: int = 60, backoff_sec: float = 2):
+        """Block until the engine can serve queries.
+
+        A freshly-started Trino server rejects queries with SERVER_STARTING_UP
+        until its workers register, so a query issued immediately after startup
+        races that initialization. Poll a trivial query until it succeeds.
+        """
+
+        def _can_query():
+            self.run_query_fetch_one("SELECT 1")
+            return True
+
+        wait_until(
+            _can_query,
+            timeout_sec=timeout_sec,
+            backoff_sec=backoff_sec,
+            err_msg=f"{self.engine_name().value} did not become queryable "
+            f"within {timeout_sec}s",
+            retry_on_exc=True,
+        )
 
     def run_query_fetch_all(self, query):
         with self.run_query(query) as cursor:

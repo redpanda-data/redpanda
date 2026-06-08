@@ -142,6 +142,7 @@
         "rptest/tests/datalake/transactions_test.py",
         "rptest/tests/datalake/translation_interruption_test.py",
         "rptest/tests/datalake/trino_smoke_test.py",
+        "rptest/tests/datalake/ts_to_ct_migration_test.py",
         "rptest/tests/delete_retention_ms_test.py",
         "rptest/tests/describe_producers_test.py",
         "rptest/tests/enterprise_features_license_test.py",
