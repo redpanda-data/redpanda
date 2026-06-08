@@ -71,6 +71,7 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_CUTOVER = "ts-ct-migration-cutover-test"
     TOPIC_MULTI = "ts-ct-migration-multi-test"
     MULTI_PARTITION_COUNT = 4
+    TOPIC_RESTART = "ts-ct-migration-restart-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -768,6 +769,120 @@ class TsToCtMigrationTest(RedpandaTest):
         assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
         assert status.valid_reads >= total, (
             f"records lost: read {status.valid_reads} < acked {total}"
+        )
+        consumer.stop()
+        consumer.free()
+
+    @cluster(num_nodes=2)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ]
+    )
+    def test_ts_to_ct_migration_node_restart(self, storage_mode: str):
+        """A broker restart mid-migration (the common operational case, distinct
+        from total-loss cluster recovery). The migration state -- the archival
+        STM manifest and the migration flag -- lives in the partition raft log,
+        so it must survive a graceful restart: the partition comes back still
+        migrating, the mirror resumes, and it cuts over. No wipe, so every acked
+        record must still be served (a lost flag/manifest would treat it as a
+        fresh cloud topic and drop the tiered data)."""
+        self._enable_migration()
+        if storage_mode == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+        # Hold the partition migrating so the restart happens mid-migration
+        # rather than racing a cutover under concurrent writes.
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+
+        self.rpk.create_topic(
+            self.TOPIC_RESTART,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_RESTART,
+            msg_size=self.MSG_SIZE,
+            msg_count=100_000_000,
+            rate_limit_bps=1024 * 1024,
+            tolerate_failed_produce=True,
+        )
+        producer.start()
+        try:
+            self._wait_for_ts_segment(self.TOPIC_RESTART)
+            self._trigger_migration(self.TOPIC_RESTART, storage_mode)
+            # Wait until the migration is genuinely underway: the mirror has
+            # imported into L1 (next_offset advanced) -- so there is real
+            # migration state to lose on restart.
+            wait_until(
+                lambda: (self._l1_next_offset(self.TOPIC_RESTART) or 0) > 0,
+                timeout_sec=120,
+                backoff_sec=3,
+                err_msg="migration did not start (nothing imported into L1)",
+                retry_on_exc=True,
+            )
+
+            # Graceful restart of the broker (no wipe) -- mid-migration.
+            self.redpanda.restart_nodes(self.redpanda.nodes)
+            self.redpanda._admin.await_stable_leader(
+                self.TOPIC_RESTART,
+                partition=0,
+                namespace="kafka",
+                timeout_s=60,
+                backoff_s=2,
+            )
+
+            # The migration state survived: still TS-served (manifest non-empty),
+            # not reset to a fresh cloud topic.
+            wait_until(
+                lambda: len(
+                    self.admin.get_partition_manifest(self.TOPIC_RESTART, 0).get(
+                        "segments", {}
+                    )
+                )
+                > 0,
+                timeout_sec=60,
+                backoff_sec=2,
+                err_msg="migration state lost across restart (manifest empty)",
+                retry_on_exc=True,
+            )
+        finally:
+            producer.stop()
+            acked = producer.produce_status.acked
+            producer.free()
+
+        # Allow cutover now that we've confirmed the migration survived the
+        # restart; the mirror has resumed and converges.
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": False}
+        )
+        self._wait_for_cutover(self.TOPIC_RESTART)
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_RESTART,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= acked, (
+            f"records lost across restart: read {status.valid_reads} < acked {acked}"
         )
         consumer.stop()
         consumer.free()
