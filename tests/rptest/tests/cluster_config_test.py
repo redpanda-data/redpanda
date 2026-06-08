@@ -59,6 +59,7 @@ SECRET_CONFIG_NAMES = frozenset(
         "iceberg_rest_catalog_client_secret",
         "iceberg_rest_catalog_token",
         "iceberg_rest_catalog_aws_secret_key",
+        "oidc_http_proxy_password",
     ]
 )
 

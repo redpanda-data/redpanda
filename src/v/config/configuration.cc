@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 
+#include "absl/strings/ascii.h"
 #include "base/units.h"
 #include "cluster/scheduling/topic_memory_per_partition_default.h"
 #include "config/base_property.h"
@@ -29,6 +30,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -3940,6 +3942,45 @@ configuration::configuration()
           auto res = security::oidc::parse_url(*v);
           if (res.has_error()) {
               return res.error().message();
+          }
+          return std::nullopt;
+      })
+  , oidc_http_proxy_username(
+      *this,
+      "oidc_http_proxy_username",
+      "Username for HTTP Basic authentication to the OIDC forward proxy "
+      "(oidc_http_proxy_url). Leave unset for an unauthenticated proxy. "
+      "Both username and password must be set for credentials to be sent.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      [](const auto& v) -> std::optional<ss::sstring> {
+          if (!v.has_value()) {
+              return std::nullopt;
+          }
+          if (v->find(':') != ss::sstring::npos) {
+              return "must not contain ':' (RFC 7617)";
+          }
+          if (std::ranges::any_of(*v, absl::ascii_iscntrl)) {
+              return "must not contain control characters";
+          }
+          return std::nullopt;
+      })
+  , oidc_http_proxy_password(
+      *this,
+      "oidc_http_proxy_password",
+      "Password for HTTP Basic authentication to the OIDC forward proxy "
+      "(oidc_http_proxy_url). Leave unset for an unauthenticated proxy. "
+      "Both username and password must be set for credentials to be sent.",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
+      std::nullopt,
+      [](const auto& v) -> std::optional<ss::sstring> {
+          if (!v.has_value()) {
+              return std::nullopt;
+          }
+          if (std::ranges::any_of(*v, absl::ascii_iscntrl)) {
+              return "must not contain control characters";
           }
           return std::nullopt;
       })

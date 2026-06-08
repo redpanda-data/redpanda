@@ -85,6 +85,7 @@ redpanda_cc_library(
         "//src/v/utils:unresolved_address",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/container:node_hash_set",
+        "@abseil-cpp//absl/strings",
         "@boost//:algorithm",
         "@boost//:filesystem",
         "@boost//:lexical_cast",
