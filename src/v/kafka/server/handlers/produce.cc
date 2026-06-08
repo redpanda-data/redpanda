@@ -356,7 +356,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
         auto dur = std::chrono::steady_clock::now() - start;
         octx.rctx.connection()->server().update_produce_latency(dur);
     } else {
-        m->cancel();
+        m.cancel();
     }
     co_return p;
 }

@@ -159,8 +159,8 @@ public:
     // log_message_timestamp_alert_before_ms
     void produce_bad_create_time() { _produce_bad_create_time++; }
 
-    std::unique_ptr<hist_t::measurement> auto_produce_measurement() {
-        return _produce_latency.auto_measure();
+    hist_t::measurement auto_produce_measurement() {
+        return hist_t::measurement(_produce_latency);
     }
 
     void record_fetch_latency(std::chrono::microseconds micros) {
