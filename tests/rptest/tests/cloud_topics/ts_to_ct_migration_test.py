@@ -1306,3 +1306,140 @@ class TsToCtMigrationReadReplicaTest(RedpandaTest):
             producer.free()
             if self.second_cluster is not None:
                 self.second_cluster.stop()
+
+    @cluster(num_nodes=4)
+    def test_ts_to_ct_migration_read_replica_across_cutover(self):
+        """A read replica created against a migrating source, kept live across
+        the source's migrating->complete flip. After the source cuts over it is
+        a native cloud topic (imported extents + native residual, all in L1);
+        the replica's snapshot refreshes to that complete state and a consumer
+        from offset 0 must then see every source record, contiguous. Validates
+        E2's complete branch and that the phase flip on the replica is handled.
+        """
+        topic = "ts-ct-rr-cutover-test"
+        self.redpanda.set_feature_active("topic_mode_migration", True, timeout_sec=30)
+        # Hold the source migrating so the replica is brought up live during the
+        # migration; the knob is released below to drive the migrating->complete
+        # flip deterministically while the replica is reading.
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+
+        self.rpk.create_topic(
+            topic,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        # A finite producer; cutover is held off until it finishes and the knob
+        # is released.
+        total = 30000
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            msg_size=self.MSG_SIZE,
+            msg_count=total,
+        )
+        try:
+            producer.start()
+            wait_until(
+                lambda: self._has_ts_segments(topic),
+                timeout_sec=120,
+                backoff_sec=2,
+                err_msg="No TS segment uploaded within 120s",
+                retry_on_exc=True,
+            )
+            self.rpk.alter_topic_config(
+                topic,
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_CLOUD,
+            )
+
+            # Bring up the replica while the source is still migrating, so it is
+            # live across the flip.
+            self.second_cluster = make_redpanda_service(
+                self.test_context,
+                num_brokers=1,
+                si_settings=self.rr_settings,
+                extra_rp_conf={
+                    "enable_cluster_metadata_upload_loop": False,
+                    "cloud_topics_disable_metastore_flush_loop_for_tests": True,
+                    "cloud_topics_disable_level_zero_gc_for_tests": True,
+                },
+            )
+            self.second_cluster.start(start_si=False)
+            rr_rpk = RpkTool(self.second_cluster)
+            rr_rpk.create_topic(
+                topic,
+                config={"redpanda.remote.readreplica": self.source_bucket},
+            )
+
+            def rr_has_leader() -> bool:
+                parts = list(rr_rpk.describe_topic(topic, tolerant=True))
+                return len(parts) > 0 and all(p.leader != -1 for p in parts)
+
+            wait_until(
+                rr_has_leader,
+                timeout_sec=90,
+                backoff_sec=3,
+                err_msg="read replica never got a leader",
+                retry_on_exc=True,
+            )
+
+            # Let the source finish, then release the cutover hold so it flips
+            # migrating -> complete (its archival manifest empties) while the
+            # replica is live.
+            producer.wait(timeout_sec=180)
+            self.redpanda.set_cluster_config(
+                {"cloud_topics_disable_migration_cutover_for_tests": False}
+            )
+            wait_until(
+                lambda: not self._has_ts_segments(topic),
+                timeout_sec=240,
+                backoff_sec=5,
+                err_msg="source did not cut over within 240s",
+                retry_on_exc=True,
+            )
+
+            # The replica's snapshot must refresh to the completed source: its
+            # high watermark catches up to the full record count.
+            def rr_caught_up() -> bool:
+                parts = list(rr_rpk.describe_topic(topic, tolerant=True))
+                return len(parts) > 0 and (parts[0].high_watermark or 0) >= total
+
+            wait_until(
+                rr_caught_up,
+                timeout_sec=120,
+                backoff_sec=3,
+                err_msg="replica did not catch up to the completed source",
+                retry_on_exc=True,
+            )
+
+            consumer = KgoVerifierSeqConsumer(
+                self.test_context,
+                self.second_cluster,
+                topic,
+                loop=False,
+            )
+            consumer.start()
+            consumer.wait(timeout_sec=120)
+            status = consumer.consumer_status.validator
+            assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+            assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+            assert status.valid_reads >= total, (
+                f"replica lost records across the source cutover: "
+                f"read {status.valid_reads} < {total}"
+            )
+            consumer.stop()
+            consumer.free()
+        finally:
+            producer.stop()
+            producer.free()
+            if self.second_cluster is not None:
+                self.second_cluster.stop()
