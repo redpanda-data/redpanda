@@ -213,6 +213,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "metastore_lsm_probe",
+    srcs = [
+        "metastore_lsm_probe.cc",
+    ],
+    hdrs = [
+        "metastore_lsm_probe.h",
+    ],
+    implementation_deps = [
+        "//src/v/config",
+        "//src/v/ssx:sformat",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/lsm",
+        "//src/v/metrics",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "replicated_db",
     srcs = [
         "replicated_db.cc",
@@ -227,6 +249,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/lsm/io:cloud_cache_persistence",
         "//src/v/model:batch_builder",
+        "//src/v/raft",
         "//src/v/serde",
         "//src/v/ssx:clock",
         "//src/v/ssx:time",
@@ -234,6 +257,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":lsm_update",
+        ":metastore_lsm_probe",
         ":stm",
         ":write_batch_row",
         "//src/v/cloud_io:cache",
