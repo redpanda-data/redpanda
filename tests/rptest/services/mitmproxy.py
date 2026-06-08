@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import shlex
+
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 
@@ -43,6 +45,7 @@ class MitmproxyService(Service):
     def __init__(self, context):
         super().__init__(context, num_nodes=1)
         self._server_cert = None
+        self._proxy_auth = None
 
     @property
     def node(self):
@@ -54,6 +57,13 @@ class MitmproxyService(Service):
         certificate). Must be called before start().
         """
         self._server_cert = cert
+
+    def set_proxy_auth(self, username: str, password: str) -> None:
+        """Require HTTP Basic proxy authentication. Must be called
+        before start(). Clients must send Proxy-Authorization: Basic
+        base64(user:pass) on the CONNECT request or get a 407.
+        """
+        self._proxy_auth = f"{username}:{password}"
 
     def proxy_url(self) -> str:
         scheme = "https" if self._server_cert is not None else "http"
@@ -73,6 +83,9 @@ class MitmproxyService(Service):
                 allow_fail=False,
             )
             extra_args = f"--certs '*={CERT_PEM_PATH}' "
+
+        if self._proxy_auth is not None:
+            extra_args += f"--set {shlex.quote('proxyauth=' + self._proxy_auth)} "
 
         # PYTHONUNBUFFERED + stdbuf -oL: mitmdump writes progress to
         # stdout, and Python's default block-buffering means the file
