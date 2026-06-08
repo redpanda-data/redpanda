@@ -68,3 +68,11 @@ BOOST_DATA_TEST_CASE(test_parse_url, bdata::make(url_data), d) {
         BOOST_REQUIRE_EQUAL(res.assume_error(), d.url.assume_error());
     }
 }
+
+BOOST_AUTO_TEST_CASE(make_basic_proxy_authorization_rfc7617_example) {
+    // RFC 7617 canonical example: base64("aladdin:opensesame")
+    // == "YWxhZGRpbjpvcGVuc2VzYW1l".
+    BOOST_REQUIRE_EQUAL(
+      security::oidc::make_basic_proxy_authorization("aladdin", "opensesame"),
+      "Basic YWxhZGRpbjpvcGVuc2VzYW1l");
+}

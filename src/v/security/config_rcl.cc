@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/bytes.h"
 #include "re2/re2.h"
 #include "security/config.h"
 #include "security/gssapi_rule.h"
@@ -17,6 +18,7 @@
 #include "security/oidc_url_parser.h"
 #include "ssx/sformat.h"
 #include "strings/string_switch.h"
+#include "utils/base64.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -171,6 +173,13 @@ result<parsed_url> parse_url(std::string_view url_view) {
       "{}{}{}", url->get_pathname(), url->get_search(), url->get_hash());
 
     return result;
+}
+
+ss::sstring make_basic_proxy_authorization(
+  std::string_view username, std::string_view password) {
+    auto creds = ssx::sformat("{}:{}", username, password);
+    auto encoded = bytes_to_base64(bytes::from_string(creds));
+    return ssx::sformat("Basic {}", encoded);
 }
 
 static constexpr std::string_view mapping_rule_pattern
