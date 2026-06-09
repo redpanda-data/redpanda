@@ -46,7 +46,7 @@ from ducktape.utils.util import wait_until
 from connectrpc.errors import ConnectError, ConnectErrorCode
 
 from rptest.clients.admin.v2 import Admin as AdminV2, metastore_pb, ntp_pb
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -72,6 +72,8 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_MULTI = "ts-ct-migration-multi-test"
     MULTI_PARTITION_COUNT = 4
     TOPIC_RESTART = "ts-ct-migration-restart-test"
+    TOPIC_GATE = "ts-ct-migration-gate-test"
+    TOPIC_RETRIGGER = "ts-ct-migration-retrigger-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -683,6 +685,147 @@ class TsToCtMigrationTest(RedpandaTest):
         assert len(manifest.get("segments", {})) == 0, (
             "archiver re-populated the TS manifest after cutover -- post-cutover "
             "writes went to tiered storage instead of the cloud-topic path"
+        )
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_trigger_feature_gated(self):
+        """The migration trigger (storage mode tiered -> cloud) is gated on the
+        topic_mode_migration cluster feature: rejected while the feature is
+        inactive, accepted once it is active. This is mixed-version safety -- a
+        migration must not begin while older nodes that cannot drive it remain
+        in the cluster."""
+        # Feature intentionally left inactive.
+        self.rpk.create_topic(
+            self.TOPIC_GATE,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+            },
+        )
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_GATE,
+            msg_size=self.MSG_SIZE,
+            msg_count=self.NUM_PHASE1,
+            timeout_sec=120,
+        )
+        self._wait_for_ts_segment(self.TOPIC_GATE)
+
+        # Rejected while the feature is inactive.
+        try:
+            self._trigger_migration(self.TOPIC_GATE, TopicSpec.STORAGE_MODE_CLOUD)
+            raise AssertionError(
+                "the migration trigger was accepted while the "
+                "topic_mode_migration feature was inactive"
+            )
+        except RpkException:
+            pass
+
+        # Accepted once the feature is active, and the partition then migrates
+        # and cuts over -- confirming it was exactly the feature gate that
+        # blocked the trigger.
+        self._enable_migration()
+        self._trigger_migration(self.TOPIC_GATE, TopicSpec.STORAGE_MODE_CLOUD)
+        self._wait_for_cutover(self.TOPIC_GATE)
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_retrigger_idempotent(self):
+        """The migration trigger is idempotent and one-way. Re-issuing the
+        tiered -> cloud trigger while a migration is in flight is a no-op (no
+        error, no second migration) and the partition still cuts over exactly
+        once with nothing lost. After cutover the topic cannot be reverted to
+        tiered storage (cloud -> tiered is rejected), and post-cutover writes go
+        to the cloud-topic path while the archival manifest stays empty."""
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC_RETRIGGER,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+            },
+        )
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_RETRIGGER,
+            msg_size=self.MSG_SIZE,
+            msg_count=self.NUM_PHASE1,
+            timeout_sec=120,
+        )
+        total = self.NUM_PHASE1
+        self._wait_for_ts_segment(self.TOPIC_RETRIGGER)
+
+        # Trigger, then re-issue the identical trigger before cutover -- the
+        # second must neither error nor start a second migration.
+        self._trigger_migration(self.TOPIC_RETRIGGER, TopicSpec.STORAGE_MODE_CLOUD)
+        self._trigger_migration(self.TOPIC_RETRIGGER, TopicSpec.STORAGE_MODE_CLOUD)
+        self._wait_for_cutover(self.TOPIC_RETRIGGER)
+
+        # Cut over exactly once, nothing lost: consume from 0 contiguous.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_RETRIGGER,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=120)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= total, (
+            f"valid_reads={status.valid_reads} < produced {total}"
+        )
+        consumer.stop()
+        consumer.free()
+
+        # One-way: a cut-over cloud topic cannot be reverted to tiered storage.
+        try:
+            self.rpk.alter_topic_config(
+                self.TOPIC_RETRIGGER,
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_TIERED,
+            )
+            raise AssertionError(
+                "reverting a cut-over cloud topic to tiered storage was accepted"
+            )
+        except RpkException:
+            pass
+
+        # Post-cutover writes still go to the cloud-topic path (L1 next_offset
+        # advances) and the archiver stays dormant (manifest stays empty): the
+        # re-trigger did not resurrect the migration.
+        pre = self._l1_next_offset(self.TOPIC_RETRIGGER)
+        assert pre is not None, "partition absent from L1 metastore after cutover"
+        post_count = 2000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_RETRIGGER,
+            msg_size=self.MSG_SIZE,
+            msg_count=post_count,
+            timeout_sec=120,
+        )
+
+        def reconciled_into_l1() -> bool:
+            nxt = self._l1_next_offset(self.TOPIC_RETRIGGER)
+            return nxt is not None and nxt >= pre + post_count
+
+        wait_until(
+            reconciled_into_l1,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="post-cutover writes were not reconciled into L1",
+            retry_on_exc=True,
+        )
+        manifest = self.admin.get_partition_manifest(self.TOPIC_RETRIGGER, 0)
+        assert len(manifest.get("segments", {})) == 0, (
+            "archival manifest resurrected after re-trigger"
         )
 
     @cluster(num_nodes=2)
