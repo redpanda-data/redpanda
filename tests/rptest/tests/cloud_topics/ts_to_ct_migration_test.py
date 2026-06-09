@@ -89,6 +89,8 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_API = "ts-ct-migration-api-test"
     TOPIC_CG = "ts-ct-migration-cg-test"
     TOPIC_SPILL = "ts-ct-migration-spill-test"
+    TOPIC_NO_ARCHIVE_LOCAL = "ts-ct-migration-no-archive-local-test"
+    TOPIC_NO_ARCHIVE_EMPTY = "ts-ct-migration-no-archive-empty-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -948,6 +950,196 @@ class TsToCtMigrationTest(RedpandaTest):
         manifest = self.admin.get_partition_manifest(self.TOPIC_RETRIGGER, 0)
         assert len(manifest.get("segments", {})) == 0, (
             "archival manifest resurrected after re-trigger"
+        )
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_no_archived_segments_local_data(self):
+        """Trigger the migration on a tiered-storage topic that has produced
+        data but not yet uploaded any segment -- the archival manifest is empty
+        at the trigger.
+
+        Routing keys on partition_mode (the partition_properties field), not on
+        the archival manifest: while migrating, partition_mode lags at tiered so
+        reads are served via replicated_partition; cutover advances
+        partition_mode to cloud, flipping routing to the cloud-topic path. The
+        produced-but-unuploaded records live only in the local raft log at the
+        trigger. They must not be stranded by the migration: a consumer from
+        offset 0 must still see every record in order, and they must reconcile
+        into L1 (the durable cloud-topic path) rather than only surviving in the
+        local log.
+
+        NOTE: this does not actually exercise a genuinely empty-manifest
+        migration -- during migration the archiver uploads the local data, so
+        the manifest becomes non-empty and a normal mirror+cutover runs. Pinning
+        the empty-manifest path (no upload, immediate cutover) is a follow-up."""
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC_NO_ARCHIVE_LOCAL,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                # One large, time-insensitive open segment so the data stays in
+                # the local log and never seals -> never uploads: the archival
+                # manifest is guaranteed empty at the trigger. Large local
+                # retention so the pre-trigger records are not trimmed during
+                # the test (we want to prove they are served, not dropped).
+                "segment.bytes": str(1024 * 1024 * 1024),
+                "segment.ms": str(24 * 60 * 60 * 1000),
+                "retention.local.target.bytes": str(1024 * 1024 * 1024),
+            },
+        )
+
+        count = self.NUM_PHASE1
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_NO_ARCHIVE_LOCAL,
+            msg_size=self.MSG_SIZE,
+            msg_count=count,
+        )
+        try:
+            producer.start()
+            # Let some records land in the local log, then confirm the
+            # precondition (no segment uploaded) and trigger mid-stream so the
+            # records straddle the routing flip.
+            wait_until(
+                lambda: producer.produce_status.acked > 100,
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg="producer made no progress",
+            )
+            manifest = self.admin.get_partition_manifest(self.TOPIC_NO_ARCHIVE_LOCAL, 0)
+            assert len(manifest.get("segments", {})) == 0, (
+                "precondition violated: a segment uploaded before the trigger"
+            )
+            self._trigger_migration(
+                self.TOPIC_NO_ARCHIVE_LOCAL, TopicSpec.STORAGE_MODE_CLOUD
+            )
+            producer.wait(timeout_sec=120)
+        finally:
+            producer.stop()
+            producer.free()
+        total = producer.produce_status.acked
+
+        # There was nothing to mirror and nothing to cut over: the manifest is
+        # (still) empty and the partition is served on the cloud-topic path.
+        manifest = self.admin.get_partition_manifest(self.TOPIC_NO_ARCHIVE_LOCAL, 0)
+        assert len(manifest.get("segments", {})) == 0, (
+            "an empty-manifest migration unexpectedly populated the manifest"
+        )
+
+        # Every record must be served from offset 0, contiguous.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_NO_ARCHIVE_LOCAL,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=120)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= total, (
+            f"valid_reads={status.valid_reads} < produced {total}"
+        )
+        consumer.stop()
+        consumer.free()
+
+        # ...and they must be durable on the cloud-topic path: reconciled into
+        # L1, not merely surviving in the local raft log (which retention would
+        # eventually drop). next_offset >= total proves the pre-trigger
+        # local-only records were materialized into L1.
+        def reconciled_into_l1() -> bool:
+            nxt = self._l1_next_offset(self.TOPIC_NO_ARCHIVE_LOCAL)
+            return nxt is not None and nxt >= total
+
+        wait_until(
+            reconciled_into_l1,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="records produced before the trigger were not reconciled "
+            "into L1 (stranded in the local log)",
+            retry_on_exc=True,
+        )
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_no_archived_segments_empty_topic(self):
+        """Trigger the migration on a tiered-storage topic that has never held
+        any data -- empty log, empty archival manifest at the trigger.
+
+        Routing keys on partition_mode (the partition_properties field): during
+        migration partition_mode lags at tiered, and cutover advances it to
+        cloud, flipping routing to the cloud-topic path. Data produced after the
+        trigger must behave as a native cloud topic: served from offset 0 and
+        reconciled into L1.
+
+        NOTE: this does not actually exercise a genuinely empty-manifest
+        migration -- the post-trigger writes are uploaded during migration, so
+        the manifest becomes non-empty and a normal mirror+cutover runs. Pinning
+        the empty-manifest path (no upload, immediate cutover) is a follow-up."""
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC_NO_ARCHIVE_EMPTY,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+            },
+        )
+
+        # Trigger immediately, before the topic has ever seen a record.
+        self._trigger_migration(
+            self.TOPIC_NO_ARCHIVE_EMPTY, TopicSpec.STORAGE_MODE_CLOUD
+        )
+
+        # The first data the topic ever sees arrives on the cloud-topic path.
+        total = self.NUM_PHASE1 + self.NUM_PHASE2
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_NO_ARCHIVE_EMPTY,
+            msg_size=self.MSG_SIZE,
+            msg_count=total,
+            timeout_sec=120,
+        )
+
+        # The archival manifest stays empty (the partition is a native cloud
+        # topic, not tiered storage).
+        manifest = self.admin.get_partition_manifest(self.TOPIC_NO_ARCHIVE_EMPTY, 0)
+        assert len(manifest.get("segments", {})) == 0, (
+            "empty-topic migration populated the archival manifest"
+        )
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_NO_ARCHIVE_EMPTY,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=120)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= total, (
+            f"valid_reads={status.valid_reads} < produced {total}"
+        )
+        consumer.stop()
+        consumer.free()
+
+        def reconciled_into_l1() -> bool:
+            nxt = self._l1_next_offset(self.TOPIC_NO_ARCHIVE_EMPTY)
+            return nxt is not None and nxt >= total
+
+        wait_until(
+            reconciled_into_l1,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="post-trigger writes were not reconciled into L1",
+            retry_on_exc=True,
         )
 
     @cluster(num_nodes=2)
