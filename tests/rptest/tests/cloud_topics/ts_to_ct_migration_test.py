@@ -53,6 +53,7 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
+    KgoVerifierRandomConsumer,
     KgoVerifierSeqConsumer,
 )
 from rptest.services.redpanda import (
@@ -79,6 +80,7 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_DELETE_RECORDS = "ts-ct-migration-delete-records-test"
     TOPIC_API = "ts-ct-migration-api-test"
     TOPIC_CG = "ts-ct-migration-cg-test"
+    TOPIC_SPILL = "ts-ct-migration-spill-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -458,6 +460,113 @@ class TsToCtMigrationTest(RedpandaTest):
         )
         consumer.stop()
         consumer.free()
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_spilled_manifest_tx(self):
+        """Transactional completion over a SPILLED manifest. With spillover
+        forced (small max-segments), the pre-migration log spans several
+        spillover sub-manifests; the mirror must import the whole spilled history
+        into L1, not just the live manifest tail. A read_committed consumer from
+        offset 0 after cutover must see every committed record -- nothing dropped
+        across the spillover boundaries -- and no aborted ones. Uses
+        all-committed transactions so the committed total equals what was
+        produced."""
+        # Force segment-based spillover: disable the (default 64KiB) size
+        # threshold so a small number of segments triggers spillover.
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_spillover_manifest_max_segments": 5,
+                "cloud_storage_spillover_manifest_size": None,
+            }
+        )
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC_SPILL,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "segment.ms": "1000",
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+        produced = 4000
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_SPILL,
+            msg_size=self.MSG_SIZE,
+            msg_count=produced,
+            use_transactions=True,
+            transaction_abort_rate=0.0,
+            msgs_per_transaction=self.TX_MSGS_PER_TXN,
+        )
+
+        def spillover_uploads() -> float:
+            return self.redpanda.metric_sum(
+                metric_name=("redpanda_cloud_storage_spillover_manifest_uploads_total"),
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+            )
+
+        producer.start()
+        try:
+            self._wait_for_ts_segment(self.TOPIC_SPILL)
+            # The manifest must spill several times, so the imported region spans
+            # multiple spillover sub-manifests (not just the live manifest).
+            wait_until(
+                lambda: spillover_uploads() >= 1,
+                timeout_sec=180,
+                backoff_sec=3,
+                err_msg="manifest did not spill (no spillover uploads)",
+                retry_on_exc=True,
+            )
+            producer.wait(timeout_sec=240)
+        finally:
+            producer.stop()
+            acked = producer.produce_status.acked
+            producer.free()
+
+        self._trigger_migration(self.TOPIC_SPILL, TopicSpec.STORAGE_MODE_CLOUD)
+        self._wait_for_cutover(self.TOPIC_SPILL)
+
+        # The whole pre-cutover range -- including the spilled history -- is
+        # present in L1 after cutover: the partition starts at 0 and the high
+        # watermark covers everything produced.
+        part = list(self.rpk.describe_topic(self.TOPIC_SPILL))[0]
+        assert part.start_offset == 0, (
+            f"start_offset={part.start_offset} (spilled prefix not imported)"
+        )
+        assert part.high_watermark >= acked, (
+            f"high_watermark={part.high_watermark} < acked {acked}"
+        )
+
+        # Spot-check rather than full-scan: the imported region is served by
+        # reading the underlying TS segment objects on demand (imported extents
+        # reference TS objects), so scanning the whole range of many small
+        # spillover-era segments end to end is slow. Random reads sample across
+        # the range -- exercising the spilled sub-manifests + imported extents --
+        # and read_committed-validate every sampled record (invalid_reads > 0
+        # would mean a dropped/corrupt record or a leaked aborted one).
+        spot = KgoVerifierRandomConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_SPILL,
+            self.MSG_SIZE,
+            rand_read_msgs=1000,
+            parallel=4,
+            use_transactions=True,
+        )
+        spot.start()
+        spot.wait(timeout_sec=300)
+        status = spot.consumer_status.validator
+        assert status.invalid_reads == 0, (
+            f"spot-check across the spilled range saw bad reads: "
+            f"invalid_reads={status.invalid_reads}"
+        )
+        assert status.valid_reads > 0, "spot-check read no records"
+        spot.stop()
+        spot.free()
 
     @cluster(num_nodes=2)
     @matrix(
