@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/src/go/rpk
 
-go 1.26.3
+go 1.26.4
 
 require (
 	buf.build/gen/go/redpandadata/ai-gateway/connectrpc/go v1.19.1-20260203101113-1c7702ddb57a.2
