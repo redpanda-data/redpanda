@@ -54,21 +54,23 @@ iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
 
     int bytes_left = len;
     while (bytes_left) {
-        ss::temporary_buffer<char> buf(
-          details::io_allocation_size::ss_next_allocation_size(bytes_left));
-
-        size_t offset = 0;
-        in.consume(buf.size(), [&buf, &offset](const char* src, size_t size) {
-            // NOLINTNEXTLINE
-            std::copy_n(src, size, buf.get_write() + offset);
-            offset += size;
+        auto sz = details::io_allocation_size::ss_next_allocation_size(
+          bytes_left);
+        // Allocate the fragment and its buffer as a single block and copy
+        // directly into it, rather than allocating a separate buffer and
+        // control block.
+        // Hold the self-allocated fragment with the matching disposer until it
+        // is handed to ret, so it is cleaned up correctly if consume throws.
+        std::
+          unique_ptr<iobuf::fragment, decltype(&details::dispose_io_fragment)>
+            f{iobuf::fragment::allocate(sz), &details::dispose_io_fragment};
+        in.consume(sz, [&f](const char* src, size_t size) {
+            f->append(src, size);
             return ss::stop_iteration::no;
         });
 
-        bytes_left -= buf.size();
-
-        auto f = std::make_unique<iobuf::fragment>(std::move(buf));
-        ret.append(std::move(f));
+        bytes_left -= sz;
+        ret.append(std::unique_ptr<iobuf::fragment>(f.release()));
     }
 
     vassert(bytes_left == 0, "Bytes remaining to be copied");
