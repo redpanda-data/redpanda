@@ -9,6 +9,7 @@
 
 #include "filter.h"
 
+#include "base/vassert.h"
 #include "compaction/utils.h"
 #include "container/chunked_vector.h"
 #include "model/batch_compression.h"
@@ -16,7 +17,7 @@
 
 #include <seastar/core/coroutine.hh>
 
-#include <vector>
+#include <algorithm>
 
 namespace compaction {
 
@@ -67,17 +68,22 @@ ss::future<std::optional<filter::filtered_batch>> filter::do_filter_batch(
     int32_t rec_count = 0;
     std::optional<int64_t> first_timestamp_delta;
     int64_t last_timestamp_delta;
+    // We expect and enforce that offset_deltas is sorted.
+    dassert(
+      std::ranges::is_sorted(offset_deltas),
+      "offset_deltas must be ascending in record-iteration order");
+    size_t keep_idx = 0;
     co_await b.for_each_record_async([&rec_count,
                                       &first_timestamp_delta,
                                       &last_timestamp_delta,
                                       &ret,
+                                      &keep_idx,
                                       &offset_deltas](model::record record) {
         // contains the key
         if (
-          std::count(
-            offset_deltas.begin(),
-            offset_deltas.end(),
-            record.offset_delta())) {
+          keep_idx < offset_deltas.size()
+          && offset_deltas[keep_idx] == record.offset_delta()) {
+            ++keep_idx;
             /*
              * TODO when we further optimize lazy record materialization ot
              * make use of views we can avoid this re-encoding by copying or
