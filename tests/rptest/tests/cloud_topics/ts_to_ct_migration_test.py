@@ -51,6 +51,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
+    KgoVerifierConsumerGroupConsumer,
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
 )
@@ -77,6 +78,7 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_CUTOVER_RESTART = "ts-ct-migration-cutover-restart-test"
     TOPIC_DELETE_RECORDS = "ts-ct-migration-delete-records-test"
     TOPIC_API = "ts-ct-migration-api-test"
+    TOPIC_CG = "ts-ct-migration-cg-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -1195,6 +1197,100 @@ class TsToCtMigrationTest(RedpandaTest):
         )
         consumer.stop()
         consumer.free()
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_consumer_group_continuity(self):
+        """A consumer group's committed offsets survive the cutover. A group
+        consumes the pre-migration (tiered) data and commits; the source then
+        cuts over to a cloud topic and more is produced, and the SAME group
+        resumes from its committed offset -- reading the new records without
+        re-reading from 0 and without skipping. The cutover-last migration
+        preserves the kafka offset space (imported extents share the source
+        offsets), so the committed offset still points at the right record; a
+        broken handover would show up as a re-read from 0 (large second count)
+        or invalid reads."""
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC_CG,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+        group = "ts-ct-migration-cg"
+        phase1 = 5000
+        phase2 = 5000
+
+        # Produce + consume the tiered phase; the group commits ~phase1.
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CG,
+            msg_size=self.MSG_SIZE,
+            msg_count=phase1,
+            timeout_sec=120,
+        )
+        self._wait_for_ts_segment(self.TOPIC_CG)
+        c1 = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CG,
+            self.MSG_SIZE,
+            readers=1,
+            loop=False,
+            max_msgs=phase1,
+            group_name=group,
+        )
+        c1.start()
+        c1.wait(timeout_sec=120)
+        s1 = c1.consumer_status.validator
+        assert s1.invalid_reads == 0, f"invalid_reads={s1.invalid_reads}"
+        assert s1.valid_reads >= phase1, (
+            f"group did not drain the tiered phase: {s1.valid_reads} < {phase1}"
+        )
+        c1.stop()
+        c1.free()
+
+        # Migrate + cut over, then produce more on the cut-over cloud topic.
+        self._trigger_migration(self.TOPIC_CG, TopicSpec.STORAGE_MODE_CLOUD)
+        self._wait_for_cutover(self.TOPIC_CG)
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CG,
+            msg_size=self.MSG_SIZE,
+            msg_count=phase2,
+            timeout_sec=120,
+        )
+
+        # The same group resumes from its committed offset (~phase1): it reads
+        # roughly phase2 new records, not re-reading the whole log from 0.
+        c2 = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CG,
+            self.MSG_SIZE,
+            readers=1,
+            loop=False,
+            max_msgs=phase1 + phase2,
+            group_name=group,
+        )
+        c2.start()
+        c2.wait(timeout_sec=120)
+        s2 = c2.consumer_status.validator
+        assert s2.invalid_reads == 0, f"invalid_reads={s2.invalid_reads}"
+        assert s2.valid_reads >= phase2 * 0.9, (
+            f"group did not see the post-cutover records: {s2.valid_reads}"
+        )
+        assert s2.valid_reads <= phase1 + phase2 * 0.5, (
+            f"group re-read from 0 -- committed offset lost across cutover: "
+            f"valid_reads={s2.valid_reads}"
+        )
+        c2.stop()
+        c2.free()
 
     @cluster(num_nodes=2)
     @matrix(
