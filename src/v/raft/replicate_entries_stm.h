@@ -123,7 +123,9 @@ private:
       _inflight_appends;
     ssx::semaphore _dispatch_sem{0, "raft/repl-dispatch"};
     ss::gate _req_bg;
-    ctx_log _ctxlog;
+    // Reference to the consensus instance's logger (which outlives this
+    // single-shot stm) to avoid copying its ntp on every replicate.
+    ctx_log& _ctxlog;
     model::offset _dirty_offset;
     model::offset _initial_committed_offset;
     ss::lw_shared_ptr<std::vector<ssx::semaphore_units>> _units;
