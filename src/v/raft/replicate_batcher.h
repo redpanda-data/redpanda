@@ -105,9 +105,6 @@ private:
       std::vector<ssx::semaphore_units>,
       absl::flat_hash_map<vnode, follower_req_seq>);
 
-    ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
-      chunked_vector<model::record_batch>, replicate_options);
-
     ss::future<result<replicate_result>> cache_and_wait_for_result(
       ss::promise<> enqueued,
       chunked_vector<model::record_batch> r,

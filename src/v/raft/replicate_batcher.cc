@@ -112,7 +112,32 @@ replicate_batcher::cache_and_wait_for_result(
     item_ptr item;
     try {
         auto holder = _bg.hold();
-        item = co_await do_cache_with_backpressure(std::move(r), opts);
+        // Cache the batches, applying backpressure via the batch size
+        // semaphore. Produce a message larger than the internal raft batch
+        // accumulator (default 1Mb) and the semaphore can't be acquired;
+        // closing the connection doesn't propagate this error and allow those
+        // units to be returned, so the entire partition is no longer writable
+        // (see https://github.com/redpanda-data/redpanda/issues/1503). When
+        // the batch size exceeds available units we just acquire all of them.
+        size_t bytes = 0;
+        size_t record_count = 0;
+        for (const auto& b : r) {
+            bytes += b.size_bytes();
+            record_count += b.record_count();
+        }
+        ssx::semaphore_units u;
+        if (opts.timeout) {
+            u = co_await ss::get_units(
+              _max_batch_size_sem,
+              std::min(bytes, _max_batch_size),
+              ssx::semaphore::clock::now() + opts.timeout.value());
+        } else {
+            u = co_await ss::get_units(
+              _max_batch_size_sem, std::min(bytes, _max_batch_size));
+        }
+        item = ss::make_lw_shared<replicate_batcher::item>(
+          record_count, std::move(r), std::move(u), opts);
+        _item_cache.emplace_back(item);
 
         // now request is already enqueued, we can release first
         // stage future
@@ -167,45 +192,6 @@ ss::future<> replicate_batcher::stop() {
             _item_cache.clear();
         });
     });
-}
-
-ss::future<replicate_batcher::item_ptr>
-replicate_batcher::do_cache_with_backpressure(
-  chunked_vector<model::record_batch> batches, replicate_options opts) {
-    size_t bytes = 0;
-    size_t record_count = 0;
-    for (const auto& b : batches) {
-        bytes += b.size_bytes();
-        record_count += b.record_count();
-    }
-    /**
-     * Produce a message larger than the internal raft batch accumulator
-     * (default 1Mb) the semaphore can't be acquired. Closing
-     * the connection doesn't propagate this error and allow those units to be
-     * returned, so the entire partition is no longer writable.
-     * see:
-     *
-     * https://github.com/redpanda-data/redpanda/issues/1503.
-     *
-     * When batch size exceed available semaphore units we just acquire all of
-     * them to be able to continue.
-     */
-    ssx::semaphore_units u;
-    if (opts.timeout) {
-        u = co_await ss::get_units(
-          _max_batch_size_sem,
-          std::min(bytes, _max_batch_size),
-          ssx::semaphore::clock::now() + opts.timeout.value());
-    } else {
-        u = co_await ss::get_units(
-          _max_batch_size_sem, std::min(bytes, _max_batch_size));
-    }
-
-    auto i = ss::make_lw_shared<item>(
-      record_count, std::move(batches), std::move(u), opts);
-
-    _item_cache.emplace_back(i);
-    co_return i;
 }
 
 ss::future<> replicate_batcher::flush(
