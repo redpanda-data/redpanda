@@ -13,9 +13,13 @@
 #include "base/vassert.h"
 #include "bytes/details/io_allocation_size.h"
 
+#include <seastar/core/deleter.hh>
+
 #include <algorithm>
 #include <compare>
 #include <cstddef>
+#include <cstdlib>
+#include <new>
 #include <sstream>
 #include <string_view>
 
@@ -281,6 +285,40 @@ std::string iobuf::hexdump(size_t limit) const {
     }
 
     return result.str();
+}
+
+details::io_fragment* details::io_fragment::allocate(size_t capacity) {
+    // Allocate the control block and the backing buffer in a single block,
+    // laid out as [io_fragment][capacity bytes], instead of allocating the
+    // control block and the buffer separately.
+    auto* block = static_cast<char*>(
+      std::malloc(sizeof(io_fragment) + capacity));
+    if (block == nullptr) {
+        throw std::bad_alloc();
+    }
+    char* data = block + sizeof(io_fragment);
+    // The buffer's deleter owns the whole block. This keeps the block alive
+    // for as long as any buffer shared or released from this fragment
+    // references it, independently of when the control block is disposed.
+    auto buf = ss::temporary_buffer<char>::maybe_unsafe_from_deleter(
+      data, capacity, ss::make_free_deleter(block));
+    return new (block) io_fragment(std::move(buf), self_allocated_tag{});
+}
+
+void details::io_fragment::dispose(io_fragment* f) noexcept {
+    if (f->_self_allocated) {
+        // The block (control block + buffer) is owned by _buf's deleter. Move
+        // the buffer out so its deleter outlives the control block's
+        // destruction, run the destructor, then let the moved buffer free the
+        // block on scope exit - unless shared/released buffers keep it alive.
+        auto buf = std::move(f->_buf);
+        f->~io_fragment();
+    } else {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+        delete f; // NOLINT
+#pragma GCC diagnostic pop
+    }
 }
 
 void details::io_fragment::trim_front(size_t pos) {

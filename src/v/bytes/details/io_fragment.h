@@ -38,6 +38,20 @@ public:
       : _buf(size)
       , _used_bytes(0) {}
 
+    /**
+     * Allocate an empty fragment with the given capacity using a single
+     * allocation that holds both this control block and the backing buffer,
+     * instead of allocating the control block and the buffer separately. The
+     * block is owned by the fragment's buffer deleter, so shared or released
+     * buffers keep it alive after the control block is disposed.
+     */
+    static io_fragment* allocate(size_t capacity);
+
+    /**
+     * Dispose of a fragment created by either allocation strategy.
+     */
+    static void dispose(io_fragment*) noexcept;
+
     io_fragment(io_fragment&& o) noexcept = delete;
     io_fragment& operator=(io_fragment&& o) noexcept = delete;
     io_fragment(const io_fragment& o) = delete;
@@ -92,7 +106,11 @@ public:
             return;
         }
         size_t half = _buf.size() / 2;
-        if (_used_bytes <= half) {
+        // For a self-allocated fragment the backing buffer shares a single
+        // allocation with this control block, so it cannot be reallocated to a
+        // smaller buffer to release capacity (that would free the block this
+        // control block lives in). Just shrink the visible size in place.
+        if (!_self_allocated && _used_bytes <= half) {
             // this is an important optimization. often times during RPC
             // serialization we append some small controll bytes, _right_
             // before we append a full new chain of iobufs
@@ -112,11 +130,21 @@ public:
 private:
     friend class io_fragment_list;
 
+    struct self_allocated_tag {};
+    io_fragment(ss::temporary_buffer<char> buf, self_allocated_tag) noexcept
+      : _buf(std::move(buf))
+      , _used_bytes(0)
+      , _self_allocated(true) {}
+
     io_fragment* _next = nullptr;
     io_fragment* _prev = nullptr;
 
     ss::temporary_buffer<char> _buf;
     size_t _used_bytes;
+    // True if this control block was allocated together with its backing
+    // buffer in a single block (see allocate()); such blocks are owned by
+    // _buf's deleter rather than freed directly.
+    bool _self_allocated{false};
 };
 
 /**
@@ -379,11 +407,6 @@ private:
 #endif
 };
 
-inline void dispose_io_fragment(io_fragment* f) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
-    delete f; // NOLINT
-#pragma GCC diagnostic pop
-}
+inline void dispose_io_fragment(io_fragment* f) { io_fragment::dispose(f); }
 
 } // namespace details

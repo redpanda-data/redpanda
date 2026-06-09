@@ -384,7 +384,8 @@ inline void iobuf::prepend(std::unique_ptr<fragment> f) {
 inline void iobuf::create_new_fragment(size_t sz) {
     auto chunk_max = std::max(sz, last_allocation_size());
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
-    append(std::make_unique<fragment>(asz));
+    // Allocate the control block and backing buffer as a single block.
+    append(fragment::allocate(asz));
 }
 /// only ensures that a segment of at least reservation is avaible
 /// as an empty details::io_fragment
