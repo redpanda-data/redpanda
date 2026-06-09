@@ -295,7 +295,19 @@ ss::future<reconnect_result_t> client::get_connected(
         if (current < attempt_deadline) {
             const auto backoff = attempt_deadline - current;
             if (_as != nullptr) {
-                co_await ss::sleep_abortable<ss::lowres_clock>(backoff, *_as);
+                try {
+                    co_await ss::sleep_abortable<ss::lowres_clock>(
+                      backoff, *_as);
+                } catch (const ss::sleep_aborted&) {
+                    // sleep_abortable throws a generic sleep_aborted when _as
+                    // is already aborted at subscribe time (here: the abort
+                    // landed during the connect attempt). Surface the abort
+                    // source's own exception instead, matching the _as->check()
+                    // above and not masking a custom one set via
+                    // request_abort_ex. See scylladb/seastar#3452.
+                    _as->check();
+                    throw;
+                }
             } else {
                 co_await ss::sleep<ss::lowres_clock>(backoff);
             }

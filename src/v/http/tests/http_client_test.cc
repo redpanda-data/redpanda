@@ -871,6 +871,32 @@ SEASTAR_THREAD_TEST_CASE(test_http_cancel_reconnect) {
     BOOST_REQUIRE_THROW(fut.get(), ss::abort_requested_exception);
 }
 
+// When the abort fires while the first connect attempt is still in flight (so
+// the abort source is already aborted by the time the backoff sleep subscribes
+// to it), get_connected must surface the abort source's own exception. The bare
+// sleep_abortable() throws a generic sleep_aborted in that case, which would
+// mask a custom exception installed via request_abort_ex(); translating it back
+// through _as->check() keeps the externally-visible exception consistent with
+// the top-of-loop check.
+namespace {
+struct custom_abort_error : std::exception {
+    const char* what() const noexcept override { return "custom_abort_error"; }
+};
+} // namespace
+
+SEASTAR_THREAD_TEST_CASE(test_http_reconnect_abort_surfaces_source_exception) {
+    auto config = transport_configuration();
+    ss::abort_source as;
+    http::client client(config, as);
+    auto fut = client.get_connected(
+      10s, prefix_logger(http::http_log, "test-url"));
+    // The coroutine has run up to `co_await connect(...)` and suspended; abort
+    // with a custom exception now, before the reactor resumes it into the
+    // backoff sleep.
+    as.request_abort_ex(custom_abort_error{});
+    BOOST_REQUIRE_THROW(fut.get(), custom_abort_error);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_http_reconnect_graceful_shutdown) {
     auto config = transport_configuration();
     ss::abort_source as;
