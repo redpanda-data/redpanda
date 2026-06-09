@@ -139,6 +139,24 @@ size_t append_bench() {
 
     return Bufs;
 }
+
+// Microbench for fragment _creation_: each iteration forces a brand new
+// fragment to be allocated (control block + backing buffer) and the data
+// copied in. This is the path hit when building/growing an iobuf and when
+// deep-copying one, which the share-based benches above do not exercise.
+template<size_t NumFrags, size_t FragSize>
+size_t create_frags_bench() {
+    const auto data = std::string(FragSize, 'x');
+    perf_tests::start_measuring_time();
+    iobuf buf;
+    for (size_t i = 0; i < NumFrags; ++i) {
+        buf.reserve_memory(FragSize);
+        buf.append(data.data(), data.size());
+    }
+    perf_tests::stop_measuring_time();
+    perf_tests::do_not_optimize(buf);
+    return NumFrags;
+}
 } // namespace
 
 // clang-format off
@@ -194,6 +212,13 @@ PERF_TEST(iobuf, eq_bench_large_same) {
 PERF_TEST(iobuf, append_bench_small) { return append_bench<1'000, 4>(); }
 PERF_TEST(iobuf, append_bench_medium) { return append_bench<1'000, 40_KiB>(); }
 PERF_TEST(iobuf, append_bench_large) { return append_bench<1'000, 400_KiB>(); }
+
+PERF_TEST(iobuf, create_frags_bench_128) {
+    return create_frags_bench<128, 512>();
+}
+PERF_TEST(iobuf, create_frags_bench_1k) {
+    return create_frags_bench<1'000, 512>();
+}
 
 namespace {
 // Build n deep copies of source upfront so each iteration consumes a fresh
