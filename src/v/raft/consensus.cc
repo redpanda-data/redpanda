@@ -2942,6 +2942,40 @@ void consensus::maybe_schedule_flush() {
     }
 }
 
+namespace {
+// Append batches that are already materialized in memory directly into the
+// log appender, extracting raft configuration batches inline. This mirrors
+// details::for_each_ref_extract_configuration but iterates the chunked_vector
+// directly instead of wrapping it in a streaming record_batch_reader, avoiding
+// the reader's per-batch slice/variant/repeat machinery on the append path.
+ss::future<
+  std::tuple<storage::append_result, chunked_vector<offset_configuration>>>
+append_in_memory_extract_configuration(
+  model::offset base_offset,
+  chunked_vector<model::record_batch> batches,
+  storage::log_appender appender) {
+    chunked_vector<offset_configuration> configurations;
+    auto next_offset = model::next_offset(base_offset);
+    for (auto& batch : batches) {
+        if (
+          batch.header().type == model::record_batch_type::raft_configuration) {
+            iobuf_parser parser(batch.copy_records().begin()->release_value());
+            configurations.emplace_back(
+              next_offset, details::deserialize_configuration(parser));
+        }
+        // offsets are calculated manually because the batch may not yet have
+        // its base offset assigned.
+        next_offset += model::offset(batch.header().last_offset_delta)
+                       + model::offset(1);
+        if (co_await appender(batch) == ss::stop_iteration::yes) {
+            break;
+        }
+    }
+    auto res = co_await appender.end_of_stream();
+    co_return std::make_tuple(std::move(res), std::move(configurations));
+}
+} // namespace
+
 ss::future<storage::append_result> consensus::disk_append(
   chunked_vector<model::record_batch> batches,
   update_last_quorum_index should_update_last_quorum_idx) {
@@ -2952,27 +2986,10 @@ ss::future<storage::append_result> consensus::disk_append(
       storage::log_append_config::fsync::no,
       model::timeout_clock::now() + _disk_timeout()};
 
-    class consumer {
-    public:
-        consumer(storage::log_appender appender)
-          : _appender(std::move(appender)) {}
-
-        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
-            auto ret = co_await _appender(batch);
-            co_return ret;
-        }
-
-        auto end_of_stream() { return _appender.end_of_stream(); }
-
-    private:
-        storage::log_appender _appender;
-    };
-
-    return details::for_each_ref_extract_configuration(
+    return append_in_memory_extract_configuration(
              _log->offsets().dirty_offset,
-             model::make_chunked_memory_record_batch_reader(std::move(batches)),
-             consumer(_log->make_appender(cfg)),
-             cfg.timeout)
+             std::move(batches),
+             _log->make_appender(cfg))
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, chunked_vector<offset_configuration>> t) {
           auto& [ret, configurations] = t;
