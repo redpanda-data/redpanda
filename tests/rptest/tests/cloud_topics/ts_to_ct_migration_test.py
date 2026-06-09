@@ -2262,6 +2262,7 @@ class TsToCtMigrationReplicatedTest(RedpandaTest):
 
     TOPIC = "ts-ct-migration-replicated-test"
     TOPIC_XFER = "ts-ct-migration-xfer-test"
+    TOPIC_MULTITERM = "ts-ct-migration-multiterm-test"
     MSG_SIZE = 128
     NUM_PHASE1 = 500
 
@@ -2496,6 +2497,104 @@ class TsToCtMigrationReplicatedTest(RedpandaTest):
         assert status.valid_reads >= acked, (
             f"records lost across leadership transfer: read "
             f"{status.valid_reads} < acked {acked}"
+        )
+        consumer.stop()
+        consumer.free()
+
+    @cluster(num_nodes=4)
+    def test_ts_to_ct_migration_multi_term(self):
+        """The pre-migration log spans multiple raft terms (leadership changes),
+        so the archival manifest -- and the imported L1 extents after cutover --
+        carry segments produced under several leader epochs. A consumer from 0
+        must see monotonic, per-term-correct leader epochs across the cut-over
+        partition: kgo-verifier asserts leader-epoch monotonicity, so a mirror
+        that imported the epochs unfaithfully would fail the consume. RF=3 makes
+        leadership transfers (hence new terms) real."""
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC_MULTITERM,
+            partitions=1,
+            replicas=3,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_MULTITERM,
+            msg_size=self.MSG_SIZE,
+            msg_count=100_000_000,
+            rate_limit_bps=1024 * 1024,
+            tolerate_failed_produce=True,
+        )
+        producer.start()
+        try:
+            self._wait_for_ts_segment(self.TOPIC_MULTITERM)
+            epoch0 = list(self.rpk.describe_topic(self.TOPIC_MULTITERM))[0].leader_epoch
+            # Transfer leadership a few times while producing, so segments are
+            # uploaded under several raft terms (distinct leader epochs).
+            for _ in range(3):
+                acked = producer.produce_status.acked
+                old = self.admin.await_stable_leader(
+                    self.TOPIC_MULTITERM,
+                    partition=0,
+                    namespace="kafka",
+                    timeout_s=60,
+                    backoff_s=2,
+                )
+                self.admin.transfer_leadership_to(
+                    namespace="kafka",
+                    topic=self.TOPIC_MULTITERM,
+                    partition=0,
+                    leader_id=old,
+                )
+                self.admin.await_stable_leader(
+                    self.TOPIC_MULTITERM,
+                    partition=0,
+                    namespace="kafka",
+                    timeout_s=60,
+                    backoff_s=2,
+                    check=lambda node_id, _old=old: node_id != _old,
+                )
+                # Let a batch of records land under the new term.
+                wait_until(
+                    lambda _a=acked: producer.produce_status.acked > _a + 2000,
+                    timeout_sec=60,
+                    backoff_sec=1,
+                    err_msg="producer made no progress under the new term",
+                    retry_on_exc=True,
+                )
+            epoch1 = list(self.rpk.describe_topic(self.TOPIC_MULTITERM))[0].leader_epoch
+            assert epoch1 > epoch0, (
+                f"no new terms created: leader_epoch {epoch0} -> {epoch1}"
+            )
+            self._trigger_migration(self.TOPIC_MULTITERM, TopicSpec.STORAGE_MODE_CLOUD)
+        finally:
+            producer.stop()
+            acked = producer.produce_status.acked
+            producer.free()
+
+        self._wait_for_cutover(self.TOPIC_MULTITERM)
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_MULTITERM,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=240)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, (
+            f"invalid_reads={status.invalid_reads} (leader-epoch monotonicity "
+            f"or order broken across the imported multi-term extents)"
+        )
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= acked, (
+            f"records lost: read {status.valid_reads} < acked {acked}"
         )
         consumer.stop()
         consumer.free()
