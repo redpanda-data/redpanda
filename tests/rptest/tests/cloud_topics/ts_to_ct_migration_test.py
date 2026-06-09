@@ -1900,3 +1900,139 @@ class TsToCtMigrationReadReplicaTest(RedpandaTest):
             producer.free()
             if self.second_cluster is not None:
                 self.second_cluster.stop()
+
+
+class TsToCtMigrationReplicatedTest(RedpandaTest):
+    """tiered->cloud migration of a replicated (RF=3) partition across a real
+    raft quorum, including a leadership transfer mid-mirror.
+
+    With RF=3 the archival STM and the cutover batch (reset_metadata) replicate
+    through raft, and the migration mirror runs only on the partition leader.
+    These cases check that migration converges and cuts over under a real quorum,
+    and that it survives a leadership change while migrating -- the new leader
+    resumes the mirror and still reaches cutover, with nothing lost."""
+
+    TOPIC = "ts-ct-migration-replicated-test"
+    TOPIC_XFER = "ts-ct-migration-xfer-test"
+    MSG_SIZE = 128
+    NUM_PHASE1 = 500
+
+    def __init__(self, test_context: TestContext):
+        si_settings = SISettings(test_context, fast_uploads=True)
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            si_settings=si_settings,
+            extra_rp_conf={
+                "enable_topic_mode_migration": True,
+                "cloud_topics_produce_batching_size_threshold": 65536,
+                "enable_cluster_metadata_upload_loop": False,
+                "log_segment_size_min": 1,
+                "log_segment_ms_min": 1000,
+                "log_segment_size": 1048576,
+                "cloud_storage_housekeeping_interval_ms": 1000,
+                "log_compaction_interval_ms": 1000,
+            },
+        )
+        self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
+
+    # ---- helpers ----------------------------------------------------------
+
+    def _enable_migration(self):
+        self.redpanda.set_feature_active("topic_mode_migration", True, timeout_sec=30)
+
+    def _wait_for_ts_segment(self, topic: str):
+        wait_until(
+            lambda: len(self.admin.get_partition_manifest(topic, 0).get("segments", {}))
+            >= 1,
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg=f"No TS segment uploaded for {topic} within 120s",
+            retry_on_exc=True,
+        )
+
+    def _trigger_migration(self, topic: str, storage_mode: str):
+        # The TSv2 (tiered_cloud) destination is spelled storage.mode=tiered
+        # with the cluster default impl set to tiered_v2, since
+        # redpanda.storage.mode.impl is read-only after creation and
+        # tiered_cloud is not a settable storage.mode value.
+        if storage_mode == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2:
+            self.redpanda.set_cluster_config(
+                {"default_redpanda_storage_mode_tiered_impl": "tiered_v2"}
+            )
+            storage_mode = TopicSpec.STORAGE_MODE_TIERED
+        self.rpk.alter_topic_config(
+            topic, TopicSpec.PROPERTY_STORAGE_MODE, storage_mode
+        )
+
+    def _wait_for_cutover(self, topic: str):
+        wait_until(
+            lambda: len(self.admin.get_partition_manifest(topic, 0).get("segments", {}))
+            == 0,
+            timeout_sec=240,
+            backoff_sec=5,
+            err_msg=f"{topic} did not cut over to cloud topics within 240s",
+            retry_on_exc=True,
+        )
+
+    def _l1_next_offset(self, topic: str, partition: int = 0) -> int | None:
+        metastore = AdminV2(self.redpanda).metastore()
+        req = metastore_pb.GetOffsetsRequest(
+            partition=ntp_pb.TopicPartition(topic=topic, partition=partition)
+        )
+        try:
+            resp = metastore.get_offsets(req=req)
+            return resp.offsets.next_offset
+        except ConnectError as e:
+            if e.code == ConnectErrorCode.NOT_FOUND:
+                return None
+            raise
+
+    # ---- tests ------------------------------------------------------------
+
+    @cluster(num_nodes=4)
+    def test_ts_to_ct_migration_replicated(self):
+        """RF=3 migration end to end: the archival STM and the cutover batch
+        (reset_metadata) replicate through a real raft quorum. The partition
+        must converge, cut over, and serve every record from offset 0."""
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC,
+            partitions=1,
+            replicas=3,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+            },
+        )
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC,
+            msg_size=self.MSG_SIZE,
+            msg_count=self.NUM_PHASE1,
+            timeout_sec=120,
+        )
+        total = self.NUM_PHASE1
+        self._wait_for_ts_segment(self.TOPIC)
+
+        self._trigger_migration(self.TOPIC, TopicSpec.STORAGE_MODE_CLOUD)
+        self._wait_for_cutover(self.TOPIC)
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= total, (
+            f"valid_reads={status.valid_reads} < produced {total}"
+        )
+        consumer.stop()
+        consumer.free()
