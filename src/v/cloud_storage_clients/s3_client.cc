@@ -900,7 +900,7 @@ s3_client::s3_client(
   const s3_configuration& conf,
   const net::base_transport::configuration& transport_conf,
   ss::shared_ptr<client_probe> probe,
-  const ss::abort_source& as,
+  ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : client(std::move(upstream_ptr))
   , _requestor(conf, std::move(apply_credentials))
@@ -1540,7 +1540,7 @@ gcs_client::gcs_client(
   const s3_configuration& conf,
   const net::base_transport::configuration& transport_conf,
   ss::shared_ptr<client_probe> probe,
-  const ss::abort_source& as,
+  ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : s3_client(
       std::move(upstream_ptr),

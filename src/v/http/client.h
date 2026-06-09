@@ -102,16 +102,14 @@ public:
     using verb = boost::beast::http::verb;
 
     explicit client(const net::base_transport::configuration& cfg);
+    client(const net::base_transport::configuration& cfg, ss::abort_source& as);
     client(
       const net::base_transport::configuration& cfg,
-      const ss::abort_source& as);
-    client(
-      const net::base_transport::configuration& cfg,
-      const ss::abort_source* as,
+      ss::abort_source* as,
       ss::shared_ptr<client_probe> probe);
     client(
       const net::base_transport::configuration& cfg,
-      const ss::abort_source* as,
+      ss::abort_source* as,
       ss::shared_ptr<client_probe> probe,
       ss::lowres_clock::duration max_idle_time);
 
@@ -322,7 +320,7 @@ private:
     bool _shutdown_now{false};
     std::string _host_with_port;
     ss::gate _connect_gate;
-    const ss::abort_source* _as;
+    ss::abort_source* _as;
     ss::shared_ptr<http::client_probe> _probe;
     // Stores point in time when the last response was received
     // from the server.

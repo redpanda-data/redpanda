@@ -85,18 +85,18 @@ client::client(const net::base_transport::configuration& cfg)
   : client(cfg, nullptr, nullptr, default_max_idle_time) {}
 
 client::client(
-  const net::base_transport::configuration& cfg, const ss::abort_source& as)
+  const net::base_transport::configuration& cfg, ss::abort_source& as)
   : client(cfg, &as, nullptr, default_max_idle_time) {}
 
 client::client(
   const net::base_transport::configuration& cfg,
-  const ss::abort_source* as,
+  ss::abort_source* as,
   ss::shared_ptr<client_probe> probe)
   : client(cfg, as, std::move(probe), default_max_idle_time) {}
 
 client::client(
   const net::base_transport::configuration& cfg,
-  const ss::abort_source* as,
+  ss::abort_source* as,
   ss::shared_ptr<client_probe> probe,
   ss::lowres_clock::duration max_idle_time)
   : net::base_transport(cfg, &http_log)
