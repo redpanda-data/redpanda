@@ -74,6 +74,7 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_RESTART = "ts-ct-migration-restart-test"
     TOPIC_GATE = "ts-ct-migration-gate-test"
     TOPIC_RETRIGGER = "ts-ct-migration-retrigger-test"
+    TOPIC_CUTOVER_RESTART = "ts-ct-migration-cutover-restart-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -826,6 +827,114 @@ class TsToCtMigrationTest(RedpandaTest):
         manifest = self.admin.get_partition_manifest(self.TOPIC_RETRIGGER, 0)
         assert len(manifest.get("segments", {})) == 0, (
             "archival manifest resurrected after re-trigger"
+        )
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_cutover_durable_across_restart(self):
+        """Cutover durability across a graceful broker restart. After the
+        partition cuts over (archival STM emptied, migration flag cleared, ctp
+        baseline seeded), a restart must bring it back as a fully-cut-over cloud
+        topic: the manifest stays empty (it must not revert to tiered storage
+        by rebuilding from the still-present remote archival manifest), every
+        record is still served from L1, and post-cutover writes still reconcile
+        into L1 (the cutover baseline survived). The graceful-restart analogue of
+        the completed-migration recovery path."""
+        self._enable_migration()
+        self.rpk.create_topic(
+            self.TOPIC_CUTOVER_RESTART,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+            },
+        )
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CUTOVER_RESTART,
+            msg_size=self.MSG_SIZE,
+            msg_count=self.NUM_PHASE1,
+            timeout_sec=120,
+        )
+        total = self.NUM_PHASE1
+        self._wait_for_ts_segment(self.TOPIC_CUTOVER_RESTART)
+
+        self._trigger_migration(
+            self.TOPIC_CUTOVER_RESTART, TopicSpec.STORAGE_MODE_CLOUD
+        )
+        self._wait_for_cutover(self.TOPIC_CUTOVER_RESTART)
+
+        # Restart immediately after cutover.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda._admin.await_stable_leader(
+            self.TOPIC_CUTOVER_RESTART,
+            partition=0,
+            namespace="kafka",
+            timeout_s=60,
+            backoff_s=2,
+        )
+
+        def manifest_empty() -> bool:
+            m = self.admin.get_partition_manifest(self.TOPIC_CUTOVER_RESTART, 0)
+            return len(m.get("segments", {})) == 0
+
+        # Cutover persisted: the partition comes back cloud-topic-served, not
+        # reverted to tiered storage (a revert rebuilds a non-empty manifest).
+        wait_until(
+            manifest_empty,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="cutover did not survive restart: archival manifest is "
+            "non-empty (partition reverted to tiered storage)",
+            retry_on_exc=True,
+        )
+
+        # Every record is still served from L1, contiguous from 0.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CUTOVER_RESTART,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= total, (
+            f"valid_reads={status.valid_reads} < produced {total}"
+        )
+        consumer.stop()
+        consumer.free()
+
+        # The cutover baseline survived: post-cutover writes reconcile into L1
+        # and the archiver stays dormant.
+        pre = self._l1_next_offset(self.TOPIC_CUTOVER_RESTART)
+        assert pre is not None, "partition absent from L1 metastore after restart"
+        post_count = 2000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_CUTOVER_RESTART,
+            msg_size=self.MSG_SIZE,
+            msg_count=post_count,
+            timeout_sec=120,
+        )
+
+        def reconciled_into_l1() -> bool:
+            nxt = self._l1_next_offset(self.TOPIC_CUTOVER_RESTART)
+            return nxt is not None and nxt >= pre + post_count
+
+        wait_until(
+            reconciled_into_l1,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="post-restart writes were not reconciled into L1",
+            retry_on_exc=True,
+        )
+        assert manifest_empty(), (
+            "archival manifest resurrected after post-restart writes"
         )
 
     @cluster(num_nodes=2)
