@@ -2036,3 +2036,118 @@ class TsToCtMigrationReplicatedTest(RedpandaTest):
         )
         consumer.stop()
         consumer.free()
+
+    @cluster(num_nodes=4)
+    def test_ts_to_ct_migration_leadership_transfer_during_mirror(self):
+        """A leadership transfer while the partition is migrating. The mirror
+        runs leader-only, so a leader change must hand off cleanly: the new
+        leader resumes the mirror and the partition still cuts over with nothing
+        lost. The migration is held in the migrating phase (test knob) so the
+        transfer lands mid-mirror rather than racing a cutover under concurrent
+        writes."""
+        self._enable_migration()
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+        self.rpk.create_topic(
+            self.TOPIC_XFER,
+            partitions=1,
+            replicas=3,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_XFER,
+            msg_size=self.MSG_SIZE,
+            msg_count=100_000_000,
+            rate_limit_bps=1024 * 1024,
+            tolerate_failed_produce=True,
+        )
+        producer.start()
+        try:
+            self._wait_for_ts_segment(self.TOPIC_XFER)
+            self._trigger_migration(self.TOPIC_XFER, TopicSpec.STORAGE_MODE_CLOUD)
+            # Migration genuinely underway: the mirror has imported into L1.
+            wait_until(
+                lambda: (self._l1_next_offset(self.TOPIC_XFER) or 0) > 0,
+                timeout_sec=120,
+                backoff_sec=3,
+                err_msg="migration did not start (nothing imported into L1)",
+                retry_on_exc=True,
+            )
+
+            old_leader = self.admin.await_stable_leader(
+                self.TOPIC_XFER,
+                partition=0,
+                namespace="kafka",
+                timeout_s=60,
+                backoff_s=2,
+            )
+            # Move leadership to the next replica, mid-mirror.
+            transferred = self.admin.transfer_leadership_to(
+                namespace="kafka",
+                topic=self.TOPIC_XFER,
+                partition=0,
+                leader_id=old_leader,
+            )
+            assert transferred, "leadership transfer was not performed"
+            new_leader = self.admin.await_stable_leader(
+                self.TOPIC_XFER,
+                partition=0,
+                namespace="kafka",
+                timeout_s=60,
+                backoff_s=2,
+                check=lambda node_id: node_id != old_leader,
+            )
+            assert new_leader != old_leader, (
+                f"leader did not change: still {old_leader}"
+            )
+
+            # Migration survived the transfer: still TS-served (manifest
+            # non-empty), not reset to a fresh cloud topic.
+            wait_until(
+                lambda: len(
+                    self.admin.get_partition_manifest(self.TOPIC_XFER, 0).get(
+                        "segments", {}
+                    )
+                )
+                > 0,
+                timeout_sec=60,
+                backoff_sec=2,
+                err_msg="migration state lost across leadership transfer "
+                "(manifest empty)",
+                retry_on_exc=True,
+            )
+        finally:
+            producer.stop()
+            acked = producer.produce_status.acked
+            producer.free()
+
+        # Release the hold: the new leader's mirror resumes and converges.
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": False}
+        )
+        self._wait_for_cutover(self.TOPIC_XFER)
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_XFER,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= acked, (
+            f"records lost across leadership transfer: read "
+            f"{status.valid_reads} < acked {acked}"
+        )
+        consumer.stop()
+        consumer.free()
