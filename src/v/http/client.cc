@@ -25,6 +25,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/coroutine/exception.hh>
@@ -239,11 +240,12 @@ ss::future<reconnect_result_t> client::get_connected(
       _dispatch_gate.is_closed());
     auto current = ss::lowres_clock::now();
     const auto deadline = current + timeout;
-    const auto interval = 1s; // 500ms;
+    const auto interval = 1s;
     while (!_connect_gate.is_closed() && current < deadline) {
         if (_as != nullptr) {
             _as->check();
         }
+        const auto attempt_deadline = current + interval;
         // Reconnect attempts have to stop if:
         // - shutdown method was called
         // - abort was requested
@@ -256,7 +258,7 @@ ss::future<reconnect_result_t> client::get_connected(
             // _dispatcher_gate is already closed. We need to synchronize
             // this loop with the `stop` call.
             ss::gate::holder gg(_connect_gate);
-            co_await connect(current + interval);
+            co_await connect(attempt_deadline);
             break;
         } catch (const std::system_error& err) {
             vlog(ctxlog.trace, "connection refused {}", err);
@@ -278,7 +280,27 @@ ss::future<reconnect_result_t> client::get_connected(
             }
             co_return reconnect_result_t::timed_out;
         }
+        // If a spaced retry would land at or past the overall deadline there's
+        // no room for another attempt, so stop now rather than sleep only to
+        // fall out of the loop on the next deadline check.
+        if (attempt_deadline >= deadline) {
+            break;
+        }
+        // Some connection attemps return effectively immediately after burning
+        // CPU only, (e.g. ECONNREFUSED/ENETUNREACH against an unreachable
+        // endpoint). In that case, we wait the remainder of the interval in
+        // order not to slam the reactor with connection attemps at a very high
+        // rate (starving other work).
         current = ss::lowres_clock::now();
+        if (current < attempt_deadline) {
+            const auto backoff = attempt_deadline - current;
+            if (_as != nullptr) {
+                co_await ss::sleep_abortable<ss::lowres_clock>(backoff, *_as);
+            } else {
+                co_await ss::sleep<ss::lowres_clock>(backoff);
+            }
+            current = ss::lowres_clock::now();
+        }
         // Any TLS error have to be propagated because it's not
         // transient. It won't help to try once again.
     }
