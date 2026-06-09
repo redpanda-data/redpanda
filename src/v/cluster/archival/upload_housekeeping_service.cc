@@ -16,6 +16,7 @@
 #include "cluster/archival/types.h"
 #include "config/configuration.h"
 #include "ssx/future-util.h"
+#include "storage/exceptions.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -409,6 +410,18 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                 jobs_executed++;
                 quota = res.remaining;
                 maybe_update_probe(res);
+            } catch (const translation_offset_out_of_range& e) {
+                // This exception is most commonly experienced in the
+                // `adjacent_segment_merger::run()` path- the reupload candidate
+                // references a log offset that local retention has already
+                // trimmed away, so it can no longer be translated and
+                // reuploaded from the local log. This races with GC and can be
+                // expected.
+                vlog(
+                  archival_log.debug,
+                  "Reupload candidate is no longer translatable in the local "
+                  "log (trimmed by retention), skipping: {}",
+                  e.what());
             } catch (...) {
                 auto eptr = std::current_exception();
                 if (ssx::is_shutdown_exception(eptr)) {
