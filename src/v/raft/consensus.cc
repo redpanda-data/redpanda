@@ -3169,14 +3169,22 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
         co_return;
     }
 
-    auto latest_cfg = _configuration_manager.get_latest();
-
-    /**
-     * current config still contains learners, do nothing
-     */
-    if (unlikely(!latest_cfg.current_config().learners.empty())) {
-        co_return;
+    // Inspect the committed configuration by reference first. The common case
+    // is a stable, simple configuration that needs no work, so return before
+    // copying the configuration - only finishing a transition (the rare
+    // transitional/joint states) needs a mutable copy.
+    {
+        const auto& committed_cfg = _configuration_manager.get_latest();
+        // current config still contains learners, do nothing
+        if (unlikely(!committed_cfg.current_config().learners.empty())) {
+            co_return;
+        }
+        if (committed_cfg.get_state() == configuration_state::simple) {
+            co_return;
+        }
     }
+
+    auto latest_cfg = _configuration_manager.get_latest();
     switch (latest_cfg.get_state()) {
     case configuration_state::simple:
         co_return;
