@@ -75,6 +75,8 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_GATE = "ts-ct-migration-gate-test"
     TOPIC_RETRIGGER = "ts-ct-migration-retrigger-test"
     TOPIC_CUTOVER_RESTART = "ts-ct-migration-cutover-restart-test"
+    TOPIC_DELETE_RECORDS = "ts-ct-migration-delete-records-test"
+    TOPIC_API = "ts-ct-migration-api-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -938,12 +940,262 @@ class TsToCtMigrationTest(RedpandaTest):
         )
 
     @cluster(num_nodes=2)
-    @matrix(
-        storage_mode=[
-            TopicSpec.STORAGE_MODE_CLOUD,
-            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
-        ]
-    )
+    def test_ts_to_ct_migration_delete_records(self):
+        """DeleteRecords (Kafka prefix truncation) WHILE migrating. The trim is
+        recorded as a start-offset override and is not applied to the mirrored L1
+        extents during the migration -- tiered-storage retention and GC are
+        suspended while migrating, so nothing prunes them. The floor instead
+        reaches L1 across the cutover: it is handed to the ctp_stm as the
+        partition's start offset, and the cloud-topic housekeeper syncs that into
+        L1 afterwards, reclaiming the extents below it.
+
+        Asserts the visible outcome, which must hold either way: after cutover the
+        start offset is the trimmed offset (> 0) and a consumer from the earliest
+        available offset sees a correct, gap-free prefix -- no stale extents below
+        the start, no gap above it. Cutover is held off (test knob) until the trim
+        has taken effect mid-migration, so this covers the trim-floor handover but
+        not a DeleteRecords interleaved with cutover itself."""
+        self._enable_migration()
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+
+        self.rpk.create_topic(
+            self.TOPIC_DELETE_RECORDS,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+        produced = 4000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_DELETE_RECORDS,
+            msg_size=self.MSG_SIZE,
+            msg_count=produced,
+            timeout_sec=120,
+        )
+        # Several uploaded segments so a mid-stream trim prunes whole segments
+        # from the manifest head.
+        wait_until(
+            lambda: len(
+                self.admin.get_partition_manifest(self.TOPIC_DELETE_RECORDS, 0).get(
+                    "segments", {}
+                )
+            )
+            >= 3,
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="not enough TS segments uploaded to trim",
+            retry_on_exc=True,
+        )
+
+        self._trigger_migration(self.TOPIC_DELETE_RECORDS, TopicSpec.STORAGE_MODE_CLOUD)
+        wait_until(
+            lambda: (self._l1_next_offset(self.TOPIC_DELETE_RECORDS) or 0) > 0,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="migration did not start (nothing imported into L1)",
+            retry_on_exc=True,
+        )
+
+        trim_offset = produced // 2
+        self.rpk.trim_prefix(self.TOPIC_DELETE_RECORDS, trim_offset, partitions=[0])
+
+        # The trim advances the start offset while the partition is still
+        # migrating (manifest non-empty), driving the mirror's head-prune.
+        def trimmed_while_migrating() -> bool:
+            m = self.admin.get_partition_manifest(self.TOPIC_DELETE_RECORDS, 0)
+            migrating = len(m.get("segments", {})) > 0
+            return (
+                migrating
+                and self._partition_start_offset(self.TOPIC_DELETE_RECORDS)
+                >= trim_offset
+            )
+
+        wait_until(
+            trimmed_while_migrating,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="DeleteRecords did not advance the start offset while migrating",
+            retry_on_exc=True,
+        )
+
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": False}
+        )
+        self._wait_for_cutover(self.TOPIC_DELETE_RECORDS)
+
+        trimmed_start = self._partition_start_offset(self.TOPIC_DELETE_RECORDS)
+        assert trimmed_start >= trim_offset, (
+            f"trimmed start lost across cutover: start={trimmed_start} < {trim_offset}"
+        )
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_DELETE_RECORDS,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, (
+            f"trimmed prefix has gaps: offset_gaps={status.offset_gaps}"
+        )
+        assert status.valid_reads > 0, "trimmed partition served no records"
+        consumer.stop()
+        consumer.free()
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_partition_api_battery(self):
+        """Exercise the replicated_partition Kafka-facing API surface while the
+        partition is held mid-migration: storage_mode is already cloud
+        (cloud_topic_enabled) but the archival manifest is non-empty, so
+        make_partition_proxy routes to replicated_partition and serves from
+        tiered storage. This is the routing / storage_mode-vs-manifest corner the
+        DeleteRecords-during-migration bug lived in; each API must behave as it
+        does for a plain tiered partition. Covers list-offsets (earliest +
+        latest), fetch from earliest, fetch from a mid offset, timequery, and a
+        read_committed scan; then cuts over and re-reads from L1."""
+        self._enable_migration()
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+
+        self.rpk.create_topic(
+            self.TOPIC_API,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+        produced = 4000
+        # A timestamp safely before any record, for the timequery check below.
+        t_before = int(time.time() * 1000) - 60_000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_API,
+            msg_size=self.MSG_SIZE,
+            msg_count=produced,
+            timeout_sec=120,
+        )
+        wait_until(
+            lambda: len(
+                self.admin.get_partition_manifest(self.TOPIC_API, 0).get("segments", {})
+            )
+            >= 3,
+            timeout_sec=180,
+            backoff_sec=2,
+            err_msg="not enough TS segments uploaded",
+            retry_on_exc=True,
+        )
+
+        self._trigger_migration(self.TOPIC_API, TopicSpec.STORAGE_MODE_CLOUD)
+        wait_until(
+            lambda: (self._l1_next_offset(self.TOPIC_API) or 0) > 0,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="migration did not start (nothing imported into L1)",
+            retry_on_exc=True,
+        )
+        assert (
+            len(
+                self.admin.get_partition_manifest(self.TOPIC_API, 0).get("segments", {})
+            )
+            > 0
+        ), "partition is not in the migrating (TS-served) state"
+
+        def offsets(out: str) -> list[int]:
+            return [int(ln) for ln in out.splitlines() if ln.strip().isdigit()]
+
+        # list-offsets: earliest == 0, latest == produced.
+        p = list(self.rpk.describe_topic(self.TOPIC_API))[0]
+        assert p.start_offset == 0, f"start_offset={p.start_offset}"
+        assert p.high_watermark == produced, (
+            f"high_watermark={p.high_watermark} != {produced}"
+        )
+
+        # fetch from earliest: a full scan from 0 is contiguous and complete.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context, self.redpanda, self.TOPIC_API, loop=False
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= produced, (
+            f"valid_reads={status.valid_reads} < {produced}"
+        )
+        consumer.stop()
+        consumer.free()
+
+        # fetch from a mid offset: the first record returned is exactly that
+        # offset (make_reader honors the requested start while migrating).
+        mid = produced // 2
+        got = offsets(
+            self.rpk.consume(
+                self.TOPIC_API, n=1, offset=mid, partition=0, format="%o\n"
+            )
+        )
+        assert got and got[0] == mid, f"fetch from offset {mid} returned {got[:1]}"
+
+        # timequery: a timestamp before any produce resolves to the earliest
+        # offset (0).
+        got = offsets(
+            self.rpk.consume(
+                self.TOPIC_API, n=1, offset=f"@{t_before}", partition=0, format="%o\n"
+            )
+        )
+        assert got and got[0] == 0, (
+            f"timequery(@{t_before}) returned {got[:1]}, expected 0"
+        )
+
+        # read_committed: with no open transactions the last-stable-offset equals
+        # the high watermark, so a full read_committed scan returns everything.
+        rc = offsets(
+            self.rpk.consume(
+                self.TOPIC_API,
+                n=produced,
+                offset="start",
+                partition=0,
+                read_committed=True,
+                format="%o\n",
+            )
+        )
+        assert len(rc) == produced, (
+            f"read_committed returned {len(rc)} records, expected {produced}"
+        )
+
+        # Cut over and confirm everything still reads back from L1.
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": False}
+        )
+        self._wait_for_cutover(self.TOPIC_API)
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context, self.redpanda, self.TOPIC_API, loop=False
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=180)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        assert status.offset_gaps == 0, f"offset_gaps={status.offset_gaps}"
+        assert status.valid_reads >= produced, (
+            f"valid_reads={status.valid_reads} < {produced}"
+        )
+        consumer.stop()
+        consumer.free()
+
     @cluster(num_nodes=2)
     @matrix(
         storage_mode=[
