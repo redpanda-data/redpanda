@@ -63,6 +63,14 @@ from rptest.services.redpanda import (
 )
 from rptest.tests.redpanda_test import RedpandaTest
 
+# A read replica has remote.write disabled, so the archiver's adjacent-segment
+# merger, if its housekeeping tick races partition startup before the
+# read-replica flag is observed, correctly refuses to run and logs this at ERROR.
+# It is benign (the merge is refused, as intended); allow it.
+RR_MIGRATION_LOG_ALLOW_LIST = [
+    "Adjacent segment merging refusing to run on topic with remote.write disabled"
+]
+
 
 class TsToCtMigrationTest(RedpandaTest):
     NUM_PHASE1 = 500
@@ -1860,7 +1868,153 @@ class TsToCtMigrationRecoveryTest(RedpandaTest):
         consumer.free()
 
     TOPIC_COMPLETE = "ts-ct-recovery-complete-test"
+    TOPIC_TRIMMED = "ts-ct-recovery-trimmed-test"
     NUM_COMPLETE = 30000
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_recovery_trimmed_head(self):
+        """Whole-cluster recovery of a mid-migration partition whose head has
+        been trimmed (ts_start > 0). A DeleteRecords issued while migrating
+        advances the start offset deterministically; after recovery the partition
+        must come back with that same trimmed start -- a correct prefix beginning
+        above 0, not a gap from 0 and not a reset to 0. Trims near the tail so the
+        retained range stays small (the recovered partition reads from tiered
+        storage on demand)."""
+        self.redpanda.set_feature_active("topic_mode_migration", True, timeout_sec=30)
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+
+        self.rpk.create_topic(
+            self.TOPIC_TRIMMED,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        produced = 8000
+        trim_to = 7000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_TRIMMED,
+            msg_size=self.MSG_SIZE,
+            msg_count=produced,
+            timeout_sec=120,
+        )
+
+        def describe_start() -> int:
+            parts = list(self.rpk.describe_topic(self.TOPIC_TRIMMED))
+            return parts[0].start_offset if parts else 0
+
+        try:
+            wait_until(
+                lambda: self._has_ts_segments(self.TOPIC_TRIMMED),
+                timeout_sec=120,
+                backoff_sec=2,
+                err_msg="No TS segment uploaded within 120s",
+                retry_on_exc=True,
+            )
+            self.rpk.alter_topic_config(
+                self.TOPIC_TRIMMED,
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_CLOUD,
+            )
+            # Let the mirror import (nearly) the whole log into L1 -- so the
+            # segments around the trim point are uploaded and the retained tail
+            # [trim_to, ...] is fully in tiered storage for the recovered read.
+            wait_until(
+                lambda: (self._l1_next_offset(self.TOPIC_TRIMMED) or 0)
+                >= produced - 256,
+                timeout_sec=120,
+                backoff_sec=3,
+                err_msg="mirror did not import the log into L1",
+                retry_on_exc=True,
+            )
+
+            # DeleteRecords trims the head deterministically while migrating; the
+            # start advances to the trim point with the manifest still non-empty.
+            self.rpk.trim_prefix(self.TOPIC_TRIMMED, trim_to, partitions=[0])
+
+            def trimmed_migrating() -> bool:
+                m = self.admin.get_partition_manifest(self.TOPIC_TRIMMED, 0)
+                migrating = len(m.get("segments", {})) > 0
+                return migrating and describe_start() >= trim_to
+
+            wait_until(
+                trimmed_migrating,
+                timeout_sec=120,
+                backoff_sec=3,
+                err_msg="DeleteRecords did not advance the start while migrating",
+                retry_on_exc=True,
+            )
+            self.logger.info(f"trimmed start before recovery: {describe_start()}")
+            self.redpanda.wait_for_controller_snapshot(self.redpanda.nodes[0])
+            time.sleep(8)
+        finally:
+            self.redpanda.stop()
+
+        for n in self.redpanda.nodes:
+            self.redpanda.remove_local_data(n)
+        self.redpanda.restart_nodes(
+            self.redpanda.nodes,
+            auto_assign_node_id=True,
+            omit_seeds_on_idx_one=False,
+        )
+        self.redpanda._admin.await_stable_leader(
+            "controller", partition=0, namespace="redpanda", timeout_s=60, backoff_s=2
+        )
+        self.redpanda._admin.initialize_cluster_recovery()
+
+        def recovery_done() -> bool:
+            state = self.redpanda._admin.get_cluster_recovery_status().json()["state"]
+            if "failed" in state:
+                raise RuntimeError(f"cluster recovery failed: {state}")
+            return "inactive" in state
+
+        wait_until(
+            recovery_done,
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="cluster recovery did not complete within 120s",
+            retry_on_exc=True,
+        )
+        assert self.TOPIC_TRIMMED in set(self.rpk.list_topics()), (
+            "topic was not recovered"
+        )
+
+        # The trimmed head carried through recovery: the partition begins at the
+        # trimmed offset (no reset to 0, no stale prefix below the trimmed start).
+        recovered_start = describe_start()
+        assert recovered_start >= trim_to, (
+            f"trimmed start lost on recovery: start={recovered_start} < {trim_to}"
+        )
+
+        # Confirm the recovered prefix is readable from exactly the trimmed start.
+        # A bounded read of the first records suffices -- the recovered partition
+        # reads its segments from tiered storage on demand, so an end-to-end scan
+        # of the retained range is slow, and the start offset (above) is the
+        # property under test.
+        out = self.rpk.consume(
+            self.TOPIC_TRIMMED,
+            n=20,
+            offset="start",
+            partition=0,
+            format="%o\n",
+            timeout=120,
+        )
+        served = [int(ln) for ln in out.splitlines() if ln.strip().isdigit()]
+        assert len(served) >= 20, (
+            f"recovered partition served too few records: {len(served)}"
+        )
+        assert served[0] == recovered_start, (
+            f"recovered prefix starts at {served[0]}, expected the trimmed "
+            f"start {recovered_start}"
+        )
 
     def _l1_next_offset(self, topic: str, partition: int = 0) -> int | None:
         metastore = AdminV2(self.redpanda).metastore()
@@ -2350,6 +2504,141 @@ class TsToCtMigrationReadReplicaTest(RedpandaTest):
                 f"replica lost records across the source cutover: "
                 f"read {status.valid_reads} < {total}"
             )
+            consumer.stop()
+            consumer.free()
+        finally:
+            producer.stop()
+            producer.free()
+            if self.second_cluster is not None:
+                self.second_cluster.stop()
+
+    @cluster(num_nodes=4, log_allow_list=RR_MIGRATION_LOG_ALLOW_LIST)
+    def test_ts_to_ct_migration_read_replica_transactions(self):
+        """read_committed on a read replica of a migrating source. The source
+        produces transactions (some aborted); the replica reads the source's
+        imported extents via L1, and a read_committed consumer on the replica
+        must see only committed records -- the snapshot imported-reader strips
+        aborted ranges (sourced from the per-segment tx_range_manifest),
+        independently of the source's _rm_stm. The source is held migrating while
+        the replica is brought up, then cut over."""
+        topic = "ts-ct-rr-tx-test"
+        self.redpanda.set_feature_active("topic_mode_migration", True, timeout_sec=30)
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": True}
+        )
+
+        self.rpk.create_topic(
+            topic,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "segment.ms": "1000",
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            msg_size=self.MSG_SIZE,
+            msg_count=10000,
+            use_transactions=True,
+            transaction_abort_rate=0.3,
+            msgs_per_transaction=200,
+        )
+        try:
+            producer.start()
+            wait_until(
+                lambda: self._has_ts_segments(topic),
+                timeout_sec=120,
+                backoff_sec=2,
+                err_msg="No TS segment uploaded within 120s",
+                retry_on_exc=True,
+            )
+            self.rpk.alter_topic_config(
+                topic,
+                TopicSpec.PROPERTY_STORAGE_MODE,
+                TopicSpec.STORAGE_MODE_CLOUD,
+            )
+
+            self.second_cluster = make_redpanda_service(
+                self.test_context,
+                num_brokers=1,
+                si_settings=self.rr_settings,
+                extra_rp_conf={
+                    "enable_cluster_metadata_upload_loop": False,
+                    "cloud_topics_disable_metastore_flush_loop_for_tests": True,
+                    "cloud_topics_disable_level_zero_gc_for_tests": True,
+                },
+            )
+            self.second_cluster.start(start_si=False)
+            rr_rpk = RpkTool(self.second_cluster)
+            rr_rpk.create_topic(
+                topic,
+                config={"redpanda.remote.readreplica": self.source_bucket},
+            )
+
+            def rr_has_leader() -> bool:
+                parts = list(rr_rpk.describe_topic(topic, tolerant=True))
+                return len(parts) > 0 and all(p.leader != -1 for p in parts)
+
+            wait_until(
+                rr_has_leader,
+                timeout_sec=90,
+                backoff_sec=3,
+                err_msg="read replica never got a leader",
+                retry_on_exc=True,
+            )
+
+            producer.wait(timeout_sec=180)
+            # A non-transactional sentinel so the tail of the log is never an
+            # all-aborted run (which read_committed returns nothing for).
+            self.rpk.produce(topic, "sentinel", "sentinel")
+
+            self.redpanda.set_cluster_config(
+                {"cloud_topics_disable_migration_cutover_for_tests": False}
+            )
+            wait_until(
+                lambda: not self._has_ts_segments(topic),
+                timeout_sec=240,
+                backoff_sec=5,
+                err_msg="source did not cut over within 240s",
+                retry_on_exc=True,
+            )
+
+            src_hwm = list(self.rpk.describe_topic(topic))[0].high_watermark or 0
+            wait_until(
+                lambda: (
+                    list(rr_rpk.describe_topic(topic, tolerant=True))[0].high_watermark
+                    or 0
+                )
+                >= src_hwm,
+                timeout_sec=120,
+                backoff_sec=3,
+                err_msg="replica did not catch up to the source high watermark",
+                retry_on_exc=True,
+            )
+
+            consumer = KgoVerifierSeqConsumer(
+                self.test_context,
+                self.second_cluster,
+                topic,
+                loop=False,
+                # read_committed: the verifier filters aborted-transaction
+                # records and fails (invalid_reads) if any are observed.
+                use_transactions=True,
+            )
+            consumer.start()
+            consumer.wait(timeout_sec=180)
+            status = consumer.consumer_status.validator
+            assert status.invalid_reads == 0, (
+                f"replica read_committed saw aborted records: "
+                f"invalid_reads={status.invalid_reads}"
+            )
+            assert status.valid_reads > 0, "replica served no committed records"
             consumer.stop()
             consumer.free()
         finally:
