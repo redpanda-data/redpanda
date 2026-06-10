@@ -22,6 +22,7 @@
 #include "serde/rw/set.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sstring.hh>
 
 #include <expected>
 
@@ -30,17 +31,111 @@ namespace cloud_topics::l1 {
 // Represents the state managed by the replicated state machine that serves L1
 // metadata.
 
+// The metastore stores an imported tiered-storage segment's descriptor
+// (l1::imported_ts_info) decomposed by row ownership: the path is an object
+// property, the delta/term are extent properties. The interface and IO path
+// recompose the two into an imported_ts_info; only the storage layer (and its
+// debug-serde encoding) sees this split.
+
+/// Where a referenced tiered-storage segment lives. An object property: the
+/// imported analog of a native object's oid -> bucket path, independent of
+/// which Kafka offsets any extent over it covers.
+struct imported_ts_object_location
+  : public serde::envelope<
+      imported_ts_object_location,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    friend bool operator==(
+      const imported_ts_object_location&,
+      const imported_ts_object_location&) = default;
+    auto serde_fields() { return std::tie(ts_path); }
+
+    /// Opaque tiered-storage segment object path (sname_format path).
+    ts_segment_path ts_path;
+};
+
+/// How to interpret the data within an extent imported from a tiered-storage
+/// segment. An extent property, alongside the extent's Kafka offset bounds
+/// (base_offset/last_offset).
+struct imported_ts_segment_info
+  : public serde::envelope<
+      imported_ts_segment_info,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    friend bool
+    operator==(const imported_ts_segment_info&, const imported_ts_segment_info&)
+      = default;
+    std::strong_ordering
+    operator<=>(const imported_ts_segment_info&) const = default;
+    auto serde_fields() { return std::tie(segment_term, delta_base, tx_state); }
+
+    /// Raft term the segment was written in. Stamped onto every imported batch
+    /// as its partition leader epoch (a tiered-storage segment is single-term),
+    /// so a Kafka fetch of the imported region reports the original leader
+    /// epoch rather than -1.
+    model::term_id segment_term{};
+    /// Offset-translation delta at the segment's base (source segment_meta's
+    /// delta_offset). Seeds the reader's running delta at the segment start so
+    /// translation survives a compacted front hole. See l1::imported_ts_info.
+    model::offset_delta delta_base{};
+    /// Whether the segment's aborted-transaction (.tx) manifest exists,
+    /// resolved at import time so the read path can skip the probe. See
+    /// l1::tx_manifest_state.
+    tx_manifest_state tx_state{tx_manifest_state::unknown};
+};
+
+// Translate between the storage split (object-owned location + extent-owned
+// segment descriptor) and the unified imported_ts_info the interface and IO
+// path use.
+inline imported_ts_object_location
+to_object_location(const imported_ts_info& i) {
+    return imported_ts_object_location{.ts_path = i.ts_path};
+}
+inline imported_ts_segment_info to_segment_info(const imported_ts_info& i) {
+    return imported_ts_segment_info{
+      .segment_term = i.segment_term,
+      .delta_base = i.delta_base,
+      .tx_state = i.tx_state};
+}
+inline imported_ts_info to_imported_ts_info(
+  const imported_ts_object_location& loc, const imported_ts_segment_info& seg) {
+    return imported_ts_info{
+      .ts_path = loc.ts_path,
+      .segment_term = seg.segment_term,
+      .delta_base = seg.delta_base,
+      .tx_state = seg.tx_state};
+}
+// Recompose a read response's imported_ts_info from the object row's location
+// and the extent row's segment descriptor (set together for an imported extent,
+// both nullopt for native L1). The extent's Kafka offset bounds live on the
+// extent itself (base_offset/last_offset); the read path does not need them
+// here.
+inline std::optional<imported_ts_info> to_imported_ts_info(
+  const std::optional<imported_ts_object_location>& loc,
+  const std::optional<imported_ts_segment_info>& seg) {
+    if (loc.has_value() && seg.has_value()) {
+        return to_imported_ts_info(*loc, *seg);
+    }
+    return std::nullopt;
+}
+
 // A description of a portion of an object that points at data for a contiguous
 // range of batches belonging to a single partition. The object itself may
 // contain ranges of data from many partitions.
 struct extent
   : public serde::
-      envelope<extent, serde::version<0>, serde::compat_version<0>> {
+      envelope<extent, serde::version<1>, serde::compat_version<0>> {
     friend bool operator==(const extent&, const extent&) = default;
     std::strong_ordering operator<=>(const extent&) const = default;
     auto serde_fields() {
         return std::tie(
-          base_offset, last_offset, max_timestamp, filepos, len, oid);
+          base_offset,
+          last_offset,
+          max_timestamp,
+          filepos,
+          len,
+          oid,
+          imported_ts_info);
     }
 
     kafka::offset base_offset;
@@ -50,6 +145,10 @@ struct extent
     size_t len;
     // TODO: avoid duplicating the UUIDs with some indirection.
     object_id oid;
+    // Properties of the data in this extent when it is imported from a
+    // tiered-storage segment (nullopt for native L1). The segment's Kafka
+    // bounds are base_offset/last_offset above; ts_path lives on the object.
+    std::optional<imported_ts_segment_info> imported_ts_info;
 
     fmt::iterator format_to(fmt::iterator it) const {
         return fmt::format_to(
@@ -273,7 +372,7 @@ struct topic_state
 // Metadata about a given object that is not specific to any partition.
 struct object_entry
   : public serde::
-      envelope<object_entry, serde::version<1>, serde::compat_version<0>> {
+      envelope<object_entry, serde::version<2>, serde::compat_version<0>> {
     friend bool operator==(const object_entry&, const object_entry&) = default;
     auto serde_fields() {
         return std::tie(
@@ -282,7 +381,8 @@ struct object_entry
           footer_pos,
           object_size,
           last_updated,
-          is_preregistration);
+          is_preregistration,
+          imported_ts_location);
     }
     size_t total_data_size{0};
     size_t removed_data_size{0};
@@ -290,6 +390,10 @@ struct object_entry
     size_t object_size{0};
     model::timestamp last_updated;
     bool is_preregistration{false};
+    // Location of the backing tiered-storage segment when this object is
+    // imported by reference (nullopt for native L1). Used by GC to delete the
+    // segment + .tx + .index; the per-data fields live on the extent.
+    std::optional<imported_ts_object_location> imported_ts_location;
 };
 
 // Tracks the state of each topic revision.

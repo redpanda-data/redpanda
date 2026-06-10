@@ -30,6 +30,26 @@ else:
     import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
+class _ImportedTsTxManifestState:
+    ValueType = typing.NewType('ValueType', builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _ImportedTsTxManifestStateEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_ImportedTsTxManifestState.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    IMPORTED_TS_TX_MANIFEST_STATE_UNKNOWN: _ImportedTsTxManifestState.ValueType
+    IMPORTED_TS_TX_MANIFEST_STATE_ABSENT: _ImportedTsTxManifestState.ValueType
+    IMPORTED_TS_TX_MANIFEST_STATE_PRESENT: _ImportedTsTxManifestState.ValueType
+
+class ImportedTsTxManifestState(_ImportedTsTxManifestState, metaclass=_ImportedTsTxManifestStateEnumTypeWrapper):
+    """Whether an imported tiered-storage segment has an aborted-transaction (.tx)
+    manifest, resolved at import time so the read path need not probe object
+    storage. UNKNOWN (v1/v2 non-compacted) => probe and tolerate a missing .tx.
+    """
+IMPORTED_TS_TX_MANIFEST_STATE_UNKNOWN: ImportedTsTxManifestState.ValueType
+IMPORTED_TS_TX_MANIFEST_STATE_ABSENT: ImportedTsTxManifestState.ValueType
+IMPORTED_TS_TX_MANIFEST_STATE_PRESENT: ImportedTsTxManifestState.ValueType
+Global___ImportedTsTxManifestState: typing_extensions.TypeAlias = ImportedTsTxManifestState
+
 class _AnomalyType:
     ValueType = typing.NewType('ValueType', builtins.int)
     V: typing_extensions.TypeAlias = ValueType
@@ -404,6 +424,44 @@ class MetadataValue(google.protobuf.message.Message):
 Global___MetadataValue: typing_extensions.TypeAlias = MetadataValue
 
 @typing.final
+class ImportedTsObjectLocation(google.protobuf.message.Message):
+    """Where the backing tiered-storage segment of an imported object lives. An
+    object property: the imported analog of a native object's id->bucket path.
+    """
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    TS_PATH_FIELD_NUMBER: builtins.int
+    ts_path: builtins.str
+
+    def __init__(self, *, ts_path: builtins.str=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['ts_path', b'ts_path']) -> None:
+        ...
+Global___ImportedTsObjectLocation: typing_extensions.TypeAlias = ImportedTsObjectLocation
+
+@typing.final
+class ImportedTsSegmentInfo(google.protobuf.message.Message):
+    """Properties of the data in an imported tiered-storage extent. An extent
+    property, alongside the extent's Kafka offset bounds (base/last_offset).
+    """
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    SEGMENT_TERM_FIELD_NUMBER: builtins.int
+    DELTA_BASE_FIELD_NUMBER: builtins.int
+    TX_STATE_FIELD_NUMBER: builtins.int
+    segment_term: builtins.int
+    delta_base: builtins.int
+    "Offset-translation delta at the segment's base (source segment_meta's\n    delta_offset).\n    "
+    tx_state: Global___ImportedTsTxManifestState.ValueType
+    "Whether the segment's .tx manifest exists (resolved at import time)."
+
+    def __init__(self, *, segment_term: builtins.int=..., delta_base: builtins.int=..., tx_state: Global___ImportedTsTxManifestState.ValueType=...) -> None:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['delta_base', b'delta_base', 'segment_term', b'segment_term', 'tx_state', b'tx_state']) -> None:
+        ...
+Global___ImportedTsSegmentInfo: typing_extensions.TypeAlias = ImportedTsSegmentInfo
+
+@typing.final
 class ExtentValue(google.protobuf.message.Message):
     """Value for an extent row."""
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
@@ -412,16 +470,27 @@ class ExtentValue(google.protobuf.message.Message):
     FILEPOS_FIELD_NUMBER: builtins.int
     LEN_FIELD_NUMBER: builtins.int
     OBJECT_ID_FIELD_NUMBER: builtins.int
+    IMPORTED_TS_INFO_FIELD_NUMBER: builtins.int
     last_offset: builtins.int
     max_timestamp: builtins.int
     filepos: builtins.int
     len: builtins.int
     object_id: builtins.str
 
-    def __init__(self, *, last_offset: builtins.int=..., max_timestamp: builtins.int=..., filepos: builtins.int=..., len: builtins.int=..., object_id: builtins.str=...) -> None:
+    @property
+    def imported_ts_info(self) -> Global___ImportedTsSegmentInfo:
         ...
 
-    def ClearField(self, field_name: typing.Literal['filepos', b'filepos', 'last_offset', b'last_offset', 'len', b'len', 'max_timestamp', b'max_timestamp', 'object_id', b'object_id']) -> None:
+    def __init__(self, *, last_offset: builtins.int=..., max_timestamp: builtins.int=..., filepos: builtins.int=..., len: builtins.int=..., object_id: builtins.str=..., imported_ts_info: Global___ImportedTsSegmentInfo | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['_imported_ts_info', b'_imported_ts_info', 'imported_ts_info', b'imported_ts_info']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['_imported_ts_info', b'_imported_ts_info', 'filepos', b'filepos', 'imported_ts_info', b'imported_ts_info', 'last_offset', b'last_offset', 'len', b'len', 'max_timestamp', b'max_timestamp', 'object_id', b'object_id']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['_imported_ts_info', b'_imported_ts_info']) -> typing.Literal['imported_ts_info'] | None:
         ...
 Global___ExtentValue: typing_extensions.TypeAlias = ExtentValue
 
@@ -505,6 +574,7 @@ class ObjectValue(google.protobuf.message.Message):
     OBJECT_SIZE_FIELD_NUMBER: builtins.int
     LAST_UPDATED_FIELD_NUMBER: builtins.int
     IS_PREREGISTRATION_FIELD_NUMBER: builtins.int
+    IMPORTED_TS_LOCATION_FIELD_NUMBER: builtins.int
     total_data_size: builtins.int
     removed_data_size: builtins.int
     footer_pos: builtins.int
@@ -512,10 +582,20 @@ class ObjectValue(google.protobuf.message.Message):
     last_updated: builtins.int
     is_preregistration: builtins.bool
 
-    def __init__(self, *, total_data_size: builtins.int=..., removed_data_size: builtins.int=..., footer_pos: builtins.int=..., object_size: builtins.int=..., last_updated: builtins.int=..., is_preregistration: builtins.bool=...) -> None:
+    @property
+    def imported_ts_location(self) -> Global___ImportedTsObjectLocation:
         ...
 
-    def ClearField(self, field_name: typing.Literal['footer_pos', b'footer_pos', 'is_preregistration', b'is_preregistration', 'last_updated', b'last_updated', 'object_size', b'object_size', 'removed_data_size', b'removed_data_size', 'total_data_size', b'total_data_size']) -> None:
+    def __init__(self, *, total_data_size: builtins.int=..., removed_data_size: builtins.int=..., footer_pos: builtins.int=..., object_size: builtins.int=..., last_updated: builtins.int=..., is_preregistration: builtins.bool=..., imported_ts_location: Global___ImportedTsObjectLocation | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['_imported_ts_location', b'_imported_ts_location', 'imported_ts_location', b'imported_ts_location']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['_imported_ts_location', b'_imported_ts_location', 'footer_pos', b'footer_pos', 'imported_ts_location', b'imported_ts_location', 'is_preregistration', b'is_preregistration', 'last_updated', b'last_updated', 'object_size', b'object_size', 'removed_data_size', b'removed_data_size', 'total_data_size', b'total_data_size']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['_imported_ts_location', b'_imported_ts_location']) -> typing.Literal['imported_ts_location'] | None:
         ...
 Global___ObjectValue: typing_extensions.TypeAlias = ObjectValue
 

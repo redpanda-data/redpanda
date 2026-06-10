@@ -168,6 +168,18 @@ debug_reader::decode_value(row_type type, iobuf value) {
             ev.set_filepos(rv.filepos);
             ev.set_len(rv.len);
             ev.set_object_id(uuid_to_string(rv.oid()));
+            if (rv.imported_ts_info.has_value()) {
+                proto::admin::metastore::imported_ts_segment_info isi;
+                isi.set_segment_term(rv.imported_ts_info->segment_term());
+                isi.set_delta_base(rv.imported_ts_info->delta_base());
+                // The proto enum values mirror tx_manifest_state 1:1 (see the
+                // .proto); a straight cast keeps them in sync.
+                isi.set_tx_state(
+                  static_cast<
+                    proto::admin::metastore::imported_ts_tx_manifest_state>(
+                    static_cast<uint8_t>(rv.imported_ts_info->tx_state)));
+                ev.set_imported_ts_info(std::move(isi));
+            }
             pv.set_extent(std::move(ev));
             return pv;
         }
@@ -210,6 +222,12 @@ debug_reader::decode_value(row_type type, iobuf value) {
             ov.set_object_size(rv.object.object_size);
             ov.set_last_updated(rv.object.last_updated());
             ov.set_is_preregistration(rv.object.is_preregistration);
+            if (rv.object.imported_ts_location.has_value()) {
+                proto::admin::metastore::imported_ts_object_location loc;
+                loc.set_ts_path(
+                  ss::sstring{rv.object.imported_ts_location->ts_path()});
+                ov.set_imported_ts_location(std::move(loc));
+            }
             pv.set_object(std::move(ov));
             return pv;
         }

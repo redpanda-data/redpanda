@@ -242,13 +242,16 @@ struct get_size_request
 struct extent_object_info
   : serde::envelope<
       extent_object_info,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(oid, footer_pos, object_size); }
+    auto serde_fields() {
+        return std::tie(oid, footer_pos, object_size, imported);
+    }
 
     object_id oid;
     size_t footer_pos{0};
     size_t object_size{0};
+    std::optional<imported_ts_info> imported;
 };
 
 struct extent_metadata

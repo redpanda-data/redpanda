@@ -239,6 +239,32 @@ message MetadataValue {
     uint64 num_extents = 5;
 }
 
+// Where the backing tiered-storage segment of an imported object lives. An
+// object property: the imported analog of a native object's id->bucket path.
+message ImportedTsObjectLocation {
+    string ts_path = 1;
+}
+
+// Whether an imported tiered-storage segment has an aborted-transaction (.tx)
+// manifest, resolved at import time so the read path need not probe object
+// storage. UNKNOWN (v1/v2 non-compacted) => probe and tolerate a missing .tx.
+enum ImportedTsTxManifestState {
+    IMPORTED_TS_TX_MANIFEST_STATE_UNKNOWN = 0;
+    IMPORTED_TS_TX_MANIFEST_STATE_ABSENT = 1;
+    IMPORTED_TS_TX_MANIFEST_STATE_PRESENT = 2;
+}
+
+// Properties of the data in an imported tiered-storage extent. An extent
+// property, alongside the extent's Kafka offset bounds (base/last_offset).
+message ImportedTsSegmentInfo {
+    int64 segment_term = 1;
+    // Offset-translation delta at the segment's base (source segment_meta's
+    // delta_offset).
+    int64 delta_base = 2;
+    // Whether the segment's .tx manifest exists (resolved at import time).
+    ImportedTsTxManifestState tx_state = 3;
+}
+
 // Value for an extent row.
 message ExtentValue {
     int64 last_offset = 1;
@@ -246,6 +272,7 @@ message ExtentValue {
     uint64 filepos = 3;
     uint64 len = 4;
     string object_id = 5;
+    optional ImportedTsSegmentInfo imported_ts_info = 6;
 }
 
 // Value for a term row.
@@ -280,6 +307,7 @@ message ObjectValue {
     uint64 object_size = 4;
     int64 last_updated = 5;
     bool is_preregistration = 6;
+    optional ImportedTsObjectLocation imported_ts_location = 7;
 }
 
 // A typed value for a metastore row.
