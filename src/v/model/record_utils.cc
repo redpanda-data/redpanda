@@ -13,19 +13,32 @@
 #include "model/record.h"
 #include "utils/vint.h"
 
+#include <array>
+#include <cstring>
 #include <type_traits>
 
 namespace model {
 
-template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
-void crc_extend_cpu_to_le(crc::crc32c& crc, T i) {
-    auto j = ss::cpu_to_le(i);
-    crc.extend(j);
+// Pack the converted fields into a contiguous stack buffer and extend the
+// crc once. This produces a byte stream identical to extending the crc field
+// by field while avoiding a crc32c call (and its block setup) per field.
+template<typename ConvertFn, typename... T>
+requires(std::is_integral_v<T> && ...)
+void crc_extend_fields(crc::crc32c& crc, ConvertFn convert, T... t) {
+    std::array<uint8_t, (sizeof(T) + ... + 0)> buf;
+    size_t offset = 0;
+    auto append = [&buf, &offset, convert](auto field) {
+        auto converted = convert(field);
+        std::memcpy(&buf[offset], &converted, sizeof(converted));
+        offset += sizeof(converted);
+    };
+    (append(t), ...);
+    crc.extend(buf.data(), buf.size());
 }
 
 template<typename... T>
 void crc_extend_all_cpu_to_le(crc::crc32c& crc, T... t) {
-    ((crc_extend_cpu_to_le(crc, t)), ...);
+    crc_extend_fields(crc, [](auto i) { return ss::cpu_to_le(i); }, t...);
 }
 
 /// \brief uint32_t because that's what crc32c uses
@@ -53,15 +66,9 @@ uint32_t internal_header_only_crc(const record_batch_header& header) {
     return c.value();
 }
 
-template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
-void crc_extend_cpu_to_be(crc::crc32c& crc, T i) {
-    auto j = ss::cpu_to_be(i);
-    crc.extend(j);
-}
-
 template<typename... T>
 void crc_extend_all_cpu_to_be(crc::crc32c& crc, T... t) {
-    ((crc_extend_cpu_to_be(crc, t)), ...);
+    crc_extend_fields(crc, [](auto i) { return ss::cpu_to_be(i); }, t...);
 }
 
 void crc_record_batch_header(
