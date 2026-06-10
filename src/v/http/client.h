@@ -133,6 +133,12 @@ public:
      */
     void shutdown_now() noexcept {
         _shutdown_now = true;
+        // Wake an in-flight get_connected backoff sleep so tear down is prompt;
+        // the backoff is otherwise only interrupted by the external abort
+        // source, which shutdown_now() does not touch.
+        if (_reconnect_abort != nullptr) {
+            _reconnect_abort->request_abort();
+        }
         shutdown();
     }
 
@@ -321,6 +327,9 @@ private:
     std::string _host_with_port;
     ss::gate _connect_gate;
     ss::abort_source* _as;
+    // Points at a get_connected-local abort source while a reconnect loop is
+    // running, so shutdown_now() can wake its backoff sleep; null otherwise.
+    ss::abort_source* _reconnect_abort{nullptr};
     ss::shared_ptr<http::client_probe> _probe;
     // Stores point in time when the last response was received
     // from the server.

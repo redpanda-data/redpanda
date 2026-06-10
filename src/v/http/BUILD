@@ -41,6 +41,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/config",
         "//src/v/net",
+        "//src/v/ssx:abort_source",
         "//src/v/ssx:sformat",
         "//src/v/utils:prefix_logger",
         "@boost//:asio",

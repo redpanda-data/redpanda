@@ -16,6 +16,7 @@
 #include "bytes/iobuf.h"
 #include "config/base_property.h"
 #include "http/logger.h"
+#include "ssx/abort_source.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
@@ -225,8 +226,14 @@ ss::future<client::request_response_t> client::make_request(
 
 ss::future<reconnect_result_t> client::get_connected(
   ss::lowres_clock::duration timeout, prefix_logger ctxlog) {
-    auto clear_shutdown_signal = ss::defer(
-      [this]() noexcept { _shutdown_now = false; });
+    // Exposed to shutdown_now() (via _reconnect_abort) so it can interrupt the
+    // backoff sleep below; reset on exit so the dangling pointer isn't reused.
+    ss::abort_source reconnect_abort;
+    _reconnect_abort = &reconnect_abort;
+    auto clear_shutdown_signal = ss::defer([this]() noexcept {
+        _shutdown_now = false;
+        _reconnect_abort = nullptr;
+    });
     if (unlikely(_stopped)) {
         co_await ss::coroutine::return_exception(
           std::runtime_error("client is stopped"));
@@ -294,22 +301,26 @@ ss::future<reconnect_result_t> client::get_connected(
         current = ss::lowres_clock::now();
         if (current < attempt_deadline) {
             const auto backoff = attempt_deadline - current;
-            if (_as != nullptr) {
-                try {
+            try {
+                if (_as != nullptr) {
+                    // Wake on either the external abort source or shutdown_now.
+                    ssx::composite_abort_source cas{*_as, reconnect_abort};
                     co_await ss::sleep_abortable<ss::lowres_clock>(
-                      backoff, *_as);
-                } catch (const ss::sleep_aborted&) {
-                    // sleep_abortable throws a generic sleep_aborted when _as
-                    // is already aborted at subscribe time (here: the abort
-                    // landed during the connect attempt). Surface the abort
-                    // source's own exception instead, matching the _as->check()
-                    // above and not masking a custom one set via
-                    // request_abort_ex. See scylladb/seastar#3452.
-                    _as->check();
-                    throw;
+                      backoff, cas.as());
+                } else {
+                    co_await ss::sleep_abortable<ss::lowres_clock>(
+                      backoff, reconnect_abort);
                 }
-            } else {
-                co_await ss::sleep<ss::lowres_clock>(backoff);
+            } catch (const ss::sleep_aborted&) {
+                // Woke before the backoff elapsed. If the external abort source
+                // fired, surface its own exception (also covers
+                // scylladb/seastar#3452, where an already-aborted source makes
+                // sleep_abortable throw a bare sleep_aborted). Otherwise
+                // shutdown_now() fired: fall through so the _shutdown_now check
+                // on the next iteration stops the loop promptly.
+                if (_as != nullptr) {
+                    _as->check();
+                }
             }
             current = ss::lowres_clock::now();
         }
