@@ -12,6 +12,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/wire.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
@@ -89,7 +90,7 @@ struct group_metadata_value {
     std::optional<kafka::protocol_name> protocol;
     std::optional<kafka::member_id> leader;
     model::timestamp state_timestamp{-1};
-    std::vector<member_state> members;
+    chunked_vector<member_state> members;
 
     group_metadata_value copy() const {
         group_metadata_value ret{
