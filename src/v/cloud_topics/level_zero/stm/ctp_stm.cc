@@ -112,15 +112,16 @@ ss::future<> ctp_stm::prefix_truncate_below_lro() {
     static constexpr auto retry_backoff_time = 5s;
     static constexpr auto min_truncate_period = 60s;
     while (!_gate.is_closed()) {
+        auto target = co_await prefix_truncate_target();
         vlog(
           _log.trace,
           "Waiting for prefix-truncate target to advance past {}, current "
           "snapshot index: {}",
-          prefix_truncate_target(),
+          target,
           _raft->last_snapshot_index());
         try {
             if (
-              _raft->last_snapshot_index() >= prefix_truncate_target()
+              _raft->last_snapshot_index() >= target
               && _active_readers.empty()) {
                 // Only wait without a timeout if there are no active readers
                 // that could be holding us back.
@@ -141,12 +142,12 @@ ss::future<> ctp_stm::prefix_truncate_below_lro() {
               "background loop: {}",
               std::current_exception());
         }
-        auto target = prefix_truncate_target();
+        target = co_await prefix_truncate_target();
         auto snapshot_index = _raft->last_snapshot_index();
         vlog(
           _log.trace,
           "Attempting to snapshot ctp at {}, last snapshot at {}",
-          prefix_truncate_target(),
+          target,
           _raft->last_snapshot_index());
         try {
             co_await _raft->snapshot_and_truncate_log(target);
@@ -524,25 +525,78 @@ model::offset ctp_stm::max_removable_local_log_offset() {
     return _state.get_max_collectible_offset();
 }
 
-model::offset ctp_stm::prefix_truncate_target() {
-    // Base case: min(max_removable_local_log_offset, allowed_local_start).
-    // max_removable_local_log_offset already accounts for active readers
-    // and LRLO, so it's the upper bound. The hint, when set, pulls the
-    // target down so older data stays local.
-    auto cap = max_removable_local_log_offset();
-    auto hint = _state.get_min_allowed_local_threshold();
-    auto target = cap;
-    if (hint.has_value()) {
-        // Translate the kafka::offset hint to a log offset. to_log_offset
-        // may return a sentinel for offsets outside the translator's known
-        // range (e.g. a stale hint from a previous epoch); fall back to the
-        // cap in that case rather than feeding garbage into std::min.
-        auto hint_log = _raft->log()->to_log_offset(kafka::offset_cast(*hint));
-        if (hint_log != model::offset{} && hint_log != model::offset::min()) {
-            target = std::min(cap, hint_log);
+storage::gc_config ctp_stm::build_gc_config() const {
+    const auto& ntp_cfg = _raft->log()->config();
+    auto retention_ms = ntp_cfg.retention_duration();
+    auto retention_bytes = ntp_cfg.retention_bytes();
+
+    model::timestamp eviction_time = retention_ms.has_value()
+                                       ? model::timestamp(
+                                           model::timestamp::now().value()
+                                           - retention_ms->count())
+                                       : model::timestamp::min();
+    return storage::gc_config{eviction_time, retention_bytes};
+}
+
+ss::future<model::offset> ctp_stm::prefix_truncate_target() {
+    const auto& ntp_cfg = _raft->log()->config();
+
+    // Treat the local log as a cache and trim as aggressively as readers and
+    // uploads allow whenever the authoritative data already lives in L1:
+    //   * storage.mode=cloud, and
+    //   * compacted cloud topics (cleanup.policy=compact / compact+delete),
+    //     where L1 holds the compacted view, so anything below the
+    //     min_allowed_local_threshold floor is redundant locally.
+    // Otherwise consult the storage layer, which folds cloud_gc + strict /
+    // non-strict + local overrides into a single retention offset.
+    model::offset retention_target;
+    if (
+      (ntp_cfg.cloud_topic_enabled() && !ntp_cfg.is_tiered_cloud())
+      || ntp_cfg.is_remotely_compacted()) {
+        retention_target = model::offset::max();
+    } else {
+        auto cfg = build_gc_config();
+        auto off = co_await _raft->log()->compute_gc_offset(cfg);
+        retention_target = off.value_or(model::offset::min());
+    }
+
+    // The min allowed local threshold is a kafka-offset floor set by L1
+    // compaction. Translate it to a log offset; sentinels mean the hint is
+    // untranslatable (stale epoch, missing translator state) and contribute
+    // nothing to the floor.
+    model::offset min_allowed_local_threshold_log = model::offset::min();
+    if (
+      auto allowed_start = _state.get_min_allowed_local_threshold();
+      allowed_start.has_value()) {
+        try {
+            auto translated = _raft->log()->to_log_offset(
+              kafka::offset_cast(*allowed_start));
+            if (
+              translated != model::offset{}
+              && translated != model::offset::min()) {
+                min_allowed_local_threshold_log = translated;
+            } else {
+                vlog(
+                  _log.warn,
+                  "[{}] min_allowed_local_threshold {} could not be translated "
+                  "to log offset; contributing nothing to floor",
+                  _raft->ntp(),
+                  *allowed_start);
+            }
+        } catch (...) {
+            vlog(
+              _log.warn,
+              "[{}] min_allowed_local_threshold {} translation to log offset "
+              "threw: {}; contributing nothing to floor",
+              _raft->ntp(),
+              *allowed_start,
+              std::current_exception());
         }
     }
-    return target;
+
+    auto floor = std::max(retention_target, min_allowed_local_threshold_log);
+    auto cap = max_removable_local_log_offset();
+    co_return std::min(cap, floor);
 }
 
 l0::producer_queue& ctp_stm::producer_queue() { return _producer_queue; }

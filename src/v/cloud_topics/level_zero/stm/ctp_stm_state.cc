@@ -182,6 +182,18 @@ kafka::offset ctp_stm_state::start_offset() const noexcept {
 
 void ctp_stm_state::set_min_allowed_local_threshold(
   std::optional<kafka::offset> offset) noexcept {
+    // The min allowed local threshold is a kafka-offset floor below which L1
+    // has compacted; it is monotonic non-decreasing within a term. Resetting
+    // to nullopt is permitted for recovery / test paths.
+    if (!offset.has_value()) {
+        _min_allowed_local_threshold = std::nullopt;
+        return;
+    }
+    if (
+      _min_allowed_local_threshold.has_value()
+      && *offset <= *_min_allowed_local_threshold) {
+        return;
+    }
     _min_allowed_local_threshold = offset;
 }
 

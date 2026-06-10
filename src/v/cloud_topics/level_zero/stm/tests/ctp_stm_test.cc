@@ -56,7 +56,7 @@ struct ctp_stm_accessor {
         return stm.max_removable_local_log_offset();
     }
 
-    model::offset prefix_truncate_target(ctp_stm& stm) {
+    ss::future<model::offset> prefix_truncate_target(ctp_stm& stm) {
         return stm.prefix_truncate_target();
     }
 };
@@ -423,6 +423,12 @@ TEST_F_CORO(ctp_stm_fixture, truncates_below_lro) {
     // Advance the LRO
     co_await leader_api.advance_reconciled_offset(
       kafka::offset{2000}, model::no_timeout, as);
+    // The min allowed local threshold is now the floor that drives prefix
+    // truncation. Set it to the same kafka offset so the housekeeping fiber
+    // has a reason to trim.
+    auto floor_res = co_await replicate_set_min_allowed_local_threshold(
+      leader, kafka::offset{2000});
+    ASSERT_TRUE_CORO(floor_res.has_value());
     // Wait for the snapshot to be created
     for (auto& vnode : all_vnodes()) {
         RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this, &vnode]() {
@@ -460,6 +466,11 @@ TEST_F_CORO(ctp_stm_fixture, can_replay_truncated_log) {
     // Advance the LRO to truncate what the previous batch pointed too
     co_await leader_api.advance_reconciled_offset(
       kafka::offset{2000}, model::no_timeout, as);
+    // The min allowed local threshold drives prefix truncation; set it so
+    // housekeeping has a floor.
+    auto floor_res = co_await replicate_set_min_allowed_local_threshold(
+      leader, kafka::offset{2000});
+    ASSERT_TRUE_CORO(floor_res.has_value());
     // Wait for the snapshot to be created
     for (auto& vnode : all_vnodes()) {
         RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this, &vnode]() {
@@ -1473,14 +1484,18 @@ TEST_F_CORO(
       kafka::offset{50});
 }
 
-TEST_F_CORO(ctp_stm_fixture, prefix_truncate_target_returns_lrlo_when_no_hint) {
+TEST_F_CORO(ctp_stm_fixture, prefix_truncate_target_no_signal_no_trim) {
+    // Under floor semantics, an unset min allowed local threshold + no
+    // retention policy means no trim.
+    // The target collapses to model::offset::min(), even when LRLO has
+    // advanced. The housekeeping loop will see no progress past
+    // last_snapshot_index and not take a snapshot.
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
     auto& leader = node(*get_leader());
     auto stm = get_stm<0>(leader);
     auto leader_api = api(leader);
 
-    // Write a placeholder batch and advance LRO so LRLO is non-min.
     co_await replicate_record_batch(
       leader, make_record_batch(ct::cluster_epoch{1}, model::offset{0}, 0));
     co_await leader_api.advance_reconciled_offset(
@@ -1488,7 +1503,11 @@ TEST_F_CORO(ctp_stm_fixture, prefix_truncate_target_returns_lrlo_when_no_hint) {
 
     ct::ctp_stm_accessor accessor;
     auto lrlo = accessor.max_removable_local_log_offset(*stm);
-    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+    // LRLO has advanced past min, but with no min allowed local threshold and
+    // no retention config the target is min (no signal to trim).
+    ASSERT_NE_CORO(lrlo, model::offset::min());
+    ASSERT_EQ_CORO(
+      co_await accessor.prefix_truncate_target(*stm), model::offset::min());
     ASSERT_FALSE_CORO(
       stm->state().get_min_allowed_local_threshold().has_value());
 }
@@ -1517,7 +1536,7 @@ TEST_F_CORO(
       leader, kafka::offset{60});
     ASSERT_TRUE_CORO(res.has_value());
 
-    auto target = accessor.prefix_truncate_target(*stm);
+    auto target = co_await accessor.prefix_truncate_target(*stm);
     auto expected = leader.raft()->log()->to_log_offset(
       kafka::offset_cast(kafka::offset{60}));
     ASSERT_EQ_CORO(target, expected);
@@ -1548,11 +1567,16 @@ TEST_F_CORO(
       leader, kafka::offset{40});
     ASSERT_TRUE_CORO(res.has_value());
 
-    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+    ASSERT_EQ_CORO(co_await accessor.prefix_truncate_target(*stm), lrlo);
 }
 
 TEST_F_CORO(
-  ctp_stm_fixture, prefix_truncate_target_uses_lrlo_when_hint_cleared) {
+  ctp_stm_fixture,
+  prefix_truncate_target_collapses_when_min_allowed_local_threshold_cleared) {
+    // Under floor semantics, clearing the min allowed local threshold removes
+    // the only signal driving the target (no retention config in this
+    // fixture), so the target collapses to model::offset::min() rather than
+    // falling back to LRLO.
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
     auto& leader = node(*get_leader());
@@ -1568,15 +1592,20 @@ TEST_F_CORO(
 
     ct::ctp_stm_accessor accessor;
     auto lrlo = accessor.max_removable_local_log_offset(*stm);
+    ASSERT_NE_CORO(lrlo, model::offset::min());
 
     auto res = co_await replicate_set_min_allowed_local_threshold(
       leader, kafka::offset{50});
     ASSERT_TRUE_CORO(res.has_value());
-    ASSERT_NE_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+    // min_allowed_local_threshold=50 is below LRLO, so it drives the target.
+    auto expected = leader.raft()->log()->to_log_offset(
+      kafka::offset_cast(kafka::offset{50}));
+    ASSERT_EQ_CORO(co_await accessor.prefix_truncate_target(*stm), expected);
 
-    // Clear the hint.
+    // Clear the hint -> no signal -> target collapses to min().
     res = co_await replicate_set_min_allowed_local_threshold(
       leader, std::nullopt);
     ASSERT_TRUE_CORO(res.has_value());
-    ASSERT_EQ_CORO(accessor.prefix_truncate_target(*stm), lrlo);
+    ASSERT_EQ_CORO(
+      co_await accessor.prefix_truncate_target(*stm), model::offset::min());
 }

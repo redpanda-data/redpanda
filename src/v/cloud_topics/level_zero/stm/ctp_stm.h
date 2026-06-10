@@ -16,6 +16,7 @@
 #include "model/timeout_clock.h"
 #include "raft/persisted_stm.h"
 #include "ssx/mutex.h"
+#include "storage/types.h"
 
 #include <seastar/core/semaphore.hh>
 
@@ -144,9 +145,20 @@ private:
     model::offset max_removable_local_log_offset() override;
 
     /// Target log offset for the background prefix-truncate loop.
-    /// Returns LRLO when no hint is set; otherwise min(LRLO, log_offset(hint)).
-    /// Does NOT affect max_removable_local_log_offset().
-    model::offset prefix_truncate_target();
+    /// Composes three signals:
+    ///   retention_target = log->compute_gc_offset(gc_cfg)
+    ///                      (or model::offset::max() under storage.mode=cloud)
+    ///   floor            = max(retention_target, min_allowed_local_threshold)
+    ///   target           = min(max_removable_local_log_offset, floor)
+    /// The min allowed local threshold is the L1 compaction floor; the helper
+    /// folds cloud_gc, strict / non-strict, and local-target overrides. Does
+    /// NOT affect max_removable_local_log_offset().
+    ss::future<model::offset> prefix_truncate_target();
+
+    /// Build the gc_config to feed compute_gc_offset. Derives
+    /// eviction_time from now() and retention.ms, and max_bytes from
+    /// retention.bytes.
+    storage::gc_config build_gc_config() const;
 
     // A function invoked in a background loop that attempts to truncate the log
     // below the current start offset.

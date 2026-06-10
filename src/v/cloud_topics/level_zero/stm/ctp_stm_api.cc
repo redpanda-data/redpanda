@@ -188,8 +188,15 @@ ctp_stm_api::set_min_allowed_local_threshold(
   std::optional<kafka::offset> value,
   model::timeout_clock::time_point deadline,
   ss::abort_source& as) {
-    // Idempotency: skip replication if the cached value already matches.
-    if (_stm->state().get_min_allowed_local_threshold() == value) {
+    // Idempotency: skip replication when the proposed value would not
+    // advance the floor. The min allowed local threshold is monotonic
+    // non-decreasing (the apply path also rejects decreases defensively), so
+    // values <= current are no-ops. nullopt resets always replicate.
+    auto current = _stm->state().get_min_allowed_local_threshold();
+    if (value.has_value() && current.has_value() && *value <= *current) {
+        co_return std::monostate{};
+    }
+    if (!value.has_value() && !current.has_value()) {
         co_return std::monostate{};
     }
 

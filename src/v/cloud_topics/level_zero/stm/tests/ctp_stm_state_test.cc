@@ -485,6 +485,29 @@ TEST(ctp_stm_state_test, set_then_get_min_allowed_local_threshold) {
     EXPECT_FALSE(s.get_min_allowed_local_threshold().has_value());
 }
 
+TEST(ctp_stm_state_test, min_allowed_local_threshold_monotonic) {
+    ct::ctp_stm_state s;
+    s.set_min_allowed_local_threshold(kafka::offset{100});
+    ASSERT_TRUE(s.get_min_allowed_local_threshold().has_value());
+    EXPECT_EQ(*s.get_min_allowed_local_threshold(), kafka::offset{100});
+
+    // Smaller value is ignored.
+    s.set_min_allowed_local_threshold(kafka::offset{50});
+    EXPECT_EQ(*s.get_min_allowed_local_threshold(), kafka::offset{100});
+
+    // Equal value is a no-op.
+    s.set_min_allowed_local_threshold(kafka::offset{100});
+    EXPECT_EQ(*s.get_min_allowed_local_threshold(), kafka::offset{100});
+
+    // Larger value advances.
+    s.set_min_allowed_local_threshold(kafka::offset{150});
+    EXPECT_EQ(*s.get_min_allowed_local_threshold(), kafka::offset{150});
+
+    // Reset to nullopt is allowed for recovery / test paths.
+    s.set_min_allowed_local_threshold(std::nullopt);
+    EXPECT_FALSE(s.get_min_allowed_local_threshold().has_value());
+}
+
 TEST(
   ctp_stm_state_test, min_allowed_local_threshold_round_trips_through_serde) {
     ct::ctp_stm_state s;
