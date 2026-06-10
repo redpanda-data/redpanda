@@ -253,18 +253,42 @@ ss::future<storage::translating_reader>
 frontend::make_reader(cloud_topic_log_reader_config cfg) {
     vassert(_data_plane != nullptr, "cloud topics api not initialized");
 
-    const auto lro = _ctp_stm_api->get_last_reconciled_offset();
+    bool level_one = false;
+    if (_partition->get_ntp_config().is_tiered_cloud()) {
+        // In tiered_cloud mode writes go straight to the local raft log; the
+        // authoritative copy of trimmed-away data lives in L1. Local retention
+        // prefix-truncates the local log, the min_allowed_local_threshold
+        // defines what's safe to read from it.
+        auto ot_state = _partition->get_offset_translator_state();
+        const auto local_start = model::offset_cast(
+          ot_state->from_log_offset(_partition->raft_start_offset()));
+        auto min_allowed_start_threshold
+          = _ctp_stm_api->get_min_allowed_local_threshold();
+        auto local_floor = std::max(local_start, min_allowed_start_threshold);
+        level_one = cfg.start_offset < local_floor;
 
-    const auto level_one = lro > kafka::offset::min()
-                           && cfg.start_offset <= lro;
+        vlog(
+          cd_log.debug,
+          "Building {} reader for {} from {} local floor {}, local start {}, "
+          "min allowed {}",
+          (level_one ? "L1" : "L0"),
+          _partition->ntp(),
+          cfg.start_offset,
+          local_floor,
+          local_start,
+          min_allowed_start_threshold);
+    } else {
+        const auto lro = _ctp_stm_api->get_last_reconciled_offset();
+        level_one = lro > kafka::offset::min() && cfg.start_offset <= lro;
 
-    vlog(
-      cd_log.debug,
-      "Building {} reader for {} from {} lro {}",
-      (level_one ? "L1" : "L0"),
-      _partition->ntp(),
-      cfg.start_offset,
-      lro);
+        vlog(
+          cd_log.debug,
+          "Building {} reader for {} from {} lro {}",
+          (level_one ? "L1" : "L0"),
+          _partition->ntp(),
+          cfg.start_offset,
+          lro);
+    }
 
     if (level_one) {
         // For L1, we return a `null` translator because control batches
