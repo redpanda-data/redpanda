@@ -34,8 +34,8 @@ ss::future<chunked_vector<model::record_batch>>
 replicate_entries_stm::share_batches() {
     // one extra copy is needed for retries
     chunked_vector<model::record_batch> batches;
-    batches.reserve(_batches->size());
-    co_await ssx::async_for_each(*_batches, [&batches](model::record_batch& b) {
+    batches.reserve(_batches.size());
+    co_await ssx::async_for_each(_batches, [&batches](model::record_batch& b) {
         batches.push_back(b.share());
     });
 
@@ -283,7 +283,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
         // Wait until all RPCs will be dispatched
         return _dispatch_sem.wait(_requests_count).then([this] {
             // release memory reservations, and destroy data
-            _batches.reset();
+            _batches = {};
             _units.release();
         });
     });
@@ -372,9 +372,7 @@ replicate_entries_stm::replicate_entries_stm(
   , _meta(r.metadata())
   , _is_flush_required(r.is_flush_required())
   , _batches_size(r.batches_size())
-  , _batches(
-      std::make_unique<chunked_vector<model::record_batch>>(
-        std::move(r).release_batches()))
+  , _batches(std::move(r).release_batches())
   , _followers_seq(std::move(seqs))
   , _ctxlog(_ptr->_ctxlog) {}
 

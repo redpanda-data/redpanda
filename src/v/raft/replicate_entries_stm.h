@@ -116,7 +116,7 @@ private:
     protocol_metadata _meta;
     flush_after_append _is_flush_required;
     size_t _batches_size;
-    std::unique_ptr<chunked_vector<model::record_batch>> _batches;
+    chunked_vector<model::record_batch> _batches;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
     absl::flat_hash_map<vnode, consensus::inflight_appends_guard>
       _inflight_appends;
