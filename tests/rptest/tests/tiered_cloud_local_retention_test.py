@@ -28,6 +28,8 @@ These tests verify the resulting observable behavior:
   target.
 - Switching cleanup.policy to compact causes L1 compaction to run, which
   advances MASH; ctp_stm housekeeping then evicts up to the new floor.
+- Once the local log is trimmed, reads below the local log start are served
+  from L1, so a consumer can still read the whole partition from offset 0.
 """
 
 from ducktape.tests.test import TestContext
@@ -36,7 +38,10 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+)
 from rptest.tests.cloud_topics.e2e_test import EndToEndCloudTopicsBase
 
 
@@ -45,7 +50,8 @@ class TieredCloudLocalRetentionTest(EndToEndCloudTopicsBase):
     Verify that tiered_cloud partitions honor retention.local.target.bytes
     (via the storage-layer retention path consulted by ctp_stm), that
     flipping to cloud mode or applying disk pressure evicts aggressively,
-    and that enabling compaction advances MASH via L1 compaction.
+    that enabling compaction advances MASH via L1 compaction, and that reads
+    below the trimmed local log start pivot to the L1 reader.
     """
 
     topic_name = "tc_local_retention"
@@ -443,3 +449,102 @@ class TieredCloudLocalRetentionTest(EndToEndCloudTopicsBase):
             ceiling_bytes=replication * 5 * self.segment_size,
             timeout_sec=240,
         )
+
+    # 5 nodes: 3 brokers + a producer and a sequential consumer held alive
+    # at the same time (the consumer validates against the live producer).
+    @cluster(num_nodes=5)
+    def test_read_below_local_start_pivots_to_l1(self):
+        """
+        In tiered_cloud the local log is a cache: local retention trims it
+        while the authoritative data stays in L1 (retention.bytes is
+        effectively unlimited, so nothing is globally deleted). The frontend
+        read path must therefore pivot reads below the local log start to the
+        L1 reader.
+
+        This produces well above the local target, waits for the local
+        footprint to shrink so the partition prefix lives only in L1, then
+        consumes the whole topic from the beginning and asserts:
+          1. every produced record is read back (the trimmed-away prefix is
+             served correctly), and
+          2. the L1 reader actually did work (read_bytes increased), proving
+             the prefix came from L1 rather than the local log.
+
+        If the pivot keyed on LRO or on min_allowed_local_threshold (which is
+        unset for cleanup.policy=delete) instead of the local log start, reads
+        of the trimmed prefix would hit the empty local log and the consumer
+        would fail to read the full range.
+        """
+        self._create_topic(storage_mode=TopicSpec.STORAGE_MODE_TIERED_CLOUD)
+        self._wait_for_partition_info()
+
+        assert self.redpanda is not None
+        msg_count = self.bytes_to_produce // self.msg_size
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic_name,
+            msg_size=self.msg_size,
+            msg_count=msg_count,
+        )
+        producer.start()
+        producer.wait(timeout_sec=180)
+        self.wait_until_reconciled(topic=self.topic_name, partition=0)
+
+        # Wait until local retention has trimmed the local log well below the
+        # produced footprint, so the partition prefix is only available in L1.
+        replication = 3
+        per_replica_ceiling = self.local_target_bytes + 2 * self.segment_size
+        self._wait_local_below(
+            ceiling_bytes=replication * per_replica_ceiling,
+            timeout_sec=180,
+        )
+
+        # The partition start offset must still be 0: data is globally retained
+        # in L1, only the local cache was trimmed. Otherwise the read below is
+        # vacuous (nothing to serve from L1).
+        rpk = RpkTool(self.redpanda)
+        part = next(iter(rpk.describe_topic(self.topic_name)))
+        assert part.start_offset == 0, (
+            f"expected partition start offset 0 (data retained in L1), got "
+            f"{part.start_offset}"
+        )
+
+        def l1_read_bytes() -> float:
+            assert self.redpanda is not None
+            return self.redpanda.metric_sum(
+                metric_name=("vectorized_cloud_topics_level_one_reader_read_bytes"),
+                expect_metric=False,
+            )
+
+        before = l1_read_bytes()
+
+        # Consume the whole topic from the beginning. Passing the producer
+        # makes wait() block until every produced offset is read and validated,
+        # so a failure to serve the trimmed prefix from L1 fails the test.
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic_name,
+            self.msg_size,
+            loop=False,
+            producer=producer,
+        )
+        consumer.start(clean=False)
+        consumer.wait(timeout_sec=300)
+
+        valid_reads = consumer.consumer_status.validator.valid_reads
+        assert valid_reads >= msg_count, (
+            f"read {valid_reads} valid records, expected at least {msg_count}; "
+            f"the trimmed prefix was not served"
+        )
+
+        after = l1_read_bytes()
+        self.logger.info(f"L1 reader read_bytes: before={before} after={after}")
+        assert after > before, (
+            "expected the L1 reader to serve the trimmed prefix, but "
+            "cloud_topics_level_one_reader_read_bytes did not increase "
+            f"({before} -> {after})"
+        )
+
+        producer.free()
+        consumer.free()
