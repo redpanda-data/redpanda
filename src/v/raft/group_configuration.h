@@ -16,6 +16,7 @@
 #include "reflection/adl.h"
 #include "serde/rw/vector.h"
 
+#include <absl/container/inlined_vector.h>
 #include <boost/range/join.hpp>
 
 #include <optional>
@@ -447,7 +448,10 @@ auto quorum_match(ValueProvider&& f, Range&& range) {
         return ret_t{};
     }
 
-    std::vector<ret_t> values;
+    // quorum_match runs on every commit index update i.e. on every replicate
+    // round, so keep the voter values inline for any realistic replication
+    // factor instead of allocating.
+    absl::InlinedVector<ret_t, 8> values;
     values.reserve(range.size());
     std::transform(
       std::cbegin(range),

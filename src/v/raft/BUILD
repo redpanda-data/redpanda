@@ -174,6 +174,7 @@ redpanda_cc_library(
         "@abseil-cpp//absl/container:btree",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/container:inlined_vector",
         "@abseil-cpp//absl/container:node_hash_map",
         "@boost//:container",
         "@boost//:range",
