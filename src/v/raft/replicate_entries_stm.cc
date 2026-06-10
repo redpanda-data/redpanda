@@ -42,15 +42,6 @@ replicate_entries_stm::share_batches() {
     co_return batches;
 }
 
-ss::future<> replicate_entries_stm::flush_log() {
-    auto flush_f = ss::now();
-    if (_is_flush_required) {
-        flush_f = _ptr->flush_log().discard_result();
-    }
-    _dispatch_sem.signal();
-    return flush_f;
-}
-
 clock_type::time_point replicate_entries_stm::append_entries_timeout() {
     return raft::clock_type::now() + _ptr->_replicate_append_timeout;
 }
@@ -96,13 +87,25 @@ replicate_entries_stm::send_append_entries_request(
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
-    return ss::with_gate(
-             _req_bg,
-             [this, id]() mutable {
-                 return id == _ptr->self() ? flush_log()
-                                           : dispatch_remote_append_entries(id);
-             })
-      .handle_exception_type([](const ss::gate_closed_exception&) {});
+    try {
+        auto holder = _req_bg.hold();
+        if (id == _ptr->self()) {
+            // self dispatch means flushing the leader log
+            if (_is_flush_required) {
+                // start the flush before signalling the dispatch semaphore,
+                // the dispatcher only waits for the flush to be started, not
+                // to finish
+                auto flush_f = _ptr->flush_log();
+                _dispatch_sem.signal();
+                co_await std::move(flush_f);
+            } else {
+                _dispatch_sem.signal();
+            }
+        } else {
+            co_await dispatch_remote_append_entries(id);
+        }
+    } catch (const ss::gate_closed_exception&) {
+    }
 }
 
 ss::future<> replicate_entries_stm::dispatch_remote_append_entries(vnode id) {

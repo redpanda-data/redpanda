@@ -98,7 +98,6 @@ private:
 
     ss::future<> dispatch_one(vnode);
     ss::future<> dispatch_remote_append_entries(vnode);
-    ss::future<> flush_log();
 
     ss::future<result<append_entries_reply>>
       send_append_entries_request(vnode, chunked_vector<model::record_batch>);
