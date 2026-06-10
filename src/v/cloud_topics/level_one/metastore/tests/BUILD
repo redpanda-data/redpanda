@@ -240,6 +240,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "imported_serde_test",
+    timeout = "short",
+    srcs = [
+        "imported_serde_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/metastore:state",
+        "//src/v/cloud_topics/level_one/metastore/lsm:values",
+        "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "extent_metadata_reader_test",
     timeout = "short",
     srcs = [

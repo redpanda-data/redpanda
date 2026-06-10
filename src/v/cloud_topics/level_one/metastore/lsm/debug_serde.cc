@@ -163,6 +163,17 @@ debug_encode_value(const proto::admin::metastore::row_value& val) {
           .len = static_cast<size_t>(v.get_len()),
           .oid = object_id{*uuid},
         };
+        if (v.has_imported_ts_info()) {
+            const auto& isi = v.get_imported_ts_info();
+            rv.imported_ts_info = imported_ts_segment_info{
+              .segment_term = model::term_id{isi.get_segment_term()},
+              .delta_base = model::offset_delta{isi.get_delta_base()},
+              // The proto enum values mirror tx_manifest_state 1:1 (see the
+              // .proto); a straight cast keeps them in sync.
+              .tx_state = static_cast<tx_manifest_state>(
+                static_cast<uint8_t>(isi.get_tx_state())),
+            };
+        }
         return serde::to_iobuf(std::move(rv));
     }
     if (val.has_term()) {
@@ -204,6 +215,12 @@ debug_encode_value(const proto::admin::metastore::row_value& val) {
           .last_updated = model::timestamp{v.get_last_updated()},
           .is_preregistration = v.get_is_preregistration(),
         };
+        if (v.has_imported_ts_location()) {
+            const auto& loc = v.get_imported_ts_location();
+            entry.imported_ts_location = imported_ts_object_location{
+              .ts_path = ts_segment_path{ss::sstring{loc.get_ts_path()}},
+            };
+        }
         object_row_value rv{
           .object = std::move(entry),
         };

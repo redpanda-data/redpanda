@@ -238,6 +238,32 @@ TEST(DebugReaderTest, RoundTripExtentValue) {
     EXPECT_EQ(decoded->get_extent().get_filepos(), 512);
     EXPECT_EQ(decoded->get_extent().get_len(), 1024);
     EXPECT_EQ(decoded->get_extent().get_object_id(), test_obj_uuid_str);
+    EXPECT_FALSE(decoded->get_extent().has_imported_ts_info());
+}
+
+TEST(DebugReaderTest, RoundTripExtentValueImported) {
+    pm::row_value val;
+    pm::extent_value ev;
+    ev.set_last_offset(199);
+    ev.set_max_timestamp(42000);
+    ev.set_filepos(512);
+    ev.set_len(1024);
+    ev.set_object_id(std::string(test_obj_uuid_str));
+    pm::imported_ts_segment_info isi;
+    isi.set_segment_term(3);
+    ev.set_imported_ts_info(std::move(isi));
+    val.set_extent(std::move(ev));
+
+    auto encoded = debug_encode_value(val);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto decoded = debug_reader::decode_value(
+      row_type::extent, std::move(*encoded));
+    ASSERT_TRUE(decoded.has_value());
+    ASSERT_TRUE(decoded->has_extent());
+    ASSERT_TRUE(decoded->get_extent().has_imported_ts_info());
+    const auto& d = decoded->get_extent().get_imported_ts_info();
+    EXPECT_EQ(d.get_segment_term(), 3);
 }
 
 TEST(DebugReaderTest, RoundTripTermValue) {
@@ -295,6 +321,34 @@ TEST(DebugReaderTest, RoundTripObjectValue) {
     EXPECT_EQ(decoded->get_object().get_object_size(), 5100);
     EXPECT_EQ(decoded->get_object().get_last_updated(), 99999);
     EXPECT_TRUE(decoded->get_object().get_is_preregistration());
+    EXPECT_FALSE(decoded->get_object().has_imported_ts_location());
+}
+
+TEST(DebugReaderTest, RoundTripObjectValueImported) {
+    pm::row_value val;
+    pm::object_value ov;
+    ov.set_total_data_size(5000);
+    ov.set_removed_data_size(100);
+    ov.set_footer_pos(4800);
+    ov.set_object_size(5100);
+    ov.set_last_updated(99999);
+    ov.set_is_preregistration(false);
+    pm::imported_ts_object_location loc;
+    loc.set_ts_path("a/b/c-segment.log.1");
+    ov.set_imported_ts_location(std::move(loc));
+    val.set_object(std::move(ov));
+
+    auto encoded = debug_encode_value(val);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto decoded = debug_reader::decode_value(
+      row_type::object, std::move(*encoded));
+    ASSERT_TRUE(decoded.has_value());
+    ASSERT_TRUE(decoded->has_object());
+    ASSERT_TRUE(decoded->get_object().has_imported_ts_location());
+    EXPECT_EQ(
+      decoded->get_object().get_imported_ts_location().get_ts_path(),
+      "a/b/c-segment.log.1");
 }
 
 TEST(DebugReaderTest, UnknownRowTypeReturnsError) {

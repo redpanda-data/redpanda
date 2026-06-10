@@ -296,6 +296,7 @@ rpc_to_meta_extent_metadata(chunked_vector<rpc::extent_metadata> v) {
               .oid = e.object_info->oid,
               .footer_pos = e.object_info->footer_pos,
               .object_size = e.object_info->object_size,
+              .imported = e.object_info->imported,
             };
         }
         res.push_back(
