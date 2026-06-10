@@ -868,7 +868,31 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
         co_return co_await idempotent_replicate(
           bid, std::move(batch), opts, enqueued);
     }
-    co_return co_await replicate_msg(std::move(batch), opts, enqueued);
+
+    // plain replication, inline here rather than in a helper coroutine to
+    // avoid an extra frame allocation on the common non-idempotent path
+    using ret_t = result<kafka_result>;
+
+    if (!co_await sync(_sync_timeout())) {
+        co_return cluster::errc::not_leader;
+    }
+
+    if (!opts.expected_term.has_value()) {
+        opts.expected_term = _insync_term;
+    }
+
+    auto stages = _raft->replicate_in_stages(std::move(batch), opts);
+    co_await std::move(stages.request_enqueued);
+    enqueued->set_value();
+    auto r = co_await std::move(stages.replicate_finished);
+
+    if (!r) {
+        co_return ret_t(r.error());
+    }
+    auto old_offset = r.value().last_offset;
+    auto term = r.value().last_term;
+    auto new_offset = from_log_offset(old_offset);
+    co_return ret_t(kafka_result{new_offset, term});
 }
 
 ss::future<> rm_stm::stop() {
@@ -1240,34 +1264,6 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
             std::move(units),
             known_producer);
       });
-}
-
-ss::future<result<kafka_result>> rm_stm::replicate_msg(
-  model::record_batch batch,
-  raft::replicate_options opts,
-  ss::lw_shared_ptr<available_promise<>> enqueued) {
-    using ret_t = result<kafka_result>;
-
-    if (!co_await sync(_sync_timeout())) {
-        co_return cluster::errc::not_leader;
-    }
-
-    if (!opts.expected_term.has_value()) {
-        opts.expected_term = _insync_term;
-    }
-
-    auto ss = _raft->replicate_in_stages(std::move(batch), opts);
-    co_await std::move(ss.request_enqueued);
-    enqueued->set_value();
-    auto r = co_await std::move(ss.replicate_finished);
-
-    if (!r) {
-        co_return ret_t(r.error());
-    }
-    auto old_offset = r.value().last_offset;
-    auto term = r.value().last_term;
-    auto new_offset = from_log_offset(old_offset);
-    co_return ret_t(kafka_result{new_offset, term});
 }
 
 model::offset rm_stm::last_stable_offset() {

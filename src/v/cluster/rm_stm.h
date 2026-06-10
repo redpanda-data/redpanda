@@ -321,11 +321,6 @@ private:
       ssx::semaphore_units,
       producer_previously_known);
 
-    ss::future<result<kafka_result>> replicate_msg(
-      model::record_batch,
-      raft::replicate_options,
-      ss::lw_shared_ptr<available_promise<>>);
-
     ss::future<bool> sync(model::timeout_clock::duration);
     constexpr bool check_tx_permitted() { return true; }
 
