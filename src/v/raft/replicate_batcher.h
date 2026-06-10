@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/inlined_vector.h"
 #include "base/outcome.h"
 #include "container/chunked_vector.h"
 #include "raft/types.h"
@@ -83,6 +84,9 @@ public:
         ss::optimized_optional<ss::abort_source::subscription> _abort_sub;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
+    // Flushes typically dispatch a handful of items, keep them inline to
+    // avoid an allocation per replicate round.
+    using item_cache_t = absl::InlinedVector<item_ptr, 4>;
     explicit replicate_batcher(consensus* ptr, size_t cache_size);
 
     replicate_batcher(replicate_batcher&&) noexcept = default;
@@ -100,7 +104,7 @@ public:
 
 private:
     ss::future<> do_flush(
-      std::vector<item_ptr>,
+      item_cache_t,
       append_entries_request,
       std::vector<ssx::semaphore_units>,
       absl::flat_hash_map<vnode, follower_req_seq>);
@@ -113,7 +117,7 @@ private:
     consensus* _ptr;
     ssx::semaphore _max_batch_size_sem;
     size_t _max_batch_size;
-    std::vector<item_ptr> _item_cache;
+    item_cache_t _item_cache;
     ssx::mutex _lock{"replicate_batcher"};
     ss::gate _bg;
     // If true, a background flush must be pending. Used to coalesce
