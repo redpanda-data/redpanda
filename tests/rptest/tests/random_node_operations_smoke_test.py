@@ -241,6 +241,9 @@ class RandomNodeOperationsBase(PreallocNodesTest):
                     # Set both compaction intervals for cloud topics compaction tests
                     "log_compaction_interval_ms": 5000,
                     "cloud_topics_compaction_interval_ms": 5000,
+                    # Tune down the leveling interval so leveling actually runs
+                    # (and is exercised by node operations) within the test.
+                    "cloud_topics_leveling_interval_ms": 5000,
                 },
             )
 
