@@ -1,7 +1,114 @@
-from typing import Callable
+from typing import Any, Callable
 from ducktape.utils.util import wait_until
 from connectrpc.errors import ConnectError, ConnectErrorCode
 from rptest.clients.admin.v2 import Admin, metastore_pb, ntp_pb
+
+# Default of the `cloud_topics_num_metastore_partitions` cluster config.
+_DEFAULT_NUM_METASTORE_PARTITIONS: int = 3
+_INT64_MAX: int = (2**63) - 1
+
+
+def _read_rows(
+    admin: Admin,
+    metastore_partition: int,
+    seek_key: metastore_pb.RowKey | None = None,
+    last_key: metastore_pb.RowKey | None = None,
+) -> list[metastore_pb.ReadRow]:
+    """Paginated read of rows from a single metastore partition, optionally
+    bounded by seek_key/last_key."""
+    metastore = admin.metastore()
+    all_rows: list[metastore_pb.ReadRow] = []
+    next_key: str | None = None
+    while True:
+        req_kwargs: dict[str, Any] = dict(
+            metastore_partition=metastore_partition, max_rows=200
+        )
+        if next_key is not None:
+            req_kwargs["raw_seek_key"] = next_key
+        elif seek_key is not None:
+            req_kwargs["seek_key"] = seek_key
+        if last_key is not None:
+            req_kwargs["last_key"] = last_key
+        resp = metastore.read_rows(req=metastore_pb.ReadRowsRequest(**req_kwargs))
+        all_rows.extend(resp.rows)
+        if not resp.next_key:
+            break
+        next_key = resp.next_key
+    return all_rows
+
+
+def _resolve_topic_id(admin: Admin, topic: str) -> str:
+    """Resolve a cloud topic's name to the topic id used in metastore row
+    keys."""
+    metastore = admin.metastore()
+    after = ""
+    while True:
+        resp = metastore.list_cloud_topics(
+            req=metastore_pb.ListCloudTopicsRequest(after_topic_name=after)
+        )
+        for t in resp.topics:
+            if t.topic_name == topic:
+                return t.topic_id
+        if not resp.has_more or not resp.topics:
+            raise ValueError(f"cloud topic {topic} not found in the topic table")
+        after = resp.topics[-1].topic_name
+
+
+def get_l1_extent_lengths(
+    admin: Admin,
+    topic: str | None = None,
+    partition: int | None = None,
+    num_metastore_partitions: int = _DEFAULT_NUM_METASTORE_PARTITIONS,
+) -> list[int]:
+    """Return the byte length (`ExtentValue.len`) of every L1 extent, in no
+    particular order. With `topic` (and optionally `partition`) set, only that
+    topic's (partition's) extents are returned; otherwise extents from every
+    cloud-topic partition are.
+
+    Enumerates the metadata rows (one per managed partition) across the
+    metastore partitions, then reads each partition's extents from the same
+    metastore partition that holds its metadata.
+
+    `num_metastore_partitions` must reflect the cluster's actual
+    `cloud_topics_num_metastore_partitions` config; partitions beyond it
+    would be silently skipped.
+    """
+    assert topic is not None or partition is None, "a partition filter requires a topic"
+    topic_id = _resolve_topic_id(admin, topic) if topic is not None else None
+    lengths: list[int] = []
+    for mp in range(num_metastore_partitions):
+        try:
+            rows = _read_rows(admin, mp)
+        except ConnectError as e:
+            if e.code == ConnectErrorCode.NOT_FOUND:
+                # The metastore topic has not been created yet: no rows.
+                continue
+            raise
+        for row in rows:
+            if not row.key.HasField("metadata"):
+                continue
+            metadata = row.key.metadata
+            if topic_id is not None and metadata.topic_id != topic_id:
+                continue
+            if partition is not None and metadata.partition_id != partition:
+                continue
+            seek = metastore_pb.RowKey(
+                extent=metastore_pb.ExtentKey(
+                    topic_id=metadata.topic_id,
+                    partition_id=metadata.partition_id,
+                    base_offset=0,
+                )
+            )
+            last = metastore_pb.RowKey(
+                extent=metastore_pb.ExtentKey(
+                    topic_id=metadata.topic_id,
+                    partition_id=metadata.partition_id,
+                    base_offset=_INT64_MAX,
+                )
+            )
+            for extent_row in _read_rows(admin, mp, seek_key=seek, last_key=last):
+                lengths.append(extent_row.value.extent.len)
+    return lengths
 
 
 def get_l1_partition_size(admin: Admin, topic: str, partition: int) -> int | None:

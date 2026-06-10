@@ -120,7 +120,7 @@ class EndToEndCloudTopicsBase(EndToEndTest):
                 config=config,
             )
 
-    def wait_until_reconciled(self, topic: str, partition: int):
+    def wait_until_reconciled(self, topic: str, partition: int, timeout_sec: int = 60):
         def get_offsets():
             last_record: int | None = None
             output = self.rpk.consume(
@@ -153,7 +153,7 @@ class EndToEndCloudTopicsBase(EndToEndTest):
 
         wait_until(
             condition=is_reconciled,
-            timeout_sec=60,
+            timeout_sec=timeout_sec,
             backoff_sec=5,
             err_msg=message,
             retry_on_exc=True,
@@ -306,6 +306,49 @@ class EndToEndCloudTopicsBase(EndToEndTest):
             self.get_leveling_queue_length,
             stable_sec,
             timeout_sec,
+        )
+
+    def assert_extents_well_sized(
+        self,
+        topic: str,
+        max_target_size: int,
+        min_extent_ratio: float,
+        min_healthy_byte_fraction: float = 0.5,
+        max_size_tolerance: float = 2.0,
+    ):
+        """Assert that, after leveling, `topic`'s L1 extents are reasonably
+        sized per the leveling configuration:
+        * the bulk of the data lives in well-sized ("healthy") extents, i.e.
+          extents at least `min_extent_ratio * max_target_size` bytes, which is
+          the threshold below which an extent is undersized and leveling
+          eligible. Most bytes should end up in healthy extents.
+        * no extent is grossly larger than the `max_target_size`
+          (which is a soft cap)
+        """
+        lengths = ct_utils.get_l1_extent_lengths(self.admin, topic=topic)
+        assert lengths, "expected at least one L1 extent to inspect"
+
+        total_bytes = sum(lengths)
+        min_healthy = int(min_extent_ratio * max_target_size)
+        max_allowed = int(max_target_size * max_size_tolerance)
+        healthy_bytes = sum(length for length in lengths if length >= min_healthy)
+        oversized = [length for length in lengths if length > max_allowed]
+        healthy_fraction = healthy_bytes / total_bytes
+
+        self.logger.info(
+            f"L1 extent sizes after leveling: count={len(lengths)}, "
+            f"total={total_bytes}, max={max(lengths)}, min={min(lengths)}, "
+            f"healthy(>= {min_healthy})_byte_fraction={healthy_fraction}"
+        )
+
+        assert not oversized, (
+            f"found {len(oversized)} extents larger than {max_allowed}B "
+            f"({max_size_tolerance}x the {max_target_size}B soft cap)"
+        )
+        assert healthy_fraction >= min_healthy_byte_fraction, (
+            f"only {healthy_fraction} of L1 bytes are in well-sized extents "
+            f"(>= {min_healthy}B), expected >= {min_healthy_byte_fraction}; "
+            f"leveling may not have consolidated the undersized extents"
         )
 
 
@@ -809,6 +852,14 @@ class EndToEndCloudTopicsLevelingTest(EndToEndCloudTopicsBase):
 
         # Wait for leveling to fully converge before verifying data integrity.
         self.wait_for_leveling_quiesce()
+
+        # Assert that extents are now well sized post leveling.
+        assert self.topic
+        self.assert_extents_well_sized(
+            topic=self.topic,
+            max_target_size=self.RECONCILIATION_MAX_OBJECT_SIZE,
+            min_extent_ratio=self.MIN_EXTENT_RATIO,
+        )
 
         # Read all records back to verify data integrity.
         self.consume()
