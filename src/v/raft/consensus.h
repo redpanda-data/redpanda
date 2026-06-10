@@ -717,6 +717,7 @@ private:
       interrupt_configuration_change(model::revision_id, Func);
 
     ss::future<> maybe_commit_configuration(ssx::semaphore_units);
+    ss::future<> do_commit_configuration_transition(ssx::semaphore_units);
     void maybe_promote_to_voter(vnode);
 
     ss::future<model::record_batch_reader>

@@ -3158,32 +3158,34 @@ void consensus::maybe_update_leader_commit_idx() {
  * state transition is decided and executed
  */
 ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
+    // The checks here are synchronous and almost always conclude that there
+    // is nothing to do (a stable, simple configuration), so perform them
+    // before allocating a coroutine frame for the rare transition handling.
+
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
-        co_return;
+        return ss::now();
     }
 
-    auto latest_offset = _configuration_manager.get_latest_offset();
     // no configurations were committed
-    if (latest_offset > _commit_index) {
-        co_return;
+    if (_configuration_manager.get_latest_offset() > _commit_index) {
+        return ss::now();
     }
 
-    // Inspect the committed configuration by reference first. The common case
-    // is a stable, simple configuration that needs no work, so return before
-    // copying the configuration - only finishing a transition (the rare
-    // transitional/joint states) needs a mutable copy.
-    {
-        const auto& committed_cfg = _configuration_manager.get_latest();
-        // current config still contains learners, do nothing
-        if (unlikely(!committed_cfg.current_config().learners.empty())) {
-            co_return;
-        }
-        if (committed_cfg.get_state() == configuration_state::simple) {
-            co_return;
-        }
+    const auto& committed_cfg = _configuration_manager.get_latest();
+    // current config still contains learners, do nothing
+    if (unlikely(!committed_cfg.current_config().learners.empty())) {
+        return ss::now();
+    }
+    if (committed_cfg.get_state() == configuration_state::simple) {
+        return ss::now();
     }
 
+    return do_commit_configuration_transition(std::move(u));
+}
+
+ss::future<>
+consensus::do_commit_configuration_transition(ssx::semaphore_units u) {
     auto latest_cfg = _configuration_manager.get_latest();
     switch (latest_cfg.get_state()) {
     case configuration_state::simple:
