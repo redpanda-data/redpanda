@@ -91,6 +91,7 @@ class TsToCtMigrationTest(RedpandaTest):
     TOPIC_SPILL = "ts-ct-migration-spill-test"
     TOPIC_NO_ARCHIVE_LOCAL = "ts-ct-migration-no-archive-local-test"
     TOPIC_NO_ARCHIVE_EMPTY = "ts-ct-migration-no-archive-empty-test"
+    TOPIC_COMPACT_REUP = "ts-ct-migration-compact-reupload-test"
 
     # Transactional parameters. msgs_per_transaction is intentionally large so
     # that when the migration trigger fires mid-stream at least one in-flight
@@ -678,6 +679,124 @@ class TsToCtMigrationTest(RedpandaTest):
             consumer.stop()
             consumer.free()
             producer.free()
+
+    @cluster(num_nodes=2)
+    def test_ts_to_ct_migration_compacted_reupload_mid_migration(self):
+        """Compacted reupload must be suspended while migrating.
+
+        The migration mirror imports the source's segments into L1 by
+        forward-append + head-prune and does not re-diff the already-mirrored
+        region. A compacted topic recompacted mid-migration rewrites the
+        archival manifest under the mirror -- e.g. a segment whose records are
+        all superseded reuploads as an empty/compacted-away segment (base kafka
+        offset > last). The mirror cannot represent that: append_imported
+        rejects the inverted extent and the whole batch fails, so the mirror
+        stalls and L1 never advances (and, more generally, an already-mirrored
+        segment replaced by a reupload leaves the old object GC-eligible while
+        the L1 extent still references it).
+
+        This holds the partition migrating (cutover knob) and overwrites a large
+        key set to force recompaction of already-mirrored segments. With the fix
+        the mirror imports cleanly (L1 advances), every imported extent
+        references a live object (metastore ValidatePartition object-storage
+        check), and the partition serves correctly through cutover. Without it
+        the mirror's import stalls on the reupload-mangled manifest.
+        """
+        self._enable_migration()
+        # Enable compacted reupload and hold the partition migrating so a
+        # recompaction can race the mirror before cutover.
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_enable_compacted_topic_reupload": True,
+                "cloud_topics_disable_migration_cutover_for_tests": True,
+            }
+        )
+        self.rpk.create_topic(
+            self.TOPIC_COMPACT_REUP,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                TopicSpec.PROPERTY_CLEANUP_POLICY: "compact",
+                "segment.bytes": str(16 * 1024),
+                "segment.ms": "1000",
+                # Recompact aggressively and keep data from aging out via
+                # time/size retention so the only segment churn is compaction.
+                "min.cleanable.dirty.ratio": "0.0",
+                "retention.ms": str(24 * 3600 * 1000),
+                "retention.local.target.bytes": str(32 * 1024),
+            },
+        )
+
+        # A large key set so the compacted log spans many segments (not one):
+        # the mirror imports multiple extents, and a later recompaction can
+        # replace an already-mirrored *middle* segment. The high
+        # overwrite-per-key ratio (msg_count >> key_card) keeps compaction busy.
+        key_card = 4000
+        # Phase 1: keyed data -> archived and compacted-reuploaded on TS, then
+        # imported into L1 by the mirror.
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT_REUP,
+            msg_size=self.MSG_SIZE,
+            msg_count=40000,
+            key_set_cardinality=key_card,
+            timeout_sec=120,
+        )
+        self._wait_for_ts_segment(self.TOPIC_COMPACT_REUP)
+        self._trigger_migration(self.TOPIC_COMPACT_REUP, TopicSpec.STORAGE_MODE_CLOUD)
+        # Wait for the mirror to import the phase-1 segments into L1 (the
+        # partition stays migrating: cutover is held).
+        wait_until(
+            lambda: (self._l1_next_offset(self.TOPIC_COMPACT_REUP) or 0) > 0,
+            timeout_sec=120,
+            backoff_sec=3,
+            err_msg="mirror did not import phase-1 segments into L1",
+            retry_on_exc=True,
+        )
+
+        # Phase 2: overwrite the same keys -> drives recompaction of the
+        # already-uploaded+mirrored segments (and, absent the fix, a reupload
+        # that replaces them; the superseded objects are then GC-deleted).
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT_REUP,
+            msg_size=self.MSG_SIZE,
+            msg_count=40000,
+            key_set_cardinality=key_card,
+            timeout_sec=120,
+        )
+
+        # Give housekeeping time to recompact, reupload, and GC replaced objects
+        # while the partition is still migrating.
+        time.sleep(40)
+
+        # Still migrating: every L1 imported extent must reference a live object.
+        # check_object_storage HEADs each backing object; a replaced+GC'd
+        # compacted segment leaves a dangling extent -> missing-object anomaly.
+        self.redpanda.validate_metastore(check_object_storage=True)
+
+        # The partition also serves correctly through cutover.
+        self.redpanda.set_cluster_config(
+            {"cloud_topics_disable_migration_cutover_for_tests": False}
+        )
+        self._wait_for_cutover(self.TOPIC_COMPACT_REUP)
+        self.redpanda.validate_metastore(check_object_storage=True)
+
+        consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC_COMPACT_REUP,
+            loop=False,
+        )
+        consumer.start()
+        consumer.wait(timeout_sec=120)
+        status = consumer.consumer_status.validator
+        assert status.invalid_reads == 0, f"invalid_reads={status.invalid_reads}"
+        consumer.stop()
+        consumer.free()
 
     @cluster(num_nodes=2)
     @matrix(
@@ -2564,6 +2683,101 @@ class TsToCtMigrationReadReplicaTest(RedpandaTest):
         finally:
             producer.stop()
             producer.free()
+            if self.second_cluster is not None:
+                self.second_cluster.stop()
+
+    @cluster(num_nodes=2)
+    def test_read_replica_storage_mode_alter_rejected(self):
+        """A read replica derives its storage configuration from the source
+        cluster, so storage-mode changes on the replica must be rejected -- in
+        particular a read replica must not be independently migrated
+        tiered->cloud. The source here is a plain tiered topic, so the replica
+        inherits `tiered`; `tiered->cloud` (the migration trigger) and
+        `tiered->local` are both transitions that *are* permitted on an ordinary
+        topic (the migration feature is active on the replica cluster), so a
+        rejection isolates the read-replica guard rather than the transition
+        rules or the feature gate."""
+        # Source: a plain tiered-storage topic with uploaded data for the
+        # replica to attach to. The source is never migrated.
+        self.rpk.create_topic(
+            self.TOPIC,
+            partitions=1,
+            replicas=1,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED,
+                "segment.bytes": str(32 * 1024),
+                "retention.local.target.bytes": str(64 * 1024),
+            },
+        )
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.TOPIC,
+            msg_size=self.MSG_SIZE,
+            msg_count=20_000,
+            timeout_sec=120,
+        )
+        wait_until(
+            lambda: self._has_ts_segments(self.TOPIC),
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="No TS segment uploaded within 120s",
+            retry_on_exc=True,
+        )
+
+        try:
+            self.second_cluster = make_redpanda_service(
+                self.test_context,
+                num_brokers=1,
+                si_settings=self.rr_settings,
+                extra_rp_conf={
+                    "enable_cluster_metadata_upload_loop": False,
+                    "cloud_topics_disable_metastore_flush_loop_for_tests": True,
+                    "cloud_topics_disable_level_zero_gc_for_tests": True,
+                },
+            )
+            self.second_cluster.start(start_si=False)
+            # Activate the migration feature on the replica cluster so that
+            # tiered->cloud would be permitted if not for the read-replica guard.
+            self.second_cluster.set_feature_active(
+                "topic_mode_migration", True, timeout_sec=30
+            )
+            rr_rpk = RpkTool(self.second_cluster)
+            rr_rpk.create_topic(
+                self.TOPIC,
+                config={"redpanda.remote.readreplica": self.source_bucket},
+            )
+
+            def rr_has_leader() -> bool:
+                parts = list(rr_rpk.describe_topic(self.TOPIC, tolerant=True))
+                return len(parts) > 0 and all(p.leader != -1 for p in parts)
+
+            wait_until(
+                rr_has_leader,
+                timeout_sec=90,
+                backoff_sec=3,
+                err_msg="read replica never got a leader",
+                retry_on_exc=True,
+            )
+
+            # Every storage-mode change on the replica is rejected: the
+            # migration trigger (tiered->cloud) and an otherwise-unconditionally
+            # permitted transition (tiered->local).
+            for mode in (
+                TopicSpec.STORAGE_MODE_CLOUD,
+                TopicSpec.STORAGE_MODE_LOCAL,
+            ):
+                try:
+                    rr_rpk.alter_topic_config(
+                        self.TOPIC, TopicSpec.PROPERTY_STORAGE_MODE, mode
+                    )
+                    raise AssertionError(
+                        f"altering redpanda.storage.mode to {mode} on a "
+                        "read-replica topic was accepted"
+                    )
+                except RpkException:
+                    pass
+        finally:
             if self.second_cluster is not None:
                 self.second_cluster.stop()
 
