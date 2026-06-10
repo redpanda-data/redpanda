@@ -29,14 +29,16 @@ worker_manager::worker_manager(
   ss::sharded<replicated_metastore>* metastore,
   ss::sharded<cluster::metadata_cache>* metadata_cache,
   compaction_scheduler_probe& probe,
-  ss::sharded<level_one_reader_probe>* l1_reader_probe)
+  ss::sharded<level_one_reader_probe>* l1_reader_probe,
+  ss::sharded<cloud_topics::level_zero_notifier>* notifier)
   : _compaction_queue(compaction_queue)
   , _leveling_queue(leveling_queue)
   , _io(io)
   , _metastore(metastore)
   , _metadata_cache(metadata_cache)
   , _probe(probe)
-  , _l1_reader_probe(l1_reader_probe) {}
+  , _l1_reader_probe(l1_reader_probe)
+  , _notifier(notifier) {}
 
 ss::future<> worker_manager::start() {
     co_await _workers.start(
@@ -45,7 +47,10 @@ ss::future<> worker_manager::start() {
       ss::sharded_parameter([this] { return &_metastore->local(); }),
       ss::sharded_parameter([this] { return &_metadata_cache->local(); }),
       scheduling_groups::instance().cloud_topics_compaction_sg(),
-      ss::sharded_parameter([this] { return &_l1_reader_probe->local(); }));
+      ss::sharded_parameter([this] { return &_l1_reader_probe->local(); }),
+      ss::sharded_parameter([this] {
+          return _notifier == nullptr ? nullptr : &_notifier->local();
+      }));
     co_await _workers.invoke_on_all(&compaction_worker::start);
 }
 

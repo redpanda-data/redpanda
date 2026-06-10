@@ -51,7 +51,8 @@ compaction_worker::compaction_worker(
   metastore* metastore,
   cluster::metadata_cache* metadata_cache,
   ss::scheduling_group compaction_sg,
-  level_one_reader_probe* l1_reader_probe)
+  level_one_reader_probe* l1_reader_probe,
+  cloud_topics::level_zero_notifier* notifier)
   : _worker_update_queue([](const std::exception_ptr& ex) {
       vlog(
         compaction_log.error,
@@ -73,7 +74,8 @@ compaction_worker::compaction_worker(
   , _metastore(metastore)
   , _metadata_cache(metadata_cache)
   , _compaction_sg(compaction_sg)
-  , _l1_reader_probe(l1_reader_probe) {
+  , _l1_reader_probe(l1_reader_probe)
+  , _notifier(notifier) {
     _compaction_poll_interval.watch([this]() { alert_compaction_fiber(); });
     _leveling_poll_interval.watch([this]() { alert_leveling_fiber(); });
     _leveling_max_concurrent_jobs.watch([this]() {
@@ -321,8 +323,10 @@ ss::future<> compaction_worker::compact_log(compaction_job* job) {
       _probe,
       _l1_reader_probe,
       ctxlog);
+
     auto sink = std::make_unique<compaction_sink>(
       tidp,
+      job->meta->ntp,
       dirty_range_intervals,
       compaction_offsets.removable_tombstone_ranges,
       expected_compaction_epoch,
@@ -336,7 +340,8 @@ ss::future<> compaction_worker::compact_log(compaction_job* job) {
       l1::object_builder::options{
         .indexing_interval
         = config::shard_local_cfg().cloud_topics_l1_indexing_interval(),
-      });
+      },
+      _notifier);
     auto reducer = compaction::sliding_window_reducer(
       std::move(src), std::move(sink));
 

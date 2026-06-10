@@ -67,6 +67,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/metastore:extent_metadata_reader",
         "//src/v/cloud_topics/level_one/metastore:offset_interval_set",
         "//src/v/cloud_topics/level_one/metastore:retry",
+        "//src/v/cloud_topics/level_zero/notifier:level_zero_notifier",
         "//src/v/compaction:key",
         "//src/v/compaction:key_offset_map",
         "//src/v/compaction:reducer",

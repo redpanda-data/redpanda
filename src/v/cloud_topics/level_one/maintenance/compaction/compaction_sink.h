@@ -14,6 +14,7 @@
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/maintenance/l1_object_sink.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
+#include "cloud_topics/level_zero/notifier/level_zero_notifier.h"
 #include "config/property.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
@@ -25,6 +26,7 @@ class compaction_sink : public l1_object_sink {
 public:
     compaction_sink(
       model::topic_id_partition,
+      model::ntp,
       const chunked_vector<offset_interval_set::interval>&,
       const offset_interval_set&,
       metastore::compaction_epoch,
@@ -35,7 +37,8 @@ public:
       config::binding<size_t>,
       size_t,
       prefix_logger&,
-      object_builder::options = {});
+      object_builder::options = {},
+      cloud_topics::level_zero_notifier* = nullptr);
 
     ss::future<bool>
     initialize(compaction::sliding_window_reducer::source&) final;
@@ -78,6 +81,14 @@ private:
     // `map_deduplication_iteration`.
     chunked_vector<metastore::compaction_update::cleaned_range>
       _new_cleaned_ranges;
+
+    // Mirror of _tp as a model::ntp, used to notify the level_zero_notifier
+    // (and for anything else that needs cross-shard partition lookups by ntp).
+    model::ntp _ntp;
+
+    // Receives the new min_allowed_local_threshold floor after a successful
+    // finalize(). May be null (no-op).
+    cloud_topics::level_zero_notifier* _notifier;
 
 private:
     friend class throwing_compaction_sink;

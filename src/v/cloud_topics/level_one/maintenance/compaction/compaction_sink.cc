@@ -70,6 +70,7 @@ get_new_cleaned_ranges(
 
 compaction_sink::compaction_sink(
   model::topic_id_partition tp,
+  model::ntp ntp,
   const chunked_vector<offset_interval_set::interval>& dirty_range_intervals,
   const offset_interval_set& removable_tombstone_ranges,
   metastore::compaction_epoch expected_compaction_epoch,
@@ -80,7 +81,8 @@ compaction_sink::compaction_sink(
   config::binding<size_t> max_object_size,
   size_t upload_part_size,
   prefix_logger& ctxlog,
-  object_builder::options opts)
+  object_builder::options opts,
+  cloud_topics::level_zero_notifier* notifier)
   : l1_object_sink(
       std::move(tp),
       io,
@@ -93,7 +95,9 @@ compaction_sink::compaction_sink(
   , _dirty_range_intervals(dirty_range_intervals)
   , _removable_tombstone_ranges(removable_tombstone_ranges)
   , _expected_compaction_epoch(expected_compaction_epoch)
-  , _start_offset(start_offset) {}
+  , _start_offset(start_offset)
+  , _ntp(std::move(ntp))
+  , _notifier(notifier) {}
 
 ss::future<bool>
 compaction_sink::initialize(compaction::sliding_window_reducer::source& src) {
@@ -213,6 +217,66 @@ ss::future<> compaction_sink::finalize(bool success) {
           _removable_tombstone_ranges, _processed_extents);
         auto new_cleaned_ranges = get_new_cleaned_ranges(
           _new_cleaned_ranges, _processed_extents, _start_offset);
+
+        // Compute the new min_allowed_local_threshold floor for this
+        // partition: the exclusive lower bound for local reads. The floor is
+        // the max last_offset across new cleaned ranges, plus one.
+        std::optional<kafka::offset> max_cleaned_last_offset;
+        for (const auto& r : new_cleaned_ranges) {
+            if (
+              !max_cleaned_last_offset.has_value()
+              || r.last_offset > *max_cleaned_last_offset) {
+                max_cleaned_last_offset = r.last_offset;
+            }
+        }
+
+        if (max_cleaned_last_offset.has_value() && _notifier != nullptr) {
+            auto new_floor = kafka::next_offset(*max_cleaned_last_offset);
+
+            // If tombstones were removed at or above the new floor we must
+            // advance the floor before committing the removal: otherwise local
+            // reads in [new_floor, removed-tombstone-range] could still serve
+            // records that compaction has just deleted in L1. Below the floor
+            // the removal is safe regardless, so a failed advance only blocks
+            // the commit in the former case.
+            bool tombstones_removed_above_floor = false;
+            auto stream = removed_tombstone_ranges.make_stream();
+            while (stream.has_next()) {
+                if (stream.next().last_offset >= new_floor) {
+                    tombstones_removed_above_floor = true;
+                    break;
+                }
+            }
+
+            vlog(
+              _ctxlog.info,
+              "[{}] compaction advancing min_allowed_local_threshold to {}",
+              _tp,
+              new_floor);
+            auto res = co_await _notifier->set_min_allowed_local_threshold(
+              _ntp, new_floor);
+            if (!res.has_value()) {
+                if (tombstones_removed_above_floor) {
+                    vlog(
+                      _ctxlog.warn,
+                      "[{}] skipping compaction commit: failed to advance "
+                      "min_allowed_local_threshold to {} ({}) while tombstones "
+                      "were removed above it",
+                      _tp,
+                      new_floor,
+                      res.error());
+                    co_return;
+                }
+                vlog(
+                  _ctxlog.warn,
+                  "[{}] failed to advance min_allowed_local_threshold to {} "
+                  "({}); committing compaction anyway",
+                  _tp,
+                  new_floor,
+                  res.error());
+            }
+        }
+
         co_await compact_objects_with_update(
           std::move(new_cleaned_ranges), std::move(removed_tombstone_ranges));
     }

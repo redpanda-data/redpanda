@@ -12,6 +12,7 @@
 
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
+#include "cloud_topics/level_one/maintenance/compaction/compaction_sink.h"
 #include "cloud_topics/level_one/maintenance/compaction/compaction_source.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cloud_topics/level_one/maintenance/worker_probe.h"
@@ -47,13 +48,17 @@ public:
     enum class worker_state { active, paused, stopped };
 
     // io and metastore are passed to the compaction `source` and `sink`.
+    // notifier is forwarded to every compaction_sink and told the new
+    // min_allowed_local_threshold floor after a successful finalize().
+    // May be null (production wiring is done by worker_manager).
     compaction_worker(
       worker_manager*,
       io*,
       metastore*,
       cluster::metadata_cache*,
       ss::scheduling_group,
-      level_one_reader_probe*);
+      level_one_reader_probe*,
+      cloud_topics::level_zero_notifier* notifier = nullptr);
 
     // Launches background loop.
     ss::future<> start();
@@ -290,6 +295,11 @@ private:
 
     // Owned by `app`.
     level_one_reader_probe* _l1_reader_probe;
+
+    // Forwarded to every compaction_sink. Told the new
+    // min_allowed_local_threshold floor after a successful compaction.
+    // Owned by `app`. May be null.
+    cloud_topics::level_zero_notifier* _notifier;
 };
 
 } // namespace cloud_topics::l1

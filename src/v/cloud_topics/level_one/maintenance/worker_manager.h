@@ -18,6 +18,7 @@
 #include "cloud_topics/level_one/maintenance/scheduler_probe.h"
 #include "cloud_topics/level_one/maintenance/worker.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
+#include "cloud_topics/level_zero/notifier/level_zero_notifier.h"
 #include "cluster/metadata_cache.h"
 #include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
@@ -48,7 +49,8 @@ public:
       ss::sharded<replicated_metastore>*,
       ss::sharded<cluster::metadata_cache>*,
       compaction_scheduler_probe&,
-      ss::sharded<level_one_reader_probe>*);
+      ss::sharded<level_one_reader_probe>*,
+      ss::sharded<cloud_topics::level_zero_notifier>* notifier = nullptr);
 
     // Starts the pool of workers, making them available for maintenance jobs.
     ss::future<> start();
@@ -135,6 +137,10 @@ private:
 
     // Owned by `app`.
     ss::sharded<level_one_reader_probe>* _l1_reader_probe;
+
+    // Owned by `app`. The per-shard level_zero_notifier forwarded to every
+    // compaction_worker (and from there to each sink).
+    ss::sharded<cloud_topics::level_zero_notifier>* _notifier;
 
     // A sharded pool of compaction workers.
     ss::sharded<compaction_worker> _workers;

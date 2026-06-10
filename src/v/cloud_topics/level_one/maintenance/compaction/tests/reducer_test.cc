@@ -124,6 +124,7 @@ ss::future<> do_compact(
       logger);
     auto sink = std::make_unique<l1::compaction_sink>(
       tidp,
+      ntp,
       dirty_range_intervals,
       offsets_response.removable_tombstone_ranges,
       expected_compaction_epoch,
@@ -177,6 +178,7 @@ ss::future<> do_compact_with_throwing_sink(
     // throwing_compaction_sink's should_roll predicate controls rolling.
     auto inner_sink = std::make_unique<l1::compaction_sink>(
       tidp,
+      ntp,
       dirty_range_intervals,
       offsets_response.removable_tombstone_ranges,
       expected_compaction_epoch,

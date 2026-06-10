@@ -51,7 +51,8 @@ public:
       compaction_cluster_state,
       ss::sharded<file_io>*,
       ss::sharded<l1::replicated_metastore>*,
-      ss::sharded<level_one_reader_probe>*);
+      ss::sharded<level_one_reader_probe>*,
+      ss::sharded<cloud_topics::level_zero_notifier>*);
 
     // Starts the contained `_log_collector`, `_worker_manager`, and the
     // backgrounded scheduling loop.
