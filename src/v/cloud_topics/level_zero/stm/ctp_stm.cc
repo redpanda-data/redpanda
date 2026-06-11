@@ -427,6 +427,16 @@ ctp_stm::take_local_snapshot(ssx::semaphore_units) {
 }
 
 ss::future<> ctp_stm::apply_raft_snapshot(const iobuf& buf) {
+    // An empty snapshot is applied during recovery fast-forward: the raft
+    // snapshot created when bootstrapping a pre-existing partition carries no
+    // per-STM data, so state_machine_manager hands each STM an empty buffer to
+    // advance over. There is no ctp_stm state to restore then -- e.g. a
+    // partition recovered mid tiered->cloud migration has no L1 state (its data
+    // is still in tiered storage). Keep the default (empty) state and advance,
+    // mirroring log_eviction_stm's empty-snapshot handling.
+    if (buf.empty()) {
+        co_return;
+    }
     auto snap = serde::from_iobuf<ctp_stm_snapshot>(buf.copy());
     _state = std::move(snap.state);
     _epoch_checker = snap.checker;

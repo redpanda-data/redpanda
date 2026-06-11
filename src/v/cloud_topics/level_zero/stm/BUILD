@@ -182,6 +182,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":ctp_stm",
         "//src/v/cloud_topics:logger",
+        "//src/v/config",
     ],
     visibility = ["//visibility:public"],
     deps = ["//src/v/cluster:state_machine_registry"],
