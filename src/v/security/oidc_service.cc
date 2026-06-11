@@ -78,9 +78,14 @@ template<typename... Args>
 /// For https:// proxies, attaches the caller-supplied TLS credentials
 /// (the OIDC service's system-trust creds, shared with the origin
 /// handshake) and sets SNI to the proxy hostname.
+/// When both `username` and `password` are non-empty, sets an HTTP Basic
+/// `Proxy-Authorization` header on the returned config (for both http://
+/// and https:// proxies).
 result<net::base_transport::configuration::proxy_config> parse_proxy_url(
   std::string_view url_str,
-  ss::shared_ptr<ss::tls::certificate_credentials> system_creds) {
+  ss::shared_ptr<ss::tls::certificate_credentials> system_creds,
+  std::string_view username,
+  std::string_view password) {
     auto parsed = parse_url(url_str);
     if (parsed.has_error()) {
         return errc::metadata_invalid;
@@ -92,6 +97,9 @@ result<net::base_transport::configuration::proxy_config> parse_proxy_url(
         cfg.credentials = std::move(system_creds);
     } else if (url.scheme != "http") {
         return errc::metadata_invalid;
+    }
+    if (!username.empty() && !password.empty()) {
+        cfg.authorization = make_basic_proxy_authorization(username, password);
     }
     return cfg;
 }
@@ -193,6 +201,8 @@ struct service::impl {
       config::binding<std::vector<ss::sstring>> http_authentication,
       config::binding<ss::sstring> discovery_url,
       config::binding<std::optional<ss::sstring>> http_proxy_url,
+      config::binding<std::optional<ss::sstring>> http_proxy_username,
+      config::binding<std::optional<ss::sstring>> http_proxy_password,
       config::binding<ss::sstring> token_audience,
       config::binding<std::chrono::seconds> clock_skew_tolerance,
       config::binding<ss::sstring> mapping,
@@ -205,6 +215,8 @@ struct service::impl {
       , _http_authentication{std::move(http_authentication)}
       , _discovery_url{std::move(discovery_url)}
       , _http_proxy_url{std::move(http_proxy_url)}
+      , _http_proxy_username{std::move(http_proxy_username)}
+      , _http_proxy_password{std::move(http_proxy_password)}
       , _token_audience{std::move(token_audience)}
       , _clock_skew_tolerance{std::move(clock_skew_tolerance)}
       , _mapping{std::move(mapping)}
@@ -228,6 +240,15 @@ struct service::impl {
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
         _http_proxy_url.watch([this]() {
+            check_proxy_config_warnings();
+            ssx::spawn_with_gate(_gate, [this] { return update(); });
+        });
+        _http_proxy_username.watch([this]() {
+            check_proxy_config_warnings();
+            ssx::spawn_with_gate(_gate, [this] { return update(); });
+        });
+        _http_proxy_password.watch([this]() {
+            check_proxy_config_warnings();
             ssx::spawn_with_gate(_gate, [this] { return update(); });
         });
         _mapping.watch([this]() { update_rule(); });
@@ -235,6 +256,7 @@ struct service::impl {
         _group_claim_path.watch([this]() { update_group_claim_policy(); });
         _nested_group_behavior.watch([this]() { update_group_claim_policy(); });
         update_group_claim_policy();
+        check_proxy_config_warnings();
         _jwks_refresh_interval.watch([this]() {
             if (_gate.is_closed()) {
                 return;
@@ -396,6 +418,33 @@ struct service::impl {
         arm_duration = _jwks_refresh_interval();
     }
 
+    void check_proxy_config_warnings() {
+        const auto& url = _http_proxy_url();
+        bool has_user = _http_proxy_username().has_value()
+                        && !_http_proxy_username()->empty();
+        bool has_pass = _http_proxy_password().has_value()
+                        && !_http_proxy_password()->empty();
+        if (has_user != has_pass) {
+            vlog(
+              seclog.warn,
+              "oidc_http_proxy: only one of username/password is set; Basic "
+              "proxy authentication is disabled until both are set");
+        } else if (has_user && has_pass && !url.has_value()) {
+            vlog(
+              seclog.warn,
+              "oidc_http_proxy: credentials are set but oidc_http_proxy_url is "
+              "empty; the credentials are ignored");
+        } else if (has_user && has_pass && url.has_value()) {
+            auto parsed = security::oidc::parse_url(*url);
+            if (!parsed.has_error() && parsed.assume_value().scheme == "http") {
+                vlog(
+                  seclog.warn,
+                  "oidc_http_proxy: credentials are sent unencrypted over a "
+                  "plaintext http:// proxy; prefer an https:// proxy");
+            }
+        }
+    }
+
     void update_rule() {
         if (auto r = parse_principal_mapping_rule(_mapping()); r.has_error()) {
             vlog(seclog.error, "Rule failed to parse: {}", _mapping());
@@ -425,6 +474,8 @@ struct service::impl {
         // watcher across coroutine suspension points. A local copy keeps
         // the scheme check and the error detail consistent.
         auto proxy_url = _http_proxy_url();
+        auto proxy_username = _http_proxy_username().value_or("");
+        auto proxy_password = _http_proxy_password().value_or("");
         auto is_https = url.scheme == "https";
 
         // Reject plaintext origins through the proxy; see the
@@ -474,10 +525,11 @@ struct service::impl {
         if (proxy_url.has_value()) {
             // _creds is always initialized here: we've already rejected
             // proxy + plaintext origin above, and the is_https branch
-            // built _creds. parse_proxy_url only consumes the creds for
-            // https:// proxy URLs; http:// proxies leave credentials
-            // null on the resulting proxy_config.
-            auto parsed = parse_proxy_url(*proxy_url, _creds);
+            // built _creds. parse_proxy_url sets TLS credentials only for
+            // https:// proxy URLs; the Basic auth authorization header is
+            // set for both schemes when username+password are non-empty.
+            auto parsed = parse_proxy_url(
+              *proxy_url, _creds, proxy_username, proxy_password);
             if (parsed.has_error()) {
                 co_await return_exception(
                   parsed.assume_error(),
@@ -533,6 +585,8 @@ struct service::impl {
     config::binding<std::vector<ss::sstring>> _http_authentication;
     config::binding<ss::sstring> _discovery_url;
     config::binding<std::optional<ss::sstring>> _http_proxy_url;
+    config::binding<std::optional<ss::sstring>> _http_proxy_username;
+    config::binding<std::optional<ss::sstring>> _http_proxy_password;
     config::binding<ss::sstring> _token_audience;
     config::binding<std::chrono::seconds> _clock_skew_tolerance;
     config::binding<ss::sstring> _mapping;
@@ -556,6 +610,8 @@ service::service(
   config::binding<std::vector<ss::sstring>> http_authentication,
   config::binding<ss::sstring> discovery_url,
   config::binding<std::optional<ss::sstring>> http_proxy_url,
+  config::binding<std::optional<ss::sstring>> http_proxy_username,
+  config::binding<std::optional<ss::sstring>> http_proxy_password,
   config::binding<ss::sstring> token_audience,
   config::binding<std::chrono::seconds> clock_skew_tolerance,
   config::binding<ss::sstring> mapping,
@@ -568,6 +624,8 @@ service::service(
       std::move(http_authentication),
       std::move(discovery_url),
       std::move(http_proxy_url),
+      std::move(http_proxy_username),
+      std::move(http_proxy_password),
       std::move(token_audience),
       std::move(clock_skew_tolerance),
       std::move(mapping),

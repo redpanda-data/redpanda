@@ -19,7 +19,9 @@ redpanda_cc_library(
         "oidc_url_parser.h",
     ],
     implementation_deps = [
+        "//src/v/bytes",
         "//src/v/strings:string_switch",
+        "//src/v/utils:base64",
     ],
     visibility = ["//visibility:public"],
     deps = [

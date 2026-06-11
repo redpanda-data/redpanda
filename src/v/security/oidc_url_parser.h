@@ -28,4 +28,10 @@ struct parsed_url {
 };
 result<parsed_url> parse_url(std::string_view);
 
+/// Builds an HTTP Basic Proxy-Authorization header value:
+/// "Basic " + base64(username + ":" + password). Caller must ensure
+/// username contains no ':' (RFC 7617); validated at config-commit.
+ss::sstring make_basic_proxy_authorization(
+  std::string_view username, std::string_view password);
+
 } // namespace security::oidc
