@@ -158,7 +158,8 @@ public:
           _staging.append(std::move(b), deadline));
         if (fut.failed()) {
             _failed = true;
-            std::rethrow_exception(fut.get_exception());
+            throw_as_lsm_ex(
+              fut.get_exception(), "failed to append to staging file");
         }
     }
 
