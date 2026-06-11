@@ -48,6 +48,10 @@ struct ctp_stm_accessor {
           snapshot.header, std::move(snapshot.data));
     }
 
+    auto apply_raft_snapshot(ctp_stm& stm, const iobuf& buf) {
+        return stm.apply_raft_snapshot(buf);
+    }
+
     bool epoch_cv_has_waiters(ctp_stm& stm) {
         return stm._epoch_updated_cv.has_waiters();
     }
@@ -562,6 +566,37 @@ TEST_F_CORO(ctp_stm_fixture, test_snapshot) {
         auto fence = co_await api(leader).fence_epoch(ct::cluster_epoch{1});
         ASSERT_FALSE_CORO(fence.has_value());
     }
+}
+
+// The recovery fast-forward hands each STM an empty raft snapshot to advance
+// over: a bootstrapped pre-existing partition carries no per-STM data, and a
+// partition recovered mid tiered->cloud migration has no L1 ctp_stm state (its
+// data is still in tiered storage). apply_raft_snapshot must treat an empty
+// buffer as a no-op -- not try to deserialize it (which threw before the guard)
+// and not clobber existing state with a default.
+TEST_F_CORO(ctp_stm_fixture, apply_empty_raft_snapshot_is_noop) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+
+    // Establish some applied state so we can prove the empty snapshot doesn't
+    // reset it.
+    auto b1 = make_record_batch(ct::cluster_epoch{2}, model::offset{0}, 0);
+    auto res = co_await replicate_record_batch(leader, std::move(b1));
+    ASSERT_TRUE_CORO(res.has_value());
+    auto max_epoch_before = api(leader).get_max_epoch();
+    ASSERT_TRUE_CORO(max_epoch_before.has_value());
+    ASSERT_EQ_CORO(max_epoch_before.value(), ct::cluster_epoch{2});
+
+    auto stm = get_stm<0>(leader);
+    ct::ctp_stm_accessor a;
+    // Must not throw on an empty buffer.
+    co_await a.apply_raft_snapshot(*stm, iobuf{});
+
+    // State preserved, not reset to default.
+    auto max_epoch_after = api(leader).get_max_epoch();
+    ASSERT_TRUE_CORO(max_epoch_after.has_value());
+    ASSERT_EQ_CORO(max_epoch_after.value(), max_epoch_before.value());
 }
 
 TEST_F_CORO(ctp_stm_fixture, test_fence_epoch_concurrent_new_epoch) {
