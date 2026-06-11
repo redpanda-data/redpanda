@@ -19,7 +19,6 @@
 #include <boost/locale/encoding_utf.hpp>
 #include <boost/locale/utf.hpp>
 
-#include <expected>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -191,12 +190,6 @@ std::string_view utf8_truncate_min(std::string_view s, size_t max_bytes);
 std::optional<std::string>
 utf8_truncate_max(std::string_view s, size_t max_bytes);
 
-enum class utf8_sanitize_error {
-    /// Input is invalid and size_bytes() > max_bytes; linearization not
-    /// attempted.
-    input_too_large,
-};
-
 /// Fragment-aware UTF-8 validation with no allocation.
 ///
 /// Returns false if \p buf contains any byte sequence that is not valid
@@ -207,12 +200,7 @@ bool is_valid_utf8(const iobuf& buf);
 ///
 /// Fast path: if \p input is already valid UTF-8, returns it unchanged
 /// (zero copy, no allocation).
-/// Slow path: if invalid and size_bytes() <= \p max_bytes, linearizes the
-/// input and replaces each ill-formed byte with U+FFFD; output is at most
-/// 3x the input size.
-/// Returns an error if the input exceeds \p max_bytes.
-///
-/// \p max_bytes is silently capped to iobuf::max_linearize_size; values
-/// larger than that cannot be linearized.
-std::expected<iobuf, utf8_sanitize_error>
-utf8_sanitize(iobuf input, size_t max_bytes = iobuf::max_linearize_size);
+/// Slow path: copies the input fragment by fragment, replacing each
+/// ill-formed byte with U+FFFD (advance-1-on-error strategy); output is at
+/// most 3x the input size.
+iobuf utf8_sanitize(iobuf input);

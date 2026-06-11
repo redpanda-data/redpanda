@@ -11,6 +11,7 @@
 
 #include "strings/utf8.h"
 
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -83,27 +84,6 @@ namespace {
 
 constexpr std::string_view replacement_char = "\xEF\xBF\xBD";
 
-// Replace ill-formed bytes in `raw` with U+FFFD (advance-1-on-error strategy:
-// one replacement per ill-formed byte).
-iobuf replace_invalid_utf8(std::string_view raw) {
-    iobuf result;
-    const auto* data = reinterpret_cast<const utf8proc_uint8_t*>(raw.data());
-    auto len = static_cast<utf8proc_ssize_t>(raw.size());
-    utf8proc_ssize_t i = 0;
-    while (i < len) {
-        utf8proc_int32_t cp;
-        utf8proc_ssize_t n = utf8proc_iterate(data + i, len - i, &cp);
-        if (n > 0) {
-            result.append(raw.data() + i, static_cast<size_t>(n));
-            i += n;
-        } else {
-            result.append(replacement_char.data(), replacement_char.size());
-            ++i;
-        }
-    }
-    return result;
-}
-
 // Incremental UTF-8 validation state. `pending` counts the continuation
 // bytes still expected; `min_cont`/`max_cont` bound the next continuation
 // byte (tightened after an E0/ED/F0/F4 lead to reject overlongs, surrogates,
@@ -155,6 +135,56 @@ inline bool accept_utf8_byte(utf8_scan_state& s, uint8_t b) {
     return true;
 }
 
+// Replace ill-formed bytes in `input` with U+FFFD (advance-1-on-error
+// strategy: one replacement per ill-formed byte). Bytes of the current code
+// point are buffered in `seq` and copied once the code point completes, so
+// fragment boundaries need no special handling.
+iobuf replace_invalid_utf8(const iobuf& input) {
+    iobuf result;
+    result.reserve_memory(input.size_bytes());
+    utf8_scan_state state;
+    std::array<char, 4> seq{};
+    size_t seq_len = 0;
+
+    // Appends one at a time on purpose: n is almost always 0 or 1, and a
+    // constant-size append compiles to direct stores; a single runtime-size
+    // append from a prepared buffer measured slower.
+    auto emit_replacements = [&result](size_t n) {
+        for (size_t i = 0; i < n; ++i) {
+            result.append(replacement_char.data(), replacement_char.size());
+        }
+    };
+
+    auto sanitize_byte = [&](uint8_t b) {
+        if (!accept_utf8_byte(state, b)) {
+            // Abort any partial sequence: its lead is ill-formed and each
+            // consumed continuation is then a bare continuation — one U+FFFD
+            // per byte. Then re-examine `b` with fresh state.
+            emit_replacements(seq_len);
+            seq_len = 0;
+            state = utf8_scan_state{};
+            if (!accept_utf8_byte(state, b)) {
+                emit_replacements(1);
+                return;
+            }
+        }
+        seq[seq_len++] = static_cast<char>(b);
+        if (state.pending == 0) {
+            result.append(seq.data(), seq_len);
+            seq_len = 0;
+        }
+    };
+
+    for (const auto& frag : input) {
+        for (size_t i = 0; i < frag.size(); ++i) {
+            sanitize_byte(static_cast<uint8_t>(frag.get()[i]));
+        }
+    }
+    // Input ended mid-sequence: one U+FFFD per leftover byte.
+    emit_replacements(seq_len);
+    return result;
+}
+
 } // namespace
 
 bool is_valid_utf8(const iobuf& buf) {
@@ -169,14 +199,9 @@ bool is_valid_utf8(const iobuf& buf) {
     return state.pending == 0;
 }
 
-std::expected<iobuf, utf8_sanitize_error>
-utf8_sanitize(iobuf input, size_t max_bytes) {
-    max_bytes = std::min(max_bytes, iobuf::max_linearize_size);
+iobuf utf8_sanitize(iobuf input) {
     if (is_valid_utf8(input)) {
-        return std::move(input);
+        return input;
     }
-    if (input.size_bytes() > max_bytes) {
-        return std::unexpected(utf8_sanitize_error::input_too_large);
-    }
-    return replace_invalid_utf8(input.linearize_to_string());
+    return replace_invalid_utf8(input);
 }
