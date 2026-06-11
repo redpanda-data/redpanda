@@ -179,7 +179,16 @@ model::offset ctp_stm_state::get_max_collectible_offset() const noexcept {
     if (_last_reconciled_log_offset.has_value()) {
         return _last_reconciled_log_offset.value();
     }
-    // Truncation is impossible without LRO
+    // An STM that has applied no CT data must not constrain truncation: it may
+    // be an inert passenger on a partition that is not (yet) a cloud topic
+    // (e.g. a tiered partition pre-installed with ctp_stm so a migration needs
+    // no runtime STM install). Without this a passenger would pin the local log
+    // at offset::min() forever.
+    if (!_max_applied_epoch.has_value()) {
+        return model::offset::max();
+    }
+    // CT data has been applied but not yet reconciled to L1: protect it.
+    // Truncation is impossible without an LRO.
     return model::offset::min();
 }
 
