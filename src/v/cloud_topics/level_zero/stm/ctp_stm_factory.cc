@@ -12,13 +12,23 @@
 
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/logger.h"
+#include "config/configuration.h"
+#include "model/namespace.h"
 
 namespace cloud_topics::l0 {
 
 bool ctp_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
-    return ntp_cfg.cloud_topic_enabled()
-           && !ntp_cfg.is_read_replica_mode_enabled();
+    if (ntp_cfg.is_read_replica_mode_enabled()) {
+        return false;
+    }
+    if (ntp_cfg.cloud_topic_enabled()) {
+        return true;
+    }
+    // Pre-install an (idle) ctp_stm on user-topic partitions when cloud
+    // topics are available to support migration to cloud/tsv2.
+    return config::shard_local_cfg().cloud_storage_enabled()
+           && model::is_user_topic(ntp_cfg.ntp());
 }
 
 void ctp_stm_factory::create(

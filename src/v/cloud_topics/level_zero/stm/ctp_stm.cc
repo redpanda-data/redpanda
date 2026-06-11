@@ -462,6 +462,11 @@ ctp_stm::take_local_snapshot(ssx::semaphore_units) {
 }
 
 ss::future<> ctp_stm::apply_raft_snapshot(const iobuf& buf) {
+    // Snapshots taken prior to ctp_stm existing on the partition will be empty.
+    // Treat as a noop, implicitly setting the stm to the default state.
+    if (buf.empty()) {
+        co_return;
+    }
     auto snap = serde::from_iobuf<ctp_stm_snapshot>(buf.copy());
     _state = std::move(snap.state);
     _epoch_checker = snap.checker;
@@ -567,6 +572,15 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
 }
 
 model::offset ctp_stm::max_removable_local_log_offset() {
+    // ctp_stm is unconditionally present on tiered and local partitions in
+    // order to allow for migration to cloud/tsv2, but it owns trimming only
+    // on cloud-topic partitions: until this partition's log says the topic
+    // is a cloud topic, don't pin truncation. The storage mode is monotone
+    // (never cloud -> non-cloud) and the flip propagates through this log,
+    // so any applied cloud-topic data is preceded by the flip.
+    if (!_raft->log()->config().cloud_topic_enabled()) {
+        return model::offset::max();
+    }
     // If there is an active reader, it holds back prefix truncation.
     if (!_active_readers.empty()) {
         return _active_readers.front().lrlo;

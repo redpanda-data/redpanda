@@ -11,15 +11,19 @@
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_commands.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_factory.h"
 #include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "raft/tests/raft_fixture.h"
 #include "ssx/when_all.h"
+#include "storage/ntp_config.h"
 #include "test_utils/async.h"
+#include "test_utils/scoped_config.h"
 
 #include <optional>
 
@@ -48,6 +52,10 @@ struct ctp_stm_accessor {
           snapshot.header, std::move(snapshot.data));
     }
 
+    auto apply_raft_snapshot(ctp_stm& stm, const iobuf& buf) {
+        return stm.apply_raft_snapshot(buf);
+    }
+
     bool epoch_cv_has_waiters(ctp_stm& stm) {
         return stm._epoch_updated_cv.has_waiters();
     }
@@ -70,8 +78,8 @@ class ctp_stm_fixture : public raft::stm_raft_fixture<ct::ctp_stm> {
 public:
     ss::future<> start() {
         enable_offset_translation();
-        // ctp_stm's prefix-truncate bg fiber only runs on cloud partitions;
-        // see ctp_stm::sync_bg_fiber_to_mode().
+        // ctp_stm max_removable_local_log_offset() behavior depends on
+        // ntp_config overrides
         set_ntp_config_overrides(
           storage::ntp_config::default_overrides{
             .storage_mode = model::redpanda_storage_mode::cloud});
@@ -588,6 +596,18 @@ TEST_F_CORO(ctp_stm_fixture, test_snapshot) {
         auto fence = co_await api(leader).fence_epoch(ct::cluster_epoch{1});
         ASSERT_FALSE_CORO(fence.has_value());
     }
+}
+
+// Tolerate an empty snapshot as a noop after ctp_stm installation.
+TEST_F_CORO(ctp_stm_fixture, apply_empty_raft_snapshot_is_noop) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+
+    auto stm = get_stm<0>(leader);
+    ct::ctp_stm_accessor a;
+    // Must not throw on an empty buffer.
+    co_await a.apply_raft_snapshot(*stm, iobuf{});
 }
 
 TEST_F_CORO(ctp_stm_fixture, test_fence_epoch_concurrent_new_epoch) {
@@ -1765,6 +1785,68 @@ TEST_F_CORO(
       kafka::offset_cast(kafka::offset{50}));
     ASSERT_EQ_CORO(
       co_await accessor.compute_local_retention_offset(*stm), expected);
+}
+
+// A ctp_stm pre-installed on a non-cloud partition doesn't own trimming and
+// must not pin truncation.
+TEST_F_CORO(ctp_stm_fixture, passenger_does_not_pin_truncation) {
+    co_await start_as_passenger();
+    co_await wait_for_leader(raft::default_timeout());
+    auto stm = get_stm<0>(node(*get_leader()));
+    ct::ctp_stm_accessor accessor;
+    ASSERT_EQ_CORO(
+      accessor.max_removable_local_log_offset(*stm), model::offset::max());
+}
+
+// On a cloud-topic partition, nothing may be trimmed before reconciliation
+// records progress — even while the state is still empty.
+TEST_F_CORO(ctp_stm_fixture, cloud_partition_pins_truncation_when_empty) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto stm = get_stm<0>(node(*get_leader()));
+    ct::ctp_stm_accessor accessor;
+    ASSERT_EQ_CORO(
+      accessor.max_removable_local_log_offset(*stm), model::offset::min());
+}
+
+namespace {
+storage::ntp_config make_factory_cfg(
+  model::ntp ntp,
+  model::redpanda_storage_mode mode,
+  bool read_replica = false) {
+    storage::ntp_config::default_overrides o;
+    o.storage_mode = mode;
+    if (read_replica) {
+        o.read_replica = true;
+    }
+    return {
+      std::move(ntp),
+      "",
+      std::make_unique<storage::ntp_config::default_overrides>(o)};
+}
+} // namespace
+
+TEST(ctp_stm_factory_test, is_applicable_for) {
+    using mode = model::redpanda_storage_mode;
+    ct::l0::ctp_stm_factory factory;
+    auto user_ntp = model::ntp(
+      model::kafka_namespace, model::topic("t"), model::partition_id(0));
+
+    scoped_config cfg;
+    cfg.get("cloud_storage_enabled").set_value(true);
+    for (auto m : {mode::unset, mode::local, mode::tiered, mode::cloud}) {
+        EXPECT_TRUE(factory.is_applicable_for(make_factory_cfg(user_ntp, m)));
+    }
+    EXPECT_FALSE(factory.is_applicable_for(
+      make_factory_cfg(user_ntp, mode::cloud, /*read_replica=*/true)));
+    EXPECT_FALSE(factory.is_applicable_for(
+      make_factory_cfg(model::controller_ntp, mode::local)));
+
+    cfg.get("cloud_storage_enabled").set_value(false);
+    EXPECT_FALSE(
+      factory.is_applicable_for(make_factory_cfg(user_ntp, mode::local)));
+    EXPECT_TRUE(
+      factory.is_applicable_for(make_factory_cfg(user_ntp, mode::cloud)));
 }
 
 TEST_F_CORO(ctp_stm_fixture, bg_fiber_follows_storage_mode) {
