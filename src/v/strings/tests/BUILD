@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest_no_seastar", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest_no_seastar", "redpanda_cc_gtest")
 
 redpanda_cc_btest_no_seastar(
     name = "strings_test",
@@ -39,6 +39,21 @@ redpanda_cc_gtest(
         "//src/v/strings:utf8",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "utf8_sanitize_rpbench",
+    srcs = [
+        "utf8_sanitize_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/random:generators",
+        "//src/v/strings:utf8",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 
