@@ -30,7 +30,9 @@ TEST(ctp_stm_state_test, initial_state) {
     EXPECT_FALSE(state.get_max_seen_epoch(model::term_id(1)).has_value());
     EXPECT_FALSE(state.get_last_reconciled_offset().has_value());
     EXPECT_FALSE(state.get_last_reconciled_log_offset().has_value());
-    EXPECT_EQ(state.get_max_collectible_offset(), model::offset::min());
+    // An STM with no applied CT data is an inert passenger and must not
+    // constrain truncation.
+    EXPECT_EQ(state.get_max_collectible_offset(), model::offset::max());
 }
 
 TEST(ctp_stm_state_test, advance_max_seen_epoch) {
@@ -107,8 +109,15 @@ TEST(ctp_stm_state_test, advance_last_reconciled_offset) {
 TEST(ctp_stm_state_test, get_max_collectible_offset) {
     ct::ctp_stm_state state;
 
+    // No CT data applied yet: inert passenger, do not constrain truncation.
+    EXPECT_EQ(state.get_max_collectible_offset(), model::offset::max());
+
+    // CT data applied (a placeholder advanced the epoch) but not yet reconciled
+    // to L1: protect it by pinning collection at min().
+    state.advance_epoch(ct::cluster_epoch(1), model::offset(10));
     EXPECT_EQ(state.get_max_collectible_offset(), model::offset::min());
 
+    // Once reconciled, collect up to the reconciled log offset.
     model::offset log_offset(500);
     state.advance_last_reconciled_offset(kafka::offset(300), log_offset);
     EXPECT_EQ(state.get_max_collectible_offset(), log_offset);
