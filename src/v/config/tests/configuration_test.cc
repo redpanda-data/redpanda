@@ -36,4 +36,40 @@ TEST(ConfigurationTest, Roundtrip) {
     }
 }
 
+TEST(oidc_http_proxy_credentials, password_is_secret) {
+    auto& cfg = config::shard_local_cfg();
+    EXPECT_TRUE(cfg.oidc_http_proxy_password.is_secret());
+    EXPECT_FALSE(cfg.oidc_http_proxy_username.is_secret());
+}
+
+TEST(oidc_http_proxy_credentials, username_rejects_colon_and_control) {
+    auto& cfg = config::shard_local_cfg();
+    EXPECT_EQ(
+      cfg.oidc_http_proxy_username.validate(std::optional<ss::sstring>{}),
+      std::nullopt);
+    EXPECT_EQ(
+      cfg.oidc_http_proxy_username.validate(std::optional<ss::sstring>{"svc"}),
+      std::nullopt);
+    EXPECT_TRUE(cfg.oidc_http_proxy_username
+                  .validate(std::optional<ss::sstring>{"has:colon"})
+                  .has_value());
+    EXPECT_TRUE(cfg.oidc_http_proxy_username
+                  .validate(std::optional<ss::sstring>{"has\nnewline"})
+                  .has_value());
+}
+
+TEST(oidc_http_proxy_credentials, password_allows_colon_rejects_control) {
+    auto& cfg = config::shard_local_cfg();
+    EXPECT_EQ(
+      cfg.oidc_http_proxy_password.validate(std::optional<ss::sstring>{}),
+      std::nullopt);
+    EXPECT_EQ(
+      cfg.oidc_http_proxy_password.validate(
+        std::optional<ss::sstring>{"p@ss:word/ok"}),
+      std::nullopt);
+    EXPECT_TRUE(cfg.oidc_http_proxy_password
+                  .validate(std::optional<ss::sstring>{"bad\rcr"})
+                  .has_value());
+}
+
 }; // namespace config
