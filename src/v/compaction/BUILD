@@ -108,6 +108,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":utils",
+        "//src/v/base",
         "//src/v/model:batch_compression",
     ],
     visibility = ["//visibility:public"],
