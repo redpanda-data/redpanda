@@ -280,3 +280,6 @@ bazel_cc_flags.json
 
 # rpk CLAUDE.md
 /**/**/CLAUDE.md
+
+# claude local settings
+**/.claude/settings.local.json
