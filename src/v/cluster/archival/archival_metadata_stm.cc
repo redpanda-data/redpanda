@@ -1373,6 +1373,18 @@ model::offset archival_metadata_stm::max_removable_local_log_offset() {
         collect_all = false;
     }
 
+    // The manifest, not the storage mode, governs local-log truncation. While
+    // the partition still holds archived data (a non-empty live manifest or a
+    // spillover archive) it is still served from tiered storage and may hold
+    // local data not yet uploaded, so its local log must not be trimmed past
+    // cloud_recoverable_offset(). is_archival_enabled() can report false while
+    // archived data is still present -- e.g. a partition mid tiered->cloud
+    // migration whose effective storage mode is cloud -- which would otherwise
+    // collect_all and stop constraining truncation, evicting the not-yet-
+    // uploaded data. Gate collect_all on holds_archived_data() so it takes
+    // effect only once the manifest is cleared.
+    collect_all = collect_all && !holds_archived_data();
+
     if (collect_all || is_read_replica || (uploads_paused && gaps_allowed)) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
@@ -1672,6 +1684,11 @@ ss::future<> archival_metadata_stm::stop() {
 const cloud_storage::partition_manifest&
 archival_metadata_stm::manifest() const {
     return *_manifest;
+}
+
+bool archival_metadata_stm::holds_archived_data() const {
+    return _manifest->size() > 0
+           || _manifest->get_archive_start_offset() != model::offset{};
 }
 
 model::offset archival_metadata_stm::get_start_offset() const {
