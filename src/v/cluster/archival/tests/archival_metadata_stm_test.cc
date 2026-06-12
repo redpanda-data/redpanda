@@ -256,6 +256,42 @@ FIXTURE_TEST(
       archival_stm->manifest().begin()->committed_offset, model::offset(99));
 }
 
+// With archival disabled (the flipped, mid-migration storage mode) but a
+// non-empty manifest, max_removable_local_log_offset keeps constraining
+// local-log truncation rather than collecting all -- protecting tiered-storage
+// data that has not yet been uploaded.
+FIXTURE_TEST(test_migration_local_trim_clamp, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+
+    // The fixture's partition has archival disabled. With an empty manifest,
+    // nothing constrains local-log truncation.
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->max_removable_local_log_offset(), model::offset::max());
+
+    // Add a segment so the manifest is non-empty.
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(
+      segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1)});
+    archival_stm
+      ->add_segments(
+        m,
+        std::nullopt,
+        model::producer_id{},
+        ss::lowres_clock::now() + 10s,
+        never_abort,
+        cluster::segment_validated::yes)
+      .get();
+    BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 1);
+
+    // Now truncation is constrained (no longer offset::max()).
+    BOOST_REQUIRE_NE(
+      archival_stm->max_removable_local_log_offset(), model::offset::max());
+}
+
 FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
     std::vector<cloud_storage::segment_meta> m1;
