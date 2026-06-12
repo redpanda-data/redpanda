@@ -9,6 +9,7 @@
 
 import concurrent.futures
 import math
+import threading
 import time
 from collections import Counter
 from typing import Any, Callable
@@ -34,6 +35,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     LoggingConfig,
+    MetricsEndpoint,
     SISettings,
 )
 from rptest.services.rpk_consumer import RpkConsumer
@@ -514,6 +516,70 @@ class ManyPartitionsTest(PreallocNodesTest):
                 str(scale.local_retention_after_warmup),
             )
 
+    def _run_cloud_io_lane_sampler(
+        self, stop_event: threading.Event, interval_sec: int = 20
+    ):
+        """Periodically log per-lane cloud_io scheduler occupancy during a
+        consume (CORE-15812). A cloud-topic fetch read runs in the
+        `consumer_fetch` lane; when it is starved of the shared client pool its
+        `waiters` pile up while `in_flight` sits at the reserved floor -- the
+        read-side stall behind the ManyPartitions cloud_topics consumer hang.
+        All lanes are logged so contention is attributable to producer_upload /
+        default_group. Reads the public metrics endpoint (internal metrics are
+        disabled at high partition counts, so the internal endpoint is empty) in
+        a single scrape pass per tick; self-disables when the scheduler metrics
+        are absent (e.g. non cloud-topic runs)."""
+        lanes = ("consumer_fetch", "producer_upload", "default_group")
+        # in_flight + waiters are the public per-lane gauges; the admit counters
+        # are internal-only (and internal metrics are off at scale).
+        per_lane_fields = ("in_flight", "waiters")
+        agg_fields = ("available_slots", "total_capacity")
+        patterns = [f"cloud_io_scheduler_{f}" for f in (*per_lane_fields, *agg_fields)]
+        announced = False
+        while not stop_event.is_set():
+            try:
+                result = self.redpanda.metrics_samples(
+                    sample_patterns=patterns,
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                )
+                if not result:
+                    if not announced:
+                        self.logger.info(
+                            "cloud_io_scheduler metrics absent; lane sampler disabled"
+                        )
+                    return
+
+                def lane_sum(field: str, lane: str) -> int:
+                    ms = result.get(f"cloud_io_scheduler_{field}")
+                    if ms is None:
+                        return 0
+                    return int(
+                        sum(
+                            s.value
+                            for s in ms.samples
+                            if s.labels.get("group_id") == lane
+                        )
+                    )
+
+                def total(field: str) -> int:
+                    ms = result.get(f"cloud_io_scheduler_{field}")
+                    return int(sum(s.value for s in ms.samples)) if ms else 0
+
+                parts = [
+                    f"{lane}[inflight={lane_sum('in_flight', lane)} "
+                    f"waiters={lane_sum('waiters', lane)}]"
+                    for lane in lanes
+                ]
+                self.logger.info(
+                    f"cloud_io lanes (summed/shards): {' '.join(parts)} "
+                    f"available_slots={total('available_slots')} "
+                    f"total_capacity={total('total_capacity')}"
+                )
+                announced = True
+            except Exception as e:
+                self.logger.warning(f"cloud_io lane sampler error: {e}")
+            stop_event.wait(interval_sec)
+
     def _write_and_random_read(
         self,
         scale: ScaleParameters,
@@ -700,7 +766,21 @@ class ManyPartitionsTest(PreallocNodesTest):
         )
         verifier.start(clean=False)
 
-        verifier.wait(timeout_sec=expect_transmit_time)
+        # CORE-15812: sample per-lane cloud_io scheduler occupancy during the
+        # consume so consumer_fetch read-lane starvation is visible in the
+        # artifacts. Self-disables when the scheduler metrics are absent.
+        lane_sampler_stop = threading.Event()
+        lane_sampler = threading.Thread(
+            target=self._run_cloud_io_lane_sampler,
+            args=(lane_sampler_stop,),
+            daemon=True,
+        )
+        lane_sampler.start()
+        try:
+            verifier.wait(timeout_sec=expect_transmit_time)
+        finally:
+            lane_sampler_stop.set()
+            lane_sampler.join(timeout=30)
         for i, v in enumerate(verifier.consumers):
             assert v.consumer_status.validator.invalid_reads == 0
             if not scale.tiered_storage_enabled:
@@ -974,6 +1054,22 @@ class ManyPartitionsTest(PreallocNodesTest):
                 fast_uploads=True,
             )
             self.redpanda.set_si_settings(cloud_si_settings)
+
+        if cloud_topics_enabled:
+            # CORE-15812 experiment: cloud-topic leveling and compaction run in
+            # the cloud_io default_group lane and contend with consumer_fetch
+            # reads for the shared client pool. In build 85771 leveling did
+            # ~17.6k range merges during the consume (the heavy drain);
+            # compaction was enabled but near-idle on these delete-policy
+            # topics. Disable both to test whether freeing default_group I/O
+            # lets the consumer drain. Reconciliation stays on -- it is the
+            # L0->L1 data path.
+            self.redpanda.add_extra_rp_conf(
+                {
+                    "cloud_topics_leveling_disabled": True,
+                    "cloud_topics_compaction_disabled": True,
+                }
+            )
 
         # By default run with one huge topic for maximum metadata stress. It is
         # more stressful for redpanda when clients request the metadata for
