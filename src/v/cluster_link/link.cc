@@ -143,6 +143,11 @@ ss::future<> link::stop() noexcept {
       _config->uuid);
     _task_reconciler.cancel();
     _as.request_abort();
+    // Shutdown input within the `_cluster` first before trying to close any
+    // `gate`s. Otherwise, there is the potential to deadlock (`gate` waiting on
+    // hung request, hung request waiting on `_cluster`'s `abort_source`,
+    // `abort_source` waiting for `gate` to be closed).
+    _cluster_connection->shutdown_input();
     co_await _replication_mgr.stop();
     co_await _gate.close();
 
@@ -174,7 +179,7 @@ ss::future<> link::stop() noexcept {
     }
 
     try {
-        co_await _cluster_connection->stop();
+        co_await _cluster_connection->drain();
     } catch (const std::exception& e) {
         vlog(cllog.warn, "Error shutting down cluster connection: {}", e);
     }
