@@ -112,8 +112,17 @@ private:
     std::unique_ptr<data_sink> _sink;
     ss::scheduling_group _scheduling_group;
     // set in start.
-    // The original start offset configured for this replicator.
+    // The offset replication begins from: the configured link start offset
+    // when the sink is empty, or the resume position (next offset after the
+    // last replicated one) otherwise.
     kafka::offset _start_offset{};
+    // Floor for prefix-truncating the shadow partition. Only a fresh start
+    // from the configured link start offset establishes a floor: the shadow
+    // partition has no data below it. A resumed replicator must not floor
+    // truncation at its resume position -- that would advance the shadow
+    // start offset past the source's when the source trims below the resume
+    // point (set in start).
+    kafka::offset _truncation_floor{kafka::offset::min()};
     // to pipeline multiple replicate requests in parallel
     static constexpr ssize_t max_in_flight_requests = 5;
     ssx::semaphore _max_requests{
