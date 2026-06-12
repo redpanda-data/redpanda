@@ -33,6 +33,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <algorithm>
 #include <iterator>
@@ -281,38 +282,54 @@ static metadata_response::topic make_topic_response(
     return res;
 }
 
+static ss::future<chunked_vector<metadata_response::topic>>
+get_all_topic_metadata(
+  request_context& ctx,
+  metadata_request& request,
+  const is_node_isolated_or_decommissioned is_node_isolated) {
+    // snapshot the topic names: the topic table is not iterator stable and
+    // we yield below while authorizing/building responses
+    chunked_vector<model::topic_namespace> topic_names;
+    for (const auto& [tp_ns, md] : ctx.metadata_cache().all_topics_metadata()) {
+        // only serve topics from the kafka namespace
+        if (tp_ns.ns == model::kafka_namespace) {
+            topic_names.push_back(tp_ns);
+        }
+    }
+
+    chunked_vector<metadata_response::topic> res;
+    for (auto& tp_ns : topic_names) {
+        /*
+         * quiet authz failures. this isn't checking for a specifically
+         * requested topic, but rather checking visibility of all topics.
+         */
+        if (!ctx.authorized(
+              security::acl_operation::describe, tp_ns.tp, authz_quiet{true})) {
+            continue;
+        }
+        // the topic may have been deleted while we yielded
+        auto md = ctx.metadata_cache().get_topic_metadata_ref(tp_ns);
+        if (!md) {
+            continue;
+        }
+        res.push_back(
+          make_topic_response(ctx, request, md->get(), is_node_isolated));
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    co_return res;
+}
+
 static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
   request_context& ctx,
   metadata_request& request,
   const is_node_isolated_or_decommissioned is_node_isolated) {
-    chunked_vector<metadata_response::topic> res;
-
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
-        auto& topics_md = ctx.metadata_cache().all_topics_metadata();
-        for (const auto& [tp_ns, md] : topics_md) {
-            // only serve topics from the kafka namespace
-            if (tp_ns.ns != model::kafka_namespace) {
-                continue;
-            }
-            /*
-             * quiet authz failures. this isn't checking for a specifically
-             * requested topic, but rather checking visibility of all topics.
-             */
-            if (!ctx.authorized(
-                  security::acl_operation::describe,
-                  tp_ns.tp,
-                  authz_quiet{true})) {
-                continue;
-            }
-            res.push_back(make_topic_response(
-              ctx, request, md.get_metadata(), is_node_isolated));
-        }
-
-        return ss::make_ready_future<chunked_vector<metadata_response::topic>>(
-          std::move(res));
+        return get_all_topic_metadata(ctx, request, is_node_isolated);
     }
 
+    chunked_vector<metadata_response::topic> res;
     std::vector<model::topic> topics_to_be_created;
     std::vector<ss::future<metadata_response::topic>> new_topics;
 
