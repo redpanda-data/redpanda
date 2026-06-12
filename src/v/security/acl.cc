@@ -179,8 +179,24 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
         literals = {it->first, it->second};
     }
 
-    auto prefixes = get_prefix_view<acl_matches::entry_set_ref>(
-      _acls, resource, name);
+    /*
+     * The btree range below spans every prefixed pattern (for this resource
+     * type) whose name falls between the full resource name and its first
+     * character: a superset of the actual prefix matches. Filter it down to
+     * the real matches once here- calls to `acl_matches::find()` (of
+     * which a single authorization request can make several) should be as cheap
+     * as possible.
+     */
+    acl_matches::prefix_vector prefixes;
+    auto it = _acls.lower_bound(
+      resource_pattern(resource, name, pattern_type::prefixed));
+    const auto end = _acls.upper_bound(
+      resource_pattern(resource, name.substr(0, 1), pattern_type::prefixed));
+    for (; it != end; ++it) {
+        if (std::string_view(name).starts_with(it->first.name())) {
+            prefixes.push_back({it->first, it->second});
+        }
+    }
 
     return acl_matches(wildcards, literals, std::move(prefixes));
 }
