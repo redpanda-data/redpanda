@@ -220,6 +220,22 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_bench(
+    name = "authorizer_bench_rpbench",
+    srcs = [
+        "authorizer_bench.cc",
+    ],
+    deps = [
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/security",
+        "@fmt",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
     name = "role_store_bench_rpbench",
     srcs = [
         "role_store_bench.cc",
