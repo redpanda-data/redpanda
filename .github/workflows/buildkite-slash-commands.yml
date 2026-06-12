@@ -30,7 +30,7 @@ jobs:
             ,sdlc/prod/github/actions_bot_token
             ,sdlc/prod/github/buildkite_token
           parse-json-secrets: true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: redpanda-data/sparse-checkout
           token: ${{ env.ACTIONS_BOT_TOKEN }}
