@@ -10,6 +10,7 @@
  */
 #include "kafka/client/test/cluster_mock.h"
 
+#include "config/configuration.h"
 #include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/details/security.h"
 
@@ -304,7 +305,7 @@ ss::future<response_t> cluster_mock::handle_describe_configs_request(
         report_topic_config(
           resource,
           result,
-          cluster_link_test_metadata_adapter{&_mock_config},
+          cluster_link_test_metadata_adapter{_mock_config.get()},
           topic_it->second.topic_properties,
           dc_req.data.include_synonyms,
           dc_req.data.include_documentation);
@@ -568,7 +569,8 @@ void cluster_mock::set_topic_properties(
 }
 
 cluster_mock::cluster_mock()
-  : _logger(kclog, "cluster-mock") {
+  : _mock_config(config::make_config())
+  , _logger(kclog, "cluster-mock") {
     default_supported_versions[metadata_api::key] = {
       .min = kafka::metadata_api::min_valid,
       .max = kafka::metadata_api::max_valid};

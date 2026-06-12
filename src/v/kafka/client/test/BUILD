@@ -47,6 +47,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster:topic_configuration",
+        "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/kafka/client:brokers",
         "//src/v/kafka/client:logger",
