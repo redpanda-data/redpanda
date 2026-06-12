@@ -93,6 +93,11 @@ ss::future<> client::stop() noexcept {
         co_return;
     }
     _as.request_abort();
+    // Shutdown input within the `_cluster` first before trying to close any
+    // `gate`s. Otherwise, there is the potential to deadlock (`gate` waiting on
+    // hung request, hung request waiting on `_cluster`'s `abort_source`,
+    // `abort_source` waiting for `gate` to be closed).
+    _cluster->shutdown_input();
     co_await catch_and_log(_logger, [this]() { return _producer.stop(); });
     _cluster->unregister_metadata_cb(_metadata_callback_id);
     co_await _gate.close();
@@ -106,7 +111,7 @@ ss::future<> client::stop() noexcept {
             });
         }
     }
-    co_await catch_and_log(_logger, [this]() { return _cluster->stop(); });
+    co_await catch_and_log(_logger, [this]() { return _cluster->drain(); });
 }
 
 void client::on_metadata_update(const metadata_update& res) {
