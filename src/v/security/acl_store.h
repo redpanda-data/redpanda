@@ -14,8 +14,6 @@
 #include "security/acl.h"
 #include "security/acl_entry_set.h"
 
-#include <ranges>
-
 namespace security {
 
 /*
@@ -84,40 +82,6 @@ private:
     using container_type = absl::
       btree_map<resource_pattern, acl_entry_set, resource_pattern_compare>;
     container_type _acls;
-
-    /**
-     * WARNING: The view returned by this function contains iterators into a
-     * container which is NOT iterator stable. Use of this view across a yield
-     * point or acl_store update of any kind may (and likely will) result in
-     * UNDEFINED BEHAVIOR.
-     */
-    template<typename RefT>
-    static auto get_prefix_view(
-      const container_type& acls,
-      resource_type resource,
-      const ss::sstring& name) {
-        auto it = acls.lower_bound(
-          resource_pattern(resource, name, pattern_type::prefixed));
-
-        auto end = acls.upper_bound(resource_pattern(
-          resource, name.substr(0, 1), pattern_type::prefixed));
-
-        return std::ranges::subrange(it, end)
-               | std::views::filter([name](const auto& e) {
-                     return std::string_view(name).starts_with(e.first.name());
-                 })
-               | std::views::transform(
-                 [](const auto& e) { return RefT{e.first, e.second}; });
-    }
-
-public:
-    template<
-      typename RefT,
-      typename ViewT = decltype(get_prefix_view<RefT>(
-        std::declval<container_type>(),
-        std::declval<resource_type>(),
-        std::declval<ss::sstring>()))>
-    using prefix_view = ViewT;
 };
 
 /*
@@ -135,10 +99,12 @@ public:
 
     using entry_set_ref = acl_entry_set_match;
 
+    using prefix_vector = chunked_vector<entry_set_ref>;
+
     acl_matches(
       std::optional<entry_set_ref> wildcards,
       std::optional<entry_set_ref> literals,
-      acl_store::prefix_view<entry_set_ref> prefixes)
+      prefix_vector prefixes)
       : wildcards(wildcards)
       , literals(literals)
       , prefixes(std::move(prefixes)) {}
@@ -168,10 +134,7 @@ public:
 private:
     std::optional<entry_set_ref> wildcards;
     std::optional<entry_set_ref> literals;
-    // NOTE(oren): mutable because filter_view & transform_view don't support
-    // const iterators as of C++20. Both are slated for C++23, so we can remove
-    // the mutable specifier when we bump compilers.
-    mutable acl_store::prefix_view<entry_set_ref> prefixes;
+    prefix_vector prefixes;
 };
 
 } // namespace security
