@@ -384,9 +384,15 @@ log_eviction_stm_factory::log_eviction_stm_factory(storage::kvstore& kvstore)
 
 bool log_eviction_stm_factory::is_applicable_for(
   const storage::ntp_config& cfg) const {
-    if (cfg.cloud_topic_enabled()) {
-        return false;
-    }
+    // (No cloud_topic_enabled() == false guard.) Install the eviction STM on
+    // cloud-topic partitions too. STM membership is fixed at construction and a
+    // tiered->cloud migration does not reconstruct the partition, so a
+    // partition migrating from tiered storage -- still served from its local
+    // log + archival manifest -- must already carry the eviction STM to keep
+    // supporting prefix truncation (DeleteRecords) and retention while
+    // migrating. On a native cloud topic it is an inert passenger: retention
+    // and DeleteRecords go through the L1 path, so no local eviction requests
+    // are generated.
     return !storage::deletion_exempt(cfg.ntp());
 }
 
