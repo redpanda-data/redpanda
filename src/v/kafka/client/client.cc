@@ -152,6 +152,12 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
     return external_mitigate_error(ex).handle_exception(
       [this](std::exception_ptr ex) {
           _gate.check();
+          // Early log & exit on shutdown exceptions
+          if (ssx::is_shutdown_exception(ex)) {
+              vlog(_logger.debug, "shutdown exception {}", ex);
+              return ss::make_exception_future(ex);
+          }
+
           try {
               std::rethrow_exception(ex);
           } catch (const broker_error& ex) {
@@ -204,8 +210,6 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
                   vlog(_logger.warn, "topic_error: {}", ex);
                   return ss::make_exception_future(ex);
               }
-          } catch (const ss::gate_closed_exception&) {
-              vlog(_logger.debug, "gate_closed_exception");
           } catch (const std::system_error& ex) {
               if (net::is_reconnect_error(ex)) {
                   vlog(_logger.debug, "system_error: {}", ex);
@@ -214,8 +218,6 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
                   vlog(_logger.warn, "system_error: {}", ex);
                   return ss::make_exception_future(ex);
               }
-          } catch (const ss::abort_requested_exception& ex) {
-              vlog(_logger.debug, "abort_requested_exception: {}", ex);
           } catch (const std::exception& ex) {
               // TODO(Ben): Probably vassert
               vlog(_logger.error, "unknown exception: {}", ex);
