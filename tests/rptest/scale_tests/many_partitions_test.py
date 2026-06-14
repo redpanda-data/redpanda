@@ -534,7 +534,19 @@ class ManyPartitionsTest(PreallocNodesTest):
         # are internal-only (and internal metrics are off at scale).
         per_lane_fields = ("in_flight", "waiters")
         agg_fields = ("available_slots", "total_capacity")
-        patterns = [f"cloud_io_scheduler_{f}" for f in (*per_lane_fields, *agg_fields)]
+        # L1 reader cache counters — the direct signal for whether the cache is
+        # thrashing (CORE-15812): a near-zero hit rate + steady evictions means
+        # every fetch rebuilds the reader and re-RPCs the metastore.
+        cache_fields = (
+            "cached_readers",
+            "in_use_readers",
+            "hits",
+            "misses",
+            "readers_evicted",
+        )
+        patterns = [
+            f"cloud_io_scheduler_{f}" for f in (*per_lane_fields, *agg_fields)
+        ] + [f"cloud_topics_l1_reader_cache_{f}" for f in cache_fields]
         announced = False
         while not stop_event.is_set():
             try:
@@ -574,6 +586,19 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"cloud_io lanes (summed/shards): {' '.join(parts)} "
                     f"available_slots={total('available_slots')} "
                     f"total_capacity={total('total_capacity')}"
+                )
+
+                def cache_sum(field: str) -> int:
+                    ms = result.get(f"cloud_topics_l1_reader_cache_{field}")
+                    return int(sum(s.value for s in ms.samples)) if ms else 0
+
+                self.logger.info(
+                    f"l1_reader_cache (summed/shards): "
+                    f"cached={cache_sum('cached_readers')} "
+                    f"in_use={cache_sum('in_use_readers')} "
+                    f"hits={cache_sum('hits')} "
+                    f"misses={cache_sum('misses')} "
+                    f"evicted={cache_sum('readers_evicted')}"
                 )
                 announced = True
             except Exception as e:
@@ -1056,16 +1081,22 @@ class ManyPartitionsTest(PreallocNodesTest):
             self.redpanda.set_si_settings(cloud_si_settings)
 
         if cloud_topics_enabled:
-            # CORE-15812 experiment: cloud-topic leveling and compaction run in
-            # the cloud_io default_group lane and contend with consumer_fetch
-            # reads for the shared client pool. In build 85771 leveling did
-            # ~17.6k range merges during the consume (the heavy drain);
-            # compaction was enabled but near-idle on these delete-policy
-            # topics. Disable both to test whether freeing default_group I/O
-            # lets the consumer drain. Reconciliation stays on -- it is the
-            # L0->L1 data path.
+            # CORE-15812: the L1 reader cache (default 128/shard) thrashes at
+            # this scale -- ~17.8k partitions across the brokers/shards is ~500
+            # active partitions/shard, far over 128, so the LRU evicts the very
+            # reader the consumer is about to re-fetch. Every fetch then rebuilds
+            # the reader and re-RPCs the metastore, saturating the kafka
+            # scheduling group and stalling the consumer (the cloud_io pool stays
+            # idle). Size the cache to hold the active set and stop idle-eviction
+            # during the consume.
+            #
+            # Leveling/compaction stay disabled: ruled out as the cause in builds
+            # 85774/85775 (pool idle either way), kept off to isolate the reader
+            # cache as the only change vs the hung 85775 run.
             self.redpanda.add_extra_rp_conf(
                 {
+                    "cloud_topics_l1_reader_cache_max_size": 1024,
+                    "cloud_topics_l1_reader_cache_eviction_timeout_ms": 600000,
                     "cloud_topics_leveling_disabled": True,
                     "cloud_topics_compaction_disabled": True,
                 }
