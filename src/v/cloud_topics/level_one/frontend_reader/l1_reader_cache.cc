@@ -11,6 +11,9 @@
 #include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 
 #include "cloud_topics/logger.h"
+#include "config/configuration.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
 
@@ -30,6 +33,7 @@ l1_reader_cache::l1_reader_cache(
         });
     });
     arm_eviction_timer();
+    setup_metrics();
 }
 
 l1_reader_cache::~l1_reader_cache() {
@@ -221,6 +225,51 @@ void l1_reader_cache::maybe_evict_size() {
     }
     _readers.pop_front_and_dispose(
       [this](entry* e) { dispose_in_background(e); });
+}
+
+void l1_reader_cache::setup_metrics() {
+    namespace sm = ss::metrics;
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+    const auto group_name = prometheus_sanitize::metrics_name(
+      "cloud_topics_l1_reader_cache");
+    const std::vector<sm::label> aggregate_labels{sm::shard_label};
+    _public_metrics.add_group(
+      group_name,
+      {
+        sm::make_gauge(
+          "cached_readers",
+          [this] { return _readers.size(); },
+          sm::description("Idle L1 readers currently held in the cache."))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "in_use_readers",
+          [this] { return _in_use.size(); },
+          sm::description("L1 readers currently checked out of the cache."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "hits",
+          [this] { return _cache_hits; },
+          sm::description("L1 reader cache hits (positioned reader reused)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "misses",
+          [this] { return _cache_misses; },
+          sm::description("L1 reader cache misses (reader rebuilt)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "readers_added",
+          [this] { return _readers_added; },
+          sm::description("L1 readers added to the cache."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "readers_evicted",
+          [this] { return _readers_evicted; },
+          sm::description(
+            "L1 readers evicted from the cache (size limit or idle timeout)."))
+          .aggregate(aggregate_labels),
+      });
 }
 
 } // namespace cloud_topics
