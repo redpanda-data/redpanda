@@ -1461,22 +1461,44 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
     co_return result;
 }
 
-ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
-    auto current_insync_term = _insync_term;
-    auto ready = co_await raft::persisted_stm<>::sync(timeout);
-    if (ready) {
-        if (current_insync_term != _insync_term) {
-            _last_known_lso = model::invalid_lso;
-            vlog(
-              _ctx_log.trace,
-              "garbage collecting requests from terms < {}",
-              _insync_term);
-            for (auto& [_, producer] : _producers) {
-                producer->gc_requests_from_older_terms(_insync_term);
-            }
+void rm_stm::maybe_gc_requests_from_older_terms(
+  model::term_id sync_start_term) {
+    if (sync_start_term != _insync_term) {
+        _last_known_lso = model::invalid_lso;
+        vlog(
+          _ctx_log.trace,
+          "garbage collecting requests from terms < {}",
+          _insync_term);
+        for (auto& [_, producer] : _producers) {
+            producer->gc_requests_from_older_terms(_insync_term);
         }
     }
+}
+
+ss::future<bool>
+rm_stm::do_sync(model::term_id sync_start_term, ss::future<bool> sync_fut) {
+    auto ready = co_await std::move(sync_fut);
+    if (ready) {
+        maybe_gc_requests_from_older_terms(sync_start_term);
+    }
     co_return ready;
+}
+
+ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
+    auto current_insync_term = _insync_term;
+    auto sync_fut = raft::persisted_stm<>::sync(timeout);
+    // The stm is almost always already in sync, in which case the base sync()
+    // completes synchronously and the in-sync term is unchanged (so there is
+    // nothing to garbage collect). Handle that inline to avoid allocating a
+    // coroutine frame on every replicate.
+    if (!sync_fut.available() || sync_fut.failed()) {
+        return do_sync(current_insync_term, std::move(sync_fut));
+    }
+    auto ready = sync_fut.get();
+    if (ready) {
+        maybe_gc_requests_from_older_terms(current_insync_term);
+    }
+    return ss::make_ready_future<bool>(ready);
 }
 
 void rm_stm::abort_old_txes() {

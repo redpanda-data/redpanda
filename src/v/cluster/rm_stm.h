@@ -327,6 +327,9 @@ private:
       ss::lw_shared_ptr<available_promise<>>);
 
     ss::future<bool> sync(model::timeout_clock::duration);
+    ss::future<bool>
+    do_sync(model::term_id sync_start_term, ss::future<bool> sync_fut);
+    void maybe_gc_requests_from_older_terms(model::term_id sync_start_term);
     constexpr bool check_tx_permitted() { return true; }
 
     void abort_old_txes();
