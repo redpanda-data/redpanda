@@ -544,6 +544,13 @@ class ManyPartitionsTest(PreallocNodesTest):
             "hits",
             "misses",
             "readers_evicted",
+            # CORE-15812 miss-reason breakdown: offset-mismatch (over-read, A)
+            # vs evicted_eos (frontier-EOS, B) vs evicted_size (offset-mismatch
+            # pileup, A).
+            "misses_offset_mismatch",
+            "evicted_eos",
+            "evicted_not_reusable",
+            "evicted_size",
         )
         patterns = [
             f"cloud_io_scheduler_{f}" for f in (*per_lane_fields, *agg_fields)
@@ -599,7 +606,11 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"in_use={cache_sum('in_use_readers')} "
                     f"hits={cache_sum('hits')} "
                     f"misses={cache_sum('misses')} "
-                    f"evicted={cache_sum('readers_evicted')}"
+                    f"evicted={cache_sum('readers_evicted')} "
+                    f"miss_offset_mismatch={cache_sum('misses_offset_mismatch')} "
+                    f"evicted_eos={cache_sum('evicted_eos')} "
+                    f"evicted_not_reusable={cache_sum('evicted_not_reusable')} "
+                    f"evicted_size={cache_sum('evicted_size')}"
                 )
                 announced = True
             except Exception as e:

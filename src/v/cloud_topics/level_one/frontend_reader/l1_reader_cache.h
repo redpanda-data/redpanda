@@ -112,6 +112,17 @@ private:
     uint64_t _readers_added{0};
     uint64_t _readers_evicted{0};
 
+    // CORE-15812 miss-reason instrumentation. Splits why the cache fails to
+    // reuse readers, to distinguish over-read / offset-mismatch (A: a reader
+    // for this partition is cached but positioned at an offset the next fetch
+    // doesn't request) from frontier-EOS (B: the reader is returned having
+    // hit end-of-stream and is disposed, so nothing stays cached). _readers
+    // _evicted remains the grand total; these break it down.
+    uint64_t _misses_offset_mismatch{0}; // miss, but a same-tidp reader cached
+    uint64_t _evicted_eos{0};            // returned non-reusable at EOS (B)
+    uint64_t _evicted_not_reusable{0};   // returned non-reusable, not EOS
+    uint64_t _evicted_size{0}; // reusable reader dropped for space (A)
+
     metrics::public_metric_groups _public_metrics;
 };
 

@@ -50,18 +50,28 @@ std::optional<model::record_batch_reader> l1_reader_cache::get_reader(
     }
 
     auto it = _readers.begin();
+    bool saw_tidp = false;
     while (it != _readers.end()) {
-        if (
-          it->reader->is_reusable()
-          && it->reader->next_read_lower_bound() == cfg.start_offset
-          && it->reader->tidp() == tidp) {
-            break;
+        if (it->reader->tidp() == tidp) {
+            // CORE-15812: a reader for this partition is cached. If it also
+            // matches the requested offset it's a hit; otherwise the reader
+            // is positioned at an offset the fetch isn't asking for, i.e. it
+            // read past what the consumer re-requests (over-read).
+            saw_tidp = true;
+            if (
+              it->reader->is_reusable()
+              && it->reader->next_read_lower_bound() == cfg.start_offset) {
+                break;
+            }
         }
         ++it;
     }
 
     if (it == _readers.end()) {
         ++_cache_misses;
+        if (saw_tidp) {
+            ++_misses_offset_mismatch;
+        }
         return std::nullopt;
     }
 
@@ -100,6 +110,14 @@ l1_reader_cache::entry_guard::~entry_guard() noexcept {
         _e->last_used = ss::lowres_clock::now();
         _cache->_readers.push_back(*_e);
     } else {
+        // CORE-15812: a reader returned non-reusable can't be cached. Record
+        // whether it ended at end-of-stream (read to the frontier / true end
+        // -> B) vs lost its stream some other way (abort/error).
+        if (_e->reader->is_end_of_stream()) {
+            ++_cache->_evicted_eos;
+        } else {
+            ++_cache->_evicted_not_reusable;
+        }
         _cache->dispose_in_background(_e);
     }
     _cache->_in_use_reader_destroyed.broadcast();
@@ -223,8 +241,13 @@ void l1_reader_cache::maybe_evict_size() {
     if (!over_size_limit()) [[likely]] {
         return;
     }
-    _readers.pop_front_and_dispose(
-      [this](entry* e) { dispose_in_background(e); });
+    _readers.pop_front_and_dispose([this](entry* e) {
+        // CORE-15812: a reusable reader dropped purely for space means the
+        // cache filled with readers that were never reused (offset-mismatch
+        // pileup -> A).
+        ++_evicted_size;
+        dispose_in_background(e);
+    });
 }
 
 void l1_reader_cache::setup_metrics() {
@@ -268,6 +291,34 @@ void l1_reader_cache::setup_metrics() {
           [this] { return _readers_evicted; },
           sm::description(
             "L1 readers evicted from the cache (size limit or idle timeout)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "misses_offset_mismatch",
+          [this] { return _misses_offset_mismatch; },
+          sm::description(
+            "Cache misses where a reader for the partition was "
+            "cached at a different offset (over-read)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "evicted_eos",
+          [this] { return _evicted_eos; },
+          sm::description(
+            "Readers disposed on return because they reached "
+            "end-of-stream (read to the frontier/end)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "evicted_not_reusable",
+          [this] { return _evicted_not_reusable; },
+          sm::description(
+            "Readers disposed on return non-reusable for a "
+            "non-EOS reason (abort/error)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "evicted_size",
+          [this] { return _evicted_size; },
+          sm::description(
+            "Reusable readers dropped to stay under the size "
+            "cap (offset-mismatch pileup)."))
           .aggregate(aggregate_labels),
       });
 }
