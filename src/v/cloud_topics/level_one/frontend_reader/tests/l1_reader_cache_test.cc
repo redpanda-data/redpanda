@@ -335,6 +335,57 @@ TEST_F(l1_reader_cache_test, sequential_fetches_hit_cache) {
     EXPECT_EQ(data1.size() + data2.size(), expected_count);
 }
 
+// Regression test for CORE-15812: a transient consumer disconnect must not
+// destroy a warm cached reader. fetch.cc wires the client connection's abort
+// source into the read config; if that abort tears down the in-flight
+// object-store read, the reader loses its open stream, is_reusable() goes
+// false, and the cache evicts it -- forcing a fresh metastore RPC + object GET
+// on the consumer's reconnect. At scale that thrash starves the consumer (~4%
+// cache hit) and times out the fetch.
+TEST_F(l1_reader_cache_test, client_disconnect_does_not_evict_cached_reader) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    auto batches
+      = model::test::make_random_batches(model::offset{0}, /*count=*/10).get();
+    auto first_batch_last = kafka::offset(batches.front().last_offset()());
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(tidp, std::move(batches));
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    // A fetch whose client connection drops mid-read: wire the (already fired)
+    // connection abort source into the read config, exactly as fetch.cc does.
+    ss::abort_source client_as;
+    client_as.request_abort();
+
+    auto cfg = make_test_config(kafka::offset{0}, first_batch_last);
+    cfg.abort_source = std::ref(client_as);
+    auto reader_impl = std::make_unique<level_one_log_reader_impl>(
+      cfg, ntp, tidp, &_metastore, &_io);
+    auto wrapped = _cache->put(std::move(reader_impl));
+
+    // The read must still complete (bounded by the fetch deadline, not the
+    // client connection) and leave the reader cached for the reconnect.
+    bool threw = false;
+    size_t read_count = 0;
+    try {
+        auto data = model::consume_reader_to_memory(
+                      std::move(wrapped), model::no_timeout)
+                      .get();
+        read_count = data.size();
+    } catch (...) {
+        threw = true;
+    }
+
+    EXPECT_FALSE(threw) << "client disconnect aborted the in-flight L1 read";
+    EXPECT_GT(read_count, 0u) << "no data returned after client disconnect";
+
+    auto stats = _cache->get_stats();
+    EXPECT_EQ(stats.cached_readers, 1)
+      << "client disconnect evicted the warm reader (forces re-open on "
+         "reconnect)";
+}
+
 TEST_F(l1_reader_cache_test, byte_limited_reader_is_reusable) {
     auto [ntp, tidp] = make_ntidp("test_topic");
 
