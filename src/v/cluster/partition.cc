@@ -1835,24 +1835,47 @@ ss::future<errc> partition::flush_archiver() {
     }
 }
 
-ss::future<result<ss::rwlock::holder>> partition::hold_writes_enabled() {
-    auto maybe_units = _produce_lock.try_hold_read_lock();
-    if (!maybe_units) {
-        co_return errc::resource_is_being_migrated;
-    }
-
-    auto are_disabled
-      = _partition_properties_stm
-          ? co_await _partition_properties_stm->sync_writes_disabled()
-          : partition_properties_stm::writes_disabled::no;
+ss::future<result<ss::rwlock::holder>> partition::do_hold_writes_enabled(
+  ss::rwlock::holder units,
+  ss::future<result<partition_properties_stm::writes_disabled>> disabled_fut) {
+    auto are_disabled = co_await std::move(disabled_fut);
     if (!are_disabled.has_value()) {
         co_return are_disabled.error();
     }
     if (are_disabled.value()) {
         co_return errc::resource_is_being_migrated;
     }
+    co_return std::move(units);
+}
 
-    co_return *std::move(maybe_units);
+ss::future<result<ss::rwlock::holder>> partition::hold_writes_enabled() {
+    using ret_t = result<ss::rwlock::holder>;
+    auto maybe_units = _produce_lock.try_hold_read_lock();
+    if (!maybe_units) {
+        return ss::make_ready_future<ret_t>(errc::resource_is_being_migrated);
+    }
+
+    // The common case has no partition_properties_stm (or its sync completes
+    // synchronously), so avoid allocating a coroutine frame for this per
+    // produce path unless we actually have to suspend.
+    if (!_partition_properties_stm) {
+        return ss::make_ready_future<ret_t>(*std::move(maybe_units));
+    }
+
+    auto disabled_fut = _partition_properties_stm->sync_writes_disabled();
+    if (!disabled_fut.available() || disabled_fut.failed()) {
+        return do_hold_writes_enabled(
+          *std::move(maybe_units), std::move(disabled_fut));
+    }
+
+    auto are_disabled = disabled_fut.get();
+    if (!are_disabled.has_value()) {
+        return ss::make_ready_future<ret_t>(are_disabled.error());
+    }
+    if (are_disabled.value()) {
+        return ss::make_ready_future<ret_t>(errc::resource_is_being_migrated);
+    }
+    return ss::make_ready_future<ret_t>(*std::move(maybe_units));
 }
 
 ss::sharded<cloud_topics::state_accessors>*

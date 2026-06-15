@@ -396,6 +396,10 @@ public:
 
     // Acquire a shared lock for producing to the partition.
     ss::future<result<ss::rwlock::holder>> hold_writes_enabled();
+    ss::future<result<ss::rwlock::holder>> do_hold_writes_enabled(
+      ss::rwlock::holder units,
+      ss::future<result<partition_properties_stm::writes_disabled>>
+        disabled_fut);
 
     // Returns a pointer to cloud topics state accessors if available on the
     // cluster, or nullptr otherwise.
