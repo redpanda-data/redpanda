@@ -190,20 +190,37 @@ replicate_batcher::do_cache_with_backpressure(
      * When batch size exceed available semaphore units we just acquire all of
      * them to be able to continue.
      */
-    ssx::semaphore_units u;
-    if (opts.timeout) {
-        u = co_await ss::get_units(
-          _max_batch_size_sem,
-          std::min(bytes, _max_batch_size),
-          ssx::semaphore::clock::now() + opts.timeout.value());
-    } else {
-        u = co_await ss::get_units(
-          _max_batch_size_sem, std::min(bytes, _max_batch_size));
+    auto units_f = opts.timeout
+                     ? ss::get_units(
+                         _max_batch_size_sem,
+                         std::min(bytes, _max_batch_size),
+                         ssx::semaphore::clock::now() + opts.timeout.value())
+                     : ss::get_units(
+                         _max_batch_size_sem, std::min(bytes, _max_batch_size));
+
+    // The accumulator semaphore almost always has units available, so the
+    // units future is already resolved. Build and cache the item inline in
+    // that case to avoid allocating a coroutine frame on every replicate.
+    if (!units_f.available() || units_f.failed()) {
+        return do_cache_with_backpressure_slow(
+          std::move(units_f), std::move(batches), record_count, opts);
     }
 
     auto i = ss::make_lw_shared<item>(
-      record_count, std::move(batches), std::move(u), opts);
+      record_count, std::move(batches), units_f.get(), opts);
+    _item_cache.emplace_back(i);
+    return ss::make_ready_future<item_ptr>(std::move(i));
+}
 
+ss::future<replicate_batcher::item_ptr>
+replicate_batcher::do_cache_with_backpressure_slow(
+  ss::future<ssx::semaphore_units> units_f,
+  chunked_vector<model::record_batch> batches,
+  size_t record_count,
+  replicate_options opts) {
+    auto u = co_await std::move(units_f);
+    auto i = ss::make_lw_shared<item>(
+      record_count, std::move(batches), std::move(u), opts);
     _item_cache.emplace_back(i);
     co_return i;
 }
