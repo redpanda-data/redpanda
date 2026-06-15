@@ -528,3 +528,5 @@ filegroup(
     strip_prefix = "JSONTestSuite-1ef36fa01286573e846ac449e8683f8833c5b26a",
     urls = ["https://github.com/nst/JSONTestSuite/archive/1ef36fa01286573e846ac449e8683f8833c5b26a.tar.gz"],
 )
+
+# No-op change to trigger a CI build for testing the gRPC remote cache path.
