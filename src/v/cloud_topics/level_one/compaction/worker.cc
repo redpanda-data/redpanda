@@ -28,6 +28,20 @@
 
 namespace cloud_topics::l1 {
 
+namespace {
+
+// Confirms on `worker_manager_shard` (the home shard of every maintenance
+// job's meta, and the owner shard of its `foreign_ptr`) that the job's CTP is
+// still managed. `link` is owned and mutated on that shard, so the read is
+// marshalled there; reading it from a worker shard would be a data race.
+ss::future<bool> is_linked(const log_compaction_meta* meta) {
+    return ss::smp::submit_to(worker_manager::worker_manager_shard, [meta] {
+        return meta->link.is_linked();
+    });
+}
+
+} // namespace
+
 compaction_worker::compaction_worker(
   worker_manager* worker_manager,
   io* io,
@@ -146,20 +160,20 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
         co_return;
     }
 
+    if (!log) {
+        co_return;
+    }
+
+    if (!co_await is_linked(log)) {
+        co_return;
+    }
+
     // If there was a concurrent race with a request to cancel/stop an inflight
     // compaction, early return after resetting state to `idle`.
     if (
       _job_state == compaction_job_state::soft_stop
       || _job_state == compaction_job_state::hard_stop) {
         _job_state = compaction_job_state::idle;
-        co_return;
-    }
-
-    if (!log) {
-        co_return;
-    }
-
-    if (!log->link.is_linked()) {
         co_return;
     }
 
