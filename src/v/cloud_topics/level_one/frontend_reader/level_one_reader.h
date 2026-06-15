@@ -17,6 +17,8 @@
 #include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/abort_source.hh>
+
 #include <deque>
 #include <expected>
 #include <variant>
@@ -212,6 +214,15 @@ private:
     // Consumed front-to-back as the reader advances through objects.
     // Populated with 1 entry (no prefetch) or N entries (prefetch).
     std::deque<l1::metastore::object_response> _lookahead_buffer;
+
+    // Abort source for object-store and metastore IO. Deliberately decoupled
+    // from the client connection's abort source (_config.abort_source): a
+    // transient consumer disconnect must not abort an in-flight read, because
+    // that destroys the reader's open stream and evicts it from the
+    // l1_reader_cache, forcing a full re-open (metastore RPC + object GET) on
+    // the client's reconnect (CORE-15812). IO stays bounded by each
+    // operation's own retry/timeout policy.
+    ss::abort_source _io_abort_source;
 };
 
 } // namespace cloud_topics

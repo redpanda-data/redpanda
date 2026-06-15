@@ -128,12 +128,10 @@ level_one_log_reader_impl::open_reader_at(
       .position = extent_position,
       .size = extent_size,
     };
-    ss::abort_source default_abort_source;
-    auto* abort_source = _config.abort_source
-                           ? &_config.abort_source.value().get()
-                           : &default_abort_source;
+    // CORE-15812: bind object-store IO to _io_abort_source, not the client
+    // connection (_config.abort_source); see the member's doc comment.
     auto stream_fut = co_await ss::coroutine::as_future(
-      _io->read_object(extent, abort_source, _config.group));
+      _io->read_object(extent, &_io_abort_source, _config.group));
     if (stream_fut.failed()) {
         auto ex = stream_fut.get_exception();
         vlog(
@@ -260,11 +258,9 @@ ss::future<> level_one_log_reader_impl::fill_lookahead_buffer(
   kafka::offset offset, size_t num_objects) {
     scoped_phase_timer timer{
       _probe, &level_one_reader_probe::record_metastore_lookup_duration};
-    ss::abort_source default_abort_source;
-    auto* abort_source = _config.abort_source
-                           ? &_config.abort_source.value().get()
-                           : &default_abort_source;
-    retry_chain_node rtc = l1::make_default_metastore_rtc(*abort_source);
+    // CORE-15812: bind metastore IO to _io_abort_source, not the client
+    // connection (_config.abort_source); see the member's doc comment.
+    retry_chain_node rtc = l1::make_default_metastore_rtc(_io_abort_source);
     auto response = co_await l1::retry_metastore_op(
       [this, offset, num_objects] -> ss::future<std::expected<
                                     l1::metastore::extent_metadata_response,
@@ -351,12 +347,10 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
       .size = footer_total_size,
     };
 
-    ss::abort_source default_abort_source;
-    auto* abort_source = _config.abort_source
-                           ? &_config.abort_source.value().get()
-                           : &default_abort_source;
+    // CORE-15812: bind object-store IO to _io_abort_source, not the client
+    // connection (_config.abort_source); see the member's doc comment.
     auto read_fut = co_await ss::coroutine::as_future(
-      _io->read_object_as_iobuf(extent, abort_source, _config.group));
+      _io->read_object_as_iobuf(extent, &_io_abort_source, _config.group));
     if (read_fut.failed()) {
         auto ex = read_fut.get_exception();
         vlog(
