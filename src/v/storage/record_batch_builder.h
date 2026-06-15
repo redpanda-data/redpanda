@@ -39,6 +39,10 @@ public:
         _producer_epoch = epoch;
     }
 
+    void set_base_sequence(int32_t base_sequence) {
+        _base_sequence = base_sequence;
+    }
+
     void set_control_type() { _is_control_type = true; }
 
     void set_transactional_type() { _transactional_type = true; }
@@ -89,6 +93,7 @@ private:
     model::offset _base_offset;
     int64_t _producer_id{-1};
     int16_t _producer_epoch{-1};
+    int32_t _base_sequence{-1};
     bool _is_control_type{false};
     bool _transactional_type{false};
     iobuf _records;

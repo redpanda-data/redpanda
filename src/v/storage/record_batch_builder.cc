@@ -96,7 +96,7 @@ model::record_batch_header record_batch_builder::build_header() const {
       .max_timestamp = *_timestamp,
       .producer_id = _producer_id,
       .producer_epoch = _producer_epoch,
-      .base_sequence = -1,
+      .base_sequence = _base_sequence,
       .record_count = _offset_delta,
       .ctx = model::record_batch_header::context(
         model::term_id(0), ss::this_shard_id())};

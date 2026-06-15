@@ -40,6 +40,10 @@ struct produce_partition_fixture : redpanda_thread_fixture {
     static constexpr size_t total_partition_count = 1;
 
     model::topic t;
+    // Monotonically increasing base sequence for the idempotent variants, so
+    // each iteration looks like the next in-order request from the same
+    // producer rather than a duplicate.
+    int32_t idempotent_seq{0};
 
     produce_partition_fixture() {
         BOOST_TEST_CHECKPOINT("before leadership");
@@ -60,11 +64,12 @@ struct produce_partition_fixture : redpanda_thread_fixture {
         wait_for_leader(ntp).get();
         BOOST_TEST_CHECKPOINT("HERE");
     }
-    ss::future<> run_test(size_t data_size, measured_region region);
+    ss::future<>
+    run_test(size_t data_size, measured_region region, bool idempotent = false);
 };
 
-ss::future<>
-produce_partition_fixture::run_test(size_t data_size, measured_region region) {
+ss::future<> produce_partition_fixture::run_test(
+  size_t data_size, measured_region region, bool idempotent) {
     BOOST_TEST_CHECKPOINT("HERE");
 
     model::topic_partition tp = model::topic_partition(
@@ -76,6 +81,12 @@ produce_partition_fixture::run_test(size_t data_size, measured_region region) {
     constexpr size_t num_records = 1;
     for (size_t i = 0; i < num_records; ++i) {
         builder.add_raw_kv(iobuf{}, rand_iobuf(data_size));
+    }
+
+    if (idempotent) {
+        builder.set_producer_identity(1, 0);
+        builder.set_base_sequence(idempotent_seq);
+        idempotent_seq += num_records;
     }
 
     auto batch = std::move(builder).build();
@@ -211,4 +222,9 @@ PERF_TEST_C(produce_partition_fixture, 4_KiB_produced) {
 }
 PERF_TEST_C(produce_partition_fixture, 8_KiB_produced) {
     co_return co_await this->run_test(8_KiB, measured_region::produced);
+}
+
+PERF_TEST_C(produce_partition_fixture, 1_KiB_produced_idempotent) {
+    co_return co_await this->run_test(
+      1024, measured_region::produced, /*idempotent=*/true);
 }
