@@ -19,6 +19,7 @@
 
 #include <seastar/util/defer.hh>
 
+#include <fmt/format.h>
 #include <gtest/gtest.h>
 
 namespace security {
@@ -3438,6 +3439,73 @@ TEST(AUTHORIZER_TEST, group_principal_acl_deny_precedence) {
     EXPECT_TRUE(bool(result_without_group));
     EXPECT_EQ(result_without_group.acl, allow_write);
     EXPECT_FALSE(result_without_group.group.has_value());
+}
+
+// acl_store::find() scans the candidate prefix range when it is small and
+// switches to per-prefix lookups once the range exceeds the resource name's
+// length. Both paths must surface the same prefix matches: add a matching
+// prefix ACL plus a varying amount of non-matching, same-first-character noise
+// that straddles that threshold (the query name is 22 chars), and assert
+// authorization is unaffected by which path runs.
+TEST(AUTHORIZER_TEST, authz_prefix_match_across_scan_enumerate_threshold) {
+    const acl_principal user(principal_type::user, "alice");
+    const acl_host host("192.168.0.1");
+    const model::topic topic("tz-some-workload-topic"); // 22 chars
+
+    const resource_pattern match(
+      resource_type::topic, "tz-", pattern_type::prefixed);
+
+    // counts below and above the name length exercise the scan and enumerate
+    // paths respectively
+    for (size_t noise : {size_t{0}, size_t{8}, size_t{100}}) {
+        auto auth = make_test_instance();
+
+        chunked_vector<acl_binding> bindings;
+        bindings.emplace_back(
+          match,
+          acl_entry(user, host, acl_operation::read, acl_permission::allow));
+
+        // prefixed patterns that share the topic's first character ('t') but
+        // are never a prefix of it: they fall in the scanned range yet must
+        // never match
+        for (size_t i = 0; i < noise; ++i) {
+            bindings.emplace_back(
+              resource_pattern(
+                resource_type::topic,
+                fmt::format("to-noise-{:06}", i),
+                pattern_type::prefixed),
+              acl_entry(
+                acl_principal(principal_type::user, fmt::format("u{}", i)),
+                acl_wildcard_host,
+                acl_operation::read,
+                acl_permission::allow));
+        }
+        auth.add_bindings(bindings);
+
+        // granted via the "tz-" prefix regardless of the noise / code path
+        auto granted = auth.authorized(
+          topic,
+          acl_operation::read,
+          user,
+          host,
+          security::superuser_required::no,
+          {});
+        EXPECT_TRUE(granted.authorized) << "noise=" << noise;
+        EXPECT_EQ(granted.resource_pattern, match) << "noise=" << noise;
+
+        // a topic the "tz-" prefix does not cover is never granted, even though
+        // the noise shares its first character
+        EXPECT_FALSE(auth
+                       .authorized(
+                         model::topic("to-uncovered"),
+                         acl_operation::read,
+                         user,
+                         host,
+                         security::superuser_required::no,
+                         {})
+                       .authorized)
+          << "noise=" << noise;
+    }
 }
 
 } // namespace security

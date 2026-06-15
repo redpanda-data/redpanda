@@ -24,6 +24,8 @@
 #include <container/chunked_vector.h>
 #include <fmt/format.h>
 
+#include <iterator>
+
 namespace security {
 
 namespace {
@@ -180,23 +182,64 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
     }
 
     /*
-     * The btree range below spans every prefixed pattern (for this resource
-     * type) whose name falls between the full resource name and its first
-     * character: a superset of the actual prefix matches. Filter it down to
-     * the real matches once here- calls to `acl_matches::find()` (of
-     * which a single authorization request can make several) should be as cheap
-     * as possible.
+     * A prefixed pattern matches the resource name iff its name is a prefix
+     * of it, so the only matches are the name's own prefixes. The btree range
+     * below spans every prefixed pattern (for this resource type) whose name
+     * sorts between the full name and its first character: a superset of those
+     * matches that also contains unrelated prefixed patterns sharing the
+     * name's first character.
+     *
+     * Example: for name "tz-events" the matches are its prefixes "t", "tz",
+     * "tz-", ..., "tz-events". The scanned range (names from "tz-events" down
+     * to "t") also holds unrelated patterns that merely start with 't'. E.g.,
+     * "ta", "tom", "topic-0001", which are in range but rejected because
+     * "tz-events" does not start with them.
+     *
+     * A legitimate match range holds at most `name.size()` entries (one per
+     * prefix length), so the strategy is decided by whether the range exceeds
+     * that bound:
+     *  - within bound: scan linearly (cheap, range is small).
+     *  - over bound: the range also holds many of those non-matching
+     *    same-first-character patterns so instead look up the name's prefixes
+     *    ("t", "tz", "tz-", ...) one by one.
+     *
+     * Either path materializes the matches longest-prefix-first, preserving
+     * the reverse-name ordering, so the several `acl_matches::find()` calls
+     * per authorization stay cheap.
      */
     acl_matches::prefix_vector prefixes;
     const resource_pattern_probe full_name_pattern(
       resource, name_view, pattern_type::prefixed);
-    auto it = _acls.lower_bound(full_name_pattern);
+    const auto begin = _acls.lower_bound(full_name_pattern);
     const resource_pattern_probe first_char_pattern(
       resource, name_view.substr(0, 1), pattern_type::prefixed);
     const auto end = _acls.upper_bound(first_char_pattern);
-    for (; it != end; ++it) {
-        if (std::string_view(name).starts_with(it->first.name())) {
-            prefixes.push_back({it->first, it->second});
+
+    // Decide between the two strategies by sizing the range against
+    // `name.size()` without walking its (potentially huge) tail: advance a
+    // cursor by up to `name.size()` steps, stopping early if it hits `end`.
+    // If it reaches `end`, the range holds at most `name.size()` entries, so
+    // scan linearly. If it does not, the range also holds prefixed
+    // patterns that share the name's first character but are not prefixes of it
+    // (which a scan would visit and discard one by one), so enumerate the
+    // name's prefixes instead.
+    auto probe = begin;
+    std::ranges::advance(probe, name_view.size(), end);
+    const bool enumerate_prefixes = probe != end;
+
+    if (enumerate_prefixes) {
+        for (size_t len = name_view.size(); len >= 1; --len) {
+            const resource_pattern_probe prefix_pattern{
+              resource, name_view.substr(0, len), pattern_type::prefixed};
+            if (const auto it = _acls.find(prefix_pattern); it != _acls.end()) {
+                prefixes.push_back({it->first, it->second});
+            }
+        }
+    } else {
+        for (auto it = begin; it != end; ++it) {
+            if (name_view.starts_with(it->first.name())) {
+                prefixes.push_back({it->first, it->second});
+            }
         }
     }
 
