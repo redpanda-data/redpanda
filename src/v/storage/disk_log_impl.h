@@ -153,6 +153,8 @@ public:
 
     // Must be called while _segments_rolling_lock is held.
     ss::future<> maybe_roll_unlocked(model::term_id, model::offset next_offset);
+    ss::future<> roll_unlocked(
+      ss::lw_shared_ptr<segment> active, model::term_id, model::offset);
 
     // Kicks off a background flush of offset translator state to the kvstore.
     void bg_checkpoint_offset_translator();

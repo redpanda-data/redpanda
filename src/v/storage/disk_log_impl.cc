@@ -2226,22 +2226,30 @@ ss::future<> disk_log_impl::maybe_roll_unlocked(
 
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (_segs.empty()) {
-        co_return co_await new_segment(next_offset, t);
+        return new_segment(next_offset, t);
     }
     auto ptr = _segs.back();
     if (!ptr->has_appender() || ptr->is_tombstone()) {
-        co_return co_await new_segment(next_offset, t);
+        return new_segment(next_offset, t);
     }
-    bool size_should_roll = false;
-
-    if (ptr->appender().file_byte_offset() >= _max_segment_size) {
-        size_should_roll = true;
-    }
+    bool size_should_roll = ptr->appender().file_byte_offset()
+                            >= _max_segment_size;
+    // Rolling is the exception: an append almost always lands in the current
+    // segment with nothing to do here, so don't allocate a coroutine frame for
+    // it - only the rare roll path enters a coroutine.
     if (t != term() || size_should_roll) {
-        add_segment_bytes(ptr, ptr->size_bytes());
-        co_await ptr->release_appender(_readers_cache.get());
-        co_await new_segment(next_offset, t);
+        return roll_unlocked(std::move(ptr), t, next_offset);
     }
+    return ss::now();
+}
+
+ss::future<> disk_log_impl::roll_unlocked(
+  ss::lw_shared_ptr<segment> active,
+  model::term_id t,
+  model::offset next_offset) {
+    add_segment_bytes(active, active->size_bytes());
+    co_await active->release_appender(_readers_cache.get());
+    co_await new_segment(next_offset, t);
 }
 
 ss::future<> disk_log_impl::apply_segment_ms() {
