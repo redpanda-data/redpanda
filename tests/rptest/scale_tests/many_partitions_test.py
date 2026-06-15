@@ -19,6 +19,7 @@ from ducktape.mark import parametrize
 from ducktape.utils.util import TimeoutError, wait_until
 
 from rptest.clients.rpk import RpkException, RpkTool
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import (
@@ -605,6 +606,40 @@ class ManyPartitionsTest(PreallocNodesTest):
                 self.logger.warning(f"cloud_io lane sampler error: {e}")
             stop_event.wait(interval_sec)
 
+    def _capture_cpu_profile_once(
+        self,
+        stop_event: threading.Event,
+        delay_sec: int = 60,
+        wait_ms: int = 30000,
+    ):
+        """CORE-15812: once, mid-consume, capture a CPU profile of one broker to
+        see what saturates the kafka scheduling group. Targeted (one broker, one
+        window) to keep the cost down. The backtraces are raw addresses; the top
+        stacks by sample count are logged for offline symbolization against the
+        build binary."""
+        if stop_event.wait(delay_sec):
+            return  # consume ended before the capture window
+        try:
+            node = self.redpanda.nodes[0]
+            profile = Admin(self.redpanda).get_cpu_profile(
+                node=node, wait_ms=wait_ms
+            )
+            stacks: Counter[str] = Counter()
+            for shard in profile.get("profile", []):
+                for s in shard.get("samples", []):
+                    stacks[s["user_backtrace"]] += s["occurrences"]
+            total = sum(stacks.values())
+            self.logger.info(
+                f"CPU profile ({node.name}, {wait_ms}ms): {total} samples, "
+                f"sample_period_ms={profile.get('sample_period_ms')}; top stacks "
+                f"(raw addresses, symbolize offline):"
+            )
+            for bt, occ in stacks.most_common(25):
+                pct = 100.0 * occ / max(1, total)
+                self.logger.info(f"  cpu occ={occ} ({pct:.1f}%): {bt}")
+        except Exception as e:
+            self.logger.warning(f"cpu profile capture failed: {e}")
+
     def _write_and_random_read(
         self,
         scale: ScaleParameters,
@@ -801,11 +836,21 @@ class ManyPartitionsTest(PreallocNodesTest):
             daemon=True,
         )
         lane_sampler.start()
+        # CORE-15812: also grab one targeted CPU profile of a broker mid-consume
+        # to see what saturates the kafka scheduling group. Shares the stop
+        # event; self-skips if the consume ends before the capture window.
+        cpu_profiler = threading.Thread(
+            target=self._capture_cpu_profile_once,
+            args=(lane_sampler_stop,),
+            daemon=True,
+        )
+        cpu_profiler.start()
         try:
             verifier.wait(timeout_sec=expect_transmit_time)
         finally:
             lane_sampler_stop.set()
             lane_sampler.join(timeout=30)
+            cpu_profiler.join(timeout=35)
         for i, v in enumerate(verifier.consumers):
             assert v.consumer_status.validator.invalid_reads == 0
             if not scale.tiered_storage_enabled:
