@@ -429,7 +429,14 @@ kafka_stages partition::replicate_in_stages(
        bid = std::move(bid),
        batch = std::move(batch),
        opts = std::move(opts)]() mutable {
-          if (_rm_stm) {
+          // Only idempotent and transactional batches need the rm_stm
+          // replicate path (sequence/fence tracking, transaction state, the
+          // sync + state lock). A plain produce carries no producer state, so
+          // route it straight to raft - the stm still observes the batch via
+          // apply() in log order, exactly as it would for a partition without
+          // an rm_stm. This avoids the rm_stm coroutine frames, the
+          // available_promise and the state-lock acquisition per produce.
+          if (_rm_stm && (bid.is_transactional || bid.is_idempotent())) {
               return _rm_stm->replicate_in_stages(bid, std::move(batch), opts);
           }
           auto res = _raft->replicate_in_stages(std::move(batch), opts);
