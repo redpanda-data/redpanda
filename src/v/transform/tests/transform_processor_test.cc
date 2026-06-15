@@ -222,6 +222,10 @@ public:
 
     void cork_sink(model::output_topic_index idx) { _sinks[idx()]->cork(); }
     void uncork_sink(model::output_topic_index idx) { _sinks[idx()]->uncork(); }
+    void fail_sink(model::output_topic_index idx) {
+        _sinks[idx()]->fail_writes();
+    }
+    bool processor_running() const { return _p->is_running(); }
 
     std::vector<model::output_topic_index> output_topics() const {
         std::vector<model::output_topic_index> indexes;
@@ -362,6 +366,54 @@ TEST_P(ProcessorTestFixture, LagOverflowBug) {
     // their lag.
     tests::drain_task_queue().get();
     EXPECT_EQ(lag(), 0);
+}
+
+// Reproduces the "stuck transform" bug. When one output's producer fails to
+// produce (e.g. a transient "not a leader for partition"), a SINGLE-output
+// transform reports the error (state::errored), so the manager would restart
+// it. But with MULTIPLE outputs, the surviving producer loop(s) keep
+// `ss::parallel_for_each` (run_all_producers) pending forever, so the exception
+// is never observed: state::errored never fires, the processor still reports
+// "running", and it makes no progress until an external stop (== an `rpk
+// transform pause`/`resume`).
+TEST_P(ProcessorTestFixture, ProduceFailureWedgesMultiOutputButErrorsSingle) {
+    const size_t n_out = GetParam().meta.output_topics.size();
+    set_tee_output();
+
+    // Healthy baseline so the pipeline is flowing and committed.
+    auto baseline = make_records(1);
+    push_batch(baseline);
+    for (auto o : output_topics()) {
+        EXPECT_THAT(read_records(o, 1), SameRecords(baseline));
+    }
+    ASSERT_TRUE(wait_for_all_committed());
+
+    // Fail only output 0; any other outputs stay healthy.
+    fail_sink(model::output_topic_index(0));
+    push_batch(make_records(1));
+    tests::drain_task_queue().get();
+
+    // The loops are never aborted, so the processor still reports running.
+    EXPECT_TRUE(processor_running());
+    // Output 0's producer died, so nothing is ever written there.
+    EXPECT_TRUE(sink_empty(model::output_topic_index(0)));
+
+    if (n_out == 1) {
+        // parallel_for_each(1 element) resolves exceptionally, the error
+        // propagates, and the manager would restart the processor.
+        EXPECT_GE(error_count(), 1u)
+          << "single-output produce failure should be reported as errored";
+    } else {
+        // The surviving producer loop(s) keep parallel_for_each pending, so the
+        // error is swallowed -- THE BUG.
+        EXPECT_EQ(error_count(), 0u)
+          << "multi-output produce failure is silently swallowed (stuck "
+             "transform bug)";
+        // Healthy outputs keep flowing while output 0 is wedged.
+        for (size_t i = 1; i < n_out; ++i) {
+            EXPECT_FALSE(sink_empty(model::output_topic_index(i)));
+        }
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(
