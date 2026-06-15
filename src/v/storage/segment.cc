@@ -497,18 +497,27 @@ ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
       });
 }
 ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
+    // This runs on every append. Segments without a compaction index (the
+    // common, delete-policy case) and non-compactible batches have nothing to
+    // do, so handle them synchronously rather than allocating a coroutine
+    // frame for an immediate return.
     if (!has_compaction_index()) {
-        co_return;
+        return ss::now();
     }
     // do not index not compactible batches
     if (!compaction::is_compactible(b.header())) {
-        co_return;
+        return ss::now();
     }
 
     if (!b.compressed()) {
-        co_return co_await do_compaction_index_batch(b);
+        return do_compaction_index_batch(b);
     }
 
+    return do_compaction_index_batch_compressed(b);
+}
+
+ss::future<>
+segment::do_compaction_index_batch_compressed(const model::record_batch& b) {
     // Compressed batches have to be uncompressed before we can index them
     // by key for compaction.  This is potentially _very_ expensive in memory:
     // clients can simply send us 100MiB of zeros, which will compress small
