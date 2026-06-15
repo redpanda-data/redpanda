@@ -463,12 +463,16 @@ TEST_F(l1_reader_test, max_bytes_zero_behavior) {
     }
 
     {
-        // Test max_bytes=0 with strict_max_bytes=true
-        // Should return zero batches (strict mode respects the byte limit)
+        // max_bytes=0 with strict_max_bytes=true. Reverting the early
+        // max_bytes==0 check removed the only use of strict_max_bytes in the
+        // L1 reader, so this behaves like the non-strict case: the reader makes
+        // minimal progress and returns one batch (it no longer starves a
+        // budget-exhausted fetch tail).
         auto reader = make_reader(
           ntp, tidp, kafka::offset::min(), kafka::offset::max(), 0, true);
         auto result = read_all(std::move(reader));
-        EXPECT_TRUE(result.empty());
+        EXPECT_EQ(result.size(), 1);
+        EXPECT_EQ(result[0], expected[0]);
     }
 }
 

@@ -117,11 +117,6 @@ level_one_log_reader_impl::open_reader_at(
 ss::future<model::record_batch_reader::storage_t>
 level_one_log_reader_impl::read_some(
   model::timeout_clock::time_point deadline) {
-    if (_config.strict_max_bytes && _config.max_bytes == 0) {
-        set_end_of_stream();
-        co_await close_current_stream();
-        co_return model::record_batch_reader::storage_t{};
-    }
     while (true) {
         if (_next_offset > _config.max_offset) {
             vlog(
