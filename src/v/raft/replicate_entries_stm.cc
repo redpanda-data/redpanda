@@ -31,7 +31,7 @@ namespace raft {
 using namespace std::chrono_literals;
 
 ss::future<chunked_vector<model::record_batch>>
-replicate_entries_stm::share_batches() {
+replicate_entries_stm::do_share_batches_async() {
     // one extra copy is needed for retries
     chunked_vector<model::record_batch> batches;
     batches.reserve(_batches.size());
@@ -40,6 +40,26 @@ replicate_entries_stm::share_batches() {
     });
 
     co_return batches;
+}
+
+ss::future<chunked_vector<model::record_batch>>
+replicate_entries_stm::share_batches() {
+    // async_for_each only yields once the batch count reaches its interval; for
+    // the common small batch count the copy runs inline, so do it here and skip
+    // allocating a coroutine frame for share_batches. Larger batch sets defer
+    // to the yielding coroutine.
+    if (_batches.size() >= ssx::async_algo_traits::interval) {
+        return do_share_batches_async();
+    }
+
+    // one extra copy is needed for retries
+    chunked_vector<model::record_batch> batches;
+    batches.reserve(_batches.size());
+    for (auto& b : _batches) {
+        batches.push_back(b.share());
+    }
+    return ss::make_ready_future<chunked_vector<model::record_batch>>(
+      std::move(batches));
 }
 
 clock_type::time_point replicate_entries_stm::append_entries_timeout() {
