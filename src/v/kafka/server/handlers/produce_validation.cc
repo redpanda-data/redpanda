@@ -455,39 +455,21 @@ std::optional<error_code_and_msg> validate_batch(
     return res;
 }
 
-} // namespace
-
-ss::future<std::optional<error_code_and_msg>>
-validate_batch(const validation_args& args) {
-    const auto& validation_mode
-      = config::shard_local_cfg().kafka_produce_batch_validation();
-
+ss::future<std::optional<error_code_and_msg>> validate_decompressed_batch(
+  validation_args args, model::kafka_batch_validation_mode validation_mode) {
     std::optional<model::record_batch> maybe_decompressed_batch;
-    std::optional<std::reference_wrapper<const model::record_batch>>
-      maybe_decompressed_batch_ref;
-
-    auto& batch = args.batch;
-
-    if (batch.compressed()) {
-        if (should_decompress(batch, validation_mode)) {
-            try {
-                maybe_decompressed_batch = co_await model::decompress_batch(
-                  batch);
-            } catch (...) {
-                co_return error_code_and_msg{
-                  .err = error_code::corrupt_message,
-                  .msg = "unable to decompress batch",
-                };
-            }
-            maybe_decompressed_batch_ref = maybe_decompressed_batch.value();
-        }
-    } else {
-        maybe_decompressed_batch_ref = batch;
+    try {
+        maybe_decompressed_batch = co_await model::decompress_batch(args.batch);
+    } catch (...) {
+        co_return error_code_and_msg{
+          .err = error_code::corrupt_message,
+          .msg = "unable to decompress batch",
+        };
     }
 
     co_return validate_batch(
-      batch,
-      maybe_decompressed_batch_ref,
+      args.batch,
+      maybe_decompressed_batch.value(),
       validation_mode,
       args.timestamp_type,
       args.message_timestamp_before_max_ms,
@@ -495,6 +477,42 @@ validate_batch(const validation_args& args) {
       args.probe,
       args.ntp,
       args.client_id);
+}
+
+} // namespace
+
+ss::future<std::optional<error_code_and_msg>>
+validate_batch(const validation_args& args) {
+    const auto validation_mode
+      = config::shard_local_cfg().kafka_produce_batch_validation();
+
+    auto& batch = args.batch;
+
+    // Only compressed batches whose records need inspecting require the
+    // asynchronous decompression step. Every other case (the common produce
+    // path) is fully synchronous, so handle it inline rather than allocating a
+    // coroutine frame on every produce.
+    if (batch.compressed() && should_decompress(batch, validation_mode)) {
+        return validate_decompressed_batch(args, validation_mode);
+    }
+
+    std::optional<std::reference_wrapper<const model::record_batch>>
+      maybe_decompressed_batch_ref;
+    if (!batch.compressed()) {
+        maybe_decompressed_batch_ref = batch;
+    }
+
+    return ss::make_ready_future<std::optional<error_code_and_msg>>(
+      validate_batch(
+        batch,
+        maybe_decompressed_batch_ref,
+        validation_mode,
+        args.timestamp_type,
+        args.message_timestamp_before_max_ms,
+        args.message_timestamp_after_max_ms,
+        args.probe,
+        args.ntp,
+        args.client_id));
 }
 
 } // namespace kafka
