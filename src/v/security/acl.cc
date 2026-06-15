@@ -162,17 +162,17 @@ std::optional<security::acl_match> acl_matches::find(
 acl_matches
 acl_store::find(resource_type resource, const ss::sstring& name) const {
     using opt_entry_set = std::optional<acl_matches::entry_set_ref>;
+    const std::string_view name_view{name.data(), name.size()};
 
-    const resource_pattern wildcard_pattern(
+    const resource_pattern_probe wildcard_pattern(
       resource, resource_pattern::wildcard, pattern_type::literal);
-
     opt_entry_set wildcards;
     if (const auto it = _acls.find(wildcard_pattern); it != _acls.end()) {
         wildcards = {it->first, it->second};
     }
 
-    const resource_pattern literal_pattern(
-      resource, name, pattern_type::literal);
+    const resource_pattern_probe literal_pattern(
+      resource, name_view, pattern_type::literal);
 
     opt_entry_set literals;
     if (const auto it = _acls.find(literal_pattern); it != _acls.end()) {
@@ -188,10 +188,12 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
      * as possible.
      */
     acl_matches::prefix_vector prefixes;
-    auto it = _acls.lower_bound(
-      resource_pattern(resource, name, pattern_type::prefixed));
-    const auto end = _acls.upper_bound(
-      resource_pattern(resource, name.substr(0, 1), pattern_type::prefixed));
+    const resource_pattern_probe full_name_pattern(
+      resource, name_view, pattern_type::prefixed);
+    auto it = _acls.lower_bound(full_name_pattern);
+    const resource_pattern_probe first_char_pattern(
+      resource, name_view.substr(0, 1), pattern_type::prefixed);
+    const auto end = _acls.upper_bound(first_char_pattern);
     for (; it != end; ++it) {
         if (std::string_view(name).starts_with(it->first.name())) {
             prefixes.push_back({it->first, it->second});

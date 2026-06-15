@@ -14,6 +14,8 @@
 #include "security/acl.h"
 #include "security/acl_entry_set.h"
 
+#include <string_view>
+
 namespace security {
 
 /*
@@ -59,6 +61,16 @@ public:
     ss::future<> reset_bindings(const chunked_vector<acl_binding>& bindings);
 
 private:
+    /// A lightweight, non-owning key for heterogeneous btree lookups
+    struct resource_pattern_probe {
+        resource_type _resource;
+        std::string_view _name;
+        pattern_type _pattern;
+        resource_type resource() const { return _resource; }
+        std::string_view name() const { return _name; }
+        pattern_type pattern() const { return _pattern; }
+    };
+
     /*
      * resource pattern ordering:
      *
@@ -67,15 +79,23 @@ private:
      *  3. name (in reverse order)
      */
     struct resource_pattern_compare {
-        bool
-        operator()(const resource_pattern& a, const resource_pattern& b) const {
+        using is_transparent = void;
+
+        template<typename L, typename R>
+        bool operator()(const L& a, const R& b) const {
             if (a.resource() != b.resource()) {
                 return a.resource() < b.resource();
             }
             if (a.pattern() != b.pattern()) {
                 return a.pattern() < b.pattern();
             }
-            return b.name() < a.name();
+            return as_view(b.name()) < as_view(a.name());
+        }
+
+    private:
+        static std::string_view as_view(std::string_view s) { return s; }
+        static std::string_view as_view(const ss::sstring& s) {
+            return {s.data(), s.size()};
         }
     };
 
