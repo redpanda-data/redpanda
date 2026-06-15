@@ -50,6 +50,11 @@ public:
     // Returns a current value of the writes disabled property.
     writes_disabled are_writes_disabled() const;
 
+private:
+    ss::future<result<writes_disabled>>
+    do_sync_writes_disabled(ss::gate::holder, ss::future<bool> sync_fut);
+
+public:
     raft::stm_initial_recovery_policy
     get_initial_recovery_policy() const final {
         return raft::stm_initial_recovery_policy::skip_to_end;

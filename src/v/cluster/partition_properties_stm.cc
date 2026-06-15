@@ -333,12 +333,30 @@ partition_properties_stm::enable_writes(model::revision_id revision_id) {
 }
 
 ss::future<result<partition_properties_stm::writes_disabled>>
-partition_properties_stm::sync_writes_disabled() {
-    auto holder = _gate.hold();
-    if (!co_await sync(_sync_timeout())) {
+partition_properties_stm::do_sync_writes_disabled(
+  ss::gate::holder holder, ss::future<bool> sync_fut) {
+    if (!co_await std::move(sync_fut)) {
         co_return errc::not_leader;
     }
     co_return are_writes_disabled();
+}
+
+ss::future<result<partition_properties_stm::writes_disabled>>
+partition_properties_stm::sync_writes_disabled() {
+    auto holder = _gate.hold();
+    auto sync_fut = sync(_sync_timeout());
+    // sync() completes synchronously whenever the stm is already in sync,
+    // which is the common case. Handle it inline to avoid allocating a
+    // coroutine frame on every produce (this is called from
+    // partition::hold_writes_enabled()).
+    if (!sync_fut.available() || sync_fut.failed()) {
+        return do_sync_writes_disabled(std::move(holder), std::move(sync_fut));
+    }
+    if (!sync_fut.get()) {
+        return ss::make_ready_future<result<writes_disabled>>(errc::not_leader);
+    }
+    return ss::make_ready_future<result<writes_disabled>>(
+      are_writes_disabled());
 }
 
 partition_properties_stm_factory::partition_properties_stm_factory(
