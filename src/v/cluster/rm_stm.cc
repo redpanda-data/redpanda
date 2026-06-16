@@ -34,6 +34,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/util/defer.hh>
 
 #include <filesystem>
 #include <iterator>
@@ -818,25 +819,15 @@ kafka_stages rm_stm::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch batch,
   raft::replicate_options opts) {
-    auto enqueued = ss::make_lw_shared<available_promise<>>();
-    auto f = enqueued->get_future();
-    auto replicate_finished
-      = do_replicate(bid, std::move(batch), opts, enqueued).finally([enqueued] {
-            // we should avoid situations when
-            // replicate_finished is set while enqueued
-            // isn't because it leads to hanging produce
-            // requests and the resource leaks. since
-            // staged replication is an optimization and
-            // setting enqueued only after
-            // replicate_finished is already set doesn't
-            // have sematic implications adding this
-            // post replicate_finished as a safety
-            // measure in case enqueued isn't set
-            // explicitly
-            if (!enqueued->available()) {
-                enqueued->set_value();
-            }
-        });
+    // The enqueued promise lives in do_replicate's coroutine frame (it owns it
+    // by value) rather than in a separate heap allocation. do_replicate
+    // guarantees it is set on every exit path via an internal scope guard - the
+    // same safety net the .finally() here used to provide - which avoids
+    // hanging produce requests if enqueued is not set explicitly.
+    available_promise<> enqueued;
+    auto f = enqueued.get_future();
+    auto replicate_finished = do_replicate(
+      bid, std::move(batch), opts, std::move(enqueued));
     return {std::move(f), std::move(replicate_finished)};
 }
 
@@ -844,8 +835,7 @@ ss::future<result<kafka_result>> rm_stm::replicate(
   model::batch_identity bid,
   model::record_batch batch,
   raft::replicate_options opts) {
-    auto enqueued = ss::make_lw_shared<available_promise<>>();
-    return do_replicate(bid, std::move(batch), opts, enqueued);
+    return do_replicate(bid, std::move(batch), opts, available_promise<>{});
 }
 
 ss::future<ss::basic_rwlock<>::holder> rm_stm::prepare_transfer_leadership() {
@@ -856,7 +846,15 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
   model::batch_identity bid,
   model::record_batch batch,
   raft::replicate_options opts,
-  ss::lw_shared_ptr<available_promise<>> enqueued) {
+  available_promise<> enqueued) {
+    // Guarantee enqueued is set on every exit path. The staged paths below set
+    // it explicitly once the request is enqueued; this guard covers the early
+    // returns and the transactional path, preventing hanging produce requests.
+    auto enqueued_guard = ss::defer([&enqueued] {
+        if (!enqueued.available()) {
+            enqueued.set_value();
+        }
+    });
     auto holder = _gate.hold();
     auto unit = co_await _state_lock.hold_read_lock();
     if (bid.is_transactional) {
@@ -887,7 +885,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
                 bid,
                 std::move(batch),
                 opts,
-                std::move(enqueued),
+                enqueued,
                 std::move(units),
                 known_producer);
           });
@@ -1107,7 +1105,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   model::batch_identity bid,
   model::record_batch batch,
   raft::replicate_options opts,
-  ss::lw_shared_ptr<available_promise<>> enqueued,
+  available_promise<>& enqueued,
   ssx::semaphore_units units,
   producer_previously_known known_producer) {
     vassert(opts.expected_term.has_value(), "expected term must be set");
@@ -1162,7 +1160,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
             result = cluster::errc::replication_error;
         } else {
             units.return_all();
-            enqueued->set_value();
+            enqueued.set_value();
             auto replicated = co_await ss::coroutine::as_future(
               std::move(stages.replicate_finished));
             if (replicated.failed()) {
@@ -1222,7 +1220,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
 ss::future<result<kafka_result>> rm_stm::replicate_msg(
   model::record_batch batch,
   raft::replicate_options opts,
-  ss::lw_shared_ptr<available_promise<>> enqueued) {
+  available_promise<>& enqueued) {
     using ret_t = result<kafka_result>;
 
     if (!co_await sync(_sync_timeout())) {
@@ -1235,7 +1233,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
 
     auto ss = _raft->replicate_in_stages(std::move(batch), opts);
     co_await std::move(ss.request_enqueued);
-    enqueued->set_value();
+    enqueued.set_value();
     auto r = co_await std::move(ss.replicate_finished);
 
     if (!r) {

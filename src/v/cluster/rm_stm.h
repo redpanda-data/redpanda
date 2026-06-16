@@ -278,7 +278,7 @@ private:
       model::batch_identity,
       model::record_batch,
       raft::replicate_options,
-      ss::lw_shared_ptr<available_promise<>>);
+      available_promise<>);
 
     ss::future<result<kafka_result>> transactional_replicate(
       model::batch_identity,
@@ -302,14 +302,12 @@ private:
       model::batch_identity,
       model::record_batch,
       raft::replicate_options,
-      ss::lw_shared_ptr<available_promise<>>,
+      available_promise<>&,
       ssx::semaphore_units,
       producer_previously_known);
 
     ss::future<result<kafka_result>> replicate_msg(
-      model::record_batch,
-      raft::replicate_options,
-      ss::lw_shared_ptr<available_promise<>>);
+      model::record_batch, raft::replicate_options, available_promise<>&);
 
     ss::future<bool> sync(model::timeout_clock::duration);
     ss::future<bool>
