@@ -851,15 +851,15 @@ replicate_stages consensus::replicate_in_stages(
 
 replicate_stages
 wrap_stages_with_gate(ss::gate& gate, replicate_stages stages) {
+    // replicate_finished always resolves no earlier than request_enqueued, so a
+    // single gate hold spanning replicate_finished already keeps the consensus
+    // instance alive for the whole operation. Gating request_enqueued
+    // separately is redundant, so hold the gate once and avoid the second
+    // with_gate continuation. The caller has already verified the gate is open.
+    auto holder = gate.hold();
     return replicate_stages(
-      ss::with_gate(
-        gate,
-        [f = std::move(stages.request_enqueued)]() mutable {
-            return std::move(f);
-        }),
-      ss::with_gate(gate, [f = std::move(stages.replicate_finished)]() mutable {
-          return std::move(f);
-      }));
+      std::move(stages.request_enqueued),
+      std::move(stages.replicate_finished).finally([h = std::move(holder)] {}));
 }
 replicate_stages consensus::do_replicate(
   chunked_vector<model::record_batch> batches, replicate_options opts) {
