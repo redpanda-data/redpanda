@@ -298,12 +298,6 @@ private:
       model::record_batch);
 
     ss::future<result<kafka_result>> idempotent_replicate(
-      model::batch_identity,
-      model::record_batch,
-      raft::replicate_options,
-      ss::lw_shared_ptr<available_promise<>>);
-
-    ss::future<result<kafka_result>> idempotent_replicate(
       tx::producer_ptr,
       model::batch_identity,
       model::record_batch,

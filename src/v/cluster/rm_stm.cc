@@ -865,8 +865,32 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
         co_return co_await transactional_replicate(
           bid, std::move(batch), opts.expected_term);
     } else if (bid.is_idempotent()) {
-        co_return co_await idempotent_replicate(
-          bid, std::move(batch), opts, enqueued);
+        // Inlined from the former idempotent_replicate() dispatch overload to
+        // avoid an extra coroutine frame (and task hop) per idempotent produce.
+        if (!co_await sync(_sync_timeout())) {
+            // it's ok not to set enqueued on early return because the safety
+            // check in replicate_in_stages sets it automatically
+            co_return cluster::errc::not_leader;
+        }
+        if (!opts.expected_term.has_value()) {
+            opts.expected_term = _insync_term;
+        }
+        auto result = maybe_create_producer(bid.pid);
+        if (result.has_error()) {
+            co_return result.error();
+        }
+        auto [producer, known_producer] = result.value();
+        co_return co_await producer->run_with_lock(
+          [&, known_producer](ssx::semaphore_units units) {
+              return idempotent_replicate(
+                producer,
+                bid,
+                std::move(batch),
+                opts,
+                std::move(enqueued),
+                std::move(units),
+                known_producer);
+          });
     }
     co_return co_await replicate_msg(std::move(batch), opts, enqueued);
 }
@@ -1193,37 +1217,6 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
         }
     }
     co_return result.error();
-}
-
-ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
-  model::batch_identity bid,
-  model::record_batch batch,
-  raft::replicate_options opts,
-  ss::lw_shared_ptr<available_promise<>> enqueued) {
-    if (!co_await sync(_sync_timeout())) {
-        // it's ok not to set enqueued on early return because
-        // the safety check in replicate_in_stages sets it automatically
-        co_return cluster::errc::not_leader;
-    }
-    if (!opts.expected_term.has_value()) {
-        opts.expected_term = _insync_term;
-    }
-    auto result = maybe_create_producer(bid.pid);
-    if (result.has_error()) {
-        co_return result.error();
-    }
-    auto [producer, known_producer] = result.value();
-    co_return co_await producer->run_with_lock(
-      [&, known_producer](ssx::semaphore_units units) {
-          return idempotent_replicate(
-            producer,
-            bid,
-            std::move(batch),
-            opts,
-            std::move(enqueued),
-            std::move(units),
-            known_producer);
-      });
 }
 
 ss::future<result<kafka_result>> rm_stm::replicate_msg(
