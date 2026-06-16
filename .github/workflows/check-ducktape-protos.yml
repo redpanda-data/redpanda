@@ -48,7 +48,7 @@ jobs:
           CI: false
         run: bazel fetch --lockfile_mode=off //proto/...
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v8.2.0
       - name: Regenerate ducktape proto bindings
         env:
           CI: false

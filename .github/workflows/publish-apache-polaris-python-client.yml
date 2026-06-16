@@ -52,7 +52,7 @@ jobs:
             -e 's/"polaris\/\*\*"/"polaris\/\*\*\/\*\.py"/' \
             -e 's/boto3==/boto3>=/' pyproject.toml
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v8.2.0
       - name: Build distribution packages
         working-directory: client/python
         run: uv build
