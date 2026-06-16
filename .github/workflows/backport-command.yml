@@ -45,7 +45,7 @@ jobs:
         run: $SCRIPT_DIR/get_backport_type.sh
         shell: bash
       - name: Failed reaction
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         if: failure()
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
@@ -155,14 +155,14 @@ jobs:
         run: $SCRIPT_DIR/create_pr.sh
         shell: bash
       - name: Add reaction
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
           reactions: hooray
       - name: Failed reaction
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         if: failure()
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
