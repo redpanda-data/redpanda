@@ -22,12 +22,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       - name: Ruff format --check
-        uses: astral-sh/ruff-action@v3
+        uses: astral-sh/ruff-action@v4.0.0
         with:
           args: "format --check --diff"
           version: "0.12.10"
       - name: Ruff check (/tests only)
-        uses: astral-sh/ruff-action@v3
+        uses: astral-sh/ruff-action@v4.0.0
         with:
           args: "check --output-format=github"
           src: "./tests"
