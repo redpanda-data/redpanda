@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_fuzz_test", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "utils",
@@ -294,5 +294,24 @@ redpanda_cc_gtest(
         "//src/v/security:license",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_fuzz_test(
+    name = "acl_store_fuzz",
+    timeout = "short",
+    srcs = [
+        "acl_store_fuzz.cc",
+    ],
+    args = [
+        "-max_total_time=30",
+        "-rss_limit_mb=8192",
+    ],
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/security",
+        "//src/v/test_utils:seastar_fuzz",
+        "@fmt",
+        "@seastar",
     ],
 )
