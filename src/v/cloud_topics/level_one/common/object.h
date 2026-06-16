@@ -11,6 +11,7 @@
 #pragma once
 
 #include "absl/container/btree_map.h"
+#include "absl/container/btree_set.h"
 #include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/units.h"
@@ -26,9 +27,15 @@
 
 #include <fmt/format.h>
 
+#include <functional>
 #include <limits>
 
 namespace cloud_topics::l1 {
+
+// The aborted transaction ranges carried alongside a tiered-storage segment,
+// ordered descending so a forward scan can drop already-consumed ranges off
+// the front as it advances.
+using aborted_transactions = absl::btree_set<model::tx_range, std::greater<>>;
 
 // clang-format off
 // L1 Object File Format:
