@@ -86,7 +86,7 @@ jobs:
           tinygo build -scheduler=none -target=wasi -o tee.wasm ./tee
           tinygo build -scheduler=none -target=wasi -o sr.wasm ./schema-registry
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/go/transform/internal/testdata
@@ -140,7 +140,7 @@ jobs:
             --example=tee \
             --example=schema_registry
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/rust
@@ -187,7 +187,7 @@ jobs:
         working-directory: src/transform-sdk/cpp/examples
         run: cmake -B build && cmake --build build
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/cpp/examples
@@ -264,7 +264,7 @@ jobs:
             -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
             -o sr.wasm
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/js
