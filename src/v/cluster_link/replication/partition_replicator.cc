@@ -59,6 +59,7 @@ ss::future<> partition_replicator::start() {
         // Sink has not replicated anything yet.
         // We will start from configured start offset.
         _start_offset = co_await _config_provider.start_offset(_ntp, _as);
+        _truncation_floor = _start_offset;
         vlog(
           _log.debug,
           "Starting replication from configured start offset {}",
@@ -369,7 +370,7 @@ ss::future<> partition_replicator::maybe_synchronize_start_offset() {
         co_return;
     }
 
-    auto truncate_offset = std::max(_start_offset, source_start_offset);
+    auto truncate_offset = std::max(_truncation_floor, source_start_offset);
     vlog(
       _log.debug,
       "Truncating shadow partition from {} -> {}",
