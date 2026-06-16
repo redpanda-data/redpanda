@@ -178,6 +178,10 @@ public:
     /// See the overload for r-value batches above for documentation.
     ss::future<append_result> append(const model::record_batch&);
     ss::future<append_result> do_append(const model::record_batch&);
+    /// Slow path of append() for transactional batches that need the
+    /// compaction index marked incomplete before appending.
+    ss::future<append_result>
+    append_marking_compaction_index_incomplete(const model::record_batch&);
     ss::future<bool> materialize_index();
 
     /// main read interface

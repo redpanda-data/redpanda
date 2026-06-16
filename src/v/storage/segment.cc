@@ -650,27 +650,32 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
 }
 
 ss::future<append_result> segment::append(const model::record_batch& b) {
-    if (b.contains_transactional_data()) {
-        if (has_compaction_index()) {
-            // With transactional batches, we do not know ahead of time whether
-            // the batch will be committed or aborted. We may not have this
-            // information during the lifetime of this segment as the batch may
-            // be aborted in the next segment. We mark this index as
-            // `incomplete` and rebuild it later from scratch during compaction.
-            try {
-                auto compacted_index
-                  = std::exchange(_compaction_index, std::nullopt).value();
-                compacted_index->set_flag(
-                  compacted_index::footer_flags::incomplete);
-                vlog(
-                  gclog.info,
-                  "Marking compaction index {} as incomplete",
-                  compacted_index->filename());
-                co_await compacted_index->close();
-            } catch (...) {
-                co_return ss::coroutine::exception(std::current_exception());
-            }
-        }
+    // Common case (non-transactional data): append directly and avoid a
+    // coroutine frame on the per-batch write path.
+    if (unlikely(b.contains_transactional_data() && has_compaction_index())) {
+        return append_marking_compaction_index_incomplete(b);
+    }
+    return do_append(b);
+}
+
+ss::future<append_result> segment::append_marking_compaction_index_incomplete(
+  const model::record_batch& b) {
+    // With transactional batches, we do not know ahead of time whether
+    // the batch will be committed or aborted. We may not have this
+    // information during the lifetime of this segment as the batch may
+    // be aborted in the next segment. We mark this index as
+    // `incomplete` and rebuild it later from scratch during compaction.
+    try {
+        auto compacted_index
+          = std::exchange(_compaction_index, std::nullopt).value();
+        compacted_index->set_flag(compacted_index::footer_flags::incomplete);
+        vlog(
+          gclog.info,
+          "Marking compaction index {} as incomplete",
+          compacted_index->filename());
+        co_await compacted_index->close();
+    } catch (...) {
+        co_return ss::coroutine::exception(std::current_exception());
     }
     co_return co_await do_append(b);
 }
