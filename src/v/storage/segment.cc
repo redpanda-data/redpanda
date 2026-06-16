@@ -611,6 +611,28 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
           return ret;
       });
     auto index_fut = compaction_index_batch(b);
+    // Common case: there is no compaction index to update, so
+    // compaction_index_batch() returns an already-resolved no-op. Chain
+    // directly off the write and skip the when_all machinery (and its tuple).
+    if (likely(index_fut.available() && !index_fut.failed())) {
+        index_fut.get();
+        return write_fut.then_wrapped([this, batch_type = b.header().type](
+                                        ss::future<append_result> append_fut) {
+            clear_cached_disk_usage();
+            if (append_fut.failed()) {
+                auto append_err = std::move(append_fut).get_exception();
+                vlog(stlog.error, "segment::append failed: {}", append_err);
+                return ss::make_exception_future<append_result>(append_err);
+            }
+            if (
+              !this->_first_write.has_value()
+              && batch_type == model::record_batch_type::raft_data) {
+                // record time of first write of data batch
+                this->_first_write = ss::lowres_clock::now();
+            }
+            return append_fut;
+        });
+    }
     return ss::when_all(std::move(write_fut), std::move(index_fut))
       .then([this, batch_type = b.header().type](
               std::tuple<ss::future<append_result>, ss::future<>> p) {
