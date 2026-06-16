@@ -303,15 +303,6 @@ private:
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
-    ss::future<result<kafka_result>> do_idempotent_replicate(
-      tx::producer_ptr,
-      model::batch_identity,
-      model::record_batch,
-      raft::replicate_options,
-      ss::lw_shared_ptr<available_promise<>>,
-      ssx::semaphore_units&,
-      producer_previously_known);
-
     ss::future<result<kafka_result>> idempotent_replicate(
       tx::producer_ptr,
       model::batch_identity,

@@ -1085,60 +1085,6 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
   ssx::semaphore_units units,
-  producer_previously_known producer_known) {
-    vassert(opts.expected_term.has_value(), "expected term must be set");
-    auto result = co_await do_idempotent_replicate(
-      producer,
-      bid,
-      std::move(batch),
-      opts,
-      std::move(enqueued),
-      units,
-      producer_known);
-
-    if (!result) {
-        vlog(
-          _ctx_log.trace,
-          "error from do_idempotent_replicate: {}, pid: {}, range: [{}, {}]",
-          result.error(),
-          bid.pid,
-          bid.first_seq,
-          bid.last_seq);
-        if (result.error() == cluster::errc::sequence_out_of_order) {
-            // release the lock so it is not held for the duration of the
-            // barrier, other requests can make progress if they are
-            // in the right sequence.
-            units.return_all();
-            // Ensure we are actually the leader and request didn't
-            // ooosn on a stale state. If we are not the leader return
-            // a retryable error code to the client.
-            auto barrier = co_await _raft->linearizable_barrier();
-            if (!barrier) {
-                co_return cluster::errc::not_leader;
-            }
-        } else {
-            // if the request enqueue failed, its important to step down
-            // under units scope so that the next request in the pipeline
-            // fails on sync.
-            if (
-              _raft->is_leader()
-              && _raft->term() == opts.expected_term.value()) {
-                co_await _raft->step_down(
-                  "Failed replication during idempotent replicate.");
-            }
-        }
-        co_return result.error();
-    }
-    co_return result.value();
-}
-
-ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
-  producer_ptr producer,
-  model::batch_identity bid,
-  model::record_batch batch,
-  raft::replicate_options opts,
-  ss::lw_shared_ptr<available_promise<>> enqueued,
-  ssx::semaphore_units& units,
   producer_previously_known known_producer) {
     vassert(opts.expected_term.has_value(), "expected term must be set");
     // Check if the producer bumped the epoch and reset accordingly.
@@ -1162,53 +1108,91 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
           bid,
           opts.expected_term.value());
     }
+
+    // Perform the replication, capturing its outcome. Any error falls through
+    // to the shared error handling below (barrier / step down). Merging what
+    // used to be a separate do_idempotent_replicate() coroutine into this one
+    // avoids a coroutine-frame allocation on every idempotent produce.
+    result<kafka_result> result = cluster::errc::timeout;
     auto request = producer->try_emplace_request(
       bid, opts.expected_term.value(), skip_sequence_checks);
     if (!request) {
-        co_return request.error();
-    }
-    auto req_ptr = request.value();
-    if (req_ptr->state() != request_state::initialized) {
+        result = request.error();
+    } else if (
+      auto req_ptr = request.value();
+      req_ptr->state() != request_state::initialized) {
         // request already in progress/ completed.
-        co_return co_await req_ptr->result();
+        result = co_await req_ptr->result();
+    } else {
+        req_ptr->mark_request_in_progress();
+        auto stages = _raft->replicate_in_stages(std::move(batch), opts);
+        auto req_enqueued = co_await ss::coroutine::as_future(
+          std::move(stages.request_enqueued));
+        if (req_enqueued.failed()) {
+            auto ex = req_enqueued.get_exception();
+            vlog(
+              _ctx_log.warn,
+              "replication failed, request enqueue returned error: {}",
+              ex);
+            req_ptr->set_error(cluster::errc::replication_error);
+            result = cluster::errc::replication_error;
+        } else {
+            units.return_all();
+            enqueued->set_value();
+            auto replicated = co_await ss::coroutine::as_future(
+              std::move(stages.replicate_finished));
+            if (replicated.failed()) {
+                auto ex = replicated.get_exception();
+                vlog(_ctx_log.warn, "replication failed: {}", ex);
+                req_ptr->set_error(cluster::errc::replication_error);
+                result = cluster::errc::replication_error;
+            } else if (auto r = replicated.get(); r.has_error()) {
+                vlog(_ctx_log.warn, "replication failed: {}", r.error());
+                req_ptr->set_error(r.error());
+                result = r.error();
+            } else {
+                // translate to kafka offset.
+                result = kafka_result{
+                  .last_offset = from_log_offset(r.value().last_offset),
+                  .last_term = r.value().last_term};
+                req_ptr->set_value(result.value());
+            }
+        }
     }
 
-    req_ptr->mark_request_in_progress();
-    auto stages = _raft->replicate_in_stages(std::move(batch), opts);
-    auto req_enqueued = co_await ss::coroutine::as_future(
-      std::move(stages.request_enqueued));
-    if (req_enqueued.failed()) {
-        auto ex = req_enqueued.get_exception();
-        vlog(
-          _ctx_log.warn,
-          "replication failed, request enqueue returned error: {}",
-          ex);
-        req_ptr->set_error(cluster::errc::replication_error);
-        co_return cluster::errc::replication_error;
+    if (result) {
+        co_return result.value();
     }
-    units.return_all();
-    enqueued->set_value();
-    auto replicated = co_await ss::coroutine::as_future(
-      std::move(stages.replicate_finished));
-    if (replicated.failed()) {
-        auto ex = replicated.get_exception();
-        vlog(_ctx_log.warn, "replication failed: {}", ex);
-        req_ptr->set_error(cluster::errc::replication_error);
-        co_return cluster::errc::replication_error;
+
+    vlog(
+      _ctx_log.trace,
+      "error from idempotent replicate: {}, pid: {}, range: [{}, {}]",
+      result.error(),
+      bid.pid,
+      bid.first_seq,
+      bid.last_seq);
+    if (result.error() == cluster::errc::sequence_out_of_order) {
+        // release the lock so it is not held for the duration of the
+        // barrier, other requests can make progress if they are
+        // in the right sequence.
+        units.return_all();
+        // Ensure we are actually the leader and request didn't
+        // ooosn on a stale state. If we are not the leader return
+        // a retryable error code to the client.
+        auto barrier = co_await _raft->linearizable_barrier();
+        if (!barrier) {
+            co_return cluster::errc::not_leader;
+        }
+    } else {
+        // if the request enqueue failed, its important to step down
+        // under units scope so that the next request in the pipeline
+        // fails on sync.
+        if (_raft->is_leader() && _raft->term() == opts.expected_term.value()) {
+            co_await _raft->step_down(
+              "Failed replication during idempotent replicate.");
+        }
     }
-    auto result = replicated.get();
-    if (result.has_error()) {
-        vlog(_ctx_log.warn, "replication failed: {}", result.error());
-        req_ptr->set_error(result.error());
-        co_return result.error();
-    }
-    // translate to kafka offset.
-    auto kafka_offset = from_log_offset(result.value().last_offset);
-    auto term = result.value().last_term;
-    auto final_result = kafka_result{
-      .last_offset = kafka_offset, .last_term = term};
-    req_ptr->set_value(final_result);
-    co_return final_result;
+    co_return result.error();
 }
 
 ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
