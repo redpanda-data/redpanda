@@ -94,3 +94,28 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "open_object_test",
+    timeout = "short",
+    srcs = [
+        "open_object_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_io:admission_control_types",
+        "//src/v/cloud_topics/level_one/common:fake_io",
+        "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/cloud_topics/level_one/common:object_handle",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/common:open_object",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/storage:record_batch_utils",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "@abseil-cpp//absl/container:btree",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

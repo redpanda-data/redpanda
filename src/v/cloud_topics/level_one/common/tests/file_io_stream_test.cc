@@ -267,55 +267,17 @@ TEST_F(l1_file_io_stream_test, streaming_read_early_close_does_not_hang) {
     stream.close().get();
 }
 
-TEST_F(l1_file_io_stream_test, streaming_read_abort_surfaces_as_error) {
-    auto oid = l1::create_object_id();
-    // Spans several get() reads so buffered bytes remain when we abort.
-    const ss::sstring body(4_MiB, 'x');
-    upload(oid, body);
-
-    ss::abort_source as;
-    l1::object_extent extent{.id = oid, .position = 0, .size = body.size()};
-    auto stream_res = _io
-                        ->read_object(
-                          extent,
-                          &as,
-                          cloud_io::group_id::default_group,
-                          /*skip_cache=*/true)
-                        .get();
-    ASSERT_TRUE(stream_res.has_value());
-    auto stream = std::move(stream_res).value();
-
-    // Consume one chunk, then abort. The remainder of the read must fail with
-    // an exception rather than terminating as a (truncated) clean end-of-stream
-    // -- otherwise a cancelled maintenance read could be committed as if it had
-    // read the whole extent.
-    auto first = stream.read().get();
-    EXPECT_FALSE(first.empty());
-    as.request_abort();
-
-    EXPECT_THROW(
-      {
-          while (!stream.read().get().empty()) {
-          }
-      },
-      ss::abort_requested_exception);
-    stream.close().get();
-}
-
-TEST_F(l1_file_io_stream_test, streaming_read_chunks_large_object) {
-    // Pin the chunk size so the test is independent of the configured
-    // default: a read larger than one chunk must be served as several ranged
-    // GETs (each releasing the lease) and reassembled in order.
-    static constexpr size_t chunk_size = 1_MiB;
-    scoped_config cfg;
-    cfg.get("cloud_topics_l1_streaming_read_chunk_size").set_value(chunk_size);
-    const size_t total = 2 * chunk_size + 512_KiB; // spans 3 chunks
+TEST_F(l1_file_io_stream_test, streaming_read_issues_single_ranged_get) {
+    // read_object is a single-range primitive: a skip_cache read serves the
+    // whole requested extent as ONE ranged GET, reassembled in order.
+    // Chunking (splitting a read into several bounded GETs) is applied a layer
+    // up in open_object, which calls read_object once per chunk -- so it is
+    // covered end-to-end there, not here.
+    const size_t total = 2_MiB + 512_KiB;
 
     auto oid = l1::create_object_id();
     // Position-dependent (ASCII, so the UTF8 drain() accepts it) content so a
-    // misordered or truncated chunk is caught by the comparison below: the
-    // chunk size is not a multiple of 26, so an out-of-order chunk breaks the
-    // pattern at the seam.
+    // misordered or truncated read is caught by the comparison below.
     ss::sstring body(total, '\0');
     for (size_t i = 0; i < total; ++i) {
         body[i] = static_cast<char>('a' + (i % 26));
@@ -337,8 +299,8 @@ TEST_F(l1_file_io_stream_test, streaming_read_chunks_large_object) {
     EXPECT_EQ(contents, body);
     EXPECT_EQ(is_cached(extent), cloud_io::cache_element_status::not_available);
 
-    // ceil(total / chunk_size) ranged GETs, one per chunk.
+    // Exactly one ranged GET for the whole extent.
     auto gets = get_requests(
       [](const http_test_utils::request_info& r) { return r.method == "GET"; });
-    EXPECT_EQ(gets.size(), 3);
+    EXPECT_EQ(gets.size(), 1);
 }

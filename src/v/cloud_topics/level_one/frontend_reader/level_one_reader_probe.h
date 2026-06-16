@@ -17,10 +17,6 @@ class level_one_reader_probe {
 public:
     level_one_reader_probe();
 
-    void register_footer_read(size_t bytes_requested) {
-        _footer_bytes_read += bytes_requested;
-    }
-
     void register_bytes_read(size_t bytes_read) { _bytes_read += bytes_read; }
 
     void register_bytes_skipped(size_t bytes_skipped) {
@@ -30,7 +26,6 @@ public:
 private:
     void setup_metrics();
 
-    uint64_t _footer_bytes_read{0};
     uint64_t _bytes_read{0};
     uint64_t _bytes_skipped{0};
 

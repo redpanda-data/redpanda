@@ -11,6 +11,7 @@
 
 #include "metrics/metrics.h"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace cloud_topics::l1 {
@@ -24,12 +25,16 @@ public:
     void register_cache_miss() { ++_cache_misses; }
     void register_concurrent_read_merge() { ++_concurrent_read_merges; }
 
+    void register_footer_read(size_t bytes) { _footer_bytes_read += bytes; }
+
 private:
     void setup_metrics();
 
     uint64_t _reads{0};
     uint64_t _cache_misses{0};
     uint64_t _concurrent_read_merges{0};
+
+    uint64_t _footer_bytes_read{0};
 
     metrics::internal_metric_groups _metrics;
 };

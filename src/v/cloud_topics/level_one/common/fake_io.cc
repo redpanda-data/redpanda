@@ -116,8 +116,16 @@ fake_io::read_object(
   ss::abort_source*,
   [[maybe_unused]] cloud_io::group_id gid,
   // fake_io keeps everything in memory and never caches, so it is always
-  // effectively a streaming read regardless of this flag.
-  [[maybe_unused]] bool skip_cache) {
+  // effectively a streaming read regardless of this flag. It is still recorded
+  // so tests can assert how open_object chunks a read and whether it bypasses
+  // the cache.
+  bool skip_cache) {
+    _read_object_calls.push_back(
+      read_object_call{
+        .position = extent.position,
+        .size = extent.size,
+        .skip_cache = skip_cache,
+        .imported = extent.imported.has_value()});
     co_return get_object(extent.id)
       .transform(
         [&extent](
