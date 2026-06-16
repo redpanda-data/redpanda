@@ -544,10 +544,12 @@ class ManyPartitionsTest(PreallocNodesTest):
             "hits",
             "misses",
             "readers_evicted",
-            # CORE-15812 miss-reason breakdown: offset-mismatch (over-read, A)
+            # CORE-15812 miss-reason breakdown: offset_mismatch (over-read, A)
             # vs evicted_eos (frontier-EOS, B) vs evicted_size (offset-mismatch
-            # pileup, A).
-            "misses_offset_mismatch",
+            # pileup, A). NB: "offset_mismatch" deliberately omits a "misses"
+            # prefix so the metrics substring matcher doesn't conflate it with
+            # the "misses" counter.
+            "offset_mismatch",
             "evicted_eos",
             "evicted_not_reusable",
             "evicted_size",
@@ -607,7 +609,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"hits={cache_sum('hits')} "
                     f"misses={cache_sum('misses')} "
                     f"evicted={cache_sum('readers_evicted')} "
-                    f"miss_offset_mismatch={cache_sum('misses_offset_mismatch')} "
+                    f"miss_offset_mismatch={cache_sum('offset_mismatch')} "
                     f"evicted_eos={cache_sum('evicted_eos')} "
                     f"evicted_not_reusable={cache_sum('evicted_not_reusable')} "
                     f"evicted_size={cache_sum('evicted_size')}"

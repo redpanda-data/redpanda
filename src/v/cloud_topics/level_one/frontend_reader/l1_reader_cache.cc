@@ -70,7 +70,7 @@ std::optional<model::record_batch_reader> l1_reader_cache::get_reader(
     if (it == _readers.end()) {
         ++_cache_misses;
         if (saw_tidp) {
-            ++_misses_offset_mismatch;
+            ++_offset_mismatch;
         }
         return std::nullopt;
     }
@@ -293,8 +293,8 @@ void l1_reader_cache::setup_metrics() {
             "L1 readers evicted from the cache (size limit or idle timeout)."))
           .aggregate(aggregate_labels),
         sm::make_counter(
-          "misses_offset_mismatch",
-          [this] { return _misses_offset_mismatch; },
+          "offset_mismatch",
+          [this] { return _offset_mismatch; },
           sm::description(
             "Cache misses where a reader for the partition was "
             "cached at a different offset (over-read)."))
