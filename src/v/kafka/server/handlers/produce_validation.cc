@@ -147,16 +147,15 @@ void maybe_set_max_timestamp(
 // Invoking this function shows that iteration over the records within the batch
 // is possible (i.e format validation). For corrupted batches, an
 // `INVALID_RECORD` error code and message are returned.
+template<typename Func>
 std::optional<error_code_and_msg> iterate_over_records(
-  const model::record_batch& b,
-  ss::noncopyable_function<ss::stop_iteration(model::record_metadata)>&& f,
-  bool is_strict_validation = false) {
+  const model::record_batch& b, Func&& f, bool is_strict_validation = false) {
     dassert(
       !b.compressed(),
       "Cannot iterate over records within a compressed batch.");
 
     try {
-        b.for_each_record_metadata(std::move(f), is_strict_validation);
+        b.for_each_record_metadata(std::forward<Func>(f), is_strict_validation);
     } catch (const std::exception& e) {
         vlog(
           klog.error,
