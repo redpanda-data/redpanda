@@ -157,8 +157,16 @@ ss::future<> replicate_entries_stm::dispatch_remote_append_entries(vnode id) {
 }
 
 ss::future<result<storage::append_result>>
-replicate_entries_stm::append_to_self() {
-    return share_batches()
+replicate_entries_stm::append_to_self(bool can_move_batches) {
+    // With no followers the original _batches are never read again after this
+    // append (the dispatch loop only flushes the leader log), so move them
+    // straight into the appender and skip the per-batch share() copy.
+    auto batches_f
+      = can_move_batches
+          ? ss::make_ready_future<chunked_vector<model::record_batch>>(
+              std::exchange(_batches, {}))
+          : share_batches();
+    return std::move(batches_f)
       .then([this](chunked_vector<model::record_batch> batches) mutable {
           vlog(_ctxlog.trace, "Self append entries - {}", _meta);
 
@@ -266,14 +274,17 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
     absl::InlinedVector<vnode, 5> replicas;
     _ptr->config().for_each_replica(
       [&replicas](const vnode& rni) { replicas.push_back(rni); });
+    bool has_followers = false;
     for (const auto& rni : replicas) {
         // suppress follower heartbeat, before appending to self log
         if (rni != _ptr->_self) {
+            has_followers = true;
             _inflight_appends.emplace(rni, _ptr->track_append_inflight(rni));
         }
     }
     _units = ss::make_lw_shared<units_t>(std::move(u));
-    _append_result = co_await append_to_self();
+    _append_result = co_await append_to_self(
+      /*can_move_batches=*/!has_followers);
 
     if (!_append_result || _append_result->has_error()) {
         co_return build_replicate_result();

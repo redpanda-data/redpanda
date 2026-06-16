@@ -107,8 +107,12 @@ private:
       process_result(raft::errc, model::offset, model::term_id);
     bool should_skip_follower_request(vnode);
     clock_type::time_point append_entries_timeout();
-    /// This append will happen under the lock
-    ss::future<result<storage::append_result>> append_to_self();
+    /// This append will happen under the lock. When can_move_batches is true
+    /// the entries are moved straight into the appender instead of being
+    /// shared, which is safe only when there are no followers that would still
+    /// need their own copy.
+    ss::future<result<storage::append_result>>
+    append_to_self(bool can_move_batches);
 
     result<replicate_result> build_replicate_result() const;
 
