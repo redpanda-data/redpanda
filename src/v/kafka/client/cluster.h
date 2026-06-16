@@ -42,6 +42,14 @@ public:
     ~cluster() noexcept = default;
 
     ss::future<> start();
+
+    /// Abort in-flight work without draining it. Synchronous.
+    void shutdown_input();
+
+    /// Drain background work and stop the brokers.
+    ss::future<> drain();
+
+    /// Equivalent to shutdown_input() followed by drain().
     ss::future<> stop();
 
     /**

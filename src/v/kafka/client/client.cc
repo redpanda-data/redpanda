@@ -93,6 +93,11 @@ ss::future<> client::stop() noexcept {
         co_return;
     }
     _as.request_abort();
+    // Shutdown input within the `_cluster` first before trying to close any
+    // `gate`s. Otherwise, there is the potential to deadlock (`gate` waiting on
+    // hung request, hung request waiting on `_cluster`'s `abort_source`,
+    // `abort_source` waiting for `gate` to be closed).
+    _cluster->shutdown_input();
     co_await catch_and_log(_logger, [this]() { return _producer.stop(); });
     _cluster->unregister_metadata_cb(_metadata_callback_id);
     co_await _gate.close();
@@ -106,7 +111,7 @@ ss::future<> client::stop() noexcept {
             });
         }
     }
-    co_await catch_and_log(_logger, [this]() { return _cluster->stop(); });
+    co_await catch_and_log(_logger, [this]() { return _cluster->drain(); });
 }
 
 void client::on_metadata_update(const metadata_update& res) {
@@ -147,6 +152,12 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
     return external_mitigate_error(ex).handle_exception(
       [this](std::exception_ptr ex) {
           _gate.check();
+          // Early log & exit on shutdown exceptions
+          if (ssx::is_shutdown_exception(ex)) {
+              vlog(_logger.debug, "shutdown exception {}", ex);
+              return ss::make_exception_future(ex);
+          }
+
           try {
               std::rethrow_exception(ex);
           } catch (const broker_error& ex) {
@@ -199,8 +210,6 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
                   vlog(_logger.warn, "topic_error: {}", ex);
                   return ss::make_exception_future(ex);
               }
-          } catch (const ss::gate_closed_exception&) {
-              vlog(_logger.debug, "gate_closed_exception");
           } catch (const std::system_error& ex) {
               if (net::is_reconnect_error(ex)) {
                   vlog(_logger.debug, "system_error: {}", ex);
@@ -209,8 +218,6 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
                   vlog(_logger.warn, "system_error: {}", ex);
                   return ss::make_exception_future(ex);
               }
-          } catch (const ss::abort_requested_exception& ex) {
-              vlog(_logger.debug, "abort_requested_exception: {}", ex);
           } catch (const std::exception& ex) {
               // TODO(Ben): Probably vassert
               vlog(_logger.error, "unknown exception: {}", ex);

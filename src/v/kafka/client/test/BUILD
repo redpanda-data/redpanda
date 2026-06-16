@@ -47,6 +47,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster:topic_configuration",
+        "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/kafka/client:brokers",
         "//src/v/kafka/client:logger",
@@ -451,6 +452,25 @@ redpanda_cc_gtest(
         ":cluster_mock",
         "//src/v/kafka/client:brokers",
         "//src/v/kafka/client:cluster",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "client_stop_test",
+    timeout = "short",
+    srcs = [
+        "client_stop_test.cc",
+    ],
+    deps = [
+        ":utils",
+        "//src/v/kafka/client",
+        "//src/v/kafka/client:configuration",
+        "//src/v/kafka/protocol:metadata",
+        "//src/v/model",
+        "//src/v/test_utils:async",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
