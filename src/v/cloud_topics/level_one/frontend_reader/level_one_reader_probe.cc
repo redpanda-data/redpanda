@@ -29,10 +29,6 @@ void level_one_reader_probe::setup_metrics() {
       prometheus_sanitize::metrics_name("cloud_topics_level_one_reader"),
       {
         sm::make_counter(
-          "footer_read_bytes",
-          [this] { return _footer_bytes_read; },
-          sm::description("Number of footer bytes read by L1 readers.")),
-        sm::make_counter(
           "read_bytes",
           [this] { return _bytes_read; },
           sm::description("Number of bytes read by L1 readers.")),

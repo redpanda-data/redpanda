@@ -60,6 +60,12 @@ public:
       cloud_io::group_id g,
       bool skip_cache) override;
 
+    ss::future<std::expected<iobuf, errc>> fetch_native_footer(
+      object_extent,
+      ss::abort_source*,
+      cloud_io::group_id g,
+      bool skip_cache) override;
+
     ss::future<std::expected<void, errc>>
     delete_objects(chunked_vector<object_id>, ss::abort_source*) override;
 

@@ -95,9 +95,11 @@ public:
       cloud_io::group_id g,
       bool skip_cache = false) = 0;
 
-    // The same as `read_object` except that instead of returning an input
-    // stream, the data is fully buffered into an `iobuf`.
-    virtual ss::future<std::expected<iobuf, errc>> read_object_as_iobuf(
+    // Read a native L1 object's footer region (the passed extent) fully
+    // buffered into an `iobuf`, so open_object can parse the footer index.
+    // Like read_object, may be served from or populate the cache unless
+    // `skip_cache` is set.
+    virtual ss::future<std::expected<iobuf, errc>> fetch_native_footer(
       object_extent,
       ss::abort_source*,
       cloud_io::group_id g,

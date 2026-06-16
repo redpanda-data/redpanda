@@ -14,6 +14,8 @@
 #include "bytes/iobuf.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 
+#include <vector>
+
 namespace cloud_topics::l1 {
 
 // The IO implementation that is entirely in-memory, used for testing.
@@ -51,8 +53,21 @@ public:
     // Return a list of the object IDs that haven't been removed.
     chunked_vector<object_id> list_objects() const;
 
+    /// A recorded read_object call, so tests can assert how open_object chunks
+    /// a read (chunk size / chunk alignment) and whether it bypasses the cache.
+    struct read_object_call {
+        size_t position;
+        size_t size;
+        bool skip_cache;
+        bool imported;
+    };
+    const std::vector<read_object_call>& read_object_calls() const {
+        return _read_object_calls;
+    }
+
 private:
     absl::btree_map<object_id, iobuf> _storage;
+    std::vector<read_object_call> _read_object_calls;
 };
 
 } // namespace cloud_topics::l1

@@ -42,6 +42,10 @@ void file_io_probe::setup_metrics() {
           sm::description(
             "Cache misses that joined an in-flight download for the "
             "same extent.")),
+        sm::make_counter(
+          "footer_read_bytes",
+          [this] { return _footer_bytes_read; },
+          sm::description("Native L1 object footer bytes read by L1 readers.")),
       });
 }
 

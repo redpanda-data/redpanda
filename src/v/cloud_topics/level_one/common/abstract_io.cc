@@ -18,7 +18,7 @@ ss::future<ss::input_stream<char>> io::read_file(staging_file* file) {
     return file->input_stream();
 }
 
-ss::future<std::expected<iobuf, io::errc>> io::read_object_as_iobuf(
+ss::future<std::expected<iobuf, io::errc>> io::fetch_native_footer(
   object_extent extent,
   ss::abort_source* as,
   cloud_io::group_id gid,

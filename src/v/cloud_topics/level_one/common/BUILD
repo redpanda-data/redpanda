@@ -102,6 +102,37 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "object_handle",
+    srcs = ["object_handle.cc"],
+    hdrs = ["object_handle.h"],
+    deps = [
+        ":abstract_io",
+        ":object",
+        ":object_id",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "open_object",
+    srcs = ["open_object.cc"],
+    hdrs = ["open_object.h"],
+    implementation_deps = [
+        ":chunk_data_source",
+        ":object",
+        "//src/v/cloud_topics:logger",
+        "//src/v/config",
+    ],
+    deps = [
+        ":abstract_io",
+        ":object_handle",
+        ":object_id",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "file_io",
     srcs = [
         "file_io.cc",
@@ -113,6 +144,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/base",
+        "//src/v/bytes:iostream",
     ],
     visibility = [
         "//src/v/cloud_topics:__pkg__",
@@ -144,7 +176,6 @@ redpanda_cc_library(
     deps = [
         ":abstract_io",
         ":object_id",
-        ":object_utils",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
         "//src/v/cloud_storage_clients",
