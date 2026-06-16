@@ -1,6 +1,24 @@
 load("//bazel:test.bzl", "redpanda_cc_gtest")
 
 redpanda_cc_gtest(
+    name = "object_index_test",
+    timeout = "short",
+    srcs = [
+        "object_index_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_storage:offset_index",
+        "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/cloud_topics/level_one/common:object_handle",
+        "//src/v/cloud_topics/level_one/common:ts_object",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "object_test",
     timeout = "short",
     srcs = [
