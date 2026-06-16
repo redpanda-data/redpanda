@@ -26,6 +26,11 @@
 
 namespace cloud_topics::l1 {
 
+// Forward declaration — full definition in object_handle.h.
+// Do not #include object_handle.h here: object_handle.h already includes
+// abstract_io.h for io::errc, so including it here creates a cycle.
+class object_handle;
+
 // An abstraction for a local file that is used for staging uploads to object
 // storage.
 class staging_file {
@@ -125,9 +130,11 @@ public:
     virtual ss::future<std::expected<chunked_vector<model::tx_range>, errc>>
     fetch_ts_tx(object_extent, ss::abort_source*) = 0;
 
-    // Delete the specified objects from object storage.
+    // Delete the specified objects from object storage. An entry with a ts_path
+    // is addressed by that tiered-storage segment path; otherwise the native L1
+    // object path is used. Both live in the one configured object bucket.
     virtual ss::future<std::expected<void, errc>>
-    delete_objects(chunked_vector<object_id>, ss::abort_source*) = 0;
+    delete_objects(chunked_vector<object_location>, ss::abort_source*) = 0;
 
     // Create a multipart upload for streaming data directly to object storage.
     virtual ss::future<

@@ -128,6 +128,71 @@ public:
         ASSERT_TRUE_CORO(repl_res.has_value());
     }
 
+    // Registers a single-extent imported object covering [base, last] whose
+    // backing segment is the TS-bucket object at ts_path (injected here).
+    // Unlike add_objects, an imported object has no L1 blob and is not
+    // preregistered.
+    ss::future<> add_imported_object(
+      simple_stm* stm,
+      model::topic_id_partition tp,
+      const ts_segment_path& ts_path,
+      kafka::offset base,
+      kafka::offset last) {
+        _io.put_ts_segment(ts_path, iobuf{});
+
+        new_object obj;
+        obj.oid = create_object_id();
+        obj.footer_pos = 0;
+        obj.object_size = 500;
+        obj.imported_ts_location = imported_ts_object_location{
+          .ts_path = ts_path};
+        obj.extent_metas[tp.topic_id][tp.partition] = new_object::metadata{
+          .base_offset = base,
+          .last_offset = last,
+          .max_timestamp = ts{10000},
+          .filepos = 0,
+          .len = 500,
+          .imported_ts_info = imported_ts_segment_info{},
+        };
+        chunked_vector<new_object> new_objects;
+        new_objects.push_back(std::move(obj));
+        term_state_update_t terms;
+        terms[tp].emplace_back(
+          term_start{.term_id = model::term_id{0}, .start_offset = base});
+
+        // Mark the partition migrating so the metastore adopts its log at the
+        // imported extents' (non-zero) base, then import via the normal
+        // add_objects path (imported objects skip pre-registration).
+        {
+            auto sync_res = co_await stm->sync(10s);
+            ASSERT_TRUE_CORO(sync_res.has_value());
+            set_migrating_update mig{.tp = tp, .migrating = true};
+            storage::record_batch_builder b(
+              model::record_batch_type::l1_stm, model::offset{0});
+            b.add_raw_kv(
+              serde::to_iobuf(set_migrating_update::key),
+              serde::to_iobuf(std::move(mig)));
+            auto r = co_await stm->replicate_and_wait(
+              sync_res.value(), std::move(b).build(), never_abort);
+            ASSERT_TRUE_CORO(r.has_value());
+        }
+
+        auto sync_res = co_await stm->sync(10s);
+        ASSERT_TRUE_CORO(sync_res.has_value());
+        add_objects_update update{
+          .new_objects = std::move(new_objects),
+          .new_terms = std::move(terms),
+        };
+        storage::record_batch_builder builder(
+          model::record_batch_type::l1_stm, model::offset{0});
+        builder.add_raw_kv(
+          serde::to_iobuf(add_objects_update::key),
+          serde::to_iobuf(std::move(update)));
+        auto repl_res = co_await stm->replicate_and_wait(
+          sync_res.value(), std::move(builder).build(), never_abort);
+        ASSERT_TRUE_CORO(repl_res.has_value());
+    }
+
     size_t count_objects() { return _io.list_objects().size(); }
 
     fake_io _io;
@@ -188,6 +253,30 @@ TEST_F(GarbageCollectorTest, TestGarbageCollectPartiallyRemovedObjects) {
     ASSERT_EQ(5, count_objects());
 }
 
+TEST_F(GarbageCollectorTest, TestGarbageCollectImportedObject) {
+    initialize_state_machines(1).get();
+    wait_for_leader(5s).get();
+    auto stm = get_stm<0>(*nodes().begin()->second);
+
+    auto tp = make_tp(0);
+    const ts_segment_path ts_path{"imported/seg-100-104.log"};
+    add_imported_object(stm.get(), tp, ts_path, o{100}, o{104}).get();
+    EXPECT_EQ(1, stm->state().objects.size());
+    EXPECT_TRUE(_io.has_ts_segment(ts_path));
+
+    // Trim past the imported extent so the object becomes unreferenced.
+    set_start_offset(stm.get(), tp, o{105}).get();
+
+    garbage_collector gc(stm.get(), &_io);
+    auto gc_res = gc.remove_unreferenced_objects(&never_abort).get();
+    ASSERT_TRUE(gc_res.has_value());
+
+    // The object row is gone, and its backing TS-bucket segment is deleted
+    // (routed by ts_path, not the object id).
+    EXPECT_EQ(0, stm->state().objects.size());
+    EXPECT_FALSE(_io.has_ts_segment(ts_path));
+}
+
 // A fake_io wrapper that fails on delete_objects
 class failing_io : public io {
 public:
@@ -222,8 +311,8 @@ public:
         return underlying_->fetch_ts_tx(ext, as);
     }
 
-    ss::future<std::expected<void, errc>>
-    delete_objects(chunked_vector<object_id>, ss::abort_source*) override {
+    ss::future<std::expected<void, errc>> delete_objects(
+      chunked_vector<object_location>, ss::abort_source*) override {
         return ss::make_ready_future<std::expected<void, errc>>(
           std::unexpected(errc::cloud_op_error));
     }
