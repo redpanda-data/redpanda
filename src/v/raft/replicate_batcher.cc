@@ -109,49 +109,66 @@ replicate_batcher::cache_and_wait_for_result(
   ss::promise<> enqueued,
   chunked_vector<model::record_batch> r,
   replicate_options opts) {
+    if (unlikely(_bg.is_closed())) {
+        enqueued.set_exception(ss::gate_closed_exception());
+        return ss::make_ready_future<result<replicate_result>>(
+          errc::replicate_batcher_cache_error);
+    }
+    auto holder = _bg.hold();
+    auto item_f = do_cache_with_backpressure(std::move(r), opts);
+    // Caching almost always completes synchronously (the accumulator semaphore
+    // is available), so handle that inline and avoid a coroutine frame on every
+    // replicate. Backpressure (or failure) falls back to the slow coroutine.
+    if (unlikely(!item_f.available() || item_f.failed())) {
+        return wait_for_cached_result(
+          std::move(enqueued), std::move(item_f), std::move(holder));
+    }
+    auto item = item_f.get();
+    // now request is already enqueued, we can release first stage future
+    enqueued.set_value();
+    schedule_flush();
+    return item->get_future().finally([h = std::move(holder)] {});
+}
+
+void replicate_batcher::schedule_flush() {
+    /**
+     * Dispatching flush in a background.
+     *
+     * The batcher mutex may be grabbed without the timeout as each item has its
+     * own timeout timer. The shutdown related exceptions may be ignored here as
+     * all pending item promises will be completed in replicate batcher stop
+     * method.
+     */
+    if (_flush_pending) {
+        return;
+    }
+    _flush_pending = true;
+    ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
+        return _lock.get_units()
+          .then([this](auto units) { return flush(std::move(units), false); })
+          .handle_exception([this](const std::exception_ptr& e) {
+              // an exception here is quite unlikely, since the flush() method
+              // generally catches all its exceptions and propagates them to the
+              // promises associated with the items being flushed
+              vlog(_ptr->_ctxlog.error, "Error in background flush: {}", e);
+          });
+    });
+}
+
+ss::future<result<replicate_result>> replicate_batcher::wait_for_cached_result(
+  ss::promise<> enqueued,
+  ss::future<item_ptr> item_f,
+  ss::gate::holder holder) {
     item_ptr item;
     try {
-        auto holder = _bg.hold();
-        item = co_await do_cache_with_backpressure(std::move(r), opts);
-
-        // now request is already enqueued, we can release first
-        // stage future
+        item = co_await std::move(item_f);
         enqueued.set_value();
-
-        /**
-         * Dispatching flush in a background.
-         *
-         * The batcher mutex may be grabbed without the timeout as each item
-         * has its own timeout timer. The shutdown related exceptions may be
-         * ignored here as all pending item promises will be completed in
-         * replicate batcher stop method
-         *
-         */
-        if (!_flush_pending) {
-            _flush_pending = true;
-            ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
-                return _lock.get_units()
-                  .then([this](auto units) {
-                      return flush(std::move(units), false);
-                  })
-                  .handle_exception([this](const std::exception_ptr& e) {
-                      // an exception here is quite unlikely, since the flush()
-                      // method generally catches all its exceptions and
-                      // propagates them to the promises associated with the
-                      // items being flushed
-                      vlog(
-                        _ptr->_ctxlog.error,
-                        "Error in background flush: {}",
-                        e);
-                  });
-            });
-        }
+        schedule_flush();
     } catch (...) {
         // exception in caching phase
         enqueued.set_to_current_exception();
         co_return errc::replicate_batcher_cache_error;
     }
-
     co_return co_await item->get_future();
 }
 

@@ -119,6 +119,16 @@ private:
       chunked_vector<model::record_batch> r,
       replicate_options);
 
+    // Slow path of cache_and_wait_for_result for when caching is delayed by
+    // backpressure (or fails).
+    ss::future<result<replicate_result>> wait_for_cached_result(
+      ss::promise<> enqueued,
+      ss::future<item_ptr> item_f,
+      ss::gate::holder holder);
+
+    // Dispatch a background flush if one is not already pending.
+    void schedule_flush();
+
     consensus* _ptr;
     ssx::semaphore _max_batch_size_sem;
     size_t _max_batch_size;
