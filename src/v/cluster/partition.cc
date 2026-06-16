@@ -423,37 +423,54 @@ kafka_stages partition::replicate_in_stages(
         }
     }
 
-    return stages_with_units(
-      hold_writes_enabled(),
-      [this,
-       bid = std::move(bid),
-       batch = std::move(batch),
-       opts = std::move(opts)]() mutable {
-          // Only idempotent and transactional batches need the rm_stm
-          // replicate path (sequence/fence tracking, transaction state, the
-          // sync + state lock). A plain produce carries no producer state, so
-          // route it straight to raft - the stm still observes the batch via
-          // apply() in log order, exactly as it would for a partition without
-          // an rm_stm. This avoids the rm_stm coroutine frames, the
-          // available_promise and the state-lock acquisition per produce.
-          if (_rm_stm && (bid.is_transactional || bid.is_idempotent())) {
-              return _rm_stm->replicate_in_stages(bid, std::move(batch), opts);
-          }
-          auto res = _raft->replicate_in_stages(std::move(batch), opts);
-          auto replicate_finished = res.replicate_finished.then(
-            [this](result<raft::replicate_result> r) {
-                if (!r) {
-                    return ret_t(r.error());
-                }
-                auto old_offset = r.value().last_offset;
-                auto term = r.value().last_term;
-                auto new_offset = kafka::offset(
-                  log()->from_log_offset(old_offset)());
-                return ret_t(kafka_result{new_offset, term});
-            });
-          return kafka_stages(
-            std::move(res.request_enqueued), std::move(replicate_finished));
-      });
+    auto stages_func = [this,
+                        bid = std::move(bid),
+                        batch = std::move(batch),
+                        opts = std::move(opts)]() mutable {
+        // Only idempotent and transactional batches need the rm_stm
+        // replicate path (sequence/fence tracking, transaction state, the
+        // sync + state lock). A plain produce carries no producer state, so
+        // route it straight to raft - the stm still observes the batch via
+        // apply() in log order, exactly as it would for a partition without
+        // an rm_stm. This avoids the rm_stm coroutine frames, the
+        // available_promise and the state-lock acquisition per produce.
+        if (_rm_stm && (bid.is_transactional || bid.is_idempotent())) {
+            return _rm_stm->replicate_in_stages(bid, std::move(batch), opts);
+        }
+        auto res = _raft->replicate_in_stages(std::move(batch), opts);
+        auto replicate_finished = res.replicate_finished.then(
+          [this](result<raft::replicate_result> r) {
+              if (!r) {
+                  return ret_t(r.error());
+              }
+              auto old_offset = r.value().last_offset;
+              auto term = r.value().last_term;
+              auto new_offset = kafka::offset(
+                log()->from_log_offset(old_offset)());
+              return ret_t(kafka_result{new_offset, term});
+          });
+        return kafka_stages(
+          std::move(res.request_enqueued), std::move(replicate_finished));
+    };
+
+    // The writes-enabled lock is almost always immediately available, so skip
+    // the stages_with_units coroutine frame: forward the inner stages directly
+    // and hold the lock until replication finishes.
+    auto units_f = hold_writes_enabled();
+    if (likely(units_f.available() && !units_f.failed())) {
+        auto maybe_units = units_f.get();
+        if (unlikely(!maybe_units.has_value())) {
+            return kafka_stages(
+              ss::now(),
+              ss::make_ready_future<result<kafka_result>>(maybe_units.error()));
+        }
+        auto stages = stages_func();
+        return kafka_stages(
+          std::move(stages.request_enqueued),
+          std::move(stages.replicate_finished)
+            .finally([u = std::move(maybe_units.value())] {}));
+    }
+    return stages_with_units(std::move(units_f), std::move(stages_func));
 }
 
 raft::group_id partition::group() const { return _raft->group(); }
