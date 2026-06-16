@@ -33,12 +33,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: src/transform-sdk/go/transform/go.sum
       - name: Build integration tests
         working-directory: src/transform-sdk/tests
+        env:
+          # setup-go@v6 defaults GOTOOLCHAIN=local; this module's go.mod
+          # requires a newer Go than the pinned GO_VERSION, so allow the
+          # toolchain to be fetched as it was under v5.
+          GOTOOLCHAIN: auto
         run: go test -c -o ./wasm-integration-test
       - name: Upload integration test binary
         uses: actions/upload-artifact@v4
@@ -51,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: src/transform-sdk/go/transform/go.sum
@@ -69,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: src/transform-sdk/go/transform/go.sum
