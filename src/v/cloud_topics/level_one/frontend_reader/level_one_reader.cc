@@ -9,6 +9,7 @@
  */
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 
+#include "cloud_topics/level_one/common/open_object.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
 #include "cloud_topics/level_one/metastore/retry.h"
 #include "cloud_topics/logger.h"
@@ -79,58 +80,6 @@ level_one_log_reader_impl::do_load_slice(
         set_end_of_stream();
         throw;
     }
-}
-
-ss::future<std::expected<std::monostate, l1::io::errc>>
-level_one_log_reader_impl::open_reader_at(
-  l1::object_id oid,
-  kafka::offset last_object_offset,
-  size_t extent_position,
-  size_t extent_size) {
-    l1::object_extent extent{
-      .id = oid,
-      .position = extent_position,
-      .size = extent_size,
-    };
-    // Choose the abort source for the read. Prefer the caller's, which always
-    // outlives the read. A skip_cache read streams in the background and
-    // outlives this call, so it can't fall back to the local abort source
-    // (it would dangle) and uses none; a cached read completes before we
-    // return, so the local fallback is safe there.
-    ss::abort_source default_abort_source;
-    ss::abort_source* abort_source = nullptr;
-    if (_config.abort_source) {
-        abort_source = &_config.abort_source.value().get();
-    } else {
-        vassert(
-          !_config.skip_cache,
-          "skip_cache reads require a caller-provided abort source");
-        abort_source = &default_abort_source;
-    }
-    auto stream_fut = co_await ss::coroutine::as_future(_io->read_object(
-      extent, abort_source, _config.group, _config.skip_cache));
-    if (stream_fut.failed()) {
-        auto ex = stream_fut.get_exception();
-        auto log_level = ssx::is_shutdown_exception(ex) ? ss::log_level::debug
-                                                        : ss::log_level::warn;
-        vlogl(
-          _log,
-          log_level,
-          "Exception opening stream for L1 object {}: {}",
-          oid,
-          ex);
-        std::rethrow_exception(ex);
-    }
-    auto stream_result = stream_fut.get();
-    if (!stream_result.has_value()) {
-        co_return std::unexpected(stream_result.error());
-    }
-    _current_stream = open_stream{
-      .oid = oid,
-      .last_object_offset = last_object_offset,
-      .reader = l1::object_reader::create(std::move(stream_result).value()),
-    };
-    co_return std::monostate{};
 }
 
 ss::future<model::record_batch_reader::storage_t>
@@ -290,6 +239,7 @@ ss::future<> level_one_log_reader_impl::fill_lookahead_buffer(
             .object_size = em.object_info->object_size,
             .first_offset = em.base_offset,
             .last_offset = em.last_offset,
+            .imported = em.object_info->imported,
           });
     }
 }
@@ -309,88 +259,45 @@ level_one_log_reader_impl::lookup_object_for_offset(
     auto& obj = obj_resp.value();
     vlog(_log.debug, "Found L1 object {} at offset {}", obj.oid, offset);
 
-    auto footer = co_await read_footer(
-      obj.oid, obj.footer_pos, obj.object_size);
-
-    co_return object_info{
-      .oid = obj.oid,
-      .footer = std::move(footer),
-      .last_offset = obj.last_offset,
-    };
-}
-
-ss::future<l1::footer> level_one_log_reader_impl::read_footer(
-  l1::object_id oid, size_t footer_pos, size_t object_size) {
-    size_t footer_total_size = object_size - footer_pos;
-    if (_probe != nullptr) {
-        _probe->register_footer_read(footer_total_size);
-    }
-
+    // For native objects: position = footer_pos, size = footer_total_size.
+    // For imported extents: footer_pos = 0, object_size = segment size, so
+    // size = segment_size, which ts_segment_index uses to bound seek results.
+    size_t footer_size = obj.object_size - obj.footer_pos;
     l1::object_extent extent{
-      .id = oid,
-      .position = footer_pos,
-      .size = footer_total_size,
+      .id = obj.oid,
+      .position = obj.footer_pos,
+      .size = footer_size,
+      .imported = obj.imported,
     };
 
     ss::abort_source default_abort_source;
-    auto* abort_source = _config.abort_source
-                           ? &_config.abort_source.value().get()
-                           : &default_abort_source;
-    auto read_fut = co_await ss::coroutine::as_future(_io->read_object_as_iobuf(
-      extent, abort_source, _config.group, _config.skip_cache));
-    if (read_fut.failed()) {
-        auto ex = read_fut.get_exception();
+    auto* as = _config.abort_source ? &_config.abort_source.value().get()
+                                    : &default_abort_source;
+
+    auto handle_fut = co_await ss::coroutine::as_future(
+      l1::open_object(*_io, extent, as, _config.group, _config.skip_cache));
+    if (handle_fut.failed()) {
+        auto ex = handle_fut.get_exception();
         auto log_level = ssx::is_shutdown_exception(ex) ? ss::log_level::debug
                                                         : ss::log_level::warn;
-        vlogl(
-          _log,
-          log_level,
-          "Exception opening stream for footer from object {} (pos {} object "
-          "size {}): {}",
-          oid,
-          extent.position,
-          object_size,
-          ex);
+        vlogl(_log, log_level, "Exception opening object {}: {}", obj.oid, ex);
         std::rethrow_exception(ex);
     }
-
-    auto read_result = read_fut.get();
-    if (!read_result.has_value()) {
-        vlog(
-          _log.warn,
-          "Failed to read footer from object {} (pos {} object size {}): {}",
-          oid,
-          extent.position,
-          object_size,
-          std::to_underlying(read_result.error()));
+    auto handle_result = handle_fut.get();
+    if (!handle_result.has_value()) {
         throw std::runtime_error(_log.format(
-          "Failed to read footer from object {} (pos {} size {}): {}",
-          oid,
-          extent.position,
-          object_size,
-          std::to_underlying(read_result.error())));
+          "Failed to open object {} (pos {} size {}): {}",
+          obj.oid,
+          obj.footer_pos,
+          obj.object_size,
+          std::to_underlying(handle_result.error())));
     }
 
-    // Parse the footer - we have the complete footer so this should succeed.
-    auto footer_result = co_await l1::footer::read(
-      std::move(read_result).value());
-
-    if (!std::holds_alternative<l1::footer>(footer_result)) {
-        vlog(
-          _log.error,
-          "Failed to parse footer from object {} despite reading complete "
-          "footer (pos {} object size {})",
-          oid,
-          extent.position,
-          object_size);
-        throw std::runtime_error(_log.format(
-          "Failed to parse footer from object {} (pos {} size {})",
-          oid,
-          extent.position,
-          object_size));
-    }
-
-    co_return std::get<l1::footer>(std::move(footer_result));
+    co_return object_info{
+      .oid = obj.oid,
+      .handle = std::move(*handle_result),
+      .last_offset = obj.last_offset,
+    };
 }
 
 ss::future<chunked_circular_buffer<model::record_batch>>
@@ -449,29 +356,26 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
   const object_info& object,
   kafka::offset offset,
   model::timeout_clock::time_point /*deadline*/) {
-    // When a timestamp hint is available, use the footer's timestamp index
-    // to narrow the seek position. Both offset and timestamp constraints
-    // must hold, so we start at whichever position is further into the
-    // file.
-    auto seek_res = [&] {
-        auto offset_seek = object.footer.file_position_before_kafka_offset(
-          _tidp, offset);
+    // Use the handle's index to seek. When a timestamp hint is available,
+    // take whichever position is further into the file.
+    auto seek_res = [&]() -> std::optional<l1::seek_result> {
+        auto offset_seek = object.handle->index().seek_to_offset(_tidp, offset);
         if (!_config.first_timestamp) {
             return offset_seek;
         }
-        auto time_seek = object.footer.file_position_before_max_timestamp(
+        auto time_seek = object.handle->index().seek_to_timestamp(
           _tidp, *_config.first_timestamp);
-        if (time_seek == l1::footer::npos) {
+        if (!time_seek) {
             return offset_seek;
         }
-        if (offset_seek == l1::footer::npos) {
+        if (!offset_seek) {
             return time_seek;
         }
-        return time_seek.file_position > offset_seek.file_position
+        return time_seek->file_position > offset_seek->file_position
                  ? time_seek
                  : offset_seek;
     }();
-    if (seek_res == l1::footer::npos) {
+    if (!seek_res) {
         // Perhaps this object spans offsets in the metastore but has
         // no data because of compaction.
         vlog(
@@ -483,23 +387,46 @@ level_one_log_reader_impl::materialize_batches_from_object_offset(
         };
     }
 
-    auto reader_result = co_await open_reader_at(
-      object.oid, object.last_offset, seek_res.file_position, seek_res.length);
+    // Use the read config's abort source, which the Kafka fetch path normally
+    // supplies; only readers built without one fall back to the impl-owned
+    // source. Not a local: the reader open_reader returns is persisted in
+    // _current_stream and consumed across later do_load_slice calls, so the
+    // abort source must outlive this call.
+    auto* as = _config.abort_source ? &_config.abort_source.value().get()
+                                    : &_fallback_read_abort_source;
+
+    auto reader_fut = co_await ss::coroutine::as_future(
+      object.handle->open_reader(*seek_res, as));
+    if (reader_fut.failed()) {
+        auto ex = reader_fut.get_exception();
+        vlog(
+          _log.error,
+          "Exception opening reader for L1 object {}: {}",
+          object.oid,
+          ex);
+        std::rethrow_exception(ex);
+    }
+    auto reader_result = reader_fut.get();
     if (!reader_result.has_value()) {
         vlog(
           _log.warn,
           "Failed to open stream for L1 object {} reading offset {}: {}",
           object.oid,
           offset,
-          reader_result.error());
+          std::to_underlying(reader_result.error()));
         co_await ss::coroutine::return_exception(
           std::runtime_error(_log.format(
             "Failed to open stream for L1 object {}: {}",
             object.oid,
-            reader_result.error())));
+            std::to_underlying(reader_result.error()))));
     }
 
-    // _current_stream is now populated by open_reader_at.
+    _current_stream = open_stream{
+      .oid = object.oid,
+      .last_object_offset = object.last_offset,
+      .reader = std::move(*reader_result),
+    };
+
     auto read_fut = co_await ss::coroutine::as_future(
       read_batches(*_current_stream->reader));
     if (read_fut.failed()) {

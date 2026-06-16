@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_one/common/file_io.h"
 
+#include "bytes/iostream.h"
 #include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/client.h"
@@ -20,7 +21,6 @@
 #include "config/configuration.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -96,117 +96,46 @@ struct one_time_stream_provider : public stream_provider {
 // A streaming download source for L1 objects that chunks downloads per
 // `chunk_size`. This may result in many GET requests per object download.
 //
-// The object's byte range is read one bounded chunk at a time. `get()` fully
-// buffers the next chunk via `download_stream` (a separate ranged GET), which
-// returns the lease to the pool as soon as the chunk's body has been read off
-// the connection. The buffered chunk is then served from memory, lease-free,
-// while subsequent `get()`s drain it; only once it is exhausted is the next
-// chunk fetched. Peak in-memory bytes and the connection-hold duration per read
-// are both bounded by `chunk_size`.
-class streaming_download_source final : public ss::data_source_impl {
-public:
-    // chunk_size bounds both the peak in-memory bytes held per read and the
-    // span of object bytes downloaded under a single held lease. _next_pos and
-    // _last_pos are initialized to inclusive byte ranges.
-    streaming_download_source(
-      cloud_io::remote* remote,
-      cloud_storage_clients::bucket_name bucket,
-      cloud_storage_clients::object_key key,
-      cloud_storage_clients::http_byte_range range,
-      ss::abort_source& as,
-      cloud_io::group_id gid,
-      size_t chunk_size)
-      : _remote(remote)
-      , _bucket(std::move(bucket))
-      , _key(std::move(key))
-      , _next_pos(range.first)
-      , _last_pos(range.second)
-      , _as(as)
-      , _gid(gid)
-      , _chunk_size(chunk_size) {}
+// Cache-bypassing ranged download of the object byte range [pos, pos+len) at
+// `key`, fully buffered into an input_stream. `download_stream` (a single
+// ranged GET) returns the lease to the pool as soon as the range body has been
+// read off the connection, before the buffered bytes are served -- so both the
+// peak in-memory bytes and the connection-hold duration are bounded by the
+// range length. Backs read_object's skip_cache path without populating the
+// cloud cache; the range is bounded because open_object invokes read_object
+// once per chunk. A download failure throws (rethrowing the original
+// exception, or a runtime_error for a non-success result), surfaced from the
+// caller's read of the returned stream.
+ss::future<std::expected<ss::input_stream<char>, io::errc>>
+download_range_bypassing_cache(
+  cloud_io::remote* remote,
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& key,
+  cloud_io::group_id gid,
+  size_t pos,
+  size_t len,
+  ss::abort_source* as) {
+    static constexpr auto timeout = 10s;
+    static constexpr auto backoff = 100ms;
+    retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);
 
-    streaming_download_source(const streaming_download_source&) = delete;
-    streaming_download_source&
-    operator=(const streaming_download_source&) = delete;
-    streaming_download_source(streaming_download_source&&) = delete;
-    streaming_download_source& operator=(streaming_download_source&&) = delete;
-    ~streaming_download_source() override = default;
-
-    ss::future<ss::temporary_buffer<char>> get() override {
-        while (true) {
-            _as.check();
-            if (!_current.empty()) {
-                auto buf = std::move(_current.front());
-                _current.pop_front();
-                co_return buf;
-            }
-            if (_next_pos > _last_pos) {
-                // An empty buffer signals end-of-stream.
-                co_return ss::temporary_buffer<char>();
-            }
-            co_await download_next_chunk();
-        }
-    }
-
-    ss::future<> close() override { return ss::now(); }
-
-private:
-    // Fetches the next chunk of the object's byte range into `_current`. The
-    // lease is released when `download_stream` returns, before the buffered
-    // chunk is served.
-    ss::future<> download_next_chunk() {
-        static constexpr auto timeout = 10s;
-        static constexpr auto backoff = 100ms;
-        const auto chunk_first = _next_pos;
-        const auto chunk_last = std::min(
-          chunk_first + _chunk_size - 1, _last_pos);
-        _next_pos = chunk_last + 1;
-        retry_chain_node root(_as, ss::lowres_clock::now() + timeout, backoff);
-
-        cloud_io::try_consume_stream consumer =
-          [this](uint64_t /*content_length*/, ss::input_stream<char> stream) {
-              return drain_chunk(std::move(stream));
-          };
-
-        auto result_fut = co_await ss::coroutine::as_future(
-          _remote->download_stream(
-            cloud_io::transfer_details{
-              .bucket = _bucket,
-              .key = _key,
-              .parent_rtc = root,
-            },
-            consumer,
-            "l1_stream_download",
-            /*acquire_hydration_units=*/true,
-            cloud_storage_clients::http_byte_range{chunk_first, chunk_last},
-            {},
-            _gid));
-        if (result_fut.failed()) {
-            std::rethrow_exception(result_fut.get_exception());
-        }
-        auto result = result_fut.get();
-        if (result != cloud_io::download_result::success) {
-            throw std::runtime_error(
-              fmt::format("L1 streaming download failed: {}", result));
-        }
-    }
-
-    // Reads a chunk's whole body into `_current`. Cleared up-front so that a
-    // retried download re-buffers from scratch rather than appending to a
-    // partially-read result.
-    ss::future<uint64_t> drain_chunk(ss::input_stream<char> stream) {
-        _current.clear();
+    iobuf buf;
+    cloud_io::try_consume_stream consumer =
+      [&buf, as](
+        this auto,
+        uint64_t /*content_length*/,
+        ss::input_stream<char> stream) -> ss::future<uint64_t> {
         uint64_t total = 0;
         std::exception_ptr ex;
         try {
             while (true) {
-                _as.check();
-                auto buf = co_await stream.read();
-                if (buf.empty()) {
+                as->check();
+                auto b = co_await stream.read();
+                if (b.empty()) {
                     break;
                 }
-                total += buf.size();
-                _current.push_back(std::move(buf));
+                total += b.size();
+                buf.append(std::move(b));
             }
         } catch (...) {
             ex = std::current_exception();
@@ -216,18 +145,30 @@ private:
             std::rethrow_exception(ex);
         }
         co_return total;
-    }
+    };
 
-    cloud_io::remote* _remote;
-    cloud_storage_clients::bucket_name _bucket;
-    cloud_storage_clients::object_key _key;
-    size_t _next_pos;
-    size_t _last_pos;
-    ss::abort_source& _as;
-    cloud_io::group_id _gid;
-    size_t _chunk_size;
-    ss::chunked_fifo<ss::temporary_buffer<char>> _current;
-};
+    auto result_fut = co_await ss::coroutine::as_future(remote->download_stream(
+      cloud_io::transfer_details{
+        .bucket = bucket,
+        .key = key,
+        .parent_rtc = root,
+      },
+      consumer,
+      "l1_stream_download",
+      /*acquire_hydration_units=*/true,
+      cloud_storage_clients::http_byte_range{pos, pos + len - 1},
+      {},
+      gid));
+    if (result_fut.failed()) {
+        std::rethrow_exception(result_fut.get_exception());
+    }
+    auto result = result_fut.get();
+    if (result != cloud_io::download_result::success) {
+        throw std::runtime_error(
+          fmt::format("L1 streaming download failed: {}", result));
+    }
+    co_return make_iobuf_input_stream(std::move(buf));
+}
 
 } // namespace
 
@@ -424,19 +365,18 @@ file_io::read_object(
         }
 
         if (skip_cache) {
-            // Not in the cache: stream directly from object storage in bounded
-            // chunks without populating the cache.
-            co_return ss::input_stream<char>(ss::data_source(
-              std::make_unique<streaming_download_source>(
-                _remote,
-                _bucket,
-                object_path_factory::level_one_path(extent.id),
-                cloud_storage_clients::http_byte_range{
-                  extent.position, extent.position + extent.size - 1},
-                *as,
-                gid,
-                config::shard_local_cfg()
-                  .cloud_topics_l1_streaming_read_chunk_size())));
+            // Not in the cache: serve the requested range directly from object
+            // storage as a single ranged GET, without populating the cache. Any
+            // chunking that bounds peak memory is applied a layer up in
+            // open_object, which invokes read_object once per chunk.
+            co_return co_await download_range_bypassing_cache(
+              _remote,
+              _bucket,
+              object_path_factory::level_one_path(extent.id),
+              gid,
+              extent.position,
+              extent.size,
+              as);
         }
 
         // single_flight dedups concurrent downloads for this extent.
@@ -461,6 +401,17 @@ file_io::read_object(
             }
         }
     }
+}
+
+ss::future<std::expected<iobuf, io::errc>> file_io::fetch_native_footer(
+  object_extent extent,
+  ss::abort_source* as,
+  cloud_io::group_id gid,
+  bool skip_cache) {
+    if (_probe != nullptr) {
+        _probe->register_footer_read(extent.size);
+    }
+    return io::fetch_native_footer(extent, as, gid, skip_cache);
 }
 
 ss::future<std::expected<void, io::errc>>
