@@ -285,7 +285,16 @@ ss::future<> replicate_batcher::flush(
                     || (n->get_consistency_level() == consistency_level::quorum_ack);
                 for (auto& b : batches) {
                     b.set_term(term);
-                    data.push_back(std::move(b));
+                }
+                if (data.empty()) {
+                    // common case: a single item contributes all batches -
+                    // reuse its vector instead of allocating a fresh one and
+                    // moving each batch across.
+                    data = std::move(batches);
+                } else {
+                    for (auto& b : batches) {
+                        data.push_back(std::move(b));
+                    }
                 }
                 notifications.push_back(std::move(n));
             } else {
