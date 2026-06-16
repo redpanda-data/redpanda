@@ -46,7 +46,7 @@ jobs:
           GOTOOLCHAIN: auto
         run: go test -c -o ./wasm-integration-test
       - name: Upload integration test binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-integration-test
           path: src/transform-sdk/tests/wasm-integration-test
