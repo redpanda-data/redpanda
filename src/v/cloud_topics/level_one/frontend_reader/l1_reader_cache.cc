@@ -115,6 +115,12 @@ l1_reader_cache::entry_guard::~entry_guard() noexcept {
         // -> B) vs lost its stream some other way (abort/error).
         if (_e->reader->is_end_of_stream()) {
             ++_cache->_evicted_eos;
+            // CORE-15812: split out EOS caused by the metastore having no
+            // object for a reconciled offset (the consistency gap) from a
+            // normal end-of-data EOS.
+            if (_e->reader->eos_was_no_object()) {
+                ++_cache->_evicted_eos_no_object;
+            }
         } else {
             ++_cache->_evicted_not_reusable;
         }
@@ -305,6 +311,17 @@ void l1_reader_cache::setup_metrics() {
           sm::description(
             "Readers disposed on return because they reached "
             "end-of-stream (read to the frontier/end)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          // Named "no_object_eos" (not "evicted_eos_no_object") so the
+          // public-metric substring matcher doesn't conflate it with the
+          // "evicted_eos" counter (CORE-15812).
+          "no_object_eos",
+          [this] { return _evicted_eos_no_object; },
+          sm::description(
+            "Subset of evicted_eos where the metastore returned no object "
+            "for the next offset -- a reconciled offset with no registered "
+            "extent (the CORE-15812 consistency gap the consumer hits)."))
           .aggregate(aggregate_labels),
         sm::make_counter(
           "evicted_not_reusable",

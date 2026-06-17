@@ -551,6 +551,10 @@ class ManyPartitionsTest(PreallocNodesTest):
             # the "misses" counter.
             "offset_mismatch",
             "evicted_eos",
+            # CORE-15812: subset of evicted_eos where the metastore returned no
+            # object for a reconciled offset (the consistency gap). High here =
+            # the consumer is hitting reconciled-but-unregistered offsets.
+            "no_object_eos",
             "evicted_not_reusable",
             "evicted_size",
         )
@@ -568,6 +572,11 @@ class ManyPartitionsTest(PreallocNodesTest):
             # Both are 0 when reconciliation is genuinely caught up.
             "lso_hwm_gap",
             "lso_unavailable_sources",
+            # CORE-15812: offset_corrections>0 means the metastore dropped
+            # misaligned extents (lro/metastore divergence). Cumulative -- may
+            # not climb during the freeze if the reconciler is idle.
+            "offset_corrections",
+            "partitions_reconciled",
         )
         batch_cache_fields = ("hits", "misses", "get_bytes", "put_bytes")
         patterns = (
@@ -630,6 +639,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"evicted={cache_sum('readers_evicted')} "
                     f"miss_offset_mismatch={cache_sum('offset_mismatch')} "
                     f"evicted_eos={cache_sum('evicted_eos')} "
+                    f"no_object_eos={cache_sum('no_object_eos')} "
                     f"evicted_not_reusable={cache_sum('evicted_not_reusable')} "
                     f"evicted_size={cache_sum('evicted_size')}"
                 )
@@ -646,6 +656,10 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"{metric_sum('cloud_topics_reconciler_batches_reconciled')} "
                     f"bytes_reconciled="
                     f"{metric_sum('cloud_topics_reconciler_bytes_reconciled')} "
+                    f"offset_corrections="
+                    f"{metric_sum('cloud_topics_reconciler_offset_corrections')} "
+                    f"partitions_reconciled="
+                    f"{metric_sum('cloud_topics_reconciler_partitions_reconciled')} "
                     f"lso_hwm_gap="
                     f"{metric_sum('cloud_topics_reconciler_lso_hwm_gap')} "
                     f"lso_unavailable="

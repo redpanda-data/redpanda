@@ -112,6 +112,19 @@ void reconciler_probe::setup_public_metrics() {
           [this] { return _bytes_reconciled; },
           sm::description("Bytes reconciled from L0 to L1."))
           .aggregate(aggregate_labels),
+        sm::make_counter(
+          "offset_corrections",
+          [this] { return _offset_corrections; },
+          sm::description(
+            "Times the metastore corrected (dropped misaligned) extents on "
+            "add_objects. Non-zero means lro/metastore-next-offset diverged "
+            "and extents were dropped (CORE-15812)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "partitions_reconciled",
+          [this] { return _partitions_reconciled; },
+          sm::description("Partition contributions to reconciled objects."))
+          .aggregate(aggregate_labels),
         sm::make_gauge(
           "lso_hwm_gap",
           [this] { return _lso_hwm_gap; },

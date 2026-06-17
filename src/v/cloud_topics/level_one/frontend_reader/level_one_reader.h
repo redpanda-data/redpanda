@@ -106,6 +106,12 @@ public:
     /// Whether the reader has state worth preserving in the cache.
     bool is_reusable() const;
 
+    /// CORE-15812: true if the reader reached end-of-stream because the
+    /// metastore returned no object for the next offset (a reconciled offset
+    /// with no registered extent -- the consistency gap), vs a normal
+    /// max_offset/end EOS.
+    bool eos_was_no_object() const { return _eos_no_object; }
+
     const model::ntp& ntp() const { return _ntp; }
     const model::topic_id_partition& tidp() const { return _tidp; }
 
@@ -193,6 +199,7 @@ private:
 
     void set_end_of_stream();
     bool _end_of_stream{false};
+    bool _eos_no_object{false};
 
     cloud_topic_log_reader_config _config;
     model::ntp _ntp;

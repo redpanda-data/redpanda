@@ -155,6 +155,11 @@ level_one_log_reader_impl::read_some(
             auto object = co_await lookup_object_for_offset(
               _next_offset, deadline);
             if (!object.has_value()) {
+                // CORE-15812: the metastore has no extent at this offset. If
+                // this offset is <= the reconciled offset (lro), that's the
+                // consistency gap; flag it so the cache can count it
+                // separately from a normal end-of-data EOS.
+                _eos_no_object = true;
                 set_end_of_stream();
                 co_return model::record_batch_reader::storage_t{};
             }
