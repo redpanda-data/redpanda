@@ -10,7 +10,11 @@
 package selftest
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"reflect"
+	"time"
 
 	"github.com/redpanda-data/common-go/rpadmin"
 
@@ -24,6 +28,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// selfTestWatchInterval is how often 'self-test start --watch' polls the
+// cluster for self-test status updates.
+const selfTestWatchInterval = 2 * time.Second
+
 func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		noConfirm      bool
@@ -35,6 +43,7 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		onlyDisk       bool
 		onlyNetwork    bool
 		onlyCloud      bool
+		watch          bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -69,7 +78,9 @@ Available tests to run:
 
 This command prompts users for confirmation (unless the flag '--no-confirm' is specified), then returns a test identifier ID, and runs the tests.
 
-To view the test status, poll 'rpk cluster self-test status'. Once the tests end, the cached results will be available with 'rpk cluster self-test status'.`,
+To view the test status, poll 'rpk cluster self-test status'. Once the tests end, the cached results will be available with 'rpk cluster self-test status'.
+
+Pass '--watch' to poll the status automatically and wait until the tests complete.`,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
@@ -96,6 +107,15 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 			// Make HTTP POST request to leader that starts the actual test
 			tid, err := cl.StartSelfTest(cmd.Context(), onNodes, tests)
 			out.MaybeDie(err, "unable to start self test: %v", err)
+
+			// With --watch we poll the status until the tests finish
+			// instead of asking the user to poll manually.
+			if watch {
+				fmt.Printf("Redpanda self-test has started, test identifier: %v\n", tid)
+				err = watchSelfTest(cmd.Context(), cl, config.OutFormatter{Kind: "text"}, cmd.OutOrStdout(), selfTestWatchInterval)
+				out.MaybeDieErr(err)
+				return
+			}
 			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk cluster self-test status\n", tid)
 		},
 	}
@@ -115,8 +135,45 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 	cmd.Flags().BoolVar(&onlyDisk, "only-disk-test", false, "Runs only the disk benchmarks")
 	cmd.Flags().BoolVar(&onlyNetwork, "only-network-test", false, "Runs only network benchmarks")
 	cmd.Flags().BoolVar(&onlyCloud, "only-cloud-test", false, "Runs only cloud storage verification")
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Poll the self-test status and wait until the tests complete")
 	cmd.MarkFlagsMutuallyExclusive("only-disk-test", "only-network-test", "only-cloud-test")
 	return cmd
+}
+
+// selfTestStatusClient is the subset of the admin client used to poll
+// self-test status. It exists so watchSelfTest can be tested without a live
+// cluster.
+type selfTestStatusClient interface {
+	SelfTestStatus(context.Context) ([]rpadmin.SelfTestNodeReport, error)
+}
+
+// watchSelfTest polls the self-test status every interval, printing each
+// update, until no node is still running a test. It backs the --watch flag of
+// 'rpk cluster self-test start'.
+func watchSelfTest(ctx context.Context, cl selfTestStatusClient, f config.OutFormatter, w io.Writer, interval time.Duration) error {
+	var last []rpadmin.SelfTestNodeReport
+	for {
+		reports, err := cl.SelfTestStatus(ctx)
+		if err != nil {
+			return fmt.Errorf("unable to query self-test status: %w", err)
+		}
+		// Only reprint when something changed to avoid spamming the
+		// terminal with identical status on every poll.
+		if !reflect.DeepEqual(reports, last) {
+			if err := printSelfTestStatus(f, reports, w); err != nil {
+				return err
+			}
+			last = reports
+		}
+		if len(runningNodes(reports)) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
 }
 
 // assembleTests creates types of pre-canned tests depending on user input
