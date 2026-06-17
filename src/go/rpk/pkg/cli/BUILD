@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "deprecated.go",
         "plugin_cmds.go",
+        "printtree.go",
         "root.go",
         "root_darwin.go",
         "root_linux.go",
@@ -40,6 +41,7 @@ go_library(
         "@com_github_moby_term//:term",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
+        "@com_github_spf13_pflag//:pflag",
         "@org_golang_x_term//:term",
         "@org_uber_go_zap//:zap",
     ] + select({
@@ -68,10 +70,14 @@ go_library(
 go_test(
     name = "cli_test",
     size = "small",
-    srcs = ["root_test.go"],
+    srcs = [
+        "printtree_test.go",
+        "root_test.go",
+    ],
     embed = [":cli"],
     deps = [
         "@com_github_spf13_cobra//:cobra",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
