@@ -55,6 +55,17 @@ public:
               latency_labels,
               [this] { return _fetch_latency.internal_histogram_logform(); }),
             sm::make_histogram(
+              "fetch_busy_latency_us",
+              sm::description(
+                "Fetch busy latency: for immediate fetches, full handler "
+                "latency; for waited fetches, time from the start of the last "
+                "post-wakeup read that returned data until the response is "
+                "sent."),
+              latency_labels,
+              [this] {
+                  return _fetch_busy_latency.internal_histogram_logform();
+              }),
+            sm::make_histogram(
               "produce_latency_us",
               sm::description("Produce Latency"),
               latency_labels,
@@ -167,6 +178,10 @@ public:
         _fetch_latency.record(micros.count());
     }
 
+    void record_fetch_busy_latency(std::chrono::microseconds micros) {
+        _fetch_busy_latency.record(micros.count());
+    }
+
     void add_fetch_response_dropped_bytes(uint64_t bytes) {
         _fetch_response_dropped_bytes += bytes;
     }
@@ -189,6 +204,7 @@ private:
 
     hist_t _produce_latency;
     hist_t _fetch_latency;
+    hist_t _fetch_busy_latency;
     // non partition or topic related as that is too expensive for histograms
     batch_size_hist _batch_size;
 

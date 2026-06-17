@@ -25,6 +25,7 @@
 #include <seastar/core/smp.hh>
 
 #include <memory>
+#include <optional>
 
 namespace kafka {
 
@@ -188,6 +189,10 @@ struct op_context {
      * @brief Returns the total number of units held by the response.
      */
     size_t total_response_memory_units() const;
+
+    bool fetch_waited{false};
+    std::optional<latency_point> last_data_read_time;
+    bool fetch_used_debounce{false};
 
     request_context rctx;
     ss::smp_service_group ssg;

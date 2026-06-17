@@ -433,6 +433,10 @@ public:
           std::move(res));
     }
 
+    handler_probe::hist_t::measurement* handler_latency_measurement() const {
+        return _request_resources->handler_latency.get();
+    }
+
 private:
     template<typename T>
     security::auth_result do_authorized(

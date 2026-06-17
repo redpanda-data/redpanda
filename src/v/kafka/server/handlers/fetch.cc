@@ -617,6 +617,8 @@ public:
         size_t total_size;
         // The time it took for the first `fetch_ntps` to complete
         std::chrono::microseconds first_run_latency_result;
+        bool waited{false};
+        std::optional<op_context::latency_point> last_data_read_time;
     };
 
     ss::future<worker_result> run() {
@@ -781,6 +783,7 @@ private:
 
     ss::future<worker_result> do_run() {
         bool first_run{true};
+        bool waited{false};
         std::chrono::microseconds first_run_latency_result{0};
         // A map of indexes in `requests` to their corresponding index in
         // `_ctx.requests`.
@@ -813,7 +816,16 @@ private:
                 start_time = op_context::latency_clock::now();
             }
 
+            std::optional<op_context::latency_point> read_start
+              = op_context::latency_clock::now();
+
             auto q_results = co_await query_requests(std::move(requests));
+            // read_start anchors the busy interval; drop it unless this
+            // post-wait read returned data. Not carried past the wait below,
+            // so the reported interval can never span a wait.
+            if (first_run || q_results.total_size == 0) {
+                read_start.reset();
+            }
             if (first_run) {
                 results = std::move(q_results.results);
                 total_size = q_results.total_size;
@@ -845,6 +857,8 @@ private:
                   .read_results = std::move(results),
                   .total_size = total_size,
                   .first_run_latency_result = first_run_latency_result,
+                  .waited = waited,
+                  .last_data_read_time = read_start,
                 };
             }
 
@@ -867,9 +881,12 @@ private:
                   .read_results = std::move(results),
                   .total_size = total_size,
                   .first_run_latency_result = first_run_latency_result,
+                  .waited = waited,
+                  .last_data_read_time = read_start,
                 };
             }
 
+            waited = true;
             co_await _completed_waiter_count.wait();
 
             if (_as.abort_requested()) {
@@ -877,6 +894,8 @@ private:
                   .read_results = std::move(results),
                   .total_size = total_size,
                   .first_run_latency_result = first_run_latency_result,
+                  .waited = waited,
+                  .last_data_read_time = std::nullopt,
                 };
             }
 
@@ -902,7 +921,9 @@ public:
     ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
         auto fetch_read_strategy
           = config::shard_local_cfg().fetch_read_strategy();
-        if (is_fetch_strategy_with_debounce(fetch_read_strategy)) {
+        _fetch_used_debounce = is_fetch_strategy_with_debounce(
+          fetch_read_strategy);
+        if (_fetch_used_debounce) {
             co_await ss::sleep(
               std::min(
                 config::shard_local_cfg().fetch_reads_debounce_timeout(),
@@ -941,6 +962,17 @@ public:
         if (_thrown_exception) {
             std::rethrow_exception(_thrown_exception);
         }
+    }
+
+    bool fetch_waited() const { return _wait_state == wait_state::waited; }
+
+    bool bytes_were_read() const { return _bytes_were_read; }
+
+    bool fetch_used_debounce() const { return _fetch_used_debounce; }
+
+    const std::optional<op_context::latency_point>&
+    last_data_read_time() const {
+        return _last_data_read_time;
     }
 
 private:
@@ -1117,6 +1149,24 @@ private:
         octx.rctx.probe().record_fetch_latency(
           results.first_run_latency_result);
 
+        if (results.waited) {
+            if (_wait_state != wait_state::completed_without_waiting) {
+                _wait_state = wait_state::waited;
+            }
+        } else if (
+          _wait_state == wait_state::not_waited && results.total_size > 0
+          && octx.should_stop_fetch()) {
+            _wait_state = wait_state::completed_without_waiting;
+        }
+        if (results.last_data_read_time) {
+            _last_data_read_time = _last_data_read_time
+                                     ? std::max(
+                                         *_last_data_read_time,
+                                         *results.last_data_read_time)
+                                     : *results.last_data_read_time;
+        }
+        _bytes_were_read |= results.total_size > 0;
+
         _last_result_size[fetch.shard] = results.total_size;
         _completed_shard_fetches.push_back(std::move(fetch));
         _has_progress.signal();
@@ -1153,6 +1203,11 @@ private:
     ss::condition_variable _has_progress;
     std::vector<shard_fetch> _completed_shard_fetches;
     std::vector<size_t> _last_result_size;
+    enum class wait_state { not_waited, waited, completed_without_waiting };
+    wait_state _wait_state{wait_state::not_waited};
+    std::optional<op_context::latency_point> _last_data_read_time;
+    bool _bytes_were_read{false};
+    bool _fetch_used_debounce{false};
     // If any child task throws an exception this holds on to the exception
     // until all child tasks have been stopped and its safe to rethrow the
     // exception.
@@ -1446,12 +1501,46 @@ ss::future<> do_fetch(op_context& octx) {
 
     nonpolling_fetch_plan_executor executor;
     co_await executor.execute_plan(octx, std::move(fetch_plan));
+    octx.fetch_waited = executor.fetch_waited();
+    octx.last_data_read_time = executor.last_data_read_time();
+    octx.fetch_used_debounce = executor.fetch_used_debounce();
+    if (!executor.bytes_were_read()) {
+        octx.last_data_read_time.reset();
+    }
 }
 } // namespace
 
 namespace testing {
 ss::future<> do_fetch(op_context& octx) { return ::kafka::do_fetch(octx); }
 } // namespace testing
+
+namespace {
+
+void record_fetch_busy_latency(
+  bool fetch_used_debounce,
+  handler_probe::hist_t::measurement* handler_latency,
+  bool fetch_waited,
+  bool fetch_bytes_were_read,
+  std::optional<op_context::latency_point> last_data_read_time,
+  kafka_probe& probe) {
+    if (fetch_used_debounce || !fetch_bytes_were_read) {
+        return;
+    }
+    auto handler_end = op_context::latency_clock::now();
+    if (fetch_waited) {
+        if (last_data_read_time) {
+            auto busy_latency
+              = std::chrono::duration_cast<std::chrono::microseconds>(
+                handler_end - *last_data_read_time);
+            probe.record_fetch_busy_latency(busy_latency);
+        }
+    } else if (handler_latency) {
+        probe.record_fetch_busy_latency(
+          handler_latency->compute_total_latency());
+    }
+}
+
+} // namespace
 
 template<>
 ss::future<response_ptr>
@@ -1472,6 +1561,13 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
           }
           octx.response.data.error_code = error_code::none;
           return do_fetch(octx).then([&octx] {
+              auto fetch_waited = octx.fetch_waited;
+              auto fetch_bytes_were_read = octx.response_size > 0;
+              auto last_data_read_time = octx.last_data_read_time;
+              auto* handler_latency = octx.rctx.handler_latency_measurement();
+              auto& probe = octx.rctx.server().local().kafka_probe();
+              auto fetch_used_debounce = octx.fetch_used_debounce;
+
               auto resp_units_deleter = octx.response_memory_units_deleter();
 
               // NOTE: Audit call doesn't happen until _after_ the fetch
@@ -1481,6 +1577,22 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
                   return std::move(octx).send_error_response(
                     error_code::broker_not_available);
               }
+
+              octx.rctx.add_response_resource_deleter(
+                ss::make_deleter([fetch_used_debounce,
+                                  handler_latency,
+                                  fetch_waited,
+                                  fetch_bytes_were_read,
+                                  last_data_read_time,
+                                  &probe] {
+                    record_fetch_busy_latency(
+                      fetch_used_debounce,
+                      handler_latency,
+                      fetch_waited,
+                      fetch_bytes_were_read,
+                      last_data_read_time,
+                      probe);
+                }));
 
               octx.rctx.add_response_resource_deleter(
                 std::move(resp_units_deleter));
