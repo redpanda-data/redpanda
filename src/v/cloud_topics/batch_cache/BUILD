@@ -14,6 +14,7 @@ redpanda_cc_library(
         "probe.h",
     ],
     deps = [
+        "//src/v/config",
         "//src/v/metrics",
         "//src/v/utils:hdr_hist",
         "//src/v/utils:log_hist",

@@ -554,9 +554,23 @@ class ManyPartitionsTest(PreallocNodesTest):
             "evicted_not_reusable",
             "evicted_size",
         )
-        patterns = [
-            f"cloud_io_scheduler_{f}" for f in (*per_lane_fields, *agg_fields)
-        ] + [f"cloud_topics_l1_reader_cache_{f}" for f in cache_fields]
+        # CORE-15812 data-availability signals. If the consumer stalls while
+        # cloud_io is idle, the data isn't reaching readable objects. These say
+        # whether reconciliation is advancing (flat objects_uploaded/
+        # batches_reconciled => hung, not just slow) and whether the batch cache
+        # is going cold (falling hit rate).
+        reconciler_fields = (
+            "objects_uploaded",
+            "batches_reconciled",
+            "bytes_reconciled",
+        )
+        batch_cache_fields = ("hits", "misses", "get_bytes", "put_bytes")
+        patterns = (
+            [f"cloud_io_scheduler_{f}" for f in (*per_lane_fields, *agg_fields)]
+            + [f"cloud_topics_l1_reader_cache_{f}" for f in cache_fields]
+            + [f"cloud_topics_reconciler_{f}" for f in reconciler_fields]
+            + [f"cloud_topics_batch_cache_{f}" for f in batch_cache_fields]
+        )
         announced = False
         while not stop_event.is_set():
             try:
@@ -613,6 +627,25 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"evicted_eos={cache_sum('evicted_eos')} "
                     f"evicted_not_reusable={cache_sum('evicted_not_reusable')} "
                     f"evicted_size={cache_sum('evicted_size')}"
+                )
+
+                def metric_sum(name: str) -> int:
+                    ms = result.get(name)
+                    return int(sum(s.value for s in ms.samples)) if ms else 0
+
+                self.logger.info(
+                    f"reconciler (summed/shards): "
+                    f"objects_uploaded="
+                    f"{metric_sum('cloud_topics_reconciler_objects_uploaded')} "
+                    f"batches_reconciled="
+                    f"{metric_sum('cloud_topics_reconciler_batches_reconciled')} "
+                    f"bytes_reconciled="
+                    f"{metric_sum('cloud_topics_reconciler_bytes_reconciled')} "
+                    f"| batch_cache: "
+                    f"hits={metric_sum('cloud_topics_batch_cache_hits')} "
+                    f"misses={metric_sum('cloud_topics_batch_cache_misses')} "
+                    f"get_bytes={metric_sum('cloud_topics_batch_cache_get_bytes')} "
+                    f"put_bytes={metric_sum('cloud_topics_batch_cache_put_bytes')}"
                 )
                 announced = True
             except Exception as e:

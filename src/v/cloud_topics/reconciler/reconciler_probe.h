@@ -34,6 +34,10 @@ public:
     ~reconciler_probe() = default;
 
     void setup_metrics();
+    // CORE-15812: expose reconciliation progress as public metrics so the
+    // ManyPartitions sampler can tell whether reconciliation is advancing
+    // (internal metrics are disabled at scale).
+    void setup_public_metrics();
 
     void increment_objects_uploaded() { ++_objects_uploaded; }
     void add_bytes_reconciled(uint64_t bytes) { _bytes_reconciled += bytes; }
@@ -68,6 +72,7 @@ public:
 
 private:
     metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 
     uint64_t _objects_uploaded{0};
     uint64_t _bytes_reconciled{0};

@@ -21,6 +21,10 @@ namespace cloud_topics::reconciler {
 void reconciler_probe::setup_metrics() {
     namespace sm = ss::metrics;
 
+    // Public metrics use a separate enablement flag; set them up first so they
+    // survive even when internal metrics are disabled (the case at scale).
+    setup_public_metrics();
+
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
@@ -77,6 +81,37 @@ void reconciler_probe::setup_metrics() {
           "object_size_bytes",
           [this] { return _object_size_bytes.seastar_histogram_logform(); },
           sm::description("Distribution of built L1 object sizes in bytes")),
+      });
+}
+
+void reconciler_probe::setup_public_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+
+    const std::vector<sm::label> aggregate_labels{sm::shard_label};
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("cloud_topics_reconciler"),
+      {
+        sm::make_counter(
+          "objects_uploaded",
+          [this] { return _objects_uploaded; },
+          sm::description(
+            "L1 objects uploaded by reconciliation (a flat "
+            "value means reconciliation is not advancing)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "batches_reconciled",
+          [this] { return _batches_reconciled; },
+          sm::description("Record batches reconciled from L0 to L1."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "bytes_reconciled",
+          [this] { return _bytes_reconciled; },
+          sm::description("Bytes reconciled from L0 to L1."))
+          .aggregate(aggregate_labels),
       });
 }
 

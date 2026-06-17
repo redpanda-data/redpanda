@@ -36,6 +36,10 @@ public:
 
 private:
     void setup_internal_metrics(bool disable);
+    // CORE-15812: expose hit/miss as public metrics so the ManyPartitions
+    // sampler can test whether the batch cache is going cold at scale
+    // (internal metrics are disabled there).
+    void setup_public_metrics();
 
     uint64_t _put_bytes{0};
     uint64_t _get_bytes{0};
@@ -43,6 +47,7 @@ private:
     uint64_t _hits{0};
 
     metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace cloud_topics

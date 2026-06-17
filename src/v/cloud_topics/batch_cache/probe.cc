@@ -9,6 +9,7 @@
  */
 #include "cloud_topics/batch_cache/probe.h"
 
+#include "config/configuration.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
 
@@ -18,6 +19,7 @@ namespace cloud_topics {
 
 batch_cache_probe::batch_cache_probe(bool disable_metrics) {
     setup_internal_metrics(disable_metrics);
+    setup_public_metrics();
 }
 
 void batch_cache_probe::setup_internal_metrics(bool disable) {
@@ -53,6 +55,40 @@ void batch_cache_probe::setup_internal_metrics(bool disable) {
           [this] { return _misses; },
           sm::description("Number of cache misses"),
           labels),
+      });
+}
+
+void batch_cache_probe::setup_public_metrics() {
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    const std::vector<sm::label> aggregate_labels{sm::shard_label};
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("cloud_topics_batch_cache"),
+      {
+        sm::make_counter(
+          "hits",
+          [this] { return _hits; },
+          sm::description(
+            "Record batch cache hits (a falling hit rate at "
+            "scale points to a cold/thrashing batch cache)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "misses",
+          [this] { return _misses; },
+          sm::description("Record batch cache misses."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "get_bytes",
+          [this] { return _get_bytes; },
+          sm::description("Bytes read from the record batch cache."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "put_bytes",
+          [this] { return _put_bytes; },
+          sm::description("Bytes written to the record batch cache."))
+          .aggregate(aggregate_labels),
       });
 }
 
