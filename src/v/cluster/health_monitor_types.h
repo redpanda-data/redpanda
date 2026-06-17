@@ -107,7 +107,7 @@ struct followers_stats
 };
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<6>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<7>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
     static constexpr uint32_t invalid_shard_id = uint32_t(-1);
 
@@ -155,6 +155,13 @@ struct partition_status
      */
     std::optional<int64_t> cloud_topic_max_gc_eligible_epoch;
 
+    /**
+     * Kafka log start offset (first readable offset) for this partition
+     * replica. Only populated for Kafka namespace partitions. std::nullopt
+     * when reported by nodes running an older version.
+     */
+    std::optional<kafka::offset> log_start_offset;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -167,7 +174,8 @@ struct partition_status
           shard,
           followers_stats,
           high_watermark,
-          cloud_topic_max_gc_eligible_epoch);
+          cloud_topic_max_gc_eligible_epoch,
+          log_start_offset);
     }
 
     fmt::iterator format_to(fmt::iterator it) const;

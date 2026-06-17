@@ -219,7 +219,8 @@ fmt::iterator partition_status::format_to(fmt::iterator it) const {
       it,
       "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}, "
       "reclaimable_size_bytes: {}, under_replicated: {}, shard: {}, "
-      "followers_stats: {}, kafka_highwatermark: {}, ct_max_gc_epoch: {}}}",
+      "followers_stats: {}, kafka_highwatermark: {}, ct_max_gc_epoch: {}, "
+      "log_start_offset: {}}}",
       id,
       term,
       leader_id,
@@ -230,7 +231,8 @@ fmt::iterator partition_status::format_to(fmt::iterator it) const {
       shard,
       followers_stats,
       high_watermark,
-      cloud_topic_max_gc_eligible_epoch);
+      cloud_topic_max_gc_eligible_epoch,
+      log_start_offset);
 }
 
 topic_status& topic_status::operator=(const topic_status& rhs) {

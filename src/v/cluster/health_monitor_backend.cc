@@ -24,6 +24,7 @@
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/node_status_table.h"
+#include "cluster/partition_kafka_offsets.h"
 #include "cluster/partition_manager.h"
 #include "cluster/partition_probe.h"
 #include "cluster/types.h"
@@ -969,6 +970,7 @@ partition_status build_partition_status(const partition& p) {
         // HWM cannot be reliably retrieved until raft has started
         status.high_watermark = model::offset_cast(
           p.log()->from_log_offset(p.high_watermark()));
+        status.log_start_offset = model::offset_cast(kafka_start_offset(p));
     }
 
     if (p.raft()->is_elected_leader()) {
