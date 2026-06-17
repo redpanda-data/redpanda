@@ -66,8 +66,16 @@ public:
         auto lro = last_reconciled_offset();
         auto lso = _fe->last_stable_offset();
         if (!lso.has_value()) {
-            // LSO is invalid.
-            return false;
+            // The LSO is not available yet (e.g. the stm has not synced in
+            // the current term after a leadership change). That is uncertainty
+            // about whether there is data, not a determination that there is
+            // none. Returning false here would drop the source before
+            // make_reader runs -- and make_reader is what syncs the stm (via
+            // sync_effective_start) -- so the LSO would stay unavailable and
+            // the partition would never reconcile (a self-perpetuating skip
+            // observed in CORE-15812). Treat unavailable as "maybe pending"
+            // and keep the source so the next pass syncs and re-evaluates.
+            return true;
         }
         return lso.value() > kafka::next_offset(lro);
     }
