@@ -46,6 +46,11 @@ void fake_sink::fail_writes() {
     _cond_var.broadcast();
 }
 
+void fake_sink::resume_writes() {
+    _fail = false;
+    _cond_var.broadcast();
+}
+
 class read_timed_out : public ss::condition_variable_timed_out {
     const char* what() const noexcept override {
         return "waiting for read timed out";

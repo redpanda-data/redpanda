@@ -115,6 +115,12 @@ public:
      */
     void fail_writes();
 
+    /**
+     * Stop failing writes, mimicking the transient produce failure (e.g. a
+     * leadership transfer) resolving so the sink can make progress again.
+     */
+    void resume_writes();
+
 private:
     ss::chunked_fifo<model::record> _records;
     ss::condition_variable _cond_var;
