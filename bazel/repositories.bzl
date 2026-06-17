@@ -141,9 +141,9 @@ def data_dependency():
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
-        sha256 = "c80a01dfc70ece4dc21168932c37739042d404d46ccc81a5986dd75314ecda6f",
-        strip_prefix = "openssl-3.0.20",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.20/openssl-3.0.20.tar.gz",
+        sha256 = "617e29af8e421f46649484a4937e48c685e47f46488167c982f88bc4ec1d522f",
+        strip_prefix = "openssl-3.0.21",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.0.21/openssl-3.0.21.tar.gz",
     )
 
     http_archive(
