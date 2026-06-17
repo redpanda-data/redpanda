@@ -12,6 +12,7 @@
 
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
+#include "cluster/partition_kafka_offsets.h"
 #include "cluster/rm_stm.h"
 #include "kafka/data/log_reader_config.h"
 #include "kafka/protocol/errors.h"
@@ -105,8 +106,8 @@ replicated_partition::sync_effective_start(
               }
               return error_code;
           }
-          return kafka_start_offset_with_override(
-            synced_start_offset_override.value());
+          return cluster::kafka_start_offset_with_override(
+            *_partition, synced_start_offset_override.value());
       });
 }
 
@@ -115,23 +116,11 @@ model::offset replicated_partition::local_start_offset() const {
 }
 
 model::offset replicated_partition::start_offset() const {
-    const auto start_offset_override
-      = _partition->kafka_start_offset_override();
-    if (!start_offset_override.has_value()) {
-        return partition_kafka_start_offset();
-    }
-    return kafka_start_offset_with_override(start_offset_override.value());
+    return cluster::kafka_start_offset(*_partition);
 }
 
 model::offset replicated_partition::high_watermark() const {
-    if (_partition->is_read_replica_mode_enabled()) {
-        if (_partition->cloud_data_available()) {
-            return _partition->next_cloud_offset();
-        } else {
-            return model::offset(0);
-        }
-    }
-    return _translator->from_log_offset(_partition->high_watermark());
+    return cluster::kafka_high_watermark(*_partition);
 }
 /**
  * According to Kafka protocol semantics a log_end_offset is an offset that
@@ -417,42 +406,58 @@ raft::replicate_stages replicated_partition::replicate(
     return out;
 }
 
-model::offset replicated_partition::partition_kafka_start_offset() const {
-    if (
-      _partition->is_read_replica_mode_enabled()
-      && _partition->cloud_data_available()) {
-        // Always assume remote read in this case.
-        return _partition->start_cloud_offset();
+namespace {
+class stm_exact_offset_replicator final : public exact_offset_replicator {
+public:
+    explicit stm_exact_offset_replicator(
+      ss::shared_ptr<write_at_offset_stm> stm)
+      : _stm(std::move(stm)) {}
+
+    raft::replicate_stages replicate(
+      chunked_vector<model::record_batch> batches,
+      chunked_vector<kafka::offset> expected_base_offsets,
+      std::optional<kafka::offset> prev_log_offset,
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as) final {
+        return _stm->replicate(
+          std::move(batches),
+          std::move(expected_base_offsets),
+          prev_log_offset,
+          timeout,
+          as);
     }
 
-    auto local_kafka_start_offset = _translator->from_log_offset(
-      _partition->raft_start_offset());
-    if (
-      _partition->is_remote_fetch_enabled()
-      && _partition->cloud_data_available()
-      && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
-        return _partition->start_cloud_offset();
+    ss::future<result<kafka::offset>> get_last_offset(
+      model::timeout_clock::duration sync_timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>>) final {
+        return _stm->get_expected_last_offset(sync_timeout);
     }
-    return local_kafka_start_offset;
-}
 
-model::offset replicated_partition::kafka_start_offset_with_override(
-  model::offset start_kafka_offset_override) const {
-    if (start_kafka_offset_override == model::offset{}) {
-        return partition_kafka_start_offset();
-    }
-    if (_partition->is_read_replica_mode_enabled()) {
-        // The start override may fall ahead of the HWM since read replicas
-        // compute HWM based on uploaded segments, and the override may
-        // appear in the manifest before uploading corresponding segments.
-        // Clamp down to the HWM.
-        const auto hwm = high_watermark();
-        if (hwm <= start_kafka_offset_override) {
-            return hwm;
+    ss::future<std::error_code> ensure_truncatable(
+      kafka::offset new_start_offset,
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as) final {
+        auto err = co_await _stm->ensure_truncatable(
+          new_start_offset, timeout, as);
+        if (err != write_at_offset_stm::errc::success) {
+            co_return _stm->make_error_code(err);
         }
+        co_return std::error_code{};
     }
-    return std::max(
-      partition_kafka_start_offset(), start_kafka_offset_override);
+
+private:
+    ss::shared_ptr<write_at_offset_stm> _stm;
+};
+} // namespace
+
+std::unique_ptr<exact_offset_replicator>
+replicated_partition::make_exact_offset_replicator() && {
+    auto stm
+      = _partition->raft()->stm_manager()->get<kafka::write_at_offset_stm>();
+    if (!stm) {
+        return nullptr;
+    }
+    return std::make_unique<stm_exact_offset_replicator>(std::move(stm));
 }
 
 ss::future<std::optional<model::offset>>
