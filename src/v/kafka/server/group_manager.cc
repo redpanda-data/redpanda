@@ -2355,11 +2355,16 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
         co_return;
     }
 
-    static constexpr auto find_partition_hwm =
+    struct lag_bounds {
+        std::optional<kafka::offset> high_watermark;
+        std::optional<kafka::offset> log_start_offset;
+    };
+
+    static constexpr auto find_lag_bounds =
       [](
         const cluster::cluster_health_report& response,
-        const model::topic_partition& tp) -> std::optional<kafka::offset> {
-        std::optional<kafka::offset> max_hwm;
+        const model::topic_partition& tp) -> lag_bounds {
+        lag_bounds max_bounds;
         for (const auto& report : response.node_reports) {
             const model::topic_namespace_view tn{
               model::kafka_namespace, tp.topic};
@@ -2371,23 +2376,35 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
             if (partition_it == topic_it->second.end()) {
                 continue;
             }
-            auto hwm = partition_it->second.high_watermark;
-            if (!max_hwm || hwm > *max_hwm) {
-                max_hwm = hwm;
+            const auto& ps = partition_it->second;
+            if (
+              !max_bounds.high_watermark
+              || ps.high_watermark > *max_bounds.high_watermark) {
+                max_bounds.high_watermark = ps.high_watermark;
+                max_bounds.log_start_offset = ps.log_start_offset;
             }
         }
-        return max_hwm;
+        return max_bounds;
     };
 
     const auto set_metrics = [&report_r](const group_manager& gm) {
         for (const auto& group : gm._groups | std::views::values) {
             consumer_lag_metrics lag_metrics{};
             for (const auto& [tp, group_topic_offsets] : group->offsets()) {
-                if (auto hwm = find_partition_hwm(report_r.value(), tp); hwm) {
+                auto [hwm, lso] = find_lag_bounds(report_r.value(), tp);
+                if (hwm) {
                     auto committed_offset = offset_cast(
                       group_topic_offsets->metadata.offset);
+                    // Clamp committed_offset up to log_start_offset when
+                    // known: a stale commit below log_start_offset means no
+                    // consumable backlog exists and should not inflate lag.
+                    // log_start_offset is nullopt for reports from older nodes
+                    // — fall back to the pre-fix behaviour in that case.
+                    auto effective_committed = lso ? std::max(
+                                                       committed_offset, *lso)
+                                                   : committed_offset;
                     lag part_lag{static_cast<lag>(
-                      std::max(*hwm - committed_offset, offset{0}))};
+                      std::max(*hwm - effective_committed, offset{0}))};
                     lag_metrics.sum += part_lag;
                     lag_metrics.max = std::max(lag_metrics.max, part_lag);
                 }
