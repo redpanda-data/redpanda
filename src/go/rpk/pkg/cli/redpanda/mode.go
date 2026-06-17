@@ -24,9 +24,9 @@ import (
 func NewModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mode [MODE]",
-		Short: "Enable a default configuration mode",
+		Short: "Enable or display the configuration mode",
 		Long:  modeHelpText,
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		ValidArgsFunction: func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			// We complete "dev" and "prod", but if the user is typing
 			// the full word, we switch to completing that.
@@ -47,6 +47,14 @@ func NewModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			return complete, cobra.ShellCompDirectiveDefault
 		},
 		Run: func(_ *cobra.Command, args []string) {
+			// With no argument we report the currently active mode
+			// instead of changing it.
+			if len(args) == 0 {
+				mode, err := currentMode(fs, p)
+				out.MaybeDieErr(err)
+				fmt.Printf("Current mode: %q.\n", mode)
+				return
+			}
 			err := executeMode(fs, p, args[0])
 			out.MaybeDieErr(err)
 			fmt.Printf("Successfully set mode to %q.\n", args[0])
@@ -63,10 +71,21 @@ func executeMode(fs afero.Fs, p *config.Params, mode string) error {
 	return cfg.SetMode(fs, mode)
 }
 
-const modeHelpText = `Enable a default configuration mode
+func currentMode(fs afero.Fs, p *config.Params) (string, error) {
+	cfg, err := p.Load(fs)
+	if err != nil {
+		return "", fmt.Errorf("rpk unable to load config: %v", err)
+	}
+	return cfg.ActualRedpandaYamlOrDefaults().Mode(), nil
+}
+
+const modeHelpText = `Enable or display the configuration mode
 
 This command allows you to set one of the following modes: Development,
 Production, or Recovery.
+
+Running the command without a MODE argument prints the mode that is currently
+active in your redpanda.yaml.
 
 PRODUCTION
 

@@ -225,6 +225,21 @@ const (
 	ModeRecovery = "recovery"
 )
 
+// Mode returns the configuration mode that is currently active in the given
+// redpanda.yaml node configuration. Recovery takes precedence because it can be
+// enabled on top of dev or prod; otherwise the mode is dev or prod depending on
+// whether developer_mode is set.
+func (y *RedpandaYaml) Mode() string {
+	switch {
+	case y.Redpanda.RecoveryModeEnabled:
+		return ModeRecovery
+	case y.Redpanda.DeveloperMode:
+		return ModeDev
+	default:
+		return ModeProd
+	}
+}
+
 func (c *Config) SetMode(fs afero.Fs, mode string) error {
 	yRedpanda := c.ActualRedpandaYamlOrDefaults()
 	switch {
