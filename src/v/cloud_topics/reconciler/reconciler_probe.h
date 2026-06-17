@@ -48,6 +48,13 @@ public:
     void increment_metastore_retries() { ++_metastore_retries; }
     void increment_offset_corrections() { ++_offset_corrections; }
 
+    // CORE-15812 diagnostic gauges, set by the reconciler's per-iteration
+    // sweep over its sources.
+    void set_lso_diag(int64_t hwm_gap, int64_t unavailable_sources) {
+        _lso_hwm_gap = hwm_gap;
+        _lso_unavailable_sources = unavailable_sources;
+    }
+
     void record_object_size_bytes(uint64_t size) {
         _object_size_bytes.record(size);
     }
@@ -80,6 +87,8 @@ private:
     uint64_t _partitions_reconciled{0};
     uint64_t _metastore_retries{0};
     uint64_t _offset_corrections{0};
+    int64_t _lso_hwm_gap{0};
+    int64_t _lso_unavailable_sources{0};
 
     // Histograms.
     hist_t _l0_read_duration;

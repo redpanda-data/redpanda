@@ -112,6 +112,20 @@ void reconciler_probe::setup_public_metrics() {
           [this] { return _bytes_reconciled; },
           sm::description("Bytes reconciled from L0 to L1."))
           .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "lso_hwm_gap",
+          [this] { return _lso_hwm_gap; },
+          sm::description(
+            "Sum over partitions of HWM-LSO: produced stable data beyond "
+            "the reconcilable point. Persistently positive => the LSO is "
+            "frozen below the HWM and reconciliation cannot advance."))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "lso_unavailable_sources",
+          [this] { return _lso_unavailable_sources; },
+          sm::description(
+            "Reconciler sources whose LSO is currently unavailable."))
+          .aggregate(aggregate_labels),
       });
 }
 

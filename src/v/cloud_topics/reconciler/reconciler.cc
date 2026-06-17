@@ -252,6 +252,25 @@ ss::future<> reconciler<Clock>::reconciliation_loop() {
             continue;
         }
 
+        // CORE-15812 diagnostic: snapshot LSO state across all sources before
+        // reconciling, so the public metrics can distinguish a frozen-LSO-
+        // below-HWM stall from an unavailable LSO from genuine idleness. The
+        // sweep is synchronous (no scheduling point), so iterating _sources
+        // directly is safe.
+        {
+            int64_t gap_sum = 0;
+            int64_t lso_unavailable = 0;
+            for (auto& [unused, src] : _sources) {
+                auto gap = src->lso_hwm_gap();
+                if (gap < 0) {
+                    ++lso_unavailable;
+                } else {
+                    gap_sum += gap;
+                }
+            }
+            _probe.set_lso_diag(gap_sum, lso_unavailable);
+        }
+
         // clang-format off
         /*
          * Error Handling

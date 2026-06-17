@@ -563,6 +563,11 @@ class ManyPartitionsTest(PreallocNodesTest):
             "objects_uploaded",
             "batches_reconciled",
             "bytes_reconciled",
+            # CORE-15812: lso_hwm_gap>0 (persistent) => LSO frozen below HWM;
+            # lso_unavailable_sources>0 => sources whose LSO can't be read.
+            # Both are 0 when reconciliation is genuinely caught up.
+            "lso_hwm_gap",
+            "lso_unavailable_sources",
         )
         batch_cache_fields = ("hits", "misses", "get_bytes", "put_bytes")
         patterns = (
@@ -641,6 +646,10 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"{metric_sum('cloud_topics_reconciler_batches_reconciled')} "
                     f"bytes_reconciled="
                     f"{metric_sum('cloud_topics_reconciler_bytes_reconciled')} "
+                    f"lso_hwm_gap="
+                    f"{metric_sum('cloud_topics_reconciler_lso_hwm_gap')} "
+                    f"lso_unavailable="
+                    f"{metric_sum('cloud_topics_reconciler_lso_unavailable_sources')} "
                     f"| batch_cache: "
                     f"hits={metric_sum('cloud_topics_batch_cache_hits')} "
                     f"misses={metric_sum('cloud_topics_batch_cache_misses')} "

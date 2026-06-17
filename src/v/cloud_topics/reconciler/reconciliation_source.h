@@ -66,6 +66,13 @@ public:
     // unavailable.
     virtual int64_t pending_offset_lag() = 0;
 
+    // CORE-15812 diagnostic: HWM - LSO, i.e. produced data sitting beyond the
+    // reconcilable stable point. A persistently positive value means the LSO
+    // is frozen below the HWM (so reconciliation can't advance even though
+    // data exists). Returns -1 when the LSO is unavailable. Non-pure so test
+    // fakes inherit the 0 default.
+    virtual int64_t lso_hwm_gap() { return 0; }
+
     // Get the last reconciled offset for this source, or kafka::offset::min()
     // if none.
     virtual kafka::offset last_reconciled_offset() = 0;

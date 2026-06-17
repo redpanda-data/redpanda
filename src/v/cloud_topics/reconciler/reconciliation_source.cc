@@ -80,6 +80,14 @@ public:
         return lso.value() > kafka::next_offset(lro);
     }
 
+    int64_t lso_hwm_gap() override {
+        auto lso = _fe->last_stable_offset();
+        if (!lso.has_value()) {
+            return -1;
+        }
+        return std::max<int64_t>(0, _fe->high_watermark()() - lso.value()());
+    }
+
     int64_t pending_offset_lag() override {
         auto lro = last_reconciled_offset();
         auto lso = _fe->last_stable_offset();
