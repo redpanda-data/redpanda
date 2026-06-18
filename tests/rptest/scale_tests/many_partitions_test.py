@@ -9,9 +9,11 @@
 
 import concurrent.futures
 import math
+import threading
 import time
 from collections import Counter
-from typing import Any, Callable
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator
 from ducktape.cluster.cluster import ClusterNode
 import numpy
 from ducktape.mark import parametrize
@@ -34,6 +36,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import (
     RESTART_LOG_ALLOW_LIST,
     LoggingConfig,
+    MetricsEndpoint,
     SISettings,
 )
 from rptest.services.rpk_consumer import RpkConsumer
@@ -290,6 +293,89 @@ class ManyPartitionsTest(PreallocNodesTest):
             )
             consumer.stop()
             consumer.free()
+
+    def _run_l1_phase_sampler(
+        self, stop_event: threading.Event, interval_sec: int = 20
+    ):
+        """Periodically log the per-phase wall-clock breakdown of the
+        serialized cloud-topic L1 read (CORE-15812). At
+        fetch_max_read_concurrency=1 a fetch reads its partitions serially and
+        the broker is latency-bound; these public per-shard counters attribute
+        that wall-clock to the metastore extent lookup, the per-object footer
+        read, opening the object data stream, or streaming+parsing batches, so
+        the dominant phase is visible in the artifacts. Reads the public
+        endpoint (internal metrics are disabled at high partition counts).
+        Self-disables when the metrics are absent (e.g. non cloud-topic runs).
+        """
+        phases = ("metastore_lookup", "footer_read", "stream_open", "batch_read")
+        prefix = "cloud_topics_level_one_reader"
+        patterns = [f"{prefix}_{p}_duration_ns" for p in phases] + [
+            f"{prefix}_{p}_count" for p in phases
+        ]
+        announced = False
+        while not stop_event.is_set():
+            try:
+                result = self.redpanda.metrics_samples(
+                    sample_patterns=patterns,
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                )
+                if not result:
+                    if not announced:
+                        self.logger.info(
+                            "L1 reader phase metrics absent; phase sampler disabled"
+                        )
+                    return
+
+                def metric_sum(name: str) -> int:
+                    ms = result.get(name)
+                    return int(sum(s.value for s in ms.samples)) if ms else 0
+
+                durations = {
+                    p: metric_sum(f"{prefix}_{p}_duration_ns") for p in phases
+                }
+                counts = {p: metric_sum(f"{prefix}_{p}_count") for p in phases}
+                total_ns = sum(durations.values())
+
+                def fmt(p: str) -> str:
+                    ns = durations[p]
+                    cnt = counts[p]
+                    share = (100.0 * ns / total_ns) if total_ns else 0.0
+                    avg_us = (ns / cnt / 1000.0) if cnt else 0.0
+                    return (
+                        f"{p}[{share:4.1f}% {ns / 1e6:.0f}ms "
+                        f"n={cnt} avg={avg_us:.1f}us]"
+                    )
+
+                self.logger.info(
+                    "L1 read phases (cumulative, summed/shards): "
+                    + " ".join(fmt(p) for p in phases)
+                    + f" total={total_ns / 1e6:.0f}ms"
+                )
+                announced = True
+            except Exception as e:
+                self.logger.warning(f"L1 phase sampler error: {e}")
+            stop_event.wait(interval_sec)
+
+    @contextmanager
+    def _l1_phase_sampler(self, enabled: bool) -> Iterator[None]:
+        """Run the L1 read-phase sampler in a background thread for the
+        duration of the consume (CORE-15812). No-op unless enabled (cloud
+        topics)."""
+        stop_event = threading.Event()
+        thread: threading.Thread | None = None
+        if enabled:
+            thread = threading.Thread(
+                target=self._run_l1_phase_sampler,
+                args=(stop_event,),
+                daemon=True,
+            )
+            thread.start()
+        try:
+            yield
+        finally:
+            stop_event.set()
+            if thread is not None:
+                thread.join(timeout=30)
 
     def _repeater_worker_count(self, scale: ScaleParameters):
         assert scale.node_memory_mib / scale.node_cpus >= 3500, (
@@ -1127,7 +1213,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         max_buffered_records = 64
         if scale.tiered_storage_enabled:
             max_buffered_records = 1
-        with repeater_traffic(
+        with self._l1_phase_sampler(cloud_topics_enabled), repeater_traffic(
             context=self._ctx,
             redpanda=self.redpanda,
             nodes=self.preallocated_nodes,
