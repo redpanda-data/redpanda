@@ -39,8 +39,15 @@ void maybe_log_update_error(
     // that this update's construction raced with another update that broke an
     // invariant required to apply update. Expectation is that this update's
     // caller constructs a new update and tries again if needed.
+    //
+    // CORE-15812 (B): a skipped apply still advances the apply offset, so
+    // replicated_database::write reports success while this write was dropped
+    // -- the reconciler then advances lro past extents the metastore never
+    // stored. This should not happen in MPT (apply only fails on a domain_uuid
+    // mismatch, i.e. a restore_domain reset, which MPT never issues), so log it
+    // at warn to make any silent drop visible.
     vlog(
-      log.debug,
+      log.warn,
       "L1 LSM STM {} update at offset {} didn't apply: {}",
       key,
       o,

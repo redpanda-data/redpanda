@@ -120,6 +120,11 @@ l1_reader_cache::entry_guard::~entry_guard() noexcept {
             // normal end-of-data EOS.
             if (_e->reader->eos_was_no_object()) {
                 ++_cache->_evicted_eos_no_object;
+                // The subset that delivered nothing: a reconciled offset
+                // (start_offset <= lro) with no extent -- the gap.
+                if (_e->reader->eos_was_gap()) {
+                    ++_cache->_evicted_eos_gap;
+                }
             }
         } else {
             ++_cache->_evicted_not_reusable;
@@ -322,6 +327,16 @@ void l1_reader_cache::setup_metrics() {
             "Subset of evicted_eos where the metastore returned no object "
             "for the next offset -- a reconciled offset with no registered "
             "extent (the CORE-15812 consistency gap the consumer hits)."))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "gap_eos",
+          [this] { return _evicted_eos_gap; },
+          sm::description(
+            "Subset of no_object_eos where the reader delivered 0 bytes "
+            "before the no-object EOS -- the first lookup at start_offset "
+            "(<= lro) found no extent. The direct CORE-15812 gap signal: a "
+            "reconciled offset the consumer re-requests but the metastore "
+            "cannot serve."))
           .aggregate(aggregate_labels),
         sm::make_counter(
           "evicted_not_reusable",

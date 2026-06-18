@@ -555,6 +555,10 @@ class ManyPartitionsTest(PreallocNodesTest):
             # object for a reconciled offset (the consistency gap). High here =
             # the consumer is hitting reconciled-but-unregistered offsets.
             "no_object_eos",
+            # CORE-15812: subset of no_object_eos where the reader delivered 0
+            # bytes (first lookup at start_offset <= lro found no extent). The
+            # direct gap signal -- the stuck consumer's re-requests land here.
+            "gap_eos",
             "evicted_not_reusable",
             "evicted_size",
         )
@@ -640,6 +644,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"miss_offset_mismatch={cache_sum('offset_mismatch')} "
                     f"evicted_eos={cache_sum('evicted_eos')} "
                     f"no_object_eos={cache_sum('no_object_eos')} "
+                    f"gap_eos={cache_sum('gap_eos')} "
                     f"evicted_not_reusable={cache_sum('evicted_not_reusable')} "
                     f"evicted_size={cache_sum('evicted_size')}"
                 )

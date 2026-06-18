@@ -160,6 +160,24 @@ level_one_log_reader_impl::read_some(
                 // consistency gap; flag it so the cache can count it
                 // separately from a normal end-of-data EOS.
                 _eos_no_object = true;
+                // An L1 reader is only dispatched for start_offset <= lro, so
+                // a no-object on the *first* lookup (nothing delivered yet)
+                // means a reconciled offset has no registered extent -- the
+                // gap that strands the consumer.
+                _eos_gap = _bytes_consumed == 0;
+                if (_eos_gap) {
+                    thread_local static ss::logger::rate_limit gap_rate(
+                      std::chrono::seconds(5));
+                    cd_log.log(
+                      ss::log_level::warn,
+                      gap_rate,
+                      "CORE-15812: L1 reader for {} hit no-object at "
+                      "reconciled "
+                      "offset {} with 0 bytes delivered -- metastore has no "
+                      "extent for an offset <= lro (consistency gap)",
+                      _tidp,
+                      _next_offset);
+                }
                 set_end_of_stream();
                 co_return model::record_batch_reader::storage_t{};
             }

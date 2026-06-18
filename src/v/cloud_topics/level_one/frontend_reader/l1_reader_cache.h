@@ -123,6 +123,7 @@ private:
     uint64_t _offset_mismatch{0};       // miss, but a same-tidp reader cached
     uint64_t _evicted_eos{0};           // returned non-reusable at EOS (B)
     uint64_t _evicted_eos_no_object{0}; // EOS subset: metastore had no object
+    uint64_t _evicted_eos_gap{0};       // no-object subset: 0 bytes (the gap)
     uint64_t _evicted_not_reusable{0};  // returned non-reusable, not EOS
     uint64_t _evicted_size{0};          // reusable reader dropped for space (A)
 

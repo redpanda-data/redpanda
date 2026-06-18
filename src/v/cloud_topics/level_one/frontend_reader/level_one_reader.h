@@ -112,6 +112,14 @@ public:
     /// max_offset/end EOS.
     bool eos_was_no_object() const { return _eos_no_object; }
 
+    /// CORE-15812: true if the no-object EOS happened on the reader's *first*
+    /// lookup (zero bytes delivered). Because an L1 reader is only dispatched
+    /// when start_offset <= lro, an immediate no-object means a reconciled
+    /// offset has no registered extent -- the gap that strands the consumer
+    /// (vs a no-object EOS after delivering data, which is reading to the end
+    /// of the available extents).
+    bool eos_was_gap() const { return _eos_gap; }
+
     const model::ntp& ntp() const { return _ntp; }
     const model::topic_id_partition& tidp() const { return _tidp; }
 
@@ -200,6 +208,7 @@ private:
     void set_end_of_stream();
     bool _end_of_stream{false};
     bool _eos_no_object{false};
+    bool _eos_gap{false};
 
     cloud_topic_log_reader_config _config;
     model::ntp _ntp;

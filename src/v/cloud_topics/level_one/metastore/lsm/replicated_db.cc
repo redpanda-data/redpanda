@@ -155,16 +155,16 @@ replicated_database::open(
     // manifest.
     auto max_persisted_seqno = db.max_persisted_seqno();
     if (!s->state().volatile_buffer.empty()) {
-        vlog(
-          cd_log.info,
-          "Applying {} volatile writes to LSM database",
-          s->state().volatile_buffer.size());
+        const auto buf_front_seqno = s->state().volatile_buffer.front().seqno;
+        const auto buf_back_seqno = s->state().volatile_buffer.back().seqno;
 
         auto wb = db.create_write_batch();
         size_t num_written = 0;
+        size_t num_skipped = 0;
         for (const auto& row : s->state().volatile_buffer) {
             auto seqno = row.seqno;
             if (seqno <= max_persisted_seqno) {
+                ++num_skipped;
                 continue;
             }
             if (row.row.value.empty()) {
@@ -179,6 +179,25 @@ replicated_database::open(
               row.row.key);
             ++num_written;
         }
+        // CORE-15812 (C): log the recovery boundaries. A write is lost if it is
+        // skipped here (seqno <= max_persisted_seqno) but is not actually
+        // durable in the manifest/objects -- i.e. if a flush advanced the
+        // manifest's last_seqno past durably-flushed data. These numbers expose
+        // a suspicious skip (e.g. rows skipped as "persisted" while the persist
+        // seqno looks ahead of the buffer's range).
+        vlog(
+          cd_log.info,
+          "LSM recovery for domain {} term {}: max_persisted_seqno={}, "
+          "volatile_buffer seqno [{}, {}] ({} rows), replaying {}, skipping {} "
+          "as already-persisted",
+          domain_uuid,
+          term,
+          max_persisted_seqno,
+          buf_front_seqno,
+          buf_back_seqno,
+          s->state().volatile_buffer.size(),
+          num_written,
+          num_skipped);
         if (num_written > 0) {
             auto write_fut = co_await ss::coroutine::as_future(
               db.apply(std::move(wb)));
