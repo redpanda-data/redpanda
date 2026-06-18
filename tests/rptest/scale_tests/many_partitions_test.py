@@ -1089,7 +1089,17 @@ class ManyPartitionsTest(PreallocNodesTest):
             )
             self.redpanda.set_si_settings(cloud_si_settings)
             self.redpanda.add_extra_rp_conf(
-                {"cloud_storage_cache_size_percent": 50.0}
+                {
+                    "cloud_storage_cache_size_percent": 50.0,
+                    # CORE-15812: the per-shard L1 reader cache (default 128
+                    # readers, 60s idle eviction) governs positioned-stream
+                    # reuse. At ~17,856 partitions cycled through, readers can
+                    # be evicted (size or idle-timeout) before reuse, forcing a
+                    # fresh ~10ms cache-file open every fetch. Crank both to
+                    # test whether retaining positioned readers cuts re-opens.
+                    "cloud_topics_l1_reader_cache_max_size": 10000,
+                    "cloud_topics_l1_reader_cache_eviction_timeout_ms": 600000,
+                }
             )
 
         # By default run with one huge topic for maximum metadata stress. It is
