@@ -85,7 +85,7 @@ This command allows you to set one of the following modes: Development,
 Production, or Recovery.
 
 Running the command without a MODE argument prints the mode that is currently
-active in your redpanda.yaml.
+set in your redpanda.yaml.
 
 PRODUCTION
 
