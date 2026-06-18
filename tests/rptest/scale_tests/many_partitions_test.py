@@ -1218,6 +1218,11 @@ class ManyPartitionsTest(PreallocNodesTest):
                     "cloud_topics_l1_reader_cache_eviction_timeout_ms": 600000,
                     "cloud_topics_leveling_disabled": True,
                     "cloud_topics_compaction_disabled": True,
+                    # CORE-15812: each cloud-topic partition read does a metastore
+                    # extent-lookup RPC; at concurrency=1 a fetch serializes one
+                    # ~100ms round-trip per partition while the broker sits idle.
+                    # Pipeline them to test whether that serialization is the cap.
+                    "fetch_max_read_concurrency": 16,
                 }
             )
 
