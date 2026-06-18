@@ -20,10 +20,46 @@
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
 
+#include <chrono>
 #include <exception>
 #include <utility>
 
 namespace cloud_topics {
+
+namespace {
+
+// RAII accumulator that records the wall-clock elapsed over its lifetime into a
+// level_one_reader_probe phase counter. Declared as the first local of a timed
+// coroutine, it lives in the coroutine frame, so the recorded interval spans
+// every suspension point in the phase (the real latency the read experiences)
+// and is recorded on every exit path, including exceptions. A null probe
+// disables recording.
+class scoped_phase_timer {
+public:
+    using recorder = void (level_one_reader_probe::*)(std::chrono::nanoseconds);
+
+    scoped_phase_timer(level_one_reader_probe* probe, recorder rec)
+      : _probe(probe)
+      , _rec(rec) {}
+    scoped_phase_timer(const scoped_phase_timer&) = delete;
+    scoped_phase_timer& operator=(const scoped_phase_timer&) = delete;
+    scoped_phase_timer(scoped_phase_timer&&) = delete;
+    scoped_phase_timer& operator=(scoped_phase_timer&&) = delete;
+
+    ~scoped_phase_timer() {
+        if (_probe != nullptr) {
+            (_probe->*_rec)(std::chrono::steady_clock::now() - _start);
+        }
+    }
+
+private:
+    level_one_reader_probe* _probe;
+    recorder _rec;
+    std::chrono::steady_clock::time_point _start{
+      std::chrono::steady_clock::now()};
+};
+
+} // namespace
 
 ss::future<>
 level_one_log_reader_impl::close_reader_safe(l1::object_reader& reader) {
@@ -85,6 +121,8 @@ level_one_log_reader_impl::open_reader_at(
   kafka::offset last_object_offset,
   size_t extent_position,
   size_t extent_size) {
+    scoped_phase_timer timer{
+      _probe, &level_one_reader_probe::record_stream_open_duration};
     l1::object_extent extent{
       .id = oid,
       .position = extent_position,
@@ -220,6 +258,8 @@ level_one_log_reader_impl::consume_lookahead_buffer(kafka::offset offset) {
 
 ss::future<> level_one_log_reader_impl::fill_lookahead_buffer(
   kafka::offset offset, size_t num_objects) {
+    scoped_phase_timer timer{
+      _probe, &level_one_reader_probe::record_metastore_lookup_duration};
     ss::abort_source default_abort_source;
     auto* abort_source = _config.abort_source
                            ? &_config.abort_source.value().get()
@@ -298,6 +338,8 @@ level_one_log_reader_impl::lookup_object_for_offset(
 
 ss::future<l1::footer> level_one_log_reader_impl::read_footer(
   l1::object_id oid, size_t footer_pos, size_t object_size) {
+    scoped_phase_timer timer{
+      _probe, &level_one_reader_probe::record_footer_read_duration};
     size_t footer_total_size = object_size - footer_pos;
     if (_probe != nullptr) {
         _probe->register_footer_read(footer_total_size);
@@ -369,6 +411,8 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
 
 ss::future<chunked_circular_buffer<model::record_batch>>
 level_one_log_reader_impl::read_batches(l1::object_reader& reader) {
+    scoped_phase_timer timer{
+      _probe, &level_one_reader_probe::record_batch_read_duration};
     chunked_circular_buffer<model::record_batch> batches;
     size_t bytes_read = 0;
     size_t bytes_skipped = 0;
