@@ -942,18 +942,31 @@ class ManyPartitionsTest(PreallocNodesTest):
         num_nodes=12,
         log_allow_list=RESTART_LOG_ALLOW_LIST,
     )
+    # CORE-15812 A/B: run the serialized default (=1, which reproduces the
+    # hang) and the pipelined arm (=16) in one invocation so the per-phase L1
+    # read timing can be compared directly. Experiment only, not the fix.
     @parametrize(
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
         topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
+        fetch_max_read_concurrency=1,
+    )
+    @parametrize(
+        mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+        topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
+        fetch_max_read_concurrency=16,
     )
     def test_many_partitions_cloud_topics(
-        self, mib_per_partition: float, topic_partitions_per_shard: int
+        self,
+        mib_per_partition: float,
+        topic_partitions_per_shard: int,
+        fetch_max_read_concurrency: int,
     ):
         self._test_many_partitions(
             compacted=False,
             cloud_topics_enabled=True,
             mib_per_partition=mib_per_partition,
             topic_partitions_per_shard=topic_partitions_per_shard,
+            fetch_max_read_concurrency=fetch_max_read_concurrency,
         )
 
     @cluster(
@@ -1008,6 +1021,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         topic_partitions_per_shard: int,
         tiered_storage_enabled: bool = False,
         cloud_topics_enabled: bool = False,
+        fetch_max_read_concurrency: int | None = None,
     ):
         """
         Validate that redpanda works with partition counts close to its resource
@@ -1110,13 +1124,15 @@ class ManyPartitionsTest(PreallocNodesTest):
             }
         )
 
-        if cloud_topics_enabled:
-            # CORE-15812 A/B: at the default fetch_max_read_concurrency=1 a
-            # cloud-topic fetch reads its partitions serially and the broker is
-            # latency-bound. Raise it to pipeline the per-partition L1 reads and
-            # measure how the per-phase read timing shifts vs the =1 baseline.
-            # Experiment only, not the shippable fix.
-            self.redpanda.add_extra_rp_conf({"fetch_max_read_concurrency": 16})
+        if cloud_topics_enabled and fetch_max_read_concurrency is not None:
+            # CORE-15812 A/B: fetch_max_read_concurrency=1 (the default) makes a
+            # cloud-topic fetch read its partitions serially, leaving the broker
+            # latency-bound. The cloud_topics test parametrizes this knob (1 vs
+            # 16) to measure how the per-phase L1 read timing shifts once the
+            # per-partition reads pipeline. Experiment only, not the fix.
+            self.redpanda.add_extra_rp_conf(
+                {"fetch_max_read_concurrency": fetch_max_read_concurrency}
+            )
 
         self.redpanda.start()
 
