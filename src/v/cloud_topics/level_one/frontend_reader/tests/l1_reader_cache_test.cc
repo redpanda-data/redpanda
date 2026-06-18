@@ -181,6 +181,9 @@ TEST_F(l1_reader_cache_test, size_cap_evicts_oldest) {
 
     // Recreate cache with max size 1.
     _cache->stop().get();
+    // Destroy before re-creating so the per-shard metric group unregisters
+    // before the replacement registers it again.
+    _cache.reset();
     _max_size_binding = config::mock_binding<size_t>(1);
     _eviction_timeout_binding = config::mock_binding(default_eviction_timeout);
     _cache = std::make_unique<l1_reader_cache>(
@@ -261,6 +264,7 @@ TEST_F(l1_reader_cache_test, stop_drains_idle_readers) {
     EXPECT_EQ(stats.in_use_readers, 0);
 
     // Recreate for TearDown.
+    _cache.reset();
     _eviction_timeout_binding = config::mock_binding(default_eviction_timeout);
     _max_size_binding = config::mock_binding(default_max_size);
     _cache = std::make_unique<l1_reader_cache>(

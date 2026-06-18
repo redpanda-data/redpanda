@@ -11,11 +11,14 @@
 #include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
 
 #include "cloud_topics/logger.h"
+#include "config/configuration.h"
+#include "metrics/prometheus_sanitize.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/metrics.hh>
 
 namespace cloud_topics {
 
@@ -30,6 +33,58 @@ l1_reader_cache::l1_reader_cache(
         });
     });
     arm_eviction_timer();
+    setup_metrics();
+}
+
+void l1_reader_cache::setup_metrics() {
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("cloud_topics_l1_reader_cache"),
+      {
+        sm::make_counter(
+          "hits",
+          [this] { return _cache_hits; },
+          sm::description(
+            "L1 reader cache hits (a positioned reader was reused).")),
+        sm::make_counter(
+          "misses",
+          [this] { return _cache_misses; },
+          sm::description("L1 reader cache misses (a new reader was built).")),
+        sm::make_counter(
+          "readers_added",
+          [this] { return _readers_added; },
+          sm::description("L1 readers added to the cache.")),
+        sm::make_counter(
+          "readers_returned",
+          [this] { return _readers_returned; },
+          sm::description(
+            "In-use L1 readers returned to the cache as reusable "
+            "(available for a subsequent fetch).")),
+        sm::make_counter(
+          "readers_disposed_non_reusable",
+          [this] { return _readers_disposed_non_reusable; },
+          sm::description(
+            "In-use L1 readers disposed on return because they "
+            "were non-reusable (read a partition to its end); a "
+            "bigger cache cannot reuse these.")),
+        sm::make_counter(
+          "readers_evicted",
+          [this] { return _readers_evicted; },
+          sm::description(
+            "L1 readers evicted/disposed from the cache (size, "
+            "idle timeout, or non-reusable disposal).")),
+        sm::make_gauge(
+          "cached_readers",
+          [this] { return _readers.size(); },
+          sm::description("L1 readers currently idle in the cache.")),
+        sm::make_gauge(
+          "in_use_readers",
+          [this] { return _in_use.size(); },
+          sm::description("L1 readers currently checked out.")),
+      });
 }
 
 l1_reader_cache::~l1_reader_cache() {
@@ -95,7 +150,9 @@ l1_reader_cache::entry_guard::~entry_guard() noexcept {
     if (_e->reader->is_reusable()) {
         _e->last_used = ss::lowres_clock::now();
         _cache->_readers.push_back(*_e);
+        ++_cache->_readers_returned;
     } else {
+        ++_cache->_readers_disposed_non_reusable;
         _cache->dispose_in_background(_e);
     }
     _cache->_in_use_reader_destroyed.broadcast();

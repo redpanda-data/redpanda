@@ -31,6 +31,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:logger",
         "//src/v/config",
         "//src/v/container:intrusive",
+        "//src/v/metrics",
         "//src/v/model",
         "//src/v/random:time_jitter",
         "//src/v/ssx:future_util",

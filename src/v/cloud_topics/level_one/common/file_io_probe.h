@@ -31,7 +31,9 @@ private:
     uint64_t _cache_misses{0};
     uint64_t _concurrent_read_merges{0};
 
-    metrics::internal_metric_groups _metrics;
+    // Public so the cache hit/miss rate is visible at high partition counts,
+    // where internal metrics are disabled (CORE-15812).
+    metrics::public_metric_groups _metrics;
 };
 
 } // namespace cloud_topics::l1

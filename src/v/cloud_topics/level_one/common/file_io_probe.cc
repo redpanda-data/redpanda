@@ -20,7 +20,7 @@ namespace cloud_topics::l1 {
 file_io_probe::file_io_probe() { setup_metrics(); }
 
 void file_io_probe::setup_metrics() {
-    if (config::shard_local_cfg().disable_metrics()) {
+    if (config::shard_local_cfg().disable_public_metrics()) {
         return;
     }
 

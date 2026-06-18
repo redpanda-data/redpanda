@@ -13,6 +13,7 @@
 #include "cloud_topics/log_reader_config.h"
 #include "config/property.h"
 #include "container/intrusive_list_helpers.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 
@@ -94,6 +95,7 @@ private:
     void dispose_in_background(entry* e);
     ss::future<> wait_for_no_inuse_readers();
     void arm_eviction_timer();
+    void setup_metrics();
 
     config::binding<std::chrono::milliseconds> _eviction_timeout;
     ss::gate _gate;
@@ -109,6 +111,14 @@ private:
     uint64_t _cache_misses{0};
     uint64_t _readers_added{0};
     uint64_t _readers_evicted{0};
+    // CORE-15812: split how an in-use reader ends — cached for reuse vs
+    // disposed because it came back non-reusable (read a small partition to
+    // its end, so is_reusable() is false). A high disposed-non-reusable rate
+    // means a bigger cache / longer timeout cannot lift the hit rate.
+    uint64_t _readers_returned{0};
+    uint64_t _readers_disposed_non_reusable{0};
+
+    metrics::public_metric_groups _metrics;
 };
 
 } // namespace cloud_topics
