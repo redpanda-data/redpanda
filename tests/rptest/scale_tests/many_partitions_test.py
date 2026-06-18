@@ -309,9 +309,25 @@ class ManyPartitionsTest(PreallocNodesTest):
         """
         phases = ("metastore_lookup", "footer_read", "stream_open", "batch_read")
         prefix = "cloud_topics_level_one_reader"
-        patterns = [f"{prefix}_{p}_duration_ns" for p in phases] + [
-            f"{prefix}_{p}_count" for p in phases
-        ]
+        cache_prefix = "cloud_topics_l1_reader_cache"
+        cache_fields = (
+            "hits",
+            "misses",
+            "readers_added",
+            "readers_returned",
+            "readers_disposed_non_reusable",
+            "readers_evicted",
+            "cached_readers",
+            "in_use_readers",
+        )
+        io_prefix = "cloud_topics_level_one_file_io"
+        io_fields = ("reads", "cache_misses", "concurrent_read_merges")
+        patterns = (
+            [f"{prefix}_{p}_duration_ns" for p in phases]
+            + [f"{prefix}_{p}_count" for p in phases]
+            + [f"{cache_prefix}_{f}" for f in cache_fields]
+            + [f"{io_prefix}_{f}" for f in io_fields]
+        )
         announced = False
         while not stop_event.is_set():
             try:
@@ -350,6 +366,35 @@ class ManyPartitionsTest(PreallocNodesTest):
                     "L1 read phases (cumulative, summed/shards): "
                     + " ".join(fmt(p) for p in phases)
                     + f" total={total_ns / 1e6:.0f}ms"
+                )
+
+                def cache_sum(field: str) -> int:
+                    return metric_sum(f"{cache_prefix}_{field}")
+
+                hits = cache_sum("hits")
+                misses = cache_sum("misses")
+                denom = hits + misses
+                hit_rate = (100.0 * hits / denom) if denom else 0.0
+                # disposed_non_reusable vs returned is the decisive split: if
+                # readers come back non-reusable they are disposed regardless of
+                # cache size, so a bigger cache cannot lift the hit rate.
+                self.logger.info(
+                    f"L1 reader cache (summed/shards): hit_rate={hit_rate:.1f}% "
+                    f"hits={hits} misses={misses} "
+                    f"added={cache_sum('readers_added')} "
+                    f"returned={cache_sum('readers_returned')} "
+                    f"disposed_non_reusable="
+                    f"{cache_sum('readers_disposed_non_reusable')} "
+                    f"evicted={cache_sum('readers_evicted')} "
+                    f"cached={cache_sum('cached_readers')} "
+                    f"in_use={cache_sum('in_use_readers')}"
+                )
+                self.logger.info(
+                    f"L1 file_io (summed/shards): "
+                    f"reads={metric_sum(f'{io_prefix}_reads')} "
+                    f"cache_misses={metric_sum(f'{io_prefix}_cache_misses')} "
+                    f"concurrent_read_merges="
+                    f"{metric_sum(f'{io_prefix}_concurrent_read_merges')}"
                 )
                 announced = True
             except Exception as e:
