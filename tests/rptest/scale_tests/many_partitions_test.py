@@ -1106,6 +1106,14 @@ class ManyPartitionsTest(PreallocNodesTest):
             }
         )
 
+        if cloud_topics_enabled:
+            # CORE-15812 A/B: at the default fetch_max_read_concurrency=1 a
+            # cloud-topic fetch reads its partitions serially and the broker is
+            # latency-bound. Raise it to pipeline the per-partition L1 reads and
+            # measure how the per-phase read timing shifts vs the =1 baseline.
+            # Experiment only, not the shippable fix.
+            self.redpanda.add_extra_rp_conf({"fetch_max_read_concurrency": 16})
+
         self.redpanda.start()
 
         self.logger.info("Entering topic creation")
