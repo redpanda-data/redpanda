@@ -605,6 +605,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         scale: ScaleParameters,
         topic_names: list[str],
         skip_rand_reads: bool = False,
+        cloud_topics_enabled: bool = False,
     ):
         """
         This is a relatively low intensity test, that covers random
@@ -786,7 +787,10 @@ class ManyPartitionsTest(PreallocNodesTest):
         )
         verifier.start(clean=False)
 
-        verifier.wait(timeout_sec=expect_transmit_time)
+        # CORE-15812: the cloud-topics consumer-group consumer hangs here, so
+        # sample the per-phase L1 read timing for the duration of this consume.
+        with self._l1_phase_sampler(cloud_topics_enabled):
+            verifier.wait(timeout_sec=expect_transmit_time)
         for i, v in enumerate(verifier.consumers):
             assert v.consumer_status.validator.invalid_reads == 0
             if not scale.tiered_storage_enabled:
@@ -1198,7 +1202,9 @@ class ManyPartitionsTest(PreallocNodesTest):
         # its dedicated test.  The sequential consumer group verify still
         # validates both read paths.
         skip_rand_reads = cloud_topics_enabled and scale.tiered_storage_enabled
-        self._write_and_random_read(scale, topic_names, skip_rand_reads)
+        self._write_and_random_read(
+            scale, topic_names, skip_rand_reads, cloud_topics_enabled
+        )
 
         # Start kgo-repeater
 
@@ -1221,7 +1227,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         max_buffered_records = 64
         if scale.tiered_storage_enabled:
             max_buffered_records = 1
-        with self._l1_phase_sampler(cloud_topics_enabled), repeater_traffic(
+        with repeater_traffic(
             context=self._ctx,
             redpanda=self.redpanda,
             nodes=self.preallocated_nodes,
