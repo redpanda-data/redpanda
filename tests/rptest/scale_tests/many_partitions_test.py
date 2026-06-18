@@ -1071,13 +1071,26 @@ class ManyPartitionsTest(PreallocNodesTest):
         # When cloud topics are enabled but tiered storage is not, we still
         # need SISettings for the object store backend that cloud topics use.
         if cloud_topics_enabled and not tiered_storage_enabled:
+            # CORE-15812: the default test cache (~2.44 GiB, sized for trimming)
+            # is far smaller than the L1 object working set across ~17,856
+            # partitions, so reads thrash the cloud cache and stream_open is
+            # dominated by S3 re-downloads (~80-90% of read wall-clock). Crank
+            # the cache to test whether holding the working set drains the
+            # serialized (=1) arm. All three caps matter: bytes, the percent it
+            # is min'd with (default 20%), and the object count (default 100k,
+            # which ~17,856 partitions can blow on its own).
             cloud_si_settings = SISettings(
                 self.test_context,
                 cloud_storage_enable_remote_read=False,
                 cloud_storage_enable_remote_write=False,
                 fast_uploads=True,
+                cloud_storage_cache_size=50 * 2**30,
+                cloud_storage_cache_max_objects=5_000_000,
             )
             self.redpanda.set_si_settings(cloud_si_settings)
+            self.redpanda.add_extra_rp_conf(
+                {"cloud_storage_cache_size_percent": 50.0}
+            )
 
         # By default run with one huge topic for maximum metadata stress. It is
         # more stressful for redpanda when clients request the metadata for
