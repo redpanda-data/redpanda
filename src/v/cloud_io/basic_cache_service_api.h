@@ -121,10 +121,15 @@ public:
     /// \param key is a cache key
     /// \param read_buffer_size is a read buffer size for the iostream
     /// \param readahead number of pages that can be read asynchronously
+    /// \param reuse_fd if true, the cache may serve the read from a cached open
+    /// file handle and cache the handle for later reads. Only safe for
+    /// immutable objects (e.g. L1 data extents); never set for mutable
+    /// cache-backed state such as the metastore.
     virtual ss::future<std::optional<cache_item_stream>> get_stream(
       std::filesystem::path key,
       size_t read_buffer_size = default_read_buffer_size,
-      unsigned int read_ahead = default_read_ahead) = 0;
+      unsigned int read_ahead = default_read_ahead,
+      bool reuse_fd = false) = 0;
 
     /// Get a range of a cached value as a stream if it exists
     ///
@@ -133,12 +138,14 @@ public:
     /// \param length is the number of bytes to read
     /// \param read_buffer_size is a read buffer size for the iostream
     /// \param read_ahead number of pages that can be read asynchronously
+    /// \param reuse_fd see get_stream; only safe for immutable objects
     virtual ss::future<std::optional<cache_item_stream>> get_stream_range(
       std::filesystem::path key,
       uint64_t offset,
       uint64_t length,
       size_t read_buffer_size = default_read_buffer_size,
-      unsigned int read_ahead = default_read_ahead) = 0;
+      unsigned int read_ahead = default_read_ahead,
+      bool reuse_fd = false) = 0;
 
     /// Add new value to the cache, overwrite if it's already exist
     ///

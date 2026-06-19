@@ -121,7 +121,13 @@ FIXTURE_TEST(fd_reuse_serves_read_after_unlink, cache_test_fixture) {
 
     // First get populates the fd cache.
     {
-        auto first = sharded_cache.local().get_stream(KEY).get();
+        auto first = sharded_cache.local()
+                       .get_stream(
+                         KEY,
+                         default_read_buffer_size,
+                         default_read_ahead,
+                         /*reuse_fd=*/true)
+                       .get();
         BOOST_REQUIRE(first);
         auto buf = first->body.read_exactly(data_string.length()).get();
         BOOST_CHECK_EQUAL(std::string_view(buf.get(), buf.size()), data_string);
@@ -134,7 +140,13 @@ FIXTURE_TEST(fd_reuse_serves_read_after_unlink, cache_test_fixture) {
     BOOST_REQUIRE(!ss::file_exists((CACHE_DIR / KEY).native()).get());
 
     // A re-open would return nullopt; success here proves the fd was reused.
-    auto second = sharded_cache.local().get_stream(KEY).get();
+    auto second = sharded_cache.local()
+                    .get_stream(
+                      KEY,
+                      default_read_buffer_size,
+                      default_read_ahead,
+                      /*reuse_fd=*/true)
+                    .get();
     BOOST_REQUIRE(second);
     auto buf = second->body.read_exactly(data_string.length()).get();
     BOOST_CHECK_EQUAL(std::string_view(buf.get(), buf.size()), data_string);
@@ -150,8 +162,20 @@ FIXTURE_TEST(fd_reuse_shared_handle_concurrent_reads, cache_test_fixture) {
     auto data_string = create_data_string('a', 1_MiB + 1_KiB);
     put_into_cache(data_string, KEY);
 
-    auto s1 = sharded_cache.local().get_stream(KEY).get();
-    auto s2 = sharded_cache.local().get_stream(KEY).get();
+    auto s1 = sharded_cache.local()
+                .get_stream(
+                  KEY,
+                  default_read_buffer_size,
+                  default_read_ahead,
+                  /*reuse_fd=*/true)
+                .get();
+    auto s2 = sharded_cache.local()
+                .get_stream(
+                  KEY,
+                  default_read_buffer_size,
+                  default_read_ahead,
+                  /*reuse_fd=*/true)
+                .get();
     BOOST_REQUIRE(s1);
     BOOST_REQUIRE(s2);
 

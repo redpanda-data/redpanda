@@ -1132,12 +1132,13 @@ static std::vector<std::filesystem::path> make_candidate_object_names(
     return keys;
 }
 
-ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
+ss::future<std::optional<cache_item>>
+cache::get(std::filesystem::path key, bool reuse_fd) {
     std::vector<std::filesystem::path> keys = make_candidate_object_names(
       key, "get");
     std::optional<cache_item> result;
     for (auto k : keys) {
-        result = co_await _get(std::move(k));
+        result = co_await _get(std::move(k), reuse_fd);
         if (result.has_value()) {
             break;
         }
@@ -1151,8 +1152,11 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
 }
 
 ss::future<std::optional<cloud_io::cache_item_stream>> cache::get_stream(
-  std::filesystem::path key, size_t read_buffer_size, unsigned int read_ahead) {
-    auto get_res = co_await get(key);
+  std::filesystem::path key,
+  size_t read_buffer_size,
+  unsigned int read_ahead,
+  bool reuse_fd) {
+    auto get_res = co_await get(key, reuse_fd);
     if (!get_res.has_value()) {
         co_return std::nullopt;
     }
@@ -1173,8 +1177,9 @@ ss::future<std::optional<cloud_io::cache_item_stream>> cache::get_stream_range(
   uint64_t offset,
   uint64_t length,
   size_t read_buffer_size,
-  unsigned int read_ahead) {
-    auto get_res = co_await get(key);
+  unsigned int read_ahead,
+  bool reuse_fd) {
+    auto get_res = co_await get(key, reuse_fd);
     if (!get_res.has_value()) {
         co_return std::nullopt;
     }
@@ -1190,7 +1195,8 @@ ss::future<std::optional<cloud_io::cache_item_stream>> cache::get_stream_range(
     };
 }
 
-ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
+ss::future<std::optional<cache_item>>
+cache::_get(std::filesystem::path key, bool reuse_fd) {
     auto guard = _gate.hold();
     vlog(log.debug, "Trying to get {} from archival cache.", key.native());
     auto source = (_cache_dir / key).native();
@@ -1201,14 +1207,16 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     ss::file cache_file;
     size_t data_size{0};
 
-    // CORE-15812 PROTOTYPE: reuse an already-open handle for this cache file if
-    // we have one, skipping the open_file_dma + size() that dominated the L1
-    // read at scale. On a miss, open as usual and cache the handle; it is
-    // closed (via file refcount) once evicted here and no read still holds it.
-    // Invalidated on put/invalidate/trim so a rewritten or removed file is not
-    // served stale (e.g. the mutable metastore manifest).
+    // Reuse an already-open handle for this cache file if we have one, skipping
+    // the open_file_dma + size() that dominated the L1 read at scale. On a miss,
+    // open as usual and cache the handle; it is closed (via file refcount) once
+    // evicted here and no read still holds it. Only callers that pass reuse_fd
+    // (immutable objects, e.g. L1 data extents) participate -- mutable
+    // cache-backed state such as the metastore must never be served from a
+    // cached handle. Also invalidated on put/invalidate/trim as a backstop.
     const bool fd_reuse_enabled
-      = config::shard_local_cfg().cloud_storage_cache_reuse_open_files();
+      = reuse_fd
+        && config::shard_local_cfg().cloud_storage_cache_reuse_open_files();
     auto cached = fd_reuse_enabled
                     ? _fd_cache.get_value(fd_key)
                     : ss::optimized_optional<ss::shared_ptr<open_file_entry>>{};

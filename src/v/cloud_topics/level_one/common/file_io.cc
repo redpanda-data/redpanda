@@ -264,7 +264,8 @@ file_io::read_object(
           std::optional<cloud_io::cache_item_stream>>(_cache->get_stream(
           cache_key,
           config::shard_local_cfg().storage_read_buffer_size(),
-          config::shard_local_cfg().storage_read_readahead_count()));
+          config::shard_local_cfg().storage_read_readahead_count(),
+          /*reuse_fd=*/true));
         if (stream_fut.failed()) {
             auto ex = stream_fut.get_exception();
             vlog(

@@ -87,19 +87,24 @@ public:
     /// Get cached value as a stream if it exists on disk
     ///
     /// \param key is a cache key
-    ss::future<std::optional<cache_item>> get(std::filesystem::path key);
+    /// \param reuse_fd if true, may serve from / populate the open-file-handle
+    /// cache. Only safe for immutable objects (see basic_cache_service_api).
+    ss::future<std::optional<cache_item>>
+    get(std::filesystem::path key, bool reuse_fd = false);
 
     ss::future<std::optional<cloud_io::cache_item_stream>> get_stream(
       std::filesystem::path key,
       size_t read_buffer_size = cloud_io::default_read_buffer_size,
-      unsigned int read_ahead = cloud_io::default_read_ahead) override;
+      unsigned int read_ahead = cloud_io::default_read_ahead,
+      bool reuse_fd = false) override;
 
     ss::future<std::optional<cloud_io::cache_item_stream>> get_stream_range(
       std::filesystem::path key,
       uint64_t offset,
       uint64_t length,
       size_t read_buffer_size = cloud_io::default_read_buffer_size,
-      unsigned int read_ahead = cloud_io::default_read_ahead) override;
+      unsigned int read_ahead = cloud_io::default_read_ahead,
+      bool reuse_fd = false) override;
 
     /// Add new value to the cache, overwrite if it's already exist
     ///
@@ -221,7 +226,8 @@ private:
         bool trim_missed_tmp_files{false};
     };
 
-    ss::future<std::optional<cache_item>> _get(std::filesystem::path key);
+    ss::future<std::optional<cache_item>>
+    _get(std::filesystem::path key, bool reuse_fd);
 
     /// Invalidate every candidate name for a key. Runs on shard 0.
     ss::future<> do_invalidate(const std::filesystem::path& key);
