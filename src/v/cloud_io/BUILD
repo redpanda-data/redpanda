@@ -278,6 +278,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/ssx:semaphore",
         "//src/v/storage:disk",
+        "//src/v/utils:chunked_kv_cache",
         "@seastar",
     ],
 )

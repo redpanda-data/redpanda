@@ -20,9 +20,11 @@
 #include "config/property.h"
 #include "ssx/semaphore.h"
 #include "storage/disk.h"
+#include "utils/chunked_kv_cache.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
+#include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
@@ -350,6 +352,22 @@ private:
     // When trimming, trim to this fraction of the target size to leave some
     // slack free space and thereby avoid continuously trimming.
     static constexpr double _cache_size_low_watermark{0.8};
+
+    // CORE-15812 PROTOTYPE: reuse open cache-file handles across reads so a
+    // get() for a hot object skips open_file_dma + size() (re-opening the
+    // already-cached file per fetch dominated the L1 read at scale). The fd is
+    // closed via refcount once it is evicted here AND no in-flight read still
+    // holds a copy. NOTE (prototype caveats): keyed by path; does not
+    // invalidate on put/trim (safe only because L1 objects are immutable), and
+    // pins trimmed inodes until eviction (bounded by the capacity below).
+    // NOTE: this is PER SHARD (the cache is sharded), so the open-fd budget is
+    // capacity x shards-per-broker; keep it well under the process fd limit.
+    static constexpr size_t _fd_cache_capacity{16384};
+    struct open_file_entry {
+        ss::file file;
+        uint64_t size;
+    };
+    utils::chunked_kv_cache<std::string, open_file_entry> _fd_cache;
 
     recursive_directory_walker _walker;
     uint64_t _total_cleaned;

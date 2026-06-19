@@ -107,6 +107,56 @@ FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
     body.close().get();
 }
 
+// CORE-15812 fd-reuse prototype: _get hands out an already-open handle on a
+// second get instead of re-opening. Prove the handle is genuinely reused (not
+// re-opened) by unlinking the backing file after the first get: a fresh
+// open_file_dma would now fail, so a successful second read can only come from
+// the cached open fd reading the (now unlinked but still-open) inode.
+FIXTURE_TEST(fd_reuse_serves_read_after_unlink, cache_test_fixture) {
+    auto data_string = create_data_string('a', 1_MiB + 1_KiB);
+    put_into_cache(data_string, KEY);
+
+    // First get populates the fd cache.
+    {
+        auto first = sharded_cache.local().get_stream(KEY).get();
+        BOOST_REQUIRE(first);
+        auto buf = first->body.read_exactly(data_string.length()).get();
+        BOOST_CHECK_EQUAL(std::string_view(buf.get(), buf.size()), data_string);
+        first->body.close().get();
+    }
+
+    // Remove the directory entry. Closing the stream above did not close the
+    // file (the fd cache still holds the handle), so the inode survives.
+    ss::remove_file((CACHE_DIR / KEY).native()).get();
+    BOOST_REQUIRE(!ss::file_exists((CACHE_DIR / KEY).native()).get());
+
+    // A re-open would return nullopt; success here proves the fd was reused.
+    auto second = sharded_cache.local().get_stream(KEY).get();
+    BOOST_REQUIRE(second);
+    auto buf = second->body.read_exactly(data_string.length()).get();
+    BOOST_CHECK_EQUAL(std::string_view(buf.get(), buf.size()), data_string);
+    second->body.close().get();
+}
+
+// Two streams for the same key share one cached open handle; each tracks its
+// own position, so both must independently read the full content.
+FIXTURE_TEST(fd_reuse_shared_handle_concurrent_reads, cache_test_fixture) {
+    auto data_string = create_data_string('a', 1_MiB + 1_KiB);
+    put_into_cache(data_string, KEY);
+
+    auto s1 = sharded_cache.local().get_stream(KEY).get();
+    auto s2 = sharded_cache.local().get_stream(KEY).get();
+    BOOST_REQUIRE(s1);
+    BOOST_REQUIRE(s2);
+
+    auto b1 = s1->body.read_exactly(data_string.length()).get();
+    auto b2 = s2->body.read_exactly(data_string.length()).get();
+    BOOST_CHECK_EQUAL(std::string_view(b1.get(), b1.size()), data_string);
+    BOOST_CHECK_EQUAL(std::string_view(b2.get(), b2.size()), data_string);
+    s1->body.close().get();
+    s2->body.close().get();
+}
+
 FIXTURE_TEST(get_missing_file, cache_test_fixture) {
     std::optional<cloud_io::cache_item> returned_item
       = sharded_cache.local().get(WRONG_KEY).get();

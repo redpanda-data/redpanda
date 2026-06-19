@@ -69,6 +69,10 @@ cache::cache(
   , _max_objects(std::move(max_objects))
   , _walk_concurrency(std::move(walk_concurrency))
   , _cnt(0)
+  , _fd_cache(
+      decltype(_fd_cache)::config{
+        .cache_size = _fd_cache_capacity,
+        .small_size = _fd_cache_capacity / 10})
   , _total_cleaned(0) {
     if (ss::this_shard_id() == coordinator_shard) {
         update_max_bytes(); // initialize _max_bytes
@@ -1185,33 +1189,46 @@ ss::future<std::optional<cloud_io::cache_item_stream>> cache::get_stream_range(
 ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     auto guard = _gate.hold();
     vlog(log.debug, "Trying to get {} from archival cache.", key.native());
+    auto source = (_cache_dir / key).native();
+
     ss::file cache_file;
-
     size_t data_size{0};
-    try {
-        auto source = (_cache_dir / key).native();
-        cache_file = co_await ss::open_file_dma(source, ss::open_flags::ro);
-        data_size = co_await cache_file.size();
 
-        // Bump access time of the file
-        if (ss::this_shard_id() == coordinator_shard) {
-            _access_time_tracker.add(
-              source, std::chrono::system_clock::now(), data_size);
-        } else {
-            ssx::spawn_with_gate(_gate, [this, source, data_size] {
-                return container().invoke_on(
-                  coordinator_shard, [source, data_size](cache& c) {
-                      c._access_time_tracker.add(
-                        source, std::chrono::system_clock::now(), data_size);
-                  });
-            });
-        }
-    } catch (const std::filesystem::filesystem_error& e) {
-        if (e.code() == std::errc::no_such_file_or_directory) {
-            co_return std::nullopt;
-        } else {
+    // CORE-15812 PROTOTYPE: reuse an already-open handle for this cache file if
+    // we have one, skipping the open_file_dma + size() that dominated the L1
+    // read at scale. On a miss, open as usual and cache the handle; it is
+    // closed (via file refcount) once evicted here and no read still holds it.
+    if (auto cached = _fd_cache.get_value(source); cached) {
+        cache_file = (*cached)->file;
+        data_size = (*cached)->size;
+    } else {
+        try {
+            cache_file = co_await ss::open_file_dma(source, ss::open_flags::ro);
+            data_size = co_await cache_file.size();
+        } catch (const std::filesystem::filesystem_error& e) {
+            if (e.code() == std::errc::no_such_file_or_directory) {
+                co_return std::nullopt;
+            }
             throw;
         }
+        _fd_cache.try_insert(
+          source,
+          ss::make_shared<open_file_entry>(
+            open_file_entry{.file = cache_file, .size = data_size}));
+    }
+
+    // Bump access time of the file
+    if (ss::this_shard_id() == coordinator_shard) {
+        _access_time_tracker.add(
+          source, std::chrono::system_clock::now(), data_size);
+    } else {
+        ssx::spawn_with_gate(_gate, [this, source, data_size] {
+            return container().invoke_on(
+              coordinator_shard, [source, data_size](cache& c) {
+                  c._access_time_tracker.add(
+                    source, std::chrono::system_clock::now(), data_size);
+              });
+        });
     }
 
     co_return std::optional(cache_item{std::move(cache_file), data_size});
