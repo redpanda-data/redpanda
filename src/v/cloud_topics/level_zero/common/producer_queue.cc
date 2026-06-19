@@ -30,6 +30,8 @@ public:
     virtual ~impl() = default;
     virtual ss::future<> redeem() = 0;
     virtual void release() = 0;
+    virtual void abandon() = 0;
+    virtual bool poisoned() const = 0;
 };
 
 namespace {
@@ -53,6 +55,11 @@ public:
         _units = {};
         _as.request_abort();
     }
+
+    // Non-idempotent producers carry no per-producer ordering, so there is
+    // nothing to poison.
+    void abandon() override { release(); }
+    bool poisoned() const override { return false; }
 
     ss::semaphore& _s;
     ss::semaphore_units<> _units;
@@ -79,9 +86,28 @@ public:
         }
     }
 
-    ~ticket_impl() override { release(); }
+    // Fail-safe: a ticket dropped without an explicit release() never reached
+    // raft, so poison the successor to preserve per-producer ordering.
+    ~ticket_impl() override { abandon(); }
 
     ss::future<> redeem() override { return _p.get_future(); }
+
+    bool poisoned() const override { return _poisoned; }
+
+    void abandon() override {
+        if (!_map) {
+            // already released or abandoned
+            return;
+        }
+        // Tag the immediate successor before unlinking. The tag survives the
+        // relink in release(): whenever the successor's redeem resolves (now,
+        // if we are the head, or later via our predecessor), it observes the
+        // poison.
+        if (_next != nullptr) {
+            _next->_poisoned = true;
+        }
+        release();
+    }
 
     void release() override {
         // Use the null map to signify a released ticket.
@@ -119,6 +145,7 @@ public:
 private:
     ticket_impl* _prev;
     ticket_impl* _next = nullptr;
+    bool _poisoned = false;
 
     model::producer_id _pid;
     ss::lw_shared_ptr<producer_state_map> _map;
@@ -190,6 +217,8 @@ ss::future<> producer_ticket::redeem(ss::abort_source& as) {
 }
 
 void producer_ticket::release() { _impl->release(); }
+void producer_ticket::abandon() { _impl->abandon(); }
+bool producer_ticket::poisoned() const { return _impl->poisoned(); }
 
 // producer_queue wrapper implementation
 producer_queue::producer_queue()
