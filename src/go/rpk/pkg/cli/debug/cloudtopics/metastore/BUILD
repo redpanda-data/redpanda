@@ -5,11 +5,18 @@ go_library(
     srcs = [
         "flags.go",
         "metastore.go",
+        "transport.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/cloudtopics/metastore",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/go/rpk/pkg/adminapi",
+        "//src/go/rpk/pkg/cli/debug/cloudtopics/metastore/internal/cloudtopicsv1",
+        "//src/go/rpk/pkg/cli/debug/cloudtopics/metastore/internal/cloudtopicsv1/cloudtopicsv1connect",
         "//src/go/rpk/pkg/config",
+        "//src/go/rpk/pkg/out",
+        "@com_connectrpc_connect//:connect",
+        "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
     ],
