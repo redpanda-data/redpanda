@@ -21,5 +21,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "metastore",
 		Short: "Inspect the Cloud Topics L1 metastore",
 	}
+	cmd.AddCommand(
+		newLayoutCommand(fs, p),
+	)
 	return cmd
 }

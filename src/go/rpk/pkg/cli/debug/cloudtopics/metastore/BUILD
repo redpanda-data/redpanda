@@ -4,6 +4,7 @@ go_library(
     name = "metastore",
     srcs = [
         "flags.go",
+        "layout.go",
         "metastore.go",
         "transport.go",
     ],
@@ -24,7 +25,13 @@ go_library(
 
 go_test(
     name = "metastore_test",
-    srcs = ["flags_test.go"],
+    srcs = [
+        "flags_test.go",
+        "layout_test.go",
+    ],
     embed = [":metastore"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "//src/go/rpk/pkg/cli/debug/cloudtopics/metastore/internal/cloudtopicsv1",
+        "@com_github_stretchr_testify//require",
+    ],
 )
