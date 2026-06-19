@@ -987,24 +987,36 @@ class ManyPartitionsTest(PreallocNodesTest):
         num_nodes=12,
         log_allow_list=RESTART_LOG_ALLOW_LIST,
     )
-    # CORE-15812 A/B: run the serialized default (=1, which reproduces the
-    # hang) and the pipelined arm (=16) in one invocation so the per-phase L1
-    # read timing can be compared directly. Experiment only, not the fix.
+    # CORE-15812 A/B: the serialized default (=1, which reproduces the hang)
+    # and the pipelined arm (=16) measure how the per-phase L1 read timing
+    # shifts once per-partition reads pipeline. The third arm keeps =1 but
+    # turns on fd-reuse (cloud_storage_cache_reuse_open_files): the decisive
+    # test of whether reusing open cache-file handles drains the serialized
+    # read without bumping concurrency. Experiment, not the final fix.
     @parametrize(
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
         topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
         fetch_max_read_concurrency=1,
+        reuse_open_files=False,
+    )
+    @parametrize(
+        mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+        topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
+        fetch_max_read_concurrency=1,
+        reuse_open_files=True,
     )
     @parametrize(
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
         topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
         fetch_max_read_concurrency=16,
+        reuse_open_files=False,
     )
     def test_many_partitions_cloud_topics(
         self,
         mib_per_partition: float,
         topic_partitions_per_shard: int,
         fetch_max_read_concurrency: int,
+        reuse_open_files: bool = False,
     ):
         self._test_many_partitions(
             compacted=False,
@@ -1012,6 +1024,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             mib_per_partition=mib_per_partition,
             topic_partitions_per_shard=topic_partitions_per_shard,
             fetch_max_read_concurrency=fetch_max_read_concurrency,
+            reuse_open_files=reuse_open_files,
         )
 
     @cluster(
@@ -1067,6 +1080,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         tiered_storage_enabled: bool = False,
         cloud_topics_enabled: bool = False,
         fetch_max_read_concurrency: int | None = None,
+        reuse_open_files: bool = False,
     ):
         """
         Validate that redpanda works with partition counts close to its resource
@@ -1200,6 +1214,15 @@ class ManyPartitionsTest(PreallocNodesTest):
             # per-partition reads pipeline. Experiment only, not the fix.
             self.redpanda.add_extra_rp_conf(
                 {"fetch_max_read_concurrency": fetch_max_read_concurrency}
+            )
+
+        if cloud_topics_enabled and reuse_open_files:
+            # CORE-15812: reuse open cache-file handles for immutable L1 object
+            # reads, skipping the per-fetch open_file_dma + size() that dominate
+            # the serialized read at scale. Scoped to L1 data/footer reads only
+            # (the metastore is never fd-cached), so it is safe to enable here.
+            self.redpanda.add_extra_rp_conf(
+                {"cloud_storage_cache_reuse_open_files": True}
             )
 
         self.redpanda.start()
