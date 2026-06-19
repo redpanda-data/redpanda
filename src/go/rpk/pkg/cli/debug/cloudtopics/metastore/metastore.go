@@ -23,6 +23,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newLayoutCommand(fs, p),
+		newFilesCommand(fs, p),
 	)
 	return cmd
 }

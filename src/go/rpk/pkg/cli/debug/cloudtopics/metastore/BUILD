@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "metastore",
     srcs = [
+        "files.go",
         "flags.go",
         "layout.go",
         "metastore.go",
@@ -26,6 +27,7 @@ go_library(
 go_test(
     name = "metastore_test",
     srcs = [
+        "files_test.go",
         "flags_test.go",
         "layout_test.go",
     ],
