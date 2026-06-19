@@ -15,6 +15,7 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage_clients/types.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -117,10 +118,15 @@ public:
     /// \param state Backend-specific state implementation
     /// \param part_size Size of each part in bytes
     /// \param logger Logger to use for diagnostics
+    /// \param as If set, makes each backend operation
+    ///   (initialize/upload_part/complete/abort) abortable, so a stalled op
+    ///   cannot block the caller's shutdown.
+    ///   Null by default, so callers that don't pass one are unchanged.
     explicit multipart_upload(
       ss::shared_ptr<multipart_upload_state> state,
       size_t part_size,
-      ss::logger& logger);
+      ss::logger& logger,
+      ss::abort_source* as = nullptr);
 
     ~multipart_upload() override;
 
@@ -178,6 +184,9 @@ private:
     /// Best-effort abort after a failure during complete()
     ss::future<> abort_on_error();
 
+    /// Make a backend op abortable via the abort source (no-op if unset).
+    ss::future<> with_op_abort(ss::future<> op);
+
     ss::shared_ptr<multipart_upload_state> _state;
     size_t _part_size;
     ss::logger& _logger;
@@ -185,6 +194,7 @@ private:
     size_t _part_number{1};
     bool _multipart_initialized{false};
     bool _finalized{false};
+    ss::abort_source* _abort_source{nullptr};
 };
 
 } // namespace cloud_storage_clients

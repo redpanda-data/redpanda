@@ -175,6 +175,8 @@ public:
     /// \param key Object key
     /// \param part_size Size of each part (must be >= 5 MiB for S3/GCS)
     /// \param timeout Operation timeout
+    /// \param as If set, makes the upload's ops abortable so a stalled op
+    ///   cannot block the caller's shutdown (see multipart_upload's ctor).
     /// \return multipart_upload handle or error
     ss::future<result<
       cloud_storage_clients::multipart_upload_ref,
@@ -183,7 +185,8 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& key,
       size_t part_size,
-      ss::lowres_clock::duration timeout);
+      ss::lowres_clock::duration timeout,
+      ss::abort_source* as = nullptr);
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.

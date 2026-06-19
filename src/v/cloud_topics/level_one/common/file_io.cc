@@ -286,7 +286,7 @@ file_io::create_multipart_upload(
     static constexpr auto timeout = 10s;
     auto key = object_path_factory::level_one_path(oid);
     auto result_fut = co_await ss::coroutine::as_future(
-      _remote->initiate_multipart_upload(_bucket, key, part_size, timeout));
+      _remote->initiate_multipart_upload(_bucket, key, part_size, timeout, as));
     if (result_fut.failed()) {
         auto ex = result_fut.get_exception();
         vlog(cd_log.warn, "Error initiating multipart upload: {}", ex);
