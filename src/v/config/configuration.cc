@@ -3043,6 +3043,13 @@ configuration::configuration()
       // Enough for a >1TiB cache of 16MiB objects.  Decrease this in case
       // of issues with trim performance.
       100000)
+  , cloud_storage_cache_reuse_open_files(
+      *this,
+      "cloud_storage_cache_reuse_open_files",
+      "Experimental: reuse open cache-file handles across reads so a read of "
+      "a hot object skips re-opening the file. Off by default.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , cloud_storage_cache_trim_carryover_bytes(
       *this,
       "cloud_storage_cache_trim_carryover_bytes",

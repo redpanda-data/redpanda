@@ -160,6 +160,10 @@ cache::delete_file_and_empty_parents(const std::string_view& key) {
           normal_cache_dir.native()));
     }
 
+    // CORE-15812: drop any cached open handle for the file being removed, so a
+    // subsequent get re-opens (or misses) rather than serving a stale handle.
+    _fd_cache.erase(normal_path.native());
+
     // Delete the specified file, and iterate through parents
     // attempting to delete them (will delete empty directories,
     // and then drop out when we hit a non-empty directory).
@@ -1190,6 +1194,9 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     auto guard = _gate.hold();
     vlog(log.debug, "Trying to get {} from archival cache.", key.native());
     auto source = (_cache_dir / key).native();
+    // Normalized so it matches the keys used to invalidate the fd cache on
+    // put/remove (those paths are lexically_normal'd).
+    auto fd_key = std::filesystem::path(source).lexically_normal().native();
 
     ss::file cache_file;
     size_t data_size{0};
@@ -1198,7 +1205,14 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
     // we have one, skipping the open_file_dma + size() that dominated the L1
     // read at scale. On a miss, open as usual and cache the handle; it is
     // closed (via file refcount) once evicted here and no read still holds it.
-    if (auto cached = _fd_cache.get_value(source); cached) {
+    // Invalidated on put/invalidate/trim so a rewritten or removed file is not
+    // served stale (e.g. the mutable metastore manifest).
+    const bool fd_reuse_enabled
+      = config::shard_local_cfg().cloud_storage_cache_reuse_open_files();
+    auto cached = fd_reuse_enabled
+                    ? _fd_cache.get_value(fd_key)
+                    : ss::optimized_optional<ss::shared_ptr<open_file_entry>>{};
+    if (cached) {
         cache_file = (*cached)->file;
         data_size = (*cached)->size;
     } else {
@@ -1211,10 +1225,12 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
             }
             throw;
         }
-        _fd_cache.try_insert(
-          source,
-          ss::make_shared<open_file_entry>(
-            open_file_entry{.file = cache_file, .size = data_size}));
+        if (fd_reuse_enabled) {
+            _fd_cache.try_insert(
+              fd_key,
+              ss::make_shared<open_file_entry>(
+                open_file_entry{.file = cache_file, .size = data_size}));
+        }
     }
 
     // Bump access time of the file
@@ -1396,6 +1412,9 @@ ss::future<> cache::put(
 
     auto dest = (dir_path / filename).native();
     co_await ss::rename_file(tmp_filepath.native(), dest);
+    // CORE-15812: the rename replaced the file, so drop any cached open handle
+    // for it; otherwise a reader would be served the previous contents.
+    _fd_cache.erase(dest);
 
     // We will now update
     reservation.wrote_data(put_size, 1);
@@ -1467,6 +1486,8 @@ ss::future<> cache::invalidate_candidate(const std::filesystem::path& key) {
         auto stat = co_await ss::file_stat(path);
         _access_time_tracker.remove(key.native());
         co_await ss::remove_file(path);
+        // CORE-15812: drop any cached open handle for the invalidated file.
+        _fd_cache.erase(path);
         _current_cache_size -= stat.size;
         _current_cache_objects -= 1;
         probe.set_size(_current_cache_size);

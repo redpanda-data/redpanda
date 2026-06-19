@@ -113,6 +113,9 @@ FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
 // open_file_dma would now fail, so a successful second read can only come from
 // the cached open fd reading the (now unlinked but still-open) inode.
 FIXTURE_TEST(fd_reuse_serves_read_after_unlink, cache_test_fixture) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_cache_reuse_open_files").set_value(true);
+
     auto data_string = create_data_string('a', 1_MiB + 1_KiB);
     put_into_cache(data_string, KEY);
 
@@ -141,6 +144,9 @@ FIXTURE_TEST(fd_reuse_serves_read_after_unlink, cache_test_fixture) {
 // Two streams for the same key share one cached open handle; each tracks its
 // own position, so both must independently read the full content.
 FIXTURE_TEST(fd_reuse_shared_handle_concurrent_reads, cache_test_fixture) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_cache_reuse_open_files").set_value(true);
+
     auto data_string = create_data_string('a', 1_MiB + 1_KiB);
     put_into_cache(data_string, KEY);
 

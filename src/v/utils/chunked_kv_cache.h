@@ -73,6 +73,15 @@ public:
      */
     ss::optimized_optional<ss::shared_ptr<Value>> get_value(const Key& key);
 
+    /**
+     * Removes the entry for a given key, if present, so a subsequent
+     * get_value returns nullopt and try_insert re-inserts. Releases the
+     * cache's reference to the value.
+     *
+     * Returns true if an entry was removed.
+     */
+    bool erase(const Key& key);
+
     using cache_stat = struct cache_t::stat;
     /**
      * Cache statistics.
@@ -176,6 +185,24 @@ chunked_kv_cache<Key, Value, Hash, EqualTo>::get_value(const Key& key) {
     entry.hook.touch();
     _hit_count++;
     return entry.value;
+}
+
+template<typename Key, typename Value, typename Hash, typename EqualTo>
+bool chunked_kv_cache<Key, Value, Hash, EqualTo>::erase(const Key& key) {
+    auto e_it = _map.find(key);
+    if (e_it == _map.end()) {
+        return false;
+    }
+
+    auto& entry = *e_it->second;
+    if (entry.hook.evicted()) {
+        // Already evicted: it lives on the ghost fifo, not the cache queues.
+        _ghost_fifo.erase(_ghost_fifo.iterator_to(entry));
+    } else {
+        _cache.remove(entry);
+    }
+    _map.erase(e_it);
+    return true;
 }
 
 template<typename Key, typename Value, typename Hash, typename EqualTo>
