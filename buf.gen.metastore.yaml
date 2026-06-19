@@ -1,0 +1,32 @@
+# Generates Go message + Connect bindings for the INTERNAL Cloud Topics
+# metastore admin proto, consumed only by `rpk debug cloud-topics metastore`.
+#
+# This is intentionally separate from buf.gen.yaml. The metastore proto lives
+# under proto/redpanda/core/admin/internal, which buf.yaml excludes from the
+# published buf.build/redpandadata/core module and from lint/breaking checks --
+# so the API carries no stability guarantees and must NOT be added to that
+# module. Generation therefore runs with an alternate workspace config that
+# includes the internal tree (see `make generate-metastore-proto`), and the
+# output lands in an internal/ Go package so nothing outside the metastore
+# command can import it.
+#
+# The proto's three transitive imports (common/v1/ntp, pbgen/options,
+# pbgen/rpc) ARE in the published module, so they are mapped to the existing
+# buf.build/gen/go packages rather than regenerated here.
+#
+# Regenerate with: make -C src/go/rpk generate-metastore-proto
+version: v2
+managed:
+  enabled: false
+plugins:
+  - local: protoc-gen-go
+    out: src/go/rpk
+    opt: &opts
+      - module=github.com/redpanda-data/redpanda/src/go/rpk
+      - Mproto/redpanda/core/common/v1/ntp.proto=buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/common/v1
+      - Mproto/redpanda/core/pbgen/options.proto=buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/pbgen
+      - Mproto/redpanda/core/pbgen/rpc.proto=buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/pbgen
+      - Mproto/redpanda/core/admin/internal/cloud_topics/v1/metastore.proto=github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/cloudtopics/metastore/internal/cloudtopicsv1
+  - local: protoc-gen-connect-go
+    out: src/go/rpk
+    opt: *opts
