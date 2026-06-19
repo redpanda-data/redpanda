@@ -1208,12 +1208,13 @@ cache::_get(std::filesystem::path key, bool reuse_fd) {
     size_t data_size{0};
 
     // Reuse an already-open handle for this cache file if we have one, skipping
-    // the open_file_dma + size() that dominated the L1 read at scale. On a miss,
-    // open as usual and cache the handle; it is closed (via file refcount) once
-    // evicted here and no read still holds it. Only callers that pass reuse_fd
-    // (immutable objects, e.g. L1 data extents) participate -- mutable
-    // cache-backed state such as the metastore must never be served from a
-    // cached handle. Also invalidated on put/invalidate/trim as a backstop.
+    // the open_file_dma + size() that dominated the L1 read at scale. On a
+    // miss, open as usual and cache the handle; it is closed (via file
+    // refcount) once evicted here and no read still holds it. Only callers that
+    // pass reuse_fd (immutable objects, e.g. L1 data extents) participate --
+    // mutable cache-backed state such as the metastore must never be served
+    // from a cached handle. Also invalidated on put/invalidate/trim as a
+    // backstop.
     const bool fd_reuse_enabled
       = reuse_fd
         && config::shard_local_cfg().cloud_storage_cache_reuse_open_files();
