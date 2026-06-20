@@ -95,6 +95,7 @@ redpanda_cc_library(
         "//src/v/model:batch_compression",
         "//src/v/random:time_jitter",
         "//src/v/rpc",
+        "//src/v/ssx:abort_source",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
         "//src/v/utils:backoff_policy",
