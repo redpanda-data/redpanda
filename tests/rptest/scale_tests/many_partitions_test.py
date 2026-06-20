@@ -346,9 +346,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                     ms = result.get(name)
                     return int(sum(s.value for s in ms.samples)) if ms else 0
 
-                durations = {
-                    p: metric_sum(f"{prefix}_{p}_duration_ns") for p in phases
-                }
+                durations = {p: metric_sum(f"{prefix}_{p}_duration_ns") for p in phases}
                 counts = {p: metric_sum(f"{prefix}_{p}_count") for p in phases}
                 total_ns = sum(durations.values())
 
@@ -987,18 +985,26 @@ class ManyPartitionsTest(PreallocNodesTest):
         num_nodes=12,
         log_allow_list=RESTART_LOG_ALLOW_LIST,
     )
-    # CORE-15812 A/B: the serialized default (=1, which reproduces the hang)
-    # and the pipelined arm (=16, which drains) measure how the per-phase L1
-    # read timing shifts once per-partition reads pipeline.
+    # CORE-15812: at the default fetch_max_read_concurrency=1 a cloud-topic
+    # fetch reads its partitions serially, so the latency-bound L1 reads can't
+    # keep up at scale and the consumer hangs. A little concurrency hides that
+    # latency; =4 is the smallest setting that keeps up and the value we intend
+    # to use. The =1 (failing baseline) and =16 (known-good ceiling) arms below
+    # are kept commented for re-running the diagnostic sweep.
+    # @parametrize(
+    #     mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+    #     topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
+    #     fetch_max_read_concurrency=1,
+    # )
+    # @parametrize(
+    #     mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+    #     topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
+    #     fetch_max_read_concurrency=16,
+    # )
     @parametrize(
         mib_per_partition=DEFAULT_MIB_PER_PARTITION,
         topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
-        fetch_max_read_concurrency=1,
-    )
-    @parametrize(
-        mib_per_partition=DEFAULT_MIB_PER_PARTITION,
-        topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
-        fetch_max_read_concurrency=16,
+        fetch_max_read_concurrency=4,
     )
     def test_many_partitions_cloud_topics(
         self,
