@@ -87,6 +87,32 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "offset_index",
+    srcs = [
+        "offset_index.cc",
+    ],
+    hdrs = [
+        "offset_index.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde",
+        "//src/v/serde:iobuf",
+        "//src/v/serde:vector",
+        "@seastar",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "//src/v/utils:delta_for",
+        "@abseil-cpp//absl/container:btree",
+    ],
+)
+
+redpanda_cc_library(
     name = "cloud_storage",
     srcs = [
         "anomalies_detector.cc",
@@ -183,6 +209,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":logger",
+        ":offset_index",
         ":remote_label",
         ":segment_meta_cstore",
         ":topic_mount_manifest_path",
