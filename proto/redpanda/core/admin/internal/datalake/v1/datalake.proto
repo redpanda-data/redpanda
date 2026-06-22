@@ -48,6 +48,18 @@ service DatalakeService {
             authz: SUPERUSER
         };
     }
+
+    // Tests an iceberg catalog config for connectivity and credential
+    // validity. With an empty property_overrides map, tests the running
+    // cluster config (functionally equivalent to DescribeCatalog). With
+    // overrides, constructs an ephemeral catalog client from the cluster
+    // config overlaid with the given properties and probes it without
+    // applying the overrides to the cluster.
+    rpc TestCatalog(TestCatalogRequest) returns (TestCatalogResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 message GetCoordinatorStateRequest {
@@ -131,3 +143,24 @@ message DescribeCatalogRequest {}
 // Currently empty. In the future, may include additional catalog
 // information such as configuration details or capabilities.
 message DescribeCatalogResponse {}
+
+message TestCatalogRequest {
+    // Cluster property overrides to apply when constructing the ephemeral
+    // catalog used for the probe. Keys are cluster property names (e.g.
+    // "iceberg_rest_catalog_endpoint"); values are the string forms
+    // accepted by the property's set_value. Empty map = test the
+    // currently-applied cluster config (no override).
+    map<string, string> property_overrides = 1;
+}
+
+message TestCatalogResponse {
+    // Empty on success. On failure, the iceberg::catalog_errc enum name
+    // (e.g. "io_error", "timedout"), or "invalid_request" if a property
+    // name/value in the overrides was rejected before probing.
+    string catalog_describe_error_code = 1;
+
+    // Empty on success. On failure, a human-readable message from either
+    // the catalog client or the request validator. Never contains secret
+    // values from the override map.
+    string catalog_describe_error_message = 2;
+}

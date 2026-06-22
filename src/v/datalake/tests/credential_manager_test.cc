@@ -80,7 +80,8 @@ private:
 class CredentialManagerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        _manager = std::make_unique<credential_manager>();
+        _manager = std::make_unique<credential_manager>(
+          config::shard_local_cfg());
         _tester = std::make_unique<credential_manager_tester>(*_manager);
         _test_impl = nullptr;
     }

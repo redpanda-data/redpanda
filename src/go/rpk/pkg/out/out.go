@@ -28,12 +28,22 @@ import (
 func norm(header string) string { return strings.TrimSpace(strings.ToUpper(header)) }
 
 // Confirm prompts the user to confirm the formatted message and returns the
-// confirmation result or an error.
+// confirmation result or an error. Defaults to yes.
 func Confirm(msg string, args ...any) (bool, error) {
 	var confirmation bool
 	return confirmation, survey.AskOne(&survey.Confirm{
 		Message: fmt.Sprintf(msg, args...),
 		Default: true,
+	}, &confirmation)
+}
+
+// ConfirmDefaultNo is like Confirm but defaults to no. Use for irreversible
+// or destructive actions where the safer default is to abort.
+func ConfirmDefaultNo(msg string, args ...any) (bool, error) {
+	var confirmation bool
+	return confirmation, survey.AskOne(&survey.Confirm{
+		Message: fmt.Sprintf(msg, args...),
+		Default: false,
 	}, &confirmation)
 }
 

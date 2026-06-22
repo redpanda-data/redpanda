@@ -153,7 +153,10 @@ void application::wire_up_runtime_services(
         syschecks::systemd_message("Starting datalake services").get();
 
         // Start credential manager first to provide shared credentials
-        construct_service(_datalake_credential_mgr).get();
+        construct_service(_datalake_credential_mgr, ss::sharded_parameter([] {
+                              return std::cref(config::shard_local_cfg());
+                          }))
+          .get();
         _datalake_credential_mgr
           .invoke_on_all(&datalake::credential_manager::start)
           .get();
