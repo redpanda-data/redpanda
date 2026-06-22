@@ -71,7 +71,7 @@ cache::cache(
   , _walk_concurrency(std::move(walk_concurrency))
   , _cnt(0)
   , _total_cleaned(0) {
-    if (ss::this_shard_id() == ss::shard_id{0}) {
+    if (ss::this_shard_id() == coordinator_shard) {
         update_max_bytes(); // initialize _max_bytes
         _disk_reservation.watch([this]() { update_max_bytes(); });
         _max_bytes_cfg.watch([this]() { update_max_bytes(); });
@@ -281,7 +281,9 @@ ss::future<> cache::trim_throttled_unlocked(
   std::optional<uint64_t> size_limit_override,
   std::optional<size_t> object_limit_override,
   std::optional<ss::lowres_clock::time_point> deadline) {
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     // If we trimmed very recently then do not do it immediately:
     // this reduces load and improves chance of currently promoted
     // segments finishing their read work before we demote their
@@ -306,7 +308,9 @@ ss::future<> cache::trim_throttled_unlocked(
 ss::future<> cache::trim_throttled(
   std::optional<uint64_t> size_limit_override,
   std::optional<size_t> object_limit_override) {
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     auto units = co_await ss::get_units(_cleanup_sm, 1);
     co_await trim_throttled_unlocked(
       size_limit_override, object_limit_override);
@@ -315,7 +319,9 @@ ss::future<> cache::trim_throttled(
 ss::future<> cache::trim_manually(
   std::optional<uint64_t> size_limit_override,
   std::optional<size_t> object_limit_override) {
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     auto units = co_await ss::get_units(_cleanup_sm, 1);
     vlog(
       log.info,
@@ -329,7 +335,9 @@ ss::future<> cache::trim_manually(
 ss::future<> cache::trim(
   std::optional<uint64_t> size_limit_override,
   std::optional<size_t> object_limit_override) {
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     auto guard = _gate.hold();
 
     auto size_limit = size_limit_override.value_or(_max_bytes);
@@ -898,7 +906,9 @@ ss::future<std::optional<uint64_t>> cache::access_time_tracker_size() const {
 
 ss::future<> cache::load_access_time_tracker() {
     ss::gate::holder guard{_gate};
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     auto source = _cache_dir / access_time_tracker_file_name;
     auto present = co_await ss::file_exists(source.native());
     if (!present) {
@@ -948,7 +958,9 @@ ss::future<> cache::_save_access_time_tracker(ss::file f) {
 
 ss::future<> cache::save_access_time_tracker() {
     ss::gate::holder guard{_gate};
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     auto tmp_path = _cache_dir / access_time_tracker_file_name_tmp;
 
     // Protect the file from concurrent writes.
@@ -971,7 +983,9 @@ ss::future<> cache::save_access_time_tracker() {
 }
 
 ss::future<> cache::maybe_save_access_time_tracker() {
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     if (_access_time_tracker.is_dirty() && !_gate.is_closed()) {
         co_await save_access_time_tracker();
     }
@@ -983,7 +997,7 @@ ss::future<> cache::start() {
       "Starting archival cache service, data directory: {}",
       _cache_dir);
 
-    if (ss::this_shard_id() == 0) {
+    if (ss::this_shard_id() == coordinator_shard) {
         // access time tracker has to be initialized before
         // cleanup
         co_await load_access_time_tracker();
@@ -1025,7 +1039,7 @@ ss::future<> cache::stop() {
     _block_puts_cond.broken();
     _cleanup_sm.broken();
     _tracker_sync_timer_sem.broken();
-    if (ss::this_shard_id() == 0) {
+    if (ss::this_shard_id() == coordinator_shard) {
         co_await save_access_time_tracker().handle_exception([](auto eptr) {
             // NOTE: see issue/11270 if the exception is "filesystem error:
             // rename failed", some other process is deleting files in the
@@ -1173,15 +1187,16 @@ ss::future<std::optional<cache_item>> cache::_get(std::filesystem::path key) {
         data_size = co_await cache_file.size();
 
         // Bump access time of the file
-        if (ss::this_shard_id() == 0) {
+        if (ss::this_shard_id() == coordinator_shard) {
             _access_time_tracker.add(
               source, std::chrono::system_clock::now(), data_size);
         } else {
             ssx::spawn_with_gate(_gate, [this, source, data_size] {
-                return container().invoke_on(0, [source, data_size](cache& c) {
-                    c._access_time_tracker.add(
-                      source, std::chrono::system_clock::now(), data_size);
-                });
+                return container().invoke_on(
+                  coordinator_shard, [source, data_size](cache& c) {
+                      c._access_time_tracker.add(
+                        source, std::chrono::system_clock::now(), data_size);
+                  });
             });
         }
     } catch (const std::filesystem::filesystem_error& e) {
@@ -1312,18 +1327,26 @@ ss::future<> cache::put(
               "Removing temporary file {}. Exception during copy: {}",
               tmp_filepath.native(),
               eptr);
-            auto delete_tmp_fut = co_await ss::coroutine::as_future(
-              delete_file_and_empty_parents(tmp_filepath.native()));
-            if (delete_tmp_fut.failed()) {
-                auto e = delete_tmp_fut.get_exception();
-                if (!ssx::is_shutdown_exception(e)) {
-                    vlog(
-                      log.error,
-                      "Failed to delete tmp file {}: {}",
-                      tmp_filepath.native(),
-                      e);
-                }
-            }
+            co_await ss::remove_file(tmp_filepath.native())
+              .handle_exception_type(
+                [&](const std::filesystem::filesystem_error& e) {
+                    if (e.code() != std::errc::no_such_file_or_directory) {
+                        vlog(
+                          log.error,
+                          "Failed to delete tmp file {}: {}",
+                          tmp_filepath.native(),
+                          e);
+                    }
+                })
+              .handle_exception([&](std::exception_ptr e) {
+                  if (!ssx::is_shutdown_exception(e)) {
+                      vlog(
+                        log.error,
+                        "Failed to delete tmp file {}: {}",
+                        tmp_filepath.native(),
+                        e);
+                  }
+              });
         }
 
         if (no_space_on_device) {
@@ -1338,7 +1361,7 @@ ss::future<> cache::put(
             // they'll contend for cleanup_sm and the losers will skip
             // trim due to throttling.
             co_await container().invoke_on(
-              0, [](cache& c) { return c.trim_throttled(); });
+              coordinator_shard, [](cache& c) { return c.trim_throttled(); });
         }
 
         std::rethrow_exception(eptr);
@@ -1385,25 +1408,41 @@ cache::_is_cached(const std::filesystem::path& key) {
 }
 
 ss::future<> cache::invalidate(const std::filesystem::path& key) {
+    return container().invoke_on(
+      coordinator_shard, [key](cache& c) { return c.do_invalidate(key); });
+}
+
+ss::future<> cache::do_invalidate(const std::filesystem::path& key) {
     std::vector<std::filesystem::path> keys = make_candidate_object_names(
       key, "invalidate");
     for (const auto& k : keys) {
         // We shouldn't stop invalidating if we actually deleted the file
         // because cache may store two files, one with old-style name and
         // another one with new-style name.
-        co_await _invalidate(k);
+        co_await invalidate_candidate(k);
     }
 }
 
-ss::future<> cache::_invalidate(const std::filesystem::path& key) {
+ss::future<> cache::invalidate_candidate(const std::filesystem::path& key) {
     auto guard = _gate.hold();
     vlog(
       log.debug, "Trying to invalidate {} from archival cache.", key.native());
+    auto normal_path = (_cache_dir / key).lexically_normal();
+    auto normal_cache_dir = _cache_dir.lexically_normal();
+    auto [p1, p2] = std::mismatch(
+      normal_cache_dir.begin(), normal_cache_dir.end(), normal_path.begin());
+    if (p1 != normal_cache_dir.end()) {
+        throw std::invalid_argument(fmt_with_ctx(
+          fmt::format,
+          "Tried to invalidate {}, which is outside of cache_dir {}.",
+          normal_path.native(),
+          normal_cache_dir.native()));
+    }
     try {
-        auto path = (_cache_dir / key).native();
+        auto path = normal_path.native();
         auto stat = co_await ss::file_stat(path);
         _access_time_tracker.remove(key.native());
-        co_await delete_file_and_empty_parents(path);
+        co_await ss::remove_file(path);
         _current_cache_size -= stat.size;
         _current_cache_objects -= 1;
         probe.set_size(_current_cache_size);
@@ -1442,9 +1481,10 @@ ss::future<space_reservation_guard> cache::reserve_space(
         }
     }
 
-    co_await container().invoke_on(0, [bytes, objects, deadline](cache& c) {
-        return c.do_reserve_space(bytes, objects, deadline);
-    });
+    co_await container().invoke_on(
+      coordinator_shard, [bytes, objects, deadline](cache& c) {
+          return c.do_reserve_space(bytes, objects, deadline);
+      });
 
     vlog(
       log.trace, "reserve_space: reserved {}/{} bytes/objects", bytes, objects);
@@ -1466,13 +1506,14 @@ void cache::reserve_space_release(
       wrote_bytes,
       wrote_objects);
 
-    if (ss::this_shard_id() == ss::shard_id{0}) {
+    if (ss::this_shard_id() == coordinator_shard) {
         do_reserve_space_release(bytes, objects, wrote_bytes, wrote_objects);
     } else {
         ssx::spawn_with_gate(
           _gate, [this, bytes, objects, wrote_bytes, wrote_objects]() {
               return container().invoke_on(
-                0, [bytes, objects, wrote_bytes, wrote_objects](cache& c) {
+                coordinator_shard,
+                [bytes, objects, wrote_bytes, wrote_objects](cache& c) {
                     return c.do_reserve_space_release(
                       bytes, objects, wrote_bytes, wrote_objects);
                 });
@@ -1482,7 +1523,7 @@ void cache::reserve_space_release(
 
 void cache::do_reserve_space_release(
   uint64_t bytes, size_t objects, uint64_t wrote_bytes, size_t wrote_objects) {
-    vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
+    vassert(ss::this_shard_id() == coordinator_shard, "Only call on shard 0");
     vassert(_reserved_cache_size >= bytes, "Double free of reserved bytes?");
     _reserved_cache_size -= bytes;
     _reserved_cache_objects -= objects;
@@ -1658,7 +1699,9 @@ cache::trim_carryover(uint64_t delete_bytes, uint64_t delete_objects) {
 }
 
 void cache::maybe_background_trim() {
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
     auto& trim_threshold_pct_objects
       = config::shard_local_cfg()
           .cloud_storage_cache_trim_threshold_percent_objects;
@@ -1705,7 +1748,7 @@ ss::future<> cache::do_reserve_space(
   uint64_t bytes,
   size_t objects,
   std::optional<ss::lowres_clock::time_point> deadline) {
-    vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
+    vassert(ss::this_shard_id() == coordinator_shard, "Only call on shard 0");
 
     auto check_deadline = [&] {
         if (deadline && ss::lowres_clock::now() >= *deadline) {
@@ -1944,7 +1987,7 @@ void cache::notify_disk_status(
   [[maybe_unused]] uint64_t total_space,
   [[maybe_unused]] uint64_t free_space,
   storage::disk_space_alert alert) {
-    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+    vassert(ss::this_shard_id() == coordinator_shard, "Called on wrong shard");
 
     _free_space = free_space;
 
@@ -1984,7 +2027,9 @@ ss::future<> cache::initialize(std::filesystem::path cache_dir) {
 
 ss::future<> cache::sync_access_time_tracker(
   access_time_tracker::add_entries_t add_entries) {
-    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    vassert(
+      ss::this_shard_id() == coordinator_shard,
+      "Method can only be invoked on shard 0");
 
     if (_cleanup_sm.available_units() <= 0) {
         vlog(
@@ -2151,15 +2196,16 @@ ss::future<> cache::commit_staging_file(
     reservation.wrote_data(file_size, 1);
 
     auto source = dest_path.native();
-    if (ss::this_shard_id() == 0) {
+    if (ss::this_shard_id() == coordinator_shard) {
         _access_time_tracker.add(
           source, std::chrono::system_clock::now(), file_size);
     } else {
         ssx::spawn_with_gate(_gate, [this, source, file_size] {
-            return container().invoke_on(0, [source, file_size](cache& c) {
-                c._access_time_tracker.add(
-                  source, std::chrono::system_clock::now(), file_size);
-            });
+            return container().invoke_on(
+              coordinator_shard, [source, file_size](cache& c) {
+                  c._access_time_tracker.add(
+                    source, std::chrono::system_clock::now(), file_size);
+              });
         });
     }
 }

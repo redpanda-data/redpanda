@@ -19,6 +19,7 @@
 #include "datalake/table_id_provider.h"
 #include "datalake/tests/test_utils.h"
 #include "features/feature_table.h"
+#include "iceberg/field_name_comparison.h"
 #include "iceberg/filesystem_catalog.h"
 #include "iceberg/manifest_entry.h"
 #include "iceberg/manifest_io.h"
@@ -115,7 +116,8 @@ public:
                      .ensure_table_schema(
                        table_ident,
                        datalake::schemaless_struct_type(),
-                       datalake::hour_partition_spec())
+                       datalake::hour_partition_spec(),
+                       iceberg::field_name_comparison::verbatim)
                      .get();
         ASSERT_FALSE(res.has_error());
     }
@@ -700,7 +702,8 @@ TEST_F(FileCommitterTest, TestDontLoadMainTable) {
                         .ensure_table_schema(
                           datalake::table_id_provider::dlq_table_id(topic),
                           datalake::schemaless_struct_type(),
-                          datalake::hour_partition_spec())
+                          datalake::hour_partition_spec(),
+                          iceberg::field_name_comparison::verbatim)
                         .get();
     ASSERT_FALSE(create_res.has_error());
     topics_state state;

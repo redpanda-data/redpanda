@@ -150,7 +150,7 @@ model::record_batch copy_data_segment_reducer::make_placeholder_batch(
       new_hdr, std::move(no_records), model::record_batch::tag_ctor_ng{});
 }
 
-ss::future<std::optional<model::record_batch>>
+ss::future<std::optional<copy_data_segment_reducer::filtered_batch>>
 copy_data_segment_reducer::filter(model::record_batch batch) {
     const auto is_last_batch_in_segment = batch.last_offset()
                                           == _segment_last_offset;
@@ -167,7 +167,8 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
 
     // do not filter non-removable batch types under any circumstances
     if (!compaction::is_filterable(batch.header().type)) {
-        co_return std::move(batch);
+        co_return filtered_batch{
+          .mode = filtered_batch::result::identical, .batch = std::move(batch)};
     }
 
     // 1. compute which records to keep
@@ -197,7 +198,9 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
               "installing a placeholder {} for compacted batch: {}",
               placeholder,
               batch);
-            co_return placeholder;
+            co_return filtered_batch{
+              .mode = filtered_batch::result::rebuilt,
+              .batch = std::move(placeholder)};
         }
     }
 
@@ -208,20 +211,25 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
 
     // 3. keep all records
     if (offset_deltas.size() == static_cast<size_t>(batch.record_count())) {
-        auto& header = batch.header();
-        if (
-          header.type == model::record_batch_type::raft_data
-          && header.attrs.is_transactional() && !header.attrs.is_control()) {
-            if (likely(_unset_transaction_bit_enabled)) {
-                vlog(
-                  gclog.trace,
-                  "Removing transactional bit for raft batch {}",
-                  header);
-                header.attrs.remove_transactional_type();
-                header.reset_size_checksum_metadata(batch.data());
-            }
+        const auto& header = batch.header();
+        const bool clear_transactional_bit
+          = header.type == model::record_batch_type::raft_data
+            && header.attrs.is_transactional() && !header.attrs.is_control()
+            && likely(_unset_transaction_bit_enabled);
+        if (clear_transactional_bit) {
+            vlog(
+              gclog.trace,
+              "Removing transactional bit for raft batch {}",
+              header);
         }
-        co_return std::move(batch);
+        // The actual header rewrite is deferred to filter_and_append so it can
+        // be applied to the batch that is ultimately appended (the original
+        // compressed payload, if any), avoiding re-compression.
+        co_return filtered_batch{
+          .mode = clear_transactional_bit
+                    ? filtered_batch::result::clear_transactional_bit
+                    : filtered_batch::result::identical,
+          .batch = std::move(batch)};
     }
 
     // 4. filter
@@ -229,17 +237,22 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     int32_t rec_count = 0;
     std::optional<int64_t> first_timestamp_delta;
     int64_t last_timestamp_delta;
+    // We expect and enforce that offset_deltas is sorted.
+    dassert(
+      std::ranges::is_sorted(offset_deltas),
+      "offset_deltas must be ascending in record-iteration order");
+    size_t keep_idx = 0;
     batch.for_each_record([&rec_count,
                            &first_timestamp_delta,
                            &last_timestamp_delta,
                            &ret,
+                           &keep_idx,
                            &offset_deltas](model::record record) {
         // contains the key
         if (
-          std::count(
-            offset_deltas.begin(),
-            offset_deltas.end(),
-            record.offset_delta())) {
+          keep_idx < offset_deltas.size()
+          && offset_deltas[keep_idx] == record.offset_delta()) {
+            ++keep_idx;
             /*
              * TODO when we further optimize lazy record materialization ot
              * make use of views we can avoid this re-encoding by copying or
@@ -325,11 +338,14 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     new_hdr.reset_size_checksum_metadata(ret);
     auto new_batch = model::record_batch(
       new_hdr, std::move(ret), model::record_batch::tag_ctor_ng{});
-    co_return new_batch;
+    co_return filtered_batch{
+      .mode = filtered_batch::result::rebuilt, .batch = std::move(new_batch)};
 }
 
 ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
-  model::compression original, model::record_batch b) {
+  model::compression original,
+  model::record_batch b,
+  std::optional<model::record_batch> compressed_b_opt) {
     ++_stats.batches_processed;
     using stop_t = ss::stop_iteration;
     const auto record_count_before = b.record_count();
@@ -343,7 +359,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
         _stats.records_discarded += record_count_before;
         co_return stop_t::no;
     }
-    auto batch = std::move(maybe_batch.value());
+    auto filtered = std::move(maybe_batch.value());
+    auto batch = std::move(filtered.batch);
     const auto records_to_remove = record_count_before - batch.record_count();
     _stats.records_discarded += records_to_remove;
     bool compactible_batch = compaction::is_compactible(batch.header());
@@ -362,31 +379,61 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
                 r.offset_delta());
           });
     }
-    if (original != model::compression::none) {
-        batch = co_await model::compress_batch(original, std::move(batch));
+    using result = filtered_batch::result;
+    model::record_batch to_append = std::move(batch);
+    switch (filtered.mode) {
+    case result::identical:
+        // Records and header unchanged: reuse the (possibly compressed) payload
+        // as-is.
+        if (compressed_b_opt.has_value()) {
+            to_append = std::move(compressed_b_opt).value();
+            ++_stats.compressed_batches_reused;
+        }
+        break;
+    case result::clear_transactional_bit: {
+        // Records unchanged but the transactional bit must be cleared. Reuse
+        // the (possibly compressed) payload and rewrite only the header and
+        // checksum.
+        if (compressed_b_opt.has_value()) {
+            to_append = std::move(compressed_b_opt).value();
+            ++_stats.compressed_batches_reused;
+        }
+        auto& hdr = to_append.header();
+        hdr.attrs.remove_transactional_type();
+        hdr.reset_size_checksum_metadata(to_append.data());
+        break;
+    }
+    case result::rebuilt:
+        // Records changed: re-compress the rebuilt batch if the source was
+        // compressed.
+        if (original != model::compression::none) {
+            to_append = co_await model::compress_batch(
+              original, std::move(to_append));
+        }
+        break;
     }
     const auto start_pos = _appender->file_byte_offset();
-    const auto header_size = batch.header().size_bytes;
+    const auto header_size = to_append.header().size_bytes;
     _acc += header_size;
     // do not set broker_timestamp in this index, leave the operation to the
     // caller who has more context
-    bool filterable_batch = compaction::is_filterable(batch.header().type);
+    bool filterable_batch = compaction::is_filterable(to_append.header().type);
     if (
       _idx.maybe_index(
         _acc,
         segment_index::default_data_buffer_step,
         start_pos,
-        batch.base_offset(),
-        batch.last_offset(),
-        batch.header().first_timestamp,
-        batch.header().max_timestamp,
+        to_append.base_offset(),
+        to_append.last_offset(),
+        to_append.header().first_timestamp,
+        to_append.header().max_timestamp,
         std::nullopt,
         _internal_topic
-          || batch.header().type == model::record_batch_type::raft_data,
-        filterable_batch ? batch.header().record_count : 0)) {
+          || to_append.header().type == model::record_batch_type::raft_data,
+        filterable_batch ? to_append.header().record_count : 0)) {
         _acc = 0;
     }
-    co_await _appender->append(batch);
+    co_await _appender->append(to_append);
     vassert(
       _appender->file_byte_offset() == start_pos + header_size,
       "Size must be deterministic. Expected:{} == {}",
@@ -406,10 +453,15 @@ copy_data_segment_reducer::operator()(model::record_batch b) {
     }
     const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
-        co_return co_await filter_and_append(comp, std::move(b));
+        co_return co_await filter_and_append(comp, std::move(b), std::nullopt);
     }
-    b = co_await model::decompress_batch(b);
-    co_return co_await filter_and_append(comp, std::move(b));
+    // Decompress for filtering and index building, but keep the original
+    // compressed batch so filter_and_append can append it verbatim if nothing
+    // was removed. decompress_batch takes its argument by const ref, so `b`
+    // remains valid to hand off as the compressed original.
+    auto decompressed = co_await model::decompress_batch(b);
+    co_return co_await filter_and_append(
+      comp, std::move(decompressed), std::move(b));
 }
 
 ss::future<ss::stop_iteration>

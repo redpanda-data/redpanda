@@ -87,14 +87,22 @@ public:
     std::optional<data_source::source_partition_offsets_report>
     get_offsets() final {
         source_partition_offsets_report ret;
-        ret.source_start_offset = _start_offset.value_or(kafka::offset{-1});
+        ret.source_start_offset = _reported_start_offset.value_or(
+          _start_offset.value_or(kafka::offset{-1}));
         ret.source_hwm = _next_to_consume;
         ret.source_lso = _next_to_consume;
         return ret;
     }
 
+    // Simulate a prefix trim on the source: subsequent offset reports
+    // advertise `o` as the source start offset.
+    void set_reported_start_offset(kafka::offset o) {
+        _reported_start_offset = o;
+    }
+
 private:
     std::optional<kafka::offset> _start_offset{};
+    std::optional<kafka::offset> _reported_start_offset{};
     kafka::offset _next_to_consume;
     kafka::offset _last_reset_offset;
     int _num_fetches = 0;
@@ -193,6 +201,13 @@ public:
 
     kafka::offset committed_offset() const { return _committed_offset; }
 
+    // Seed the sink with already-replicated data so a replicator built on
+    // top of it resumes from next_offset(o) instead of starting fresh.
+    void seed_replicated(kafka::offset o) {
+        _last_replicated_offset = o;
+        _committed_offset = o;
+    }
+
 private:
     model::ntp _ntp{"kafka", "test", model::partition_id(0)};
     ssx::mutex _replication_mu{"test_replication"};
@@ -233,8 +248,6 @@ protected:
     test_data_sink* _sink;
     std::unique_ptr<partition_replicator> _replicator;
     model::ntp _ntp{"kafka", "test", 0};
-
-private:
     std::unique_ptr<link_configuration_provider> _config_provider;
 };
 
@@ -355,6 +368,46 @@ TEST_F_CORO(PartitionReplicatorFixture, TestOffsetMonotonicityOnFailure) {
         return _sink->last_replicated_offset() == kafka::offset(109)
                && _source->num_resets() == 1;
     });
+}
+
+// Test that a replicator resuming from a previously replicated position
+// (e.g. after a shadow partition leadership change) follows the source start
+// offset exactly when synchronizing. Flooring the truncation at the resume
+// position would advance the shadow partition start offset past a source
+// prefix trim that landed below the resume point.
+TEST_F_CORO(PartitionReplicatorFixture, TestNoStartOffsetOvershootOnResume) {
+    // Replicate offsets [0, 99] with the initial replicator, then stop it,
+    // simulating a leadership change.
+    for (int i = 0; i < 10; ++i) {
+        co_await push_data();
+    }
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      5s, [&] { return _sink->last_replicated_offset() == kafka::offset(99); });
+    co_await _replicator->stop();
+
+    // New term: the sink already holds [0, 99], so the new replicator
+    // resumes from offset 100.
+    auto source = std::make_unique<test_data_source>();
+    auto sink = std::make_unique<test_data_sink>();
+    sink->seed_replicated(kafka::offset(99));
+    _source = source.get();
+    _sink = sink.get();
+    _replicator = std::make_unique<partition_replicator>(
+      _ntp,
+      model::term_id(1),
+      *_config_provider,
+      std::move(source),
+      std::move(sink));
+    co_await _replicator->start();
+
+    // The source was prefix-trimmed to offset 50, below the resume point.
+    _source->set_reported_start_offset(kafka::offset(50));
+    co_await push_data();
+
+    // The shadow partition start offset must land on the source's, not on
+    // the resume position (100).
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      5s, [&] { return _sink->start_offset() == kafka::offset(50); });
 }
 
 } // namespace cluster_link::replication

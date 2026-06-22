@@ -16,6 +16,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <exception>
+#include <stdexcept>
 #include <utility>
 
 class malformed_batch_stream_exception : public std::exception {
@@ -49,4 +50,12 @@ public:
 
 private:
     ss::sstring _msg;
+};
+
+/// Thrown by `offset_translator_state` when an offset to translate falls
+/// outside the range currently covered by the translator state.
+class translation_offset_out_of_range : public std::runtime_error {
+public:
+    explicit translation_offset_out_of_range(const ss::sstring& s)
+      : std::runtime_error(s.c_str()) {}
 };

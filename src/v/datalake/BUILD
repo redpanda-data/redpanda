@@ -22,6 +22,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/iceberg:catalog",
         "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/iceberg:table_identifier",
         "@seastar",
     ],
@@ -205,6 +206,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "validators",
+    srcs = [
+        "validators.cc",
+    ],
+    hdrs = [
+        "validators.h",
+    ],
+    implementation_deps = [
+        "@abseil-cpp//absl/strings",
+        "@fmt",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@ada",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "translation_task",
     srcs = [
         "translation_task.cc",
@@ -223,6 +244,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/datalake/coordinator:translated_offset_range",
         "//src/v/datalake/translation:translation_probe",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/iceberg:values_bytes",
         "//src/v/model",
         "//src/v/utils:lazy_abort_source",
@@ -334,6 +356,7 @@ redpanda_cc_library(
         ":writer",
         "//src/v/container:chunked_hash_map",
         "//src/v/datalake/translation:translation_probe",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/model",
         "@seastar",
     ],

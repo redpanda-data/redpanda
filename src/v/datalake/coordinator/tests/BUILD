@@ -72,6 +72,7 @@ redpanda_cc_gtest(
         "//src/v/datalake/coordinator:iceberg_file_committer",
         "//src/v/datalake/tests:test_utils",
         "//src/v/features",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/iceberg:manifest_entry",
         "//src/v/iceberg:manifest_io",
@@ -109,6 +110,23 @@ redpanda_cc_gtest(
         "//src/v/iceberg:table_identifier",
         "//src/v/iceberg:transaction",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "catalog_config_test",
+    timeout = "short",
+    srcs = [
+        "catalog_config_test.cc",
+    ],
+    deps = [
+        "//src/v/datalake/coordinator:catalog_config",
+        "//src/v/iceberg:field_name_comparison",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
         "@googletest//:gtest",
         "@seastar",
     ],

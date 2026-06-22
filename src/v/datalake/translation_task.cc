@@ -55,7 +55,7 @@ translation_task::errc map_error_code(writer_error errc) {
     case writer_error::out_of_disk:
         return translation_task::errc::out_of_disk;
     case writer_error::unknown_error:
-        return translation_task::errc::file_io_error;
+        return translation_task::errc::unknown_error;
     case writer_error::retryable_type_resolution_error:
         return translation_task::errc::type_resolution_error;
     }
@@ -246,6 +246,7 @@ translation_task::translation_task(
   record_translator& record_translator,
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
+  iceberg::field_name_comparison norm,
   location_provider location_provider,
   translation_probe& probe)
   : _log(datalake_log, fmt::format("{}", ntp))
@@ -266,6 +267,7 @@ translation_task::translation_task(
       *_record_translator,
       *_table_creator,
       _invalid_record_action,
+      norm,
       _location_provider,
       *_translation_probe,
       features) {}
@@ -428,6 +430,8 @@ std::ostream& operator<<(std::ostream& o, translation_task::errc ec) {
         return o << "disk exhausted";
     case translation_task::errc::type_resolution_error:
         return o << "type resolution error";
+    case translation_task::errc::unknown_error:
+        return o << "unknown error";
     }
 }
 } // namespace datalake

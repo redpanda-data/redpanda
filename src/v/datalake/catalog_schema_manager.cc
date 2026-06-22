@@ -75,9 +75,12 @@ enum class fill_errc {
 checked<std::nullopt_t, fill_errc> check_schema_compat(
   iceberg::struct_type& dest,
   iceberg::struct_type source,
-  const iceberg::partition_spec& spec) {
+  const iceberg::partition_spec& spec,
+  iceberg::field_name_comparison norm) {
     using namespace iceberg;
-    if (auto evo_res = evolve_schema(source, dest, spec); evo_res.has_error()) {
+    if (
+      auto evo_res = evolve_schema(source, dest, spec, norm);
+      evo_res.has_error()) {
         vlog(
           datalake_log.warn,
           "Schema compatibility error: '{}'\n",
@@ -104,7 +107,8 @@ checked<schema_update_required, schema_manager::errc> apply_evolution_rules(
   const iceberg::table_identifier& table_id,
   const iceberg::table_metadata& table_meta,
   const iceberg::schema& schema,
-  iceberg::struct_type& dest_type) {
+  iceberg::struct_type& dest_type,
+  iceberg::field_name_comparison norm) {
     const auto* cur_spec = table_meta.get_partition_spec(
       table_meta.default_spec_id);
     if (cur_spec == nullptr) {
@@ -115,8 +119,17 @@ checked<schema_update_required, schema_manager::errc> apply_evolution_rules(
           table_id);
         return schema_manager::errc::failed;
     }
+
+    vlog(
+      datalake_log.trace,
+      "check_schema_compat table={} dest={} source={} spec={}",
+      table_id,
+      dest_type,
+      schema.schema_struct,
+      *cur_spec);
+
     auto compat_res = check_schema_compat(
-      dest_type, schema.schema_struct.copy(), *cur_spec);
+      dest_type, schema.schema_struct.copy(), *cur_spec, norm);
     if (compat_res.has_error()) {
         switch (compat_res.error()) {
         case fill_errc::invalid_schema:
@@ -143,8 +156,8 @@ std::ostream& operator<<(std::ostream& o, const schema_manager::errc& e) {
 }
 
 bool schema_manager::table_info::fill_registered_ids(
-  iceberg::struct_type& type) {
-    return iceberg::try_fill_field_ids(schema.schema_struct, type)
+  iceberg::struct_type& type, iceberg::field_name_comparison norm) {
+    return iceberg::try_fill_field_ids(schema.schema_struct, type, norm)
            == iceberg::ids_filled::yes;
 }
 
@@ -152,7 +165,8 @@ ss::future<checked<std::nullopt_t, schema_manager::errc>>
 simple_schema_manager::ensure_table_schema(
   const iceberg::table_identifier& table_id,
   const iceberg::struct_type& writer_struct_type,
-  const iceberg::unresolved_partition_spec& partition_spec) {
+  const iceberg::unresolved_partition_spec& partition_spec,
+  iceberg::field_name_comparison /*norm*/) {
     iceberg::schema s{
       .schema_struct = writer_struct_type.copy(),
       .schema_id = {},
@@ -190,7 +204,8 @@ simple_schema_manager::ensure_table_schema(
 ss::future<checked<schema_manager::table_info, schema_manager::errc>>
 simple_schema_manager::get_table_info(
   const iceberg::table_identifier& table_id,
-  std::optional<std::reference_wrapper<iceberg::struct_type>>) {
+  std::optional<std::reference_wrapper<iceberg::struct_type>>,
+  iceberg::field_name_comparison /*norm*/) {
     auto it = table_info_by_id.find(table_id);
     if (it == table_info_by_id.end()) {
         co_return errc::failed;
@@ -208,7 +223,8 @@ ss::future<checked<std::nullopt_t, schema_manager::errc>>
 catalog_schema_manager::ensure_table_schema(
   const iceberg::table_identifier& table_id,
   const iceberg::struct_type& writer_struct_type,
-  const iceberg::unresolved_partition_spec& partition_spec) {
+  const iceberg::unresolved_partition_spec& partition_spec,
+  iceberg::field_name_comparison norm) {
     // Cache the result so it is consistent for the duration of the function.
     const bool use_schema_merging = features_->is_active(
       features::feature::iceberg_schema_merging);
@@ -240,17 +256,25 @@ catalog_schema_manager::ensure_table_schema(
         co_return errc::failed;
     }
 
+    vlog(
+      datalake_log.trace,
+      "Current schema for table {}: id={} struct={}, writer struct: {}",
+      table_id,
+      current_schema->schema_id,
+      current_schema->schema_struct,
+      writer_struct_type);
+
     std::optional<iceberg::struct_type> new_schema;
     if (use_schema_merging) {
         auto writer_struct_type_with_ids = writer_struct_type.copy();
         auto fill_res = iceberg::try_fill_field_ids(
-          current_schema->schema_struct, writer_struct_type_with_ids);
+          current_schema->schema_struct, writer_struct_type_with_ids, norm);
 
         if (fill_res == iceberg::ids_filled::no) {
             auto merged_schema_struct_type
               = current_schema->schema_struct.copy();
             auto merge_res = iceberg::merge_struct_types(
-              writer_struct_type, merged_schema_struct_type);
+              writer_struct_type, merged_schema_struct_type, norm);
             if (merge_res.has_error()) {
                 vlog(
                   datalake_log.warn,
@@ -267,7 +291,11 @@ catalog_schema_manager::ensure_table_schema(
             // need to log it on the error path.
             auto merged_schema_with_evo = merged_schema_struct_type.copy();
             auto evo_res = apply_evolution_rules(
-              table_id, txn.table(), *current_schema, merged_schema_with_evo);
+              table_id,
+              txn.table(),
+              *current_schema,
+              merged_schema_with_evo,
+              norm);
             if (evo_res.has_error()) {
                 co_return evo_res.error();
             } else if (evo_res.value() == schema_update_required::no) {
@@ -290,7 +318,7 @@ catalog_schema_manager::ensure_table_schema(
         // Compatibility with Redpanda v25.2 where we would short-circuit if an
         // equivalent schema existed at some point in time.
         const auto* equivalent_schema = txn.table().get_equivalent_schema(
-          writer_struct_type);
+          writer_struct_type, norm);
         if (equivalent_schema != nullptr) {
             vlog(
               datalake_log.debug,
@@ -300,7 +328,7 @@ catalog_schema_manager::ensure_table_schema(
             // Apply evolution rules from current schema to writer schema.
             auto type_copy = writer_struct_type.copy();
             auto evo_res = apply_evolution_rules(
-              table_id, txn.table(), *current_schema, type_copy);
+              table_id, txn.table(), *current_schema, type_copy, norm);
             if (evo_res.has_error()) {
                 co_return evo_res.error();
             } else if (evo_res.value() == schema_update_required::yes) {
@@ -357,7 +385,8 @@ ss::future<checked<schema_manager::table_info, schema_manager::errc>>
 catalog_schema_manager::get_table_info(
   const iceberg::table_identifier& table_id,
   std::optional<std::reference_wrapper<iceberg::struct_type>>
-    writer_struct_type) {
+    writer_struct_type,
+  iceberg::field_name_comparison norm) {
     auto gh = maybe_gate();
     if (gh.has_error()) {
         co_return gh.error();
@@ -373,7 +402,7 @@ catalog_schema_manager::get_table_info(
 
     const auto* cur_schema = writer_struct_type.has_value()
                                ? table.get_equivalent_schema(
-                                   writer_struct_type->get())
+                                   writer_struct_type->get(), norm)
                                : table.get_schema(table.current_schema_id);
     if (!cur_schema) {
         vlog(

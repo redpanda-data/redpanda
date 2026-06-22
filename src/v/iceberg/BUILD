@@ -126,6 +126,42 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "field_name_comparison",
+    srcs = [
+        "field_name_comparison.cc",
+    ],
+    hdrs = [
+        "field_name_comparison.h",
+    ],
+    implementation_deps = [
+        "//src/v/strings:string_switch",
+        "@seastar",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
+    name = "unicode",
+    srcs = [
+        "unicode.cc",
+    ],
+    hdrs = [
+        "unicode.h",
+    ],
+    implementation_deps = [
+        "@utf8proc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":field_name_comparison",
+    ],
+)
+
+redpanda_cc_library(
     name = "compatibility_types",
     srcs = [
         "compatibility_types.cc",
@@ -158,6 +194,8 @@ redpanda_cc_library(
         ":compatibility_types",
         ":datatypes",
         ":field_collecting_visitor",
+        ":field_name_comparison",
+        ":unicode",
         "//src/v/base",
         "@seastar",
     ],
@@ -176,7 +214,9 @@ redpanda_cc_library(
         ":compatibility_types",
         ":compatibility_utils",
         ":datatypes",
+        ":field_name_comparison",
         ":partition",
+        ":unicode",
         ":values",
         "//src/v/base",
     ],
@@ -785,6 +825,7 @@ redpanda_cc_library(
     deps = [
         ":compatibility_utils",
         ":datatypes",
+        ":field_name_comparison",
         ":manifest",
         ":manifest_entry",
         ":partition",

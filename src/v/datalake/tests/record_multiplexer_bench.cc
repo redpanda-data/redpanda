@@ -20,6 +20,7 @@
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
 #include "features/feature_table.h"
+#include "iceberg/field_name_comparison.h"
 #include "model/batch_compression.h"
 #include "model/compression.h"
 #include "model/record.h"
@@ -571,6 +572,7 @@ private:
           _translator,
           _table_creator,
           model::iceberg_invalid_record_action::dlq_table,
+          iceberg::field_name_comparison::verbatim,
           datalake::location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
           _translation_probe,

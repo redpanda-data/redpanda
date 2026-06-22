@@ -7,19 +7,17 @@
 // Modifications copyright 2025 Redpanda Data, Inc.
 
 #include "lsm/core/internal/files.h"
+#include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/options.h"
-#include "lsm/db/table_cache.h"
+#include "lsm/db/tests/db_test_base.h"
 #include "lsm/db/version_edit.h"
 #include "lsm/db/version_set.h"
-#include "lsm/io/memory_persistence.h"
-#include "lsm/sst/block_cache.h"
-#include "lsm/sst/builder.h"
 
 #include <gmock/gmock-matchers.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <algorithm>
+#include <vector>
 
 namespace {
 
@@ -32,12 +30,6 @@ using testing::ElementsAre;
 using testing::IsEmpty;
 using testing::UnorderedElementsAre;
 
-struct sst_spec {
-    lsm::internal::file_id id;
-    lsm::internal::level level;
-    std::vector<lsm::internal::key> keys;
-};
-
 MATCHER_P2(IsLookupValue, key, level, "is a value") {
     auto expected = iobuf::from(
       fmt::format("value for {} on level {}", key, level));
@@ -47,88 +39,19 @@ MATCHER_P2(IsLookupValue, key, level, "is a value") {
 MATCHER(IsMissing, "is missing") { return arg.is_missing(); }
 MATCHER(IsTombstone, "is a tombstone") { return arg.is_tombstone(); }
 
-class VersionSetTest : public testing::Test {
+class VersionSetTest : public lsm::db::db_test_base {
 public:
-    constexpr static size_t default_max_entries = 10;
-    void TearDown() override {
-        _table_cache.close().get();
-        _data_persistence->close().get();
-        _metadata_persistence->close().get();
-    }
-
-    const lsm::internal::options& options() { return *_options; }
-    lsm::db::version_set& version_set() { return *_version_set; }
-
     void recover() {
         _version_set = nullptr;
         _version_set = ss::make_lw_shared<lsm::db::version_set>(
           _metadata_persistence.get(), &_table_cache, _options);
         _version_set->recover().get();
     }
-
-    void add_sst(sst_spec spec) {
-        auto writer
-          = _data_persistence->open_sequential_writer({.id = spec.id}).get();
-        lsm::sst::builder builder(std::move(writer), {});
-        std::ranges::sort(spec.keys);
-        for (const auto& key : spec.keys) {
-            builder
-              .add(
-                key,
-                iobuf::from(
-                  fmt::format("value for {} on level {}", key, spec.level)))
-              .get();
-        }
-        builder.finish().get();
-        size_t file_size = builder.file_size();
-        builder.close().get();
-        auto edit = _version_set->new_edit();
-        auto min_seqno = std::ranges::min_element(
-                           spec.keys,
-                           std::less<>(),
-                           [](lsm::internal::key_view k) { return k.seqno(); })
-                           ->seqno();
-        auto max_seqno = std::ranges::max_element(
-                           spec.keys,
-                           std::less<>(),
-                           [](lsm::internal::key_view k) { return k.seqno(); })
-                           ->seqno();
-        edit->add_file({
-          .level = spec.level,
-          .file_handle = {.id = spec.id},
-          .file_size = file_size,
-          .smallest = spec.keys.front(),
-          .largest = spec.keys.back(),
-          .oldest_seqno = min_seqno,
-          .newest_seqno = max_seqno,
-        });
-        edit->set_last_seqno(max_seqno);
-        _version_set->log_and_apply(std::move(edit)).get();
-    }
-
-private:
-    ss::lw_shared_ptr<lsm::internal::options> _options
-      = ss::make_lw_shared<lsm::internal::options>();
-    std::unique_ptr<lsm::io::data_persistence> _data_persistence
-      = lsm::io::make_memory_data_persistence();
-    std::unique_ptr<lsm::io::metadata_persistence> _metadata_persistence
-      = lsm::io::make_memory_metadata_persistence();
-    lsm::db::table_cache _table_cache{
-      _data_persistence.get(),
-      default_max_entries,
-      ss::make_lw_shared<lsm::probe>(),
-      ss::make_lw_shared<lsm::sst::block_cache>(
-        1_MiB, ss::make_lw_shared<lsm::probe>())};
-    ss::lw_shared_ptr<lsm::db::version_set> _version_set
-      = ss::make_lw_shared<lsm::db::version_set>(
-        _metadata_persistence.get(), &_table_cache, _options);
 };
 
 // Fixture for compaction tests that only uses file metadata.
-class CompactionTest : public testing::Test {
+class CompactionTest : public lsm::db::db_test_base {
 public:
-    constexpr static size_t default_max_entries = 10;
-
     CompactionTest() {
         // Use small sizes that are easier to reason about
         _options->level_one_compaction_trigger = 4;
@@ -141,36 +64,6 @@ public:
           },
           /*multiplier=*/10,
           /*max_level=*/6_level);
-    }
-
-    void TearDown() override {
-        _table_cache.close().get();
-        _data_persistence->close().get();
-        _metadata_persistence->close().get();
-    }
-
-    const lsm::internal::options& options() { return *_options; }
-    lsm::db::version_set& version_set() { return *_version_set; }
-
-    // Add a file to the version using only metadata (no actual SST file).
-    void add_file(
-      lsm::internal::level level,
-      lsm::internal::file_id id,
-      lsm::internal::key smallest,
-      lsm::internal::key largest,
-      uint64_t file_size = 100) {
-        auto edit = _version_set->new_edit();
-        edit->add_file({
-          .level = level,
-          .file_handle = {.id = id},
-          .file_size = file_size,
-          .smallest = smallest,
-          .largest = largest,
-          .oldest_seqno = 0_seqno,
-          .newest_seqno = 0_seqno,
-        });
-        edit->set_last_seqno(0_seqno);
-        _version_set->log_and_apply(std::move(edit)).get();
     }
 
     // Extract file IDs from compaction inputs at the specified level.
@@ -194,23 +87,6 @@ public:
     output_file_ids(const lsm::db::compaction& c) {
         return input_file_ids(c, lsm::db::compaction::output_level);
     }
-
-private:
-    ss::lw_shared_ptr<lsm::internal::options> _options
-      = ss::make_lw_shared<lsm::internal::options>();
-    std::unique_ptr<lsm::io::data_persistence> _data_persistence
-      = lsm::io::make_memory_data_persistence();
-    std::unique_ptr<lsm::io::metadata_persistence> _metadata_persistence
-      = lsm::io::make_memory_metadata_persistence();
-    lsm::db::table_cache _table_cache{
-      _data_persistence.get(),
-      default_max_entries,
-      ss::make_lw_shared<lsm::probe>(),
-      ss::make_lw_shared<lsm::sst::block_cache>(
-        1_MiB, ss::make_lw_shared<lsm::probe>())};
-    ss::lw_shared_ptr<lsm::db::version_set> _version_set
-      = ss::make_lw_shared<lsm::db::version_set>(
-        _metadata_persistence.get(), &_table_cache, _options);
 };
 
 } // namespace

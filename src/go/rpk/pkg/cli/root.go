@@ -56,6 +56,7 @@ func Execute() {
 	}
 
 	p := new(config.Params)
+	var printTree bool
 	runXHelp := func() {
 		for _, o := range p.FlagOverrides {
 			switch o {
@@ -69,18 +70,24 @@ func Execute() {
 			os.Exit(0)
 		}
 	}
-	cobra.OnInitialize(func() {
-		runXHelp()
-		zap.ReplaceGlobals(p.Logger())
-	})
 	root := &cobra.Command{
-		Use:     "rpk",
-		Short:   "rpk is the Redpanda CLI & toolbox",
-		Long:    "",
+		Use:   "rpk",
+		Short: "rpk is the Redpanda CLI & toolbox",
+		Long: `rpk is the Redpanda CLI & toolbox.
+
+Use --print-tree to emit the full command tree as JSON.`,
 		Version: version.Pretty(),
 
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
+	cobra.OnInitialize(func() {
+		runXHelp()
+		if printTree {
+			printTreeAndExit(root)
+		}
+		zap.ReplaceGlobals(p.Logger())
+	})
+	root.Flags().BoolVar(&printTree, "print-tree", false, "Print the rpk command tree as JSON and exit; intended for LLM/automation tooling")
 	pf := root.PersistentFlags()
 
 	searchLocal, _ := os.UserConfigDir()

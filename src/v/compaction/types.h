@@ -120,6 +120,9 @@ struct stats {
     // Number of tombstone records that were removed due to expiration (not
     // including those removed by de-duplication)
     size_t expired_tombstones_discarded{0};
+    // Number of compressed batches that were appended by reusing the source's
+    // compressed payload instead of re-compressing after filtering.
+    size_t compressed_batches_reused{0};
 
     // Returns whether any data was removed by this reducer.
     bool has_removed_data() const {

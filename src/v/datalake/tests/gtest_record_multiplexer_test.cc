@@ -64,6 +64,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       translator,
       t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
@@ -124,6 +125,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
       translator,
       t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
@@ -179,6 +181,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       translator,
       t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
@@ -315,6 +318,7 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
       translator,
       t_creator,
       model::iceberg_invalid_record_action::dlq_table,
+      iceberg::field_name_comparison::verbatim,
       location_provider(scoped_remote->remote.local().provider(), bucket_name),
       probe,
       &features);

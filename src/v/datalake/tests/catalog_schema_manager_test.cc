@@ -102,13 +102,22 @@ TEST_F(CatalogSchemaManagerTest, TestCreateTable) {
 
     // Create the table
     auto create_res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(create_res.has_error());
 
     // Fill the field IDs in `type`.
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
 
     auto schema = load_table_schema(table_ident).get();
     ASSERT_TRUE(schema.has_value());
@@ -122,12 +131,18 @@ TEST_F(CatalogSchemaManagerTest, TestFillFromExistingTable) {
 
     // Even if the table already exists, we should be able to fill fields IDs
     // without trouble.
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
 
     auto type = std::get<struct_type>(test_nested_schema_type());
     reset_field_ids(type);
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
     EXPECT_EQ(type, schema.value().schema_struct);
 }
 
@@ -141,9 +156,15 @@ TEST_F(CatalogSchemaManagerTest, TestFillSubset) {
     reset_field_ids(type);
     type.fields.pop_back();
 
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
 
     schema.value().schema_struct.fields.pop_back();
     EXPECT_EQ(type, schema.value().schema_struct);
@@ -159,9 +180,15 @@ TEST_F(CatalogSchemaManagerTest, TestFillNestedSubset) {
     reset_field_ids(type);
     std::get<struct_type>(type.fields.back()->type).fields.pop_back();
 
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
 
     std::get<struct_type>(schema.value().schema_struct.fields.back()->type)
       .fields.pop_back();
@@ -193,13 +220,22 @@ TEST_F(CatalogSchemaManagerTest, TestFillSuperset) {
     }
     // Alter the table schema
     auto ensure_res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(ensure_res.has_error());
 
     // Fill the ids in `type`
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
 
     // Check the resulting schema.
     schema s{
@@ -232,13 +268,22 @@ TEST_F(CatalogSchemaManagerTest, TestFillSupersetSubtype) {
     }
     // Alter the table schema
     auto ensure_res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(ensure_res.has_error());
 
     // Fill the ids
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
 
     // Check the resulting schema.
     schema s{
@@ -265,7 +310,10 @@ TEST_F(CatalogSchemaManagerTest, TestOptionalMismatch) {
     // Make the destinations both optional. This is fine.
     type.fields[0]->required = field_required::no;
     auto res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(res.has_error());
 
     // Make the destinations both required. This is a no-op under schema merging
@@ -275,12 +323,20 @@ TEST_F(CatalogSchemaManagerTest, TestOptionalMismatch) {
 
         all_req.fields[0]->required = field_required::yes;
         all_req.fields[1]->required = field_required::yes;
-        res = schema_mgr.ensure_table_schema(table_ident, all_req, empty_pspec)
+        res = schema_mgr
+                .ensure_table_schema(
+                  table_ident,
+                  all_req,
+                  empty_pspec,
+                  field_name_comparison::verbatim)
                 .get();
         ASSERT_FALSE(res.has_error());
     }
 
-    auto info = schema_mgr.get_table_info(table_ident).get();
+    auto info = schema_mgr
+                  .get_table_info(
+                    table_ident, std::nullopt, field_name_comparison::verbatim)
+                  .get();
     ASSERT_TRUE(info.has_value());
     ASSERT_EQ(info.value().schema.schema_struct, type);
 }
@@ -293,7 +349,10 @@ TEST_F(CatalogSchemaManagerTest, TestTypeMismatch) {
     std::swap(type.fields.front()->type, type.fields.back()->type);
 
     auto res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
 }
@@ -306,7 +365,10 @@ TEST_F(CatalogSchemaManagerTest, TestReorderFields) {
     std::swap(type.fields.front(), type.fields.back());
 
     auto res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(res.has_error());
 }
 
@@ -323,12 +385,21 @@ TEST_F(CatalogSchemaManagerTest, AcceptsValidTypePromotion) {
 
     // so schema_mgr should accept the new schema
     auto ensure_res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(ensure_res.has_error()) << ensure_res.error();
 
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
-    ASSERT_TRUE(load_res.value().fill_registered_ids(type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
 
     auto loaded_table = load_table_schema(table_ident).get();
     ASSERT_TRUE(loaded_table.has_value());
@@ -337,10 +408,13 @@ TEST_F(CatalogSchemaManagerTest, AcceptsValidTypePromotion) {
     // test that ensuring schema with original types is a no-op because the
     // current schema can host pre-promotion data types without a problem
     {
-        auto ensure_orig_res_later
-          = schema_mgr
-              .ensure_table_schema(table_ident, original_type, empty_pspec)
-              .get();
+        auto ensure_orig_res_later = schema_mgr
+                                       .ensure_table_schema(
+                                         table_ident,
+                                         original_type,
+                                         empty_pspec,
+                                         field_name_comparison::verbatim)
+                                       .get();
         ASSERT_FALSE(ensure_orig_res_later.has_error())
           << ensure_orig_res_later.error();
 
@@ -365,20 +439,33 @@ TEST_F(CatalogSchemaManagerTest, RejectsInvalidTypePromotion) {
 
     // so schema_mgr should reject the new schema
     auto ensure_res
-      = schema_mgr.ensure_table_schema(table_ident, type, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, type, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_TRUE(ensure_res.has_error());
     EXPECT_EQ(ensure_res.error(), schema_manager::errc::not_supported)
       << ensure_res.error();
 
-    auto load_res = schema_mgr.get_table_info(table_ident).get();
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(load_res.has_error());
 
-    ASSERT_FALSE(load_res.value().fill_registered_ids(type));
+    ASSERT_FALSE(load_res.value().fill_registered_ids(
+      type, field_name_comparison::verbatim));
 
     // check that the table still holds the original schema
-    load_res = schema_mgr.get_table_info(table_ident).get();
+    load_res = schema_mgr
+                 .get_table_info(
+                   table_ident, std::nullopt, field_name_comparison::verbatim)
+                 .get();
     reset_field_ids(original_type);
-    ASSERT_TRUE(load_res.value().fill_registered_ids(original_type));
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      original_type, field_name_comparison::verbatim));
 
     auto loaded_table = load_table_schema(table_ident).get();
     ASSERT_TRUE(loaded_table.has_value());
@@ -400,7 +487,8 @@ TEST_F(CatalogSchemaManagerTest, CustomPartitionSpec) {
                           table_ident,
                           schema_type,
                           unresolved_partition_spec{
-                            .fields = std::move(pspec_fields)})
+                            .fields = std::move(pspec_fields)},
+                          field_name_comparison::verbatim)
                         .get();
     ASSERT_FALSE(ensure_res.has_error());
 
@@ -439,31 +527,51 @@ TEST_F(CatalogSchemaManagerTest, GetTableInfo) {
 
     // set schema to 'first'
     auto ensure_res
-      = schema_mgr.ensure_table_schema(table_ident, first, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, first, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(ensure_res.has_error());
 
     // get_table_info returns current schema by default
-    auto info_res = schema_mgr.get_table_info(table_ident).get();
+    auto info_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
     ASSERT_FALSE(info_res.has_error());
     ASSERT_EQ(info_res.value().schema.schema_struct, first);
 
     // set schema to 'second'
     ensure_res
-      = schema_mgr.ensure_table_schema(table_ident, second, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, second, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(ensure_res.has_error());
 
     // 'second' is current, so get_table_info returns this by default
-    info_res = schema_mgr.get_table_info(table_ident).get();
+    info_res = schema_mgr
+                 .get_table_info(
+                   table_ident, std::nullopt, field_name_comparison::verbatim)
+                 .get();
     ASSERT_FALSE(info_res.has_error());
     ASSERT_EQ(info_res.value().schema.schema_struct, second);
 
     // set schema to 'third'
     ensure_res
-      = schema_mgr.ensure_table_schema(table_ident, third, empty_pspec).get();
+      = schema_mgr
+          .ensure_table_schema(
+            table_ident, third, empty_pspec, field_name_comparison::verbatim)
+          .get();
     ASSERT_FALSE(ensure_res.has_error());
 
     // 'third' is current, so get_table_info returns this by default
-    info_res = schema_mgr.get_table_info(table_ident).get();
+    info_res = schema_mgr
+                 .get_table_info(
+                   table_ident, std::nullopt, field_name_comparison::verbatim)
+                 .get();
     ASSERT_FALSE(info_res.has_error());
     ASSERT_EQ(
       info_res.value().schema.schema_struct,
@@ -478,4 +586,45 @@ TEST_F(CatalogSchemaManagerTest, GetTableInfo) {
           return s;
       }())
       << "Expect merged schema";
+}
+
+// Verify that case-insensitive field-name comparison threads through the
+// schema manager: a writer struct with differently-cased field names should
+// match the catalog schema when lower_case mode is active, but not when
+// verbatim mode is active.
+TEST_F(CatalogSchemaManagerTest, CaseInsensitiveFillRegisteredIds) {
+    // Create the catalog table with lowercase field names.
+    struct_type catalog_type;
+    catalog_type.fields.push_back(
+      nested_field::create(1, "userid", field_required::no, int_type{}));
+    catalog_type.fields.push_back(
+      nested_field::create(2, "eventts", field_required::no, string_type{}));
+    create_table(catalog_type);
+
+    auto load_res = schema_mgr
+                      .get_table_info(
+                        table_ident,
+                        std::nullopt,
+                        field_name_comparison::verbatim)
+                      .get();
+    ASSERT_FALSE(load_res.has_error());
+
+    // Writer struct uses uppercase field names (as a catalog might return).
+    struct_type writer_type;
+    writer_type.fields.push_back(
+      nested_field::create(0, "UserId", field_required::no, int_type{}));
+    writer_type.fields.push_back(
+      nested_field::create(0, "EventTs", field_required::no, string_type{}));
+
+    // verbatim: names don't match, IDs not filled.
+    auto verbatim_type = writer_type.copy();
+    EXPECT_FALSE(load_res.value().fill_registered_ids(
+      verbatim_type, field_name_comparison::verbatim));
+
+    // lower_case: names match after folding, IDs are filled.
+    auto lower_type = writer_type.copy();
+    ASSERT_TRUE(load_res.value().fill_registered_ids(
+      lower_type, field_name_comparison::lower_case));
+    EXPECT_EQ(lower_type.fields[0]->id, nested_field::id_t{1});
+    EXPECT_EQ(lower_type.fields[1]->id, nested_field::id_t{2});
 }

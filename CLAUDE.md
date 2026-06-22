@@ -81,7 +81,7 @@ See `.bazelrc` for more details on build settings and config modes
 
 ### Lint/Formatting Configs:
 - `.clang-format`, `.clang-tidy*`: C++ style
-- `.style.yapf`, `.yapfignore`: Python formatting
+- `tools/ruff`, `.ruff.toml`: Python formatting
 
 ### CI/CD Checks
 

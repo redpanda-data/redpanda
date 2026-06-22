@@ -1,5 +1,6 @@
 #include "net/transport.h"
 
+#include "absl/strings/ascii.h"
 #include "base/compiler_utils.h"
 #include "base/vassert.h"
 #include "base/vlog.h"
@@ -9,6 +10,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/with_timeout.hh>
 
+#include <algorithm>
 #include <string_view>
 #include <system_error>
 
@@ -61,17 +63,14 @@ ss::future<> send_connect_and_read_response(
   ss::input_stream<char>& in,
   const net::unresolved_address& origin,
   const net::unresolved_address& proxy,
+  const std::optional<ss::sstring>& authorization,
   seastar::logger* log) {
     // IPv6 literals must be bracketed in request authority
     // (RFC 9112 §3.2 / RFC 3986 §3.2.2); see format_connect_authority.
     auto authority = net::detail::format_connect_authority(
       origin.host(), origin.port());
-    auto request = fmt::format(
-      "CONNECT {} HTTP/1.1\r\n"
-      "Host: {}\r\n"
-      "\r\n",
-      authority,
-      authority);
+    auto request = net::detail::format_connect_request(
+      authority, authorization);
 
     vlog(
       log->trace, "Sending CONNECT to proxy {} for origin {}", proxy, origin);
@@ -129,6 +128,24 @@ std::string format_connect_authority(std::string_view host, uint16_t port) {
                                  host.starts_with('[') && host.ends_with(']'));
     return is_unbracketed_ipv6 ? fmt::format("[{}]:{}", host, port)
                                : fmt::format("{}:{}", host, port);
+}
+
+std::string format_connect_request(
+  std::string_view authority, const std::optional<ss::sstring>& authorization) {
+    auto request = fmt::format(
+      "CONNECT {} HTTP/1.1\r\n"
+      "Host: {}\r\n",
+      authority,
+      authority);
+    if (authorization.has_value()) {
+        if (std::ranges::any_of(*authorization, absl::ascii_iscntrl)) {
+            throw std::invalid_argument(
+              "Proxy-Authorization value must not contain control characters");
+        }
+        request += fmt::format("Proxy-Authorization: {}\r\n", *authorization);
+    }
+    request += "\r\n";
+    return request;
 }
 
 ss::future<connect_response_parser::result_t>
@@ -231,7 +248,12 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
             _proxy_out.emplace(fd.output());
             auto proxy_in = fd.input();
             co_await send_connect_and_read_response(
-              *_proxy_out, proxy_in, server_address(), _proxy->address, _log);
+              *_proxy_out,
+              proxy_in,
+              server_address(),
+              _proxy->address,
+              _proxy->authorization,
+              _log);
         }
 
         if (_creds) {

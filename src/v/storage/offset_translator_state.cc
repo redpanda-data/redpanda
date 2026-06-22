@@ -19,6 +19,7 @@
 #include "serde/rw/rw.h"
 #include "serde/rw/scalar.h"
 #include "serde/rw/vector.h"
+#include "storage/exceptions.h"
 #include "storage/logger.h"
 
 #include <iterator>
@@ -54,7 +55,7 @@ int64_t offset_translator_state::delta(model::offset o) const {
           o,
           model::next_offset(_last_offset2batch.begin()->first));
 
-        throw std::runtime_error{fmt::format(
+        throw translation_offset_out_of_range{fmt::format(
           "ntp {}: log offset {} is outside the translation range (starting at "
           "{})",
           _ntp,
@@ -108,7 +109,7 @@ model::offset offset_translator_state::to_log_offset(
       = min_log_offset
         - model::offset(_last_offset2batch.begin()->second.next_delta);
     if (data_offset < min_data_offset) {
-        throw std::runtime_error{fmt::format(
+        throw translation_offset_out_of_range{fmt::format(
           "ntp {}: data offset {} is outside the translation range (starting "
           "at {})",
           _ntp,

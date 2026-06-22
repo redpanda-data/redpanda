@@ -45,6 +45,7 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.5.1")
 bazel_dep(name = "rules_rust", version = "0.60.0")
 bazel_dep(name = "snappy", version = "1.2.1")
+bazel_dep(name = "utf8proc", version = "2.11.0")
 bazel_dep(name = "yaml-cpp", version = "0.8.0")
 bazel_dep(name = "zlib", version = "1.3.1.bcr.6")
 bazel_dep(name = "zstd", version = "1.5.7")
@@ -239,20 +240,20 @@ COMPILERS = {
 # Go Toolchain
 # ====================================
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk", dev_dependency = True)
-go_sdk.download(version = "1.26.2")
+go_sdk.download(version = "1.26.4")
 
 # The microsoft compiler versions can be listed at their github release under the `asset.json` file
 go_sdk.download(
     name = "go_sdk_with_systemcrypto",
     experiments = ["systemcrypto"],
     sdks = {
-        "linux_amd64": ("606a9119cca2b06097017987a66db36a/go1.26.2-20260407.2.linux-amd64.tar.gz", "68bcd46d095165b37f4773450a8239ae5aa8d7e5be371eb69aea0510526ced5a"),
-        "linux_arm64": ("a5234a67f99d71512680ddea0881fe04/go1.26.2-20260407.2.linux-arm64.tar.gz", "0274f18451d73bf234798b1d1212e60b59ed1cd86d1b982701df3df76c563571"),
-        "darwin_amd64": ("0c2f246caa635f2270f7fb31e0bff430/go1.26.2-20260407.2.darwin-amd64.tar.gz", "46291a8b87fb39dc499333d9657d590a7d38fefbd88d80da387f6d01660be446"),
-        "darwin_arm64": ("6c465361732842d8ffa7df6086354d80/go1.26.2-20260407.2.darwin-arm64.tar.gz", "411616b1e261235c700220ff4aae3773d0d09a8697077400f67ebbd46b9e0003"),
+        "linux_amd64": ("30d6f3c908b93744d77f0cfcc29a8d0b/go1.26.4-20260602.8.linux-amd64.tar.gz", "fe7d72e1e83e15633d0a99bd67ce5ffbb67d8a5f71dcea309ff274457ef3c927"),
+        "linux_arm64": ("4c37d72249bf2963ca1588c288cb547b/go1.26.4-20260602.8.linux-arm64.tar.gz", "9c1c8660dd3cec69415c476232ffb32d529e158d2b2deca4038804f1766f2f78"),
+        "darwin_amd64": ("b4fd14d59150fa3fff40bec803473350/go1.26.4-20260602.8.darwin-amd64.tar.gz", "2ae7f888d38d04e891cc5512622da48cadb3c24afc96a3634723ee71ff35042c"),
+        "darwin_arm64": ("c8a11ca9a3d0828665e27739dce2a60a/go1.26.4-20260602.8.darwin-arm64.tar.gz", "396705207e67a387f9052d789ac9d0bd2ddfaf5fe57f4bc720ba9881567f8e42"),
     },
-    urls = ["https://download.visualstudio.microsoft.com/download/pr/a29a63c1-f82c-449f-baff-9c086f732ce6/{}"],
-    version = "1.26.2",
+    urls = ["https://download.visualstudio.microsoft.com/download/pr/88c9f950-d0f1-46ac-90d0-8e8b4095e743/{}"],
+    version = "1.26.4",
 )
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")

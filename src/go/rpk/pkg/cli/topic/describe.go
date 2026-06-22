@@ -18,6 +18,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -29,6 +30,47 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/types"
 )
+
+const (
+	// A broker can briefly return a retriable error (e.g.
+	// LEADER_NOT_AVAILABLE) for a partition whose leader it has not yet
+	// learned -- right after topic creation or while leadership moves between
+	// nodes. Refetch metadata for a bounded time so the partition listing is
+	// complete rather than intermittently missing partitions.
+	describeRetryTimeout = 11 * time.Second
+	describeRetryBackoff = 250 * time.Millisecond
+)
+
+// describeTopicMetadata requests topic metadata. When retryPartitions is set
+// (i.e. the partition section is being printed), it refetches while any
+// partition reports a retriable error, so a transient leadership gap does not
+// yield an incomplete partition list. Non-retriable errors are returned as-is.
+func describeTopicMetadata(
+	ctx context.Context, cl *kgo.Client, req *kmsg.MetadataRequest, retryPartitions bool,
+) (*kmsg.MetadataResponse, error) {
+	deadline := time.Now().Add(describeRetryTimeout)
+	for {
+		resp, err := req.RequestWith(ctx, cl)
+		if err != nil || !retryPartitions || time.Now().After(deadline) || !hasRetriablePartitionErr(resp) {
+			return resp, err
+		}
+		time.Sleep(describeRetryBackoff)
+	}
+}
+
+// hasRetriablePartitionErr reports whether any partition in the metadata
+// response carries a retriable error code.
+func hasRetriablePartitionErr(resp *kmsg.MetadataResponse) bool {
+	for i := range resp.Topics {
+		for j := range resp.Topics[i].Partitions {
+			err := kerr.ErrorForCode(resp.Topics[i].Partitions[j].ErrorCode)
+			if err != nil && kerr.IsRetriable(err) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func newDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
@@ -105,7 +147,7 @@ For example,
 				reqTopic.Topic = new(topic)
 				req.Topics = append(req.Topics, reqTopic)
 			}
-			resp, err := req.RequestWith(cmd.Context(), cl)
+			resp, err := describeTopicMetadata(cmd.Context(), cl, req, partitions)
 			out.MaybeDie(err, "unable to request topic metadata: %v", err)
 
 			var topicDescriptions []describedTopic

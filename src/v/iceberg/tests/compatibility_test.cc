@@ -461,6 +461,112 @@ static const std::vector<struct_evolution_test_case> valid_cases{
       },
   },
   struct_evolution_test_case{
+    .description = "we can add a new field with required descendants "
+                   "(map key is structurally required)",
+    .generator =
+      [](unique_id_generator& ids) {
+          struct_type s{};
+          s.fields.emplace_back(
+            nested_field::create(
+              ids.get_one(), "foo", field_required::yes, int_type{}));
+          return s;
+      },
+    .update =
+      [](struct_type& s) {
+          s.fields.emplace_back(
+            nested_field::create(
+              0,
+              "a_map",
+              field_required::no,
+              map_type::create(
+                0, string_type{}, 0, field_required::no, long_type{})));
+      },
+    .validator =
+      [](const struct_type& src, const struct_type& dst) {
+          if (dst.fields.size() != 2) {
+              return false;
+          }
+          const auto& new_map_field = dst.fields.back();
+          if (!added(*new_map_field)) {
+              return false;
+          }
+          const auto& new_map = get<map_type>(new_map_field);
+          return updated(*src.fields.front(), *dst.fields.front())
+                 && added(*new_map.key_field) && added(*new_map.value_field);
+      },
+  },
+  struct_evolution_test_case{
+    .description = "we can add a new field with required descendants "
+                   "(list element declared required)",
+    .generator =
+      [](unique_id_generator& ids) {
+          struct_type s{};
+          s.fields.emplace_back(
+            nested_field::create(
+              ids.get_one(), "foo", field_required::yes, int_type{}));
+          return s;
+      },
+    .update =
+      [](struct_type& s) {
+          s.fields.emplace_back(
+            nested_field::create(
+              0,
+              "a_list",
+              field_required::no,
+              list_type::create(0, field_required::yes, long_type{})));
+      },
+    .validator =
+      [](const struct_type& src, const struct_type& dst) {
+          if (dst.fields.size() != 2) {
+              return false;
+          }
+          const auto& new_list_field = dst.fields.back();
+          if (!added(*new_list_field)) {
+              return false;
+          }
+          const auto& new_list = get<list_type>(new_list_field);
+          return updated(*src.fields.front(), *dst.fields.front())
+                 && added(*new_list.element_field);
+      },
+  },
+  struct_evolution_test_case{
+    .description = "we can add a new field with required descendants "
+                   "(struct subfield declared required)",
+    .generator =
+      [](unique_id_generator& ids) {
+          struct_type s{};
+          s.fields.emplace_back(
+            nested_field::create(
+              ids.get_one(), "foo", field_required::yes, int_type{}));
+          return s;
+      },
+    .update =
+      [](struct_type& s) {
+          struct_type inner{};
+          inner.fields.emplace_back(
+            nested_field::create(0, "inner", field_required::yes, int_type{}));
+          s.fields.emplace_back(
+            nested_field::create(
+              0, "a_struct", field_required::no, std::move(inner)));
+      },
+    .validator =
+      [](const struct_type& src, const struct_type& dst) {
+          if (dst.fields.size() != 2) {
+              return false;
+          }
+          const auto& new_struct_field = dst.fields.back();
+          if (!added(*new_struct_field)) {
+              return false;
+          }
+          const auto& new_struct = get<struct_type>(new_struct_field);
+          if (new_struct.fields.size() != 1) {
+              return false;
+          }
+          return updated(*src.fields.front(), *dst.fields.front())
+                 && added(*new_struct.fields.front());
+      },
+  },
+  struct_evolution_test_case{
     .description = "we can 'add' nested fields",
     .generator = [](unique_id_generator&) { return struct_type{}; },
     .update =
@@ -1109,7 +1215,8 @@ TEST_P(AnnotateStructTest, AnnotationWorksAndDetectsStructuralErrors) {
         // transforming self -> self returns no change
         auto c1 = type.copy();
         auto c2 = type.copy();
-        auto annotate_res = annotate_schema_transform(c1, c2, partition_spec{});
+        auto annotate_res = annotate_schema_transform(
+          c1, c2, partition_spec{}, field_name_comparison::verbatim);
         if (
           !annotate_err().has_error()
           || annotate_err().error() != schema_evolution_errc::ambiguous) {
@@ -1120,7 +1227,10 @@ TEST_P(AnnotateStructTest, AnnotationWorksAndDetectsStructuralErrors) {
 
     // check that annotation works or errors as expected
     auto annotate_res = annotate_schema_transform(
-      original_schema_struct, type, gen_partition_spec(original_schema_struct));
+      original_schema_struct,
+      type,
+      gen_partition_spec(original_schema_struct),
+      field_name_comparison::verbatim);
 
     ASSERT_EQ(annotate_res.has_error(), annotate_err().has_error())
       << (annotate_res.has_error()
@@ -1176,7 +1286,7 @@ TEST_P(ValidateAnnotationTest, ValidateCatchesTypeErrors) {
         auto c1 = original_schema_struct.copy();
         auto c2 = original_schema_struct.copy();
         auto annotate_res = annotate_schema_transform(
-          c1, c2, gen_partition_spec(c1));
+          c1, c2, gen_partition_spec(c1), field_name_comparison::verbatim);
         ASSERT_FALSE(annotate_res.has_error());
         auto validate_res = validate_schema_transform(
           annotate_res, c2, gen_partition_spec(c1));
@@ -1187,7 +1297,10 @@ TEST_P(ValidateAnnotationTest, ValidateCatchesTypeErrors) {
 
     // For this subset of cases we expect annotate to pass
     auto annotate_res = annotate_schema_transform(
-      original_schema_struct, type, gen_partition_spec(original_schema_struct));
+      original_schema_struct,
+      type,
+      gen_partition_spec(original_schema_struct),
+      field_name_comparison::verbatim);
     ASSERT_FALSE(annotate_res.has_error());
     if (annotate_res.value().n_removed_partition_fields > 0) {
         ASSERT_TRUE(validate_err().has_error());
@@ -1239,7 +1352,10 @@ TEST_P(StructEvoCompatibilityTest, CanEvolveStructsAndDetectErrors) {
     // accordingly. check against expectations (both success and expected
     // qualities of the result)
     auto evolve_res = evolve_schema(
-      original_schema_struct, type, gen_partition_spec(original_schema_struct));
+      original_schema_struct,
+      type,
+      gen_partition_spec(original_schema_struct),
+      field_name_comparison::verbatim);
 
     ASSERT_EQ(evolve_res.has_error(), err().has_error())
       << (evolve_res.has_error()
@@ -1263,12 +1379,15 @@ TEST_P(StructEvoCompatibilityTest, CanEvolveStructsAndDetectErrors) {
 TEST_P(StructEvoCompatibilityTest, CanCheckEquivalence) {
     auto original = generator();
 
-    EXPECT_TRUE(schemas_equivalent(original, original));
+    EXPECT_TRUE(
+      schemas_equivalent(original, original, field_name_comparison::verbatim));
 
     auto next = update(original);
 
-    EXPECT_FALSE(schemas_equivalent(original, next));
-    EXPECT_FALSE(schemas_equivalent(next, original));
+    EXPECT_FALSE(
+      schemas_equivalent(original, next, field_name_comparison::verbatim));
+    EXPECT_FALSE(
+      schemas_equivalent(next, original, field_name_comparison::verbatim));
 }
 
 TEST(ValuePromotionTest, PrimitiveValuePromotion) {
@@ -1499,7 +1618,8 @@ TEST_P(FillIdsTest, TryFillFieldIds) {
     // Make copies since try_fill_field_ids modifies the dest schema
     auto source = tc.source->copy();
     auto dest = tc.dest->copy();
-    auto result = try_fill_field_ids(source, dest);
+    auto result = try_fill_field_ids(
+      source, dest, field_name_comparison::verbatim);
 
     ASSERT_EQ(result, tc.expected_result);
 
@@ -1702,7 +1822,8 @@ TEST_P(MergeTest, CompatibleTypesAreCompatible) {
 
     auto dest = p.dest->copy();
 
-    auto res = merge_struct_types(*p.source, dest);
+    auto res = merge_struct_types(
+      *p.source, dest, field_name_comparison::verbatim);
     ASSERT_EQ(res.has_error(), p.expected_result.has_error())
       << (res.has_error()
             ? fmt::format("Unexpected error: {}", res.error())
@@ -1728,4 +1849,47 @@ TEST_P(MergeTest, CompatibleTypesAreCompatible) {
         ASSERT_TRUE(structs_equivalent(dest, *p.expected_dest))
           << fmt::format("Expected: {}\nGot: {}", *p.expected_dest, dest);
     }
+}
+
+namespace {
+struct_type single_field_struct(const char* name, nested_field::id_t id) {
+    struct_type s;
+    s.fields.push_back(
+      nested_field::create(id, name, field_required::no, int_type{}));
+    return s;
+}
+} // namespace
+
+TEST(NormalizationTest, AnnotateSchemaRespectNorm) {
+    auto source = single_field_struct("userid", nested_field::id_t{1});
+
+    // lower_case: names compare equal — annotation succeeds.
+    auto dest = single_field_struct("UserId", nested_field::id_t{0});
+    auto ok = annotate_schema_transform(
+      source, dest, partition_spec{}, field_name_comparison::lower_case);
+    ASSERT_FALSE(ok.has_error());
+
+    // none: names are distinct — the field is treated as new.
+    auto dest2 = single_field_struct("UserId", nested_field::id_t{0});
+    auto mismatch = annotate_schema_transform(
+      source, dest2, partition_spec{}, field_name_comparison::verbatim);
+    ASSERT_FALSE(mismatch.has_error());
+    EXPECT_GT(mismatch.value().n_added, 0);
+}
+
+TEST(NormalizationTest, TryFillFieldIdsRespectNorm) {
+    auto host = single_field_struct("userid", nested_field::id_t{42});
+
+    // lower_case: names match — ID is filled.
+    auto writer = single_field_struct("UserId", nested_field::id_t{0});
+    ASSERT_EQ(
+      try_fill_field_ids(host, writer, field_name_comparison::lower_case),
+      ids_filled::yes);
+    EXPECT_EQ(writer.fields[0]->id, nested_field::id_t{42});
+
+    // none: names don't match — ID is not filled.
+    auto writer2 = single_field_struct("UserId", nested_field::id_t{0});
+    ASSERT_EQ(
+      try_fill_field_ids(host, writer2, field_name_comparison::verbatim),
+      ids_filled::no);
 }

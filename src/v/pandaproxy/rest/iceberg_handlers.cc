@@ -119,6 +119,31 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
         co_return std::move(rp);
     }
 
+    auto& topic_table = rq.service().topic_table();
+
+    // A requested topic the coordinator doesn't track, but which exists with
+    // Iceberg disabled, is reported as disabled below instead of being omitted.
+    // Enabled-but-untracked topics are excluded: they are still initializing
+    // and will appear via the coordinator with full table state once
+    // registered; surfacing them here without a table identity would be
+    // misleading.
+    chunked_vector<model::topic> disabled_topics;
+    for (const auto& topic_name : req.get_topics_filter()) {
+        model::topic topic{topic_name};
+        if (topic_states.contains(topic)) {
+            continue;
+        }
+        auto tp_md = topic_table.get_topic_metadata_ref(
+          model::topic_namespace_view(model::kafka_namespace, topic));
+        if (
+          !tp_md
+          || get_translation_status(tp_md->get().get_configuration())
+               != proto::pandaproxy::translation_status::disabled) {
+            continue;
+        }
+        disabled_topics.push_back(std::move(topic));
+    }
+
     // Filter out topics the user is not authorized to describe.
     if (rq.authn_method != config::rest_authn_method::none) {
         auto auth_result = rq.context().authenticator.authenticate(*rq.req);
@@ -127,22 +152,30 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
           security::principal_type::user, rq.user.name};
         auto host = security::acl_host{rq.req->get_client_address().addr()};
         auto& groups = auth_result.get_groups();
+        auto is_authorized = [&](const model::topic& topic) {
+            return rq.service()
+              .authorizer()
+              .authorized(
+                topic,
+                security::acl_operation::describe,
+                principal,
+                host,
+                security::superuser_required::no,
+                groups)
+              .is_authorized();
+        };
         std::erase_if(topic_states, [&](const auto& entry) {
-            auto res = rq.service().authorizer().authorized(
-              entry.first,
-              security::acl_operation::describe,
-              principal,
-              host,
-              security::superuser_required::no,
-              groups);
-            return !res.is_authorized();
+            return !is_authorized(entry.first);
         });
+        auto unauthorized = std::ranges::remove_if(
+          disabled_topics,
+          [&](const auto& topic) { return !is_authorized(topic); });
+        disabled_topics.erase_to_end(unauthorized.begin());
     }
 
     proto::pandaproxy::get_translation_state_response resp;
     chunked_hash_map<ss::sstring, proto::pandaproxy::topic_state>
       pb_topic_states;
-    auto& topic_table = rq.service().topic_table();
     for (const auto& [topic, state] : topic_states) {
         proto::pandaproxy::topic_state pb_state;
         auto tp_md = topic_table.get_topic_metadata_ref(
@@ -183,15 +216,32 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
 
         chunked_hash_map<int32_t, proto::pandaproxy::partition_state>
           pb_partitions;
-        for (const auto& [pid, pstate] : state.pid_to_pending_files) {
-            proto::pandaproxy::partition_state pb_pstate;
-            if (pstate.last_committed.has_value()) {
-                pb_pstate.set_last_catalog_committed_offset(
-                  pstate.last_committed.value()());
+        auto p_ids = state.pid_to_pending_files | std::views::keys;
+        auto max_it = std::ranges::max_element(p_ids);
+        int32_t max_partition_id = max_it == std::ranges::end(p_ids)
+                                     ? -1
+                                     : (*max_it)();
+        auto partition_count = std::max<int32_t>(
+          tp_md->get().get_configuration().partition_count,
+          max_partition_id + 1);
+        for (int32_t pid = 0; pid < partition_count; ++pid) {
+            auto it = state.pid_to_pending_files.find(model::partition_id{pid});
+            auto& partition_state = pb_partitions[pid];
+            if (
+              it != state.pid_to_pending_files.end()
+              && it->second.last_committed.has_value()) {
+                partition_state.set_last_catalog_committed_offset(
+                  it->second.last_committed.value()());
             }
-            pb_partitions.emplace(pid(), std::move(pb_pstate));
         }
         pb_state.set_partition_states(std::move(pb_partitions));
+        pb_topic_states.emplace(topic(), std::move(pb_state));
+    }
+
+    for (const auto& topic : disabled_topics) {
+        proto::pandaproxy::topic_state pb_state;
+        pb_state.set_translation_status(
+          proto::pandaproxy::translation_status::disabled);
         pb_topic_states.emplace(topic(), std::move(pb_state));
     }
     resp.set_topic_states(std::move(pb_topic_states));

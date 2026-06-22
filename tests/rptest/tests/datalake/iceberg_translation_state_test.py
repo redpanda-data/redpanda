@@ -147,7 +147,52 @@ class IcebergTranslationStateTest(RedpandaTest):
             assert state.dlq_table_name == f"{topic_name}~dlq", (
                 f"Expected DLQ table name '{topic_name}~dlq', got '{state.dlq_table_name}'"
             )
+            assert len(state.partition_states) == 3, (
+                f"Expected 3 partition states, got {len(state.partition_states)}: "
+                f"{dict(state.partition_states)}"
+            )
+            assert set(state.partition_states.keys()) == {0, 1, 2}, (
+                f"Expected partition ids 0,1,2, got {sorted(state.partition_states.keys())}"
+            )
             self.logger.info(f"Translation state for {topic_name}: {state}")
+
+            # A topic that was never Iceberg-enabled is not tracked by the
+            # coordinator, but the endpoint resolves its status from the topic
+            # table and reports it as DISABLED rather than omitting it.
+            def non_iceberg_topic_disabled():
+                result = self._try_get_translation_state(
+                    topics_filter=[non_iceberg_topic]
+                )
+                return (
+                    result is not None
+                    and non_iceberg_topic in result.topic_states
+                    and result.topic_states[non_iceberg_topic].translation_status
+                    == iceberg_pb2.TRANSLATION_STATUS_DISABLED
+                )
+
+            wait_until(
+                non_iceberg_topic_disabled,
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg=f"{non_iceberg_topic} not reported as DISABLED",
+            )
+
+            result = self._get_translation_state(topics_filter=[non_iceberg_topic])
+            plain_state = result.topic_states[non_iceberg_topic]
+            assert (
+                plain_state.translation_status
+                == iceberg_pb2.TRANSLATION_STATUS_DISABLED
+            ), f"Expected DISABLED, got {plain_state.translation_status}"
+            # A disabled topic reports status only: no table identity or offsets.
+            assert plain_state.table_name == "", (
+                f"Expected empty table name, got '{plain_state.table_name}'"
+            )
+            assert len(plain_state.namespace_name) == 0, (
+                f"Expected empty namespace, got {list(plain_state.namespace_name)}"
+            )
+            assert len(plain_state.partition_states) == 0, (
+                f"Expected no partition states, got {dict(plain_state.partition_states)}"
+            )
 
             # Requesting with an empty topics_filter must return 400
             assert self._get_raw_status_code(topics_filter=[]) == 400

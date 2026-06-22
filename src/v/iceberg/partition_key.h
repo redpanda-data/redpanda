@@ -44,6 +44,10 @@ bool operator==(const partition_key&, const partition_key&);
 // value.
 int get_hour(const iceberg::partition_key&);
 
+// Helper for daily partitioning. Assumes that the key contains a single
+// `date_value` (days since epoch) as the first field.
+int32_t get_day(const iceberg::partition_key&);
+
 } // namespace iceberg
 
 namespace std {

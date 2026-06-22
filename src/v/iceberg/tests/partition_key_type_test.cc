@@ -155,7 +155,7 @@ INSTANTIATE_TEST_SUITE_P(
     transform_expectation{
       .source_field_id = 1,
       .transform = day_transform{},
-      .expected_transformed_type = int_type{},
+      .expected_transformed_type = date_type{},
     },
     transform_expectation{
       .source_field_id = 1,

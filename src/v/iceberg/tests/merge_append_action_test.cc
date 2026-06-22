@@ -316,7 +316,10 @@ TEST_F(MergeAppendActionTest, TestMergeAfterTypePromotion) {
         ASSERT_TRUE(found);
 
         auto compat_res = evolve_schema(
-          orig_type, new_type, tx.table().partition_specs.back());
+          orig_type,
+          new_type,
+          tx.table().partition_specs.back(),
+          field_name_comparison::verbatim);
         ASSERT_FALSE(compat_res.has_error());
 
         auto res = tx.set_schema(
@@ -770,7 +773,10 @@ TEST_F(MergeAppendActionTest, TestMergeWithMultiplePartitionSpecs) {
         }
         struct_type new_type{.fields = std::move(fields_copy)};
         auto compat_res = evolve_schema(
-          orig_type, new_type, tx.table().partition_specs.back());
+          orig_type,
+          new_type,
+          tx.table().partition_specs.back(),
+          field_name_comparison::verbatim);
         ASSERT_FALSE(compat_res.has_error());
 
         auto res = tx.set_schema(

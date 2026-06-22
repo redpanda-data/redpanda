@@ -9,6 +9,7 @@
 
 #include "filter.h"
 
+#include "base/vassert.h"
 #include "compaction/utils.h"
 #include "container/chunked_vector.h"
 #include "model/batch_compression.h"
@@ -16,37 +17,40 @@
 
 #include <seastar/core/coroutine.hh>
 
-#include <vector>
+#include <algorithm>
 
 namespace compaction {
 
 ss::future<ss::stop_iteration> filter::operator()(model::record_batch b) {
     const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
-        co_return co_await filter_and_rewrite_with_sink(comp, std::move(b));
+        co_return co_await filter_and_rewrite_with_sink(
+          comp, std::move(b), std::nullopt);
     }
-    auto batch = co_await model::decompress_batch(b);
-
-    co_return co_await filter_and_rewrite_with_sink(comp, std::move(batch));
+    // Decompress for filtering, but keep the original compressed batch so it
+    // can be reused verbatim if nothing was removed.
+    auto decompressed = co_await model::decompress_batch(b);
+    co_return co_await filter_and_rewrite_with_sink(
+      comp, std::move(decompressed), std::move(b));
 }
 
-ss::future<std::optional<model::record_batch>>
+ss::future<std::optional<filter::filtered_batch>>
 filter::filter_batch(model::record_batch b) const {
     // do not filter non-removable batch types under any circumstances
     if (!is_filterable(b.header().type)) {
-        co_return std::move(b);
+        co_return filtered_batch{
+          .mode = filtered_batch::result::identical, .batch = std::move(b)};
     }
 
     // compute which records to keep
     chunked_vector<int32_t> offset_deltas
       = co_await compute_offset_deltas_to_keep(b);
 
-    auto ret = co_await filter_batch_with_offset_deltas(
+    co_return co_await filter_batch_with_offset_deltas(
       std::move(b), std::move(offset_deltas));
-    co_return ret;
 }
 
-ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
+ss::future<std::optional<filter::filtered_batch>> filter::do_filter_batch(
   model::record_batch b, chunked_vector<int32_t> offset_deltas) const {
     // no records to keep
     if (offset_deltas.empty()) {
@@ -55,7 +59,8 @@ ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
 
     // keep all records
     if (offset_deltas.size() == static_cast<size_t>(b.record_count())) {
-        co_return std::move(b);
+        co_return filtered_batch{
+          .mode = filtered_batch::result::identical, .batch = std::move(b)};
     }
 
     // filter
@@ -63,17 +68,22 @@ ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
     int32_t rec_count = 0;
     std::optional<int64_t> first_timestamp_delta;
     int64_t last_timestamp_delta;
+    // We expect and enforce that offset_deltas is sorted.
+    dassert(
+      std::ranges::is_sorted(offset_deltas),
+      "offset_deltas must be ascending in record-iteration order");
+    size_t keep_idx = 0;
     co_await b.for_each_record_async([&rec_count,
                                       &first_timestamp_delta,
                                       &last_timestamp_delta,
                                       &ret,
+                                      &keep_idx,
                                       &offset_deltas](model::record record) {
         // contains the key
         if (
-          std::count(
-            offset_deltas.begin(),
-            offset_deltas.end(),
-            record.offset_delta())) {
+          keep_idx < offset_deltas.size()
+          && offset_deltas[keep_idx] == record.offset_delta()) {
+            ++keep_idx;
             /*
              * TODO when we further optimize lazy record materialization ot
              * make use of views we can avoid this re-encoding by copying or
@@ -119,30 +129,42 @@ ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
     new_hdr.reset_size_checksum_metadata(ret);
     auto new_batch = model::record_batch(
       new_hdr, std::move(ret), model::record_batch::tag_ctor_ng{});
-    co_return new_batch;
+    co_return filtered_batch{
+      .mode = filtered_batch::result::rebuilt, .batch = std::move(new_batch)};
 }
 
 ss::future<ss::stop_iteration> filter::filter_and_rewrite_with_sink(
-  model::compression original, model::record_batch b) {
+  model::compression original,
+  model::record_batch b,
+  std::optional<model::record_batch> compressed_b_opt) {
     ++_stats.batches_processed;
     const auto record_count_before = b.record_count();
     auto to_copy = co_await filter_batch(std::move(b));
-    if (to_copy.has_value()) {
-        const auto records_to_remove = record_count_before
-                                       - to_copy->record_count();
-        _stats.records_discarded += records_to_remove;
-        bool compactible_batch = is_compactible(to_copy->header());
-        if (!compactible_batch) {
-            ++_stats.non_compactible_batches;
-        }
-
-        co_return co_await _sink(std::move(to_copy).value(), original);
-    } else {
+    if (!to_copy.has_value()) {
         ++_stats.batches_discarded;
         _stats.records_discarded += record_count_before;
+        co_return ss::stop_iteration::no;
+    }
+    auto filtered = std::move(to_copy).value();
+    _stats.records_discarded += record_count_before
+                                - filtered.batch.record_count();
+    if (!is_compactible(filtered.batch.header())) {
+        ++_stats.non_compactible_batches;
     }
 
-    co_return ss::stop_iteration::no;
+    auto batch = std::move(filtered.batch);
+    auto sink_compression = original;
+    // If filtering left the records unchanged and the source was compressed,
+    // append the original compressed batch verbatim rather than paying to
+    // re-compress byte-identical output.
+    if (
+      filtered.mode == filtered_batch::result::identical
+      && compressed_b_opt.has_value()) {
+        batch = std::move(compressed_b_opt).value();
+        sink_compression = model::compression::none;
+        ++_stats.compressed_batches_reused;
+    }
+    co_return co_await _sink(std::move(batch), sink_compression);
 }
 
 } // namespace compaction

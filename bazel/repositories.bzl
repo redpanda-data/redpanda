@@ -77,7 +77,10 @@ def data_dependency():
         sha256 = "2157d92020d408ed63ebcd886a92d1346a1383b0f91123a0473b4f69b4a24861",
         strip_prefix = "krb5-krb5-1.21.3-final",
         url = "https://github.com/krb5/krb5/archive/refs/tags/krb5-1.21.3-final.tar.gz",
-        patches = ["//bazel/thirdparty:0001-Fix-two-unlikely-memory-leaks.patch"],
+        patches = [
+            "//bazel/thirdparty:0001-Fix-two-unlikely-memory-leaks.patch",
+            "//bazel/thirdparty:0002-Fix-two-NegoEx-parsing-vulnerabilities.patch",
+        ],
         patch_args = ["-p1"],
     )
 
@@ -138,9 +141,9 @@ def data_dependency():
     http_archive(
         name = "openssl",
         build_file = "//bazel/thirdparty:openssl.BUILD",
-        sha256 = "deae7c80cba99c4b4f940ecadb3c3338b13cb77418409238e57d7f31f2a3b736",
-        strip_prefix = "openssl-3.5.6",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/openssl-3.5.6.tar.gz",
+        sha256 = "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8",
+        strip_prefix = "openssl-3.5.7",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/openssl-3.5.7.tar.gz",
     )
 
     http_archive(

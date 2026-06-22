@@ -41,7 +41,7 @@ struct transform_applying_visitor {
     }
 
     std::optional<value> operator()(const day_transform&) {
-        int_value v{
+        date_value v{
           std::visit(time_transform_visitor<std::chrono::days>{}, source_val_)};
         return v;
     }

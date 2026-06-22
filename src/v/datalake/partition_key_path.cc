@@ -167,14 +167,21 @@ struct primitive_formatting_visitor {
 template<typename DurationT>
 checked<ss::sstring, partition_key_error>
 format_time_transform_key(const iceberg::primitive_value& value) {
-    if (!std::holds_alternative<iceberg::int_value>(value)) {
-        return partition_key_error("time transform expects an integer value");
+    // Per the Iceberg spec, the `day` transform produces a date value;
+    // year/month/hour transforms produce int values. Both wrap an int32_t.
+    int32_t raw_val{};
+    if (std::holds_alternative<iceberg::int_value>(value)) {
+        raw_val = std::get<iceberg::int_value>(value).val;
+    } else if (std::holds_alternative<iceberg::date_value>(value)) {
+        raw_val = std::get<iceberg::date_value>(value).val;
+    } else {
+        return partition_key_error(
+          "time transform expects an integer or date value");
     }
-    auto v = std::get<iceberg::int_value>(value);
 
     std::chrono::system_clock::time_point tp{std::chrono::milliseconds(0)};
     // offset epoch by the given duration
-    tp += DurationT(v.val);
+    tp += DurationT(raw_val);
 
     if constexpr (std::is_same_v<std::chrono::years, DurationT>) {
         return ssx::sformat("{:%Y}", tp);

@@ -11,6 +11,7 @@
 
 #include "container/chunked_vector.h"
 #include "iceberg/datatypes.h"
+#include "iceberg/field_name_comparison.h"
 #include "iceberg/manifest.h"
 #include "iceberg/manifest_entry.h"
 #include "iceberg/partition.h"
@@ -108,7 +109,8 @@ struct table_metadata {
     // Search for a schema that matches the provided type. Start from the end of
     // the list to short circuit on the common case (desired type is current,
     // latest schema)
-    const schema* get_equivalent_schema(const struct_type& type) const;
+    const schema* get_equivalent_schema(
+      const struct_type& type, field_name_comparison norm) const;
 
     table_metadata copy() const;
 

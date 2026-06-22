@@ -114,6 +114,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:transform",
         "//src/v/json",
         "//src/v/test_utils:gtest",
+        "//src/v/utils:retry_chain_node",
         "@googletest//:gtest",
     ],
 )
@@ -740,6 +741,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:compatibility_utils",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:field_collecting_visitor",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/iceberg:partition",
         "//src/v/random:generators",
         "//src/v/test_utils:gtest",
@@ -748,6 +750,20 @@ redpanda_cc_gtest(
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "unicode_test",
+    timeout = "short",
+    srcs = [
+        "unicode_test.cc",
+    ],
+    deps = [
+        "//src/v/iceberg:field_name_comparison",
+        "//src/v/iceberg:unicode",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
 

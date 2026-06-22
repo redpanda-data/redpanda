@@ -41,9 +41,25 @@ public:
     stats end_of_stream() const { return _stats; }
 
 protected:
+    // Outcome of filtering a single batch. `mode` indicates whether the
+    // source's compression can be reused, avoiding re-compression.
+    struct filtered_batch {
+        enum class result : uint8_t {
+            // Records unchanged: a compressed source batch can be appended
+            // verbatim instead of being re-compressed, since the output would
+            // be byte-identical to the input.
+            identical,
+            // The batch was rebuilt (records removed) and must be re-compressed
+            // if the source was compressed.
+            rebuilt,
+        };
+        result mode;
+        model::record_batch batch;
+    };
+
     // Creates a new batch based on the provided batch and offset_deltas
     // indicated.
-    ss::future<std::optional<model::record_batch>> do_filter_batch(
+    ss::future<std::optional<filtered_batch>> do_filter_batch(
       model::record_batch b, chunked_vector<int32_t> offset_deltas) const;
 
     mutable stats _stats;
@@ -60,19 +76,23 @@ private:
     // produced `offset_deltas` before creating a new `record_batch`. This is
     // useful for e.g. local storage in which we may need to create a
     // placeholder batch if `offset_deltas` is empty.
-    virtual ss::future<std::optional<model::record_batch>>
+    virtual ss::future<std::optional<filtered_batch>>
     filter_batch_with_offset_deltas(
       model::record_batch b, chunked_vector<int32_t> offset_deltas) const = 0;
 
     // Computes offset deltas from the batch to keep, and then filters the
     // provided batch.
-    ss::future<std::optional<model::record_batch>>
+    ss::future<std::optional<filtered_batch>>
     filter_batch(model::record_batch b) const;
 
     // Performs filtering over the entire batch, and then delegates the result
-    // to `_sink` for writing.
+    // to `_sink` for writing. `compressed_b_opt` holds the original compressed
+    // batch (if the source was compressed) so it can be reused verbatim when
+    // filtering leaves the records unchanged.
     ss::future<ss::stop_iteration> filter_and_rewrite_with_sink(
-      model::compression original, model::record_batch b);
+      model::compression original,
+      model::record_batch b,
+      std::optional<model::record_batch> compressed_b_opt);
 
     sliding_window_reducer::sink& _sink;
     model::ntp _ntp;

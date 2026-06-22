@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 
+#include "absl/strings/ascii.h"
 #include "base/units.h"
 #include "cluster/scheduling/topic_memory_per_partition_default.h"
 #include "config/base_property.h"
@@ -29,6 +30,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -3943,6 +3945,45 @@ configuration::configuration()
           }
           return std::nullopt;
       })
+  , oidc_http_proxy_username(
+      *this,
+      "oidc_http_proxy_username",
+      "Username for HTTP Basic authentication to the OIDC forward proxy "
+      "(oidc_http_proxy_url). Leave unset for an unauthenticated proxy. "
+      "Both username and password must be set for credentials to be sent.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      [](const auto& v) -> std::optional<ss::sstring> {
+          if (!v.has_value()) {
+              return std::nullopt;
+          }
+          if (v->find(':') != ss::sstring::npos) {
+              return "must not contain ':' (RFC 7617)";
+          }
+          if (std::ranges::any_of(*v, absl::ascii_iscntrl)) {
+              return "must not contain control characters";
+          }
+          return std::nullopt;
+      })
+  , oidc_http_proxy_password(
+      *this,
+      "oidc_http_proxy_password",
+      "Password for HTTP Basic authentication to the OIDC forward proxy "
+      "(oidc_http_proxy_url). Leave unset for an unauthenticated proxy. "
+      "Both username and password must be set for credentials to be sent.",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
+      std::nullopt,
+      [](const auto& v) -> std::optional<ss::sstring> {
+          if (!v.has_value()) {
+              return std::nullopt;
+          }
+          if (std::ranges::any_of(*v, absl::ascii_iscntrl)) {
+              return "must not contain control characters";
+          }
+          return std::nullopt;
+      })
   , oidc_token_audience(
       *this,
       "oidc_token_audience",
@@ -4147,7 +4188,8 @@ configuration::configuration()
         .example = "http://hostname:8181",
         .visibility = visibility::user,
       },
-      std::nullopt)
+      std::nullopt,
+      &validate_iceberg_rest_catalog_endpoint)
   , iceberg_rest_catalog_client_id(
       *this,
       "iceberg_rest_catalog_client_id",
@@ -4420,6 +4462,22 @@ configuration::configuration()
       {
         model::iceberg_invalid_record_action::drop,
         model::iceberg_invalid_record_action::dlq_table,
+      })
+  , iceberg_schema_case_insensitive(
+      *this,
+      "iceberg_schema_case_insensitive",
+      "Schema field name comparison mode when matching Redpanda's "
+      "schema against the one returned by the Iceberg catalog. Some catalogs "
+      "(e.g. AWS Glue) return field names with inconsistent casing, requiring "
+      "case-insensitive comparison. \"auto\" enables case-insensitive "
+      "comparison when the catalog is AWS Glue, and exact comparison "
+      "otherwise.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      model::iceberg_schema_case_insensitive::auto_,
+      {
+        model::iceberg_schema_case_insensitive::auto_,
+        model::iceberg_schema_case_insensitive::no,
+        model::iceberg_schema_case_insensitive::yes,
       })
   , iceberg_target_lag_ms(
       *this,
