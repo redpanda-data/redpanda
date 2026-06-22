@@ -33,15 +33,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: src/transform-sdk/go/transform/go.sum
       - name: Build integration tests
         working-directory: src/transform-sdk/tests
+        env:
+          # setup-go@v6 defaults GOTOOLCHAIN=local; this module's go.mod
+          # requires a newer Go than the pinned GO_VERSION, so allow the
+          # toolchain to be fetched as it was under v5.
+          GOTOOLCHAIN: auto
         run: go test -c -o ./wasm-integration-test
       - name: Upload integration test binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-integration-test
           path: src/transform-sdk/tests/wasm-integration-test
@@ -51,14 +56,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: src/transform-sdk/go/transform/go.sum
       - name: Run tests
         working-directory: src/transform-sdk/go/transform
         run: go test -v ./...
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           args: --timeout 5m
@@ -69,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: src/transform-sdk/go/transform/go.sum
@@ -86,7 +91,7 @@ jobs:
           tinygo build -scheduler=none -target=wasi -o tee.wasm ./tee
           tinygo build -scheduler=none -target=wasi -o sr.wasm ./schema-registry
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/go/transform/internal/testdata
@@ -140,7 +145,7 @@ jobs:
             --example=tee \
             --example=schema_registry
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/rust
@@ -187,7 +192,7 @@ jobs:
         working-directory: src/transform-sdk/cpp/examples
         run: cmake -B build && cmake --build build
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/cpp/examples
@@ -231,7 +236,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Install node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
       - name: Build integration tests
@@ -264,7 +269,7 @@ jobs:
             -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
             -o sr.wasm
       - name: Download integration test suite
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wasm-integration-test
           path: src/transform-sdk/js

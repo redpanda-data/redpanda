@@ -22,16 +22,9 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
       - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --manifest-path tools/rp_storage_tool/Cargo.toml
+        run: cargo check --manifest-path tools/rp_storage_tool/Cargo.toml
   test:
     name: Unit tests
     runs-on: ubuntu-latest
@@ -39,13 +32,6 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
       - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path tools/rp_storage_tool/Cargo.toml
+        run: cargo test --manifest-path tools/rp_storage_tool/Cargo.toml
