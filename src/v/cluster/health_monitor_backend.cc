@@ -950,29 +950,34 @@ health_monitor_backend::get_current_node_health() {
 
 namespace {
 
-partition_status build_partition_status(const partition& p) {
+partition_status build_partition_status(
+  const ss::lw_shared_ptr<partition>& p,
+  const std::optional<kafka_start_offset_provider>& kafka_start_offset) {
     partition_status status;
-    status.id = p.ntp().tp.partition;
-    status.term = p.term();
-    status.leader_id = p.get_leader_id();
-    status.revision_id = p.get_revision_id();
-    status.size_bytes = p.size_bytes() + p.non_log_disk_size_bytes();
-    status.reclaimable_size_bytes = p.reclaimable_size_bytes();
-    auto ctp_stm = p.raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    status.id = p->ntp().tp.partition;
+    status.term = p->term();
+    status.leader_id = p->get_leader_id();
+    status.revision_id = p->get_revision_id();
+    status.size_bytes = p->size_bytes() + p->non_log_disk_size_bytes();
+    status.reclaimable_size_bytes = p->reclaimable_size_bytes();
+    auto ctp_stm = p->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
     if (ctp_stm) {
         status.cloud_topic_max_gc_eligible_epoch
           = ctp_stm->estimate_inactive_epoch();
     }
     status.shard = ss::this_shard_id();
 
-    if (p.ntp().ns == model::kafka_namespace && p.started()) {
+    if (p->ntp().ns == model::kafka_namespace && p->started()) {
         // HWM cannot be reliably retrieved until raft has started
         status.high_watermark = model::offset_cast(
-          p.log()->from_log_offset(p.high_watermark()));
+          p->log()->from_log_offset(p->high_watermark()));
+        if (kafka_start_offset) {
+            status.log_start_offset = (*kafka_start_offset)(p);
+        }
     }
 
-    if (p.raft()->is_elected_leader()) {
-        const auto fms = p.raft()->get_follower_metrics();
+    if (p->raft()->is_elected_leader()) {
+        const auto fms = p->raft()->get_follower_metrics();
 
         status.followers_stats.emplace();
         status.under_replicated_replicas = 0;
@@ -1007,12 +1012,11 @@ struct shard_report {
       topics;
 };
 
-shard_report collect_shard_local_reports(partition_manager& pm) {
-    auto partitions = pm.partitions() | std::views::values;
-
+shard_report collect_shard_local_reports(
+  partition_manager& pm,
+  const std::optional<kafka_start_offset_provider>& kafka_start_offset) {
     shard_report report;
-
-    for (const auto& p : partitions) {
+    for (const auto& p : pm.partitions() | std::views::values) {
         const auto& ntp = p->ntp();
         auto it = report.topics.find(model::topic_namespace_view{ntp});
         if (it == report.topics.end()) {
@@ -1022,7 +1026,7 @@ shard_report collect_shard_local_reports(partition_manager& pm) {
                      chunked_vector<partition_status>{})
                    .first;
         }
-        it->second.push_back(build_partition_status(*p));
+        it->second.push_back(build_partition_status(p, kafka_start_offset));
     }
     return report;
 }
@@ -1043,7 +1047,10 @@ reports_acc_t reduce_reports_map(reports_acc_t acc, shard_report shard_report) {
 ss::future<chunked_vector<topic_status>>
 health_monitor_backend::collect_topic_status() {
     auto reports_map = co_await _partition_manager.map_reduce0(
-      [](partition_manager& pm) { return collect_shard_local_reports(pm); },
+      [&kafka_start_offset = _kafka_start_offset_provider](
+        partition_manager& pm) {
+          return collect_shard_local_reports(pm, kafka_start_offset);
+      },
       reports_acc_t{},
       &reduce_reports_map);
 

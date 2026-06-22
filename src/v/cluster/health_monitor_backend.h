@@ -94,6 +94,10 @@ public:
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
 
+    void set_kafka_start_offset_provider(kafka_start_offset_provider p) {
+        _kafka_start_offset_provider = std::move(p);
+    }
+
     ss::future<result<std::optional<cluster::drain_status>>>
       get_node_drain_status(model::node_id, model::timeout_clock::time_point);
 
@@ -262,6 +266,8 @@ private:
     cluster::notification_id_type _next_callback_id{0};
 
     ssx::mutex _report_collection_mutex{"health_report_collection"};
+
+    std::optional<kafka_start_offset_provider> _kafka_start_offset_provider;
 
     friend struct health_report_accessor;
 };

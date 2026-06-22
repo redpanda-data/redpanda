@@ -127,6 +127,10 @@ public:
         return _hm_frontend;
     }
 
+    ss::sharded<health_monitor_backend>& get_health_monitor_backend() {
+        return _hm_backend;
+    }
+
     ss::sharded<feature_manager>& get_feature_manager() {
         return _feature_manager;
     }

@@ -31,9 +31,21 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/util/noncopyable_function.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/util/bool_class.hh>
 
 namespace cluster {
+
+class partition;
+
+/// Callback injected from the Kafka layer into health_monitor_backend to
+/// compute a partition replica's Kafka-space log start offset (first readable
+/// offset, accounting for cloud storage and start-offset overrides). cluster
+/// cannot depend on kafka/data, so the computation is supplied as a callback
+/// backed by kafka::replicated_partition.
+using kafka_start_offset_provider = ss::noncopyable_function<
+  kafka::offset(ss::lw_shared_ptr<partition>)>;
 
 inline constexpr ss::shard_id health_monitor_backend_shard = 0;
 /**
@@ -107,7 +119,7 @@ struct followers_stats
 };
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<6>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<7>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
     static constexpr uint32_t invalid_shard_id = uint32_t(-1);
 
@@ -155,6 +167,13 @@ struct partition_status
      */
     std::optional<int64_t> cloud_topic_max_gc_eligible_epoch;
 
+    /**
+     * Kafka log start offset (first readable offset) for this partition
+     * replica. Only populated for Kafka namespace partitions. std::nullopt
+     * when reported by nodes running an older version.
+     */
+    std::optional<kafka::offset> log_start_offset;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -167,7 +186,8 @@ struct partition_status
           shard,
           followers_stats,
           high_watermark,
-          cloud_topic_max_gc_eligible_epoch);
+          cloud_topic_max_gc_eligible_epoch,
+          log_start_offset);
     }
 
     fmt::iterator format_to(fmt::iterator it) const;

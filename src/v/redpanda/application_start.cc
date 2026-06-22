@@ -20,6 +20,7 @@
 #include "cluster/cloud_metadata/offsets_upload_router.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/controller.h"
+#include "cluster/health_monitor_backend.h"
 #include "cluster/feature_manager.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/log_eviction_stm.h"
@@ -36,6 +37,7 @@
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/translation/state_machine.h"
 #include "debug_bundle/debug_bundle_service.h"
+#include "kafka/data/replicated_partition.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_tx_tracker_stm.h"
 #include "kafka/server/quota_manager.h"
@@ -164,6 +166,18 @@ void application::start_runtime_services(
         _data_migrations_group_proxy,
         cloud_topics_app ? cloud_topics_app->get_state() : nullptr)
       .get();
+
+    // The Kafka start offset is computed by replicated_partition (kafka
+    // layer), which depends on cluster; health_monitor_backend lives in
+    // cluster and can't depend back on it. Inject the computation here,
+    // above both layers, to avoid the dependency cycle.
+    controller->get_health_monitor_backend()
+      .local()
+      .set_kafka_start_offset_provider(
+        [](ss::lw_shared_ptr<cluster::partition> p) -> kafka::offset {
+            kafka::replicated_partition rp{std::move(p)};
+            return model::offset_cast(rp.start_offset());
+        });
 
     if (archiver_manager.local_is_initialized()) {
         archiver_manager.invoke_on_all(&archival::archiver_manager::start)
