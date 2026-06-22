@@ -1196,6 +1196,194 @@ class ConsumerGroupTest(RedpandaTest):
         for consumer in consumers:
             consumer.close()
 
+    @cluster(num_nodes=3)
+    def test_group_lag_metrics_with_retention(self):
+        """
+        Verify that consumer group lag metrics are not inflated when the
+        committed offset falls below the partition's log start offset due to
+        retention.  After trim-prefix advances log_start_offset past the
+        committed offset the lag gauges should report zero, not
+        hwm - committed_offset.
+        """
+        lag_collection_interval = 5
+        topic = "test-lag-retention"
+        group = "test-lag-retention-group"
+        partition = 0
+        msg_count = 1000
+        consume_count = 500
+
+        self.redpanda.set_cluster_config(
+            {
+                "enable_consumer_group_metrics": ["consumer_lag"],
+                "consumer_group_lag_collection_interval_sec": lag_collection_interval,
+            }
+        )
+
+        rpk = RpkTool(self.redpanda)
+
+        rpk.create_topic(topic, partitions=1, replicas=3)
+
+        producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
+        for i in range(msg_count):
+            producer.produce(topic, value=f"msg-{i}")
+        producer.flush()
+
+        consumer = Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": group,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
+        consumer.subscribe([topic])
+        consumed = consumer.consume(num_messages=consume_count, timeout=30)
+        assert len(consumed) == consume_count, (
+            f"Expected {consume_count} messages, got {len(consumed)}"
+        )
+        consumer.commit(asynchronous=False)
+        consumer.close()
+
+        def get_group_lag(metric_name) -> float | None:
+            samples = self.redpanda.metrics_samples(
+                [metric_name],
+                self.redpanda.started_nodes(),
+                MetricsEndpoint.PUBLIC_METRICS,
+            )
+            if samples is None:
+                return None
+            group_samples = (
+                samples[metric_name].label_filter({"redpanda_group": group}).samples
+            )
+            if not group_samples:
+                return None
+            return max(s.value for s in group_samples)
+
+        # Before trim-prefix: committed=500, hwm=1000, lag should be ~500.
+        # This confirms metrics are being collected before we apply the fix
+        # scenario, so the post-trim assertion is meaningful.
+        wait_until(
+            lambda: get_group_lag("redpanda_kafka_consumer_group_lag_max") is not None
+            and get_group_lag("redpanda_kafka_consumer_group_lag_max") > 0,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Expected lag_max > 0 after commit but before trim-prefix",
+        )
+
+        # Advance log_start_offset past all produced messages so the committed
+        # offset becomes stale: lag = max(hwm - max(committed, lso), 0) = 0.
+        rpk.trim_prefix(topic, msg_count, partitions=[partition])
+
+        # Wait for the metric to reflect the trim — up to two extra intervals.
+        wait_until(
+            lambda: get_group_lag("redpanda_kafka_consumer_group_lag_max") == 0
+            and get_group_lag("redpanda_kafka_consumer_group_lag_sum") == 0,
+            timeout_sec=lag_collection_interval * 2 + 30,
+            backoff_sec=lag_collection_interval,
+            err_msg=(
+                f"Expected lag_max=0 and lag_sum=0 after trim-prefix past "
+                f"committed offset, got lag_max="
+                f"{get_group_lag('redpanda_kafka_consumer_group_lag_max')}, "
+                f"lag_sum="
+                f"{get_group_lag('redpanda_kafka_consumer_group_lag_sum')}"
+            ),
+        )
+
+    @cluster(num_nodes=3)
+    def test_group_lag_metrics_partial_retention(self):
+        """
+        Verify that when retention advances log_start_offset past the committed
+        offset but readable data still remains (log_start_offset < hwm), the lag
+        reflects the readable backlog (hwm - log_start_offset) rather than the
+        stale hwm - committed_offset or a fully-clamped zero.
+
+        This is the case that distinguishes the fix from a clamp-everything-to-
+        zero bug: trim-prefix lands between the committed offset and the hwm.
+        """
+        lag_collection_interval = 5
+        topic = "test-lag-partial-retention"
+        group = "test-lag-partial-retention-group"
+        partition = 0
+        msg_count = 1000
+        consume_count = 500
+        trim_offset = 700
+
+        self.redpanda.set_cluster_config(
+            {
+                "enable_consumer_group_metrics": ["consumer_lag"],
+                "consumer_group_lag_collection_interval_sec": lag_collection_interval,
+            }
+        )
+
+        rpk = RpkTool(self.redpanda)
+
+        rpk.create_topic(topic, partitions=1, replicas=3)
+
+        producer = Producer({"bootstrap.servers": self.redpanda.brokers()})
+        for i in range(msg_count):
+            producer.produce(topic, value=f"msg-{i}")
+        producer.flush()
+
+        consumer = Consumer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "group.id": group,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
+        consumer.subscribe([topic])
+        consumed = consumer.consume(num_messages=consume_count, timeout=30)
+        assert len(consumed) == consume_count, (
+            f"Expected {consume_count} messages, got {len(consumed)}"
+        )
+        consumer.commit(asynchronous=False)
+        consumer.close()
+
+        def get_group_lag(metric_name) -> float | None:
+            samples = self.redpanda.metrics_samples(
+                [metric_name],
+                self.redpanda.started_nodes(),
+                MetricsEndpoint.PUBLIC_METRICS,
+            )
+            if samples is None:
+                return None
+            group_samples = (
+                samples[metric_name].label_filter({"redpanda_group": group}).samples
+            )
+            if not group_samples:
+                return None
+            return max(s.value for s in group_samples)
+
+        # Trim-prefix to an offset between the committed offset (500) and the
+        # hwm (1000). The committed offset is now stale, but data in
+        # [trim_offset, hwm) is still consumable.
+        responses = rpk.trim_prefix(topic, trim_offset, partitions=[partition])
+        assert len(responses) == 1, f"Expected 1 trim response, got {responses}"
+        new_start_offset = responses[0].new_start_offset
+        assert new_start_offset == trim_offset, (
+            f"Expected new start offset {trim_offset}, got {new_start_offset}"
+        )
+
+        # lag = max(hwm - max(committed, log_start_offset), 0)
+        #     = max(1000 - max(500, 700), 0) = 300
+        expected_lag = msg_count - new_start_offset
+
+        wait_until(
+            lambda: get_group_lag("redpanda_kafka_consumer_group_lag_max")
+            == expected_lag
+            and get_group_lag("redpanda_kafka_consumer_group_lag_sum") == expected_lag,
+            timeout_sec=lag_collection_interval * 2 + 30,
+            backoff_sec=lag_collection_interval,
+            err_msg=(
+                f"Expected lag_max={expected_lag} and lag_sum={expected_lag} "
+                f"after partial trim-prefix, got lag_max="
+                f"{get_group_lag('redpanda_kafka_consumer_group_lag_max')}, "
+                f"lag_sum="
+                f"{get_group_lag('redpanda_kafka_consumer_group_lag_sum')}"
+            ),
+        )
+
 
 class TestConsumer:
     def __init__(
