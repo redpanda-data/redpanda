@@ -325,3 +325,19 @@ redpanda_test_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "seastar_fuzz",
+    srcs = [
+        "seastar_fuzz.cc",
+    ],
+    hdrs = [
+        "seastar_fuzz.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+    visibility = ["//visibility:public"],
+)
